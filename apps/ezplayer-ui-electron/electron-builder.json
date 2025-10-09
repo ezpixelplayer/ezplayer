@@ -1,6 +1,6 @@
 {
-    "appId": "com.ezrgb.ezplay.",
-    "productName": "EZPlay",
+    "appId": "dev.ezplayer.ezplayer.",
+    "productName": "EZPlayer",
     "directories": {
         "output": "release",
         "buildResources": "assets"

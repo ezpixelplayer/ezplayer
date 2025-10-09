@@ -12,7 +12,7 @@
     },
     "scripts": {
         "build": "pnpm --recursive --workspace-root=false build",
-        "postbuildZZZ": "pnpm run pack:shared && pnpm run pack:player && pnpm run pack:core && pnpm run pack:epp",
+        "postbuild": "pnpm run pack:shared && pnpm run pack:player && pnpm run pack:core && pnpm run pack:epp",
         "pack:shared": "cd packages/shared-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "pack:player": "cd packages/player-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "pack:core": "cd packages/ezplayer-core && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",

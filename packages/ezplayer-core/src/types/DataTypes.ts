@@ -220,3 +220,52 @@ export interface EndUserShowSettings {
     group_mode?: string;
     rot_y?: number; // Rotate around Y axis for effects
 }
+
+export interface JSONEditChoice {
+    title: string;
+    value?: string;
+    choices?: JSONEditChoice[];
+}
+
+export interface JSONEditProp {
+    value: string;
+    choices: JSONEditChoice[];
+}
+
+export interface JSONEditHeader {
+    title: string;
+    key: string;
+    fieldActiveWhenAllOf?: {
+        anyOf: {
+            key: string;
+            equals?: string;
+            notEquals?: string;
+        }[];
+    }[];
+
+    fieldType: 'choice' | 'checkbox' | 'text' | undefined;
+
+    allowsNone: boolean;
+}
+
+export interface JSONEditItem {
+    name: string;
+    values: {
+        [key: string]: {
+            defvalue: string;
+            required: boolean;
+            choiceid?: string;
+        };
+    };
+}
+
+export type JSONEditState = {
+    [name: string]: { enabled: boolean; values: { [key: string]: string } };
+};
+
+export interface JSONEditSheet {
+    headers: JSONEditHeader[];
+    items: JSONEditItem[];
+    choices: { [choiceid: string]: JSONEditChoice[] };
+    selections: JSONEditState;
+}

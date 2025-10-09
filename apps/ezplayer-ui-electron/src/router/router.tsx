@@ -4,7 +4,6 @@ import { Navigate, RouteObject } from 'react-router';
 import { SuspenseLoader } from '@ezplayer/shared-ui-components';
 
 import {
-    ConnectivityStatus,
     CreateEditPlaylist,
     JukeboxScreen,
     JukeboxFullScreen,
@@ -15,12 +14,7 @@ import {
     SidebarLayout,
     SongList,
     ShowStatusScreen,
-    Home,
-    ShowSettings,
-    GeneralSettingsDrawer,
-    CloudSettingsDrawer,
     PlaybackSettingsDrawer,
-    LayoutEditorPage,
     SchedulePreview,
 } from '@ezplayer/player-ui-components';
 
@@ -54,14 +48,6 @@ const routes: RouteObject[] = [
             {
                 path: ROUTES.SONGS,
                 element: <SongList title="Songs" AddSongDialog={AddSongDialogElectron} statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.HOME,
-                element: <Home title="Home" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.SHOWSETTINGS,
-                element: <ShowSettings title="Show Settings" statusArea={getStatusArea()} />,
             },
             {
                 path: ROUTES.PLAYLIST,
@@ -98,20 +84,8 @@ const routes: RouteObject[] = [
                 element: <CreateEditPlaylist title="unused" statusArea={getStatusArea()} />,
             },
             {
-                path: ROUTES.GENERALSETTINGS,
-                element: <GeneralSettingsDrawer title="General Settings" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.CLOUDSETTINGS,
-                element: <CloudSettingsDrawer title="Cloud Settings" statusArea={getStatusArea()} />,
-            },
-            {
                 path: ROUTES.PLAYBACKSETTINGS,
                 element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.LAYOUT_EDITOR,
-                element: <LayoutEditorPage title="Layout Editor" statusArea={getStatusArea()} />,
             },
         ],
     },

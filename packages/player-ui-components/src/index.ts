@@ -17,14 +17,8 @@ export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { StatsDialog } from './components/status/StatsDialog';
-export { Home } from './components/home/Home';
-export { ShowSettings } from './components/show-settings/ShowSettings';
-export { GeneralSettingsDrawer } from './components/general-settings/GeneralSettingsDrawer';
-export { CloudSettingsDrawer } from './components/cloud-settings/CloudSettingsDrawer';
 export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackSettingsDrawer';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
-
-export { default as LayoutEditorPage } from './components/layout-edit/LayoutEditorPage';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
 export type { DataStorageAPI } from './store/api/DataStorageAPI';
