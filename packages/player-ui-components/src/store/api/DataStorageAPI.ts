@@ -6,12 +6,13 @@ import type {
     EndUserShowSettings,
     EndUser,
     UserPlayer,
+    JSONEditSheet,
+    JSONEditState,
 } from '@ezplayer/ezplayer-core';
 
 import { AppDispatch } from '../..';
 
 import { v4 as uuidv4 } from 'uuid';
-import { JSONEditSheet, JSONEditState } from '../../components/layout-edit/types';
 
 export interface UserLoginBody {
     username: string;

@@ -16,6 +16,12 @@ export type {
     PlaybackStatistics,
     EndUser,
     EndUserShowSettings,
+    JSONEditChoice,
+    JSONEditHeader,
+    JSONEditItem,
+    JSONEditProp,
+    JSONEditSheet,
+    JSONEditState,
 } from './types/DataTypes';
 
 export type {

@@ -20,7 +20,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
             onClose={handleClose}
             model_title={
                 <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-                    About EZPlay
+                    About EZPlayer
                 </Typography>
             }
             model_content={
@@ -59,7 +59,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                     Discord Server
                                 </Typography>
                                 <Link
-                                    href="https://discord.gg/ezplay"
+                                    href="https://discord.gg/ezplayer"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     sx={{
@@ -80,7 +80,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                     GitHub Repository
                                 </Typography>
                                 <Link
-                                    href="https://github.com/indexnine/ezplay"
+                                    href="https://github.com/ezpixelplayer/ezplayer"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     sx={{

@@ -23,6 +23,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
 import { ezrgbThemeOptions, useThemeContext } from '../../theme/ThemeBase';
 import { AboutDialog } from './AboutDialog';
+import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 
 interface PlaybackSettingsDrawerProps {
     title: string;
@@ -340,6 +341,13 @@ const selectVersionInfo = createSelector([selectAuth], (auth) => ({
     playerVersion: auth.playerVersion,
     cloudVersion: auth.cloudVersion,
 }));
+
+// Extend Window interface to include electronAPI
+declare global {
+    interface Window {
+        electronAPI?: EZPElectronAPI;
+    }
+}
 
 export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ title, statusArea }) => {
     const { themeName, handleThemeChange } = useThemeContext();
@@ -1367,7 +1375,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                 px: 3
                             }}
                         >
-                            About EZPlay
+                            About EZPlayer
                         </Button>
                     </Box>
                 </Box>

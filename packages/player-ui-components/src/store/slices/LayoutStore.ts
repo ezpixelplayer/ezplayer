@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { DataStorageAPI } from '../api/DataStorageAPI';
-import { JSONEditSheet, JSONEditState } from '../../components/layout-edit/types';
+import { JSONEditSheet, JSONEditState } from '@ezplayer/ezplayer-core';
 
 export interface LayoutState {
     data: JSONEditSheet | null;

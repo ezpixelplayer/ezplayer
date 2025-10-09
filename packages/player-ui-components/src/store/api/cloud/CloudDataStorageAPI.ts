@@ -17,6 +17,8 @@ import {
     EndUser,
     EndUserShowSettings,
     UserPlayer,
+    JSONEditSheet,
+    JSONEditState,
 } from '@ezplayer/ezplayer-core';
 
 import {
@@ -67,7 +69,6 @@ import {
     uploadLayoutHintsFileAPI,
     getLayoutHintsAPI,
 } from './CloudLayoutAPI';
-import { JSONEditSheet, JSONEditState } from '../../../components/layout-edit/types';
 
 export class CloudDataStorageAPI implements DataStorageAPI {
     baseUrl: string;
@@ -148,13 +149,11 @@ export class CloudDataStorageAPI implements DataStorageAPI {
 
     // Player immediate
     async requestImmediatePlay(req: { id: string }) {
-        console.log(`GET http://fpprgb1.local/api/command/Trigger+Command+Preset/${req.id}`);
-        await fetch(`http://fpprgb1.local/api/command/Trigger+Command+Preset/${req.id}`, { method: 'GET' });
         return true;
     }
 
     static EZP_BASE_URL_DEFAULT =
-        (window as any).__APP_CONFIG__?.API_BASE ?? 'https://webmaster-ezplay-cloud-endpoint.cloud.dbos.dev/';
+        (window as any).__APP_CONFIG__?.API_BASE ?? 'https://api.ezplayer.dev/';
 
     async getCloudSequences(): Promise<SequenceRecord[]> {
         return await getSequencesAPI(this.axiosInstance, this.apiUrl, this.getPlayerIDToken());

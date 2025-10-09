@@ -68,9 +68,9 @@ async function getOrPickShowFolder(forcepick: boolean): Promise<string | null> {
 
 // Try to lock the folder itself; we lock a well-known file inside it.
 async function tryLockShowFolder(showFolder: string) {
-    const lockTarget = path.join(showFolder, '.ezplay-folder.lock');
+    const lockTarget = path.join(showFolder, '.ezplayer-folder.lock');
     // Ensure the target exists (proper-lockfile locks an existing path)
-    await fsp.writeFile(lockTarget, 'ezplay-folder-lock\n', { flag: 'a' });
+    await fsp.writeFile(lockTarget, 'ezplayer-folder-lock\n', { flag: 'a' });
     // Acquire lock; stale lock will auto-break after 30s unless renewed
     const release = await lockfile.lock(lockTarget, {
         realpath: false,

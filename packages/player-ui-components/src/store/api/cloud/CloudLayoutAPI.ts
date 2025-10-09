@@ -1,6 +1,6 @@
 import { ToastMsgs } from '@ezplayer/shared-ui-components';
 import { AxiosInstance } from 'axios';
-import { JSONEditState } from '../../../components/layout-edit/types';
+import { JSONEditState } from '@ezplayer/ezplayer-core';
 import { API_ENDPOINTS } from '../ApiEndpoints';
 import { apiPost } from './api-requests';
 
