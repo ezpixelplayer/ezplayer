@@ -1,0 +1,15 @@
+{
+    "appId": "com.ezrgb.ezplay.",
+    "productName": "EZPlay",
+    "directories": {
+        "output": "release",
+        "buildResources": "assets"
+    },
+    "files": ["dist/**/*", "package.json"],
+    "win": {
+        "target": ["nsis"]
+    },
+    "mac": {
+        "target": ["dmg"]
+    }
+}

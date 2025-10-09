@@ -1,0 +1,289 @@
+@use 'variables';
+@use 'mixins';
+@use 'component/login';
+@use 'component/header';
+@use 'component/notifications';
+@use 'component/userbox';
+@use 'component/layout';
+@use 'component/suspenseloader';
+@use 'component/sidebar';
+@use 'component/app';
+
+//common classes goes here
+body {
+    overflow-y: scroll !important;
+    padding: 0 !important;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+// Allow text selection in input fields and text areas
+input,
+textarea,
+[contenteditable] {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    // Disable spellcheck and autocorrect
+    spellcheck: false !important;
+    -webkit-spellcheck: false !important;
+    -moz-spellcheck: false !important;
+    -ms-spellcheck: false !important;
+}
+
+.cursorPointer {
+    cursor: pointer;
+}
+
+.cursorDefault {
+    cursor: default !important;
+}
+
+.textSelectable {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+.textSelectableAll {
+    user-select: all;
+    -webkit-user-select: all;
+    -moz-user-select: all;
+    -ms-user-select: all;
+}
+
+.hr-line {
+    border: 1px solid variables.$borderColor;
+}
+
+.p-absolute {
+    position: absolute;
+}
+
+.p-relative {
+    position: relative;
+}
+
+.p-fixed {
+    position: fixed;
+}
+
+.text-ellipsis {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+//multiple file upload icon size
+
+.text-center {
+    text-align: center;
+}
+
+//Text Transform
+.textUppercase {
+    text-transform: uppercase !important;
+}
+
+.textCapitalize {
+    text-transform: capitalize !important;
+}
+.textNone {
+    text-transform: none !important;
+}
+
+//text align
+.flex-basic-center {
+    @include mixins.flex-basic-center;
+}
+
+.flex-column-center {
+    @include mixins.flex-column-center;
+}
+
+.flex-basic-start {
+    justify-content: start !important;
+    @include mixins.flex-basic-center;
+}
+
+.flex-basic-space-between {
+    justify-content: space-between !important;
+    @include mixins.flex-basic-center;
+}
+
+.flex-basic-space-around {
+    justify-content: space-around !important;
+    @include mixins.flex-basic-center;
+}
+
+.flex-basic-end {
+    justify-content: end !important;
+    @include mixins.flex-basic-center;
+}
+
+.flex-direction-column {
+    flex-direction: column;
+}
+
+.flex-column-end {
+    display: flex;
+    flex-direction: column !important;
+    align-items: flex-end;
+}
+
+.flex-column-start {
+    display: flex;
+    flex-direction: column !important;
+    align-items: center;
+    justify-content: start;
+}
+
+.align-items-start {
+    align-items: start !important;
+}
+
+.align-items-end {
+    align-items: end !important;
+}
+
+.textDecorationNone {
+    text-decoration: none !important;
+}
+.textweight {
+    @include mixins.font-weight-bold;
+}
+.textalign {
+    text-align: center;
+}
+
+//height
+.h-100 {
+    height: 100%;
+}
+
+//width per clasess
+
+.w-10 {
+    width: 10%;
+}
+
+.w-20 {
+    width: 20%;
+}
+
+.w-30 {
+    width: 30%;
+}
+
+.w-40 {
+    width: 40%;
+}
+
+.w-50 {
+    width: 50%;
+}
+
+.w-60 {
+    width: 60%;
+}
+
+.w-70 {
+    width: 70%;
+}
+
+.w-80 {
+    width: 80%;
+}
+
+.w-90 {
+    width: 90%;
+}
+
+.w-100 {
+    width: 100%;
+}
+
+.d-flex {
+    display: flex;
+}
+
+.m-width {
+    min-width: 350 !important ;
+}
+
+.sidebarwrapper {
+    position: fixed;
+    left: 0;
+    top: 0;
+}
+
+.baselayout {
+    flex: 1;
+    height: 100%;
+}
+
+.selectformcontrol {
+    width: 100%;
+}
+
+.overflow_auto {
+    overflow: auto;
+}
+.flex_1 {
+    flex: 1;
+}
+.overflow_x_hidden {
+    overflow-x: hidden;
+}
+.alignitem {
+    align-items: center;
+}
+
+.loginBox {
+    position: relative;
+    &::after {
+        height: 100%;
+        content: '';
+        position: absolute;
+        width: 1px;
+        right: 0px;
+        background-color: variables.$borderBgColor;
+    }
+}
+
+.commonListScroll {
+    @include mixins.commonScrollBar;
+}
+
+//password strength meter
+.passStrengthWeak {
+    background-color: variables.$progressErrorBg !important;
+    .MuiLinearProgress-bar1Determinate {
+        background-color: variables.$progressError !important;
+    }
+}
+.passStrengthFair {
+    background-color: variables.$progressWarningBg !important;
+    .MuiLinearProgress-bar1Determinate {
+        background-color: variables.$progressWarning !important;
+    }
+}
+.passStrengthGood {
+    background-color: variables.$progressStrongBg !important;
+    .MuiLinearProgress-bar1Determinate {
+        background-color: variables.$progressStrong !important;
+    }
+}
+.passStrengthStrong {
+    background-color: variables.$progressSuccessBg !important;
+    .MuiLinearProgress-bar1Determinate {
+        background-color: variables.$progressSuccess !important;
+    }
+}
+.errorState {
+    color: variables.$errorTextColor !important;
+}
