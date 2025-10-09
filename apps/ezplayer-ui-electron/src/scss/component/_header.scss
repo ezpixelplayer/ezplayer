@@ -1,0 +1,21 @@
+@media (min-width: 1200px) and (max-width: 1536px) {
+    .userbox {
+        display: none;
+    }
+}
+@media (min-width: 0px) and (max-width: 600px) {
+    .userbox {
+        display: inline-block;
+    }
+}
+
+.headerwrapper {
+    display: flex;
+    align-items: center;
+    right: 0;
+    z-index: 6;
+    backdrop-filter: blur(3px);
+    position: fixed;
+    justify-content: space-between;
+    width: 100%;
+}

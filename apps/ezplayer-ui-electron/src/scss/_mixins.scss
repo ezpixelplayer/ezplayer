@@ -1,0 +1,54 @@
+@use 'variables';
+
+@mixin border-radius($val) {
+    border-radius: $val;
+    -moz-border-radius: $val;
+    -webkit-border-radius: $val;
+}
+
+@mixin font-weight-bold {
+    font-weight: 700 !important;
+}
+
+@mixin font-weight-semibold {
+    font-weight: 600;
+}
+
+@mixin font-weight-medium {
+    font-weight: 500;
+}
+
+@mixin font-weight-regular {
+    font-weight: 400;
+}
+
+@mixin flex-basic-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+}
+
+@mixin flex-column-center {
+    @include flex-basic-center;
+    flex-direction: column;
+}
+
+@mixin commonScrollBar {
+    overflow: auto;
+
+    &::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+        box-shadow: inset 0 0 4px variables.$backgroundColor !important;
+        border-radius: 10px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: variables.$scrollBarBgColor !important;
+        border-radius: 10px;
+    }
+}

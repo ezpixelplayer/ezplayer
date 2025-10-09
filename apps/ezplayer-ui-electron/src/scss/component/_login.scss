@@ -1,0 +1,13 @@
+.loginWrapper {
+    .containerCenter {
+        @extend .flex-basic-center !optional;
+        @extend .text-center !optional;
+        min-height: 100vh;
+    }
+    .loginWithGoogle {
+        img {
+            height: 25px;
+            width: 25px;
+        }
+    }
+}

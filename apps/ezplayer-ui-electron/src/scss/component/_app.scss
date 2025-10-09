@@ -1,0 +1,17 @@
+.configsButton {
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    background-color: #f2f5f9;
+    border-radius: 50%;
+    position: fixed;
+    right: 2rem;
+    bottom: 2rem;
+    z-index: 99;
+    color: black;
+    border: 1px solid;
+    border-style: groove;
+}

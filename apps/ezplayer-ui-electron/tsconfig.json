@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "outDir": "./dist",
+        "skipLibCheck": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "noImplicitThis": true,
+        "jsx": "react-jsx",
+        "isolatedModules": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "alwaysStrict": true,
+        //"noUnusedLocals": true,
+        //"noUnusedParameters": true,
+        "noEmit": false
+    },
+    "include": ["main.ts", "showfolder.ts", "mainsrc", "sharedsrc"],
+    "exclude": ["node_modules", "dist"]
+}

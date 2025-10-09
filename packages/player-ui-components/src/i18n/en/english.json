@@ -1,0 +1,153 @@
+{
+    "transac_list": "Transaction list",
+    "welcome": "Welcome",
+    "message": "Today is a good day to start trading crypto assets!",
+    "completed": "Completed",
+    "pending": "Pending",
+    "failed": "Failed",
+    "signUp": "Sign Up",
+    "signIn": "Sign In",
+    "cancel": "Cancel",
+    "emailAddress": "Email Address",
+    "password": "Password",
+    "forgotPassword": "Forgot password",
+    "noAccountLabel": "Don't have an account? Sign Up",
+    "google": "Google",
+    "microsoft": "Microsoft",
+    "login": {
+        "title": "Login",
+        "loginAs": "Login as:",
+        "welcomeText": "Welcome to Indexnine Demos",
+        "continueBtnText": "CONTINUE",
+        "VerifyAndLoginBtnText": "VERIFY & LOGIN",
+        "orText": "OR",
+        "verificationText": "Verification Code",
+        "verificationSubText": "Please enter 6-digit verification that was sent to your email-id.",
+        "otpText": "OTP",
+        "dontReceiveOpt": "Don’t receive an OTP? ",
+        "resendOpt": "Resend OTP",
+        "logoutBtnText": "Log Out"
+    },
+    "validationErrMsg": {
+        "required_err_msg": "{{fieldLabel}} is required",
+        "checkbox_group_err_msg": "Please select at least one option",
+        "valid_email_err_msg": "Please renter a valid email",
+        "valid_number_err_msg": "Please enter a valid number",
+        "valid_integer_err_msg": "Please enter only integer number",
+        "max_value_err_msg": "{{fieldLabel}} should not be less than {{maxValue}}",
+        "min_value_err_msg": "{{fieldLabel}} should not be greater than {{minValue}}",
+        "valid_data_err_msg": "Please enter a valid data",
+        "unique_data_err_msg": "Please enter unique {{fieldLabel}}",
+        "valid_regex_err_msg": "Please enter valid regex",
+        "default_err_msg": "Something went wrong",
+        "valid_password_err_msg": "Password must include between 0-9 characters, at least one special character, numeric digit, uppercase and lowercase.",
+        "max_lenght_err_msg": "Maximum 10 characters are allowed",
+        "passwordMatch": "Passwords must match",
+        "valid_file": "Please upload a valid file",
+        "valid_content": "File content is not valid"
+    },
+    "dashboard": {
+        "header": {
+            "welcome": "Welcome",
+            "message": "Indexnine, your partner at any stage of the product journey",
+            "refresh": "Refresh"
+        },
+        "account_balance": {
+            "account_balance": "Account Balance",
+            "this_month": "This Month",
+            "send": "Send",
+            "receive": "Receive"
+        },
+        "wallets": {
+            "wallets": "Wallets",
+            "add_new_wallet": "Add New Wallet",
+            "watch_list": "Watch List",
+            "view_more_assets": "View more assets"
+        },
+        "account_security": {
+            "account_security": "Account Security",
+            "phone_verification": "Phone Verification",
+            "recovery_email": "Recovery Email"
+        },
+        "total_revenue": {
+            "total_revenue": "Total Revenue"
+        },
+        "company_skills": {
+            "company_skills": "Company Skills",
+            "skillName": "Skill Name",
+            "employees": "Employees",
+            "available": "Available",
+            "unavailable": "Unavailable",
+            "projects": "Projects",
+            "empDetailsPopupTitle": "Employees Details With {{language}} Skill",
+            "close": "Close"
+        },
+        "employees": {
+            "employees": "Employees",
+            "total_employees": "Total Employees"
+        },
+        "domain_specific_projects": {
+            "domain_specific_projects": "Domain-specific projects"
+        },
+        "customer_satisfaction": {
+            "customer_satisfaction": "Customer Satisfaction"
+        },
+        "region_wise_customers": {
+            "region_wise_customers": "Region-wise Customers"
+        },
+        "customer_projects": {
+            "customer_projects": "Customer Projects"
+        },
+        "employee_skill_details": {
+            "empName": "Employee Name",
+            "skill": "Skill",
+            "available": "Available",
+            "projects": "Projects",
+            "empId": "Employee Id"
+        }
+    },
+    "layout": {
+        "showName": "Show Name:",
+        "frequency": "FM Frequency:",
+        "rotateLayout": "Rotate Layout:",
+        "message": "Message:",
+        "threeD": "3D:",
+        "fps": "FPS:",
+        "groupMode": "Group Mode:",
+        "locationMode": "Location Mode:",
+        "save": "Save",
+        "home": "Home Page",
+        "required": "Required",
+        "showNameError": "Must be between 3 and 50 characters",
+        "fmFrequencyError": "Invalid number. It should have a decimal exactly after 2 or 3 digits.",
+        "rotateLayoutError": "Must be a number between -90 and 90"
+    },
+    "common": {
+        "submit": "Submit",
+        "add": "Add",
+        "cancel": "Cancel",
+        "available": "Available",
+        "signUp": "Sign Up",
+        "signIn": "Sign In",
+        "emailAddress": "Email Address",
+        "checkEmail": "Check Your Email",
+        "password": "Password",
+        "forgotPassword": "Forgot password",
+        "noAccountLabel": "Sign Up",
+        "verificationMessage": "Verification link sent to your email! Please check your inbox",
+        "backToSignIn": "Go back to Sign In",
+        "signInMessage": "Already have account? Sign In",
+        "upload": "Upload",
+        "uploading": "Uploading...",
+        "uploadFiles": "Upload Layout As Files",
+        "uploadZipFile": "Upload Layout As Zip",
+        "firstName": "First Name",
+        "lastName": "Last Name"
+    },
+    "uploadFileNames": {
+        "xrgbContent": "xrgb",
+        "networksContent": "Networks",
+        "xrgb": "xlights_rgbeffects",
+        "networks": "xlights_networks"
+    }
+}
