@@ -1,0 +1,25 @@
+{
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+        "ecmaVersion": "latest",
+        "project": "./tsconfig.json"
+    },
+    "plugins": [
+        "@typescript-eslint"
+    ],
+    "rules": {  
+        "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+        "no-empty": "off",
+	    "no-constant-condition": "off",
+	    "@typescript-eslint/no-misused-promises": "error",
+	    "@typescript-eslint/no-floating-promises": "error",
+	    "eqeqeq": ["error", "always"],
+        "semi": ["error", "always"],
+        "@typescript-eslint/no-for-in-array": "error",
+	"@typescript-eslint/no-var-requires": "off"
+    }
+}

@@ -1,0 +1,34 @@
+{
+    "name": "@ezplayer/ezplayer",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "lint-staged": {
+        "*.{ts,tsx,js,jsx,json,css,md}": "prettier --write"
+    },
+    "scripts": {
+        "build": "pnpm --recursive --workspace-root=false build",
+        "postbuildZZZ": "pnpm run pack:shared && pnpm run pack:player && pnpm run pack:core && pnpm run pack:epp",
+        "pack:shared": "cd packages/shared-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
+        "pack:player": "cd packages/player-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
+        "pack:core": "cd packages/ezplayer-core && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
+	"pack:epp": "cd packages/epp && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
+        "lint": "pnpm --recursive --workspace-root=false lint",
+        "format": "prettier --check .",
+        "format:fix": "prettier --write ."
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.19.0",
+        "globals": "^15.14.0",
+        "husky": "^9.1.7",
+        "lint-staged": "^16.1.0",
+        "prettier": "^3.4.2"
+    },
+    "dependencies": {
+        "@types/node": "^22.13.1"
+    }
+}
