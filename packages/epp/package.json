@@ -1,0 +1,42 @@
+{
+  "name": "@ezplayer/epp",
+  "version": "0.0.16",
+  "description": "EZPlay EPP Core (pixel / controller data layer)",
+  "main": "./dist/index.js",
+  "module": ".dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsc && tsup --format cjs,esm",
+    "jest": "jest",
+    "lint": "eslint . --ext .ts,.tsx --fix",
+    "prepack": "npm run build",
+    "pack": "npm pack"
+  },
+  "files": [
+    "dist/src/**/*"
+  ],
+  "author": "",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "zstddec": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.11",
+    "@typescript-eslint/eslint-plugin": "^6.18.0",
+    "@typescript-eslint/parser": "^6.18.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.4.5"
+  }
+}
