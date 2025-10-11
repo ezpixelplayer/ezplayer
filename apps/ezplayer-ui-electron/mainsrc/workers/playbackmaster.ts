@@ -42,7 +42,8 @@ import {
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
-import { PerformanceObserver, performance, PerformanceEntry } from 'perf_hooks';
+import { performance } from 'perf_hooks';
+import { snapshotAsyncCounts, startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 
 const playLogger = new AsyncBatchLogger({
     filePath: (workerData as PlaybackWorkerData).logFile,
@@ -81,69 +82,19 @@ function emitFrameDebug(msg: string) {
 // Possibly useful for perf monitoring
 
 const logGargbageCollection = true;
-let obs: PerformanceObserver | undefined = undefined;
 if (logGargbageCollection) {
-    // Define human-readable names for GC kinds
-    const GC_KINDS: Record<number, string> = {
-        0: 'Unknown',
-        1: 'Scavenge',
-        2: 'MarkSweepCompact',
-        3: 'IncrementalMarking',
-        4: 'ProcessWeakCallbacks',
-        8: 'EmbedderCleanup',
-    };
-
-    // Set up GC observer
-    obs = new PerformanceObserver((list) => {
-        list.getEntries().forEach((entry: PerformanceEntry) => {
-            if (entry.duration < 1) return;
-            const dkind = entry.detail as { kind?: number } | undefined;
-            const kind = dkind?.kind ? (GC_KINDS[dkind.kind] ?? `Kind ${dkind.kind}`) : `<UNKNOWN>`;
-            playLogger.log(`[GC] ${kind} took ${entry.duration.toFixed(2)}ms`);
-        });
-    });
-
-    obs.observe({ entryTypes: ['gc'], buffered: true });
+    startGCLogging((l)=>playLogger.log(l));
 }
 
-/*
-import async_hooks from 'async_hooks';
+const logEventLoop = false;
+if (logEventLoop) {
+    startELDMonitor((l)=>playLogger.log(l));
+}
 
-// Track how many times each async type is created in this interval
-let asyncTypeCounts = new Map<string, number>();
-
-const hook = async_hooks.createHook({
-  init(_asyncId, type) {
-    asyncTypeCounts.set(type, (asyncTypeCounts.get(type) ?? 0) + 1);
-  },
-});
-
-hook.enable();
-
-let lastTime = performance.now();
-const INTERVAL_MS = 50;
-const DELAY_THRESHOLD_MS = 20;
-
-setInterval(() => {
-  const now = performance.now();
-  const delta = now - lastTime;
-
-  if (delta > INTERVAL_MS + DELAY_THRESHOLD_MS) {
-    const entries = Array.from(asyncTypeCounts.entries());
-    if (entries.length > 0) {
-      console.warn(`[hiccup] setInterval delay: ${delta.toFixed(2)}ms`);
-      for (const [type, count] of entries) {
-        console.warn(`  ${type}: ${count}`);
-      }
-    } else {
-      console.warn(`[hiccup] setInterval delay: ${delta.toFixed(2)}ms — no async activity recorded`);
-    }
-  }
-
-  asyncTypeCounts = new Map(); // reset counts
-  lastTime = now;
-}, INTERVAL_MS);
-*/
+const logAsyncs = false;
+if (logAsyncs) {
+    startAsyncCounts();
+}
 
 ////////
 // Sleep utilities
@@ -160,11 +111,15 @@ export async function xbusySleep(nextTime: number): Promise<void> {
         await new Promise((resolve) => setImmediate(resolve));
         const nowCPU = process.cpuUsage(lastCPU);
         const pe = performance.now();
+        const ahs = snapshotAsyncCounts();
         if (pe - ps > 10) {
             const cpuUserMs = nowCPU.user / 1000;
             const cpuSysMs = nowCPU.system / 1000;
             const cpuTotalMs = cpuUserMs + cpuSysMs;
-            emitWarning(`Hiccup - long setImmediate: ${pe - ps} - CPU ${cpuTotalMs} (${cpuUserMs}+${cpuSysMs})`);
+            emitWarning(`Hiccup - long setImmediate: ${pe - ps} - CPU ${cpuTotalMs} (${cpuUserMs}+${cpuSysMs}); async counts:`);
+            for (const [type, count] of ahs) {
+                emitWarning(`  ${type}: ${count}`);
+            }
         }
     }
 }
