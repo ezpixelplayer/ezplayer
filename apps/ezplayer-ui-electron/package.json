@@ -1,7 +1,7 @@
 {
     "name": "ezplayer-ui-electron",
     "private": true,
-    "version": "0.0.12-prealpha",
+    "version": "0.0.13-prealpha",
     "main": "dist/main.js",
     "type": "module",
     "scripts": {
