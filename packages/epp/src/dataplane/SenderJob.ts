@@ -6,6 +6,8 @@ export interface Sender {
     endBatch(): SendBatch | undefined;
     sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;
     sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
+    suspend() : void,
+    resume() : void,
 }
 
 // What's in here?  The description of the job, containing:

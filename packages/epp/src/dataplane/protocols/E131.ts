@@ -162,6 +162,9 @@ export class E131Sender implements Sender
         }
     }
 
+    suspend(): void {this.client?.suspend;}
+    resume(): void {this.client?.suspend;}
+
     startBatch(): void {
         if (this.client) this.client.startSendBatch();
     }

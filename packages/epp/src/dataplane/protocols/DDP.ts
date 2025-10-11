@@ -152,6 +152,9 @@ export class DDPSender implements Sender
     }
   }
 
+  suspend(): void {this.client?.suspend;}
+  resume(): void {this.client?.suspend;}
+
   startBatch(): void {
     if (this.client) this.client.startSendBatch();
   }

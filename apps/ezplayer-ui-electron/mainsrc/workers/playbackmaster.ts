@@ -939,11 +939,14 @@ async function processQueue() {
                     await sendFull(state, busySleep);
                     const end = endBatch(state);
                     const sendTime = performance.now() - nowTime;
-                    await Promise.allSettled(end.map((s)=>s.promise));
-                    const settleTime = performance.now() - nowTime;
-                    if (settleTime-sendTime > 1) {
-                        emitWarning(`Long send promise await: ${settleTime-sendTime}`);
-                    }
+                    Promise.allSettled(end.map((s)=>s.promise)).then(()=>{
+                        for (const sb of end) {
+                            if (sb.nECBs > 0) {
+                                emitWarning(`Suspending IP ${sb.sender.address}`);
+                                sb.sender.suspend();
+                            }
+                        }
+                    });
                     playbackStatsAgg.totalSendTime += sendTime;
                     ++playbackStatsAgg.nSends;
                     playbackStats.maxSendTime = Math.max(sendTime, playbackStats.maxSendTime);

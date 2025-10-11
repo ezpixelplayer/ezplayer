@@ -13,6 +13,7 @@ import dgram from "dgram";
 //     This can be awaited
 
 export type SendBatch =  {
+    sender: UdpClient,
     batchClosed: boolean,
     nSent: number,
     nSCBs: number,
@@ -22,6 +23,7 @@ export type SendBatch =  {
     resolve: ()=>void,
     reject: (err: unknown)=>void, // Not used
     cb?: ((err: Error | null, bytes: number)=>void),
+    isComplete: ()=>boolean,
   };
 
 export class UdpClient {
@@ -33,6 +35,7 @@ export class UdpClient {
   private socket: dgram.Socket | undefined;
   private _isConnected = false;
   private _connAttemptInProgress = false;
+  private _suspended = false;
 
   // Global counters
   nSent: number = 0;
@@ -67,6 +70,9 @@ export class UdpClient {
   }
 
   isConnected() { return this._isConnected; }
+
+  suspend() { this._suspended = true; }
+  resume() { this._suspended = false; }
 
   /**
    * Resolves a hostname and connects the socket.
@@ -137,6 +143,7 @@ export class UdpClient {
     let p = new Promise<void>((res: ()=>void, rej)=>{resolve = res; reject = rej});
 
     const sendBatch: SendBatch = {
+      sender: this,
       batchClosed: false,
       nSent: 0,
       nSCBs: 0,
@@ -145,6 +152,7 @@ export class UdpClient {
       reject,
       resolve,
       cb: undefined,
+      isComplete: ()=>false,
     }
     sendBatch.cb = (err: Error | null, _bytes: number)=>{
       if (err) {
@@ -156,13 +164,14 @@ export class UdpClient {
       }
       if (sendBatch.batchClosed && sendBatch.nSCBs + sendBatch.nECBs === sendBatch.nSent) sendBatch.resolve();
     }
+    sendBatch.isComplete = ()=> sendBatch.batchClosed && sendBatch.nSCBs + sendBatch.nECBs === sendBatch.nSent;
     this.sendBatch = sendBatch;
   }
   endSendBatch() {
     const sb = this.sendBatch;
     if (!sb) return sb;
     sb.batchClosed = true;
-    if (sb && sb.batchClosed && sb.nSCBs + sb.nECBs === sb.nSent) sb.resolve();
+    if (sb.isComplete()) sb.resolve();
     this.sendBatch = undefined;
     return sb;
   }
@@ -171,7 +180,7 @@ export class UdpClient {
    * Adds a UDP packet to the batch
    */
   send(data: Uint8Array | Uint8Array[]): void {
-    if (!this.sendBatch || this._connAttemptInProgress || !this._isConnected || !this.socket) return;
+    if (this._suspended || !this.sendBatch || this._connAttemptInProgress || !this._isConnected || !this.socket) return;
     ++this.sendBatch.nSent;
     ++this.nSent;
     if (Array.isArray(data)) {
