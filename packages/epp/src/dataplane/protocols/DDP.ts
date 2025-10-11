@@ -145,10 +145,10 @@ export class DDPSender implements Sender
   async connect() {
     this.header = new Uint8Array(this.useTimecodes ? 14 : 10);
     if (!this.client) {
-      this.client = new UdpClient("udp4", 256000);
+      this.client = new UdpClient("udp4", this.address, DDP_PORT_DEFAULT, 256000);
     }
     if (!this.client.isConnected()) {
-      await this.client.connect(DDP_PORT_DEFAULT, this.address);
+      await this.client.connect();
     }
   }
 

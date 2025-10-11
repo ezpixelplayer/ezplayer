@@ -155,10 +155,10 @@ export class E131Sender implements Sender
     // This could throw - if you ignore it, send won't work...
     async connect() {
         if (!this.client) {
-            this.client = new UdpClient("udp4", 256000);
+            this.client = new UdpClient("udp4", this.address, E131_PORT_DEFAULT, 256000);
         }
         if (!this.client.isConnected()) {
-            await this.client.connect(E131_PORT_DEFAULT, this.address);
+            await this.client.connect();
         }
     }
 

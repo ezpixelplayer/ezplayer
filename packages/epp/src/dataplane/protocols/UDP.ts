@@ -3,10 +3,14 @@ import dgram from "dgram";
 export class UdpClient {
   private socket: dgram.Socket;
   private _isConnected = false;
+  address: string;
+  port: number;
 
   lastError: string = "";
 
-  constructor(type: "udp4" | "udp6" = "udp4", sendBufSize ?: number) {
+  constructor(type: "udp4" | "udp6" = "udp4", address: string, port: number, sendBufSize ?: number) {
+    this.address = address;
+    this.port = port;
     this.socket = dgram.createSocket(type);
 
     if (sendBufSize) {
@@ -25,7 +29,7 @@ export class UdpClient {
   /**
    * Resolves a hostname and connects the socket.
    */
-  async connect(port: number, address: string): Promise<void> {
+  async connect(): Promise<void> {
     try {
       return new Promise((resolve, reject) => {
         const onError = (err: Error) => {
@@ -43,7 +47,7 @@ export class UdpClient {
         this.socket.once("error", onError); // Handle errors
         this.socket.once("connect", onConnect); // Handle successful connection
 
-        this.socket.connect(port, address);
+        this.socket.connect(this.port, this.address);
       });
     } catch (e) {
       const error = e as Error;
