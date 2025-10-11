@@ -1,5 +1,5 @@
 import dgram from "dgram";
-import { UdpClient } from "./UDP";
+import { SendBatch, UdpClient } from "./UDP";
 import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
 import { toDataView } from "../../util/Utils";
 
@@ -152,7 +152,15 @@ export class DDPSender implements Sender
     }
   }
 
-  async sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): Promise<boolean> {
+  startBatch(): void {
+    if (this.client) this.client.startSendBatch();
+  }
+
+  endBatch(): SendBatch | undefined {
+    if (this.client) return this.client.endSendBatch();
+  }
+
+  sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {
     const connected = this.client?.isConnected();
     if (!this.client || !connected) return true;
   
@@ -162,10 +170,10 @@ export class DDPSender implements Sender
     let bytesThisPacket = 0;
     let packetBufs: Uint8Array[] = [];
 
-    const sendOut = async (last: boolean) => {
+    const sendOut = (last: boolean) => {
       if (!bytesThisPacket) return;
       fillInDDPHeader(this.header, 0, this.startChNum + state.curChNum, bytesThisPacket, !this.pushAtEnd && last, state.nextDDPSeqNum());
-      await this.client!.send([this.header, ...packetBufs]);
+      this.client!.send([this.header, ...packetBufs]);
       packetBufs = [];
       state.curChNum += bytesThisPacket;
       bytesThisPacket = 0;
@@ -188,7 +196,7 @@ export class DDPSender implements Sender
       if (avToSend === 0) {
         // Only way to make progress is to send -- and we know there is more.
         rlLeftToSend -= bytesThisPacket;
-        await sendOut(false);
+        sendOut(false);
         continue;
       }
 
@@ -203,15 +211,15 @@ export class DDPSender implements Sender
     // TODO EZP Rate limit write-back
 
     // May have stuff left...
-    await sendOut(true);
+    sendOut(true);
     return true;
   }
 
-  async sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): Promise<void> {
+  sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): void {
     if (this.pushAtEnd) {
       fillInDDPHeader(this.header, 0, this.startChNum + state.curChNum, 0, true, state.nextDDPSeqNum());
       if (this.client?.isConnected()) {
-        await this.client?.send(this.header);
+        this.client?.send(this.header);
       }
     }
   }

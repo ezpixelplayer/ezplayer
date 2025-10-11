@@ -14,6 +14,8 @@ export {
 } from "./dataplane/SenderJob";
 
 export {
+    startBatch,
+    endBatch,
     sendFull,
 } from "../src/dataplane/SendFrame";
 

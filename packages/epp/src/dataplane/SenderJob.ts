@@ -1,8 +1,11 @@
+import { SendBatch } from "./protocols/UDP";
 import { SchedulerHeapItem, SchedulerMinHeap } from "./SchedulerHeap";
 
 export interface Sender {
-    sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): Promise<boolean>;
-    sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): Promise<void>;
+    startBatch() : void;
+    endBatch(): SendBatch | undefined;
+    sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;
+    sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
 }
 
 // What's in here?  The description of the job, containing:

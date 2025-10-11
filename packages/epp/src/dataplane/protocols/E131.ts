@@ -1,4 +1,4 @@
-import { UdpClient } from "./UDP";
+import { SendBatch, UdpClient } from "./UDP";
 import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
 import { toDataView } from "../../util/Utils";
 
@@ -162,7 +162,15 @@ export class E131Sender implements Sender
         }
     }
 
-    async sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): Promise<boolean> {
+    startBatch(): void {
+        if (this.client) this.client.startSendBatch();
+    }
+
+    endBatch(): SendBatch | undefined {
+        if (this.client) return this.client.endSendBatch();
+    }
+
+    sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {
         const connected = this.client?.isConnected();
         if (!this.client || !connected) return true;
 
@@ -173,11 +181,11 @@ export class E131Sender implements Sender
         let packetBufs: Uint8Array[] = [];
 
         // TODO: We may be asked to do scattered universes and fractional packets.  Not now, but at some point.
-        const sendOut = async (sourceName: string, _last: boolean) => {
+        const sendOut = (sourceName: string, _last: boolean) => {
             if (!bytesThisPacket) return;
             const univ = state.sendPacketNum()+this.startUniverse;
             fillE131PacketHeader(this.header, univ, sourceName, state.nextE131SeqNum(), bytesThisPacket);
-            await this.client!.send([this.header, ...packetBufs]);
+            this.client!.send([this.header, ...packetBufs]);
             packetBufs = [];
             state.curChNum += bytesThisPacket;
             bytesThisPacket = 0;
@@ -200,7 +208,7 @@ export class E131Sender implements Sender
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
                 rlLeftToSend -= bytesThisPacket;
-                await sendOut("blaBlaBLA", false);
+                sendOut("blaBlaBLA", false);
                 continue;
             }
 
@@ -215,7 +223,7 @@ export class E131Sender implements Sender
         // TODO EZP Rate limit write-back
 
         // May have stuff left...
-        await sendOut("blaBlaBLA", true);
+        sendOut("blaBlaBLA", true);
         return true;
     }
 
@@ -223,7 +231,7 @@ export class E131Sender implements Sender
         if (this.pushAtEnd) {
             buildE131SyncPacket(this.syncPacket, this.syncUniverse, state.nextE131SeqNum());
             if (this.client?.isConnected()) {
-                await this.client?.send(this.syncPacket);
+                this.client?.send(this.syncPacket);
             }
         }
     }

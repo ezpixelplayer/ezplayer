@@ -38,12 +38,58 @@ import {
     ModelRec,
     ControllerSetup,
     ControllerRec,
+    startBatch,
+    endBatch,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
 import { performance } from 'perf_hooks';
 import { snapshotAsyncCounts, startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
+
+import process from "node:process";
+
+// Helpful header for every line
+function tag(msg: string) {
+  const name = workerData?.name ?? "unnamed";
+  return `[worker ${name}] ${msg}`;
+}
+
+// Log lifecycle
+console.info(tag("booting"));
+
+// Catch truly fatal programming errors
+process.on("uncaughtException", (err) => {
+  console.error(tag("uncaughtException"), {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+    cause: (err as any).cause,
+  });
+  // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
+  process.exitCode = 1;
+});
+
+// Promote unhandled rejections to real failures (or at least log them)
+process.on("unhandledRejection", (reason, _promise) => {
+  console.error(tag("unhandledRejection"), { reason });
+  process.exitCode = 1;
+});
+
+// When the event loop is about to go idle; good for final flushes
+process.on("beforeExit", (code) => {
+  console.warn(tag(`beforeExit code=${code}`));
+});
+
+// Always runs right before termination (even after uncaughtException)
+process.on("exit", (code) => {
+  console.warn(tag(`exit code=${code}`));
+});
+
+// Parent port lifecycle (closed if main thread dies or calls worker.terminate())
+parentPort?.on("close", () => {
+  console.warn(tag("parentPort closed"));
+});
 
 const playLogger = new AsyncBatchLogger({
     filePath: (workerData as PlaybackWorkerData).logFile,
@@ -888,12 +934,26 @@ async function processQueue() {
 
             // Actually send the frame
             if (frameRef?.ref?.frame && state && job) {
-                await sendFull(state, busySleep);
-                const sendTime = performance.now() - nowTime;
-                playbackStatsAgg.totalSendTime += sendTime;
-                ++playbackStatsAgg.nSends;
-                playbackStats.maxSendTime = Math.max(sendTime, playbackStats.maxSendTime);
-                ++playbackStats.sentFrames;
+                try {
+                    startBatch(state);
+                    await sendFull(state, busySleep);
+                    const end = endBatch(state);
+                    const sendTime = performance.now() - nowTime;
+                    await Promise.allSettled(end.map((s)=>s.promise));
+                    const settleTime = performance.now() - nowTime;
+                    if (settleTime-sendTime > 1) {
+                        emitWarning(`Long send promise await: ${settleTime-sendTime}`);
+                    }
+                    playbackStatsAgg.totalSendTime += sendTime;
+                    ++playbackStatsAgg.nSends;
+                    playbackStats.maxSendTime = Math.max(sendTime, playbackStats.maxSendTime);
+                    ++playbackStats.sentFrames;
+                }
+                catch (e) {
+                    const err = e as Error;
+                    console.error(e);
+                    playLogger.log(err.message);
+                }
             }
         } finally {
             frameRef?.ref?.release();
