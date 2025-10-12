@@ -137,6 +137,7 @@ export class DDPSender implements Sender
   pushAtEnd: boolean = true;
   useTimecodes: boolean = false;
   channelsPerPacket: number = DDP_MAX_PAYLOAD;
+  sendBufSize?: number = undefined;
 
   client?: UdpClient;
   header = new Uint8Array(10); // Max header size
@@ -145,7 +146,7 @@ export class DDPSender implements Sender
   async connect() {
     this.header = new Uint8Array(this.useTimecodes ? 14 : 10);
     if (!this.client) {
-      this.client = new UdpClient("udp4", this.address, DDP_PORT_DEFAULT, 256000);
+      this.client = new UdpClient("udp4", this.address, DDP_PORT_DEFAULT, this.sendBufSize ?? 6_250_000 /*1Gbps 50ms*/);
     }
     if (!this.client.isConnected()) {
       await this.client.connect();

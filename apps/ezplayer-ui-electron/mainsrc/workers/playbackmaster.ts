@@ -87,7 +87,7 @@ process.on("exit", (code) => {
 });
 
 // Parent port lifecycle (closed if main thread dies or calls worker.terminate())
-parentPort?.on("close", () => {
+parentPort.on("close", () => {
   console.warn(tag("parentPort closed"));
 });
 
@@ -308,6 +308,8 @@ parentPort.on('message', (command: PlayerCommand) => {
             break;
     }
 });
+
+send({type: 'ready'});
 
 const rpcs = new RPCServer<PlayWorkerRPCAPI>(parentPort, handlers);
 const rpcc = new RPCClient<MainRPCAPI>(parentPort);

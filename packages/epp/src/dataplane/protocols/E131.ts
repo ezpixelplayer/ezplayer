@@ -151,11 +151,12 @@ export class E131Sender implements Sender
     client?: UdpClient;
     header = Buffer.alloc(E131_PACKET_HEADERLEN); // Header size
     syncPacket = Buffer.alloc(E131_SYNCPACKET_LEN);
+    sendBufSize?: number = undefined;
 
     // This could throw - if you ignore it, send won't work...
     async connect() {
         if (!this.client) {
-            this.client = new UdpClient("udp4", this.address, E131_PORT_DEFAULT, 256000);
+            this.client = new UdpClient("udp4", this.address, E131_PORT_DEFAULT, this.sendBufSize ?? 625_000 /*100Mbps 50ms*/);
         }
         if (!this.client.isConnected()) {
             await this.client.connect();
