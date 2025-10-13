@@ -1,6 +1,14 @@
-import { SimpleDialog } from '@ezplayer/shared-ui-components';
+import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { SimpleDialog, isElectron } from '@ezplayer/shared-ui-components';
 import { Box, Button, Divider, Link, Typography } from '@mui/material';
 import React from 'react';
+
+// Extend Window interface to include electronAPI
+declare global {
+    interface Window {
+        electronAPI?: EZPElectronAPI;
+    }
+}
 
 interface AboutDialogProps {
     open: boolean;
@@ -58,20 +66,39 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                 <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
                                     Discord Server
                                 </Typography>
-                                <Link
-                                    href="https://discord.gg/ezplayer"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    sx={{
-                                        color: 'primary.main',
-                                        textDecoration: 'none',
-                                        '&:hover': {
-                                            textDecoration: 'underline',
-                                        },
-                                    }}
-                                >
-                                    Join our Discord community
-                                </Link>
+                                {isElectron() ? (
+                                    <Link
+                                        component="button"
+                                        underline="hover"
+                                        sx={{
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            color: 'primary.main',
+                                            textDecoration: 'none',
+                                            '&:hover': {
+                                                textDecoration: 'underline',
+                                            },
+                                        }}
+                                        onClick={() => window.electronAPI?.openExternal('https://discord.gg/3Qwz79MN')}
+                                    >
+                                        Join our Discord community
+                                    </Link>
+                                ) : (
+                                    <Link
+                                        href="https://discord.gg/3Qwz79MN"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        sx={{
+                                            color: 'primary.main',
+                                            textDecoration: 'none',
+                                            '&:hover': {
+                                                textDecoration: 'underline',
+                                            },
+                                        }}
+                                    >
+                                        Join our Discord community
+                                    </Link>
+                                )}
                             </Box>
 
                             {/* GitHub Repository */}
@@ -79,20 +106,39 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                 <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
                                     GitHub Repository
                                 </Typography>
-                                <Link
-                                    href="https://github.com/ezpixelplayer/ezplayer"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    sx={{
-                                        color: 'primary.main',
-                                        textDecoration: 'none',
-                                        '&:hover': {
-                                            textDecoration: 'underline',
-                                        },
-                                    }}
-                                >
-                                    View source code and contribute
-                                </Link>
+                                {isElectron() ? (
+                                    <Link
+                                        component="button"
+                                        underline="hover"
+                                        sx={{
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            color: 'primary.main',
+                                            textDecoration: 'none',
+                                            '&:hover': {
+                                                textDecoration: 'underline',
+                                            },
+                                        }}
+                                        onClick={() => window.electronAPI?.openExternal('https://github.com/ezpixelplayer/ezplayer')}
+                                    >
+                                        View source code and contribute
+                                    </Link>
+                                ) : (
+                                    <Link
+                                        href="https://github.com/ezpixelplayer/ezplayer"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        sx={{
+                                            color: 'primary.main',
+                                            textDecoration: 'none',
+                                            '&:hover': {
+                                                textDecoration: 'underline',
+                                            },
+                                        }}
+                                    >
+                                        View source code and contribute
+                                    </Link>
+                                )}
                             </Box>
                         </Box>
                     </Box>
