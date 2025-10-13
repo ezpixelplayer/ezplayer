@@ -140,11 +140,19 @@ export class DDPSender implements Sender
   sendBufSize?: number = undefined;
 
   client?: UdpClient;
-  header = new Uint8Array(10); // Max header size
+  headers: Uint8Array[] = []; // Max header size
+  pushHeader: Uint8Array = new Uint8Array(10);
+
+  curPacketNum = 0;
+  startFrame(): void {
+    this.curPacketNum = 0;
+  }
+  endFrame(): void {
+    // This would be a time to push at end?
+  }
 
   // This could throw - if you ignore it, send won't work...
   async connect() {
-    this.header = new Uint8Array(this.useTimecodes ? 14 : 10);
     if (!this.client) {
       this.client = new UdpClient("udp4", this.address, DDP_PORT_DEFAULT, this.sendBufSize ?? 6_250_000 /*1Gbps 50ms*/);
     }
@@ -153,8 +161,8 @@ export class DDPSender implements Sender
     }
   }
 
-  suspend(): void {this.client?.suspend;}
-  resume(): void {this.client?.suspend;}
+  suspend(): void {this.client?.suspend();}
+  resume(): void {this.client?.resume();}
 
   startBatch(): void {
     if (this.client) this.client.startSendBatch();
@@ -176,11 +184,16 @@ export class DDPSender implements Sender
 
     const sendOut = (last: boolean) => {
       if (!bytesThisPacket) return;
-      fillInDDPHeader(this.header, 0, this.startChNum + state.curChNum, bytesThisPacket, !this.pushAtEnd && last, state.nextDDPSeqNum());
-      this.client!.send([this.header, ...packetBufs]);
+      if (this.curPacketNum >= this.headers.length) {
+        this.headers.push(new Uint8Array(this.useTimecodes ? 14 : 10))
+      }
+      const hdr = this.headers[this.curPacketNum];
+      fillInDDPHeader(hdr, 0, this.startChNum + state.curChNum, bytesThisPacket, !this.pushAtEnd && last, state.nextDDPSeqNum());
+      this.client!.addSendToBatch([hdr, ...packetBufs]);
       packetBufs = [];
       state.curChNum += bytesThisPacket;
       bytesThisPacket = 0;
+      ++this.curPacketNum;
     };
 
     // Outer loop - go through all the parts
@@ -221,9 +234,9 @@ export class DDPSender implements Sender
 
   sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): void {
     if (this.pushAtEnd) {
-      fillInDDPHeader(this.header, 0, this.startChNum + state.curChNum, 0, true, state.nextDDPSeqNum());
+      fillInDDPHeader(this.pushHeader, 0, this.startChNum + state.curChNum, 0, true, state.nextDDPSeqNum());
       if (this.client?.isConnected()) {
-        this.client?.send(this.header);
+        this.client?.addSendToBatch(this.pushHeader);
       }
     }
   }

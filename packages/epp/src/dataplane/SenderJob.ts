@@ -2,6 +2,8 @@ import { SendBatch } from "./protocols/UDP";
 import { SchedulerHeapItem, SchedulerMinHeap } from "./SchedulerHeap";
 
 export interface Sender {
+    startFrame() : void;
+    endFrame() : void;
     startBatch() : void;
     endBatch(): SendBatch | undefined;
     sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;

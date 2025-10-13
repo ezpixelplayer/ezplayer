@@ -40,6 +40,8 @@ import {
     ControllerRec,
     startBatch,
     endBatch,
+    startFrame,
+    endFrame,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -937,6 +939,7 @@ async function processQueue() {
             // Actually send the frame
             if (frameRef?.ref?.frame && state && job) {
                 try {
+                    startFrame(state);
                     startBatch(state);
                     await sendFull(state, busySleep);
                     const end = endBatch(state);
@@ -959,6 +962,7 @@ async function processQueue() {
                     console.error(e);
                     playLogger.log(err.message);
                 }
+                endFrame(state);
             }
         } finally {
             frameRef?.ref?.release();

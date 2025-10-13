@@ -149,7 +149,7 @@ export class E131Sender implements Sender
     useTimecodes: boolean = false;
 
     client?: UdpClient;
-    header = Buffer.alloc(E131_PACKET_HEADERLEN); // Header size
+    headers: Buffer[] = [];
     syncPacket = Buffer.alloc(E131_SYNCPACKET_LEN);
     sendBufSize?: number = undefined;
 
@@ -163,8 +163,16 @@ export class E131Sender implements Sender
         }
     }
 
-    suspend(): void {this.client?.suspend;}
-    resume(): void {this.client?.suspend;}
+    suspend(): void {this.client?.suspend();}
+    resume(): void {this.client?.resume();}
+
+    curPacketNum = 0;
+    startFrame(): void {
+        this.curPacketNum = 0;
+    }
+    endFrame(): void {
+        // This would be a time to push at end?
+    }
 
     startBatch(): void {
         if (this.client) this.client.startSendBatch();
@@ -188,11 +196,16 @@ export class E131Sender implements Sender
         const sendOut = (sourceName: string, _last: boolean) => {
             if (!bytesThisPacket) return;
             const univ = state.sendPacketNum()+this.startUniverse;
-            fillE131PacketHeader(this.header, univ, sourceName, state.nextE131SeqNum(), bytesThisPacket);
-            this.client!.send([this.header, ...packetBufs]);
+            if (this.curPacketNum >= this.headers.length) {
+                this.headers.push(Buffer.alloc(E131_PACKET_HEADERLEN));
+            }
+            const hdr = this.headers[this.curPacketNum];
+            fillE131PacketHeader(hdr, univ, sourceName, state.nextE131SeqNum(), bytesThisPacket);
+            this.client!.addSendToBatch([hdr, ...packetBufs]);
             packetBufs = [];
             state.curChNum += bytesThisPacket;
             bytesThisPacket = 0;
+            ++this.curPacketNum;
         };
 
         // Outer loop - go through all the parts
@@ -235,7 +248,7 @@ export class E131Sender implements Sender
         if (this.pushAtEnd) {
             buildE131SyncPacket(this.syncPacket, this.syncUniverse, state.nextE131SeqNum());
             if (this.client?.isConnected()) {
-                this.client?.send(this.syncPacket);
+                this.client?.addSendToBatch(this.syncPacket);
             }
         }
     }

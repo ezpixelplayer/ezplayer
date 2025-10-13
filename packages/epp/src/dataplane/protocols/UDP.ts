@@ -178,10 +178,16 @@ export class UdpClient {
 
   /**
    * Adds a UDP packet to the batch
+   *  Note that `data` must be kept valid until batch end
    */
-  send(data: Uint8Array | Uint8Array[]): void {
+  addSendToBatch(data: Uint8Array | Uint8Array[]): void {
     if (this._suspended || !this.sendBatch || this._connAttemptInProgress || !this._isConnected || !this.socket) return;
     ++this.sendBatch.nSent;
+    this.countSend(data);
+    this.socket.send(data, this.sendBatch.cb!)
+  }
+
+  private countSend(data: Uint8Array<ArrayBufferLike> | Uint8Array<ArrayBufferLike>[]) {
     ++this.nSent;
     if (Array.isArray(data)) {
       for (const d of data) this.bytesSent += data.length;
@@ -189,10 +195,24 @@ export class UdpClient {
     else {
       this.bytesSent += data.length;
     }
-    this.socket.send(data, this.sendBatch.cb!)
   }
 
   /**
+   * Sends a UDP packet - stored connection info
+   */
+  send(data: Uint8Array | Uint8Array[]): Promise<number> {
+    if (this._suspended || this._connAttemptInProgress || !this._isConnected || !this.socket) return Promise.resolve(0);
+    this.countSend(data);
+    return new Promise((resolve, reject) => {
+      if (this._isConnected && this.socket) {
+        this.socket.send(data, (err, bytes) => (err ? reject(err) : resolve(bytes)));
+      } else {
+        reject(new Error("Socket not connected."));
+      }
+    });
+  }
+
+/**
    * Closes the socket gracefully.
    */
   private close(): Promise<void> {

@@ -1,6 +1,24 @@
 import { SendBatch } from "./protocols/UDP";
 import { SendJobState } from "./SenderJob";
 
+export function startFrame(state?: SendJobState) {
+    if (!state?.job) return -1;
+    for (let i = 0; i < state.states.length; ++i) {
+        const sender = state.job.senders[i];
+        if (!sender || !sender.sender) continue;
+        sender.sender.startFrame();
+    }
+}
+
+export function endFrame(state?: SendJobState) {
+    if (!state?.job) return -1;
+    for (let i = 0; i < state.states.length; ++i) {
+        const sender = state.job.senders[i];
+        if (!sender || !sender.sender) continue;
+        sender.sender.endFrame();
+    }
+}
+
 export function startBatch(state?: SendJobState) {
     if (!state?.job) return -1;
     for (let i = 0; i < state.states.length; ++i) {
@@ -35,9 +53,11 @@ export function sendPartial(state?: SendJobState): number {
 
 export async function sendFull(state: SendJobState | undefined, sleepfn: (sleepUntil: number) => Promise<void>): Promise<void> {
     if (!state?.job) return;
+    startFrame();
     while (true) {
         const st = sendPartial(state);
-        if (st < 0) return;
+        if (st < 0) break;
         await sleepfn(st);
     }
+    endFrame();
 }
