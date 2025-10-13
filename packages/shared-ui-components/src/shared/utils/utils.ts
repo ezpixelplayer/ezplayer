@@ -13,17 +13,17 @@ export const titleCase = (value: string) => {
     return value.replace(/^_*(.)|_+(.)/g, (s, c, d) => (c ? c.toUpperCase() : ' ' + d.toUpperCase()));
 };
 
-//To convert date string in specific format, by default MM/DD/YYYY
+//To convert date string in specific format, by default DD-MMM-YYYY
 /**
  * @param date
  * @param format optional
  * @returns formated date
  */
 export const formatDate = (date: string, format?: string) => {
-    return date && dayjs(date).isValid() ? dayjs(date).format(format ? format : 'MM/DD/YYYY') : '';
+    return date && dayjs(date).isValid() ? dayjs(date).format(format ? format : 'DD-MMM-YYYY') : '';
 };
 
-//To convert date string to UTC in specific format, by default MM/DD/YYYY
+//To convert date string to UTC in specific format, by default DD-MMM-YYYY
 /**
  * @param date
  * @param format optional
@@ -34,7 +34,7 @@ export const formatDateToUtc = (date: string, format?: string) => {
     return dayjs(date).isValid()
         ? dayjs(date)
               .utc(true)
-              .format(format ? format : 'MM/DD/YYYY')
+              .format(format ? format : 'DD-MMM-YYYY')
         : '';
 };
 
@@ -130,18 +130,18 @@ export const hexToRgbA = (hex: string, opacity: number) => {
 // but importing from dateUtils.ts to ensure consistency
 import {
     convertDateToMilliseconds,
-    getCurrentTimestamp,
-    timestampToDate,
     formatTimestamp,
     formatTimestampToUtc,
+    getCurrentTimestamp,
     getTimeFromTimestamp,
+    timestampToDate,
 } from './dateUtils';
 
 export {
     convertDateToMilliseconds,
-    getCurrentTimestamp,
-    timestampToDate,
     formatTimestamp,
     formatTimestampToUtc,
+    getCurrentTimestamp,
     getTimeFromTimestamp,
+    timestampToDate,
 };

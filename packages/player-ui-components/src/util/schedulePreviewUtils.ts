@@ -1,13 +1,13 @@
+import type { PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { PlayerRunState, type PlaybackLogDetail } from '@ezplayer/ezplayer-core';
-import type { SequenceRecord, PlaylistRecord, ScheduledPlaylist } from '@ezplayer/ezplayer-core';
+import { format } from 'date-fns';
 import {
+    PlaylistGroup,
     SchedulePreviewData,
     SchedulePreviewSettings,
-    TimelineGroup,
-    PlaylistGroup,
     SequenceEvent,
+    TimelineGroup,
 } from '../types/SchedulePreviewTypes';
-import { format } from 'date-fns';
 
 const SAFETY_EVENT_LIMIT = 100000; // Maximum events > 60 days * 24 hours * 60 events/hour
 
@@ -198,7 +198,7 @@ export function formatEventTime(timestamp: number): string {
  */
 export function formatEventDateTime(timestamp: number): string {
     const date = new Date(timestamp);
-    return format(date, 'MMM d, HH:mm:ss');
+    return format(date, 'dd-MMM-yyyy HH:mm:ss');
 }
 
 /**

@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 
 // Extend dayjs with plugins
 dayjs.extend(utc);
@@ -38,7 +38,7 @@ export const formatTimestamp = (timestamp: number, format?: string, userTimezone
 
     // Use the provided timezone, or get from settings, or use local timezone
     const tz = userTimezone || getUserTimezone();
-    return date.tz(tz).format(format || 'MM/DD/YYYY');
+    return date.tz(tz).format(format || 'DD-MMM-YYYY');
 };
 
 /**
@@ -53,7 +53,7 @@ export const formatTimestampToUtc = (timestamp: number, format?: string): string
     const date = dayjs(timestamp);
     if (!date.isValid()) return '';
 
-    return date.utc().format(format || 'MM/DD/YYYY');
+    return date.utc().format(format || 'DD-MMM-YYYY');
 };
 
 /**

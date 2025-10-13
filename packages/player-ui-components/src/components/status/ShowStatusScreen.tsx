@@ -1,5 +1,6 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box, Button, Card, CardContent, Chip, CircularProgress, Grid, Typography, useTheme } from '@mui/material';
+import { format } from 'date-fns';
 import React, { useState } from 'react';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -22,15 +23,8 @@ const formatTime = (timestamp?: number | string) => {
     if (!timestamp) return '—';
     const ts = typeof timestamp === 'string' ? Date.parse(timestamp) : timestamp;
     const date = new Date(ts);
-    return date.toLocaleString('en-GB', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-    });
+
+    return format(date, 'dd-MMM-yyyy HH:mm:ss');
 };
 
 export interface ShowStatusScreenProps {

@@ -1,30 +1,29 @@
-import React, { useState, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
-import {
-    Card,
-    CardContent,
-    Typography,
-    List,
-    Box,
-    Accordion,
-    AccordionSummary,
-    AccordionDetails,
-    Chip,
-    Stack,
-    FormControlLabel,
-    Checkbox,
-    Tooltip,
-    useTheme,
-    Theme,
-} from '@mui/material';
+import { PlaylistRecord, priorityToNumber, ScheduledPlaylist } from '@ezplayer/ezplayer-core';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PersonIcon from '@mui/icons-material/Person';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import { useSelector } from 'react-redux';
-import { format } from 'date-fns';
-import { RootState } from '../../../store/Store';
-import { PlaylistRecord, ScheduledPlaylist } from '@ezplayer/ezplayer-core';
+import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
+    Box,
+    Card,
+    CardContent,
+    Checkbox,
+    Chip,
+    FormControlLabel,
+    List,
+    Stack,
+    Theme,
+    Tooltip,
+    Typography,
+    useTheme,
+} from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { priorityToNumber } from '@ezplayer/ezplayer-core';
+import { format } from 'date-fns';
+import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../../store/Store';
 
 export interface LogEvent {
     eventType: string;
@@ -1316,7 +1315,7 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                             <CalendarTodayIcon sx={{ color: 'primary.main' }} />
                                             <Typography variant="h6" sx={{ fontWeight: 500 }}>
-                                                {format(new Date(date), 'EEEE, MMMM d, yyyy')}
+                                                {format(new Date(date), 'dd-MMM-yyyy HH:mm:ss')}
                                             </Typography>
                                             <Chip
                                                 label={`${schedules.length} schedule${schedules.length !== 1 ? 's' : ''}`}
@@ -1417,12 +1416,12 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                                     );
                                                                                 const timeString = reduxSchedule
                                                                                     ? formatExtendedTime(
-                                                                                          reduxSchedule.fromTime,
-                                                                                      )
+                                                                                        reduxSchedule.fromTime,
+                                                                                    )
                                                                                     : format(
-                                                                                          new Date(schedule.startTime),
-                                                                                          'HH:mm',
-                                                                                      );
+                                                                                        new Date(schedule.startTime),
+                                                                                        'HH:mm',
+                                                                                    );
                                                                                 const isExtended =
                                                                                     reduxSchedule &&
                                                                                     parseInt(
@@ -1467,12 +1466,12 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                                     );
                                                                                 const timeString = reduxSchedule
                                                                                     ? formatExtendedTime(
-                                                                                          reduxSchedule.toTime,
-                                                                                      )
+                                                                                        reduxSchedule.toTime,
+                                                                                    )
                                                                                     : format(
-                                                                                          new Date(schedule.endTime),
-                                                                                          'HH:mm',
-                                                                                      );
+                                                                                        new Date(schedule.endTime),
+                                                                                        'HH:mm',
+                                                                                    );
                                                                                 const isExtended =
                                                                                     reduxSchedule &&
                                                                                     parseInt(
@@ -1555,25 +1554,25 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                                         ? theme.palette.error.main
                                                                                         : priorityClass ===
                                                                                             'priority-normal'
-                                                                                          ? theme.palette.primary.main
-                                                                                          : theme.palette.info.main,
+                                                                                            ? theme.palette.primary.main
+                                                                                            : theme.palette.info.main,
                                                                                 color:
                                                                                     priorityClass === 'priority-high'
                                                                                         ? theme.palette.error
-                                                                                              .contrastText
+                                                                                            .contrastText
                                                                                         : priorityClass ===
                                                                                             'priority-normal'
-                                                                                          ? theme.palette.primary
+                                                                                            ? theme.palette.primary
                                                                                                 .contrastText
-                                                                                          : theme.palette.info
+                                                                                            : theme.palette.info
                                                                                                 .contrastText,
                                                                                 borderColor:
                                                                                     priorityClass === 'priority-high'
                                                                                         ? theme.palette.error.dark
                                                                                         : priorityClass ===
                                                                                             'priority-normal'
-                                                                                          ? theme.palette.primary.dark
-                                                                                          : theme.palette.info.dark,
+                                                                                            ? theme.palette.primary.dark
+                                                                                            : theme.palette.info.dark,
                                                                                 fontWeight: 600,
                                                                                 letterSpacing: 0.3,
                                                                                 boxShadow:
