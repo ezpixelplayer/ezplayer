@@ -18,10 +18,10 @@ export type SendBatch =  {
     nSent: number,
     nSCBs: number,
     nECBs: number,
-    err?: unknown,
+    err?: Error,
     promise: Promise<void>,
     resolve: ()=>void,
-    reject: (err: unknown)=>void, // Not used
+    reject: (err: Error)=>void, // Not used
     cb?: ((err: Error | null, bytes: number)=>void),
     isComplete: ()=>boolean,
   };

@@ -26,7 +26,7 @@ export function startGCLogging(log: (l: string) => void) {
     // Set up GC observer
     obs = new PerformanceObserver((list) => {
         list.getEntries().forEach((entry: PerformanceEntry) => {
-            if (entry.duration < 1) return;
+            if (entry.duration < 2) return;
             const dkind = entry as {detail?: { kind?: number } }; // This is for PerformanceMeasure really
             const kind = dkind?.detail?.kind ? (GC_KINDS[dkind?.detail?.kind] ?? `Kind ${dkind?.detail?.kind}`) : `<UNKNOWN>`;
             log(`[GC] ${kind} took ${entry.duration.toFixed(2)}ms`);
