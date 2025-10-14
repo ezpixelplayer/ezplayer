@@ -65,6 +65,21 @@ export class FrameSender
     state: SendJobState = new SendJobState();
     prevFrameRef: FrameReference | undefined = undefined;
     prevSendBatch: SendBatch[] | undefined = undefined;
+    nChannels: number = 0;
+    blackFrame: Uint8Array | undefined = undefined;
+
+    async sendBlackFrame(args: {
+        playbackStats?: PlaybackStatistics;
+        playbackStatsAgg?: OverallFrameSendStats;
+        emitWarning?: (msg: string) => void;
+        emitError?: (err: Error) => void;
+    }) {
+        if (!this.blackFrame || !this.job || !this.state) return;
+        this.releasePrevFrame();
+        this.job!.dataBuffers = [this.blackFrame];
+        this.state.initialize(this.job);
+        await this.doSendFrame(performance.now(), args);
+    }
 
     async sendNextFrameAt(
         args: {
@@ -82,9 +97,6 @@ export class FrameSender
     ): Promise<number> {
         try {
             if (args.frame?.frame && this.state && this.job) {
-                this.job.frameNumber = args.targetFrameNum;
-                this.job.dataBuffers = [args.frame.frame];
-                this.state.initialize(this.job);
             } else {
                 ++args.playbackStats.missedFrames;
             }
@@ -92,9 +104,10 @@ export class FrameSender
             const preSleepPN = performance.now();
             // If target frame PN is way in the future compared to other tasks, go around again.
             if (args.targetFramePN - preSleepPN > args.frameInterval * 2) {
-                // TODO We should send black
+                // Send black
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, emitWarning);
+                if (this.blackFrame) this.sendBlackFrame({emitError: args.emitError, emitWarning:args.emitWarning});
                 return args.targetFramePN;
             }
 
@@ -119,52 +132,16 @@ export class FrameSender
                 args.playbackStats.worstLag = Math.max(args.playbackStats.worstLag, nowTime - args.targetFramePN);
             }
 
-            if (this.prevSendBatch) {
-                for (const s of this.prevSendBatch) {
-                    if (!s.isComplete()) {
-                        //args.emitWarning(`Sender for ${s.sender.address} missed the deadline`);
-                    }
-                    if (s.err) {
-                        //args.emitWarning(`Send error for ${s.sender.address}: ${s.err}`);
-                    }
-                }
-                this.prevSendBatch = undefined;
-            }
-
-            if (this.prevFrameRef) {
-                this.prevFrameRef.release();
-                this.prevFrameRef = undefined;
-            }
+            this.releasePrevFrame();
 
             // Actually send the frame
             if (args.frame?.frame && this.state && this.job) {
+                this.job.frameNumber = args.targetFrameNum;
+                this.job.dataBuffers = [args.frame.frame];
+                this.state.initialize(this.job);
                 this.prevFrameRef = args.frame;
                 args.frame = undefined;
-                try {
-                    startFrame(this.state);
-                    startBatch(this.state);
-                    await sendFull(this.state, busySleep);
-                    const end = endBatch(this.state);
-                    this.prevSendBatch = end;
-                    const sendTime = performance.now() - nowTime;
-                    Promise.allSettled(end.map((s)=>s.promise)).then(()=>{
-                        for (const sb of end) {
-                            if (sb.nECBs > 0) {
-                                args.emitWarning(`Suspending IP ${sb.sender.address}`);
-                                sb.sender.suspend();
-                            }
-                        }
-                    });
-                    args.playbackStatsAgg.totalSendTime += sendTime;
-                    ++args.playbackStatsAgg.nSends;
-                    args.playbackStats.maxSendTime = Math.max(sendTime, args.playbackStats.maxSendTime);
-                    ++args.playbackStats.sentFrames;
-                }
-                catch (e) {
-                    const err = e as Error;
-                    args.emitError(err)
-                }
-                endFrame(this.state);
+                await this.doSendFrame(nowTime, args);
             }
             return args.targetFramePN += args.frameInterval;
         }
@@ -173,6 +150,62 @@ export class FrameSender
                 args.frame.release();
                 args.frame = undefined;
             }
+        }
+    }
+
+    private async doSendFrame(nowTime: number, args: {
+        playbackStats?: PlaybackStatistics;
+        playbackStatsAgg?: OverallFrameSendStats;
+        emitWarning?: (msg: string) => void;
+        emitError?: (err: Error) => void;
+    }) {
+        try {
+            startFrame(this.state);
+            startBatch(this.state);
+            await sendFull(this.state, busySleep);
+            const end = endBatch(this.state);
+            this.prevSendBatch = end;
+            const sendTime = performance.now() - nowTime;
+            Promise.allSettled(end.map((s) => s.promise)).then(() => {
+                for (const sb of end) {
+                    if (sb.nECBs > 0) {
+                        args.emitWarning?.(`Suspending IP ${sb.sender.address}`);
+                        sb.sender.suspend();
+                    }
+                }
+            });
+            if (args.playbackStatsAgg) {
+                args.playbackStatsAgg.totalSendTime += sendTime;
+                ++args.playbackStatsAgg.nSends;
+            }
+            if (args.playbackStats) {
+                args.playbackStats.maxSendTime = Math.max(sendTime, args.playbackStats.maxSendTime);
+                ++args.playbackStats.sentFrames;
+            }
+        }
+        catch (e) {
+            const err = e as Error;
+            args.emitError?.(err);
+        }
+        endFrame(this.state);
+    }
+
+    private releasePrevFrame() {
+        if (this.prevSendBatch) {
+            for (const s of this.prevSendBatch) {
+                if (!s.isComplete()) {
+                    //args.emitWarning(`Sender for ${s.sender.address} missed the deadline`);
+                }
+                if (s.err) {
+                    //args.emitWarning(`Send error for ${s.sender.address}: ${s.err}`);
+                }
+            }
+            this.prevSendBatch = undefined;
+        }
+
+        if (this.prevFrameRef) {
+            this.prevFrameRef.release();
+            this.prevFrameRef = undefined;
         }
     }
 

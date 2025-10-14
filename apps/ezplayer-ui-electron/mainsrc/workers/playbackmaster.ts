@@ -28,26 +28,18 @@ import { PlayerRunState } from '@ezplayer/ezplayer-core';
 if (!parentPort) throw new Error('No parentPort in worker');
 
 import {
-    SendJobState,
-    sendFull,
-    busySleep,
     openControllersForDataSend,
     OpenControllerReport,
     FSeqPrefetchCache,
-    SendJob,
     ModelRec,
     ControllerSetup,
     ControllerRec,
-    startBatch,
-    endBatch,
-    startFrame,
-    endFrame,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
 import { performance } from 'perf_hooks';
-import { snapshotAsyncCounts, startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
+import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 
 import process from "node:process";
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
@@ -439,6 +431,9 @@ async function processQueue() {
             emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
             emitInfo('');
         }
+        const nChannels = Math.max(...(controllerSetups ?? []).map((e: ControllerSetup) => e.startCh + e.nCh));
+        sender.nChannels = nChannels;
+        sender.blackFrame = new Uint8Array(nChannels);
     } catch (e) {
         const err = e as Error;
         playbackStats.lastError = err.message;
@@ -821,6 +816,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
+                await sender.sendBlackFrame({emitError: (e)=>emitError(e.message), emitWarning: emitWarning});
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -828,6 +824,9 @@ async function processQueue() {
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
+                if (!isPaused) {
+                    await sender.sendBlackFrame({emitError: (e)=>emitError(e.message), emitWarning: emitWarning});
+                }
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
