@@ -406,6 +406,8 @@ async function processQueue() {
     }
 
     const sender: FrameSender = new FrameSender();
+    sender.emitError = (e)=>emitError(e.message);
+    sender.emitWarning = emitWarning;
 
     try {
         const {
@@ -816,7 +818,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                await sender.sendBlackFrame({emitError: (e)=>emitError(e.message), emitWarning: emitWarning});
+                await sender.sendBlackFrame({});
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -825,7 +827,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 if (!isPaused) {
-                    await sender.sendBlackFrame({emitError: (e)=>emitError(e.message), emitWarning: emitWarning});
+                    await sender.sendBlackFrame({});
                 }
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
@@ -865,8 +867,6 @@ async function processQueue() {
                 targetFrameNum,
                 playbackStats,
                 playbackStatsAgg,
-                emitError: (e)=>emitError(e.message),
-                emitWarning,
                 frameInterval,
                 skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
                 dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,

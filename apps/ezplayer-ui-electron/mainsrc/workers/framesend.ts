@@ -1,13 +1,12 @@
 import { busySleep, endBatch, endFrame, FrameReference, SendBatch, sendFull, SendJob, SendJobState, startBatch, startFrame } from "@ezplayer/epp";
 import { PlaybackStatistics } from "@ezplayer/ezplayer-core";
 import { snapshotAsyncCounts } from "./perfmon";
-import { emitWarning } from "process";
 
 ////////
 // Sleep utilities
 const unsharedSharedBuffer = new SharedArrayBuffer(1024);
 const int32USB = new Int32Array(unsharedSharedBuffer);
-export async function xbusySleep(nextTime: number, emitWarning: (s: string)=>void): Promise<void> {
+export async function xbusySleep(nextTime: number, emitWarning: ((s: string)=>void) | undefined): Promise<void> {
     while (performance.now() < nextTime) {
         const nt = performance.now();
         if (nt + 0.1 > nextTime) return;
@@ -23,9 +22,9 @@ export async function xbusySleep(nextTime: number, emitWarning: (s: string)=>voi
             const cpuUserMs = nowCPU.user / 1000;
             const cpuSysMs = nowCPU.system / 1000;
             const cpuTotalMs = cpuUserMs + cpuSysMs;
-            emitWarning(`Hiccup - long setImmediate: ${pe - ps} - CPU ${cpuTotalMs} (${cpuUserMs}+${cpuSysMs}); async counts:`);
+            emitWarning?.(`Hiccup - long setImmediate: ${pe - ps} - CPU ${cpuTotalMs} (${cpuUserMs}+${cpuSysMs}); async counts:`);
             for (const [type, count] of ahs) {
-                emitWarning(`  ${type}: ${count}`);
+                emitWarning?.(`  ${type}: ${count}`);
             }
         }
     }
@@ -67,12 +66,12 @@ export class FrameSender
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
     blackFrame: Uint8Array | undefined = undefined;
+    emitWarning?: (msg: string) => void;
+    emitError?: (err: Error) => void;
 
     async sendBlackFrame(args: {
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
-        emitWarning?: (msg: string) => void;
-        emitError?: (err: Error) => void;
     }) {
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
@@ -91,8 +90,6 @@ export class FrameSender
             frameInterval: number,
             skipFrameIfLateByMoreThan: number,
             dontSleepIfDurationLessThan: number,
-            emitWarning: (msg: string)=>void,
-            emitError: (err: Error)=>void,
         }
     ): Promise<number> {
         try {
@@ -106,8 +103,8 @@ export class FrameSender
             if (args.targetFramePN - preSleepPN > args.frameInterval * 2) {
                 // Send black
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
-                await xbusySleep(preSleepPN + args.frameInterval, emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({emitError: args.emitError, emitWarning:args.emitWarning});
+                await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
+                if (this.blackFrame) this.sendBlackFrame({});
                 return args.targetFramePN;
             }
 
@@ -121,7 +118,7 @@ export class FrameSender
             if (sleep > args.dontSleepIfDurationLessThan) {
                 args.playbackStatsAgg.totalIdleTime += sleep;
                 //await sleepms(sleep);
-                await xbusySleep(args.targetFramePN, emitWarning);
+                await xbusySleep(args.targetFramePN, this.emitWarning);
             }
 
             const nowTime = performance.now();
@@ -156,8 +153,6 @@ export class FrameSender
     private async doSendFrame(nowTime: number, args: {
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
-        emitWarning?: (msg: string) => void;
-        emitError?: (err: Error) => void;
     }) {
         try {
             startFrame(this.state);
@@ -169,7 +164,7 @@ export class FrameSender
             Promise.allSettled(end.map((s) => s.promise)).then(() => {
                 for (const sb of end) {
                     if (sb.nECBs > 0) {
-                        args.emitWarning?.(`Suspending IP ${sb.sender.address}`);
+                        this.emitWarning?.(`Suspending IP ${sb.sender.address}`);
                         sb.sender.suspend();
                     }
                 }
@@ -185,7 +180,7 @@ export class FrameSender
         }
         catch (e) {
             const err = e as Error;
-            args.emitError?.(err);
+            this.emitError?.(err);
         }
         endFrame(this.state);
     }
@@ -194,10 +189,10 @@ export class FrameSender
         if (this.prevSendBatch) {
             for (const s of this.prevSendBatch) {
                 if (!s.isComplete()) {
-                    //args.emitWarning(`Sender for ${s.sender.address} missed the deadline`);
+                    this.emitWarning?.(`Sender for ${s.sender.address} missed the deadline`);
                 }
                 if (s.err) {
-                    //args.emitWarning(`Send error for ${s.sender.address}: ${s.err}`);
+                    this.emitWarning?.(`Send error for ${s.sender.address}: ${s.err}`);
                 }
             }
             this.prevSendBatch = undefined;
