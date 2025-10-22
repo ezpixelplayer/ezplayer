@@ -37,10 +37,10 @@
         "vite-plugin-static-copy": "^3.0.0"
     },
     "dependencies": {
+        "@ezplayer/epp": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/player-ui-components": "workspace:*",
         "@ezplayer/shared-ui-components": "workspace:*",
-        "@ezplayer/epp": "workspace:*",
         "@floating-ui/core": "^1.6.9",
         "@floating-ui/react": "^0.27.3",
         "@mui/icons-material": "^5.16.14",
@@ -53,7 +53,9 @@
         "electron-store": "^10.1.0",
         "i18next": "^23.16.8",
         "mpg123-decoder": "^1.0.2",
+        "net-ping": "^1.2.4",
         "nprogress": "^0.2.0",
+        "ping": "^1.0.0",
         "proper-lockfile": "^4.1.2",
         "react": "^18.0.0",
         "react-dom": "^18.0.0",

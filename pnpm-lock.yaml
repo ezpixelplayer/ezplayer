@@ -78,9 +78,15 @@ importers:
       mpg123-decoder:
         specifier: ^1.0.2
         version: 1.0.2
+      net-ping:
+        specifier: ^1.2.4
+        version: 1.2.4
       nprogress:
         specifier: ^0.2.0
         version: 0.2.0
+      ping:
+        specifier: ^1.0.0
+        version: 1.0.0
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2
@@ -4247,6 +4253,9 @@ packages:
   mz@2.7.0:
     resolution: {integrity: sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q==}
 
+  nan@2.19.0:
+    resolution: {integrity: sha512-nO1xXxfh/RWNxfd/XPfbIfFk5vgLsAxUR9y5O0cHMJu/AW9U95JLXqthYHjEp+8gQ5p96K9jUp8nbVOxCdRbtw==}
+
   nano-spawn@1.0.3:
     resolution: {integrity: sha512-jtpsQDetTnvS2Ts1fiRdci5rx0VYws5jGyC+4IYOTnIQ/wwdf6JdomlHBwqC3bJYOvaKu0C2GSZ1A60anrYpaA==}
     engines: {node: '>=20.17'}
@@ -4265,6 +4274,9 @@ packages:
 
   neo-async@2.6.2:
     resolution: {integrity: sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==}
+
+  net-ping@1.2.4:
+    resolution: {integrity: sha512-9IbIgPonxYj5HMkgCYXFqHF/pz462qsxA7RVLA6sI604eQyaecxVKl3yrDGHajjKZpUL1r2VBMwd0KVMnPO5Rw==}
 
   no-case@3.0.4:
     resolution: {integrity: sha512-fgAN3jGAh+RoxUGZHTSOLJIqUc2wmoBwGR4tbpNAKmmovFoWq0OdRkb0VkldReO2a2iBT/OEulG9XSUc10r3zg==}
@@ -4460,6 +4472,10 @@ packages:
     engines: {node: '>=0.10'}
     hasBin: true
 
+  ping@1.0.0:
+    resolution: {integrity: sha512-3dxdgGtV+7P/EVo42JhkGSomeO/0GGicSz3mI/yK+AI+VGNAOfakw5XfcbGI4IjyBY+ZZwvuRXdhnNF2uliKew==}
+    engines: {node: '>=22.0.0'}
+
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
@@ -4587,6 +4603,9 @@ packages:
 
   raf@3.4.1:
     resolution: {integrity: sha512-Sq4CW4QhwOHE8ucn6J34MqtZCeWFP2aQSmrlroYgqAV1PjStIhJXxYuTgUIfkEk7zTLjmIjLmU5q+fbD1NnOJA==}
+
+  raw-socket@1.8.1:
+    resolution: {integrity: sha512-AjadKwsmroOZkAy/t9xm3wkHWN/WOJZMSryHAqABwE8A2j5DmqJevgdYR1das5xOWyoL11UFPRu7TYEDFs9vdw==}
 
   react-custom-scrollbars-2@4.5.0:
     resolution: {integrity: sha512-/z0nWAeXfMDr4+OXReTpYd1Atq9kkn4oI3qxq3iMXGQx1EEfwETSqB8HTAvg1X7dEqcCachbny1DRNGlqX5bDQ==}
@@ -9871,6 +9890,8 @@ snapshots:
       object-assign: 4.1.1
       thenify-all: 1.6.0
 
+  nan@2.19.0: {}
+
   nano-spawn@1.0.3: {}
 
   nanoid@3.3.11: {}
@@ -9880,6 +9901,10 @@ snapshots:
   negotiator@0.6.4: {}
 
   neo-async@2.6.2: {}
+
+  net-ping@1.2.4:
+    dependencies:
+      raw-socket: 1.8.1
 
   no-case@3.0.4:
     dependencies:
@@ -10067,6 +10092,8 @@ snapshots:
 
   pidtree@0.6.0: {}
 
+  ping@1.0.0: {}
+
   pirates@4.0.7: {}
 
   pkg-dir@4.2.0:
@@ -10178,6 +10205,10 @@ snapshots:
   raf@3.4.1:
     dependencies:
       performance-now: 2.1.0
+
+  raw-socket@1.8.1:
+    dependencies:
+      nan: 2.19.0
 
   react-custom-scrollbars-2@4.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
