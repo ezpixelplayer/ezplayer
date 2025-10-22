@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { Autocomplete, Box, Divider, Grid } from '@mui/material';
 
@@ -27,6 +27,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     const [fseqFile, setFseqFile] = useState<string | undefined>(undefined);
     const [mp3File, setMp3File] = useState<string | undefined>(undefined);
     const [imageFile, setImageFile] = useState<string | undefined>(undefined);
+    const [imageUrl, setImageUrl] = useState<string>('');
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
 
     const [newSongData, setNewSongData] = useState({
@@ -43,6 +44,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
         setFseqFile(undefined);
         setMp3File(undefined);
         setImageFile(undefined);
+        setImageUrl('');
         setNewSongData({
             title: '',
             artist: '',
@@ -127,6 +129,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     tags: [],
                     genre: '',
                     music_url: '',
+                    artwork: imageUrl || undefined, // Add image URL to work.artwork
                 },
                 sequence: {
                     vendor: 'Local',
@@ -214,14 +217,36 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                Upload Song Image
+                                Song Image
                             </Typography>
-                            <ElectronFileButton
-                                fileType={{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }}
-                                isMultipleFile={false}
-                                onChange={(e) => handleFileChange(e?.target?.files[0]?.path, 'image')}
-                            />
-                            {imageFile && <Typography sx={{ mt: 1 }}>{imageFile}</Typography>}
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                {/* Local Image File Selection */}
+                                <Box>
+                                    <Typography variant="body2" sx={{ mb: 1 }} color="text.secondary">
+                                        Local Image File (Electron only)
+                                    </Typography>
+                                    <ElectronFileButton
+                                        fileType={{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }}
+                                        isMultipleFile={false}
+                                        onChange={(e) => handleFileChange(e?.target?.files[0]?.path, 'image')}
+                                    />
+                                    {imageFile && <Typography sx={{ mt: 1 }}>{imageFile}</Typography>}
+                                </Box>
+                                {/* Image URL Input */}
+                                <Box>
+                                    <Typography variant="body2" sx={{ mb: 1 }} color="text.secondary">
+                                        Or use Image URL (works in web and Electron)
+                                    </Typography>
+                                    <TextField
+                                        label="Image URL"
+                                        name="imageUrl"
+                                        value={imageUrl}
+                                        onChange={(e) => setImageUrl(e.target.value)}
+                                        fullWidth
+                                        placeholder="https://example.com/image.jpg"
+                                    />
+                                </Box>
+                            </Box>
                         </Grid>
                         <Grid item xs={6}>
                             <TextField
