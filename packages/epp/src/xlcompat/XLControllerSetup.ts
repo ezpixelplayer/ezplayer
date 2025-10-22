@@ -67,6 +67,7 @@ export async function openControllersForDataSend(showdir: string) {
                 dsender.address = c.address;
                 dsender.pushAtEnd = false; // TODO try variety
                 dsender.startChNum = xc.keepChannelNumbers ? xc.startch - 1 : 0; 
+                dsender.sendBufSize = Math.max(256_000, c.nCh * 2);
                 try {
                     await dsender.connect();
                 }
@@ -91,6 +92,7 @@ export async function openControllersForDataSend(showdir: string) {
             } else if (c.proto === 'E131') {
                 const esender = new E131Sender();
                 esender.address = c.address;
+                esender.sendBufSize = Math.max(256_000, c.nCh * 2);
                 esender.pushAtEnd = false; // TODO try variety
                 // TODO!  Must fill in universe and ch per packet on multiple universes!  Do not do this now.
                 esender.startUniverse = xc.universeNumbers?.[0] ?? 1;

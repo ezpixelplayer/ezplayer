@@ -62,6 +62,7 @@ export type PlayerCommand =
     | { type: 'rpc-response'; response: RPCResponse };
 
 export type WorkerToMainMessage =
+    | { type: 'ready' }
     | { type: 'queueUpdate'; queue: QueueEntry[] }
     | { type: 'audioChunk'; chunk: AudioChunk }
     | { type: 'done' }

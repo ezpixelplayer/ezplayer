@@ -3,9 +3,9 @@ import { fileURLToPath } from 'url';
 
 import * as path from 'path';
 
-import { BrowserWindow, ipcMain, app } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 
-import { Worker, workerData } from 'worker_threads';
+import { Worker } from 'worker_threads';
 
 import {
     loadPlaylistsAPI,
@@ -131,9 +131,10 @@ const handlers: MainRPCAPI = {
 
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
-export function registerContentHandlers(mainWindow: BrowserWindow | null, realTimeClock: ClockConverter) {
+export async function registerContentHandlers(mainWindow: BrowserWindow | null, realTimeClock: ClockConverter, nPlayWorker: Worker) {
     updateWindow = mainWindow;
     rtConverter = realTimeClock;
+    playWorker = nPlayWorker;
 
     ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
         await loadShowFolder();
@@ -270,13 +271,6 @@ export function registerContentHandlers(mainWindow: BrowserWindow | null, realTi
     });
 
     /// Connection from player worker thread
-
-    playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
-        workerData: {
-            name: 'main',
-            logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
-        } satisfies PlaybackWorkerData,
-    });
 
     const rpcs = new RPCServer<MainRPCAPI>(playWorker, handlers);
     rpcc = new RPCClient<PlayWorkerRPCAPI>(playWorker);

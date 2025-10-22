@@ -1,5 +1,5 @@
 import dgram from "dgram";
-import { UdpClient } from "./UDP";
+import { SendBatch, UdpClient } from "./UDP";
 import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
 import { toDataView } from "../../util/Utils";
 
@@ -137,22 +137,42 @@ export class DDPSender implements Sender
   pushAtEnd: boolean = true;
   useTimecodes: boolean = false;
   channelsPerPacket: number = DDP_MAX_PAYLOAD;
+  sendBufSize?: number = undefined;
 
   client?: UdpClient;
-  header = new Uint8Array(10); // Max header size
+  headers: Uint8Array[] = []; // Max header size
+  pushHeader: Uint8Array = new Uint8Array(10);
+
+  curPacketNum = 0;
+  startFrame(): void {
+    this.curPacketNum = 0;
+  }
+  endFrame(): void {
+    // This would be a time to push at end?
+  }
 
   // This could throw - if you ignore it, send won't work...
   async connect() {
-    this.header = new Uint8Array(this.useTimecodes ? 14 : 10);
     if (!this.client) {
-      this.client = new UdpClient("udp4", 256000);
+      this.client = new UdpClient("udp4", this.address, DDP_PORT_DEFAULT, this.sendBufSize ?? 6_250_000 /*1Gbps 50ms*/);
     }
     if (!this.client.isConnected()) {
-      await this.client.connect(DDP_PORT_DEFAULT, this.address);
+      await this.client.connect();
     }
   }
 
-  async sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): Promise<boolean> {
+  suspend(): void {this.client?.suspend();}
+  resume(): void {this.client?.resume();}
+
+  startBatch(): void {
+    if (this.client) this.client.startSendBatch();
+  }
+
+  endBatch(): SendBatch | undefined {
+    if (this.client) return this.client.endSendBatch();
+  }
+
+  sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {
     const connected = this.client?.isConnected();
     if (!this.client || !connected) return true;
   
@@ -162,13 +182,18 @@ export class DDPSender implements Sender
     let bytesThisPacket = 0;
     let packetBufs: Uint8Array[] = [];
 
-    const sendOut = async (last: boolean) => {
+    const sendOut = (last: boolean) => {
       if (!bytesThisPacket) return;
-      fillInDDPHeader(this.header, 0, this.startChNum + state.curChNum, bytesThisPacket, !this.pushAtEnd && last, state.nextDDPSeqNum());
-      await this.client!.send([this.header, ...packetBufs]);
+      if (this.curPacketNum >= this.headers.length) {
+        this.headers.push(new Uint8Array(this.useTimecodes ? 14 : 10))
+      }
+      const hdr = this.headers[this.curPacketNum];
+      fillInDDPHeader(hdr, 0, this.startChNum + state.curChNum, bytesThisPacket, !this.pushAtEnd && last, state.nextDDPSeqNum());
+      this.client!.addSendToBatch([hdr, ...packetBufs]);
       packetBufs = [];
       state.curChNum += bytesThisPacket;
       bytesThisPacket = 0;
+      ++this.curPacketNum;
     };
 
     // Outer loop - go through all the parts
@@ -188,7 +213,7 @@ export class DDPSender implements Sender
       if (avToSend === 0) {
         // Only way to make progress is to send -- and we know there is more.
         rlLeftToSend -= bytesThisPacket;
-        await sendOut(false);
+        sendOut(false);
         continue;
       }
 
@@ -203,15 +228,15 @@ export class DDPSender implements Sender
     // TODO EZP Rate limit write-back
 
     // May have stuff left...
-    await sendOut(true);
+    sendOut(true);
     return true;
   }
 
-  async sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): Promise<void> {
+  sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): void {
     if (this.pushAtEnd) {
-      fillInDDPHeader(this.header, 0, this.startChNum + state.curChNum, 0, true, state.nextDDPSeqNum());
+      fillInDDPHeader(this.pushHeader, 0, this.startChNum + state.curChNum, 0, true, state.nextDDPSeqNum());
       if (this.client?.isConnected()) {
-        await this.client?.send(this.header);
+        this.client?.addSendToBatch(this.pushHeader);
       }
     }
   }

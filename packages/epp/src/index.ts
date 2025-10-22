@@ -1,19 +1,29 @@
 export {
-    DDPSender
+    DDPSender,
 } from "./dataplane/protocols/DDP";
 
 export {
-    E131Sender
+    E131Sender,
 } from "./dataplane/protocols/E131";
+
+export {
+    SendBatch,
+}
+from "./dataplane/protocols/UDP";
 
 export {
     Sender,
     SenderJob,
     SendJob,
-    SendJobState
+    SendJobState,
 } from "./dataplane/SenderJob";
 
 export {
+    startFrame,
+    endFrame,
+    startBatch,
+    endBatch,
+    sendPartial,
     sendFull,
 } from "../src/dataplane/SendFrame";
 

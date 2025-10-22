@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu } from 'electron';
+import { Worker, workerData } from 'worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -6,6 +7,7 @@ import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
 import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
+import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 
 // catch as early as possible
 process.on('uncaughtException', (err) => {
@@ -102,6 +104,7 @@ const createWindow = (showFolder: string) => {
 const dateNowConverter = new ClockConverter('rtc', Date.now(), performance.now());
 
 let dateRateTimeout: NodeJS.Timeout | undefined = undefined;
+let playWorker: Worker | null = null;
 
 app.whenReady().then(async () => {
     // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
@@ -111,9 +114,25 @@ app.whenReady().then(async () => {
         return;
     }
 
-    createWindow(showFolderSpec);
+    playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
+        workerData: {
+            name: 'main',
+            logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
+        } satisfies PlaybackWorkerData,
+    });
+    await new Promise<void>((resolve) => {
+        const onMessage = (msg: any) => {
+            if (msg.type === 'ready') {
+            playWorker!.off('message', onMessage);
+            resolve();
+            }
+        };
+        playWorker!.on('message', onMessage);
+    });
+
     registerFileListHandlers();
-    registerContentHandlers(mainWindow, dateNowConverter);
+    createWindow(showFolderSpec);
+    await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
     dateRateTimeout = setInterval(async () => {
         const mperfNow = performance.now();
         const mdateNow = Date.now();

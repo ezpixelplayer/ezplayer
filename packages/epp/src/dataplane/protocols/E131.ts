@@ -1,4 +1,4 @@
-import { UdpClient } from "./UDP";
+import { SendBatch, UdpClient } from "./UDP";
 import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
 import { toDataView } from "../../util/Utils";
 
@@ -149,20 +149,40 @@ export class E131Sender implements Sender
     useTimecodes: boolean = false;
 
     client?: UdpClient;
-    header = Buffer.alloc(E131_PACKET_HEADERLEN); // Header size
+    headers: Buffer[] = [];
     syncPacket = Buffer.alloc(E131_SYNCPACKET_LEN);
+    sendBufSize?: number = undefined;
 
     // This could throw - if you ignore it, send won't work...
     async connect() {
         if (!this.client) {
-            this.client = new UdpClient("udp4", 256000);
+            this.client = new UdpClient("udp4", this.address, E131_PORT_DEFAULT, this.sendBufSize ?? 625_000 /*100Mbps 50ms*/);
         }
         if (!this.client.isConnected()) {
-            await this.client.connect(E131_PORT_DEFAULT, this.address);
+            await this.client.connect();
         }
     }
 
-    async sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): Promise<boolean> {
+    suspend(): void {this.client?.suspend();}
+    resume(): void {this.client?.resume();}
+
+    curPacketNum = 0;
+    startFrame(): void {
+        this.curPacketNum = 0;
+    }
+    endFrame(): void {
+        // This would be a time to push at end?
+    }
+
+    startBatch(): void {
+        if (this.client) this.client.startSendBatch();
+    }
+
+    endBatch(): SendBatch | undefined {
+        if (this.client) return this.client.endSendBatch();
+    }
+
+    sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {
         const connected = this.client?.isConnected();
         if (!this.client || !connected) return true;
 
@@ -173,14 +193,19 @@ export class E131Sender implements Sender
         let packetBufs: Uint8Array[] = [];
 
         // TODO: We may be asked to do scattered universes and fractional packets.  Not now, but at some point.
-        const sendOut = async (sourceName: string, _last: boolean) => {
+        const sendOut = (sourceName: string, _last: boolean) => {
             if (!bytesThisPacket) return;
             const univ = state.sendPacketNum()+this.startUniverse;
-            fillE131PacketHeader(this.header, univ, sourceName, state.nextE131SeqNum(), bytesThisPacket);
-            await this.client!.send([this.header, ...packetBufs]);
+            if (this.curPacketNum >= this.headers.length) {
+                this.headers.push(Buffer.alloc(E131_PACKET_HEADERLEN));
+            }
+            const hdr = this.headers[this.curPacketNum];
+            fillE131PacketHeader(hdr, univ, sourceName, state.nextE131SeqNum(), bytesThisPacket);
+            this.client!.addSendToBatch([hdr, ...packetBufs]);
             packetBufs = [];
             state.curChNum += bytesThisPacket;
             bytesThisPacket = 0;
+            ++this.curPacketNum;
         };
 
         // Outer loop - go through all the parts
@@ -200,7 +225,7 @@ export class E131Sender implements Sender
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
                 rlLeftToSend -= bytesThisPacket;
-                await sendOut("blaBlaBLA", false);
+                sendOut("blaBlaBLA", false);
                 continue;
             }
 
@@ -215,7 +240,7 @@ export class E131Sender implements Sender
         // TODO EZP Rate limit write-back
 
         // May have stuff left...
-        await sendOut("blaBlaBLA", true);
+        sendOut("blaBlaBLA", true);
         return true;
     }
 
@@ -223,7 +248,7 @@ export class E131Sender implements Sender
         if (this.pushAtEnd) {
             buildE131SyncPacket(this.syncPacket, this.syncUniverse, state.nextE131SeqNum());
             if (this.client?.isConnected()) {
-                await this.client?.send(this.syncPacket);
+                this.client?.addSendToBatch(this.syncPacket);
             }
         }
     }

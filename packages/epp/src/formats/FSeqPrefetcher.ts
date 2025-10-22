@@ -94,22 +94,24 @@ export class FrameReference {
     constructor(handle: RefHandle<DecompCacheVal>, frame: Uint8Array<ArrayBufferLike>, id: string) {
         this._v = frame;
         this.underlyingHandle = handle;
-        FrameReference.registry.register(this, id, this.token);
+        if (this.underlyingHandle) {
+            FrameReference.registry.register(this, id, this.token);
+        }
     }
 
     release(): void {
         if (this.underlyingHandle) {
+            FrameReference.registry.unregister(this.token);
             this.underlyingHandle.release();
             this._v = undefined;
             this.underlyingHandle = undefined;
-            FrameReference.registry.unregister(this.token);
         }
     }
 
     get frame(): Uint8Array<ArrayBufferLike> | undefined { return this._v; }
 
     get isReleased(): boolean {
-        return this._v == undefined;
+        return this.underlyingHandle == undefined;
     }
 }
 
