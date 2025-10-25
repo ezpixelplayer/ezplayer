@@ -1,7 +1,7 @@
 {
     "name": "ezplayer-ui-electron",
     "private": true,
-    "version": "0.0.19-prealpha",
+    "version": "0.0.20-prealpha",
     "main": "dist/main.js",
     "type": "module",
     "scripts": {
@@ -19,7 +19,7 @@
         "prod": "sh -c './release/win-unpacked/EZPlayer.exe'",
         "prod:nodetrace": "sh -c 'export NODE_OPTIONS=\"--trace-opt --trace-deopt --trace-turbo-inlining\" && .\\release\\win-unpacked\\EZPlayer.exe --enable-logging --v=1'",
         "prod:log": "sh -c './release/win-unpacked/EZPlayer.exe --enable-logging --v=1'",
-        "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=/c/Users/Chuck/Documents/xlightsShows/Baldrick/'"
+        "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
     "devDependencies": {
         "@types/proper-lockfile": "^4.1.4",

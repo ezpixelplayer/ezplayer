@@ -1,3 +1,13 @@
+export interface EZPlayerVersions {
+    name: string;
+    version: string;
+    arch: string;
+    builtAtIso: string;
+    git: {[key: string]: string};
+    packages: {[pkg: string]: string};
+    processes: {[proc: string]: string | undefined};
+};
+
 export interface SongDetails {
     title: string;
     artist: string;

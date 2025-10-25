@@ -67,7 +67,7 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
         forgotPassword: undefined,
         changePassword: undefined,
 
-        playerVersion: 'EZPlayer (MMPP Fork) 0.0.7 prealpha - 2025-10-02; EPP 0.0.14',
+        playerVersion: 'EZPlayer',
         cloudVersion: 'unknown',
     };
 
