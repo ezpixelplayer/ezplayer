@@ -152,7 +152,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                             <Typography variant="body2" color="text.secondary">
                                 Player Version:
                             </Typography>
-                            <Typography variant="body2">{playerVersion ? `${playerVersion.version} / ${playerVersion.packages['Electron App']}` : 'N/A'}</Typography>
+                            <Typography variant="body2">{playerVersion ? `${playerVersion.version} / ${playerVersion.packages['Electron App']} / ${playerVersion?.git['branch']}` : 'N/A'}</Typography>
                         </Box>
                     </Box>
 

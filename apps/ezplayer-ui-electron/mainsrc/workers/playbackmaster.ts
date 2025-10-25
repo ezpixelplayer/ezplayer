@@ -314,6 +314,8 @@ const playbackStats: PlaybackStatistics = {
     skippedFrames: 0,
     sentAudioChunks: 0,
     skippedAudioChunks: 0,
+    cframesSkippedDueToDirective: 0,
+    cframesSkippedDueToIncompletePrior: 0,
     lastError: undefined as string | undefined,
 
     measurementPeriod: 0,

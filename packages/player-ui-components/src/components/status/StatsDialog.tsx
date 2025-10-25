@@ -161,6 +161,18 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                                 {formatValue(stats.maxSendTime)}ms
                                             </Typography>
                                         </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Controller Frame Skips (intentional):</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.cframesSkippedDueToDirective)}
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Controller Frame Skips (incomplete):</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.cframesSkippedDueToIncompletePrior)}
+                                            </Typography>
+                                        </Box>
                                     </Box>
                                 </CardContent>
                             </Card>

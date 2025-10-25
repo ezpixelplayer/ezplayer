@@ -202,6 +202,10 @@ export interface PlaybackStatistics {
     sentFrames: number;
     skippedFrames: number;
 
+    // Skipped controller frames
+    cframesSkippedDueToDirective: number;
+    cframesSkippedDueToIncompletePrior: number;
+
     // Audio delivery
     sentAudioChunks: number;
     skippedAudioChunks: number;

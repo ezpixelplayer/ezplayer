@@ -136,7 +136,9 @@ export class FrameSender
             if (args.frame?.frame && this.state && this.job) {
                 this.job.frameNumber = args.targetFrameNum;
                 this.job.dataBuffers = [args.frame.frame];
-                this.state.initialize(args.targetFramePN, this.job);
+                const res = this.state.initialize(args.targetFramePN, this.job);
+                args.playbackStats.cframesSkippedDueToDirective += res.skipsDueToReq;
+                args.playbackStats.cframesSkippedDueToIncompletePrior += res.skipsDueToSlowCtrl;
                 this.prevFrameRef = args.frame;
                 args.frame = undefined;
                 await this.doSendFrame(nowTime, args);
@@ -165,8 +167,8 @@ export class FrameSender
             Promise.allSettled(end.map((s) => s.promise)).then(() => {
                 for (const sb of end) {
                     if (sb.nECBs > 0) {
-                        this.emitWarning?.(`Suspending IP ${sb.sender.address}`);
-                        sb.sender.suspend();
+                        //this.emitWarning?.(`Suspending IP ${sb.sender.address}`);
+                        //sb.sender.suspend();
                     }
                 }
             });
@@ -190,7 +192,7 @@ export class FrameSender
         if (this.prevSendBatch) {
             for (const s of this.prevSendBatch) {
                 if (!s.isComplete()) {
-                    this.emitWarning?.(`Sender for ${s.sender.address} missed the deadline`);
+                    //this.emitWarning?.(`Sender for ${s.sender.address} missed the deadline`);
                 }
                 if (s.err) {
                     this.emitWarning?.(`Send error for ${s.sender.address}: ${s.err}`);

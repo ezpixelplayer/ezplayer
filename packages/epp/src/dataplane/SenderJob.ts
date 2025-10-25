@@ -18,6 +18,7 @@ export interface Sender {
     suspend() : void,
     resume() : void,
     minFrameTime() : number;
+    isCurrentlySending() : boolean;
 }
 
 // What's in here?  The description of the job, containing:
@@ -89,6 +90,9 @@ export class SendJobState {
     sendHeap: SchedulerMinHeap<SendJobSenderState> = new SchedulerMinHeap();
 
     initialize(sendTime: number, job: SendJob) {
+        let skipsDueToReq = 0;
+        let skipsDueToSlowCtrl = 0;
+
         this.job = job;
         while (this.states.length < job.senders.length) {
             const s = new SendJobSenderState();
@@ -101,6 +105,11 @@ export class SendJobState {
             s.reset();
             if (sendTime < s.lastSendTime + (job.senders[i].sender?.minFrameTime() ?? 0)) {
                 s.skippingThisFrame = true;
+                ++skipsDueToReq;
+            }
+            else if (job.senders[i].sender?.isCurrentlySending()){
+                s.skippingThisFrame = true;
+                ++skipsDueToSlowCtrl;
             }
             else {
                 s.skippingThisFrame = false;
@@ -108,5 +117,6 @@ export class SendJobState {
             }
             ++i;
         }
+        return {skipsDueToReq, skipsDueToSlowCtrl};
     }
 }
