@@ -6,6 +6,7 @@ import fsp from 'fs/promises';
 
 import type { AudioDevice, AudioTimeSyncM2R, FileSelectOptions } from '@ezplayer/ezplayer-core';
 import { getMainWindow } from '../main';
+import { ezpVersions } from '../versions';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -84,6 +85,10 @@ export function registerFileListHandlers() {
 
     ipcMain.handle('open-external-url', async (event: any, url: string) => {
         shell.openExternal(url);
+    });
+
+    ipcMain.handle('getVersions', ()=> {
+        return ezpVersions;
     });
 }
 
