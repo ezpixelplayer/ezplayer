@@ -1,5 +1,6 @@
 import { getBoolAttrDef, getNumAttrDef, XMLConstants } from '../util/XMLUtil';
 import { loadXmlFile } from '../util/FileUtil';
+import { ExplicitControllerDesc } from './XLControllerDesc';
 
 export class ModelRec {
     name: string;
@@ -44,6 +45,7 @@ export class ControllerRec {
     name: string = "";
     address: string = "";
     description: string = "";
+    desc?: ExplicitControllerDesc = undefined;
     activeState?: ActiveStateChoice;
     monitor?: boolean; // This is 0/1
     type: ControllerTypeChoice = 'Unknown';
@@ -92,11 +94,15 @@ export async function readControllersAndModels(xldir: string) {
         const rawctype = cn.getAttribute('Type');
         const ctype = ['Null', 'Ethernet', 'Serial'].includes(rawctype ?? '') ? rawctype : 'Unknown';
 
+        const description = cn.getAttribute('Description') || "";
+
         const ctrl: ControllerRec = {
             id: cn.getAttribute('Id') || "",
             address: cn.getAttribute('IP') || "",
             name: cn.getAttribute('Name')!,
-            description: cn.getAttribute('Description') || "",
+            description: description,
+            desc: new ExplicitControllerDesc(description),
+
             activeState: astate as ActiveStateChoice,
             type: ctype as ControllerTypeChoice,
             monitor: getBoolAttrDef(cn, 'Monitor', true),
@@ -268,12 +274,4 @@ export async function readControllersAndModels(xldir: string) {
         controllers,
         controllersByName,
     }
-}
-
-export interface ControllerSetup {
-    name: string;
-    address: string;
-    startCh: number;
-    nCh: number;
-    proto: 'DDP' | 'E131';
 }

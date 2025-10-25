@@ -70,13 +70,14 @@ export class FrameSender
     emitError?: (err: Error) => void;
 
     async sendBlackFrame(args: {
+        targetFramePN: number,
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
     }) {
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
-        this.state.initialize(this.job);
+        this.state.initialize(args.targetFramePN, this.job);
         await this.doSendFrame(performance.now(), args);
     }
 
@@ -104,7 +105,7 @@ export class FrameSender
                 // Send black
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({});
+                if (this.blackFrame) this.sendBlackFrame({targetFramePN: preSleepPN});
                 return args.targetFramePN;
             }
 
@@ -135,7 +136,7 @@ export class FrameSender
             if (args.frame?.frame && this.state && this.job) {
                 this.job.frameNumber = args.targetFrameNum;
                 this.job.dataBuffers = [args.frame.frame];
-                this.state.initialize(this.job);
+                this.state.initialize(args.targetFramePN, this.job);
                 this.prevFrameRef = args.frame;
                 args.frame = undefined;
                 await this.doSendFrame(nowTime, args);

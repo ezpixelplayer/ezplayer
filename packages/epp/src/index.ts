@@ -25,12 +25,18 @@ export {
     endBatch,
     sendPartial,
     sendFull,
-} from "../src/dataplane/SendFrame";
+} from "./dataplane/SendFrame";
+
+export {
+    ControllerSetup,
+    OpenControllerReport,
+}
+from "./controllers/controllertypes";
 
 export {
     busySleep,
     lpBusySleep,
-} from "../src/util/Utils";
+} from "./util/Utils";
 
 export {
     getFileSize,
@@ -38,25 +44,25 @@ export {
     readHandleRange,
     readJsonFile,
     loadXmlFile,
-} from "../src/util/FileUtil";
+} from "./util/FileUtil";
 
 export {
     CompBlockCache,
     FSEQHeader,
     FSEQReaderAsync,
     FSEQReaderSync,
-} from "../src/formats/FSeqUtil";
+} from "./formats/FSeqUtil";
 
 export {
     ControllerRec,
-    ControllerSetup,
     ModelRec,
     readControllersAndModels,
 } from "./xlcompat/XLXmlUtil";
 
 export {
+    ControllerState,
+    readControllersFromXlights,
     openControllersForDataSend,
-    OpenControllerReport,
 } from "./xlcompat/XLControllerSetup";
 
 export {
@@ -79,15 +85,15 @@ export {
     RefHandle,
 
     needTimePriorityCompare,
-} from "../src/util/PrefetchCache";
+} from "./util/PrefetchCache";
 
 export {
     FilePrefetchCache,
-} from "../src/util/FilePrefetchCache";
+} from "./util/FilePrefetchCache";
 
 export {
     WholeFilePrefetchCache,
-} from "../src/util/WholeFilePrefetchCache";
+} from "./util/WholeFilePrefetchCache";
 
 export {
     PrefetchSeqMetadataRequest,
@@ -100,4 +106,4 @@ export {
     FrameReference,
     FSeqPrefetchCache,
     FrameTimeOrNumber,
-} from '../src/formats/FSeqPrefetcher'
+} from './formats/FSeqPrefetcher'

@@ -1,4 +1,6 @@
 import dgram from "dgram";
+import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
+import { ControllerState } from "../../xlcompat/XLControllerSetup";
 
 ////
 // UDP is interesting, errors coming back can slow down processing
@@ -229,4 +231,38 @@ export class UdpClient {
       }
     });
   }
+}
+
+export abstract class UDPSender implements Sender
+{
+  controller?: ControllerState = undefined;
+
+  address: string = "";
+  minTimeBetweenFrames = 0;
+
+  minFrameTime(): number {
+    return this.minTimeBetweenFrames;
+  }
+
+  client?: UdpClient;
+  headers: Uint8Array[] = []; // Max header size
+  pushHeader: Uint8Array = new Uint8Array(10);
+
+  curPacketNum = 0;
+  abstract startFrame() : void;
+  abstract endFrame(): void;
+  abstract connect(): Promise<void>;
+  suspend(): void {this.client?.suspend();}
+  resume(): void {this.client?.resume();}
+
+  startBatch(): void {
+    if (this.client) this.client.startSendBatch();
+  }
+
+  endBatch(): SendBatch | undefined {
+    if (this.client) return this.client.endSendBatch();
+  }
+
+  abstract sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;
+  abstract sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
 }
