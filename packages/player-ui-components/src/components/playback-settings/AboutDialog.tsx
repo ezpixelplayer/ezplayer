@@ -1,4 +1,4 @@
-import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { EZPElectronAPI, EZPlayerVersions } from '@ezplayer/ezplayer-core';
 import { SimpleDialog, isElectron } from '@ezplayer/shared-ui-components';
 import { Box, Button, Divider, Link, Typography } from '@mui/material';
 import React from 'react';
@@ -13,7 +13,7 @@ declare global {
 interface AboutDialogProps {
     open: boolean;
     onClose: () => void;
-    playerVersion?: string;
+    playerVersion?: EZPlayerVersions;
     cloudVersion?: string;
 }
 
@@ -152,7 +152,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                             <Typography variant="body2" color="text.secondary">
                                 Player Version:
                             </Typography>
-                            <Typography variant="body2">{playerVersion || 'N/A'}</Typography>
+                            <Typography variant="body2">{playerVersion ? `${playerVersion.version} / ${playerVersion.packages['Electron App']}` : 'N/A'}</Typography>
                         </Box>
                     </Box>
 
