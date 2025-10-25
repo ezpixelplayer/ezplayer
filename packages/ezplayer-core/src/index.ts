@@ -1,4 +1,5 @@
 export type {
+    EZPlayerVersions,
     PlaylistRecord,
     PlaylistItem,
     ScheduledPlaylist,

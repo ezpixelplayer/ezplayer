@@ -2,6 +2,7 @@ import { ActionReducerMapBuilder, PayloadAction, createSlice, createAsyncThunk }
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { UserLoginBody, UserRegisterBody } from '../api/DataStorageAPI';
 import { AxiosError } from 'axios';
+import { EZPlayerVersions } from '@ezplayer/ezplayer-core';
 
 export interface AuthState {
     // This is called the "Auth" slice... and it does have the authentication info in it.
@@ -44,7 +45,7 @@ export interface AuthState {
     changePassword?: string; // Message that comes back from change password rq
 
     // Software version - we may add cloud service version FYI beside this
-    playerVersion: string;
+    playerVersion?: EZPlayerVersions;
     cloudVersion: string;
 }
 
@@ -67,7 +68,7 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
         forgotPassword: undefined,
         changePassword: undefined,
 
-        playerVersion: 'EZPlayer (MMPP Fork) 0.0.7 prealpha - 2025-10-02; EPP 0.0.14',
+        playerVersion: undefined,
         cloudVersion: 'unknown',
     };
 
@@ -95,6 +96,9 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
             },
             setPlayerIsRegistered: (state: AuthState, action: PayloadAction<boolean>) => {
                 state.playerIdIsRegistered = action.payload;
+            },
+            setPlayerVersion: (state: AuthState, action: PayloadAction<EZPlayerVersions>) => {
+                state.playerVersion = action.payload;
             },
             setCloudVersion: (state: AuthState, action: PayloadAction<string>) => {
                 state.cloudVersion = action.payload;

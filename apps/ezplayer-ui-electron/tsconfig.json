@@ -19,6 +19,6 @@
         //"noUnusedParameters": true,
         "noEmit": false
     },
-    "include": ["main.ts", "showfolder.ts", "mainsrc", "sharedsrc"],
+    "include": ["main.ts", "showfolder.ts", "mainsrc", "sharedsrc", "versions.ts"],
     "exclude": ["node_modules", "dist"]
 }
