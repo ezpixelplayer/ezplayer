@@ -30,6 +30,8 @@ const nodeExternals = [
     'follow-redirects',
     'proxy-from-env',
     'mpg123-decoder',
+    'bindings',
+    'node-gyp',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];
