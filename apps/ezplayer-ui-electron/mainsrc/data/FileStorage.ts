@@ -46,6 +46,31 @@ interface TempUserAPIPayload {
         user?: EndUser;
     };
 }
+
+const blankShowProfile: EndUserShowSettings = {
+    show_name: '',
+    tune_to: '',
+    rot_y: 0,
+    message: '',
+    layout_dim: 'Auto',
+    fps: 0,
+    group_mode: 'Default',
+    guess_layout: 'Build',
+    user_id: '',
+    updated: new Date().getTime(),
+};
+
+const blankUserProfile: EndUser = {
+    user_id: '',
+    email: '',
+    name_f: '',
+    name_l: '',
+    name_nn: '',
+    status: 'unregistered',
+    class: 'N/A',
+    create_time: new Date().getTime(),
+};
+
 /**
  * Ensure path is absolute relative to a base directory.
  */
@@ -132,7 +157,7 @@ export async function loadPlaylistsAPI(folder: string): Promise<PlaylistRecord[]
         return p.data.playlists ?? [];
     } catch (e) {
         console.log(e);
-        return []; // defaultPlaylists;
+        return [];
     }
 }
 
@@ -169,10 +194,10 @@ export const saveScheduleAPI = async (folder: string, payload: ScheduledPlaylist
 export async function loadShowProfileAPI(folder: string) {
     try {
         const p: TempShowAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'show.json'), 'utf-8'));
-        return p.data.show ?? {};
+        return p.data.show ?? blankShowProfile;
     } catch (e) {
         console.log(e);
-        return {};
+        return blankShowProfile;
     }
 }
 
@@ -186,10 +211,10 @@ export async function saveShowProfileAPI(folder: string, data: EndUserShowSettin
 export async function loadUserProfileAPI(folder: string) {
     try {
         const p: TempUserAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'user.json'), 'utf-8'));
-        return p.data.user ?? {};
+        return p.data.user ?? blankUserProfile;
     } catch (e) {
         console.log(e);
-        return {};
+        return blankUserProfile;
     }
 }
 
