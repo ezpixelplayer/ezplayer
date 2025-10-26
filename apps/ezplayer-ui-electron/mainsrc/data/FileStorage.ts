@@ -47,7 +47,7 @@ interface TempUserAPIPayload {
     };
 }
 
-const blankShowProfile: EndUserShowSettings = {
+export const blankShowProfile: EndUserShowSettings = {
     show_name: '',
     tune_to: '',
     rot_y: 0,
@@ -60,7 +60,7 @@ const blankShowProfile: EndUserShowSettings = {
     updated: new Date().getTime(),
 };
 
-const blankUserProfile: EndUser = {
+export const blankUserProfile: EndUser = {
     user_id: '',
     email: '',
     name_f: '',
