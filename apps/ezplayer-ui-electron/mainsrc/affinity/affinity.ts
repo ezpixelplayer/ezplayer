@@ -1,5 +1,8 @@
-// affinity/index.js
-const addon = require('node-gyp-build')(__dirname); // or ./build/Release/affinity
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+
+const addon = require('bindings')('affinity');
 
 /**
  * Pin the **calling thread** (current Worker) to specific logical CPU indices.
@@ -14,4 +17,4 @@ function setThreadAffinity(cpus: number[]) { addon.setThreadAffinity(cpus); }
  */
 function setProcessAffinity(cpus: number[]) { addon.setProcessAffinity(cpus); }
 
-module.exports = { setThreadAffinity, setProcessAffinity };
+export { setThreadAffinity, setProcessAffinity };

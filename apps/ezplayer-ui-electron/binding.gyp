@@ -12,6 +12,14 @@
           "libraries": [ "winmm.lib" ]
         }]
       ]
+    },
+    {
+      "target_name": "affinity",
+      "sources": ["mainsrc/affinity/affinity.cpp"],
+      "include_dirs": [
+        "<(module_root_dir)/deps/node-addon-api"
+      ],
+      "defines": ["NAPI_VERSION=8", "NAPI_DISABLE_CPP_EXCEPTIONS"]
     }
   ]
 }

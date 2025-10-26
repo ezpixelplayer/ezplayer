@@ -10,8 +10,10 @@ import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
+import { setProcessAffinity } from './mainsrc/affinity/affinity.js';
 
 hirezBegin();
+setProcessAffinity([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
 
 // catch as early as possible
 process.on('uncaughtException', (err) => {
