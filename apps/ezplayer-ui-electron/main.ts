@@ -9,6 +9,9 @@ import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
+import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
+
+hirezBegin();
 
 // catch as early as possible
 process.on('uncaughtException', (err) => {
