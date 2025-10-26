@@ -62,7 +62,7 @@ export class FrameSender
 {
     job: SendJob | undefined = undefined;
     state: SendJobState = new SendJobState();
-    prevFrameRef: FrameReference | undefined = undefined;
+    outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
     blackFrame: Uint8Array | undefined = undefined;
@@ -78,7 +78,7 @@ export class FrameSender
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
         this.state.initialize(args.targetFramePN, this.job);
-        await this.doSendFrame(performance.now(), args);
+        await this.doSendFrame(performance.now(), {...args, frame: undefined});
     }
 
     async sendNextFrameAt(
@@ -130,8 +130,6 @@ export class FrameSender
                 args.playbackStats.worstLag = Math.max(args.playbackStats.worstLag, nowTime - args.targetFramePN);
             }
 
-            this.releasePrevFrame();
-
             // Actually send the frame
             if (args.frame?.frame && this.state && this.job) {
                 this.job.frameNumber = args.targetFrameNum;
@@ -139,9 +137,16 @@ export class FrameSender
                 const res = this.state.initialize(args.targetFramePN, this.job);
                 args.playbackStats.cframesSkippedDueToDirective += res.skipsDueToReq;
                 args.playbackStats.cframesSkippedDueToIncompletePrior += res.skipsDueToSlowCtrl;
-                this.prevFrameRef = args.frame;
-                args.frame = undefined;
-                await this.doSendFrame(nowTime, args);
+                if (this.outstandingFrames.has(args.frame)) {
+                    this.emitWarning?.("WARNING: THIS FRAME HANDLE ALREADY BEING SENT");
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                }
+                else if (this.outstandingFrames.size > 10) {
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                }
+                else {
+                    await this.doSendFrame(nowTime, args);
+                }
             }
             return args.targetFramePN += args.frameInterval;
         }
@@ -156,8 +161,14 @@ export class FrameSender
     private async doSendFrame(nowTime: number, args: {
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
+        frame: FrameReference | undefined,
     }) {
         try {
+            const frameref = args.frame;
+            if (frameref) {
+                this.outstandingFrames.add(frameref);
+                args.frame = undefined;
+            }
             startFrame(this.state);
             startBatch(this.state);
             await sendFull(this.state, busySleep);
@@ -170,6 +181,13 @@ export class FrameSender
                         //this.emitWarning?.(`Suspending IP ${sb.sender.address}`);
                         //sb.sender.suspend();
                     }
+                }
+                if (frameref) {
+                    if (!this.outstandingFrames.has(frameref)) {
+                        this.emitWarning?.("FRAME REFERENCE GOT REMOVED ALREADY");
+                    }
+                    frameref.release();
+                    this.outstandingFrames.delete(frameref);
                 }
             });
             if (args.playbackStatsAgg) {
@@ -200,15 +218,12 @@ export class FrameSender
             }
             this.prevSendBatch = undefined;
         }
-
-        if (this.prevFrameRef) {
-            this.prevFrameRef.release();
-            this.prevFrameRef = undefined;
-        }
     }
 
     close() {
-        this.prevFrameRef?.release();
-        this.prevFrameRef = undefined;
+        for (const fr of this.outstandingFrames) {
+            fr.release();
+        }
+        this.outstandingFrames.clear();
     }
 }

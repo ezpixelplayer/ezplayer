@@ -201,6 +201,7 @@ export interface PlaybackStatistics {
     missedHeaders: number;
     sentFrames: number;
     skippedFrames: number;
+    framesSkippedDueToManyOutstandingFrames: number;
 
     // Skipped controller frames
     cframesSkippedDueToDirective: number;

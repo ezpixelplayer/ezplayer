@@ -150,6 +150,12 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Skipped Frames (High Backlog):</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.framesSkippedDueToManyOutstandingFrames)}
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Average Send Time:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.avgSendTime)}ms

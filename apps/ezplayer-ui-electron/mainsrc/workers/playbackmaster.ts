@@ -312,6 +312,7 @@ const playbackStats: PlaybackStatistics = {
     missedFrames: 0,
     missedHeaders: 0,
     skippedFrames: 0,
+    framesSkippedDueToManyOutstandingFrames: 0,
     sentAudioChunks: 0,
     skippedAudioChunks: 0,
     cframesSkippedDueToDirective: 0,
