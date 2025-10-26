@@ -44,6 +44,7 @@ import process from "node:process";
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { setThreadAffinity } from '../affinity/affinity.js';
+import { decompressZStdWithWorker } from './zstdparent';
 setThreadAffinity([3]);
 
 // Helpful header for every line
@@ -405,6 +406,7 @@ async function processQueue() {
         fseqCache = new FSeqPrefetchCache({
             now: performance.now(),
             fseqSpace: playbackParams.fseqSpace,
+            decompZstd: decompressZStdWithWorker,
         });
     }
 

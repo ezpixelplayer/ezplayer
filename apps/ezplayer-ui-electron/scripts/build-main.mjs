@@ -65,3 +65,4 @@ await run('main.ts', 'dist/main.js');
 await run('showfolder.ts', 'dist/showfolder.js');
 await run('mainsrc/workers/playbackmaster.ts', 'dist/workers/playbackmaster.js');
 await run('mainsrc/workers/mp3decodeworker.ts', 'dist/workers/mp3decodeworker.js');
+await run('mainsrc/workers/zstdworker.ts', 'dist/workers/zstdworker.js');

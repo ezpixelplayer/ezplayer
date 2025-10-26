@@ -175,7 +175,8 @@ export class ZSTDDecoder {
 		);
 
 		// Read decompressed data so WASM memory can be reused
-        uncompArray.set(heap, uncompressedPtr);
+        const dec = heap.subarray(uncompressedPtr, uncompressedPtr + actualSize);
+        uncompArray.set(dec);
 
 		return actualSize;
 	}
@@ -241,6 +242,7 @@ parentPort.on('message', async (msg: InMsg) => {
         // Transfer buffers back so the parent can recycle them
         parentPort!.postMessage(out, [decompBuf, compBuf]);
     } catch (e) {
+        console.error(e);
         const err = e as Error;
         const out: OutMsg = {
             id,
