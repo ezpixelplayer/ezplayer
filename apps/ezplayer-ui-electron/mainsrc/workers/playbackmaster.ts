@@ -29,11 +29,10 @@ if (!parentPort) throw new Error('No parentPort in worker');
 
 import {
     openControllersForDataSend,
-    OpenControllerReport,
     FSeqPrefetchCache,
     ModelRec,
-    ControllerSetup,
-    ControllerRec,
+    readControllersFromXlights,
+    ControllerState,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -207,20 +206,20 @@ function sendControllerStateUpdate() {
         controllers: [],
     };
     cstatus.n_models = modelRecs?.length;
-    cstatus.n_channels = Math.max(...(controllerSetups ?? []).map((e: ControllerSetup) => e.startCh + e.nCh));
-    for (let i = 0; i < (controllerReport?.length ?? 0); ++i) {
+    cstatus.n_channels = Math.max(...(controllerStates ?? []).map((e: ControllerState) => e.setup.startCh + e.setup.nCh));
+    for (const c of controllerStates ?? []) {
         cstatus.controllers?.push({
-            name: controllerRecs?.[i]?.name,
-            description: controllerRecs?.[i]?.description,
-            type: controllerRecs?.[i]?.type,
-            proto: controllerRecs?.[i]?.protocol,
+            name: c.setup.name,
+            description: c.xlRecord?.description,
+            type: c.xlRecord?.type,
+            proto: c.setup.proto,
             protoDetails: '',
-            model: `${controllerRecs?.[i]?.vendor} ${controllerRecs?.[i]?.model} ${controllerRecs?.[i]?.variant}`,
-            address: controllerRecs?.[i]?.address,
-            state: controllerRecs?.[i]?.activeState,
-            status: controllerReport?.[i]?.status,
-            notices: [],
-            errors: controllerReport?.[i]?.error ? [controllerReport![i]!.error!] : [],
+            model: `${c.xlRecord?.vendor} ${c.xlRecord?.model} ${c.xlRecord?.variant}`,
+            address: c.setup.address,
+            state: c.xlRecord?.activeState,
+            status:  c.setup.usable ? c.report?.status : 'unusable',
+            notices: [c.setup.summary],
+            errors: c.report?.error ? [c.report!.error!] : [],
             connectivity: '<unknown>',
             reported_time: Date.now(),
         });
@@ -313,8 +312,11 @@ const playbackStats: PlaybackStatistics = {
     missedFrames: 0,
     missedHeaders: 0,
     skippedFrames: 0,
+    framesSkippedDueToManyOutstandingFrames: 0,
     sentAudioChunks: 0,
     skippedAudioChunks: 0,
+    cframesSkippedDueToDirective: 0,
+    cframesSkippedDueToIncompletePrior: 0,
     lastError: undefined as string | undefined,
 
     measurementPeriod: 0,
@@ -362,9 +364,7 @@ let curSequences: SequenceRecord[] | undefined = undefined;
 let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
 let modelRecs: ModelRec[] | undefined = undefined;
-let controllerReport: OpenControllerReport[] | undefined = undefined;
-let controllerSetups: ControllerSetup[] | undefined = undefined;
-let controllerRecs: ControllerRec[] | undefined = undefined;
+let controllerStates: ControllerState[] | undefined = undefined;
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -410,30 +410,23 @@ async function processQueue() {
     sender.emitWarning = emitWarning;
 
     try {
-        const {
-            sendJob,
-            report,
-            controllerSetups: csetups,
-            controllers,
-            models,
-        } = await openControllersForDataSend(showFolder!);
+        const { controllers, models } =    await readControllersFromXlights(showFolder!);
+        const sendJob = await openControllersForDataSend(controllers);
         sender.job = sendJob;
         modelRecs = models;
-        controllerRecs = controllers;
-        controllerSetups = csetups;
-        controllerReport = report;
-        for (let i = 0; i < controllers.length; ++i) {
-            const xc = controllers[i];
-            const c = controllerSetups[i];
-            const r = report[i];
+        controllerStates = controllers;
+        for (const c of controllers) {
+            const xc = c.xlRecord;
+            const cs = c.setup;
+            const r = c.report;
             emitInfo(
-                `Controller: ${xc.name} ${xc.address} ${xc.activeState} ${xc.type} ${xc.universeNumbers} ${xc.universeSizes} ${xc?.keepChannelNumbers}`,
+                `Controller: ${xc?.name} ${xc?.address} ${xc?.activeState} ${xc?.type} ${xc?.universeNumbers} ${xc?.universeSizes} ${xc?.keepChannelNumbers}`,
             );
-            emitInfo(`Setup: ${c?.name} - ${c?.address} - ${c?.proto} - ${c?.nCh}@${c?.startCh}`);
+            emitInfo(`Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}; ${c.sender?.minFrameTime()} ms frame time`);
             emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
             emitInfo('');
         }
-        const nChannels = Math.max(...(controllerSetups ?? []).map((e: ControllerSetup) => e.startCh + e.nCh));
+        const nChannels = Math.max(...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
     } catch (e) {
@@ -818,7 +811,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                await sender.sendBlackFrame({});
+                await sender.sendBlackFrame({targetFramePN});
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -827,7 +820,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 if (!isPaused) {
-                    await sender.sendBlackFrame({});
+                    await sender.sendBlackFrame({targetFramePN});
                 }
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);

@@ -1,5 +1,5 @@
-import { SendBatch, UdpClient } from "./UDP";
-import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
+import { UdpClient, UDPSender } from "./UDP";
+import { SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
 import { toDataView } from "../../util/Utils";
 
 export const E131_PORT_DEFAULT = 5568;
@@ -139,16 +139,14 @@ function buildE131SyncPacket(
     syncData.setUint16(45, syncUniverse, false);
 }
 
-export class E131Sender implements Sender
+export class E131Sender extends UDPSender
 {
-    address: string = "";
     startUniverse: number = 0; // Unclear how to do refragmentation on this...
     syncUniverse: number = 0;
     channelsPerPacket: number = 510;
     pushAtEnd: boolean = true;
     useTimecodes: boolean = false;
 
-    client?: UdpClient;
     headers: Buffer[] = [];
     syncPacket = Buffer.alloc(E131_SYNCPACKET_LEN);
     sendBufSize?: number = undefined;
@@ -163,23 +161,12 @@ export class E131Sender implements Sender
         }
     }
 
-    suspend(): void {this.client?.suspend();}
-    resume(): void {this.client?.resume();}
-
     curPacketNum = 0;
     startFrame(): void {
         this.curPacketNum = 0;
     }
     endFrame(): void {
         // This would be a time to push at end?
-    }
-
-    startBatch(): void {
-        if (this.client) this.client.startSendBatch();
-    }
-
-    endBatch(): SendBatch | undefined {
-        if (this.client) return this.client.endSendBatch();
     }
 
     sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {

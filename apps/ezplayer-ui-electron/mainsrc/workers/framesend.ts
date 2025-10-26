@@ -62,7 +62,7 @@ export class FrameSender
 {
     job: SendJob | undefined = undefined;
     state: SendJobState = new SendJobState();
-    prevFrameRef: FrameReference | undefined = undefined;
+    outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
     blackFrame: Uint8Array | undefined = undefined;
@@ -70,14 +70,15 @@ export class FrameSender
     emitError?: (err: Error) => void;
 
     async sendBlackFrame(args: {
+        targetFramePN: number,
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
     }) {
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
-        this.state.initialize(this.job);
-        await this.doSendFrame(performance.now(), args);
+        this.state.initialize(args.targetFramePN, this.job);
+        await this.doSendFrame(performance.now(), {...args, frame: undefined});
     }
 
     async sendNextFrameAt(
@@ -104,7 +105,7 @@ export class FrameSender
                 // Send black
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({});
+                if (this.blackFrame) this.sendBlackFrame({targetFramePN: preSleepPN});
                 return args.targetFramePN;
             }
 
@@ -129,16 +130,23 @@ export class FrameSender
                 args.playbackStats.worstLag = Math.max(args.playbackStats.worstLag, nowTime - args.targetFramePN);
             }
 
-            this.releasePrevFrame();
-
             // Actually send the frame
             if (args.frame?.frame && this.state && this.job) {
                 this.job.frameNumber = args.targetFrameNum;
                 this.job.dataBuffers = [args.frame.frame];
-                this.state.initialize(this.job);
-                this.prevFrameRef = args.frame;
-                args.frame = undefined;
-                await this.doSendFrame(nowTime, args);
+                const res = this.state.initialize(args.targetFramePN, this.job);
+                args.playbackStats.cframesSkippedDueToDirective += res.skipsDueToReq;
+                args.playbackStats.cframesSkippedDueToIncompletePrior += res.skipsDueToSlowCtrl;
+                if (this.outstandingFrames.has(args.frame)) {
+                    this.emitWarning?.("WARNING: THIS FRAME HANDLE ALREADY BEING SENT");
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                }
+                else if (this.outstandingFrames.size > 10) {
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                }
+                else {
+                    await this.doSendFrame(nowTime, args);
+                }
             }
             return args.targetFramePN += args.frameInterval;
         }
@@ -153,8 +161,14 @@ export class FrameSender
     private async doSendFrame(nowTime: number, args: {
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
+        frame: FrameReference | undefined,
     }) {
         try {
+            const frameref = args.frame;
+            if (frameref) {
+                this.outstandingFrames.add(frameref);
+                args.frame = undefined;
+            }
             startFrame(this.state);
             startBatch(this.state);
             await sendFull(this.state, busySleep);
@@ -164,9 +178,16 @@ export class FrameSender
             Promise.allSettled(end.map((s) => s.promise)).then(() => {
                 for (const sb of end) {
                     if (sb.nECBs > 0) {
-                        this.emitWarning?.(`Suspending IP ${sb.sender.address}`);
-                        sb.sender.suspend();
+                        //this.emitWarning?.(`Suspending IP ${sb.sender.address}`);
+                        //sb.sender.suspend();
                     }
+                }
+                if (frameref) {
+                    if (!this.outstandingFrames.has(frameref)) {
+                        this.emitWarning?.("FRAME REFERENCE GOT REMOVED ALREADY");
+                    }
+                    frameref.release();
+                    this.outstandingFrames.delete(frameref);
                 }
             });
             if (args.playbackStatsAgg) {
@@ -189,7 +210,7 @@ export class FrameSender
         if (this.prevSendBatch) {
             for (const s of this.prevSendBatch) {
                 if (!s.isComplete()) {
-                    this.emitWarning?.(`Sender for ${s.sender.address} missed the deadline`);
+                    //this.emitWarning?.(`Sender for ${s.sender.address} missed the deadline`);
                 }
                 if (s.err) {
                     this.emitWarning?.(`Send error for ${s.sender.address}: ${s.err}`);
@@ -197,15 +218,12 @@ export class FrameSender
             }
             this.prevSendBatch = undefined;
         }
-
-        if (this.prevFrameRef) {
-            this.prevFrameRef.release();
-            this.prevFrameRef = undefined;
-        }
     }
 
     close() {
-        this.prevFrameRef?.release();
-        this.prevFrameRef = undefined;
+        for (const fr of this.outstandingFrames) {
+            fr.release();
+        }
+        this.outstandingFrames.clear();
     }
 }

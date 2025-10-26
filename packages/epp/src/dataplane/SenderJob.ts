@@ -1,7 +1,14 @@
+import { OpenControllerReport } from "../controllers/controllertypes";
+import { ControllerRec } from "../xlcompat/XLXmlUtil";
+import { ControllerSetup } from '../controllers/controllertypes';
 import { SendBatch } from "./protocols/UDP";
 import { SchedulerHeapItem, SchedulerMinHeap } from "./SchedulerHeap";
 
 export interface Sender {
+    controllerSetup?: ControllerSetup;
+    controllerReport?: OpenControllerReport;
+    controllerRecord?: ControllerRec;
+
     startFrame() : void;
     endFrame() : void;
     startBatch() : void;
@@ -10,6 +17,8 @@ export interface Sender {
     sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
     suspend() : void,
     resume() : void,
+    minFrameTime() : number;
+    isCurrentlySending() : boolean;
 }
 
 // What's in here?  The description of the job, containing:
@@ -48,6 +57,9 @@ export class SendJobSenderState implements SchedulerHeapItem {
 
     curChNum: number = 0;
 
+    skippingThisFrame: boolean = false;
+    lastSendTime: number = 0;
+
     curDDPSeqNum: number = 1; // E131 uses low bits.
     getDDPSeqNum() {return this.curDDPSeqNum;}
     nextDDPSeqNum() {const rv = this.curDDPSeqNum; ++this.curDDPSeqNum; if (this.curDDPSeqNum > 15) this.curDDPSeqNum = 1; return rv;}
@@ -77,7 +89,10 @@ export class SendJobState {
     job?: SendJob;
     sendHeap: SchedulerMinHeap<SendJobSenderState> = new SchedulerMinHeap();
 
-    initialize(job: SendJob) {
+    initialize(sendTime: number, job: SendJob) {
+        let skipsDueToReq = 0;
+        let skipsDueToSlowCtrl = 0;
+
         this.job = job;
         while (this.states.length < job.senders.length) {
             const s = new SendJobSenderState();
@@ -85,6 +100,23 @@ export class SendJobState {
             this.states.push(s);
             this.sendHeap.insert(s);
         }
-        for (const s of this.states) s.reset();
+        let i = 0;
+        for (const s of this.states) {
+            s.reset();
+            if (sendTime < s.lastSendTime + (job.senders[i].sender?.minFrameTime() ?? 0)) {
+                s.skippingThisFrame = true;
+                ++skipsDueToReq;
+            }
+            else if (job.senders[i].sender?.isCurrentlySending()){
+                s.skippingThisFrame = true;
+                ++skipsDueToSlowCtrl;
+            }
+            else {
+                s.skippingThisFrame = false;
+                s.lastSendTime = sendTime;
+            }
+            ++i;
+        }
+        return {skipsDueToReq, skipsDueToSlowCtrl};
     }
 }

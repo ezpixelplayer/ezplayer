@@ -1,5 +1,5 @@
 // parent.ts
-import { Worker } from 'worker_threads';
+import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import { type DecompZStd } from '@ezplayer/epp';
 
