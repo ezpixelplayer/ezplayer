@@ -1,5 +1,5 @@
 // affinity/addon.cc
-#include <napi.h>
+#include "napi.h"
 #include <vector>
 
 #if defined(_WIN32)
