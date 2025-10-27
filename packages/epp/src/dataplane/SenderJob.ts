@@ -119,7 +119,9 @@ export class SendJobState {
                 }
                 else {
                     // This allows interop of 40FPS and 100FPS, say, by bringing it up 25ms instead of 30
-                    s.lastSendTime += frameTime;
+                    //  But some things can't deal with it.
+                    // s.lastSendTime += frameTime;
+                    s.lastSendTime = sendTime;
                 }
             }
             ++i;
