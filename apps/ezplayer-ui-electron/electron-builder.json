@@ -5,7 +5,11 @@
         "output": "release",
         "buildResources": "assets"
     },
-    "files": ["dist/**/*", "package.json"],
+    "files": [
+        "dist/**/*",
+        "package.json",
+        "build/Release/**"
+    ],
     "win": {
         "target": ["nsis"]
     },

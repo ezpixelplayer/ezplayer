@@ -2,6 +2,11 @@
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import { type DecompZStd } from '@ezplayer/epp';
+import { fileURLToPath } from 'node:url';
+
+// Polyfill for `__dirname` in ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 type WorkerOk = {
     id: number;
@@ -19,7 +24,12 @@ type WorkerErr = {
 
 let nextId = 1;
 
-const worker = new Worker(path.join(__dirname, './zstdworker.js'), { workerData: 'module' });
+const nworkers = 2;
+const workers: Worker[] = [];
+for (let i=0; i<nworkers; ++i) {
+    workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: {name: 'zstddecode'} }));
+}
+const inuse: Worker[] = [];
 
 export const decompressZStdWithWorker: DecompZStd = (
     decomp: ArrayBuffer,
@@ -29,9 +39,12 @@ export const decompressZStdWithWorker: DecompZStd = (
     expLen: number,
 ) => {
     const id = nextId++;
+    const worker = workers.pop();
+    if (!worker) throw new Error("Too many outstanding requests");
 
     return new Promise((resolve, reject) => {
         const onMessage = (msg: WorkerOk | WorkerErr) => {
+            workers.push(worker);
             if (msg.id !== id) return;
             worker.off('message', onMessage);
 
