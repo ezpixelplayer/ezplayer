@@ -103,7 +103,8 @@ export class SendJobState {
         let i = 0;
         for (const s of this.states) {
             s.reset();
-            if (sendTime < s.lastSendTime + (job.senders[i].sender?.minFrameTime() ?? 0)) {
+            const frameTime = job.senders[i].sender?.minFrameTime() ?? 0;
+            if (sendTime < s.lastSendTime + frameTime) {
                 s.skippingThisFrame = true;
                 ++skipsDueToReq;
             }
@@ -113,7 +114,13 @@ export class SendJobState {
             }
             else {
                 s.skippingThisFrame = false;
-                s.lastSendTime = sendTime;
+                if ((sendTime - s.lastSendTime) >= frameTime * 2) {
+                    s.lastSendTime = sendTime;
+                }
+                else {
+                    // This allows interop of 40FPS and 100FPS, say, by bringing it up 25ms instead of 30
+                    s.lastSendTime += frameTime;
+                }
             }
             ++i;
         }
