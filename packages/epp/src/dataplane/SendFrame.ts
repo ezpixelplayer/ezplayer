@@ -5,7 +5,7 @@ export function startFrame(state?: SendJobState) {
     if (!state?.job) return -1;
     for (let i = 0; i < state.states.length; ++i) {
         const sender = state.job.senders[i];
-        if (!sender || !sender.sender) continue;
+        if (!sender || !sender.sender || state.states[i].skippingThisFrame) continue;
         sender.sender.startFrame();
     }
 }
@@ -14,7 +14,7 @@ export function endFrame(state?: SendJobState) {
     if (!state?.job) return -1;
     for (let i = 0; i < state.states.length; ++i) {
         const sender = state.job.senders[i];
-        if (!sender || !sender.sender) continue;
+        if (!sender || !sender.sender || state.states[i].skippingThisFrame) continue;
         sender.sender.endFrame();
     }
 }
@@ -23,7 +23,7 @@ export function startBatch(state?: SendJobState) {
     if (!state?.job) return -1;
     for (let i = 0; i < state.states.length; ++i) {
         const sender = state.job.senders[i];
-        if (!sender || !sender.sender) continue;
+        if (!sender || !sender.sender || state.states[i].skippingThisFrame) continue;
         sender.sender.startBatch();
     }
 }
@@ -33,7 +33,7 @@ export function endBatch(state?: SendJobState): SendBatch [] {
     const b: SendBatch[] = [];
     for (let i = 0; i < state.states.length; ++i) {
         const sender = state.job.senders[i];
-        if (!sender || !sender.sender) continue;
+        if (!sender || !sender.sender || state.states[i].skippingThisFrame) continue;
         const batch = sender.sender.endBatch();
         if (batch) b.push(batch);
     }
@@ -45,7 +45,7 @@ export function sendPartial(state?: SendJobState): number {
     // TODO EZP the whole scheduling thing
     for (let i = 0; i < state.states.length; ++i) {
         const sender = state.job.senders[i];
-        if (!sender || !sender.sender) continue;
+        if (!sender || !sender.sender || state.states[i].skippingThisFrame) continue;
         sender.sender.sendPortion(state.job, sender, state.states[i]);
     }
     return -1; // Done!

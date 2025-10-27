@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu } from 'electron';
-import { Worker, workerData } from 'worker_threads';
+import { Worker, workerData } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -8,6 +8,12 @@ import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
 import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
+import { ezpVersions } from './versions.js';
+import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
+import { setProcessAffinity } from './mainsrc/affinity/affinity.js';
+
+hirezBegin();
+setProcessAffinity([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
 
 // catch as early as possible
 process.on('uncaughtException', (err) => {
@@ -107,6 +113,7 @@ let dateRateTimeout: NodeJS.Timeout | undefined = undefined;
 let playWorker: Worker | null = null;
 
 app.whenReady().then(async () => {
+    console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
     // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
     const showFolderSpec = await ensureExclusiveFolder();
     if (!showFolderSpec) {

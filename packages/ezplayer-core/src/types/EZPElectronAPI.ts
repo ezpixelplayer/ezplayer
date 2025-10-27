@@ -9,6 +9,7 @@ import type {
     PlayerPStatusContent,
     PlayerCStatusContent,
     PlayerNStatusContent,
+    EZPlayerVersions,
 } from './DataTypes';
 
 export interface AudioDevice {
@@ -70,6 +71,9 @@ export interface EZPElectronAPI {
     // Set up / remove callbacks
     connect: () => Promise<void>;
     disconnect: () => Promise<void>;
+
+    // Get versions
+    getVersions: () => Promise<EZPlayerVersions>;
 
     // Send a command
     immediatePlayCommand: (cmd: ImmediatePlayCommand) => Promise<void>;

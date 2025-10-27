@@ -1,0 +1,54 @@
+name: Build Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - production
+      - develop
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Use Python 3.11 only on macOS to satisfy node-gyp/gyp's distutils import
+      - name: Set up Python (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Echo Python and set for node-gyp (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          which python
+          python --version
+          echo "PYTHON=$(which python)" >> $GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up CI
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build project
+        run: pnpm run build

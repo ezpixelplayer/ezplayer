@@ -63,6 +63,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
     const [selectedSong, setSelectedSong] = useState<SequenceRecord | undefined>(undefined);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [imageUrl, setImageUrl] = useState<string>('');
     const [formData, setFormData] = useState({
         title: '',
         artist: '',
@@ -88,6 +89,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
             setSelectedSong(selectedSong);
             setSelectedTags(selectedSong?.settings?.tags || []);
+            setImageUrl(selectedSong?.work?.artwork || '');
             setFormData({
                 title: selectedSong?.work?.title || '',
                 artist: selectedSong?.work?.artist || '',
@@ -172,6 +174,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         ...prevSong.work,
                         title: formData.title.trim(),
                         artist: formData.artist.trim(),
+                        artwork: imageUrl || undefined, // Update image URL
                     },
                     settings: {
                         lead_time: parseFloat(formData.lead_time),
@@ -216,6 +219,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             tags: originalSong?.settings?.tags || [],
         });
         setSelectedTags(originalSong?.settings?.tags || []);
+        setImageUrl(originalSong?.work?.artwork || '');
         setErrors({ title: false, artist: false, lead_time: false, trail_time: false, volume_adj: false, tags: false });
         setNewFiles({});
     };
@@ -333,6 +337,22 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                             </Box>
                         </Grid>
                     )}
+
+                    {/* Image URL (available in both Electron and Web) */}
+                    <Grid item xs={12}>
+                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+                            Image URL
+                        </Typography>
+                        <TextField
+                            label="Image URL"
+                            name="imageUrl"
+                            value={imageUrl}
+                            onChange={(e) => setImageUrl(e.target.value)}
+                            fullWidth
+                            placeholder="https://example.com/image.jpg"
+                            helperText="Enter an image URL that will be used as fallback or primary image source"
+                        />
+                    </Grid>
 
                     {/* Song Settings */}
                     <Grid item xs={12}>

@@ -1,4 +1,6 @@
 import dgram from "dgram";
+import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
+import { ControllerState } from "../../xlcompat/XLControllerSetup";
 
 ////
 // UDP is interesting, errors coming back can slow down processing
@@ -24,6 +26,7 @@ export type SendBatch =  {
     reject: (err: Error)=>void, // Not used
     cb?: ((err: Error | null, bytes: number)=>void),
     isComplete: ()=>boolean,
+    callOnComplete?: ()=>void,
   };
 
 export class UdpClient {
@@ -43,6 +46,8 @@ export class UdpClient {
   nSkipped: number = 0;
   nErrors: number = 0;
   lastError: string| undefined = undefined;
+
+  batchesInFlight: number = 0;
 
   resetStats() {
     this.nSent = 0;
@@ -162,16 +167,26 @@ export class UdpClient {
       else {
         ++sendBatch.nSCBs;
       }
-      if (sendBatch.batchClosed && sendBatch.nSCBs + sendBatch.nECBs === sendBatch.nSent) sendBatch.resolve();
+      if (sendBatch.batchClosed && sendBatch.nSCBs + sendBatch.nECBs === sendBatch.nSent) {
+        --this.batchesInFlight;
+        sendBatch.callOnComplete?.();
+        sendBatch.resolve();
+      }
     }
     sendBatch.isComplete = ()=> sendBatch.batchClosed && sendBatch.nSCBs + sendBatch.nECBs === sendBatch.nSent;
     this.sendBatch = sendBatch;
   }
-  endSendBatch() {
+  endSendBatch(callOnComplete?: ()=>void) {
+    ++this.batchesInFlight;
     const sb = this.sendBatch;
     if (!sb) return sb;
     sb.batchClosed = true;
-    if (sb.isComplete()) sb.resolve();
+    sb.callOnComplete = callOnComplete;
+    if (sb.isComplete()) {
+      --this.batchesInFlight;
+      sb.resolve();
+      sb.callOnComplete?.();
+    }
     this.sendBatch = undefined;
     return sb;
   }
@@ -212,7 +227,7 @@ export class UdpClient {
     });
   }
 
-/**
+  /**
    * Closes the socket gracefully.
    */
   private close(): Promise<void> {
@@ -229,4 +244,42 @@ export class UdpClient {
       }
     });
   }
+}
+
+export abstract class UDPSender implements Sender
+{
+  controller?: ControllerState = undefined;
+
+  address: string = "";
+  minTimeBetweenFrames = 0;
+
+  minFrameTime(): number {
+    return this.minTimeBetweenFrames;
+  }
+  isCurrentlySending(): boolean {
+    if (!this.client) return false;
+    return this.client.batchesInFlight > 0;
+  }
+
+  client?: UdpClient;
+  headers: Uint8Array[] = []; // Max header size
+  pushHeader: Uint8Array = new Uint8Array(10);
+
+  curPacketNum = 0;
+  abstract startFrame() : void;
+  abstract endFrame(): void;
+  abstract connect(): Promise<void>;
+  suspend(): void {this.client?.suspend();}
+  resume(): void {this.client?.resume();}
+
+  startBatch(): void {
+    if (this.client) this.client.startSendBatch();
+  }
+
+  endBatch(): SendBatch | undefined {
+    if (this.client) return this.client.endSendBatch();
+  }
+
+  abstract sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;
+  abstract sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
 }

@@ -1,5 +1,5 @@
 import dgram from "dgram";
-import { SendBatch, UdpClient } from "./UDP";
+import { SendBatch, UdpClient, UDPSender } from "./UDP";
 import { Sender, SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
 import { toDataView } from "../../util/Utils";
 
@@ -130,16 +130,13 @@ export async function sendDdpPacketUDPv4(
   });
 }
 
-export class DDPSender implements Sender
+export class DDPSender extends UDPSender
 {
-  address: string = "";
   startChNum: number = 0;
   pushAtEnd: boolean = true;
   useTimecodes: boolean = false;
   channelsPerPacket: number = DDP_MAX_PAYLOAD;
   sendBufSize?: number = undefined;
-
-  client?: UdpClient;
   headers: Uint8Array[] = []; // Max header size
   pushHeader: Uint8Array = new Uint8Array(10);
 
@@ -159,17 +156,6 @@ export class DDPSender implements Sender
     if (!this.client.isConnected()) {
       await this.client.connect();
     }
-  }
-
-  suspend(): void {this.client?.suspend();}
-  resume(): void {this.client?.resume();}
-
-  startBatch(): void {
-    if (this.client) this.client.startSendBatch();
-  }
-
-  endBatch(): SendBatch | undefined {
-    if (this.client) return this.client.endSendBatch();
   }
 
   sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {

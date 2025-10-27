@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     openExternal: (url: string) => ipcRenderer.invoke('open-external-url', url),
 
+    getVersions: () => ipcRenderer.invoke('getVersions'),
+
     writeFile: async (filename: string, content: string): Promise<string> => {
         return ipcRenderer.invoke('write-file', filename, content);
     },

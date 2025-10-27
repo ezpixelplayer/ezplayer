@@ -1,7 +1,7 @@
 {
     "name": "ezplayer-ui-electron",
     "private": true,
-    "version": "0.0.19-prealpha",
+    "version": "0.0.25-prealpha",
     "main": "dist/main.js",
     "type": "module",
     "scripts": {
@@ -9,7 +9,7 @@
         "dev": "concurrently \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": "pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --config electron-builder.json",
+        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --config electron-builder.json",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
         "build:main": "node scripts/build-main.mjs",
@@ -19,7 +19,7 @@
         "prod": "sh -c './release/win-unpacked/EZPlayer.exe'",
         "prod:nodetrace": "sh -c 'export NODE_OPTIONS=\"--trace-opt --trace-deopt --trace-turbo-inlining\" && .\\release\\win-unpacked\\EZPlayer.exe --enable-logging --v=1'",
         "prod:log": "sh -c './release/win-unpacked/EZPlayer.exe --enable-logging --v=1'",
-        "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=/c/Users/Chuck/Documents/xlightsShows/Baldrick/'"
+        "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
     "devDependencies": {
         "@types/proper-lockfile": "^4.1.4",
@@ -32,6 +32,7 @@
         "electron-builder": "^25.1.8",
         "electron-builder-squirrel-windows": "^25.1.8",
         "esbuild": "^0.25.4",
+        "node-gyp": "^10.3.1",
         "typescript": "^5.7.3",
         "vite": "^5.4.14",
         "vite-plugin-static-copy": "^3.0.0"
@@ -49,11 +50,13 @@
         "@mui/x-date-pickers": "5.0.0",
         "@reduxjs/toolkit": "^2.5.0",
         "axios": "^1.7.9",
+        "bindings": "^1.5.0",
         "crc-32": "^1.2.2",
         "electron-store": "^10.1.0",
         "i18next": "^23.16.8",
         "mpg123-decoder": "^1.0.2",
         "net-ping": "^1.2.4",
+        "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
         "ping": "^1.0.0",
         "proper-lockfile": "^4.1.2",
