@@ -1,13 +1,3 @@
-name: Build Check
-
-on:
-  pull_request:
-    branches:
-      - main
-      - master
-      - production
-      - develop
-
 jobs:
   build:
     strategy:
@@ -20,6 +10,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Use Python 3.11 only on macOS to satisfy node-gyp/gyp's distutils import
+      - name: Set up Python (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Echo Python and set for node-gyp (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          which python
+          python --version
+          echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
