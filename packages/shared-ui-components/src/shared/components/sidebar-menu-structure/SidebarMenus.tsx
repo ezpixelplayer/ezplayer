@@ -37,7 +37,11 @@ export const SidebarMenus = ({ menuname, option }: sidebarmenuprops) => {
                                         <Button
                                             disableRipple
                                             component={RouterLink}
-                                            onClick={closeSidebar}
+                                            // onClick={closeSidebar}
+                                            onClick={(e) => {
+                                                e.currentTarget.blur();
+                                                closeSidebar();
+                                            }}
                                             to={`${item.pathname}${item.subpathname}`}
                                             startIcon={item.icon}
                                             tabIndex={sidebarToggle ? 0 : -1}
