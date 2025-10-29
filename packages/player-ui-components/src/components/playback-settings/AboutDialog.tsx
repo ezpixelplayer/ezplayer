@@ -22,6 +22,20 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
         onClose();
     };
 
+    const formattedVersion = React.useMemo(() => {
+        if (!playerVersion) return undefined;
+        const ordered: EZPlayerVersions = {
+            name: playerVersion.name,
+            version: playerVersion.version,
+            arch: playerVersion.arch,
+            builtAtIso: playerVersion.builtAtIso,
+            git: playerVersion.git,
+            packages: playerVersion.packages,
+            processes: playerVersion.processes,
+        };
+        return JSON.stringify(ordered, null, 2);
+    }, [playerVersion]);
+
     return (
         <SimpleDialog
             open={open}
@@ -153,6 +167,26 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                 Player Version:
                             </Typography>
                             <Typography variant="body2">{playerVersion ? `${playerVersion.version} / ${playerVersion.packages['Electron App']} / ${playerVersion?.git['branch']}` : 'N/A'}</Typography>
+                        </Box>
+                        <Box sx={{ mt: 1 }}>
+                            <Typography variant="caption" color="text.secondary">
+                                Version Details (EZPlayerVersions)
+                            </Typography>
+                            <Box
+                                sx={{
+                                    mt: 0.5,
+                                    p: 1,
+                                    bgcolor: 'action.hover',
+                                    borderRadius: 1,
+                                    maxHeight: 180,
+                                    overflow: 'auto',
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.75rem',
+                                    whiteSpace: 'pre',
+                                }}
+                            >
+                                {formattedVersion ?? 'N/A'}
+                            </Box>
                         </Box>
                     </Box>
 
