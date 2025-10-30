@@ -24,6 +24,13 @@ import { AppDispatch, RootState } from '../../store/Store';
 import { ezrgbThemeOptions, useThemeContext } from '../../theme/ThemeBase';
 import { AboutDialog } from './AboutDialog';
 import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { LicenseDialog, LicenseEntry } from './LicenseDialog';
+import { useMemo } from 'react';
+import ElectronPkg from "../../../../../apps/ezplayer-ui-electron/package.json"
+import EppPkg from "../../../../epp/package.json"
+import EzplayerCorePkg from "../../../../ezplayer-core/package.json"
+import PlayerUiPkg from "../../../../player-ui-components/package.json"
+import SharedUiPkg from "../../../../shared-ui-components/package.json"
 
 interface PlaybackSettingsDrawerProps {
     title: string;
@@ -391,6 +398,29 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         endTime: '23:59',
         volumeLevel: 100,
     });
+
+    // License dialog state
+    const [licenseDialogOpen, setLicenseDialogOpen] = useState<boolean>(false);
+
+    const licenseEntries: LicenseEntry[] = useMemo(() => {
+        // Combine and deduplicate all dependencies
+        const allDependencies = Array.from(
+            new Set([
+                ...Object.keys(ElectronPkg.dependencies || {}),
+                ...Object.keys(EppPkg.dependencies || {}),
+                ...Object.keys(EzplayerCorePkg.dependencies || {}),
+                ...Object.keys(PlayerUiPkg.dependencies || {}),
+                ...Object.keys(SharedUiPkg.dependencies || {}),
+            ])
+        );
+
+        // Map each dependency to a license entry
+        return allDependencies.map(dep => ({
+            license: 'Unknown', // (you can later replace this with real license info)
+            packages: [dep],
+            text: 'License info will be displayed here.',
+        }));
+    }, []);
 
     const dispatch = useDispatch<AppDispatch>();
 
@@ -1369,8 +1399,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Card>
                     )}
 
-                    {/* About Button */}
-                    <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                    {/* About & License Buttons */}
+                    <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                         <Button
                             variant="outlined"
                             startIcon={<Info />}
@@ -1383,6 +1413,18 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             }}
                         >
                             About EZPlayer
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            onClick={() => setLicenseDialogOpen(true)}
+                            size="small"
+                            sx={{
+                                textTransform: 'none',
+                                minWidth: 'auto',
+                                px: 3
+                            }}
+                        >
+                            License
                         </Button>
                     </Box>
                 </Box>
@@ -1457,6 +1499,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 onClose={() => setAboutDialogOpen(false)}
                 playerVersion={versionInfo.playerVersion}
                 cloudVersion={versionInfo.cloudVersion}
+            />
+
+            {/* License Dialog */}
+            <LicenseDialog
+                open={licenseDialogOpen}
+                onClose={() => setLicenseDialogOpen(false)}
+                licenses={licenseEntries}
             />
         </Box>
     );
