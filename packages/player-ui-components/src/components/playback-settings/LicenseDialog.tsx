@@ -3,7 +3,6 @@ import { Box, Button, Typography, Divider, List, ListItem, ListItemText, Collaps
 import { SimpleDialog } from '@ezplayer/shared-ui-components';
 
 export interface LicenseEntry {
-    license: string;
     packages: string[];
     text: string;
 }
@@ -17,8 +16,11 @@ export interface LicenseDialogProps {
 export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, licenses }) => {
     const [expanded, setExpanded] = useState<string | null>(null);
 
-    const handleReproduceClick = (license: string) => {
-        setExpanded(license === expanded ? null : license);
+    // Use package name(s) as unique identifier instead of license name
+    const getUniqueKey = (packages: string[]) => packages.join(',');
+
+    const handleReproduceClick = (uniqueKey: string) => {
+        setExpanded(uniqueKey === expanded ? null : uniqueKey);
     };
 
     return (
@@ -36,26 +38,41 @@ export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, lic
                         This project uses the following open-source licenses:
                     </Typography>
                     <List dense>
-                        {licenses.map((lic) => (
-                            <React.Fragment key={lic.license}>
-                                <ListItem sx={{ alignItems: 'flex-start' }}>
-                                    <ListItemText
-                                        primary={<Typography fontWeight={600}>{lic.license}</Typography>}
-                                        secondary={<Typography variant="caption">Packages: {lic.packages.join(', ')}</Typography>}
-                                    />
-                                    <Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => handleReproduceClick(lic.license)}>
-                                        Reproduce License
-                                    </Button>
-                                </ListItem>
-                                <Collapse in={expanded === lic.license} timeout="auto" unmountOnExit>
-                                    <Box sx={{ ml: 3, mb: 2, p: 1, borderRadius: 1, bgcolor: 'action.hover', fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'pre-line' }}>
-                                        <Typography variant="subtitle2" sx={{ mb: 1 }}>License Text ({lic.license}):</Typography>
-                                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'pre-line' }}>{lic.text}</Typography>
-                                    </Box>
-                                </Collapse>
-                                <Divider />
-                            </React.Fragment>
-                        ))}
+                        {licenses.map((lic) => {
+                            const uniqueKey = getUniqueKey(lic.packages);
+                            return (
+                                <React.Fragment key={uniqueKey}>
+                                    <ListItem sx={{ alignItems: 'flex-start' }}>
+                                        <ListItemText
+                                            primary={<Typography fontWeight={600}>{lic.packages.join(', ')}</Typography>}
+                                        />
+                                        <Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => handleReproduceClick(uniqueKey)}>
+                                            Reproduce License
+                                        </Button>
+                                    </ListItem>
+                                    <Collapse in={expanded === uniqueKey} timeout="auto" unmountOnExit>
+                                        <Box sx={{ ml: 3, mb: 2, borderRadius: 1 }}>
+                                            <Typography variant="subtitle2" sx={{ mb: 1, p: 1, pb: 0 }}>License Text:</Typography>
+                                            <Box
+                                                sx={{
+                                                    p: 1,
+                                                    pt: 0.5,
+                                                    maxHeight: '400px',
+                                                    overflowY: 'auto',
+                                                    overflowX: 'hidden',
+                                                    fontFamily: 'monospace',
+                                                    fontSize: '0.8rem',
+                                                    whiteSpace: 'pre-line'
+                                                }}
+                                            >
+                                                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'pre-line', margin: 0 }}>{lic.text}</Typography>
+                                            </Box>
+                                        </Box>
+                                    </Collapse>
+                                    <Divider />
+                                </React.Fragment>
+                            );
+                        })}
                     </List>
                     <Box sx={{ mt: 2, textAlign: 'right' }}>
                         <Button variant="contained" sx={{ minWidth: 80 }} onClick={onClose}>Close</Button>

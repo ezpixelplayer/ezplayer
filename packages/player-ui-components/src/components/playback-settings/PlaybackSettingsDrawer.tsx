@@ -31,6 +31,7 @@ import EppPkg from "../../../../epp/package.json"
 import EzplayerCorePkg from "../../../../ezplayer-core/package.json"
 import PlayerUiPkg from "../../../../player-ui-components/package.json"
 import SharedUiPkg from "../../../../shared-ui-components/package.json"
+import Licenses from "../../constants/licenses.json"
 
 interface PlaybackSettingsDrawerProps {
     title: string;
@@ -416,9 +417,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
 
         // Map each dependency to a license entry
         return allDependencies.map(dep => ({
-            license: 'Unknown', // (you can later replace this with real license info)
             packages: [dep],
-            text: 'License info will be displayed here.',
+            text: Licenses.find(license => license.packages.includes(dep))?.text || 'Unknown',
         }));
     }, []);
 
