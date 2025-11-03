@@ -10,9 +10,17 @@ interface SidebarProviderProps {
 export const SidebarProvider: FC<SidebarProviderProps> = ({ children }) => {
     const [sidebarToggle, setSidebarToggle] = useState(false);
     const toggleSidebar = () => {
-        setSidebarToggle(!sidebarToggle);
+        setSidebarToggle((prev) => {
+            if (!prev) {
+                const activeElement = document.activeElement as HTMLElement | null;
+                activeElement?.blur?.();
+            }
+            return !prev;
+        });
     };
     const closeSidebar = () => {
+        const activeElement = document.activeElement as HTMLElement | null;
+        activeElement?.blur?.();
         setSidebarToggle(false);
     };
 
