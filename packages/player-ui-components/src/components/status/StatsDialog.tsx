@@ -184,6 +184,36 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                             </Card>
                         </Grid>
 
+                        {/* Worker Statistics */}
+                        <Grid item xs={12} md={6}>
+                            <Card>
+                                <CardContent>
+                                    <Typography
+                                        variant="h6"
+                                        fontWeight="bold"
+                                        color={theme.palette.primary.main}
+                                        gutterBottom
+                                    >
+                                        Worker Statistics
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Sequence Read:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.sequenceDecompress?.fileReadTime)}ms read; {formatValue(stats.sequenceDecompress?.decompressTime)}ms decompress
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Audio Read:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.audioDecode?.fileReadTime)}ms read; {formatValue(stats.audioDecode?.decodeTime)}ms decode
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+
                         {/* Error Information */}
                         {stats.lastError && (
                             <Grid item xs={12}>

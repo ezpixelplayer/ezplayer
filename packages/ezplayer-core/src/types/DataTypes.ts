@@ -210,6 +210,18 @@ export interface PlaybackStatistics {
     // Audio delivery
     sentAudioChunks: number;
     skippedAudioChunks: number;
+
+    // Audio Decode
+    audioDecode?: {
+        fileReadTime: number,
+        decodeTime: number,
+    }
+
+    // Sequence Decompress
+    sequenceDecompress?: {
+        fileReadTime: number,
+        decompressTime: number,
+    }
 }
 
 export interface EndUser {

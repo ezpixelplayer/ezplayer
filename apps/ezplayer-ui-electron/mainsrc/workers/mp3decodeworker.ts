@@ -36,6 +36,8 @@ export type DecodedAudioResp = {
     ok: boolean;
     error?: string;
     result?: MPEGDecodedAudio;
+    fileReadTime: number;
+    decodeTime: number;
 };
 
 parentPort.on('message', async (msg: DecodeReq) => {
@@ -47,6 +49,8 @@ parentPort.on('message', async (msg: DecodeReq) => {
         const fileLen = await getFileSize(filePath);
         const nodeBuf = Buffer.alloc(fileLen);
 
+        const startRead = performance.now();
+        //console.log(`Start thread read of ${filePath}`);
         const fh = await fsp.open(filePath, 'r');
         try {
             let offset = 0;
@@ -63,9 +67,13 @@ parentPort.on('message', async (msg: DecodeReq) => {
                 await fh.close();
             } catch {}
         }
+        const fileReadTime = performance.now() - startRead;
+        //console.log(`End read of ${filePath}; took ${fileReadTime}`);
 
         // Decode (mpg123-decoder expects a Uint8Array)
+        const decodeStart = performance.now();
         const decomp = decoder.decode(nodeBuf);
+        const decodeTime = performance.now() - decodeStart;
 
         if (decomp.errors?.length) {
             const e = decomp.errors[0];
@@ -78,14 +86,16 @@ parentPort.on('message', async (msg: DecodeReq) => {
             id,
             ok: true,
             result: decomp,
+            fileReadTime,
+            decodeTime,
         } satisfies DecodedAudioResp);
     } catch (err: any) {
         console.error(err);
         // Return mp3 buffer if we still own it so the main thread can reclaim
         try {
-            parentPort!.postMessage({ type: 'result', id, ok: false, error: String(err) } satisfies DecodedAudioResp);
+            parentPort!.postMessage({ type: 'result', id, ok: false, error: String(err), decodeTime: 0, fileReadTime: 0 } satisfies DecodedAudioResp);
         } catch {
-            parentPort!.postMessage({ type: 'result', id, ok: false, error: String(err) } satisfies DecodedAudioResp);
+            parentPort!.postMessage({ type: 'result', id, ok: false, error: String(err), decodeTime: 0, fileReadTime: 0 } satisfies DecodedAudioResp);
         }
     }
 });

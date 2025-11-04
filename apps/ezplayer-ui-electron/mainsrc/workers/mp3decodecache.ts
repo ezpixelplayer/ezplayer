@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ArrayBufferPool } from '@ezplayer/epp';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '@ezplayer/epp';
 
-import { MPEGDecodedAudio, MPEGDecoderWebWorker } from 'mpg123-decoder';
+import { MPEGDecodedAudio,  MPEGDecoderWebWorker } from 'mpg123-decoder';
 
 import { Worker } from 'node:worker_threads';
 import { DecodeReq, DecodedAudioResp } from './mp3decodeworker';
@@ -35,7 +35,7 @@ export class MP3PrefetchCache {
     constructor(arg: { readonly log: (msg: string) => void; now: number; mp3Space?: number }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
-        this.decoder = new MPEGDecoderWebWorker();
+        //this.decoder = new MPEGDecoderWebWorker();
         this.decodewc = new Mp3DecodeWorkerClient();
         this.mp3PrefetchCache = new PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>({
             /*
@@ -132,7 +132,7 @@ export class MP3PrefetchCache {
     now: number;
     readBufPool: ArrayBufferPool;
     mp3PrefetchCache: PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>;
-    decoder: MPEGDecoderWebWorker;
+    //decoder: MPEGDecoderWebWorker;
     decodewc: Mp3DecodeWorkerClient;
 
     getStats() {
@@ -145,6 +145,8 @@ export class MP3PrefetchCache {
             mp3Prefetch: this.mp3PrefetchCache.getStats(),
             readBufPool,
             totalDecompMem: totalReadMem,
+            fileReadTime: this.decodewc.fileReadTime,
+            decodeTime: this.decodewc.decodeTime,
         };
     }
     // TODO:
@@ -167,6 +169,9 @@ export class Mp3DecodeWorkerClient {
         }
     >();
 
+        fileReadTime: number = 0;
+        decodeTime: number = 0;
+
     constructor() {
         this.worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
             workerData: {
@@ -178,6 +183,9 @@ export class Mp3DecodeWorkerClient {
             if (msg.type !== 'result') return;
             const pending = this.inflight.get(msg.id);
             if (!pending) return;
+
+            this.fileReadTime += msg.fileReadTime;
+            this.decodeTime += msg.decodeTime;
 
             this.inflight.delete(msg.id);
 
