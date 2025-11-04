@@ -13,10 +13,14 @@ type SidebarProps = {
 };
 
 export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer }: SidebarProps) => {
-    const { sidebarToggle, toggleSidebar } = useContext(SidebarContext);
+    const { sidebarToggle, toggleSidebar, closeSidebar } = useContext(SidebarContext);
     const theme = useTheme();
     const isLg = useMediaQuery(theme.breakpoints.up('lg'));
-    const closeSidebar = () => toggleSidebar();
+    const handleClose = () => {
+        const activeElement = document.activeElement as HTMLElement | null;
+        activeElement?.blur?.();
+        closeSidebar();
+    };
     const classes = isLg ? 'large SidebarWrapper ' : 'small SidebarWrapper';
     const wrapperclass = theme.palette.mode === 'dark' ? 'sidebarwrapperDark' : 'sidebarwrapperLight';
     const finalclass = `${classes} ${wrapperclass}`;
@@ -50,23 +54,13 @@ export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer }: SidebarProps
                 className="sidebarDrawer"
                 anchor={theme.direction === 'rtl' ? 'right' : 'left'}
                 open={sidebarToggle}
-                onClose={closeSidebar}
+                onClose={handleClose}
                 variant="temporary"
                 elevation={9}
                 keepMounted={false}
-                disablePortal
-                disableEnforceFocus
                 disableRestoreFocus
-                hideBackdrop={!sidebarToggle}
-                ModalProps={{
-                    keepMounted: false,
-                    disableScrollLock: !sidebarToggle,
-                }}
-                PaperProps={{
-                    sx: {
-                        visibility: sidebarToggle ? 'visible' : 'hidden',
-                    },
-                }}
+
+
             >
                 <Box
                     className={
