@@ -110,7 +110,10 @@ export const PageHeader: FC<PageHeaderProps> = ({
                     {!isLg && (
                         <IconButton
                             color="primary"
-                            onClick={toggleSidebar}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSidebar();
+                            }}
                             sx={{
                                 flexShrink: 0,
                             }}
