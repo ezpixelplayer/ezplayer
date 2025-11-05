@@ -3,10 +3,8 @@ import * as path from 'path';
 import { ArrayBufferPool } from '@ezplayer/epp';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '@ezplayer/epp';
 
-import { MPEGDecodedAudio,  MPEGDecoderWebWorker } from 'mpg123-decoder';
-
 import { Worker } from 'node:worker_threads';
-import { DecodeReq, DecodedAudioResp } from './mp3decodeworker';
+import { DecodeReq, DecodedAudio, DecodedAudioResp } from './mp3decodeworker';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -23,7 +21,7 @@ export interface MP3FileKey {
 }
 
 interface MP3FileCacheVal {
-    decompAudio: MPEGDecodedAudio;
+    decompAudio: DecodedAudio;
 }
 
 export type MP3Reference = RefHandle<MP3FileCacheVal>;
@@ -94,7 +92,9 @@ export class MP3PrefetchCache {
             budgetLimit: arg.mp3Space ?? 800_000_000, // An hour of CD quality
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => {}, // Currently we have to GC the mp3 contents
+            onDispose: (_k, v) => {
+                this.decodewc.returnBuffer(v.decompAudio);
+            },
         });
     }
 
@@ -149,9 +149,6 @@ export class MP3PrefetchCache {
             decodeTime: this.decodewc.decodeTime,
         };
     }
-    // TODO:
-    //   Cache invalidation for updated .fseq files?
-    //   Error propagation
 }
 
 // Polyfill for `__dirname` in ES Modules
@@ -164,13 +161,13 @@ export class Mp3DecodeWorkerClient {
     private inflight = new Map<
         number,
         {
-            resolve: (v: MPEGDecodedAudio) => void;
+            resolve: (v: DecodedAudio) => void;
             reject: (e: Error) => void;
         }
     >();
 
-        fileReadTime: number = 0;
-        decodeTime: number = 0;
+    fileReadTime: number = 0;
+    decodeTime: number = 0;
 
     constructor() {
         this.worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
@@ -214,7 +211,7 @@ export class Mp3DecodeWorkerClient {
         });
     }
 
-    async decodeFile({ filePath }: { filePath: string }): Promise<MPEGDecodedAudio> {
+    async decodeFile({ filePath }: { filePath: string }): Promise<DecodedAudio> {
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
             this.inflight.set(id, { resolve, reject });
@@ -224,7 +221,16 @@ export class Mp3DecodeWorkerClient {
                 id,
                 filePath,
             } satisfies DecodeReq);
-        }) as Promise<MPEGDecodedAudio>;
+        }) as Promise<DecodedAudio>;
+    }
+
+    returnBuffer(v: DecodedAudio) {
+        this.worker.postMessage({
+                type: 'return',
+                buffers: v.channelData,
+            } satisfies DecodeReq,
+            v.channelData.map((a)=>a.buffer)
+        );
     }
 
     terminate() {

@@ -2,7 +2,7 @@ import { parentPort } from 'node:worker_threads';
 import * as fsp from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 // If you were using the WebWorker-flavored wrapper before, switch to the direct WASM decoder here.
-import { MPEGDecodedAudio, MPEGDecoder } from 'mpg123-decoder'; // same lib, non-WebWorker API
+import { MPEGDecoderWebWorker } from 'mpg123-decoder';
 import { getFileSize } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
@@ -14,13 +14,17 @@ if (!parentPort) {
 
 console.log(`Decode worker start...`);
 
-export type DecodeReq = {
+export type DecodeReq =
+{
     type: 'decode';
     id: number;
     filePath: string;
+} | {
+    type: 'return';
+    buffers: Float32Array<ArrayBuffer>[],
 };
 
-const decoder = new MPEGDecoder();
+const decoder = new MPEGDecoderWebWorker(); // new MPEGDecoder();
 let readyPromise: Promise<void> | null = null;
 
 function decoderReady() {
@@ -30,24 +34,39 @@ function decoderReady() {
     return readyPromise;
 }
 
+export type DecodedAudio = {
+    sampleRate: number,
+    nSamples: number,
+    channelData: Float32Array<ArrayBuffer>[],
+};
+
 export type DecodedAudioResp = {
     type: 'result';
     id: number;
     ok: boolean;
     error?: string;
-    result?: MPEGDecodedAudio;
+    result?: DecodedAudio;
     fileReadTime: number;
     decodeTime: number;
 };
 
+let scratchBuf: Buffer | null = Buffer.allocUnsafe(32000000);
+
+function getScratchBuf(size: number) {
+  if (!scratchBuf || scratchBuf.byteLength < size) {
+    scratchBuf = Buffer.allocUnsafe(size);
+  }
+  return scratchBuf;
+}
+
 parentPort.on('message', async (msg: DecodeReq) => {
-    const { id, filePath } = msg;
+    const { type } = msg;
+    if (type !== 'decode') return;
+    const {id, filePath} = msg;
 
     try {
-        await decoder.reset();
-
         const fileLen = await getFileSize(filePath);
-        const nodeBuf = Buffer.alloc(fileLen);
+        const nodeBuf = getScratchBuf(fileLen);
 
         const startRead = performance.now();
         //console.log(`Start thread read of ${filePath}`);
@@ -72,7 +91,8 @@ parentPort.on('message', async (msg: DecodeReq) => {
 
         // Decode (mpg123-decoder expects a Uint8Array)
         const decodeStart = performance.now();
-        const decomp = decoder.decode(nodeBuf);
+        await decoder.reset();
+        const decomp = await decoder.decode(nodeBuf.subarray(0, fileLen));
         const decodeTime = performance.now() - decodeStart;
 
         if (decomp.errors?.length) {
@@ -81,14 +101,20 @@ parentPort.on('message', async (msg: DecodeReq) => {
             throw new Error(`MP3 Decode error: ${e.message} @${e.inputBytes}`);
         }
 
+        const mrv = {
+            channelData: decomp.channelData.map((v)=>new Float32Array(v)),
+            sampleRate: decomp.sampleRate,
+            nSamples: decomp.samplesDecoded,
+        };
+
         parentPort!.postMessage({
             type: 'result',
             id,
             ok: true,
-            result: decomp,
+            result: mrv,
             fileReadTime,
             decodeTime,
-        } satisfies DecodedAudioResp);
+        } satisfies DecodedAudioResp, mrv.channelData.map((v)=>v.buffer));
     } catch (err: any) {
         console.error(err);
         // Return mp3 buffer if we still own it so the main thread can reclaim
