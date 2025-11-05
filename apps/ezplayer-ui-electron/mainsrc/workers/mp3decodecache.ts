@@ -33,50 +33,8 @@ export class MP3PrefetchCache {
     constructor(arg: { readonly log: (msg: string) => void; now: number; mp3Space?: number }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
-        //this.decoder = new MPEGDecoderWebWorker();
         this.decodewc = new Mp3DecodeWorkerClient();
         this.mp3PrefetchCache = new PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>({
-            /*
-            fetchFunction: async (key, _abort) => {
-                // Fetch file data
-                const fileLen = await getFileSize(key.mp3file);
-                let mp3data = this.readBufPool.get(fileLen);
-
-                try {
-                    const fh = await fsp.open(key.mp3file);
-                    try {
-                        // Read the file
-                        arg.log(`Starting mp3 load of ${key.mp3file}`);
-                        const rlen = await readHandleRange(fh, { buf: mp3data, offset: 0, length: fileLen });
-                        arg.log(`Done mp3 load of ${key.mp3file}`);
-                        if (rlen !== fileLen)
-                            throw new Error(
-                                `File read of ${key.mp3file} expected ${key.mp3file} bytes but could only read ${rlen}`,
-                            );
-
-                        // Now we decode
-                        await this.decoder.ready;
-                        this.decoder.reset();
-
-                        arg.log(`Starting mp3 decode of ${key.mp3file}`);
-                        const decompAudio = await this.decoder.decode(new Uint8Array(mp3data, 0, fileLen));
-                        arg.log(`Done mp3 decode of ${key.mp3file}`);
-                        if (decompAudio.errors.length) {
-                            throw new Error(
-                                `MP3 Decode error: ${decompAudio.errors[0].message} @${decompAudio.errors[0].inputBytes}`,
-                            );
-                        }
-
-                        return { decompAudio };
-                    } finally {
-                        try {
-                            await fh.close();
-                        } catch (_e) {}
-                    }
-                } finally {
-                    this.readBufPool.release(mp3data);
-                }
-            },*/
             fetchFunction: async (key, _abort) => {
                 arg.log(`Starting mp3 load of ${key.mp3file}`);
                 try {
@@ -132,7 +90,6 @@ export class MP3PrefetchCache {
     now: number;
     readBufPool: ArrayBufferPool;
     mp3PrefetchCache: PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>;
-    //decoder: MPEGDecoderWebWorker;
     decodewc: Mp3DecodeWorkerClient;
 
     getStats() {

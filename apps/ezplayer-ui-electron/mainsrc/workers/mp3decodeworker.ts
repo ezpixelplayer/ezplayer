@@ -2,7 +2,7 @@ import { parentPort } from 'node:worker_threads';
 import * as fsp from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 // If you were using the WebWorker-flavored wrapper before, switch to the direct WASM decoder here.
-import { MPEGDecoderWebWorker } from 'mpg123-decoder';
+import { MPEGDecoder } from 'mpg123-decoder';
 import { getFileSize } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
@@ -24,7 +24,7 @@ export type DecodeReq =
     buffers: Float32Array<ArrayBuffer>[],
 };
 
-const decoder = new MPEGDecoderWebWorker(); // new MPEGDecoder();
+const decoder = new MPEGDecoder();
 let readyPromise: Promise<void> | null = null;
 
 function decoderReady() {
@@ -92,7 +92,7 @@ parentPort.on('message', async (msg: DecodeReq) => {
         // Decode (mpg123-decoder expects a Uint8Array)
         const decodeStart = performance.now();
         await decoder.reset();
-        const decomp = await decoder.decode(nodeBuf.subarray(0, fileLen));
+        const decomp = decoder.decode(nodeBuf.subarray(0, fileLen));
         const decodeTime = performance.now() - decodeStart;
 
         if (decomp.errors?.length) {
