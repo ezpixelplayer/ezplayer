@@ -55,7 +55,6 @@
         "electron-store": "^10.1.0",
         "i18next": "^23.16.8",
         "mpg123-decoder": "^1.0.2",
-        "net-ping": "^1.2.4",
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
         "ping": "^1.0.0",
