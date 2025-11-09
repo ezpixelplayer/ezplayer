@@ -24,6 +24,9 @@ import { AppDispatch, RootState } from '../../store/Store';
 import { ezrgbThemeOptions, useThemeContext } from '../../theme/ThemeBase';
 import { AboutDialog } from './AboutDialog';
 import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { LicenseDialog, LicenseEntry } from './LicenseDialog';
+import { useMemo } from 'react';
+import Licenses from "../../constants/licenses.json"
 
 interface PlaybackSettingsDrawerProps {
     title: string;
@@ -391,6 +394,14 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         endTime: '23:59',
         volumeLevel: 100,
     });
+
+    // License dialog state
+    const [licenseDialogOpen, setLicenseDialogOpen] = useState<boolean>(false);
+
+    const licenseEntries: LicenseEntry[] = useMemo(() => {
+        // Map each dependency to a license entry
+        return Licenses;
+    }, []);
 
     const dispatch = useDispatch<AppDispatch>();
 
@@ -1369,8 +1380,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Card>
                     )}
 
-                    {/* About Button */}
-                    <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                    {/* About & License Buttons */}
+                    <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                         <Button
                             variant="outlined"
                             startIcon={<Info />}
@@ -1383,6 +1394,19 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             }}
                         >
                             About EZPlayer
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            startIcon={<Info />}
+                            onClick={() => setLicenseDialogOpen(true)}
+                            size="small"
+                            sx={{
+                                textTransform: 'none',
+                                minWidth: 'auto',
+                                px: 3
+                            }}
+                        >
+                            License
                         </Button>
                     </Box>
                 </Box>
@@ -1457,6 +1481,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 onClose={() => setAboutDialogOpen(false)}
                 playerVersion={versionInfo.playerVersion}
                 cloudVersion={versionInfo.cloudVersion}
+            />
+
+            {/* License Dialog */}
+            <LicenseDialog
+                open={licenseDialogOpen}
+                onClose={() => setLicenseDialogOpen(false)}
+                licenses={licenseEntries}
             />
         </Box>
     );

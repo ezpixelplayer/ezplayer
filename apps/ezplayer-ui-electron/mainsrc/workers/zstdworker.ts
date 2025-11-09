@@ -188,8 +188,8 @@ export class ZSTDDecoder {
 
 import { parentPort } from 'node:worker_threads';
 
-import { setThreadAffinity } from '../affinity/affinity.js';
-setThreadAffinity([5,6,7,8]);
+//import { setThreadAffinity } from '../affinity/affinity.js';
+//setThreadAffinity([5,6,7,8]);
 
 type InMsg = {
     id: number;

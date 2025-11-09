@@ -5,8 +5,8 @@ import { Buffer } from 'node:buffer';
 import { MPEGDecodedAudio, MPEGDecoder } from 'mpg123-decoder'; // same lib, non-WebWorker API
 import { getFileSize } from '@ezplayer/epp';
 
-import { setThreadAffinity } from '../affinity/affinity.js';
-setThreadAffinity([5,6,7,8]);
+//import { setThreadAffinity } from '../affinity/affinity.js';
+//setThreadAffinity([5,6,7,8]);
 
 if (!parentPort) {
     throw new Error('mp3Worker must be run as a worker thread.');
