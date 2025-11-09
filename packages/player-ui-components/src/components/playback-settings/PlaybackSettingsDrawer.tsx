@@ -26,11 +26,6 @@ import { AboutDialog } from './AboutDialog';
 import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 import { LicenseDialog, LicenseEntry } from './LicenseDialog';
 import { useMemo } from 'react';
-import ElectronPkg from "../../../../../apps/ezplayer-ui-electron/package.json"
-import EppPkg from "../../../../epp/package.json"
-import EzplayerCorePkg from "../../../../ezplayer-core/package.json"
-import PlayerUiPkg from "../../../../player-ui-components/package.json"
-import SharedUiPkg from "../../../../shared-ui-components/package.json"
 import Licenses from "../../constants/licenses.json"
 
 interface PlaybackSettingsDrawerProps {
@@ -404,22 +399,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     const [licenseDialogOpen, setLicenseDialogOpen] = useState<boolean>(false);
 
     const licenseEntries: LicenseEntry[] = useMemo(() => {
-        // Combine and deduplicate all dependencies
-        const allDependencies = Array.from(
-            new Set([
-                ...Object.keys(ElectronPkg.dependencies || {}),
-                ...Object.keys(EppPkg.dependencies || {}),
-                ...Object.keys(EzplayerCorePkg.dependencies || {}),
-                ...Object.keys(PlayerUiPkg.dependencies || {}),
-                ...Object.keys(SharedUiPkg.dependencies || {}),
-            ])
-        );
-
         // Map each dependency to a license entry
-        return allDependencies.map(dep => ({
-            packages: [dep],
-            text: Licenses.find(license => license.packages.includes(dep))?.text || 'Unknown',
-        }));
+        return Licenses;
     }, []);
 
     const dispatch = useDispatch<AppDispatch>();
@@ -1416,6 +1397,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Button>
                         <Button
                             variant="outlined"
+                            startIcon={<Info />}
                             onClick={() => setLicenseDialogOpen(true)}
                             size="small"
                             sx={{

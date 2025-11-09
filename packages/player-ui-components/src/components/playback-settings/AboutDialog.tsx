@@ -138,7 +138,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                         }}
                                         onClick={() => window.electronAPI?.openExternal('https://github.com/ezpixelplayer/ezplayer')}
                                     >
-                                        View source code and contribute
+                                        Get source code and contribute
                                     </Link>
                                 ) : (
                                     <Link
@@ -153,7 +153,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                             },
                                         }}
                                     >
-                                        View source code and contribute
+                                        Get source code and contribute
                                     </Link>
                                 )}
                             </Box>
