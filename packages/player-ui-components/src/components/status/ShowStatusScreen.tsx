@@ -258,6 +258,13 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                             </Typography>
                                                         </Grid>
                                                     )}
+                                                    {ctrl.pingSummary && (
+                                                        <Grid item xs={6}>
+                                                            <Typography variant="body2">
+                                                                Ping: {ctrl.pingSummary}
+                                                            </Typography>
+                                                        </Grid>
+                                                    )}
                                                     {ctrl.reported_time && (
                                                         <Grid item xs={12}>
                                                             <Typography variant="body2" color="text.secondary">

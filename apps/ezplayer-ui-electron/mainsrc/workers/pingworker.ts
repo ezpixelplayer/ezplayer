@@ -1,11 +1,24 @@
 import ping from 'ping';
 import { parentPort } from 'node:worker_threads';
+import os from 'os';
+import path from 'path';
+
+// I do not like this whole wrapper design, but for now ... we use the CLI utility
+if (process.platform === 'win32' && !process.env.SystemRoot) {
+    const execRoot = path.parse(process.execPath).root;
+    const driveRoot = /^[A-Za-z]:\\/.test(execRoot) ? execRoot : "C:\\";
+    process.env.SystemRoot =
+        process.env.SystemRoot ||
+        process.env.WINDIR ||
+        process.env.windir ||
+        path.join(driveRoot, "Windows");
+}
 
 if (!parentPort) {
     throw new Error('ping-worker must be run as a worker thread');
 }
 
-type PingConfig = {
+export type PingConfig = {
     hosts: string[];
     intervalS: number;
     maxSamples: number;
@@ -13,7 +26,7 @@ type PingConfig = {
 };
 
 export type ParentMessage =
-    | { type: 'config'; config: Partial<PingConfig> }
+    | { type: 'config'; config: PingConfig }
     | { type: 'stop' };
 
 export interface PingStat {
@@ -140,6 +153,7 @@ parentPort.on('message', (msg: ParentMessage) => {
     }
 
     if (msg.type === 'config') {
+        console.log(`Configuring ping: ${os.platform}/${process.env.SystemRoot}`)
         const { hosts, intervalS: intervalMs, maxSamples, concurrency } = msg.config;
 
         if (typeof intervalMs === 'number') cfg.intervalS = intervalMs;
@@ -165,6 +179,8 @@ async function pingHost(host: string): Promise<PingStat> {
         const alive = res.alive ? res.time : undefined;
         window.add(alive);
 
+        //console.log(`${host}: ${JSON.stringify(res)}`);
+
         let timeMs: number | null = null;
         if (typeof res.time === 'number') {
             timeMs = res.time;
@@ -175,6 +191,7 @@ async function pingHost(host: string): Promise<PingStat> {
 
         return window.getReport(host);
     } catch (err) {
+        console.error(err);
         window.add(undefined);
         return window.getReport(host);
     }
@@ -193,7 +210,7 @@ async function pingRoundOnce(): Promise<{ [address: string]: PingStat }> {
     for (let i = 0; i < hostsSnapshot.length; i += limit) {
         const chunk = hostsSnapshot.slice(i, i + limit);
         const chunkReports = await Promise.all(chunk.map((h) => pingHost(h)));
-        for (let j=0; j<chunk.length; ++j) {
+        for (let j = 0; j < chunk.length; ++j) {
             reports[chunk[j]] = chunkReports[j];
         }
     }
@@ -218,10 +235,10 @@ async function pingRoundOnce(): Promise<{ [address: string]: PingStat }> {
         parentPort!.postMessage(msg);
 
         const elapsed = finishedAt - startedAt;
-        const delay = Math.max(0, cfg.intervalS - elapsed);
+        const delayMS = Math.max(0, cfg.intervalS * 1000 - elapsed);
         if (!running) break;
-        if (delay > 0) {
-            await new Promise((resolve) => setTimeout(resolve, delay));
+        if (delayMS > 0) {
+            await new Promise((resolve) => setTimeout(resolve, delayMS));
         }
     }
 })().catch((err) => {

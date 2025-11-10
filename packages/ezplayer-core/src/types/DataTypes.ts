@@ -156,6 +156,7 @@ export interface PlayerNStatusContent {
         notices?: string[];
         errors?: string[];
         connectivity?: string;
+        pingSummary?: string;
         reported_time?: number;
     }[];
     n_models?: number;
