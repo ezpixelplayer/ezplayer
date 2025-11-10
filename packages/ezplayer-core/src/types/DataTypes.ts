@@ -141,24 +141,26 @@ export interface PlayerCStatusContent {
     schedule_sync_time?: number;
 }
 
+export interface ControllerStatus {
+    name?: string;
+    description?: string;
+    type?: string;
+    proto?: string;
+    protoDetails?: string;
+    model?: string;
+    address?: string;
+    state?: 'Active' | 'Inactive' | 'xLights Only' | 'Unknown';
+    status?: 'open' | 'skipped' | 'error' | 'unusable';
+    notices?: string[];
+    errors?: string[];
+    connectivity?: "Up" | "Down" | "Pending" | "N/A";
+    pingSummary?: string;
+    reported_time?: number;
+}
+
 export interface PlayerNStatusContent {
     // N - Network / coNtroller
-    controllers?: {
-        name?: string;
-        description?: string;
-        type?: string;
-        proto?: string;
-        protoDetails?: string;
-        model?: string;
-        address?: string;
-        state?: string;
-        status?: string;
-        notices?: string[];
-        errors?: string[];
-        connectivity?: string;
-        pingSummary?: string;
-        reported_time?: number;
-    }[];
+    controllers?: ControllerStatus[];
     n_models?: number;
     n_channels?: number;
 }

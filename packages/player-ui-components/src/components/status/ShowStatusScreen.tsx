@@ -2,22 +2,73 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box, Button, Card, CardContent, Chip, CircularProgress, Grid, Typography, useTheme } from '@mui/material';
 import { format } from 'date-fns';
 import React, { useState } from 'react';
+import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
 
 // Types
 import { AppDispatch, RootState } from '../../store/Store';
 import { StatsDialog } from './StatsDialog';
+import type { ControllerStatus } from '@ezplayer/ezplayer-core';
+import { type ControllerStatusSeverity, getControllerSeverity, getControllersSeverity, getControllerStats, severityToChipColor, severityToLightColor, severityToMainColor } from './ControllerHelpers';
 
-const getControllerStatusLabel = (controllers?: { status?: string }[]) => {
+
+const getControllerStatusLabel = (controllers?: ControllerStatus[]) => {
     if (!controllers) return 'No data';
-    const count = controllers.length;
-    const seen = controllers.filter((c) => c.status === 'online').length;
+    const stat = getControllerStats(controllers);
 
-    if (seen === count) return 'All controllers online';
-    if (seen === 0) return 'No controllers online';
-    return `${count - seen} controller(s) offline`;
+    if (stat.total === stat.online) return 'All controllers online';
+    if (stat.online === 0) return 'No controllers online';
+    return `${stat.offline} controller(s) offline`;
 };
+
+function severityToBoxSx(severity: ControllerStatusSeverity): SxProps<Theme> {
+    switch (severity) {
+        case 'error':
+            return {
+                border: '1px solid',
+                borderColor: 'error.main',
+                backgroundColor: 'error.light',
+                opacity: 0.9,
+            };
+        case 'warning':
+            return {
+                border: '1px solid',
+                borderColor: 'warning.main',
+                backgroundColor: 'warning.light',
+                opacity: 0.9,
+            };
+        case 'pending':
+            return {
+                border: '1px solid',
+                borderColor: 'info.main',
+                backgroundColor: 'info.light',
+                opacity: 0.9,
+            };
+        case 'success':
+            return {
+                border: '1px solid',
+                borderColor: 'success.main',
+                backgroundColor: 'success.light',
+                opacity: 0.8,
+            };
+        case 'disabled':
+            return {
+                border: '1px solid',
+                borderColor: 'grey.400',
+                backgroundColor: 'grey.100',
+                opacity: 0.6,
+            };
+        case 'neutral':
+        default:
+            return {
+                border: '1px solid',
+                borderColor: 'divider',
+                backgroundColor: 'background.paper',
+                opacity: 1,
+            };
+    };
+}
 
 const formatTime = (timestamp?: number | string) => {
     if (!timestamp) return '—';
@@ -169,15 +220,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                     </Typography>
                                     <Chip
                                         label={getControllerStatusLabel(controller.controllers)}
-                                        color={
-                                            !controller.controllers
-                                                ? 'default'
-                                                : controller.controllers.every((c) => c.status === 'online')
-                                                    ? 'success'
-                                                    : controller.controllers.some((c) => c.status === 'online')
-                                                        ? 'warning'
-                                                        : 'error'
-                                        }
+                                        color={severityToChipColor(getControllersSeverity(controller.controllers))}
                                         sx={{ mt: 1 }}
                                     />
                                 </Box>
@@ -195,12 +238,8 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                     mb: 2,
                                                     p: 2,
                                                     border: '1px solid',
-                                                    borderColor:
-                                                        ctrl.status === 'online' ? 'success.main' : 'error.main',
                                                     borderRadius: 1,
-                                                    backgroundColor:
-                                                        ctrl.status === 'online' ? 'success.light' : 'error.light',
-                                                    opacity: ctrl.status === 'online' ? 0.8 : 0.9,
+                                                    ...severityToBoxSx(getControllerSeverity(ctrl))
                                                 }}
                                             >
                                                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -209,7 +248,8 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                     </Typography>
                                                     <Chip
                                                         label={ctrl.status || 'unknown'}
-                                                        color={ctrl.status === 'online' ? 'success' : 'error'}
+                                                        color={severityToChipColor(getControllerSeverity(ctrl))}
+                                                        variant={getControllerSeverity(ctrl) === 'disabled' ? 'outlined' : 'filled'}
                                                         size="small"
                                                     />
                                                 </Box>
@@ -302,15 +342,15 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                         sx={{
                                                             mt: 1,
                                                             p: 1,
-                                                            bgcolor: 'error.light',
+                                                            bgcolor: severityToLightColor(getControllerSeverity(ctrl)),
                                                             borderRadius: 1,
                                                             border: '1px solid',
-                                                            borderColor: 'error.main',
+                                                            borderColor: severityToMainColor(getControllerSeverity(ctrl)),
                                                         }}
                                                     >
                                                         <Typography
                                                             variant="body2"
-                                                            sx={{ fontWeight: 'bold', color: 'error.main' }}
+                                                            sx={{ fontWeight: 'bold', color: severityToMainColor(getControllerSeverity(ctrl)) }}
                                                         >
                                                             Errors:
                                                         </Typography>
@@ -319,7 +359,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                                 key={errorIndex}
                                                                 variant="body2"
                                                                 display="block"
-                                                                color="error.main"
+                                                                color={severityToMainColor(getControllerSeverity(ctrl))}
                                                                 sx={{ fontWeight: 'medium' }}
                                                             >
                                                                 • {error}

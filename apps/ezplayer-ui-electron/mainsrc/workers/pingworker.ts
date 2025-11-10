@@ -153,7 +153,7 @@ parentPort.on('message', (msg: ParentMessage) => {
     }
 
     if (msg.type === 'config') {
-        console.log(`Configuring ping: ${os.platform}/${process.env.SystemRoot}`)
+        //console.log(`Configuring ping: ${os.platform}/${process.env.SystemRoot}`)
         const { hosts, intervalS: intervalMs, maxSamples, concurrency } = msg.config;
 
         if (typeof intervalMs === 'number') cfg.intervalS = intervalMs;

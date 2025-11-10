@@ -11,6 +11,7 @@ export type {
     PlaylistTags,
     UserPlayer,
     PlayerCStatusContent,
+    ControllerStatus,
     PlayerNStatusContent,
     PlayerPStatusContent,
     CombinedPlayerStatus,
