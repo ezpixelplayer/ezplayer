@@ -8,37 +8,12 @@ import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
+import { getControllerStats } from '../status/ControllerHelpers';
 
 interface PlayerScreenProps {
     title: string;
     statusArea: React.ReactNode[];
 }
-
-// Helper function to calculate controller statistics
-const getControllerStats = (controllers?: { status?: string; errors?: string[] }[]) => {
-    if (!controllers || controllers.length === 0) {
-        return {
-            total: 0,
-            online: 0,
-            offline: 0,
-            withErrors: 0,
-            errorCount: 0,
-        };
-    }
-
-    const online = controllers.filter((c) => c.status === 'online').length;
-    const offline = controllers.filter((c) => c.status !== 'online').length;
-    const withErrors = controllers.filter((c) => c.errors && c.errors.length > 0).length;
-    const errorCount = controllers.reduce((total, c) => total + (c.errors?.length || 0), 0);
-
-    return {
-        total: controllers.length,
-        online,
-        offline,
-        withErrors,
-        errorCount,
-    };
-};
 
 const StatusCards = ({}: {}) => {
     const playerStatus = useSelector((state: RootState) => state.playerStatus);
@@ -87,28 +62,21 @@ const StatusCards = ({}: {}) => {
                                         {/* Controller Count Summary */}
                                         <Box sx={{ mb: 2 }}>
                                             <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                                Controllers: {stats.total}
+                                                Controllers: {stats.total}{(controller.controllers?.length ?? 0) === stats.total ? '' :  ` (${controller.controllers?.length} including skipped)`}
                                             </Typography>
 
                                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
                                                 <Chip
-                                                    label={`${stats.online} Online`}
+                                                    label={`${stats.online} Online; ${stats.offline} Offline`}
                                                     color={
                                                         stats.online === stats.total
                                                             ? 'success'
-                                                            : stats.online > 0
-                                                              ? 'warning'
-                                                              : 'error'
+                                                            : stats.offline > 0
+                                                              ? 'error'
+                                                              : 'warning'
                                                     }
                                                     size="small"
                                                 />
-                                                {stats.offline > 0 && (
-                                                    <Chip
-                                                        label={`${stats.offline} Offline`}
-                                                        color="error"
-                                                        size="small"
-                                                    />
-                                                )}
                                             </Box>
                                         </Box>
 
@@ -167,7 +135,7 @@ const StatusCards = ({}: {}) => {
                                                 }}
                                             >
                                                 <Typography variant="body2" color="text.secondary">
-                                                    No Controllers Detected
+                                                    No Controllers Assigned
                                                 </Typography>
                                             </Box>
                                         )}

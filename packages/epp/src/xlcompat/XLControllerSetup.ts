@@ -21,11 +21,12 @@ export async function readControllersFromXlights(showdir: string) {
         controllers: xcontrollers, models: osmodels
     } = await readControllersAndModels(showdir);
 
-    function makeErrorState(exc: ControllerRec, sum: string) {
+    function makeErrorState(exc: ControllerRec, sum: string, skipped: boolean) {
         return (
             {
                 setup: {
                     usable: false,
+                    skipped,
                     summary: sum,
                     name: exc.name,
                     address: exc.address,
@@ -40,25 +41,26 @@ export async function readControllersFromXlights(showdir: string) {
     
     for (const xc of xcontrollers) {
         if (xc.protocol !== 'DDP' && xc.protocol !== 'E131') {
-            ctrls.push(makeErrorState(xc, `Unsupported controller protocol ${xc.protocol}`));
+            ctrls.push(makeErrorState(xc, `Unsupported controller protocol ${xc.protocol}`, false));
             continue;
         }
         if (xc.activeState !== 'Active') {
-            ctrls.push(makeErrorState(xc, `Skipped controller ${xc.name} because it is ${xc.activeState}`));
+            ctrls.push(makeErrorState(xc, `Skipped controller ${xc.name} because it is ${xc.activeState}`, true));
             continue;
         }
         else if (xc.type !== 'Ethernet') {
             if (xc.type === 'Null') {
-                ctrls.push(makeErrorState(xc, `Skipped null controller ${xc.name}`));
+                ctrls.push(makeErrorState(xc, `Skipped null controller ${xc.name}`, true));
             }
             else {
-                ctrls.push(makeErrorState(xc, `Unsupported controller type: ${xc.type}`));
+                ctrls.push(makeErrorState(xc, `Unsupported controller type: ${xc.type}`, false));
             }
             continue;
         }
 
         const c: ControllerSetup = {
             usable: true,
+            skipped: false,
             summary: `${xc.description}`,
             name: xc.name,
             startCh: xc.startch,

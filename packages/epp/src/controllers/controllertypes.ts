@@ -5,6 +5,7 @@ export interface OpenControllerReport {
     error?: string;
 }
 export interface ControllerSetup {
+    skipped: boolean;
     usable: boolean;
     summary: string;
     name: string;

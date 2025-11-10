@@ -57,6 +57,7 @@
         "mpg123-decoder": "^1.0.2",
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
+        "ping": "^1.0.0",
         "proper-lockfile": "^4.1.2",
         "react": "^18.0.0",
         "react-dom": "^18.0.0",

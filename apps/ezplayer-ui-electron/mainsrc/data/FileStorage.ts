@@ -227,6 +227,9 @@ export async function saveUserProfileAPI(folder: string, data: EndUser) {
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
     return {
+    };
+    /*
+    return {
         player_updated: new Date().getTime(),
         player: {
             ptype: 'EZP', // FPP or EZP
@@ -272,4 +275,5 @@ export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
             show_name: 'Winter Wonderland Drive',
         },
     };
+    */
 }

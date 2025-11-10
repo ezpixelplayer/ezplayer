@@ -44,6 +44,7 @@ import process from "node:process";
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { decompressZStdWithWorker } from './zstdparent';
+import { setPingConfig, getLatestPingStats } from './pingparent';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -207,12 +208,17 @@ function sendPlayerStateUpdate() {
 }
 
 function sendControllerStateUpdate() {
+    const stats = getLatestPingStats();
     const cstatus: PlayerNStatusContent = {
         controllers: [],
     };
     cstatus.n_models = modelRecs?.length;
     cstatus.n_channels = Math.max(...(controllerStates ?? []).map((e: ControllerState) => e.setup.startCh + e.setup.nCh));
     for (const c of controllerStates ?? []) {
+        const pstat = stats.stats?.[c.setup.address];
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : "";
+        const connectivity = !c.setup.usable ? "N/A"
+            : (!(pstat?.outOf) ? "Pending" :  pstat.nReplies > 0 ? "Up" : "Down");
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -222,11 +228,12 @@ function sendControllerStateUpdate() {
             model: `${c.xlRecord?.vendor} ${c.xlRecord?.model} ${c.xlRecord?.variant}`,
             address: c.setup.address,
             state: c.xlRecord?.activeState,
-            status:  c.setup.usable ? c.report?.status : 'unusable',
-            notices: [c.setup.summary],
+            status:  c.setup.skipped ? 'skipped' : (c.setup.usable ? c.report?.status : 'unusable'),
+            notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
-            connectivity: '<unknown>',
-            reported_time: Date.now(),
+            connectivity,
+            pingSummary: pss,
+            reported_time: stats.latestUpdate,
         });
     }
     send({ type: 'nstatus', status: cstatus });
@@ -361,6 +368,10 @@ const _pollTimes = setInterval(async () => {
 }, playbackParams.timePollInterval);
 
 ///////
+// Pingerating
+
+
+///////
 // The actual variables here
 let showFolder: string | undefined = undefined;
 let isPaused = false;
@@ -416,8 +427,14 @@ async function processQueue() {
     sender.emitWarning = emitWarning;
 
     try {
-        const { controllers, models } =    await readControllersFromXlights(showFolder!);
+        const { controllers, models } = await readControllersFromXlights(showFolder!);
         const sendJob = await openControllersForDataSend(controllers);
+        setPingConfig({
+            hosts: controllers.filter((c)=>c.setup.usable).map((c)=>c.setup.address),
+            concurrency: 10,
+            maxSamples: 10,
+            intervalS: 5,
+        })
         sender.job = sendJob;
         modelRecs = models;
         controllerStates = controllers;
