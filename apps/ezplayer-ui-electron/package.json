@@ -22,6 +22,8 @@
         "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
     "devDependencies": {
+        "@types/koa": "^3.0.1",
+        "@types/koa-static": "^4.0.4",
         "@types/proper-lockfile": "^4.1.4",
         "@types/react": "^18.3.18",
         "@types/react-dom": "^18.3.5",
@@ -54,6 +56,8 @@
         "crc-32": "^1.2.2",
         "electron-store": "^10.1.0",
         "i18next": "^23.16.8",
+        "koa": "^3.1.1",
+        "koa-static": "^5.0.0",
         "mpg123-decoder": "^1.0.2",
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
