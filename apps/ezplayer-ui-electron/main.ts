@@ -9,6 +9,8 @@ import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
+import Koa from 'koa';
+import serve from 'koa-static';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -130,8 +132,8 @@ app.whenReady().then(async () => {
     await new Promise<void>((resolve) => {
         const onMessage = (msg: any) => {
             if (msg.type === 'ready') {
-            playWorker!.off('message', onMessage);
-            resolve();
+                playWorker!.off('message', onMessage);
+                resolve();
             }
         };
         playWorker!.on('message', onMessage);
@@ -140,6 +142,28 @@ app.whenReady().then(async () => {
     registerFileListHandlers();
     createWindow(showFolderSpec);
     await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
+
+    // 🧩 Start Koa web server
+    const webApp = new Koa();
+    const PORT = 3000; // pick any port not used by Electron
+
+    // Serve React web build (adjust path if needed)
+    const staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
+    webApp.use(serve(staticPath));
+
+    // Simple example route
+    webApp.use(async (ctx, next) => {
+        if (ctx.path === '/api/hello') {
+            ctx.body = { message: 'Hello from Koa + Electron!' };
+        } else {
+            await next();
+        }
+    });
+
+    webApp.listen(PORT, () => {
+        console.log(`🌐 Koa server running at http://localhost:${PORT}`);
+    });
+
     dateRateTimeout = setInterval(async () => {
         const mperfNow = performance.now();
         const mdateNow = Date.now();
