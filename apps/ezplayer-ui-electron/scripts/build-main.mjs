@@ -48,7 +48,11 @@ const nodeExternals = [
     'bindings',
     'node-gyp',
     'koa',
+    'koa-router',
+    'koa-static',
     'tty',
+    'debug',
+    'supports-color',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];
