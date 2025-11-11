@@ -36,7 +36,7 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
 
-import type { AudioTimeSyncM2R, AudioTimeSyncR2M, ImmediatePlayCommand } from '@ezplayer/ezplayer-core';
+import type { AudioTimeSyncM2R, AudioTimeSyncR2M, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import {
     PlaybackWorkerData,
@@ -235,29 +235,34 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         curUser = ndata;
         return ndata;
     });
-    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: ImmediatePlayCommand): Promise<Boolean> => {
-        console.log(`PLAY CMD: ${cmd?.command}: ${cmd?.id}`);
-        const seq = curSequences.find((s) => s.id === cmd.id);
-        if (!seq) {
-            console.error(`Unable to identify sequence ${cmd.id}`);
-            return false;
-        }
-        if (!playWorker) {
-            console.error(`No player worker`);
-            return false;
-        }
-        playWorker.postMessage({
-            type: 'enqueue',
-            cmd: {
-                entry: {
-                    cmdseq: commandSeqNum++,
-                    seqid: cmd.id,
-                    fseqpath: seq.files?.fseq,
-                    audiopath: seq.files?.audio,
+    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
+        if (cmd.command === 'playsong') {
+            console.log(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+            const seq = curSequences.find((s) => s.id === cmd.songId);
+            if (!seq) {
+                console.error(`Unable to identify sequence ${cmd.songId}`);
+                return false;
+            }
+            if (!playWorker) {
+                console.error(`No player worker`);
+                return false;
+            }
+            playWorker.postMessage({
+                type: 'enqueue',
+                cmd: {
+                    entry: {
+                        cmdseq: commandSeqNum++,
+                        seqid: cmd.songId,
+                        fseqpath: seq.files?.fseq,
+                        audiopath: seq.files?.audio,
+                    },
+                    immediate: false,
                 },
-                immediate: false,
-            },
-        } as PlayerCommand);
+            } as PlayerCommand);
+        }
+        else {
+            console.log(`PLAY CMD: ${cmd?.command}`);
+        }
         return true;
     });
     ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {

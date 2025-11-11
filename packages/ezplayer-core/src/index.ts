@@ -16,6 +16,7 @@ export type {
     PlayerPStatusContent,
     CombinedPlayerStatus,
     PlaybackStatistics,
+    EZPlayerCommand,
     EndUser,
     EndUserShowSettings,
     JSONEditChoice,
@@ -31,7 +32,6 @@ export type {
     AudioChunk,
     AudioTimeSyncM2R,
     AudioTimeSyncR2M,
-    ImmediatePlayCommand,
     EZPElectronAPI,
     FileSelectOptions,
 } from './types/EZPElectronAPI';

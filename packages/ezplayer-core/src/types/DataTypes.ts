@@ -215,6 +215,51 @@ export interface PlaybackStatistics {
     skippedAudioChunks: number;
 }
 
+export type EZPlayerCommand =
+{
+    command: 'reloadcontrollers'; // Reset playback from current show folder, reloading network, and reopening controllers
+} |
+{
+    command: 'resetplayback'; // Reread and reset playback from current schedule items
+} |
+{
+    command: 'stopnow'; // Stop all playing
+} |
+{ 
+    command: 'stopgraceful'; // Stop all playing, at convenient spot
+} | 
+{
+    command: 'pause'; // Pause all playback
+} |
+{
+    command: 'resume'; // Resume playback
+} |
+{
+    command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
+} |
+{
+    command: 'activateoutput'; // Playback continues, but not audio / video not sent out
+} |
+{
+    command: 'playsong'; // Play or enqueue a song
+    songId: string;
+    immediate: boolean; // If false, enqueue
+    priority: number; // Allows precedence over RF, lower is higher priority
+    requestId: string; // To identify, for canceling
+} |
+{
+    command: 'playplaylist'; // Play or enqueue a playlist
+    playlistId: string;
+    immediate: boolean; 
+    priority: number; // Allows precedence over RF, lower is higher priority
+    requestId: string; // To identify, for canceling
+} | {
+    command: 'deleterequest';
+    requestId: string; // Identity, for canceling, of a song or a
+} | {
+    command: 'clearrequests'; // Clear all requests
+};
+
 export interface EndUser {
     user_id: string; // UUID
     email: string;

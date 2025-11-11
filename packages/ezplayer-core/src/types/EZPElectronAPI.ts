@@ -10,6 +10,7 @@ import type {
     PlayerCStatusContent,
     PlayerNStatusContent,
     EZPlayerVersions,
+    EZPlayerCommand,
 } from './DataTypes';
 
 export interface AudioDevice {
@@ -29,11 +30,6 @@ export interface AudioTimeSyncR2M {
 export interface AudioTimeSyncM2R {
     perfNowTime: number; // Main thread performance.now()
     realTime: number; // Real time, as understood by performance.now()
-}
-
-export interface ImmediatePlayCommand {
-    command: 'stopnow' | 'stopgraceful' | 'pause' | 'resume' | 'playnow' | 'playnowgraceful' | 'queue' | 'delete';
-    id?: string;
 }
 
 export interface AudioChunk {
@@ -76,7 +72,7 @@ export interface EZPElectronAPI {
     getVersions: () => Promise<EZPlayerVersions>;
 
     // Send a command
-    immediatePlayCommand: (cmd: ImmediatePlayCommand) => Promise<void>;
+    immediatePlayCommand: (cmd: EZPlayerCommand) => Promise<void>;
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;

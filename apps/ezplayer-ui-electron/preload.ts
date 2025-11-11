@@ -5,7 +5,7 @@ import type {
     AudioTimeSyncR2M,
     EZPElectronAPI,
     FileSelectOptions,
-    ImmediatePlayCommand,
+    EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -89,7 +89,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     putUserProfile(data: Partial<EndUser>) {
         return ipcRenderer.invoke('ipcPutCloudUserProfile', data);
     },
-    immediatePlayCommand(cmd: ImmediatePlayCommand) {
+    immediatePlayCommand(cmd: EZPlayerCommand) {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
     },
 
