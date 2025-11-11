@@ -50,9 +50,6 @@ const nodeExternals = [
     'koa',
     'koa-router',
     'koa-static',
-    'tty',
-    'debug',
-    'supports-color',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];
