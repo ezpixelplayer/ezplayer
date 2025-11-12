@@ -145,18 +145,37 @@ app.whenReady().then(async () => {
 
     // 🧩 Start Koa web server
     const webApp = new Koa();
-    const PORT = 3000; // pick any port not used by Electron
+    const PORT = 3000;
 
-    // Serve React web build (adjust path if needed)
-    const staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
-    webApp.use(serve(staticPath));
+    // Resolve static path for React web build
+    let staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
+    if (!fs.existsSync(staticPath)) {
+        const altPath1 = path.join(process.cwd(), 'apps/ezplayer-ui-react/dist');
+        const altPath2 = path.join(__dirname, '../../ezplayer-ui-react/dist');
+        if (fs.existsSync(altPath1)) {
+            staticPath = altPath1;
+        } else if (fs.existsSync(altPath2)) {
+            staticPath = altPath2;
+        }
+    }
 
-    // Simple example route
+    // API routes
     webApp.use(async (ctx, next) => {
         if (ctx.path === '/api/hello') {
             ctx.body = { message: 'Hello from Koa + Electron!' };
         } else {
             await next();
+        }
+    });
+
+    // Serve static files
+    webApp.use(serve(staticPath));
+
+    // Set correct MIME types for JS modules
+    webApp.use(async (ctx, next) => {
+        await next();
+        if ((ctx.path.endsWith('.js') || ctx.path.endsWith('.mjs')) && ctx.status === 200) {
+            ctx.type = 'application/javascript; charset=utf-8';
         }
     });
 
