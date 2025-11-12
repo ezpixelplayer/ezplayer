@@ -174,18 +174,23 @@ function sendPlayerStateUpdate() {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
             if (!playStatus.now_playing) {
-                ((playStatus.now_playing =
-                    foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId),
-                    (playStatus.now_playing_until =
-                        foregroundPlayerRunState.currentTime + (ps.curPLActions.actions[0].durationMS ?? 0)));
+                playStatus.now_playing = {
+                    type: 'Scheduled',
+                    item: 'Song',
+                    title: foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId ?? '<unknown>',
+                    sequence_id: pla.seqId,
+                    at: foregroundPlayerRunState.currentTime,
+                    until: foregroundPlayerRunState.currentTime + (ps.curPLActions.actions[0].durationMS ?? 0)
+                }
                 playStatus.status = 'Playing';
             } else {
                 playStatus.upcoming!.push({
-                    title:
-                        foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ??
-                        pla.seqId ??
-                        '<unknown>',
+                    type: 'Scheduled',
+                    item: 'Song',
+                    title: foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId ?? '<unknown>',
+                    sequence_id: pla.seqId,
                     at: pla.atTime,
+                    until: pla.atTime + (pla.durationMS ?? 0)
                 });
             }
         }
@@ -196,8 +201,11 @@ function sendPlayerStateUpdate() {
     if (ps.upcomingSchedules?.length && ps.upcomingSchedules[0].type === 'scheduled') {
         //console.log(`Player Schedule Upcoming: ${ps.upcomingSchedules[0].scheduleId} / ${new Date(ps.upcomingSchedules[0].schedStart)}`);
         playStatus.upcoming!.push({
+            type: 'Scheduled',
+            item: 'Schedule',
             title: foregroundPlayerRunState.schedulesById.get(ps.upcomingSchedules[0].scheduleId)?.title ?? 'Schedule',
             at: ps.upcomingSchedules[0].actions[0]?.atTime,
+            schedule_id:ps.upcomingSchedules[0].scheduleId,
         });
     }
     if (ps.interactive?.[0]?.actions?.length) {

@@ -120,15 +120,43 @@ export interface UserPlayer {
     last_nstatus?: number;
 }
 
+export interface PlayingItem {
+    type: 'Scheduled' | 'Immediate' | 'Queued',
+    item: 'Song' | 'Playlist' | 'Schedule',
+    title: string,
+    at?: number,
+    until?: number,
+    priority?: number,
+    request_id?: string,
+    sequence_id?: string,
+    playlist_id?: string,
+    schedule_id?: string,
+}
+
 export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
-    status: 'Playing' | 'Stopped';
+    status: 'Playing' | // Playing
+            'Stopping' | // Graceful stop happening
+            'Stopped' | // Stopped due to stop request
+            'Paused' | // Paused - time is not advancing
+            'Suppressed'; // Time advancing, but not emitting the sound/light
+
     reported_time: number;
-    now_playing?: string;
-    now_playing_until?: number;
-    upcoming?: { title: string; at?: number }[];
-    // versions, system status, storage, memory, temp, etc?
+    now_playing?: PlayingItem;
+    upcoming?: PlayingItem[];
+    immediate?: PlayingItem;
+    queue?: PlayingItem[];
+
+    volume?: {
+        level: number,
+        muted?: boolean,
+    }
+
+    // TODO: system status, storage, memory, temp, etc?
+
+    // Statistics currently sent separately - PlaybackStatistics
+    //   TODO figure out how to make sure that gets reflected...
 }
 
 export interface PlayerCStatusContent {
