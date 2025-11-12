@@ -128,9 +128,9 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 )}
                                 {player.ptype === 'EZP' && player.now_playing && (
                                     <>
-                                        <Typography variant="body2">Now Playing: {player.now_playing}</Typography>
+                                        <Typography variant="body2">Now Playing: {player.now_playing.title}</Typography>
                                         <Typography variant="body2">
-                                            Until: {formatTime(player.now_playing_until)}
+                                            Until: {formatTime(player.now_playing.until)}
                                         </Typography>
                                     </>
                                 )}
