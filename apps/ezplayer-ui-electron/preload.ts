@@ -89,7 +89,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     putUserProfile(data: Partial<EndUser>) {
         return ipcRenderer.invoke('ipcPutCloudUserProfile', data);
     },
-    immediatePlayCommand(cmd: EZPlayerCommand) {
+    immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
     },
 

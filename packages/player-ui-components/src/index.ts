@@ -41,6 +41,7 @@ export { fetchScheduledPlaylists, postScheduledPlaylists, setScheduledPlaylists 
 export { fetchLayoutOptions, loadLayoutHints, uploadLayoutHints, clearLayoutOptions } from './store/slices/LayoutStore';
 
 export {
+    callImmediateCommand,
     fetchPlayerStatus,
     setPlayerStatus,
     setCStatus,
@@ -65,8 +66,6 @@ export {
     postRequestPasswordReset,
     setShowDirectoryPath,
 } from './store/slices/AuthStore';
-
-export { playerImmediateSliceActions, callImmediatePlay } from './store/slices/PlayerImmediateStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

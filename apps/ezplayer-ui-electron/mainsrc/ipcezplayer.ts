@@ -39,7 +39,6 @@ import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplaye
 import type { AudioTimeSyncM2R, AudioTimeSyncR2M, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import {
-    PlaybackWorkerData,
     PlayerCommand,
     type MainRPCAPI,
     type PlayWorkerRPCAPI,

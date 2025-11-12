@@ -72,7 +72,7 @@ export interface EZPElectronAPI {
     getVersions: () => Promise<EZPlayerVersions>;
 
     // Send a command
-    immediatePlayCommand: (cmd: EZPlayerCommand) => Promise<void>;
+    immediatePlayerCommand: (cmd: EZPlayerCommand) => Promise<boolean>;
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;

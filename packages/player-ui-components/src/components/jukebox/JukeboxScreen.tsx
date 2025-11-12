@@ -4,7 +4,7 @@ import { MusicNote, Lightbulb } from '@mui/icons-material';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
-import { callImmediatePlay } from '../../store/slices/PlayerImmediateStore';
+import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
@@ -210,7 +210,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const playSong = async () => {
         if (!song?.id) return;
         onInteract?.();
-        await dispatch(callImmediatePlay({ sid: song.id })).unwrap();
+        await dispatch(callImmediateCommand({command: 'playsong', songId: song.id, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
     };
 
     // Calculate responsive sizes
@@ -614,7 +614,11 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     }, [songs, searchQuery, sortBy, selectedFilterTags, tagInputValue, sequenceData]);
 
     const handlePlay = async (songId: string) => {
-        await dispatch(callImmediatePlay({ sid: songId })).unwrap();
+        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+    };
+
+    const handleQueue = async (songId: string) => {
+        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: false, priority: 5, requestId: crypto.randomUUID()})).unwrap();
     };
 
     const sortOptions = [
@@ -756,10 +760,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                             },
                             {
                                 label: 'Queue',
-                                action: (id: string) => {
-                                    // Implement queue functionality with id
-                                    console.log('Queue song:', id);
-                                },
+                                action: handleQueue,
                                 variant: 'outlined' as const,
                                 color: 'primary' as const,
                                 isDisabled: (id: string) => {
@@ -767,6 +768,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                     return false; // Implement your logic here
                                 },
                             },
+                            /*
                             {
                                 label: 'Vote',
                                 action: (id: string) => {
@@ -780,6 +782,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                     return false; // Implement your logic here
                                 },
                             },
+                            */
                         ];
 
                         return (
