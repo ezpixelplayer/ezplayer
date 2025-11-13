@@ -145,7 +145,10 @@ app.whenReady().then(async () => {
 
     // 🧩 Start Koa web server
     const webApp = new Koa();
-    const PORT = 3000;
+    const PORT = parseInt(process.env.EZPLAYER_WEB_PORT || '3000', 10);
+    console.log(
+        `🌐 Starting Koa web server on port ${PORT} (from EZPLAYER_WEB_PORT env: ${process.env.EZPLAYER_WEB_PORT || 'default'})`,
+    );
 
     // Resolve static path for React web build
     let staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
