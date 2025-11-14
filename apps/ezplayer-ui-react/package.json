@@ -1,15 +1,41 @@
 {
-    "name": "ezplayer-ui-react",
+    "name": "@ezplayer/ui-react",
     "private": true,
     "version": "0.0.1",
     "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "development": "./src/index.ts",
+            "import": "./dist/index.js",
+            "require": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            "*": [
+                "dist/index.d.ts"
+            ]
+        }
+    },
+    "files": [
+        "dist"
+    ],
     "scripts": {
+        "build": "tsc -b",
+        "build:web": "vite build",
+        "build:web:watch": "vite build --watch",
         "dev": "vite",
-        "build": "tsc && vite build",
         "preview": "vite preview",
         "lint": "eslint ."
     },
     "dependencies": {
+        "react": "^18.0.0",
+        "react-dom": "^18.0.0"
+    },
+    "peerDependencies": {
         "react": "^18.0.0",
         "react-dom": "^18.0.0"
     },

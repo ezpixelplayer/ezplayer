@@ -1,6 +1,6 @@
 import './WelcomeCard.css';
 
-interface WelcomeCardProps {
+export interface WelcomeCardProps {
     className?: string;
 }
 
