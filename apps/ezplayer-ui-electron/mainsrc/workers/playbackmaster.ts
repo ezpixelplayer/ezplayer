@@ -251,39 +251,66 @@ function sendControllerStateUpdate() {
 // Inbound messages
 parentPort.on('message', (command: PlayerCommand) => {
     switch (command.type) {
-        case 'schedupdate':
-            {
-                emitInfo(
-                    `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
-                );
-                pendingSchedule = command;
-            }
+        case 'schedupdate': {
+            emitInfo(
+                `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
+            );
+            pendingSchedule = command;
             if (!running) {
                 running = processQueue(); // kick off first song
             }
             break;
-        case 'enqueue':
-            foregroundPlayerRunState.addInteractiveCommand({
-                commandId: `${command.cmd.entry.cmdseq}`,
-                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                seqId: command.cmd.entry.seqid,
-            });
-            emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
-            sendPlayerStateUpdate();
-            if (!running) {
-                running = processQueue(); // kick off first song
+        }
+        case 'frontendcmd': {
+            const cmd = command.cmd;
+            switch (cmd.command) {
+                case 'playsong': {
+                    emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+                    const seq = curSequences?.find((s) => s.id === cmd.songId);
+                    if (!seq) {
+                        emitError(`Unable to identify sequence ${cmd.songId}`);
+                        return false;
+                    }
+                    foregroundPlayerRunState.addInteractiveCommand({
+                        commandId: cmd.requestId,
+                        startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                        seqId: cmd.songId,
+                    });
+                    audioPlayerRunState.addInteractiveCommand({
+                        commandId: cmd.requestId,
+                        startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                        seqId: cmd.songId,
+                    });
+                    emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                    sendPlayerStateUpdate();
+                    if (!running) {
+                        running = processQueue(); // kick off first song
+                    }
+                }
+                break;
+                case 'deleterequest': {
+                    foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+                    audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
+                    break;
+                }
+                // lots of TODOs here...
+                case 'clearrequests': break;
+                case 'pause':
+                    isPaused = true;
+                    break;
+                case 'resume':
+                    isPaused = false;
+                    break;
+                case 'activateoutput': break;
+                case 'suppressoutput': break;
+                case 'playplaylist': break;
+                case 'reloadcontrollers': break;
+                case 'resetplayback': break;
+                case 'stopgraceful': break;
+                case 'stopnow': break;
             }
             break;
-        case 'dequeue':
-            foregroundPlayerRunState.removeInteractiveCommand(`${command.cmdseq}`);
-            sendPlayerStateUpdate();
-            break;
-        case 'pause':
-            isPaused = true;
-            break;
-        case 'resume':
-            isPaused = false;
-            break;
+        }
         case 'rpc':
             rpcs.dispatchRequest(command.rpc).catch((e) => {
                 emitError(`THIS SHOULD NOT HAPPEN - RPC should SEND ERROR BACK - ${e}`);

@@ -66,6 +66,8 @@ let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 let commandSeqNum = 1;
 
+// Passes our current info to the player
+//  (We may not always do this, if we do not wish to disrupt the playback)
 function scheduleUpdated() {
     playWorker?.postMessage({
         type: 'schedupdate',
@@ -235,33 +237,17 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         return ndata;
     });
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
-        if (cmd.command === 'playsong') {
-            console.log(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-            const seq = curSequences.find((s) => s.id === cmd.songId);
-            if (!seq) {
-                console.error(`Unable to identify sequence ${cmd.songId}`);
-                return false;
-            }
-            if (!playWorker) {
-                console.error(`No player worker`);
-                return false;
-            }
-            playWorker.postMessage({
-                type: 'enqueue',
-                cmd: {
-                    entry: {
-                        cmdseq: commandSeqNum++,
-                        seqid: cmd.songId,
-                        fseqpath: seq.files?.fseq,
-                        audiopath: seq.files?.audio,
-                    },
-                    immediate: false,
-                },
-            } as PlayerCommand);
+        if (cmd.command === 'resetplayback') {
+            loadShowFolder();
         }
-        else {
-            console.log(`PLAY CMD: ${cmd?.command}`);
+        if (!playWorker) {
+            console.log(`No player worker`);
+            return false;
         }
+        playWorker.postMessage({
+            type: 'frontendcmd',
+            cmd,
+        } as PlayerCommand);
         return true;
     });
     ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {
@@ -297,6 +283,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 const nstatus: CombinedPlayerStatus = {
                     ...curStatus,
                     player: {
+                        ...curStatus?.player,
                         ptype: 'EZP',
                         reported_time: Date.now(),
                         status: np.length ? 'Playing' : 'Stopped',
