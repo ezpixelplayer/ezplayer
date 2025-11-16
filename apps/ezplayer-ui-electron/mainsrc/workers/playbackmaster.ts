@@ -161,6 +161,12 @@ const handlers: PlayWorkerRPCAPI = {
     },
 };
 
+function playingItemDesc(item?: PlayAction) {
+    if (!item?.seqId) return '<Unknown>';
+    const nps = foregroundPlayerRunState.sequencesById.get(item.seqId);
+    return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+}
+
 // TODO Send better player status
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
@@ -177,7 +183,7 @@ function sendPlayerStateUpdate() {
                 playStatus.now_playing = {
                     type: 'Scheduled',
                     item: 'Song',
-                    title: foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId ?? '<unknown>',
+                    title: playingItemDesc(pla),
                     sequence_id: pla.seqId,
                     at: foregroundPlayerRunState.currentTime,
                     until: foregroundPlayerRunState.currentTime + (ps.curPLActions.actions[0].durationMS ?? 0)
@@ -187,7 +193,7 @@ function sendPlayerStateUpdate() {
                 playStatus.upcoming!.push({
                     type: 'Scheduled',
                     item: 'Song',
-                    title: foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId ?? '<unknown>',
+                    title: playingItemDesc(pla),
                     sequence_id: pla.seqId,
                     at: pla.atTime,
                     until: pla.atTime + (pla.durationMS ?? 0)
@@ -210,8 +216,30 @@ function sendPlayerStateUpdate() {
     }
     if (ps.interactive?.[0]?.actions?.length) {
         //console.log(`Player Interactive: ${ps.interactive[0].scheduleId} / ${new Date(ps.interactive[0].actions[0].atTime).toISOString()}`);
+        playStatus.queue = ps.interactive[0].actions.filter((a)=>!a.end).map((a)=>{return {
+            type: 'Queued',
+            item: 'Song',
+            title: playingItemDesc(a),
+            at: a.atTime,
+            until: a.durationMS !== undefined ? a.atTime + (a.durationMS ?? 0) : undefined,
+            request_id: undefined, // TODO
+            sequence_id: a.seqId,
+        };});
     }
-    // TODO this is really confusing it.  send({ type: 'queueUpdate',  queue: []});
+    if (ps.stackedPLActions?.length) {
+        playStatus.suspendedItems = ps.stackedPLActions.filter((a)=>a.scheduleId).map((a)=>{return {
+            type: 'Scheduled',
+            item: 'Schedule',
+            title: foregroundPlayerRunState.schedulesById.get(a.scheduleId!)?.title ?? 'Schedule',
+        };});
+    }
+    if (ps.heapSchedules?.length) {
+        playStatus.preemptedItems = ps.heapSchedules.filter((a)=>a.scheduleId).map((a)=>{return {
+            type: 'Scheduled',
+            item: 'Schedule',
+            title: foregroundPlayerRunState.schedulesById.get(a.scheduleId!)?.title ?? 'Schedule',
+        };});
+    }
     send({ type: 'pstatus', status: playStatus });
 }
 

@@ -267,36 +267,6 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
-            case 'queueUpdate': {
-                const q = msg.queue;
-                let np: string = '';
-                let un: string = '';
-                if (q.length > 0) {
-                    const nps = curSequences.find((s) => s.id === q[0].seqid);
-                    np = `${nps?.work?.title} - ${nps?.work?.artist}`;
-                }
-                if (q.length > 1) {
-                    const uns = curSequences.find((s) => s.id === q[1].seqid);
-                    un = `${uns?.work?.title} - ${uns?.work?.artist}`;
-                }
-                // TODO
-                const nstatus: CombinedPlayerStatus = {
-                    ...curStatus,
-                    player: {
-                        ...curStatus?.player,
-                        ptype: 'EZP',
-                        reported_time: Date.now(),
-                        status: np.length ? 'Playing' : 'Stopped',
-                /*
-                        now_playing: np,
-                        upcoming: [{ title: un }],
-                */
-                    },
-                };
-                curStatus = nstatus;
-                updateWindow?.webContents?.send('update:combinedstatus', curStatus);
-                break;
-            }
             case 'audioChunk': {
                 mainWindow?.webContents.send('audio:chunk', msg.chunk);
                 break;

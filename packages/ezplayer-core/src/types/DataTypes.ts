@@ -147,6 +147,8 @@ export interface PlayerPStatusContent {
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
     queue?: PlayingItem[];
+    suspendedItems?: PlayingItem[];
+    preemptedItems?: PlayingItem[];
 
     volume?: {
         level: number,

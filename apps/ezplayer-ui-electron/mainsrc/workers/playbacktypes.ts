@@ -61,7 +61,6 @@ export type PlayerCommand =
 
 export type WorkerToMainMessage =
     | { type: 'ready' }
-    | { type: 'queueUpdate'; queue: QueueEntry[] } // TODO REVISIT
     | { type: 'audioChunk'; chunk: AudioChunk }
     | { type: 'done' }
     | { type: 'error'; message: string }
