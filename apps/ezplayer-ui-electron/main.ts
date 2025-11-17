@@ -7,6 +7,7 @@ import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
 import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
+import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import Koa from 'koa';
@@ -145,22 +146,13 @@ app.whenReady().then(async () => {
 
     // 🧩 Start Koa web server
     const webApp = new Koa();
-    const PORT = parseInt(process.env.EZPLAYER_WEB_PORT || '3000', 10);
-    console.log(
-        `🌐 Starting Koa web server on port ${PORT} (from EZPLAYER_WEB_PORT env: ${process.env.EZPLAYER_WEB_PORT || 'default'})`,
-    );
+    const portInfo = getWebPort(true);
+    const PORT = typeof portInfo === 'number' ? portInfo : portInfo.port;
+    const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
+    console.log(`🌐 Starting Koa web server on port ${PORT} (source: ${source})`);
 
-    // Resolve static path for React web build
-    let staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
-    if (!fs.existsSync(staticPath)) {
-        const altPath1 = path.join(process.cwd(), 'apps/ezplayer-ui-react/dist');
-        const altPath2 = path.join(__dirname, '../../ezplayer-ui-react/dist');
-        if (fs.existsSync(altPath1)) {
-            staticPath = altPath1;
-        } else if (fs.existsSync(altPath2)) {
-            staticPath = altPath2;
-        }
-    }
+    // Resolve static path for React web build (workspace dependency)
+    const staticPath = path.resolve(process.cwd(), '../ezplayer-ui-react/dist');
 
     // API routes
     webApp.use(async (ctx, next) => {
