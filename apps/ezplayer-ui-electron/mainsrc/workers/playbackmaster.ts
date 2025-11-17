@@ -300,12 +300,14 @@ parentPort.on('message', (command: PlayerCommand) => {
                         return false;
                     }
                     foregroundPlayerRunState.addInteractiveCommand({
-                        commandId: cmd.requestId,
+                        immediate: cmd.immediate,
+                        requestId: cmd.requestId,
                         startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
                         seqId: cmd.songId,
                     });
                     audioPlayerRunState.addInteractiveCommand({
-                        commandId: cmd.requestId,
+                        immediate: cmd.immediate,
+                        requestId: cmd.requestId,
                         startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
                         seqId: cmd.songId,
                     });
@@ -321,8 +323,12 @@ parentPort.on('message', (command: PlayerCommand) => {
                     audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
                     break;
                 }
+                case 'clearrequests': {
+                    foregroundPlayerRunState.removeInteractiveCommands();
+                    audioPlayerRunState.removeInteractiveCommands();
+                    break;
+                }
                 // lots of TODOs here...
-                case 'clearrequests': break;
                 case 'pause':
                     isPaused = true;
                     break;

@@ -1133,7 +1133,7 @@ export type PlaybackActions =
     | {
           type: 'interactive';
           actions: PlayAction[];
-          commandId: string;
+          requestId: string;
           startTime: number;
           seqId?: string;
           playlistId?: string;
@@ -1141,11 +1141,12 @@ export type PlaybackActions =
       };
 
 export interface InteractivePlayCommand {
+    immediate: boolean;
     startTime: number;
-    commandId: string;
     seqId?: string;
     playlistId?: string;
     scheduleId?: string;
+    requestId: string;
 }
 
 export interface UpcomingPlaybackActions {
@@ -1317,7 +1318,7 @@ export class PlayerRunState {
             const s = this.schedulesById.get(ipc.scheduleId);
             if (!s) return;
             this.#populatePlaybackScheduleItem(sc, s);
-            sc.itemId = ipc.commandId;
+            sc.itemId = ipc.requestId;
             const dur = sc.schedEnd - sc.schedStart;
             sc.schedStart = ipc.startTime <= 0 ? ct : ipc.startTime;
             sc.schedEnd = sc.schedStart + dur;
@@ -1358,9 +1359,11 @@ export class PlayerRunState {
                 sc.mainSectionLongest = it;
             }
         }
-        sc.priorityTier = 2;
+        sc.cutOffPrevious = ipc.immediate ? true : false;
+        sc.hardCutIn = ipc.immediate ? true : false;
+        sc.priorityTier = ipc.immediate ? 1 : 2;
         sc.timeBasedPri = ipc.startTime;
-        sc.itemId = ipc.commandId;
+        sc.itemId = ipc.requestId;
     }
 
     //  Feeding in the whole schedule and a time range to update the relevant part
@@ -1457,7 +1460,7 @@ export class PlayerRunState {
             while (nqi < this.interactiveQueue.length) {
                 const add = this.interactiveQueue[nqi];
                 if (add.startTime > queueUntil) break;
-                if (this.heapBySchedId.has(add.commandId)) continue;
+                if (this.heapBySchedId.has(add.requestId)) continue;
                 const qi = new PlaybackItem();
                 this.#populatePlaybackInteractiveItem(qi, add, this.currentTime);
                 this.#addToHeap(qi);
@@ -1652,7 +1655,7 @@ export class PlayerRunState {
               }
             : {
                   type: 'interactive',
-                  commandId: item.itemId,
+                  requestId: item.itemId,
                   startTime: item.schedStart,
                   scheduleId: item.scheduleId,
                   actions: st.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
@@ -1709,7 +1712,7 @@ export class PlayerRunState {
             if (item.startTime >= this.currentTime + schedahead) continue;
             const ha: PlaybackActions = {
                 type: 'interactive',
-                commandId: item.commandId,
+                requestId: item.requestId,
                 startTime: item.startTime,
                 scheduleId: item.scheduleId,
                 playlistId: item.playlistId,
@@ -1736,7 +1739,11 @@ export class PlayerRunState {
     }
 
     removeInteractiveCommand(id: string) {
-        this.interactiveQueue = this.interactiveQueue.filter((q) => q.commandId !== id);
+        this.interactiveQueue = this.interactiveQueue.filter((q) => q.requestId !== id);
+    }
+
+    removeInteractiveCommands() {
+        this.interactiveQueue = [];
     }
 
     // TODO: Take update to the schedules, playlists, items
