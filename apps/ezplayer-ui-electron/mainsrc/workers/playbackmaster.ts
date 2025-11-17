@@ -20,8 +20,10 @@ import type {
     PlayAction,
     PlaybackLogDetail,
     PlaybackStatistics,
+    PlayingItem,
     PlayerPStatusContent,
     PlayerNStatusContent,
+    UpcomingPlaybackActions,
 } from '@ezplayer/ezplayer-core';
 import { PlayerRunState } from '@ezplayer/ezplayer-core';
 
@@ -167,7 +169,19 @@ function playingItemDesc(item?: PlayAction) {
     return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
 }
 
-// TODO Send better player status
+// TODO: Should this move to the run state?
+function actionToPlayingItem(interactive: boolean, pla: PlayAction)
+{
+    return {
+        type: interactive ? 'Immediate' : 'Scheduled',
+        item: 'Song', // TODO
+        title: playingItemDesc(pla),
+        sequence_id: pla.seqId,
+        at: foregroundPlayerRunState.currentTime,
+        until: foregroundPlayerRunState.currentTime + (pla.durationMS ?? 0)
+    } as PlayingItem;
+}
+
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const playStatus: PlayerPStatusContent = {
@@ -180,66 +194,17 @@ function sendPlayerStateUpdate() {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
             if (!playStatus.now_playing) {
-                playStatus.now_playing = {
-                    type: 'Scheduled',
-                    item: 'Song',
-                    title: playingItemDesc(pla),
-                    sequence_id: pla.seqId,
-                    at: foregroundPlayerRunState.currentTime,
-                    until: foregroundPlayerRunState.currentTime + (ps.curPLActions.actions[0].durationMS ?? 0)
-                }
+                playStatus.now_playing = actionToPlayingItem(false, pla);
                 playStatus.status = 'Playing';
             } else {
-                playStatus.upcoming!.push({
-                    type: 'Scheduled',
-                    item: 'Song',
-                    title: playingItemDesc(pla),
-                    sequence_id: pla.seqId,
-                    at: pla.atTime,
-                    until: pla.atTime + (pla.durationMS ?? 0)
-                });
+                playStatus.upcoming!.push(actionToPlayingItem(false, pla));
             }
         }
     }
-    if (ps.heapSchedules?.[0]?.actions?.length) {
-        //console.log(`Player Status Heap: ${ps.heapSchedules[0].scheduleId} / ${new Date(ps.heapSchedules[0].actions[0].atTime).toISOString()}`);
-    }
-    if (ps.upcomingSchedules?.length && ps.upcomingSchedules[0].type === 'scheduled') {
-        //console.log(`Player Schedule Upcoming: ${ps.upcomingSchedules[0].scheduleId} / ${new Date(ps.upcomingSchedules[0].schedStart)}`);
-        playStatus.upcoming!.push({
-            type: 'Scheduled',
-            item: 'Schedule',
-            title: foregroundPlayerRunState.schedulesById.get(ps.upcomingSchedules[0].scheduleId)?.title ?? 'Schedule',
-            at: ps.upcomingSchedules[0].actions[0]?.atTime,
-            schedule_id:ps.upcomingSchedules[0].scheduleId,
-        });
-    }
-    if (ps.interactive?.[0]?.actions?.length) {
-        //console.log(`Player Interactive: ${ps.interactive[0].scheduleId} / ${new Date(ps.interactive[0].actions[0].atTime).toISOString()}`);
-        playStatus.queue = ps.interactive[0].actions.filter((a)=>!a.end).map((a)=>{return {
-            type: 'Queued',
-            item: 'Song',
-            title: playingItemDesc(a),
-            at: a.atTime,
-            until: a.durationMS !== undefined ? a.atTime + (a.durationMS ?? 0) : undefined,
-            request_id: undefined, // TODO
-            sequence_id: a.seqId,
-        };});
-    }
-    if (ps.stackedPLActions?.length) {
-        playStatus.suspendedItems = ps.stackedPLActions.filter((a)=>a.scheduleId).map((a)=>{return {
-            type: 'Scheduled',
-            item: 'Schedule',
-            title: foregroundPlayerRunState.schedulesById.get(a.scheduleId!)?.title ?? 'Schedule',
-        };});
-    }
-    if (ps.heapSchedules?.length) {
-        playStatus.preemptedItems = ps.heapSchedules.filter((a)=>a.scheduleId).map((a)=>{return {
-            type: 'Scheduled',
-            item: 'Schedule',
-            title: foregroundPlayerRunState.schedulesById.get(a.scheduleId!)?.title ?? 'Schedule',
-        };});
-    }
+    playStatus.queue = foregroundPlayerRunState.getQueueItems();
+    playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
+    playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
+    playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
     send({ type: 'pstatus', status: playStatus });
 }
 

@@ -1,4 +1,4 @@
-import type { PlaylistRecord, ScheduledPlaylist, ScheduleEndPolicy, SequenceRecord } from '../types/DataTypes';
+import type { PlayingItem, PlaylistRecord, ScheduledPlaylist, ScheduleEndPolicy, SequenceRecord } from '../types/DataTypes';
 
 // Module goals:
 //   Deep understanding of the schedule - simulate a run
@@ -1318,7 +1318,6 @@ export class PlayerRunState {
             const s = this.schedulesById.get(ipc.scheduleId);
             if (!s) return;
             this.#populatePlaybackScheduleItem(sc, s);
-            sc.itemId = ipc.requestId;
             const dur = sc.schedEnd - sc.schedStart;
             sc.schedStart = ipc.startTime <= 0 ? ct : ipc.startTime;
             sc.schedEnd = sc.schedStart + dur;
@@ -1744,6 +1743,102 @@ export class PlayerRunState {
 
     removeInteractiveCommands() {
         this.interactiveQueue = [];
+    }
+
+    titleForIds(seqId?: string, plId?: string, schedId?: string) {
+        if (seqId) {
+            const nps = this.sequencesById.get(seqId);
+            return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+        } else if (plId) {
+            const npl = this.playlistsById.get(plId);
+            return `${npl?.title ?? 'unknown playlist'}`;
+        } else if (schedId) {
+            const nsc = this.schedulesById.get(schedId);
+            return `${nsc?.title ?? 'unknown sched'}`;
+        } else {
+            return "<Command>";
+        }
+    }
+
+    getQueueItems(): PlayingItem[] {
+        const items: PlayingItem[] = [];
+        for (const q of this.interactiveQueue) {
+            items.push({
+                type: q.immediate ? 'Immediate' : 'Queued',
+                item: q.seqId ? 'Song' : (q.playlistId ? 'Playlist' : (q.scheduleId ? 'Schedule' : 'Command')),
+                sequence_id: q.seqId,
+                playlist_id: q.playlistId,
+                schedule_id: q.scheduleId,
+                request_id: q.requestId,
+                //at: q.startTime,
+                //until: q.
+                title: this.titleForIds(q.seqId, q.playlistId, q.scheduleId),
+            } as PlayingItem);
+        }
+        return items;
+    }
+
+    getUpcomingSchedules(): PlayingItem[] {
+        const items: PlayingItem[] = [];
+        for (const s of this.upcomingOccurrences) {
+            items.push({
+                type: 'Scheduled',
+                item: 'Schedule',
+                schedule_id: s.scheduleId,
+                at: s.schedStart,
+                until: s.schedEnd,
+                title: this.titleForIds(undefined, undefined, s.scheduleId),
+            } as PlayingItem);
+        }
+        return items;
+    }
+
+    getHeapItems(): PlayingItem[] {
+        const items: PlayingItem[] = [];
+        for (const s of this.heapBySchedId.values()) {
+            if (s.scheduleId) {
+                items.push({
+                    type: 'Scheduled',
+                    item: 'Schedule',
+                    schedule_id: s.scheduleId,
+                    at: s.schedStart,
+                    until: s.schedEnd,
+                    title: this.titleForIds(undefined, undefined, s.scheduleId),
+                } as PlayingItem);
+            }
+            else if (s.playlistIds?.[1]) {
+                items.push({
+                    type: 'Immediate',
+                    item: 'Playlist',
+                    playlist_id: s.playlistIds?.[1],
+                    title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
+                } as PlayingItem);
+            }
+            else if (s.mainSectionIds?.[0]) {
+                items.push({
+                    type: 'Immediate',
+                    item: 'Song',
+                    sequence_id: s.mainSectionIds[0],
+                    title: this.titleForIds(undefined, undefined, s.mainSectionIds[0]),
+                } as PlayingItem);
+            }
+        }
+        return items;
+    }
+
+    getStackItems(): PlayingItem[] {
+        const items: PlayingItem[] = [];
+        const stk = this.getStatusSnapshot();
+        for (const s of stk) {
+            items.push({
+                type: 'Immediate',
+                item: 'Song',
+                schedule_id: s.scheduleId,
+                sequence_id: s.playlistIds?.[s.seqIdx],
+                title: this.titleForIds(s.scheduleId, undefined, s.playlistIds?.[s.seqIdx]),
+            })
+        }
+        return items;
     }
 
     // TODO: Take update to the schedules, playlists, items

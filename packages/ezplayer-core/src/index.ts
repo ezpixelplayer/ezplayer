@@ -16,6 +16,7 @@ export type {
     PlayerPStatusContent,
     CombinedPlayerStatus,
     PlaybackStatistics,
+    PlayingItem,
     EZPlayerCommand,
     EndUser,
     EndUserShowSettings,
