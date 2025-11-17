@@ -121,12 +121,12 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 <Typography variant="body1">
                                     Last Checkin: {formatTime(player.reported_time)}
                                 </Typography>
-                                {player.ptype === 'EZP' && (
+                                {(
                                     <Typography variant="body1">
                                         Status: {player.status === 'Playing' ? '▶ Playing' : '⏸ Not Playing'}
                                     </Typography>
                                 )}
-                                {player.ptype === 'EZP' && player.now_playing && (
+                                {player.now_playing && (
                                     <>
                                         <Typography variant="body2">Now Playing: {player.now_playing.title}</Typography>
                                         <Typography variant="body2">
@@ -134,12 +134,37 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                         </Typography>
                                     </>
                                 )}
-                                {player.ptype === 'EZP' && player.upcoming?.length && (
+                                {player.upcoming && (
+                                    <>
+                                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                                            Upcoming Songs ({player.upcoming.length}):
+                                        </Typography>
+                                        {player.upcoming.filter((s)=>s.sequence_id).map((seq, index) => (
+                                            <Box
+                                                key={index}
+                                                sx={{
+                                                    mb: 1,
+                                                    pl: 1,
+                                                    borderLeft: '2px solid',
+                                                    borderColor: 'primary.main',
+                                                }}
+                                            >
+                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                    {seq.title}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Starts: {formatTime(seq.at ?? 0)}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </>
+                                )}
+                                {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                                             Upcoming Shows ({player.upcoming.length}):
                                         </Typography>
-                                        {player.upcoming.map((show, index) => (
+                                        {player.upcoming.filter((s)=>s.schedule_id).map((show, index) => (
                                             <Box
                                                 key={index}
                                                 sx={{
@@ -154,6 +179,75 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                 </Typography>
                                                 <Typography variant="caption" color="text.secondary">
                                                     Starts: {formatTime(show.at ?? 0)}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </>
+                                )}
+                                {player.queue && (
+                                    <>
+                                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                                            Queue ({player.queue.length}):
+                                        </Typography>
+                                        {player.queue.map((qi, index) => (
+                                            <Box
+                                                key={index}
+                                                sx={{
+                                                    mb: 1,
+                                                    pl: 1,
+                                                    borderLeft: '2px solid',
+                                                    borderColor: 'primary.main',
+                                                }}
+                                            >
+                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                    {qi.title}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </>
+                                )}
+                                {player.suspendedItems?.length && (
+                                    <>
+                                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                                            Suspended ({player.suspendedItems.length}):
+                                        </Typography>
+                                        {player.suspendedItems.map((item, index) => (
+                                            <Box
+                                                key={index}
+                                                sx={{
+                                                    mb: 1,
+                                                    pl: 1,
+                                                    borderLeft: '2px solid',
+                                                    borderColor: 'primary.main',
+                                                }}
+                                            >
+                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                    {item.title}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </>
+                                )}
+                                {player.preemptedItems?.length && (
+                                    <>
+                                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                                            Preempted ({player.preemptedItems.length}):
+                                        </Typography>
+                                        {player.preemptedItems.map((sched, index) => (
+                                            <Box
+                                                key={index}
+                                                sx={{
+                                                    mb: 1,
+                                                    pl: 1,
+                                                    borderLeft: '2px solid',
+                                                    borderColor: 'primary.main',
+                                                }}
+                                            >
+                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                    {sched.title}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Scheduled start: {formatTime(sched.at ?? 0)}
                                                 </Typography>
                                             </Box>
                                         ))}
