@@ -1819,7 +1819,7 @@ export class PlayerRunState {
                     type: 'Immediate',
                     item: 'Song',
                     sequence_id: s.mainSectionIds[0],
-                    title: this.titleForIds(undefined, undefined, s.mainSectionIds[0]),
+                    title: this.titleForIds(s.mainSectionIds[0], undefined, undefined),
                 } as PlayingItem);
             }
         }
@@ -1835,7 +1835,7 @@ export class PlayerRunState {
                 item: 'Song',
                 schedule_id: s.scheduleId,
                 sequence_id: s.playlistIds?.[s.seqIdx],
-                title: this.titleForIds(s.scheduleId, undefined, s.playlistIds?.[s.seqIdx]),
+                title: this.titleForIds(s.playlistIds?.[s.seqIdx], undefined, s.scheduleId),
             })
         }
         return items;
