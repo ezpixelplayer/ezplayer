@@ -137,7 +137,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Upcoming Songs ({player.upcoming.length}):
+                                            Upcoming Songs ({player.upcoming.filter((s)=>s.sequence_id).length}):
                                         </Typography>
                                         {player.upcoming.filter((s)=>s.sequence_id).map((seq, index) => (
                                             <Box
@@ -162,7 +162,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Upcoming Shows ({player.upcoming.length}):
+                                            Upcoming Shows ({player.upcoming.filter((s)=>s.schedule_id).length}):
                                         </Typography>
                                         {player.upcoming.filter((s)=>s.schedule_id).map((show, index) => (
                                             <Box
