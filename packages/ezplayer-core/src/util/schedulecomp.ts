@@ -1553,8 +1553,14 @@ export class PlayerRunState {
                 }
 
                 if (shouldPush) {
+                    const shouldKeep = st?.item.itemType !== 'Immediate';
                     if (st) {
-                        st.suspendAtTime(this.depth, this.currentTime, log);
+                        if (shouldKeep) {
+                            st.suspendAtTime(this.depth, this.currentTime, log);
+                        }
+                        else {
+                            st.stopAtTime(this.depth, this.currentTime, log);
+                        }
                     }
 
                     this.heap.deleteTop();
@@ -1563,7 +1569,9 @@ export class PlayerRunState {
                     const nst = new PlaybackStateEntry(ht, ht.itemId);
                     nst.initializeToTime(this.depth, this.currentTime, this.currentTime);
 
-                    this.#stackPush(nst);
+                    if (shouldKeep) {
+                        this.#stackPush(nst);
+                    }
 
                     nst.noteScheduleEvent(this.depth, nst, this.currentTime, 'Schedule Started', log);
                 }
