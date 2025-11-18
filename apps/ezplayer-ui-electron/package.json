@@ -8,12 +8,35 @@
     "version": "0.0.25-prealpha",
     "main": "dist/main.js",
     "type": "module",
+    "build": {
+        "appId": "dev.ezplayer.ezplayer.",
+        "productName": "EZPlayer",
+        "directories": {
+            "output": "release",
+            "buildResources": "assets"
+        },
+        "files": [
+            "dist/**/*",
+            "package.json",
+            "build/Release/**"
+        ],
+        "win": {
+            "target": ["nsis"]
+        },
+        "mac": {
+            "target": ["dmg"]
+        },
+        "linux": {
+            "target": ["AppImage"],
+            "category": "Utility"
+        }
+    },
     "scripts": {
         "start": "pnpm dev",
         "dev": "concurrently \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --config electron-builder.json",
+        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
         "build:main": "node scripts/build-main.mjs",
