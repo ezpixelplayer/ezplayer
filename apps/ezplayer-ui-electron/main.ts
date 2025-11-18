@@ -151,26 +151,46 @@ app.whenReady().then(async () => {
     const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
     console.log(`🌐 Starting Koa web server on port ${PORT} (source: ${source})`);
 
-    // Resolve static path for React web build (workspace dependency)
-    const staticPath = path.resolve(process.cwd(), '../ezplayer-ui-react/dist');
+    const staticPath = path.resolve(__dirname, '../../ezplayer-ui-react/dist');
+    const indexPath = path.join(staticPath, 'index.html');
 
-    // API routes
     webApp.use(async (ctx, next) => {
-        if (ctx.path === '/api/hello') {
-            ctx.body = { message: 'Hello from Koa + Electron!' };
+        if (ctx.path.startsWith('/api/')) {
+            if (ctx.path === '/api/hello') {
+                ctx.body = { message: 'Hello from Koa + Electron!' };
+            } else {
+                ctx.status = 404;
+                ctx.body = { error: 'API endpoint not found' };
+            }
         } else {
             await next();
         }
     });
 
-    // Serve static files
-    webApp.use(serve(staticPath));
+    webApp.use(
+        serve(staticPath, {
+            index: false,
+        }),
+    );
 
-    // Set correct MIME types for JS modules
     webApp.use(async (ctx, next) => {
         await next();
         if ((ctx.path.endsWith('.js') || ctx.path.endsWith('.mjs')) && ctx.status === 200) {
             ctx.type = 'application/javascript; charset=utf-8';
+        }
+    });
+
+    webApp.use(async (ctx) => {
+        if (ctx.path.startsWith('/api/') || ctx.path.startsWith('/assets/')) {
+            return;
+        }
+
+        if (fs.existsSync(indexPath)) {
+            ctx.type = 'text/html';
+            ctx.body = fs.readFileSync(indexPath, 'utf-8');
+        } else {
+            ctx.status = 404;
+            ctx.body = 'React app not built. Please run: cd apps/ezplayer-ui-react && pnpm build:web';
         }
     });
 
