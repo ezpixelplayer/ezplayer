@@ -13,7 +13,7 @@
         "dev": "concurrently \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --config electron-builder.json",
+        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --config electron-builder.json --publish=never",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
         "build:main": "node scripts/build-main.mjs",
