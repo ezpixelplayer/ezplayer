@@ -29,7 +29,12 @@
         "linux": {
             "target": ["AppImage"],
             "category": "Utility"
-        }
+        },
+        "publish": [
+            {
+                "releaseType": "prerelease"
+            }
+        ]
     },
     "scripts": {
         "start": "pnpm dev",
