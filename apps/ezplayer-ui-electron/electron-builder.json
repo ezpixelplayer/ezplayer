@@ -1,9 +1,7 @@
 {
     "appId": "dev.ezplayer.ezplayer.",
     "productName": "EZPlayer",
-    "build": {
-        "publish": "never"
-    },
+    "publish": "never",
     "directories": {
         "output": "release",
         "buildResources": "assets"
