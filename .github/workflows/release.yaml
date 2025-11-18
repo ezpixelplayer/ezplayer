@@ -53,7 +53,7 @@ jobs:
       - name: Build app (electron-builder)
         run: pnpm run build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Upload per-OS artifacts to the workflow run (handy for debugging)
       - name: Upload build artifacts
