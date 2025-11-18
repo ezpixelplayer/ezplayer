@@ -101,8 +101,8 @@ We have a lot of features planned for the coming years... better previews, bette
 
 Despite that broad scope, we want to avoid the complexity that currently plagues the xLights ecosystem, so there are a few things we do not expect we will ever implement:
 - USB controllers
-- All the complexity and limitations of anything like FPP connect.
 - Cape support (this is a player, not a controller firmware)
+- All the complexity and limitations of anything like FPP connect
 - A complex plugin architecture
 
 ---

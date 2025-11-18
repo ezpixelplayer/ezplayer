@@ -50,8 +50,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # 🔧 Adjust this script name if needed (build/dist/etc)
-      - name: Build Electron app (electron-builder)
-        working-directory: apps/ezplayer-ui-electron
+      - name: Build app (electron-builder)
         run: pnpm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
