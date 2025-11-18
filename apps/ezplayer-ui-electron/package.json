@@ -8,6 +8,7 @@
     "version": "0.0.25-prealpha",
     "main": "dist/main.js",
     "type": "module",
+    "publish": "never",
     "scripts": {
         "start": "pnpm dev",
         "dev": "concurrently \"pnpm dev:react\" \"pnpm dev:electron\"",
