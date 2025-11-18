@@ -97,10 +97,11 @@ So, we started a new one, featuring:
 
 ### Roadmap
 
-We have a lot of features planned for the coming years... better previews, better controller health checks, a cloud portal, and so forth.  We have a plan for ways to enable interactive show elements, but without resorting to a complex plugin architecture.
+We have a lot of features planned for the coming years... better previews, better controller health checks, a cloud portal, and so forth.  We aim to simplify the way the xLights ecosystem works, while solving long-standing problems.  We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
 
-But, we want to avoid the complexity that currently plagues the xLights ecosystem, so there are a few things we do not expect we will ever implement:
+Despite that broad scope, we want to avoid the complexity that currently plagues the xLights ecosystem, so there are a few things we do not expect we will ever implement:
 - USB controllers
+- All the complexity and limitations of anything like FPP connect.
 - Cape support (this is a player, not a controller firmware)
 - A complex plugin architecture
 
