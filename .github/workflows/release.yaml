@@ -1,5 +1,8 @@
 name: Build & Release EZPlayer
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
