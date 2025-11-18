@@ -55,24 +55,5 @@ jobs:
       # 🔧 Adjust this script name if needed (build/dist/etc)
       - name: Build app (electron-builder)
         run: pnpm run build
-
-      # Upload per-OS artifacts to the workflow run (handy for debugging)
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ezplayer-${{ matrix.os }}-${{ github.ref_name }}
-          path: apps/ezplayer-ui-electron/release/**
-          if-no-files-found: error
-
-      # Attach artifacts from this OS to the GitHub Release for this tag
-      - name: Create / update GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}         # Release title = tag
-          draft: false
-          prerelease: false
-          files: |
-            apps/ezplayer-ui-electron/release/**
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
