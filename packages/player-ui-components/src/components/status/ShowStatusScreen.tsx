@@ -206,7 +206,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                         ))}
                                     </>
                                 )}
-                                {player.suspendedItems?.length && (
+                                {player.suspendedItems && player.suspendedItems.length > 0 && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                                             Suspended ({player.suspendedItems.length}):
@@ -228,7 +228,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                         ))}
                                     </>
                                 )}
-                                {player.preemptedItems?.length && (
+                                {player.preemptedItems && player.preemptedItems.length > 0 && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                                             Preempted ({player.preemptedItems.length}):
@@ -245,9 +245,6 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                             >
                                                 <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
                                                     {sched.title}
-                                                </Typography>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Scheduled start: {formatTime(sched.at ?? 0)}
                                                 </Typography>
                                             </Box>
                                         ))}

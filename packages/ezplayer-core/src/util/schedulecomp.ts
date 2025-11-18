@@ -1026,6 +1026,7 @@ class PlaybackStateEntry {
 
 // Track items that we may start
 class PlaybackItem implements SchedulerHeapItem {
+    itemType?: 'Scheduled' | 'Immediate' | 'Queued';
     priorityTier: number = 10;
     timeBasedPri: number = 0;
     cutOffPrevious: boolean = false; // Tie breaker, which wins, existing (false) or new (true)?
@@ -1038,7 +1039,9 @@ class PlaybackItem implements SchedulerHeapItem {
 
     hardCutIn?: boolean; // Should interrupt lower priority immediately
     preferHardCutIn?: boolean; // Set on, say, static, to allow others to preempt immediately
-    itemId: string = '';
+    itemId: string = ''; // This is for internal tracking, either the request ID or the schedule ID
+    requestId?: string; // If it is a request
+
     scheduleId?: string = ''; // If this correlates to such
     playlistIds?: (string | undefined)[] = undefined; // If this correlates to such
 
@@ -1182,6 +1185,7 @@ export class PlayerRunState {
     schedulesById: Map<string, ScheduledPlaylist> = new Map();
 
     interactiveQueue: InteractivePlayCommand[] = [];
+    immediateItem?: InteractivePlayCommand = undefined;
 
     constructor(currentTime: number) {
         this.currentTime = currentTime;
@@ -1239,6 +1243,7 @@ export class PlayerRunState {
 
     #populatePlaybackScheduleItem(sc: PlaybackItem, s: ScheduledPlaylist) {
         const times = getScheduleTimes(s);
+        sc.itemType = 'Scheduled';
         sc.priorityTier = priorityToNumber[s.priority ?? 'medium'];
         sc.timeBasedPri = times.startTimeMS;
         sc.schedStart = times.startTimeMS;
@@ -1363,6 +1368,8 @@ export class PlayerRunState {
         sc.priorityTier = ipc.immediate ? 1 : 2;
         sc.timeBasedPri = ipc.startTime;
         sc.itemId = ipc.requestId;
+        sc.requestId = ipc.requestId;
+        sc.itemType = ipc.immediate ? 'Immediate' : 'Queued';
     }
 
     //  Feeding in the whole schedule and a time range to update the relevant part
@@ -1389,6 +1396,7 @@ export class PlayerRunState {
 
             const pi = new PlaybackItem();
             this.#populatePlaybackScheduleItem(pi, s);
+            pi.itemType = 'Scheduled';
             pi.cutOffPrevious = preferStartingNew;
 
             if (pi.schedStart > this.currentTime) {
@@ -1452,6 +1460,16 @@ export class PlayerRunState {
                 ++nti;
             }
             if (nti > 0) this.upcomingOccurrences = this.upcomingOccurrences.slice(nti);
+
+            // See if there is an immediate item
+            if (this.immediateItem && this.immediateItem.startTime <= this.currentTime) {
+                if (!this.heapBySchedId.has(this.immediateItem.requestId)) {
+                    const qi = new PlaybackItem();
+                    this.#populatePlaybackInteractiveItem(qi, this.immediateItem, this.currentTime);
+                    this.#addToHeap(qi);
+                }
+                this.immediateItem = undefined;
+            }
 
             // Then see if there are relevant upcoming queue items to add
             const queueUntil = this.currentTime;
@@ -1575,10 +1593,16 @@ export class PlayerRunState {
             }
 
             //  Immediates / commands say to do something / schedule gets modified?
+            const im = this.immediateItem;
+            if (im && im.startTime < nextDecisionTime) {
+                nextDecisionTime = im.startTime;
+            }
+            /*
             const ic = this.interactiveQueue[0];
             if (ic && ic.startTime < nextDecisionTime) {
                 nextDecisionTime = ic.startTime;
             }
+            */
 
             // Run advance
             const nextTime = Math.max(nextDecisionTime, this.currentTime);
@@ -1733,15 +1757,22 @@ export class PlayerRunState {
 
     // Interactive cmd to consider?
     addInteractiveCommand(cmd: InteractivePlayCommand) {
-        this.interactiveQueue.push(cmd);
-        this.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+        if (cmd.immediate) {
+            this.immediateItem = cmd;
+        }
+        else {
+            this.interactiveQueue.push(cmd);
+            this.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+        }
     }
 
     removeInteractiveCommand(id: string) {
         this.interactiveQueue = this.interactiveQueue.filter((q) => q.requestId !== id);
+        if (this.immediateItem?.requestId === id) this.immediateItem = undefined;
     }
 
     removeInteractiveCommands() {
+        this.immediateItem = undefined;
         this.interactiveQueue = [];
     }
 
@@ -1762,7 +1793,8 @@ export class PlayerRunState {
 
     getQueueItems(): PlayingItem[] {
         const items: PlayingItem[] = [];
-        for (const q of this.interactiveQueue) {
+        const ia = [...(this.immediateItem ? [this.immediateItem]: []), ...this.interactiveQueue];
+        for (const q of ia) {
             items.push({
                 type: q.immediate ? 'Immediate' : 'Queued',
                 item: q.seqId ? 'Song' : (q.playlistId ? 'Playlist' : (q.scheduleId ? 'Schedule' : 'Command')),
@@ -1828,13 +1860,13 @@ export class PlayerRunState {
 
     getStackItems(): PlayingItem[] {
         const items: PlayingItem[] = [];
-        const stk = this.getStatusSnapshot();
+        const stk = this.getStatusSnapshot().slice(1);
         for (const s of stk) {
             items.push({
                 type: 'Immediate',
                 item: 'Song',
                 schedule_id: s.scheduleId,
-                sequence_id: s.playlistIds?.[s.seqIdx],
+                sequence_id: s.playlistIds?.[Math.max(s.seqIdx, 0)],
                 title: this.titleForIds(s.playlistIds?.[s.seqIdx], undefined, s.scheduleId),
             })
         }
