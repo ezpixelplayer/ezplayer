@@ -21,13 +21,19 @@
             "build/Release/**"
         ],
         "win": {
-            "target": ["nsis"]
+            "target": [
+                "nsis"
+            ]
         },
         "mac": {
-            "target": ["dmg"]
+            "target": [
+                "dmg"
+            ]
         },
         "linux": {
-            "target": ["AppImage"],
+            "target": [
+                "AppImage"
+            ],
             "category": "Utility"
         },
         "publish": [
@@ -86,6 +92,7 @@
         "@mui/styles": "^5.16.14",
         "@mui/x-date-pickers": "5.0.0",
         "@reduxjs/toolkit": "^2.5.0",
+        "@types/ws": "^8.18.1",
         "axios": "^1.7.9",
         "bindings": "^1.5.0",
         "crc-32": "^1.2.2",
@@ -107,6 +114,7 @@
         "react-router-dom": "^6.28.2",
         "react-toastify": "^10.0.6",
         "uuid": "^11.0.5",
+        "ws": "^8.18.3",
         "zstddec": "^0.1.0"
     }
 }

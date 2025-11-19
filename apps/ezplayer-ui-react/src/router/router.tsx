@@ -1,5 +1,5 @@
 import { Navigate, RouteObject } from 'react-router-dom';
-import { ShowStatusScreen, SidebarLayout, Routes as ROUTES } from '@ezplayer/player-ui-components';
+import { ShowStatusScreen, SidebarLayout, Routes as ROUTES, JukeboxScreen } from '@ezplayer/player-ui-components';
 
 const getStatusArea = () => [];
 
@@ -16,6 +16,10 @@ const routes: RouteObject[] = [
                 path: ROUTES.SHOWSTATUS,
                 element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
             },
+            {
+                path: ROUTES.JUKEBOXSCR,
+                element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} />,
+            }
         ],
     },
 ];

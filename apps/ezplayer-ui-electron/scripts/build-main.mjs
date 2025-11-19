@@ -50,6 +50,8 @@ const nodeExternals = [
     'koa',
     'koa-router',
     'koa-static',
+    'ws',
+    'http',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];

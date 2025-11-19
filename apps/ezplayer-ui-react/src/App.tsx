@@ -9,6 +9,7 @@ import { Provider } from 'react-redux';
 import { ThemeProviderWrapper, InitialDataProvider } from '@ezplayer/player-ui-components';
 import { store, storeApi } from './store/configure-store';
 import { ToastContainer } from 'react-toastify';
+import { WebSocketProvider } from './components/WebSocketProvider';
 
 const App = () => {
     const content = useRoutes(router);
@@ -16,17 +17,19 @@ const App = () => {
     return (
         <>
             <Provider store={store}>
-                <InitialDataProvider api={storeApi}>
-                    <ToastContainer />
-                    <StylesProvider injectFirst>
-                        <ThemeProviderWrapper>
-                            <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                <CssBaseline />
-                                {content}
-                            </LocalizationProvider>
-                        </ThemeProviderWrapper>
-                    </StylesProvider>
-                </InitialDataProvider>
+                <WebSocketProvider>
+                    <InitialDataProvider api={storeApi}>
+                        <ToastContainer />
+                        <StylesProvider injectFirst>
+                            <ThemeProviderWrapper>
+                                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                    <CssBaseline />
+                                    {content}
+                                </LocalizationProvider>
+                            </ThemeProviderWrapper>
+                        </StylesProvider>
+                    </InitialDataProvider>
+                </WebSocketProvider>
             </Provider>
         </>
     );

@@ -48,6 +48,7 @@ import {
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { ClockConverter } from '../sharedsrc/ClockConverter.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
+import { wsBroadcaster } from './websocket-broadcaster.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -106,6 +107,24 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:show', curShow);
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
 
+    // Broadcast via WebSocket (for React web app)
+    wsBroadcaster.broadcast('update:showFolder', showFolder);
+    wsBroadcaster.broadcast(
+        'update:sequences',
+        curSequences.filter((s) => !s.deleted),
+    );
+    wsBroadcaster.broadcast(
+        'update:playlist',
+        curPlaylists.filter((s) => !s.deleted),
+    );
+    wsBroadcaster.broadcast(
+        'update:schedule',
+        curSchedule.filter((s) => !s.deleted),
+    );
+    if (curUser) wsBroadcaster.broadcast('update:user', curUser);
+    if (curShow) wsBroadcaster.broadcast('update:show', curShow);
+    wsBroadcaster.broadcast('update:combinedstatus', curStatus);
+
     scheduleUpdated();
 }
 
@@ -132,7 +151,11 @@ const handlers: MainRPCAPI = {
 
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
-export async function registerContentHandlers(mainWindow: BrowserWindow | null, realTimeClock: ClockConverter, nPlayWorker: Worker) {
+export async function registerContentHandlers(
+    mainWindow: BrowserWindow | null,
+    realTimeClock: ClockConverter,
+    nPlayWorker: Worker,
+) {
     updateWindow = mainWindow;
     rtConverter = realTimeClock;
     playWorker = nPlayWorker;
@@ -174,8 +197,11 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         const showFolder = getCurrentShowFolder();
         if (showFolder) await saveSequencesAPI(showFolder, updList);
         curSequences = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        updateWindow?.webContents?.send('update:sequences', filtered);
+        wsBroadcaster.broadcast('update:sequences', filtered);
         scheduleUpdated();
-        return updList.filter((r) => r.deleted !== true);
+        return filtered;
     });
 
     ipcMain.handle('ipcGetCloudPlaylists', async (_event): Promise<PlaylistRecord[]> => {
@@ -191,8 +217,11 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         const showFolder = getCurrentShowFolder();
         if (showFolder) await savePlaylistsAPI(showFolder, updList);
         curPlaylists = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        updateWindow?.webContents?.send('update:playlist', filtered);
+        wsBroadcaster.broadcast('update:playlist', filtered);
         scheduleUpdated();
-        return updList.filter((r) => r.deleted !== true);
+        return filtered;
     });
 
     ipcMain.handle('ipcGetCloudSchedule', async (_event): Promise<ScheduledPlaylist[]> => {
@@ -206,8 +235,11 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         const showFolder = getCurrentShowFolder();
         if (showFolder) await saveScheduleAPI(showFolder, updList);
         curSchedule = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        updateWindow?.webContents?.send('update:schedule', filtered);
+        wsBroadcaster.broadcast('update:schedule', filtered);
         scheduleUpdated();
-        return updList.filter((r) => r.deleted !== true);
+        return filtered;
     });
 
     ipcMain.handle('ipcGetCloudStatus', async (_event): Promise<CombinedPlayerStatus> => {
@@ -223,6 +255,8 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             const showFolder = getCurrentShowFolder();
             if (showFolder) await saveShowProfileAPI(showFolder, data);
             curShow = data;
+            updateWindow?.webContents?.send('update:show', curShow);
+            wsBroadcaster.broadcast('update:show', curShow);
             return Promise.resolve(curShow!);
         },
     );
@@ -234,6 +268,8 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         const showFolder = getCurrentShowFolder();
         if (showFolder) await saveUserProfileAPI(showFolder, ndata);
         curUser = ndata;
+        updateWindow?.webContents?.send('update:user', curUser);
+        wsBroadcaster.broadcast('update:user', curUser);
         return ndata;
     });
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
@@ -269,10 +305,12 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         switch (msg.type) {
             case 'audioChunk': {
                 mainWindow?.webContents.send('audio:chunk', msg.chunk);
+                wsBroadcaster.broadcast('audio:chunk', msg.chunk);
                 break;
             }
             case 'stats': {
                 mainWindow?.webContents.send('playback:stats', msg.stats);
+                wsBroadcaster.broadcast('playback:stats', msg.stats);
                 break;
             }
             case 'cstatus': {
@@ -283,6 +321,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:cstatus', msg.status);
+                wsBroadcaster.broadcast('playback:cstatus', msg.status);
                 break;
             }
             case 'nstatus': {
@@ -293,6 +332,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:nstatus', msg.status);
+                wsBroadcaster.broadcast('playback:nstatus', msg.status);
                 break;
             }
             case 'pstatus': {
@@ -303,6 +343,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:pstatus', msg.status);
+                wsBroadcaster.broadcast('playback:pstatus', msg.status);
                 break;
             }
             case 'rpc': {

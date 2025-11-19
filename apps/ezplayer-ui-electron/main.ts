@@ -12,6 +12,9 @@ import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import Koa from 'koa';
 import serve from 'koa-static';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
+import { wsBroadcaster } from './mainsrc/websocket-broadcaster.js';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -144,7 +147,7 @@ app.whenReady().then(async () => {
     createWindow(showFolderSpec);
     await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
 
-    // 🧩 Start Koa web server
+    // 🧩 Start Koa web server with WebSocket support
     const webApp = new Koa();
     const portInfo = getWebPort(true);
     const PORT = typeof portInfo === 'number' ? portInfo : portInfo.port;
@@ -154,7 +157,33 @@ app.whenReady().then(async () => {
     const staticPath = path.resolve(__dirname, '../../ezplayer-ui-react/dist');
     const indexPath = path.join(staticPath, 'index.html');
 
-    webApp.use(async (ctx, next) => {
+    // Create HTTP server
+    const httpServer = createServer(webApp.callback());
+
+    // Create WebSocket server
+    const wss = new WebSocketServer({
+        server: httpServer,
+        path: '/ws',
+    });
+
+    // Initialize WebSocket broadcaster with the WebSocket server
+    wsBroadcaster.initialize(wss);
+
+    // Handle WebSocket connections
+    wss.on('connection', (ws) => {
+        wsBroadcaster.addClient(ws);
+
+        ws.on('close', () => {
+            wsBroadcaster.removeClient(ws);
+        });
+
+        ws.on('error', (error: Error) => {
+            console.error('❌ WebSocket error:', error);
+            wsBroadcaster.removeClient(ws);
+        });
+    });
+
+    webApp.use(async (ctx: any, next: () => Promise<any>) => {
         if (ctx.path.startsWith('/api/')) {
             if (ctx.path === '/api/hello') {
                 ctx.body = { message: 'Hello from Koa + Electron!' };
@@ -173,14 +202,14 @@ app.whenReady().then(async () => {
         }),
     );
 
-    webApp.use(async (ctx, next) => {
+    webApp.use(async (ctx: any, next: () => Promise<any>) => {
         await next();
         if ((ctx.path.endsWith('.js') || ctx.path.endsWith('.mjs')) && ctx.status === 200) {
             ctx.type = 'application/javascript; charset=utf-8';
         }
     });
 
-    webApp.use(async (ctx) => {
+    webApp.use(async (ctx: any) => {
         if (ctx.path.startsWith('/api/') || ctx.path.startsWith('/assets/')) {
             return;
         }
@@ -194,8 +223,9 @@ app.whenReady().then(async () => {
         }
     });
 
-    webApp.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
         console.log(`🌐 Koa server running at http://localhost:${PORT}`);
+        console.log(`🔌 WebSocket server available at ws://localhost:${PORT}/ws`);
     });
 
     dateRateTimeout = setInterval(async () => {
