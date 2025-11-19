@@ -20,8 +20,10 @@ import type {
     PlayAction,
     PlaybackLogDetail,
     PlaybackStatistics,
+    PlayingItem,
     PlayerPStatusContent,
     PlayerNStatusContent,
+    UpcomingPlaybackActions,
 } from '@ezplayer/ezplayer-core';
 import { PlayerRunState } from '@ezplayer/ezplayer-core';
 
@@ -161,7 +163,25 @@ const handlers: PlayWorkerRPCAPI = {
     },
 };
 
-// TODO Send better player status
+function playingItemDesc(item?: PlayAction) {
+    if (!item?.seqId) return '<Unknown>';
+    const nps = foregroundPlayerRunState.sequencesById.get(item.seqId);
+    return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+}
+
+// TODO: Should this move to the run state?
+function actionToPlayingItem(interactive: boolean, pla: PlayAction)
+{
+    return {
+        type: interactive ? 'Immediate' : 'Scheduled',
+        item: 'Song', // TODO
+        title: playingItemDesc(pla),
+        sequence_id: pla.seqId,
+        at: foregroundPlayerRunState.currentTime,
+        until: foregroundPlayerRunState.currentTime + (pla.durationMS ?? 0)
+    } as PlayingItem;
+}
+
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const playStatus: PlayerPStatusContent = {
@@ -174,36 +194,17 @@ function sendPlayerStateUpdate() {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
             if (!playStatus.now_playing) {
-                ((playStatus.now_playing =
-                    foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId),
-                    (playStatus.now_playing_until =
-                        foregroundPlayerRunState.currentTime + (ps.curPLActions.actions[0].durationMS ?? 0)));
+                playStatus.now_playing = actionToPlayingItem(false, pla);
                 playStatus.status = 'Playing';
             } else {
-                playStatus.upcoming!.push({
-                    title:
-                        foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ??
-                        pla.seqId ??
-                        '<unknown>',
-                    at: pla.atTime,
-                });
+                playStatus.upcoming!.push(actionToPlayingItem(false, pla));
             }
         }
     }
-    if (ps.heapSchedules?.[0]?.actions?.length) {
-        //console.log(`Player Status Heap: ${ps.heapSchedules[0].scheduleId} / ${new Date(ps.heapSchedules[0].actions[0].atTime).toISOString()}`);
-    }
-    if (ps.upcomingSchedules?.length && ps.upcomingSchedules[0].type === 'scheduled') {
-        //console.log(`Player Schedule Upcoming: ${ps.upcomingSchedules[0].scheduleId} / ${new Date(ps.upcomingSchedules[0].schedStart)}`);
-        playStatus.upcoming!.push({
-            title: foregroundPlayerRunState.schedulesById.get(ps.upcomingSchedules[0].scheduleId)?.title ?? 'Schedule',
-            at: ps.upcomingSchedules[0].actions[0]?.atTime,
-        });
-    }
-    if (ps.interactive?.[0]?.actions?.length) {
-        //console.log(`Player Interactive: ${ps.interactive[0].scheduleId} / ${new Date(ps.interactive[0].actions[0].atTime).toISOString()}`);
-    }
-    // TODO this is really confusing it.  send({ type: 'queueUpdate',  queue: []});
+    playStatus.queue = foregroundPlayerRunState.getQueueItems();
+    playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
+    playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
+    playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
     send({ type: 'pstatus', status: playStatus });
 }
 
@@ -243,39 +244,73 @@ function sendControllerStateUpdate() {
 // Inbound messages
 parentPort.on('message', (command: PlayerCommand) => {
     switch (command.type) {
-        case 'schedupdate':
-            {
-                emitInfo(
-                    `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
-                );
-                pendingSchedule = command;
-            }
+        case 'schedupdate': {
+            emitInfo(
+                `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
+            );
+            pendingSchedule = command;
             if (!running) {
                 running = processQueue(); // kick off first song
             }
             break;
-        case 'enqueue':
-            foregroundPlayerRunState.addInteractiveCommand({
-                commandId: `${command.cmd.entry.cmdseq}`,
-                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                seqId: command.cmd.entry.seqid,
-            });
-            emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
-            sendPlayerStateUpdate();
-            if (!running) {
-                running = processQueue(); // kick off first song
+        }
+        case 'frontendcmd': {
+            const cmd = command.cmd;
+            switch (cmd.command) {
+                case 'playsong': {
+                    emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+                    const seq = curSequences?.find((s) => s.id === cmd.songId);
+                    if (!seq) {
+                        emitError(`Unable to identify sequence ${cmd.songId}`);
+                        return false;
+                    }
+                    foregroundPlayerRunState.addInteractiveCommand({
+                        immediate: cmd.immediate,
+                        requestId: cmd.requestId,
+                        startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                        seqId: cmd.songId,
+                    });
+                    audioPlayerRunState.addInteractiveCommand({
+                        immediate: cmd.immediate,
+                        requestId: cmd.requestId,
+                        startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                        seqId: cmd.songId,
+                    });
+                    emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                    sendPlayerStateUpdate();
+                    if (!running) {
+                        running = processQueue(); // kick off first song
+                    }
+                }
+                break;
+                case 'deleterequest': {
+                    emitInfo(`Delete ${cmd.requestId}`);
+                    foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+                    audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
+                    break;
+                }
+                case 'clearrequests': {
+                    foregroundPlayerRunState.removeInteractiveCommands();
+                    audioPlayerRunState.removeInteractiveCommands();
+                    break;
+                }
+                // lots of TODOs here...
+                case 'pause':
+                    isPaused = true;
+                    break;
+                case 'resume':
+                    isPaused = false;
+                    break;
+                case 'activateoutput': break;
+                case 'suppressoutput': break;
+                case 'playplaylist': break;
+                case 'reloadcontrollers': break;
+                case 'resetplayback': break;
+                case 'stopgraceful': break;
+                case 'stopnow': break;
             }
             break;
-        case 'dequeue':
-            foregroundPlayerRunState.removeInteractiveCommand(`${command.cmdseq}`);
-            sendPlayerStateUpdate();
-            break;
-        case 'pause':
-            isPaused = true;
-            break;
-        case 'resume':
-            isPaused = false;
-            break;
+        }
         case 'rpc':
             rpcs.dispatchRequest(command.rpc).catch((e) => {
                 emitError(`THIS SHOULD NOT HAPPEN - RPC should SEND ERROR BACK - ${e}`);
