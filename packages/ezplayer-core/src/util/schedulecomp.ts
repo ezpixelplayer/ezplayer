@@ -1841,11 +1841,9 @@ export class PlayerRunState {
 
         // Search the heap
         if (this.heapById.has(id)) {
-            console.log (`Looking in heap!`)
             this.heapById.delete(id);
             const idx = this.heap.findIndex((s)=>s.itemId === id);
             if (idx !== undefined) {
-                console.log(`Taken out of heap`);
                 this.heap.deleteAt(idx);
             }
         }
