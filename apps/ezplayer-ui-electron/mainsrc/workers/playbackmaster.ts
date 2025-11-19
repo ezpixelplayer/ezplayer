@@ -284,6 +284,7 @@ parentPort.on('message', (command: PlayerCommand) => {
                 }
                 break;
                 case 'deleterequest': {
+                    emitInfo(`Delete ${cmd.requestId}`);
                     foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
                     audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
                     break;

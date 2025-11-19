@@ -11,7 +11,8 @@ import { AppDispatch, RootState } from '../../store/Store';
 import { StatsDialog } from './StatsDialog';
 import type { ControllerStatus } from '@ezplayer/ezplayer-core';
 import { type ControllerStatusSeverity, getControllerSeverity, getControllersSeverity, getControllerStats, severityToChipColor, severityToLightColor, severityToMainColor } from './ControllerHelpers';
-
+import { QueueCard } from './QueueCard';
+import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 
 const getControllerStatusLabel = (controllers?: ControllerStatus[]) => {
     if (!controllers) return 'No data';
@@ -184,28 +185,13 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                         ))}
                                     </>
                                 )}
-                                {player.queue && (
-                                    <>
-                                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Queue ({player.queue.length}):
-                                        </Typography>
-                                        {player.queue.map((qi, index) => (
-                                            <Box
-                                                key={index}
-                                                sx={{
-                                                    mb: 1,
-                                                    pl: 1,
-                                                    borderLeft: '2px solid',
-                                                    borderColor: 'primary.main',
-                                                }}
-                                            >
-                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                    {qi.title}
-                                                </Typography>
-                                            </Box>
-                                        ))}
-                                    </>
-                                )}
+                                {player.queue &&
+                                    <QueueCard queue={player.queue} onRemoveItem={async (i, index)=>{console.log(`Remove ${index}`); await dispatch(callImmediateCommand({
+                                        command: 'deleterequest',
+                                        requestId: i.request_id ?? '',
+                                    }))}}>
+                                    </QueueCard>
+                                }
                                 {player.suspendedItems && player.suspendedItems.length > 0 && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>

@@ -1841,9 +1841,13 @@ export class PlayerRunState {
 
         // Search the heap
         if (this.heapById.has(id)) {
+            console.log (`Looking in heap!`)
             this.heapById.delete(id);
             const idx = this.heap.findIndex((s)=>s.itemId === id);
-            if (idx !== undefined) this.heap.deleteAt(idx);
+            if (idx !== undefined) {
+                console.log(`Taken out of heap`);
+                this.heap.deleteAt(idx);
+            }
         }
     }
 
@@ -1894,6 +1898,7 @@ export class PlayerRunState {
                     schedule_id: s.scheduleId,
                     at: s.schedStart,
                     until: s.schedEnd,
+                    request_id: s.requestId,
                     title: this.titleForIds(undefined, undefined, s.scheduleId),
                 } as PlayingItem);
             }
@@ -1902,6 +1907,7 @@ export class PlayerRunState {
                     type: s.itemType,
                     item: 'Playlist',
                     playlist_id: s.playlistIds?.[1],
+                    request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
             }
@@ -1910,6 +1916,7 @@ export class PlayerRunState {
                     type: s.itemType,
                     item: 'Song',
                     sequence_id: s.mainSectionIds[0],
+                    request_id: s.requestId,
                     title: this.titleForIds(s.mainSectionIds[0], undefined, undefined),
                 } as PlayingItem);
             }
@@ -1926,6 +1933,7 @@ export class PlayerRunState {
                 schedule_id: s.scheduleId,
                 at: s.schedStart,
                 until: s.schedEnd,
+                request_id: s.requestId,
                 title: this.titleForIds(undefined, undefined, s.scheduleId),
             } as PlayingItem);
         }
@@ -1943,6 +1951,7 @@ export class PlayerRunState {
                     schedule_id: s.scheduleId,
                     at: s.schedStart,
                     until: s.schedEnd,
+                    request_id: s.requestId,
                     title: this.titleForIds(undefined, undefined, s.scheduleId),
                 } as PlayingItem);
             }
@@ -1951,6 +1960,7 @@ export class PlayerRunState {
                     type: 'Immediate',
                     item: 'Playlist',
                     playlist_id: s.playlistIds?.[1],
+                    request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
             }
@@ -1959,6 +1969,7 @@ export class PlayerRunState {
                     type: 'Immediate',
                     item: 'Song',
                     sequence_id: s.mainSectionIds[0],
+                    request_id: s.requestId,
                     title: this.titleForIds(s.mainSectionIds[0], undefined, undefined),
                 } as PlayingItem);
             }
