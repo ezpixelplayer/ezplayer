@@ -5,7 +5,6 @@ import playlistReducer from './slices/PlaylistStore';
 import scheduleReducer from './slices/ScheduleStore';
 import homeStoreSlice from './slices/HomeStore';
 import playerStatusReducer from './slices/PlayerStatusStore';
-import playerImmediateReducer from './slices/PlayerImmediateStore';
 import endUserReducer from './slices/UserProfileStore';
 import showProfileReducer from './slices/ShowProfileStore';
 import authReducer from './slices/AuthStore';
@@ -21,7 +20,6 @@ export function createAppStore(thunkAPI: DataStorageAPI) {
             schedule: scheduleReducer,
             homeStore: homeStoreSlice,
             playerStatus: playerStatusReducer,
-            playerImmediate: playerImmediateReducer,
             endUser: endUserReducer,
             showProfile: showProfileReducer,
             auth: authReducer,

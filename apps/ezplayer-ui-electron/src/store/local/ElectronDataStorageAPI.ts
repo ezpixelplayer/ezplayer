@@ -1,7 +1,10 @@
 import type {
+    AudioDevice,
+    AudioTimeSyncM2R,
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
+    EZPlayerCommand,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -27,47 +30,45 @@ import {
     authSliceActions,
 } from '@ezplayer/player-ui-components';
 
-import { AudioDevice, AudioTimeSyncM2R } from '../../../sharedsrc/EZPElectronAPI';
-
 export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     constructor(baseUrl: string) {
         super(baseUrl);
-        window.electronAPI.onShowFolderUpdated((data: string) => {
+        window.electronAPI!.onShowFolderUpdated((data: string) => {
             if (this.dispatch) {
                 this.dispatch(authSliceActions.setShowDirectory(data));
             }
         });
-        window.electronAPI.onSequencesUpdated((data: SequenceRecord[]) => {
+        window.electronAPI!.onSequencesUpdated((data: SequenceRecord[]) => {
             if (this.dispatch) {
                 this.dispatch(setSequenceData(data));
             }
         });
-        window.electronAPI.onPlaylistsUpdated((data: PlaylistRecord[]) => {
+        window.electronAPI!.onPlaylistsUpdated((data: PlaylistRecord[]) => {
             if (this.dispatch) {
                 this.dispatch(setPlaylists(data));
             }
         });
-        window.electronAPI.onScheduleUpdated((data: ScheduledPlaylist[]) => {
+        window.electronAPI!.onScheduleUpdated((data: ScheduledPlaylist[]) => {
             if (this.dispatch) {
                 this.dispatch(setScheduledPlaylists(data));
             }
         });
-        window.electronAPI.onShowUpdated((data: EndUserShowSettings) => {
+        window.electronAPI!.onShowUpdated((data: EndUserShowSettings) => {
             if (this.dispatch) {
                 this.dispatch(setShowProfile(data));
             }
         });
-        window.electronAPI.onUserUpdated((data: EndUser) => {
+        window.electronAPI!.onUserUpdated((data: EndUser) => {
             if (this.dispatch) {
                 this.dispatch(setEndUser(data));
             }
         });
-        window.electronAPI.onStatusUpdated((data: CombinedPlayerStatus) => {
+        window.electronAPI!.onStatusUpdated((data: CombinedPlayerStatus) => {
             if (this.dispatch) {
                 this.dispatch(setPlayerStatus(data));
             }
         });
-        window.electronAPI.ipcRequestAudioDevices(async () => {
+        window.electronAPI!.ipcRequestAudioDevices(async () => {
             const devices = await navigator.mediaDevices.enumerateDevices();
             return devices
                 .filter((d) => d.kind === 'audiooutput')
@@ -81,7 +82,7 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
                         }) satisfies AudioDevice,
                 );
         });
-        window.electronAPI.ipcGetAudioSyncTime((_mSync: AudioTimeSyncM2R) => {
+        window.electronAPI!.ipcGetAudioSyncTime((_mSync: AudioTimeSyncM2R) => {
             const act = this.audioCtx?.currentTime;
 
             return {
@@ -91,7 +92,7 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
                 latency: this.audioCtx?.outputLatency ?? this.audioCtx?.baseLatency,
             };
         });
-        window.electronAPI.onAudioChunk(({ sampleRate, channels, startTime, buffer, incarnation }) => {
+        window.electronAPI!.onAudioChunk(({ sampleRate, channels, startTime, buffer, incarnation }) => {
             if (!this.audioCtx || incarnation !== this.audioCtxIncarnation) return;
 
             const floatArray = new Float32Array(buffer);
@@ -110,22 +111,22 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
             source.connect(this.audioCtx.destination);
             source.start(startTime / 1000);
         });
-        window.electronAPI.onStatsUpdated((data: PlaybackStatistics) => {
+        window.electronAPI!.onStatsUpdated((data: PlaybackStatistics) => {
             if (this.dispatch) {
                 this.dispatch(setPlaybackStatistics(data));
             }
         });
-        window.electronAPI.onCStatusUpdated((data: PlayerCStatusContent) => {
+        window.electronAPI!.onCStatusUpdated((data: PlayerCStatusContent) => {
             if (this.dispatch) {
                 this.dispatch(setCStatus(data));
             }
         });
-        window.electronAPI.onNStatusUpdated((data: PlayerNStatusContent) => {
+        window.electronAPI!.onNStatusUpdated((data: PlayerNStatusContent) => {
             if (this.dispatch) {
                 this.dispatch(setNStatus(data));
             }
         });
-        window.electronAPI.onPStatusUpdated((data: PlayerPStatusContent) => {
+        window.electronAPI!.onPStatusUpdated((data: PlayerPStatusContent) => {
             if (this.dispatch) {
                 this.dispatch(setPStatus(data));
             }
@@ -135,54 +136,54 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     dispatch?: AppDispatch = undefined;
 
     override async getCloudSequences(): Promise<SequenceRecord[]> {
-        return await window.electronAPI.getSequences();
+        return await window.electronAPI!.getSequences();
     }
     override async postCloudSequences(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
-        return await window.electronAPI.putSequences(recs);
+        return await window.electronAPI!.putSequences(recs);
     }
 
     override async getCloudPlaylists(): Promise<PlaylistRecord[]> {
-        return await window.electronAPI.getPlaylists();
+        return await window.electronAPI!.getPlaylists();
     }
     override async postCloudPlaylists(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
-        return await window.electronAPI.putPlaylists(recs);
+        return await window.electronAPI!.putPlaylists(recs);
     }
 
     override async getCloudSchedule(): Promise<ScheduledPlaylist[]> {
-        return await window.electronAPI.getSchedule();
+        return await window.electronAPI!.getSchedule();
     }
     override async postCloudSchedule(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
-        return await window.electronAPI.putSchedule(recs);
+        return await window.electronAPI!.putSchedule(recs);
     }
 
     override async getCloudStatus(): Promise<CombinedPlayerStatus> {
-        return await window.electronAPI.getCombinedStatus();
+        return await window.electronAPI!.getCombinedStatus();
     }
 
     override async getCloudShowProfile(): Promise<EndUserShowSettings> {
-        return await window.electronAPI.getShowProfile();
+        return await window.electronAPI!.getShowProfile();
     }
 
     override async postCloudShowProfile(data: EndUserShowSettings): Promise<EndUserShowSettings> {
-        return await window.electronAPI.putShowProfile(data);
+        return await window.electronAPI!.putShowProfile(data);
     }
 
     override async getCloudUserProfile(): Promise<EndUser> {
-        return await window.electronAPI.getUserProfile();
+        return await window.electronAPI!.getUserProfile();
     }
 
     override async postCloudUserProfile(data: Partial<EndUser>): Promise<EndUser> {
-        return await window.electronAPI.putUserProfile(data);
+        return await window.electronAPI!.putUserProfile(data);
     }
 
-    override async requestImmediatePlay(req: { id: string }) {
-        await window.electronAPI.immediatePlayCommand({ command: 'playnow', id: req.id });
+    override async issuePlayerCommand(req: EZPlayerCommand) {
+        await window.electronAPI!.immediatePlayerCommand(req);
         return true;
     }
 
     override async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;
-        await window.electronAPI.connect();
+        await window.electronAPI!.connect();
         this.audioCtx = new AudioContext();
         ++this.audioCtxIncarnation;
         this.heartbeater = setInterval(() => this.sendAudioTimeHeartbeat(), 100);
@@ -193,7 +194,7 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
             this.heartbeater = undefined;
             clearInterval(this.heartbeater);
         }
-        await window.electronAPI.disconnect();
+        await window.electronAPI!.disconnect();
     }
 
     audioCtx?: AudioContext;
@@ -201,13 +202,13 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     heartbeater?: NodeJS.Timeout;
     async sendAudioTimeHeartbeat() {
         const pn1 = performance.now();
-        const theirTime = await window.electronAPI.getMainSyncTime();
+        const theirTime = await window.electronAPI!.getMainSyncTime();
         const pn2 = performance.now();
         if (pn2 - pn1 > 2) return; // Invalid sample...
 
         const act = this.audioCtx?.currentTime;
 
-        await window.electronAPI.sendAudioSyncTime({
+        await window.electronAPI!.sendAudioSyncTime({
             audioCtxTime: act !== undefined ? act * 1000 : -1, // TODO should we send this at all?
             perfNowTime: theirTime.perfNowTime + (pn2 - pn1) / 2,
             incarnation: this.audioCtx ? this.audioCtxIncarnation : -1,

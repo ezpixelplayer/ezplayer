@@ -8,6 +8,7 @@ import type {
     PlayerPStatusContent,
     PlayerCStatusContent,
     PlayerNStatusContent,
+    EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
 
 export interface PlaybackWorkerData {
@@ -47,8 +48,6 @@ export type MainRPCAPI = {
 };
 
 export type PlayerCommand =
-    | { type: 'enqueue'; cmd: { entry: QueueEntry; immediate: boolean } }
-    | { type: 'dequeue'; cmdseq: number }
     | {
           type: 'schedupdate';
           showFolder: string;
@@ -56,14 +55,12 @@ export type PlayerCommand =
           pls: PlaylistRecord[];
           sched: ScheduledPlaylist[];
       }
-    | { type: 'pause' }
-    | { type: 'resume' }
+    | { type: 'frontendcmd'; cmd: EZPlayerCommand}
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };
 
 export type WorkerToMainMessage =
     | { type: 'ready' }
-    | { type: 'queueUpdate'; queue: QueueEntry[] }
     | { type: 'audioChunk'; chunk: AudioChunk }
     | { type: 'done' }
     | { type: 'error'; message: string }
