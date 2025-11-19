@@ -96,7 +96,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                                 textDecoration: 'underline',
                                             },
                                         }}
-                                        onClick={() => window.electronAPI?.openExternal('https://discord.gg/3Qwz79MN')}
+                                        onClick={() => window.electronAPI?.openExternal('https://discord.gg/gpwxM4bR94')}
                                     >
                                         Join our Discord community
                                     </Link>
