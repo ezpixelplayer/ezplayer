@@ -9,7 +9,7 @@
     "main": "dist/main.js",
     "type": "module",
     "build": {
-        "appId": "dev.ezplayer.ezplayer.",
+        "appId": "dev.ezplayer.ezplayer",
         "productName": "EZPlayer",
         "directories": {
             "output": "release",
@@ -20,20 +20,34 @@
             "package.json",
             "build/Release/**"
         ],
+        "extraResources": [
+            {
+                "from": "src/assets/images",
+                "to": "images",
+                "filter": [
+                    "EZPlayerLogoTransparent.ico",
+                    "EZPlayerLogoTransparent.png",
+                    "EZPlayerLogoTransparent.icns"
+                ]
+            }
+        ],
         "win": {
             "target": [
                 "nsis"
-            ]
+            ],
+            "icon": "src/assets/images/EZPlayerLogoTransparent.ico"
         },
         "mac": {
             "target": [
                 "dmg"
-            ]
+            ],
+            "icon": "src/assets/images/EZPlayerLogoTransparent.icns"
         },
         "linux": {
             "target": [
                 "AppImage"
             ],
+            "icon": "src/assets/images/EZPlayerLogoTransparent.png",
             "category": "Utility"
         },
         "publish": [

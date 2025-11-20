@@ -53,10 +53,21 @@ const __dirname = path.dirname(__filename);
 Menu.setApplicationMenu(null);
 
 const createWindow = (showFolder: string) => {
+    let iconFile = 'EZPlayerLogoTransparent.png';
+    if (process.platform === 'win32') {
+        iconFile = 'EZPlayerLogoTransparent.ico';
+    } else if (process.platform === 'darwin') {
+        iconFile = 'EZPlayerLogoTransparent.icns';
+    }
+    const iconPath = app.isPackaged 
+        ? path.join(process.resourcesPath, `images/${iconFile}`)
+        : path.join(__dirname, `images/${iconFile}`);
+    
     // Splash screen
     const splash = new BrowserWindow({
         width: 500,
         height: 500,
+        icon: iconPath,
         frame: false,
         alwaysOnTop: true,
         transparent: true,
@@ -76,6 +87,7 @@ const createWindow = (showFolder: string) => {
     mainWindow = new BrowserWindow({
         width: 800,
         height: 600,
+        icon: iconPath,
         show: false, // don't show until ready
 
         webPreferences: {
