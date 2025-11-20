@@ -20,7 +20,7 @@ class WebSocketService {
     private maxReconnectAttempts = 10;
     private reconnectDelay = 1000; // Start with 1 second
     private maxReconnectDelay = 30000; // Max 30 seconds
-    private reconnectTimer: NodeJS.Timeout | null = null;
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private messageHandlers: Map<string, Set<MessageHandler>> = new Map();
     private connectionHandlers: Set<ConnectionHandler> = new Set();
     private errorHandlers: Set<ErrorHandler> = new Set();
