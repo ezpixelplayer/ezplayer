@@ -359,3 +359,19 @@ export async function registerContentHandlers(
         }
     });
 }
+
+/**
+ * Get current show data for sending to newly connected WebSocket clients
+ * This allows the React web app to receive all existing data on first connection
+ */
+export function getCurrentShowData() {
+    return {
+        showFolder: getCurrentShowFolder(),
+        sequences: curSequences,
+        playlists: curPlaylists,
+        schedule: curSchedule,
+        user: curUser,
+        show: curShow,
+        status: curStatus,
+    };
+}

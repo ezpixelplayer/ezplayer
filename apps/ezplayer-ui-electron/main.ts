@@ -59,10 +59,10 @@ const createWindow = (showFolder: string) => {
     } else if (process.platform === 'darwin') {
         iconFile = 'EZPlayerLogoTransparent.icns';
     }
-    const iconPath = app.isPackaged 
+    const iconPath = app.isPackaged
         ? path.join(process.resourcesPath, `images/${iconFile}`)
         : path.join(__dirname, `images/${iconFile}`);
-    
+
     // Splash screen
     const splash = new BrowserWindow({
         width: 500,
@@ -157,7 +157,7 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
-    await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
+    const contentHandlers = await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
 
     // 🧩 Start Koa web server with WebSocket support
     const webApp = new Koa();
@@ -183,9 +183,71 @@ app.whenReady().then(async () => {
 
     // Handle WebSocket connections
     wss.on('connection', (ws) => {
+        console.log('🔌 New WebSocket client connected');
         wsBroadcaster.addClient(ws);
 
+        // Send initial data to the newly connected client
+        // This ensures the React web app has all existing data on first load
+        const sendInitialData = async () => {
+            const { getCurrentShowData } = await import('./mainsrc/ipcezplayer.js');
+            const initialData = getCurrentShowData();
+
+            const sendMessage = (type: string, data: any) => {
+                try {
+                    if (ws.readyState === 1) {
+                        // WebSocket.OPEN
+                        ws.send(
+                            JSON.stringify({
+                                type,
+                                data,
+                                timestamp: Date.now(),
+                            }),
+                        );
+                    }
+                } catch (error) {
+                    console.error(`Error sending ${type} message:`, error);
+                }
+            };
+
+            if (initialData.showFolder) {
+                sendMessage('update:showFolder', initialData.showFolder);
+            }
+            if (initialData.sequences) {
+                sendMessage(
+                    'update:sequences',
+                    initialData.sequences.filter((s: any) => !s.deleted),
+                );
+            }
+            if (initialData.playlists) {
+                sendMessage(
+                    'update:playlist',
+                    initialData.playlists.filter((p: any) => !p.deleted),
+                );
+            }
+            if (initialData.schedule) {
+                sendMessage(
+                    'update:schedule',
+                    initialData.schedule.filter((s: any) => !s.deleted),
+                );
+            }
+            if (initialData.user) {
+                sendMessage('update:user', initialData.user);
+            }
+            if (initialData.show) {
+                sendMessage('update:show', initialData.show);
+            }
+            if (initialData.status) {
+                sendMessage('update:combinedstatus', initialData.status);
+            }
+            console.log('✅ Sent initial data to new WebSocket client');
+        };
+
+        sendInitialData().catch((err) => {
+            console.error('❌ Error sending initial data to WebSocket client:', err);
+        });
+
         ws.on('close', () => {
+            console.log('🔌 WebSocket client disconnected');
             wsBroadcaster.removeClient(ws);
         });
 
