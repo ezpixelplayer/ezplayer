@@ -54,3 +54,8 @@ export {
     priorityToNumber,
     PlayerRunState,
 } from './util/schedulecomp';
+
+export {
+    getActiveVolumeSchedule,
+    getActiveViewerControlSchedule,
+} from './util/SettingsScheduleUtils';
