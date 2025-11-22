@@ -23,10 +23,17 @@ import {
     blankUserProfile,
 } from './data/FileStorage.js';
 
+import {
+    applySettingsFromRenderer,
+    getSettingsCache,
+    loadSettingsFromDisk,
+} from './data/SettingsStorage.js';
+
 import type {
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
+    PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -88,6 +95,7 @@ export async function loadShowFolder() {
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);
     curUser = await loadUserProfileAPI(showFolder);
+    await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -105,6 +113,7 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:user', curUser);
     updateWindow?.webContents?.send('update:show', curShow);
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
+    updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
     scheduleUpdated();
 }
@@ -248,6 +257,11 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             type: 'frontendcmd',
             cmd,
         } as PlayerCommand);
+        return true;
+    });
+    ipcMain.handle('ipcSetPlaybackSettings', async (_event, s: PlaybackSettings): Promise<Boolean> => {
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), s);
         return true;
     });
     ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {

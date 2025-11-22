@@ -48,6 +48,7 @@ export {
     setNStatus,
     setPStatus,
     setPlaybackStatistics,
+    hydratePlaybackSettings,
     playerStatusActions,
 } from './store/slices/PlayerStatusStore';
 

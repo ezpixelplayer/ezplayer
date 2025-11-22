@@ -11,6 +11,7 @@ import {
     VolumeScheduleEntry,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
+import { RootState } from '../Store';
 
 export interface PlayerStatusState {
     playerStatus: CombinedPlayerStatus;
@@ -19,6 +20,7 @@ export interface PlayerStatusState {
 
     loading: boolean;
     issuing: boolean;
+    settingsSaving: boolean;
     error?: string;
 }
 
@@ -26,6 +28,7 @@ export const initialStatusState: PlayerStatusState = {
     playerStatus: {},
     loading: false,
     issuing: false,
+    settingsSaving: false,
     error: undefined,
     playbackSettings: {
         audioSyncAdjust: 0,
@@ -75,19 +78,9 @@ export function createPlayerStatusSlice(extraReducers: (builder: ActionReducerMa
             setPlaybackStatistics: (state: PlayerStatusState, action: PayloadAction<PlaybackStatistics>) => {
                 state.playbackStats = action.payload;
             },
-            /*
-            hydrateFromStorage(
-                _state,
-                action: PayloadAction<Partial<PlaybackSettingsState>>
-            ) {
-                // replace with loaded values over defaults
-                return { ...initialState, ...action.payload };
-            },
-            */
-
 
             // Simple setters
-            setPlaybackSettings(state, action: PayloadAction<PlaybackSettings>) {
+            hydratePlaybackSettings(state, action: PayloadAction<PlaybackSettings>) {
                 state.playbackSettings = action.payload;
             },
             setAudioSyncAdjust(state, action: PayloadAction<number>) {
@@ -150,6 +143,20 @@ export const fetchPlayerStatus = createAsyncThunk<CombinedPlayerStatus, void, { 
     },
 );
 
+// Thunk: save current settings to backend API
+export const savePlayerSettings = createAsyncThunk<
+    void,                          // return type
+    void,                          // arg type
+    { state: unknown; extra: DataStorageAPI }
+>(
+    'player/savePlayerSettings',
+    async (_arg, { getState, extra }) => {
+        const state = getState() as RootState
+        const settings: PlaybackSettings = state.playerStatus.playbackSettings;
+        await extra.setPlayerSettings(settings);
+    }
+);
+
 const playerStatusSlice = createPlayerStatusSlice((builder) => {
     builder
         .addCase(fetchPlayerStatus.pending, (state) => {
@@ -172,6 +179,15 @@ const playerStatusSlice = createPlayerStatusSlice((builder) => {
         .addCase(callImmediateCommand.rejected, (state, action) => {
             state.issuing = false;
             state.error = action.error.message;
+        })
+        .addCase(savePlayerSettings.pending, state => {
+            state.settingsSaving = true;
+        })
+        .addCase(savePlayerSettings.fulfilled, state => {
+            state.settingsSaving = false;
+        })
+        .addCase(savePlayerSettings.rejected, state => {
+            state.settingsSaving = false;
         });
 });
 
@@ -181,6 +197,7 @@ export const {
     setNStatus,
     setPStatus,
     setPlaybackStatistics,
+    hydratePlaybackSettings,
 } = playerStatusSlice.actions;
 
 export const playerStatusActions = playerStatusSlice.actions

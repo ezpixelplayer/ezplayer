@@ -12,6 +12,7 @@ import type {
     PlayerPStatusContent,
     PlayerNStatusContent,
     PlayerCStatusContent,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 
 import {
@@ -21,6 +22,7 @@ import {
     setPlayerStatus,
     setPlaybackStatistics,
     setPlaylists,
+    hydratePlaybackSettings,
     setScheduledPlaylists,
     setSequenceData,
     setShowProfile,
@@ -66,6 +68,11 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         window.electronAPI!.onStatusUpdated((data: CombinedPlayerStatus) => {
             if (this.dispatch) {
                 this.dispatch(setPlayerStatus(data));
+            }
+        });
+        window.electronAPI!.onPlaybackSettingsUpdated((data: PlaybackSettings) => {
+            if (this.dispatch) {
+                this.dispatch(hydratePlaybackSettings(data));
             }
         });
         window.electronAPI!.ipcRequestAudioDevices(async () => {
@@ -177,8 +184,11 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     }
 
     override async issuePlayerCommand(req: EZPlayerCommand) {
-        await window.electronAPI!.immediatePlayerCommand(req);
-        return true;
+        return await window.electronAPI!.immediatePlayerCommand(req);
+    }
+
+    override async setPlayerSettings(s: PlaybackSettings) {
+        return await window.electronAPI!.setPlaybackSettings(s);
     }
 
     override async connect(dispatch: AppDispatch): Promise<void> {
