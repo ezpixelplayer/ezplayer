@@ -23,7 +23,6 @@ import type {
     PlayingItem,
     PlayerPStatusContent,
     PlayerNStatusContent,
-    UpcomingPlaybackActions,
 } from '@ezplayer/ezplayer-core';
 import { PlayerRunState } from '@ezplayer/ezplayer-core';
 
@@ -47,6 +46,8 @@ import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendSta
 
 import { decompressZStdWithWorker } from './zstdparent';
 import { setPingConfig, getLatestPingStats } from './pingparent';
+
+import { setRFConfig, setRFNowPlaying } from './rfparent';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -201,6 +202,7 @@ function sendPlayerStateUpdate() {
             }
         }
     }
+    setRFNowPlaying(playStatus.now_playing?.title, playStatus.upcoming?.[0]?.title)
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
@@ -309,6 +311,14 @@ parentPort.on('message', (command: PlayerCommand) => {
                 case 'stopgraceful': break;
                 case 'stopnow': break;
             }
+            break;
+        }
+        case 'settings': {
+            const settings = command.settings;
+            // TODO do the right things with it ...
+            setRFConfig({
+                remoteToken: settings.viewerControl.remoteFalconToken,
+            })
             break;
         }
         case 'rpc':

@@ -115,6 +115,13 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
     updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
+    const settings = getSettingsCache();
+    if (settings) {
+        playWorker?.postMessage({
+            type: 'settings',
+            settings,
+        } as PlayerCommand);
+    }
     scheduleUpdated();
 }
 
@@ -259,9 +266,13 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         } as PlayerCommand);
         return true;
     });
-    ipcMain.handle('ipcSetPlaybackSettings', async (_event, s: PlaybackSettings): Promise<Boolean> => {
+    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<Boolean> => {
         const showFolder = getCurrentShowFolder();
-        if (showFolder) applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), s);
+        if (showFolder) applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+        playWorker?.postMessage({
+            type: 'settings',
+            settings,
+        } as PlayerCommand);
         return true;
     });
     ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {

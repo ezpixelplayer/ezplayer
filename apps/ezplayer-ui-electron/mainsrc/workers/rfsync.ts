@@ -9,8 +9,8 @@ export interface TypicalRFSettings {
 }
 
 export interface RFApiClientConfig {
-    remoteToken: string;
-    pluginsApiPath: string; // no trailing slash needed
+    remoteToken?: string;
+    pluginsApiPath?: string; // no trailing slash needed
     defaultTimeoutMs?: number;
 }
 
@@ -78,12 +78,12 @@ export type RFWorkerOutMessage =
 
 export class RFApiClient {
     private readonly baseUrl: string;
-    private readonly remoteToken: string;
+    private readonly remoteToken?: string;
     private readonly defaultTimeoutMs: number;
 
     constructor(config: RFApiClientConfig) {
         this.remoteToken = config.remoteToken;
-        this.baseUrl = config.pluginsApiPath.replace(/\/+$/, "");
+        this.baseUrl = config?.pluginsApiPath?.replace(/\/+$/, "") ?? 'https://remotefalcon.com/remote-falcon-plugins-api';
         this.defaultTimeoutMs = config.defaultTimeoutMs ?? 10_000; // default 10s
 
         if (!this.remoteToken || this.remoteToken.length <= 1) {
@@ -96,7 +96,9 @@ export class RFApiClient {
         path: string,
         body?: unknown,
         timeoutMs?: number
-    ): Promise<T> {
+    ): Promise<T | undefined> {
+        if (!this.remoteToken) return undefined;
+
         const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
         const controller = new AbortController();
         const to = setTimeout(() => controller.abort(), timeoutMs ?? this.defaultTimeoutMs);
@@ -140,15 +142,15 @@ export class RFApiClient {
         }
     }
 
-    private get<T = unknown>(path: string, timeoutMs?: number): Promise<T> {
+    private get<T = unknown>(path: string, timeoutMs?: number): Promise<T | undefined> {
         return this.request<T>("GET", path, undefined, timeoutMs);
     }
 
-    private post<T = unknown>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
+    private post<T = unknown>(path: string, body: unknown, timeoutMs?: number): Promise<T | undefined> {
         return this.request<T>("POST", path, body, timeoutMs);
     }
 
-    private delete<T = unknown>(path: string, timeoutMs?: number): Promise<T> {
+    private delete<T = unknown>(path: string, timeoutMs?: number): Promise<T | undefined> {
         return this.request<T>("DELETE", path, undefined, timeoutMs);
     }
 
@@ -208,7 +210,7 @@ export class RFApiClient {
      * GET /remotePreferences
      * Fetch viewer control mode and other remote preferences for this token.
      */
-    getRemotePreferences(timeoutMs?: number): Promise<RemotePreferences> {
+    getRemotePreferences(timeoutMs?: number): Promise<RemotePreferences | undefined> {
         return this.get<RemotePreferences>("/remotePreferences", timeoutMs);
     }
 
@@ -248,7 +250,7 @@ export class RFApiClient {
      * GET /highestVotedPlaylist
      * Used in "voting" viewer control mode to get the winning playlist.
      */
-    getHighestVotedPlaylist(timeoutMs?: number): Promise<HighestVotedPlaylistResponse> {
+    getHighestVotedPlaylist(timeoutMs?: number): Promise<HighestVotedPlaylistResponse | undefined> {
         return this.get<HighestVotedPlaylistResponse>(
             "/highestVotedPlaylist",
             timeoutMs
@@ -263,7 +265,7 @@ export class RFApiClient {
     getNextPlaylistInQueue(
         options: { updateQueue?: boolean } = {},
         timeoutMs?: number
-    ): Promise<NextPlaylistInQueueResponse> {
+    ): Promise<NextPlaylistInQueueResponse | undefined> {
         const update = options.updateQueue ?? true;
         const path = `/nextPlaylistInQueue?updateQueue=${update ? "true" : "false"}`;
         return this.get<NextPlaylistInQueueResponse>(path, timeoutMs);
@@ -338,7 +340,11 @@ async function runGuarded(key: string, fn: () => Promise<void>) {
     inFlight[key] = true;
     try {
         await fn();
-    } finally {
+    }
+    catch (e) {
+        send({type: 'log', msg: (e as Error).message, level: 'error'});
+    }
+    finally {
         inFlight[key] = false;
     }
 }
@@ -370,7 +376,8 @@ async function handleUpdatePlayback(nowPlaying?: string | null, nextScheduled?: 
         if (typeof nowPlaying === "string") {
             const trimmed = nowPlaying.trim();
             if (trimmed && trimmed !== lastNowPlaying) {
-                await c.updateWhatsPlaying(trimmed);
+                const npres = await c.updateWhatsPlaying(trimmed);
+                console.log(`RF Now Playing: ${JSON.stringify(npres)}`);
                 lastNowPlaying = trimmed;
                 changed = true;
             }
@@ -380,7 +387,8 @@ async function handleUpdatePlayback(nowPlaying?: string | null, nextScheduled?: 
         if (typeof nextScheduled === "string") {
             const trimmedNext = nextScheduled.trim();
             if (trimmedNext && trimmedNext !== lastNextScheduled) {
-                await c.updateNextScheduledSequence(trimmedNext);
+                const unres = await c.updateNextScheduledSequence(trimmedNext);
+                console.log(`RF Next Playing: ${JSON.stringify(unres)}`);
                 lastNextScheduled = trimmedNext;
                 changed = true;
             }
@@ -444,6 +452,7 @@ async function handleRequestNextSuggestion() {
         if (!viewerMode || Date.now() > viewerModeExpiresAt) {
             try {
                 const prefs = await c.getRemotePreferences();
+                if (!prefs) return;
                 viewerMode = (prefs.viewerControlMode as ViewerModeChoice) ?? "jukebox";
                 viewerModeExpiresAt = Date.now() + 300_000; // 5 min TTL
             } catch {
@@ -452,25 +461,26 @@ async function handleRequestNextSuggestion() {
             }
         }
 
-        let response: NextPlaylistInQueueResponse | HighestVotedPlaylistResponse | null = null;
         let suggestion: NextToPlay | null = null;
         let type: "vote" | "queue";
 
         if (viewerMode === "voting") {
             type = "vote";
             try {
-                response = await c.getHighestVotedPlaylist();
+                const response = await c.getHighestVotedPlaylist();
+                if (!response) return;
                 suggestion = { nextPlaylist: response.winningPlaylist, playlistIndex: response.playlistIndex };
             } catch {
-                response = null;
+                return;
             }
         } else {
             type = "queue";
             try {
-                response = await c.getNextPlaylistInQueue({ updateQueue: true });
+                const response = await c.getNextPlaylistInQueue({ updateQueue: true });
+                if (!response) return;
                 suggestion = { nextPlaylist: response.nextPlaylist, playlistIndex: response.playlistIndex };
             } catch {
-                response = null;
+                return;
             }
         }
 
