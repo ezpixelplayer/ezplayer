@@ -314,6 +314,55 @@ export interface EndUserShowSettings {
     rot_y?: number; // Rotate around Y axis for effects
 }
 
+export type ScheduleDays =
+    | 'all'
+    | 'weekend-fri-sat'
+    | 'weekend-sat-sun'
+    | 'weekday-mon-fri'
+    | 'weekday-sun-thu'
+    | 'monday'
+    | 'tuesday'
+    | 'wednesday'
+    | 'thursday'
+    | 'friday'
+    | 'saturday'
+    | 'sunday';
+
+export interface ViewerControlScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    playlist: string;
+}
+
+export interface VolumeScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    volumeLevel: number; // 0-100
+}
+
+export interface ViewerControlState {
+    enabled: boolean;
+    type: 'disabled' | 'remote-falcon';
+    remoteFalconToken?: string;
+    schedule: ViewerControlScheduleEntry[];
+}
+
+export interface VolumeControlState {
+    defaultVolume: number;
+    schedule: VolumeScheduleEntry[];
+}
+
+export interface PlaybackSettings {
+    audioSyncAdjust?: number;
+    backgroundSequence?: 'overlay' | 'underlay';
+    viewerControl: ViewerControlState;
+    volumeControl: VolumeControlState;
+}
+
 export interface JSONEditChoice {
     title: string;
     value?: string;

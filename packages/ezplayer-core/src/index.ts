@@ -26,6 +26,9 @@ export type {
     JSONEditProp,
     JSONEditSheet,
     JSONEditState,
+    PlaybackSettings,
+    ViewerControlScheduleEntry,
+    VolumeScheduleEntry,
 } from './types/DataTypes';
 
 export type {
