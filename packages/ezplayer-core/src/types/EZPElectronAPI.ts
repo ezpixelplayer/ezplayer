@@ -11,6 +11,7 @@ import type {
     PlayerNStatusContent,
     EZPlayerVersions,
     EZPlayerCommand,
+    PlaybackSettings,
 } from './DataTypes';
 
 export interface AudioDevice {
@@ -73,6 +74,7 @@ export interface EZPElectronAPI {
 
     // Send a command
     immediatePlayerCommand: (cmd: EZPlayerCommand) => Promise<boolean>;
+    setPlaybackSettings: (s: PlaybackSettings) => Promise<boolean>;
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
@@ -99,6 +101,7 @@ export interface EZPElectronAPI {
     onShowUpdated: (callback: (data: EndUserShowSettings) => void) => void;
 
     onStatusUpdated: (callback: (data: CombinedPlayerStatus) => void) => void;
+    onPlaybackSettingsUpdated: (callback: (data: PlaybackSettings) => void) => void;
     onCStatusUpdated: (callback: (data: PlayerCStatusContent) => void) => void;
     onNStatusUpdated: (callback: (data: PlayerNStatusContent) => void) => void;
     onPStatusUpdated: (callback: (data: PlayerPStatusContent) => void) => void;

@@ -1,4 +1,3 @@
-// parent.ts
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

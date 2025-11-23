@@ -22,6 +22,7 @@ Currently, EZPlayer supports a subset of what xSchedule supports:
 * DDP and E1.31 controllers on attached IPv4 networks
 * A jukebox view of songs to choose from
 * A variety of status screens
+* Remote Falcon
 
 It doesn't support (and won't soon support):
 * USB controllers
@@ -30,7 +31,6 @@ It doesn't support (and won't soon support):
 
 We do hope to have support for the following at some point in the 2025 season, as these are in active development:
 * Local Web UI
-* Remote Falcon
 * Background sequence
 * Volume control automation
 

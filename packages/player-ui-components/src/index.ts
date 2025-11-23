@@ -48,6 +48,8 @@ export {
     setNStatus,
     setPStatus,
     setPlaybackStatistics,
+    hydratePlaybackSettings,
+    playerStatusActions,
 } from './store/slices/PlayerStatusStore';
 
 export { fetchShowProfile, postShowProfile, setShowProfile } from './store/slices/ShowProfileStore';
