@@ -23,8 +23,10 @@ import type {
     PlayingItem,
     PlayerPStatusContent,
     PlayerNStatusContent,
+    PlaybackSettings,
+    EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
-import { PlayerRunState } from '@ezplayer/ezplayer-core';
+import { getActiveViewerControlSchedule, PlayerRunState } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -47,7 +49,9 @@ import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendSta
 import { decompressZStdWithWorker } from './zstdparent';
 import { setPingConfig, getLatestPingStats } from './pingparent';
 
-import { setRFConfig, setRFNowPlaying } from './rfparent';
+import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
+import { PlaylistSyncItem } from './rfsync';
+import { randomUUID } from 'node:crypto';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -202,7 +206,6 @@ function sendPlayerStateUpdate() {
             }
         }
     }
-    setRFNowPlaying(playStatus.now_playing?.title, playStatus.upcoming?.[0]?.title)
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
@@ -242,8 +245,130 @@ function sendControllerStateUpdate() {
     send({ type: 'nstatus', status: cstatus });
 }
 
+let lastRFCheck: number = Date.now();
+function sendRemoteUpdate() {
+    const settings = latestSettings;
+    if (!settings || !settings.viewerControl?.remoteFalconToken) {
+        //emitInfo("No RF token");
+        return;
+    }
+    const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
+    if (!rfStat) {
+        //emitInfo('Disable RF');
+        setRFControlEnabled(false);
+        return;
+    }
+    else {
+        //emitInfo('Enable RF');
+        setRFControlEnabled(true);
+    }
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    let now_playing: PlayingItem | undefined = undefined;
+    let upcoming: PlayingItem | undefined = undefined;
+    if (ps.curPLActions?.actions?.length) {
+        for (const pla of ps.curPLActions.actions) {
+            if (pla.end) continue;
+            if (!now_playing) {
+                now_playing = actionToPlayingItem(false, pla);
+            } else {
+                upcoming = actionToPlayingItem(false, pla);
+                break;
+            }
+        }
+    }
+    //emitInfo("Set RF Now Playing");
+    setRFNowPlaying(now_playing?.title, upcoming?.title);
+    const pl = curPlaylists?.find((p)=>p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
+    const items : PlaylistSyncItem[] = [];
+    if (pl) {
+        for (const i of pl.items) {
+            const s = foregroundPlayerRunState.sequencesById.get(i.id);
+            if (!s) continue;
+            items.push({
+                playlistType: 'SEQUENCE',
+                playlistDuration: s.work.length,
+                playlistIndex: i.sequence,
+                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - '+s.sequence.vendor: ''}`,
+            });
+        }
+        //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
+        setRFPlaylist(items);
+    }
+    if (now_playing) {
+        const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
+        if (diff >= 3000 && diff < 4000) {
+            //emitInfo("Initiate while-playing RF check");
+            sendRFInitiateCheck();
+        }
+    }
+    else {
+        const dn = Date.now();
+        if (dn - lastRFCheck > 5000) {
+            lastRFCheck = dn;
+            //emitInfo("Initiate idle RF check");
+            sendRFInitiateCheck();
+        }
+    }
+}
+
 /////////
 // Inbound messages
+function processCommand(cmd: EZPlayerCommand) {
+    switch (cmd.command) {
+        case 'playsong': {
+            emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+            const seq = curSequences?.find((s) => s.id === cmd.songId);
+            if (!seq) {
+                emitError(`Unable to identify sequence ${cmd.songId}`);
+                return false;
+            }
+            foregroundPlayerRunState.addInteractiveCommand({
+                immediate: cmd.immediate,
+                requestId: cmd.requestId,
+                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                seqId: cmd.songId,
+            });
+            audioPlayerRunState.addInteractiveCommand({
+                immediate: cmd.immediate,
+                requestId: cmd.requestId,
+                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                seqId: cmd.songId,
+            });
+            emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+            sendPlayerStateUpdate();
+            if (!running) {
+                running = processQueue(); // kick off first song
+            }
+        }
+        break;
+        case 'deleterequest': {
+            emitInfo(`Delete ${cmd.requestId}`);
+            foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+            audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
+            break;
+        }
+        case 'clearrequests': {
+            foregroundPlayerRunState.removeInteractiveCommands();
+            audioPlayerRunState.removeInteractiveCommands();
+            break;
+        }
+        // lots of TODOs here...
+        case 'pause':
+            isPaused = true;
+            break;
+        case 'resume':
+            isPaused = false;
+            break;
+        case 'activateoutput': break;
+        case 'suppressoutput': break;
+        case 'playplaylist': break;
+        case 'reloadcontrollers': break;
+        case 'resetplayback': break;
+        case 'stopgraceful': break;
+        case 'stopnow': break;
+    }
+}
+
 parentPort.on('message', (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
@@ -258,67 +383,12 @@ parentPort.on('message', (command: PlayerCommand) => {
         }
         case 'frontendcmd': {
             const cmd = command.cmd;
-            switch (cmd.command) {
-                case 'playsong': {
-                    emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-                    const seq = curSequences?.find((s) => s.id === cmd.songId);
-                    if (!seq) {
-                        emitError(`Unable to identify sequence ${cmd.songId}`);
-                        return false;
-                    }
-                    foregroundPlayerRunState.addInteractiveCommand({
-                        immediate: cmd.immediate,
-                        requestId: cmd.requestId,
-                        startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                        seqId: cmd.songId,
-                    });
-                    audioPlayerRunState.addInteractiveCommand({
-                        immediate: cmd.immediate,
-                        requestId: cmd.requestId,
-                        startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                        seqId: cmd.songId,
-                    });
-                    emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
-                    sendPlayerStateUpdate();
-                    if (!running) {
-                        running = processQueue(); // kick off first song
-                    }
-                }
-                break;
-                case 'deleterequest': {
-                    emitInfo(`Delete ${cmd.requestId}`);
-                    foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
-                    audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
-                    break;
-                }
-                case 'clearrequests': {
-                    foregroundPlayerRunState.removeInteractiveCommands();
-                    audioPlayerRunState.removeInteractiveCommands();
-                    break;
-                }
-                // lots of TODOs here...
-                case 'pause':
-                    isPaused = true;
-                    break;
-                case 'resume':
-                    isPaused = false;
-                    break;
-                case 'activateoutput': break;
-                case 'suppressoutput': break;
-                case 'playplaylist': break;
-                case 'reloadcontrollers': break;
-                case 'resetplayback': break;
-                case 'stopgraceful': break;
-                case 'stopnow': break;
-            }
+            processCommand(cmd);
             break;
         }
         case 'settings': {
             const settings = command.settings;
-            // TODO do the right things with it ...
-            setRFConfig({
-                remoteToken: settings.viewerControl.remoteFalconToken,
-            })
+            dispatchSettings(settings);
             break;
         }
         case 'rpc':
@@ -356,6 +426,27 @@ const playbackParams = {
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
+
+let latestSettings: PlaybackSettings | undefined = undefined;
+
+function dispatchSettings(settings: PlaybackSettings) {
+    latestSettings = settings;
+    playbackParams.audioTimeAdjMs = settings.audioSyncAdjust ?? 0;
+    setRFConfig({
+        remoteToken: settings.viewerControl.remoteFalconToken,
+    },
+    (next) => {
+        const settings = latestSettings;
+        if (!settings) return;
+        const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+        if (!rfc) return;
+        const pl = curPlaylists?.find((pl)=>pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
+        if (!pl) return;
+        const s = pl.items.find((seq)=>seq.sequence === next.playlistIndex);
+        if (!s) return;
+        processCommand({command: 'playsong', immediate: false, songId: s.id, requestId: randomUUID(), priority: 3});
+    });
+}
 
 ////////
 // Playback stats
@@ -411,10 +502,6 @@ const _pollTimes = setInterval(async () => {
         }
     }
 }, playbackParams.timePollInterval);
-
-///////
-// Pingerating
-
 
 ///////
 // The actual variables here
@@ -518,6 +605,7 @@ async function processQueue() {
     let lastStatsUpdate = clockBasePN;
     let lastPStatusUpdate = clockBasePN;
     let lastNStatusUpdate = clockBasePN;
+    let lastRFUpdate = clockBasePN;
 
     try
     {
@@ -545,6 +633,10 @@ async function processQueue() {
             if (curPerfNow - lastNStatusUpdate >= 1000 && iteration % 4 === 2) {
                 sendControllerStateUpdate();
                 lastNStatusUpdate += 1000 * Math.floor((curPerfNow - lastNStatusUpdate) / 1000);
+            }
+            if (curPerfNow - lastRFUpdate >= 1000 && iteration % 4 === 3) {
+                sendRemoteUpdate();
+                lastRFUpdate += 1000 * Math.floor((curPerfNow - lastRFUpdate) / 1000);
             }
 
             // See if a schedule update has been passed in.  If so, do something.

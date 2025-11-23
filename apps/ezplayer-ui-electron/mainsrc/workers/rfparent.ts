@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { PlaylistSyncItem, RFApiClientConfig, RFWorkerInMessage, RFWorkerOutMessage } from './rfsync';
+import type { NextToPlay, PlaylistSyncItem, RFApiClientConfig, RFWorkerInMessage, RFWorkerOutMessage } from './rfsync';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -18,11 +18,13 @@ worker.on('exit', (code) => {
     console.log('Worker exited with code', code);
 });
 
+let suggestionCallback: ((n: NextToPlay)=>void) | undefined = undefined;
+
 // rfParentExample.ts
 worker.on("message", (msg: RFWorkerOutMessage) => {
   switch (msg.type) {
     case 'nextSuggestion': {
-        // TODO
+        if (msg.suggestion) suggestionCallback?.(msg.suggestion);
         break;
     }
     case "log":
@@ -56,7 +58,8 @@ function send(msg: RFWorkerInMessage) {
   worker.postMessage(msg);
 }
 
-export function setRFConfig(cfg: RFApiClientConfig) {
+export function setRFConfig(cfg: RFApiClientConfig, cb: (arg: NextToPlay)=>void) {
+    suggestionCallback = cb;
     worker.postMessage({
         type: 'setConfig',
         config: cfg,
@@ -78,14 +81,7 @@ export function setRFControlEnabled(enabled: boolean) {
 export function setRFPlaylist(pl: PlaylistSyncItem[]) {
     send({
     type: "syncPlaylists",
-    playlists: [
-        {
-        playlistName: "Song1",
-        playlistDuration: 120,
-        playlistIndex: 1,
-        playlistType: "SEQUENCE",
-        },
-    ],
+        playlists: pl,
     });
 }
 
