@@ -11,6 +11,7 @@ import authReducer from './slices/AuthStore';
 import layoutReducer from './slices/LayoutStore';
 
 import { DataStorageAPI } from './api/DataStorageAPI';
+import { playerSettingsAutoSaveMiddleware } from './slices/PlayerStatusMiddleware';
 
 export function createAppStore(thunkAPI: DataStorageAPI) {
     return configureStore({
@@ -30,7 +31,7 @@ export function createAppStore(thunkAPI: DataStorageAPI) {
                 thunk: {
                     extraArgument: thunkAPI,
                 },
-            }),
+            }).concat(playerSettingsAutoSaveMiddleware),
     });
 }
 
