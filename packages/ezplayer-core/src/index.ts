@@ -11,10 +11,13 @@ export type {
     PlaylistTags,
     UserPlayer,
     PlayerCStatusContent,
+    ControllerStatus,
     PlayerNStatusContent,
     PlayerPStatusContent,
     CombinedPlayerStatus,
     PlaybackStatistics,
+    PlayingItem,
+    EZPlayerCommand,
     EndUser,
     EndUserShowSettings,
     JSONEditChoice,
@@ -23,6 +26,9 @@ export type {
     JSONEditProp,
     JSONEditSheet,
     JSONEditState,
+    PlaybackSettings,
+    ViewerControlScheduleEntry,
+    VolumeScheduleEntry,
 } from './types/DataTypes';
 
 export type {
@@ -30,7 +36,6 @@ export type {
     AudioChunk,
     AudioTimeSyncM2R,
     AudioTimeSyncR2M,
-    ImmediatePlayCommand,
     EZPElectronAPI,
     FileSelectOptions,
 } from './types/EZPElectronAPI';
@@ -49,3 +54,8 @@ export {
     priorityToNumber,
     PlayerRunState,
 } from './util/schedulecomp';
+
+export {
+    getActiveVolumeSchedule,
+    getActiveViewerControlSchedule,
+} from './util/SettingsScheduleUtils';

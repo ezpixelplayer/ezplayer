@@ -120,15 +120,45 @@ export interface UserPlayer {
     last_nstatus?: number;
 }
 
+export interface PlayingItem {
+    type: 'Scheduled' | 'Immediate' | 'Queued',
+    item: 'Song' | 'Playlist' | 'Schedule',
+    title: string,
+    at?: number,
+    until?: number,
+    priority?: number,
+    request_id?: string,
+    sequence_id?: string,
+    playlist_id?: string,
+    schedule_id?: string,
+}
+
 export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
-    status: 'Playing' | 'Stopped';
+    status: 'Playing' | // Playing
+            'Stopping' | // Graceful stop happening
+            'Stopped' | // Stopped due to stop request
+            'Paused' | // Paused - time is not advancing
+            'Suppressed'; // Time advancing, but not emitting the sound/light
+
     reported_time: number;
-    now_playing?: string;
-    now_playing_until?: number;
-    upcoming?: { title: string; at?: number }[];
-    // versions, system status, storage, memory, temp, etc?
+    now_playing?: PlayingItem;
+    upcoming?: PlayingItem[];
+    immediate?: PlayingItem;
+    queue?: PlayingItem[];
+    suspendedItems?: PlayingItem[];
+    preemptedItems?: PlayingItem[];
+
+    volume?: {
+        level: number,
+        muted?: boolean,
+    }
+
+    // TODO: system status, storage, memory, temp, etc?
+
+    // Statistics currently sent separately - PlaybackStatistics
+    //   TODO figure out how to make sure that gets reflected...
 }
 
 export interface PlayerCStatusContent {
@@ -141,23 +171,26 @@ export interface PlayerCStatusContent {
     schedule_sync_time?: number;
 }
 
+export interface ControllerStatus {
+    name?: string;
+    description?: string;
+    type?: string;
+    proto?: string;
+    protoDetails?: string;
+    model?: string;
+    address?: string;
+    state?: 'Active' | 'Inactive' | 'xLights Only' | 'Unknown';
+    status?: 'open' | 'skipped' | 'error' | 'unusable';
+    notices?: string[];
+    errors?: string[];
+    connectivity?: "Up" | "Down" | "Pending" | "N/A";
+    pingSummary?: string;
+    reported_time?: number;
+}
+
 export interface PlayerNStatusContent {
     // N - Network / coNtroller
-    controllers?: {
-        name?: string;
-        description?: string;
-        type?: string;
-        proto?: string;
-        protoDetails?: string;
-        model?: string;
-        address?: string;
-        state?: string;
-        status?: string;
-        notices?: string[];
-        errors?: string[];
-        connectivity?: string;
-        reported_time?: number;
-    }[];
+    controllers?: ControllerStatus[];
     n_models?: number;
     n_channels?: number;
 }
@@ -224,6 +257,51 @@ export interface PlaybackStatistics {
     }
 }
 
+export type EZPlayerCommand =
+{
+    command: 'reloadcontrollers'; // Reset playback from current show folder, reloading network, and reopening controllers
+} |
+{
+    command: 'resetplayback'; // Reread and reset playback from current schedule items
+} |
+{
+    command: 'stopnow'; // Stop all playing
+} |
+{ 
+    command: 'stopgraceful'; // Stop all playing, at convenient spot
+} | 
+{
+    command: 'pause'; // Pause all playback
+} |
+{
+    command: 'resume'; // Resume playback
+} |
+{
+    command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
+} |
+{
+    command: 'activateoutput'; // Playback continues, but not audio / video not sent out
+} |
+{
+    command: 'playsong'; // Play or enqueue a song
+    songId: string;
+    immediate: boolean; // If false, enqueue
+    priority: number; // Allows precedence over RF, lower is higher priority
+    requestId: string; // To identify, for canceling
+} |
+{
+    command: 'playplaylist'; // Play or enqueue a playlist
+    playlistId: string;
+    immediate: boolean; 
+    priority: number; // Allows precedence over RF, lower is higher priority
+    requestId: string; // To identify, for canceling
+} | {
+    command: 'deleterequest';
+    requestId: string; // Identity, for canceling, of a song or a
+} | {
+    command: 'clearrequests'; // Clear all requests
+};
+
 export interface EndUser {
     user_id: string; // UUID
     email: string;
@@ -246,6 +324,55 @@ export interface EndUserShowSettings {
     guess_layout?: string;
     group_mode?: string;
     rot_y?: number; // Rotate around Y axis for effects
+}
+
+export type ScheduleDays =
+    | 'all'
+    | 'weekend-fri-sat'
+    | 'weekend-sat-sun'
+    | 'weekday-mon-fri'
+    | 'weekday-sun-thu'
+    | 'monday'
+    | 'tuesday'
+    | 'wednesday'
+    | 'thursday'
+    | 'friday'
+    | 'saturday'
+    | 'sunday';
+
+export interface ViewerControlScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    playlist: string;
+}
+
+export interface VolumeScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    volumeLevel: number; // 0-100
+}
+
+export interface ViewerControlState {
+    enabled: boolean;
+    type: 'disabled' | 'remote-falcon';
+    remoteFalconToken?: string;
+    schedule: ViewerControlScheduleEntry[];
+}
+
+export interface VolumeControlState {
+    defaultVolume: number;
+    schedule: VolumeScheduleEntry[];
+}
+
+export interface PlaybackSettings {
+    audioSyncAdjust?: number;
+    backgroundSequence?: 'overlay' | 'underlay';
+    viewerControl: ViewerControlState;
+    volumeControl: VolumeControlState;
 }
 
 export interface JSONEditChoice {

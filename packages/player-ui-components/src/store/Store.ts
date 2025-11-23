@@ -5,13 +5,13 @@ import playlistReducer from './slices/PlaylistStore';
 import scheduleReducer from './slices/ScheduleStore';
 import homeStoreSlice from './slices/HomeStore';
 import playerStatusReducer from './slices/PlayerStatusStore';
-import playerImmediateReducer from './slices/PlayerImmediateStore';
 import endUserReducer from './slices/UserProfileStore';
 import showProfileReducer from './slices/ShowProfileStore';
 import authReducer from './slices/AuthStore';
 import layoutReducer from './slices/LayoutStore';
 
 import { DataStorageAPI } from './api/DataStorageAPI';
+import { playerSettingsAutoSaveMiddleware } from './slices/PlayerStatusMiddleware';
 
 export function createAppStore(thunkAPI: DataStorageAPI) {
     return configureStore({
@@ -21,7 +21,6 @@ export function createAppStore(thunkAPI: DataStorageAPI) {
             schedule: scheduleReducer,
             homeStore: homeStoreSlice,
             playerStatus: playerStatusReducer,
-            playerImmediate: playerImmediateReducer,
             endUser: endUserReducer,
             showProfile: showProfileReducer,
             auth: authReducer,
@@ -32,7 +31,7 @@ export function createAppStore(thunkAPI: DataStorageAPI) {
                 thunk: {
                     extraArgument: thunkAPI,
                 },
-            }),
+            }).concat(playerSettingsAutoSaveMiddleware),
     });
 }
 

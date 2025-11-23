@@ -23,68 +23,19 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
 import { ezrgbThemeOptions, useThemeContext } from '../../theme/ThemeBase';
 import { AboutDialog } from './AboutDialog';
-import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { EZPElectronAPI, ViewerControlScheduleEntry, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import { LicenseDialog, LicenseEntry } from './LicenseDialog';
+import { useMemo } from 'react';
+import Licenses from "../../constants/licenses.json"
+import { playerStatusActions } from '../../store/slices/PlayerStatusStore';
+
+interface UISettings {
+    theme?: string;
+}
 
 interface PlaybackSettingsDrawerProps {
     title: string;
     statusArea?: React.ReactNode[];
-}
-
-interface PlaybackSettings {
-    theme: string;
-    showDirectory?: string;
-    audioSyncAdjust?: number;
-    backgroundSequence?: 'overlay' | 'underlay';
-    viewerControl?: {
-        enabled: boolean;
-        type: 'disabled' | 'remote-falcon';
-        remoteFalconToken?: string;
-        schedule?: ScheduleEntry[];
-    };
-    volumeControl?: {
-        defaultVolume: number;
-        schedule?: VolumeScheduleEntry[];
-    };
-}
-
-interface ScheduleEntry {
-    id: string;
-    days:
-    | 'all'
-    | 'weekend-fri-sat'
-    | 'weekend-sat-sun'
-    | 'weekday-mon-fri'
-    | 'weekday-sun-thu'
-    | 'monday'
-    | 'tuesday'
-    | 'wednesday'
-    | 'thursday'
-    | 'friday'
-    | 'saturday'
-    | 'sunday';
-    startTime: string; // HH:MM format
-    endTime: string; // HH:MM format (can exceed 24:00)
-    playlist: string;
-}
-
-interface VolumeScheduleEntry {
-    id: string;
-    days:
-    | 'all'
-    | 'weekend-fri-sat'
-    | 'weekend-sat-sun'
-    | 'weekday-mon-fri'
-    | 'weekday-sun-thu'
-    | 'monday'
-    | 'tuesday'
-    | 'wednesday'
-    | 'thursday'
-    | 'friday'
-    | 'saturday'
-    | 'sunday';
-    startTime: string; // HH:MM format
-    endTime: string; // HH:MM format (can exceed 24:00)
-    volumeLevel: number; // 0-100
 }
 
 // Time validation and formatting functions (from schedule screen)
@@ -98,29 +49,6 @@ const isExtendedTimeValid = (time: string): boolean => {
     if (!time) return true;
     const timeRegex = /^([0-9]|[1-9][0-9]|1[0-6][0-9]|16[0-8]):([0-5][0-9])$/;
     return timeRegex.test(time);
-};
-
-const isToTimeAfterFromTime = (fromTime: string, toTime: string): boolean => {
-    if (!fromTime || !toTime) return true;
-
-    const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
-    const [toHours, toMinutes] = toTime.split(':').map(Number);
-
-    const fromTotalMinutes = fromHours * 60 + fromMinutes;
-    const toTotalMinutes = toHours * 60 + toMinutes;
-
-    return toTotalMinutes > fromTotalMinutes;
-};
-
-const suggestValidToTime = (fromTime: string): string => {
-    if (!fromTime) return '00:01';
-
-    const [hours, minutes] = fromTime.split(':').map(Number);
-    const totalMinutes = hours * 60 + minutes + 1;
-    const newHours = Math.floor(totalMinutes / 60);
-    const newMinutes = totalMinutes % 60;
-
-    return `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
 };
 
 // Time input component matching the schedule screen format
@@ -337,6 +265,7 @@ const TimeInput: React.FC<{
 const selectAuth = (state: RootState) => state.auth;
 const selectShowDirectory = (state: RootState) => state.auth.showDirectory;
 const selectPlaylists = (state: RootState) => state.playlists.playlists;
+const selectSettings = (state: RootState) => state.playerStatus.playbackSettings;
 const selectVersionInfo = createSelector([selectAuth], (auth) => ({
     playerVersion: auth.playerVersion,
     cloudVersion: auth.cloudVersion,
@@ -352,17 +281,9 @@ declare global {
 export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ title, statusArea }) => {
     const { themeName, handleThemeChange } = useThemeContext();
     const [selectedDirectory, setSelectedDirectory] = useState<string>('');
-    const [audioSyncAdjust, setAudioSyncAdjust] = useState<number>(0);
-    const [backgroundSequence, setBackgroundSequence] = useState<'overlay' | 'underlay'>('overlay');
-
-    // Viewer Control state
-    const [viewerControlEnabled, setViewerControlEnabled] = useState<boolean>(false);
-    const [viewerControlType, setViewerControlType] = useState<'disabled' | 'remote-falcon'>('disabled');
-    const [remoteFalconToken, setRemoteFalconToken] = useState<string>('');
-    const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
 
     // New schedule entry form state
-    const [newScheduleEntry, setNewScheduleEntry] = useState<Partial<ScheduleEntry>>({
+    const [newScheduleEntry, setNewScheduleEntry] = useState<Partial<ViewerControlScheduleEntry>>({
         days: 'all',
         startTime: '00:00',
         endTime: '23:59',
@@ -380,10 +301,6 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     // About dialog state
     const [aboutDialogOpen, setAboutDialogOpen] = useState<boolean>(false);
 
-    // Volume Control state
-    const [defaultVolume, setDefaultVolume] = useState<number>(100);
-    const [volumeScheduleEntries, setVolumeScheduleEntries] = useState<VolumeScheduleEntry[]>([]);
-
     // New volume schedule entry form state
     const [newVolumeScheduleEntry, setNewVolumeScheduleEntry] = useState<Partial<VolumeScheduleEntry>>({
         days: 'all',
@@ -392,11 +309,20 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         volumeLevel: 100,
     });
 
+    // License dialog state
+    const [licenseDialogOpen, setLicenseDialogOpen] = useState<boolean>(false);
+
+    const licenseEntries: LicenseEntry[] = useMemo(() => {
+        // Map each dependency to a license entry
+        return Licenses;
+    }, []);
+
     const dispatch = useDispatch<AppDispatch>();
 
     const storedShowDirectory = useSelector(selectShowDirectory);
     const playlists = useSelector(selectPlaylists);
     const versionInfo = useSelector(selectVersionInfo);
+    const settings = useSelector(selectSettings);
 
     // Update the selectedDirectory state when storedShowDirectory changes
     useEffect(() => {
@@ -409,40 +335,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     useEffect(() => {
         const savedSettings = localStorage.getItem('playbackSettings');
         if (savedSettings) {
-            const settings = JSON.parse(savedSettings) as PlaybackSettings;
-            if (settings.theme) {
+            const settings = JSON.parse(savedSettings) as UISettings;
+            if (settings?.theme) {
                 handleThemeChange(settings.theme);
-            }
-            if (settings.showDirectory) {
-                setSelectedDirectory(settings.showDirectory);
-            }
-            if (settings.audioSyncAdjust !== undefined) {
-                setAudioSyncAdjust(settings.audioSyncAdjust);
-            }
-            if (settings.backgroundSequence) {
-                setBackgroundSequence(settings.backgroundSequence);
-            }
-            if (settings.viewerControl) {
-                setViewerControlEnabled(settings.viewerControl.enabled);
-                setViewerControlType(settings.viewerControl.type);
-                if (settings.viewerControl.remoteFalconToken) {
-                    setRemoteFalconToken(settings.viewerControl.remoteFalconToken);
-                }
-                if (settings.viewerControl.schedule) {
-                    setScheduleEntries(settings.viewerControl.schedule);
-                }
-            }
-            if (settings.volumeControl) {
-                // Migrate old default volume of 50 to new default of 100
-                if (settings.volumeControl.defaultVolume !== undefined) {
-                    const savedVolume = settings.volumeControl.defaultVolume;
-                    // If it's the old default (50), update to new default (100)
-                    // Otherwise, keep the user's custom setting
-                    setDefaultVolume(savedVolume === 50 ? 100 : savedVolume);
-                }
-                if (settings.volumeControl.schedule) {
-                    setVolumeScheduleEntries(settings.volumeControl.schedule);
-                }
             }
         }
     }, []);
@@ -459,35 +354,14 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     useEffect(() => {
         // Only save settings after initial load is complete to avoid re-saving loaded settings
         if (initialLoadComplete) {
-            const settings = {
+            const uiSettings = {
                 theme: themeName,
-                showDirectory: selectedDirectory,
-                audioSyncAdjust: audioSyncAdjust,
-                backgroundSequence: backgroundSequence,
-                viewerControl: {
-                    enabled: viewerControlEnabled,
-                    type: viewerControlType,
-                    remoteFalconToken: viewerControlType === 'remote-falcon' ? remoteFalconToken : undefined,
-                    schedule: scheduleEntries.length > 0 ? scheduleEntries : undefined,
-                },
-                volumeControl: {
-                    defaultVolume: defaultVolume,
-                    schedule: volumeScheduleEntries.length > 0 ? volumeScheduleEntries : undefined,
-                },
-            } satisfies PlaybackSettings;
-            localStorage.setItem('playbackSettings', JSON.stringify(settings));
+            }
+            localStorage.setItem('playbackSettings', JSON.stringify(uiSettings));
         }
     }, [
         themeName,
         selectedDirectory,
-        audioSyncAdjust,
-        backgroundSequence,
-        viewerControlEnabled,
-        viewerControlType,
-        remoteFalconToken,
-        scheduleEntries,
-        defaultVolume,
-        volumeScheduleEntries,
         initialLoadComplete,
     ]);
 
@@ -499,7 +373,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     // Helper functions for schedule management
     const generateId = () => Math.random().toString(36).substr(2, 9);
 
-    const addScheduleEntry = () => {
+    const addViewerControlScheduleEntry = () => {
         if (
             newScheduleEntry.days &&
             newScheduleEntry.startTime &&
@@ -508,14 +382,14 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
             isValidTimeFormat(newScheduleEntry.startTime) &&
             isValidExtendedTimeFormat(newScheduleEntry.endTime)
         ) {
-            const entry: ScheduleEntry = {
+            const entry: ViewerControlScheduleEntry = {
                 id: generateId(),
                 days: newScheduleEntry.days,
                 startTime: formatTime24Hour(newScheduleEntry.startTime),
                 endTime: formatTime24Hour(newScheduleEntry.endTime),
                 playlist: newScheduleEntry.playlist,
             };
-            setScheduleEntries([...scheduleEntries, entry]);
+            dispatch(playerStatusActions.addViewerControlScheduleEntry(entry));
             setNewScheduleEntry({
                 days: 'all',
                 startTime: '00:00',
@@ -526,7 +400,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         }
     };
 
-    const removeScheduleEntry = (id: string) => {
+    const removeViewerControlScheduleEntry = (id: string) => {
         setItemToDelete({ id, type: 'schedule' });
         setDeleteDialogOpen(true);
     };
@@ -597,7 +471,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             if (dialogType === 'schedule') {
                                 setNewScheduleEntry({
                                     ...newScheduleEntry,
-                                    days: (e.target as HTMLSelectElement).value as ScheduleEntry['days'],
+                                    days: (e.target as HTMLSelectElement).value as ViewerControlScheduleEntry['days'],
                                 });
                             } else {
                                 setNewVolumeScheduleEntry({
@@ -761,7 +635,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 <Button
                     variant="contained"
                     startIcon={<Add />}
-                    onClick={dialogType === 'schedule' ? addScheduleEntry : addVolumeScheduleEntry}
+                    onClick={dialogType === 'schedule' ? addViewerControlScheduleEntry : addVolumeScheduleEntry}
                     disabled={
                         dialogType === 'schedule'
                             ? !newScheduleEntry.days ||
@@ -837,7 +711,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         );
     };
 
-    const getDaysDisplayName = (days: ScheduleEntry['days']) => {
+    const getDaysDisplayName = (days: ViewerControlScheduleEntry['days']) => {
         const dayNames = {
             all: 'All',
             'weekend-fri-sat': 'Weekend (Fri+Sat)',
@@ -905,7 +779,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 endTime: formatTime24Hour(newVolumeScheduleEntry.endTime),
                 volumeLevel: newVolumeScheduleEntry.volumeLevel,
             };
-            setVolumeScheduleEntries([...volumeScheduleEntries, entry]);
+            dispatch(playerStatusActions.addVolumeScheduleEntry(entry));
             setNewVolumeScheduleEntry({
                 days: 'all',
                 startTime: '00:00',
@@ -924,9 +798,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     const confirmDelete = () => {
         if (itemToDelete) {
             if (itemToDelete.type === 'schedule') {
-                setScheduleEntries(scheduleEntries.filter((entry) => entry.id !== itemToDelete.id));
+                dispatch(playerStatusActions.removeViewerControlScheduleEntry(itemToDelete.id));
             } else if (itemToDelete.type === 'volume') {
-                setVolumeScheduleEntries(volumeScheduleEntries.filter((entry) => entry.id !== itemToDelete.id));
+                dispatch(playerStatusActions.removeVolumeScheduleEntry(itemToDelete.id));
             }
         }
         setDeleteDialogOpen(false);
@@ -1006,8 +880,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Typography>
                         <Box sx={{ px: 2 }}>
                             <Slider
-                                value={audioSyncAdjust}
-                                onChange={(_, value) => setAudioSyncAdjust(value as number)}
+                                value={settings.audioSyncAdjust}
+                                onChange={(_, value) => dispatch(playerStatusActions.setAudioSyncAdjust(value as number))}
                                 min={-100}
                                 max={100}
                                 step={1}
@@ -1038,7 +912,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             Adjust audio synchronization. Negative values sync earlier, positive values sync later.
                         </Typography>
                         <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                            Current value: {audioSyncAdjust}ms
+                            Current value: {settings.audioSyncAdjust}ms
                         </Typography>
                     </Card>
 
@@ -1065,10 +939,10 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                 itemText="name"
                                 itemValue="id"
                                 onChange={(e) =>
-                                    setBackgroundSequence((e.target as HTMLSelectElement).value as 'overlay' | 'underlay')
+                                    dispatch(playerStatusActions.setBackgroundSequence((e.target as HTMLSelectElement).value as 'overlay' | 'underlay'))
                                 }
                                 label="Background Sequence"
-                                value={backgroundSequence}
+                                value={settings.backgroundSequence}
                             />
                         </FormControl>
                     </Card>
@@ -1099,29 +973,29 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                 itemValue="id"
                                 onChange={(e) => {
                                     const type = (e.target as HTMLSelectElement).value as 'disabled' | 'remote-falcon';
-                                    setViewerControlType(type);
-                                    setViewerControlEnabled(type !== 'disabled');
+                                    dispatch(playerStatusActions.setViewerControlType(type));
+                                    dispatch(playerStatusActions.setViewerControlEnabled(type !== 'disabled'));
                                 }}
                                 label="Viewer Control Type"
-                                value={viewerControlType}
+                                value={settings.viewerControl.type}
                             />
                         </FormControl>
 
                         {/* Remote Falcon Token */}
-                        {viewerControlType === 'remote-falcon' && (
+                        {settings.viewerControl.type === 'remote-falcon' && (
                             <TextField
                                 fullWidth
                                 size="small"
                                 label="Remote Falcon Token"
-                                value={remoteFalconToken}
-                                onChange={(e) => setRemoteFalconToken(e.target.value)}
+                                value={settings.viewerControl.remoteFalconToken}
+                                onChange={(e) => dispatch(playerStatusActions.setRemoteFalconToken(e.target.value))}
                                 placeholder="Enter your Remote Falcon token"
                                 sx={{ mb: 3 }}
                             />
                         )}
 
                         {/* Schedule Management */}
-                        {viewerControlType === 'remote-falcon' && (
+                        {settings.viewerControl.type === 'remote-falcon' && (
                             <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 2 }}>
                                     Schedule Configuration
@@ -1132,13 +1006,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                 </Typography>
 
                                 {/* Schedule Entries List */}
-                                {scheduleEntries.length > 0 && (
+                                {settings.viewerControl.schedule.length > 0 && (
                                     <Box sx={{ mb: 2 }}>
                                         <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                            Current Schedule ({scheduleEntries.length} entries)
+                                            Current Schedule ({settings.viewerControl.schedule.length} entries)
                                         </Typography>
                                         <List dense>
-                                            {scheduleEntries.map((entry, index) => (
+                                            {settings.viewerControl.schedule.map((entry, index) => (
                                                 <React.Fragment key={entry.id}>
                                                     <ListItem>
                                                         <ListItemText
@@ -1163,12 +1037,12 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                                     </Typography>
                                                                 </Box>
                                                             }
-                                                            secondary={`Priority: ${scheduleEntries.length - index}`}
+                                                            secondary={`Priority: ${settings.viewerControl.schedule.length - index}`}
                                                         />
                                                         <ListItemSecondaryAction>
                                                             <IconButton
                                                                 edge="end"
-                                                                onClick={() => removeScheduleEntry(entry.id)}
+                                                                onClick={() => removeViewerControlScheduleEntry(entry.id)}
                                                                 size="small"
                                                                 color="error"
                                                             >
@@ -1176,7 +1050,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                             </IconButton>
                                                         </ListItemSecondaryAction>
                                                     </ListItem>
-                                                    {index < scheduleEntries.length - 1 && <Divider />}
+                                                    {index < settings.viewerControl.schedule.length - 1 && <Divider />}
                                                 </React.Fragment>
                                             ))}
                                         </List>
@@ -1218,8 +1092,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             </Typography>
                             <Box sx={{ px: 2 }}>
                                 <Slider
-                                    value={defaultVolume}
-                                    onChange={(_, value) => setDefaultVolume(value as number)}
+                                    value={settings.volumeControl.defaultVolume}
+                                    onChange={(_, value) => dispatch(playerStatusActions.setDefaultVolume(value as number))}
                                     min={0}
                                     max={100}
                                     step={1}
@@ -1247,7 +1121,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                 />
                             </Box>
                             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                                Default Volume: {defaultVolume}%
+                                Default Volume: {settings.volumeControl.defaultVolume}%
                             </Typography>
                         </Box>
 
@@ -1262,13 +1136,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             </Typography>
 
                             {/* Volume Schedule Entries List */}
-                            {volumeScheduleEntries.length > 0 && (
+                            {settings.volumeControl.schedule.length > 0 && (
                                 <Box sx={{ mb: 2 }}>
                                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                        Current Volume Overrides ({volumeScheduleEntries.length} entries)
+                                        Current Volume Overrides ({settings.volumeControl.schedule.length} entries)
                                     </Typography>
                                     <List dense>
-                                        {volumeScheduleEntries.map((entry, index) => (
+                                        {settings.volumeControl.schedule.map((entry, index) => (
                                             <React.Fragment key={entry.id}>
                                                 <ListItem>
                                                     <ListItemText
@@ -1296,7 +1170,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                                 />
                                                             </Box>
                                                         }
-                                                        secondary={`Priority: ${volumeScheduleEntries.length - index}`}
+                                                        secondary={`Priority: ${settings.volumeControl.schedule.length - index}`}
                                                     />
                                                     <ListItemSecondaryAction>
                                                         <IconButton
@@ -1309,7 +1183,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                         </IconButton>
                                                     </ListItemSecondaryAction>
                                                 </ListItem>
-                                                {index < volumeScheduleEntries.length - 1 && <Divider />}
+                                                {index < settings.volumeControl.schedule.length - 1 && <Divider />}
                                             </React.Fragment>
                                         ))}
                                     </List>
@@ -1369,8 +1243,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Card>
                     )}
 
-                    {/* About Button */}
-                    <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                    {/* About & License Buttons */}
+                    <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                         <Button
                             variant="outlined"
                             startIcon={<Info />}
@@ -1383,6 +1257,19 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             }}
                         >
                             About EZPlayer
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            startIcon={<Info />}
+                            onClick={() => setLicenseDialogOpen(true)}
+                            size="small"
+                            sx={{
+                                textTransform: 'none',
+                                minWidth: 'auto',
+                                px: 3
+                            }}
+                        >
+                            License
                         </Button>
                     </Box>
                 </Box>
@@ -1457,6 +1344,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 onClose={() => setAboutDialogOpen(false)}
                 playerVersion={versionInfo.playerVersion}
                 cloudVersion={versionInfo.cloudVersion}
+            />
+
+            {/* License Dialog */}
+            <LicenseDialog
+                open={licenseDialogOpen}
+                onClose={() => setLicenseDialogOpen(false)}
+                licenses={licenseEntries}
             />
         </Box>
     );

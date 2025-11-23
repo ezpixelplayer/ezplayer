@@ -4,13 +4,14 @@ import { MusicNote, Lightbulb } from '@mui/icons-material';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
-import { callImmediatePlay } from '../../store/slices/PlayerImmediateStore';
+import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
 import { PlaylistDropdown, Playlist } from './PlaylistDropdown';
 import { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
 import { getImageUrl } from '../../util/imageUtils';
+import { QueueCard } from '../status/QueueCard';
 
 interface Song {
     isMusical: boolean;
@@ -210,7 +211,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const playSong = async () => {
         if (!song?.id) return;
         onInteract?.();
-        await dispatch(callImmediatePlay({ sid: song.id })).unwrap();
+        await dispatch(callImmediateCommand({command: 'playsong', songId: song.id, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
     };
 
     // Calculate responsive sizes
@@ -527,6 +528,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     const [selectedPlaylist, setSelectedPlaylist] = useState('all');
     const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
+    const pstat = useSelector((s: RootState) => s.playerStatus);
 
     // Get available tags from the Redux store
     const availableTags = useSelector((state: RootState) => state.sequences.tags || []);
@@ -614,7 +616,11 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     }, [songs, searchQuery, sortBy, selectedFilterTags, tagInputValue, sequenceData]);
 
     const handlePlay = async (songId: string) => {
-        await dispatch(callImmediatePlay({ sid: songId })).unwrap();
+        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+    };
+
+    const handleQueue = async (songId: string) => {
+        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: false, priority: 5, requestId: crypto.randomUUID()})).unwrap();
     };
 
     const sortOptions = [
@@ -641,6 +647,36 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                     overflow: 'auto',
                 }}
             >
+                {/* Playback Queue Card */}
+                {pstat?.playerStatus?.player?.queue &&
+                    <Box
+                        sx={{
+                            mb: 3,
+                            display: 'flex',
+                            gap: '16px',
+                            alignItems: 'center',
+                            flexWrap: { xs: 'wrap', md: 'nowrap' },
+                            '& .MuiFormControl-root': {
+                                margin: 0,
+                                width: '100%',
+                            },
+                            '& .MuiOutlinedInput-root': {
+                                margin: 0,
+                            },
+                        }}
+                    >
+                        <QueueCard
+                            sx={{ padding: 2 }}
+                            queue={pstat.playerStatus.player.queue}
+                            onRemoveItem={async (i, index)=>{console.log(`Remove ${index}`); await dispatch(callImmediateCommand({
+                                command: 'deleterequest',
+                                requestId: i.request_id ?? '',
+                            }))}
+                        }>
+                        </QueueCard>
+                    </Box>
+                }
+
                 {/* Search and Sort Controls */}
                 <Box
                     sx={{
@@ -756,10 +792,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                             },
                             {
                                 label: 'Queue',
-                                action: (id: string) => {
-                                    // Implement queue functionality with id
-                                    console.log('Queue song:', id);
-                                },
+                                action: handleQueue,
                                 variant: 'outlined' as const,
                                 color: 'primary' as const,
                                 isDisabled: (id: string) => {
@@ -767,6 +800,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                     return false; // Implement your logic here
                                 },
                             },
+                            /*
                             {
                                 label: 'Vote',
                                 action: (id: string) => {
@@ -780,6 +814,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                     return false; // Implement your logic here
                                 },
                             },
+                            */
                         ];
 
                         return (

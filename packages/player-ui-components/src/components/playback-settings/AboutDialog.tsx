@@ -3,6 +3,9 @@ import { SimpleDialog, isElectron } from '@ezplayer/shared-ui-components';
 import { Box, Button, Divider, Link, Typography } from '@mui/material';
 import React from 'react';
 
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { IconButton, Tooltip } from '@mui/material';
+
 // Extend Window interface to include electronAPI
 declare global {
     interface Window {
@@ -21,6 +24,20 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
     const handleClose = () => {
         onClose();
     };
+
+    const formattedVersion = React.useMemo(() => {
+        if (!playerVersion) return undefined;
+        const ordered: EZPlayerVersions = {
+            name: playerVersion.name,
+            version: playerVersion.version,
+            arch: playerVersion.arch,
+            builtAtIso: playerVersion.builtAtIso,
+            git: playerVersion.git,
+            packages: playerVersion.packages,
+            processes: playerVersion.processes,
+        };
+        return JSON.stringify(ordered, null, 2);
+    }, [playerVersion]);
 
     return (
         <SimpleDialog
@@ -79,7 +96,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                                 textDecoration: 'underline',
                                             },
                                         }}
-                                        onClick={() => window.electronAPI?.openExternal('https://discord.gg/3Qwz79MN')}
+                                        onClick={() => window.electronAPI?.openExternal('https://discord.gg/gpwxM4bR94')}
                                     >
                                         Join our Discord community
                                     </Link>
@@ -121,7 +138,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                         }}
                                         onClick={() => window.electronAPI?.openExternal('https://github.com/ezpixelplayer/ezplayer')}
                                     >
-                                        View source code and contribute
+                                        Get source code and contribute
                                     </Link>
                                 ) : (
                                     <Link
@@ -136,7 +153,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                             },
                                         }}
                                     >
-                                        View source code and contribute
+                                        Get source code and contribute
                                     </Link>
                                 )}
                             </Box>
@@ -153,6 +170,52 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                 Player Version:
                             </Typography>
                             <Typography variant="body2">{playerVersion ? `${playerVersion.version} / ${playerVersion.packages['Electron App']} / ${playerVersion?.git['branch']}` : 'N/A'}</Typography>
+                        </Box>
+                        <Box sx={{ mt: 1 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                <Typography variant="caption" color="text.secondary">
+                                    Version Details (EZPlayerVersions)
+                                </Typography>
+                                <Tooltip title="Copy to clipboard" placement="top"
+                                    PopperProps={{
+                                        disablePortal: true,
+                                        modifiers: [
+                                            { name: 'preventOverflow', enabled: true },
+                                            { name: 'flip', enabled: false },
+                                        ],
+                                    }}
+                                >
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => navigator.clipboard.writeText(formattedVersion ?? '')}
+                                    >
+                                        <ContentCopyIcon fontSize="inherit" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                            <Box
+                                sx={{
+                                    mt: 0.5,
+                                    p: 1,
+                                    borderRadius: 1,
+                                    maxHeight: 180,
+                                    overflow: 'auto',
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.75rem',
+                                    whiteSpace: 'pre',
+                                    bgcolor: (theme) =>
+                                        theme.palette.mode === 'light'
+                                            ? theme.palette.grey[100]
+                                            : theme.palette.grey[900],
+                                    color: (theme) =>
+                                        theme.palette.mode === 'light'
+                                            ? theme.palette.text.primary
+                                            : theme.palette.text.secondary,
+                                    border: (theme) => `1px solid ${theme.palette.divider}`,
+                                }}
+                            >
+                                {formattedVersion ?? 'N/A'}
+                            </Box>
                         </Box>
                     </Box>
 

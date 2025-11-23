@@ -23,10 +23,17 @@ import {
     blankUserProfile,
 } from './data/FileStorage.js';
 
+import {
+    applySettingsFromRenderer,
+    getSettingsCache,
+    loadSettingsFromDisk,
+} from './data/SettingsStorage.js';
+
 import type {
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
+    PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -36,10 +43,9 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
 
-import type { AudioTimeSyncM2R, AudioTimeSyncR2M, ImmediatePlayCommand } from '@ezplayer/ezplayer-core';
+import type { AudioTimeSyncM2R, AudioTimeSyncR2M, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import {
-    PlaybackWorkerData,
     PlayerCommand,
     type MainRPCAPI,
     type PlayWorkerRPCAPI,
@@ -67,6 +73,8 @@ let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 let commandSeqNum = 1;
 
+// Passes our current info to the player
+//  (We may not always do this, if we do not wish to disrupt the playback)
 function scheduleUpdated() {
     playWorker?.postMessage({
         type: 'schedupdate',
@@ -87,6 +95,7 @@ export async function loadShowFolder() {
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);
     curUser = await loadUserProfileAPI(showFolder);
+    await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -104,7 +113,15 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:user', curUser);
     updateWindow?.webContents?.send('update:show', curShow);
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
+    updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
+    const settings = getSettingsCache();
+    if (settings) {
+        playWorker?.postMessage({
+            type: 'settings',
+            settings,
+        } as PlayerCommand);
+    }
     scheduleUpdated();
 }
 
@@ -235,28 +252,26 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         curUser = ndata;
         return ndata;
     });
-    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: ImmediatePlayCommand): Promise<Boolean> => {
-        console.log(`PLAY CMD: ${cmd?.command}: ${cmd?.id}`);
-        const seq = curSequences.find((s) => s.id === cmd.id);
-        if (!seq) {
-            console.error(`Unable to identify sequence ${cmd.id}`);
-            return false;
+    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
+        if (cmd.command === 'resetplayback') {
+            loadShowFolder();
         }
         if (!playWorker) {
-            console.error(`No player worker`);
+            console.log(`No player worker`);
             return false;
         }
         playWorker.postMessage({
-            type: 'enqueue',
-            cmd: {
-                entry: {
-                    cmdseq: commandSeqNum++,
-                    seqid: cmd.id,
-                    fseqpath: seq.files?.fseq,
-                    audiopath: seq.files?.audio,
-                },
-                immediate: false,
-            },
+            type: 'frontendcmd',
+            cmd,
+        } as PlayerCommand);
+        return true;
+    });
+    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<Boolean> => {
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+        playWorker?.postMessage({
+            type: 'settings',
+            settings,
         } as PlayerCommand);
         return true;
     });
@@ -277,33 +292,6 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
-            case 'queueUpdate': {
-                const q = msg.queue;
-                let np: string = '';
-                let un: string = '';
-                if (q.length > 0) {
-                    const nps = curSequences.find((s) => s.id === q[0].seqid);
-                    np = `${nps?.work?.title} - ${nps?.work?.artist}`;
-                }
-                if (q.length > 1) {
-                    const uns = curSequences.find((s) => s.id === q[1].seqid);
-                    un = `${uns?.work?.title} - ${uns?.work?.artist}`;
-                }
-                // CB TODO
-                const nstatus: CombinedPlayerStatus = {
-                    ...curStatus,
-                    player: {
-                        ptype: 'EZP',
-                        reported_time: Date.now(),
-                        status: np.length ? 'Playing' : 'Stopped',
-                        now_playing: np,
-                        upcoming: [{ title: un }],
-                    },
-                };
-                curStatus = nstatus;
-                updateWindow?.webContents?.send('update:combinedstatus', curStatus);
-                break;
-            }
             case 'audioChunk': {
                 mainWindow?.webContents.send('audio:chunk', msg.chunk);
                 break;

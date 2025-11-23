@@ -27,7 +27,7 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
     }
 
     const isPlaying = player.status === 'Playing';
-    const hasNowPlaying = player.now_playing && player.now_playing.trim() !== '';
+    const hasNowPlaying = !!player.now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
 
     return (
@@ -80,11 +80,11 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                                 maxWidth: '100%',
                             }}
                         >
-                            {player.now_playing}
+                            {player.now_playing?.title}
                         </Typography>
-                        {player.now_playing_until && (
+                        {player.now_playing?.until && (
                             <Typography variant="caption" color="text.secondary">
-                                Until: {formatTime(player.now_playing_until)}
+                                Until: {formatTime(player.now_playing?.until    )}
                             </Typography>
                         )}
                     </Box>

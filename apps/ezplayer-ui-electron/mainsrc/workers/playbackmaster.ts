@@ -20,10 +20,13 @@ import type {
     PlayAction,
     PlaybackLogDetail,
     PlaybackStatistics,
+    PlayingItem,
     PlayerPStatusContent,
     PlayerNStatusContent,
+    PlaybackSettings,
+    EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
-import { PlayerRunState } from '@ezplayer/ezplayer-core';
+import { getActiveViewerControlSchedule, PlayerRunState } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -44,6 +47,11 @@ import process from "node:process";
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { decompressZStdWithWorker, getZstdStats } from './zstdparent';
+import { setPingConfig, getLatestPingStats } from './pingparent';
+
+import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
+import { PlaylistSyncItem } from './rfsync';
+import { randomUUID } from 'node:crypto';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -160,7 +168,25 @@ const handlers: PlayWorkerRPCAPI = {
     },
 };
 
-// TODO Send better player status
+function playingItemDesc(item?: PlayAction) {
+    if (!item?.seqId) return '<Unknown>';
+    const nps = foregroundPlayerRunState.sequencesById.get(item.seqId);
+    return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+}
+
+// TODO: Should this move to the run state?
+function actionToPlayingItem(interactive: boolean, pla: PlayAction)
+{
+    return {
+        type: interactive ? 'Immediate' : 'Scheduled',
+        item: 'Song', // TODO
+        title: playingItemDesc(pla),
+        sequence_id: pla.seqId,
+        at: foregroundPlayerRunState.currentTime,
+        until: foregroundPlayerRunState.currentTime + (pla.durationMS ?? 0)
+    } as PlayingItem;
+}
+
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const playStatus: PlayerPStatusContent = {
@@ -173,46 +199,32 @@ function sendPlayerStateUpdate() {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
             if (!playStatus.now_playing) {
-                ((playStatus.now_playing =
-                    foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ?? pla.seqId),
-                    (playStatus.now_playing_until =
-                        foregroundPlayerRunState.currentTime + (ps.curPLActions.actions[0].durationMS ?? 0)));
+                playStatus.now_playing = actionToPlayingItem(false, pla);
                 playStatus.status = 'Playing';
             } else {
-                playStatus.upcoming!.push({
-                    title:
-                        foregroundPlayerRunState.sequencesById.get(pla.seqId ?? '')?.work?.title ??
-                        pla.seqId ??
-                        '<unknown>',
-                    at: pla.atTime,
-                });
+                playStatus.upcoming!.push(actionToPlayingItem(false, pla));
             }
         }
     }
-    if (ps.heapSchedules?.[0]?.actions?.length) {
-        //console.log(`Player Status Heap: ${ps.heapSchedules[0].scheduleId} / ${new Date(ps.heapSchedules[0].actions[0].atTime).toISOString()}`);
-    }
-    if (ps.upcomingSchedules?.length && ps.upcomingSchedules[0].type === 'scheduled') {
-        //console.log(`Player Schedule Upcoming: ${ps.upcomingSchedules[0].scheduleId} / ${new Date(ps.upcomingSchedules[0].schedStart)}`);
-        playStatus.upcoming!.push({
-            title: foregroundPlayerRunState.schedulesById.get(ps.upcomingSchedules[0].scheduleId)?.title ?? 'Schedule',
-            at: ps.upcomingSchedules[0].actions[0]?.atTime,
-        });
-    }
-    if (ps.interactive?.[0]?.actions?.length) {
-        //console.log(`Player Interactive: ${ps.interactive[0].scheduleId} / ${new Date(ps.interactive[0].actions[0].atTime).toISOString()}`);
-    }
-    // TODO this is really confusing it.  send({ type: 'queueUpdate',  queue: []});
+    playStatus.queue = foregroundPlayerRunState.getQueueItems();
+    playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
+    playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
+    playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
     send({ type: 'pstatus', status: playStatus });
 }
 
 function sendControllerStateUpdate() {
+    const stats = getLatestPingStats();
     const cstatus: PlayerNStatusContent = {
         controllers: [],
     };
     cstatus.n_models = modelRecs?.length;
     cstatus.n_channels = Math.max(...(controllerStates ?? []).map((e: ControllerState) => e.setup.startCh + e.setup.nCh));
     for (const c of controllerStates ?? []) {
+        const pstat = stats.stats?.[c.setup.address];
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : "";
+        const connectivity = !c.setup.usable ? "N/A"
+            : (!(pstat?.outOf) ? "Pending" :  pstat.nReplies > 0 ? "Up" : "Down");
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -222,53 +234,163 @@ function sendControllerStateUpdate() {
             model: `${c.xlRecord?.vendor} ${c.xlRecord?.model} ${c.xlRecord?.variant}`,
             address: c.setup.address,
             state: c.xlRecord?.activeState,
-            status:  c.setup.usable ? c.report?.status : 'unusable',
-            notices: [c.setup.summary],
+            status:  c.setup.skipped ? 'skipped' : (c.setup.usable ? c.report?.status : 'unusable'),
+            notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
-            connectivity: '<unknown>',
-            reported_time: Date.now(),
+            connectivity,
+            pingSummary: pss,
+            reported_time: stats.latestUpdate,
         });
     }
     send({ type: 'nstatus', status: cstatus });
 }
 
+let lastRFCheck: number = Date.now();
+function sendRemoteUpdate() {
+    const settings = latestSettings;
+    if (!settings || !settings.viewerControl?.remoteFalconToken) {
+        //emitInfo("No RF token");
+        return;
+    }
+    const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
+    if (!rfStat) {
+        //emitInfo('Disable RF');
+        setRFControlEnabled(false);
+        return;
+    }
+    else {
+        //emitInfo('Enable RF');
+        setRFControlEnabled(true);
+    }
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    let now_playing: PlayingItem | undefined = undefined;
+    let upcoming: PlayingItem | undefined = undefined;
+    if (ps.curPLActions?.actions?.length) {
+        for (const pla of ps.curPLActions.actions) {
+            if (pla.end) continue;
+            if (!now_playing) {
+                now_playing = actionToPlayingItem(false, pla);
+            } else {
+                upcoming = actionToPlayingItem(false, pla);
+                break;
+            }
+        }
+    }
+    //emitInfo("Set RF Now Playing");
+    setRFNowPlaying(now_playing?.title, upcoming?.title);
+    const pl = curPlaylists?.find((p)=>p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
+    const items : PlaylistSyncItem[] = [];
+    if (pl) {
+        for (const i of pl.items) {
+            const s = foregroundPlayerRunState.sequencesById.get(i.id);
+            if (!s) continue;
+            items.push({
+                playlistType: 'SEQUENCE',
+                playlistDuration: s.work.length,
+                playlistIndex: i.sequence,
+                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - '+s.sequence.vendor: ''}`,
+            });
+        }
+        //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
+        setRFPlaylist(items);
+    }
+    if (now_playing) {
+        const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
+        if (diff >= 3000 && diff < 4000) {
+            //emitInfo("Initiate while-playing RF check");
+            sendRFInitiateCheck();
+        }
+    }
+    else {
+        const dn = Date.now();
+        if (dn - lastRFCheck > 5000) {
+            lastRFCheck = dn;
+            //emitInfo("Initiate idle RF check");
+            sendRFInitiateCheck();
+        }
+    }
+}
+
 /////////
 // Inbound messages
-parentPort.on('message', (command: PlayerCommand) => {
-    switch (command.type) {
-        case 'schedupdate':
-            {
-                emitInfo(
-                    `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
-                );
-                pendingSchedule = command;
+function processCommand(cmd: EZPlayerCommand) {
+    switch (cmd.command) {
+        case 'playsong': {
+            emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+            const seq = curSequences?.find((s) => s.id === cmd.songId);
+            if (!seq) {
+                emitError(`Unable to identify sequence ${cmd.songId}`);
+                return false;
             }
-            if (!running) {
-                running = processQueue(); // kick off first song
-            }
-            break;
-        case 'enqueue':
             foregroundPlayerRunState.addInteractiveCommand({
-                commandId: `${command.cmd.entry.cmdseq}`,
+                immediate: cmd.immediate,
+                requestId: cmd.requestId,
                 startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                seqId: command.cmd.entry.seqid,
+                seqId: cmd.songId,
+            });
+            audioPlayerRunState.addInteractiveCommand({
+                immediate: cmd.immediate,
+                requestId: cmd.requestId,
+                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                seqId: cmd.songId,
             });
             emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
             sendPlayerStateUpdate();
             if (!running) {
                 running = processQueue(); // kick off first song
             }
+        }
+        break;
+        case 'deleterequest': {
+            emitInfo(`Delete ${cmd.requestId}`);
+            foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+            audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
             break;
-        case 'dequeue':
-            foregroundPlayerRunState.removeInteractiveCommand(`${command.cmdseq}`);
-            sendPlayerStateUpdate();
+        }
+        case 'clearrequests': {
+            foregroundPlayerRunState.removeInteractiveCommands();
+            audioPlayerRunState.removeInteractiveCommands();
             break;
+        }
+        // lots of TODOs here...
         case 'pause':
             isPaused = true;
             break;
         case 'resume':
             isPaused = false;
             break;
+        case 'activateoutput': break;
+        case 'suppressoutput': break;
+        case 'playplaylist': break;
+        case 'reloadcontrollers': break;
+        case 'resetplayback': break;
+        case 'stopgraceful': break;
+        case 'stopnow': break;
+    }
+}
+
+parentPort.on('message', (command: PlayerCommand) => {
+    switch (command.type) {
+        case 'schedupdate': {
+            emitInfo(
+                `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
+            );
+            pendingSchedule = command;
+            if (!running) {
+                running = processQueue(); // kick off first song
+            }
+            break;
+        }
+        case 'frontendcmd': {
+            const cmd = command.cmd;
+            processCommand(cmd);
+            break;
+        }
+        case 'settings': {
+            const settings = command.settings;
+            dispatchSettings(settings);
+            break;
+        }
         case 'rpc':
             rpcs.dispatchRequest(command.rpc).catch((e) => {
                 emitError(`THIS SHOULD NOT HAPPEN - RPC should SEND ERROR BACK - ${e}`);
@@ -304,6 +426,27 @@ const playbackParams = {
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
+
+let latestSettings: PlaybackSettings | undefined = undefined;
+
+function dispatchSettings(settings: PlaybackSettings) {
+    latestSettings = settings;
+    playbackParams.audioTimeAdjMs = settings.audioSyncAdjust ?? 0;
+    setRFConfig({
+        remoteToken: settings.viewerControl.remoteFalconToken,
+    },
+    (next) => {
+        const settings = latestSettings;
+        if (!settings) return;
+        const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+        if (!rfc) return;
+        const pl = curPlaylists?.find((pl)=>pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
+        if (!pl) return;
+        const s = pl.items.find((seq)=>seq.sequence === next.playlistIndex);
+        if (!s) return;
+        processCommand({command: 'playsong', immediate: false, songId: s.id, requestId: randomUUID(), priority: 3});
+    });
+}
 
 ////////
 // Playback stats
@@ -427,8 +570,14 @@ async function processQueue() {
     sender.emitWarning = emitWarning;
 
     try {
-        const { controllers, models } =    await readControllersFromXlights(showFolder!);
+        const { controllers, models } = await readControllersFromXlights(showFolder!);
         const sendJob = await openControllersForDataSend(controllers);
+        setPingConfig({
+            hosts: controllers.filter((c)=>c.setup.usable).map((c)=>c.setup.address),
+            concurrency: 10,
+            maxSamples: 10,
+            intervalS: 5,
+        })
         sender.job = sendJob;
         modelRecs = models;
         controllerStates = controllers;
@@ -467,6 +616,7 @@ async function processQueue() {
     let lastStatsUpdate = clockBasePN;
     let lastPStatusUpdate = clockBasePN;
     let lastNStatusUpdate = clockBasePN;
+    let lastRFUpdate = clockBasePN;
 
     try
     {
@@ -504,6 +654,10 @@ async function processQueue() {
             if (curPerfNow - lastNStatusUpdate >= 1000 && iteration % 4 === 2) {
                 sendControllerStateUpdate();
                 lastNStatusUpdate += 1000 * Math.floor((curPerfNow - lastNStatusUpdate) / 1000);
+            }
+            if (curPerfNow - lastRFUpdate >= 1000 && iteration % 4 === 3) {
+                sendRemoteUpdate();
+                lastRFUpdate += 1000 * Math.floor((curPerfNow - lastRFUpdate) / 1000);
             }
 
             // See if a schedule update has been passed in.  If so, do something.

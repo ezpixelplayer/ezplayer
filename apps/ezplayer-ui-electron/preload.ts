@@ -5,7 +5,8 @@ import type {
     AudioTimeSyncR2M,
     EZPElectronAPI,
     FileSelectOptions,
-    ImmediatePlayCommand,
+    EZPlayerCommand,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -89,8 +90,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     putUserProfile(data: Partial<EndUser>) {
         return ipcRenderer.invoke('ipcPutCloudUserProfile', data);
     },
-    immediatePlayCommand(cmd: ImmediatePlayCommand) {
+    immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
+    },
+    setPlaybackSettings(s: PlaybackSettings): Promise<boolean> {
+        return ipcRenderer.invoke('ipcSetPlaybackSettings', s);
     },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
@@ -128,7 +132,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-
+    onPlaybackSettingsUpdated: (callback: (data: PlaybackSettings) => void) => {
+        ipcRenderer.on('update:playbacksettings', (_event: any, data: PlaybackSettings) => {
+            callback(data);
+        });
+    },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
         ipcRenderer.on('audio:get-devices', async (_event: any, req: M2RIPC<void>) => {
             const devices = await callback();

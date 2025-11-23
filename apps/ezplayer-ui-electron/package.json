@@ -1,15 +1,62 @@
 {
     "name": "ezplayer-ui-electron",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ezpixelplayer/ezplayer.git"
+    },
     "private": true,
-    "version": "0.0.25-prealpha",
+    "version": "0.1.0-prealpha",
     "main": "dist/main.js",
     "type": "module",
+    "build": {
+        "appId": "dev.ezplayer.ezplayer",
+        "productName": "EZPlayer",
+        "directories": {
+            "output": "release",
+            "buildResources": "assets"
+        },
+        "files": [
+            "dist/**/*",
+            "package.json",
+            "build/Release/**"
+        ],
+        "extraResources": [
+            {
+                "from": "src/assets/images",
+                "to": "images",
+                "filter": [
+                    "EZPlayerLogoTransparent.ico",
+                    "EZPlayerLogoTransparent.png",
+                    "EZPlayerLogoTransparent.icns"
+                ]
+            }
+        ],
+        "win": {
+            "target": ["nsis"],
+            "icon": "src/assets/images/EZPlayerLogoTransparent.ico"
+        },
+        "mac": {
+            "target": ["dmg"],
+            "icon": "src/assets/images/EZPlayerLogoTransparent.icns"
+        },
+        "linux": {
+            "target": ["AppImage"],
+            "icon": "src/assets/images/EZPlayerLogoTransparent.png",
+            "category": "Utility"
+        },
+        "publish": [
+            {
+                "provider": "github",
+                "releaseType": "prerelease"
+            }
+        ]
+    },
     "scripts": {
         "start": "pnpm dev",
         "dev": "concurrently \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --config electron-builder.json",
+        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
         "build:main": "node scripts/build-main.mjs",
@@ -57,6 +104,7 @@
         "mpg123-decoder": "^1.0.2",
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
+        "ping": "^1.0.0",
         "proper-lockfile": "^4.1.2",
         "react": "^18.0.0",
         "react-dom": "^18.0.0",

@@ -2,43 +2,21 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Alert, Box, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
 import { endOfDay, startOfDay } from 'date-fns';
 import React, { useMemo } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/Store';
 import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
+import { QueueCard } from '../status/QueueCard';
+import { getControllerStats } from '../status/ControllerHelpers';
+import { AppDispatch } from '../../store/Store';
+import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 
 interface PlayerScreenProps {
     title: string;
     statusArea: React.ReactNode[];
 }
-
-// Helper function to calculate controller statistics
-const getControllerStats = (controllers?: { status?: string; errors?: string[] }[]) => {
-    if (!controllers || controllers.length === 0) {
-        return {
-            total: 0,
-            online: 0,
-            offline: 0,
-            withErrors: 0,
-            errorCount: 0,
-        };
-    }
-
-    const online = controllers.filter((c) => c.status === 'online').length;
-    const offline = controllers.filter((c) => c.status !== 'online').length;
-    const withErrors = controllers.filter((c) => c.errors && c.errors.length > 0).length;
-    const errorCount = controllers.reduce((total, c) => total + (c.errors?.length || 0), 0);
-
-    return {
-        total: controllers.length,
-        online,
-        offline,
-        withErrors,
-        errorCount,
-    };
-};
 
 const StatusCards = ({}: {}) => {
     const playerStatus = useSelector((state: RootState) => state.playerStatus);
@@ -87,28 +65,21 @@ const StatusCards = ({}: {}) => {
                                         {/* Controller Count Summary */}
                                         <Box sx={{ mb: 2 }}>
                                             <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                                Controllers: {stats.total}
+                                                Controllers: {stats.total}{(controller.controllers?.length ?? 0) === stats.total ? '' :  ` (${controller.controllers?.length} including skipped)`}
                                             </Typography>
 
                                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
                                                 <Chip
-                                                    label={`${stats.online} Online`}
+                                                    label={`${stats.online} Online; ${stats.offline} Offline`}
                                                     color={
                                                         stats.online === stats.total
                                                             ? 'success'
-                                                            : stats.online > 0
-                                                              ? 'warning'
-                                                              : 'error'
+                                                            : stats.offline > 0
+                                                              ? 'error'
+                                                              : 'warning'
                                                     }
                                                     size="small"
                                                 />
-                                                {stats.offline > 0 && (
-                                                    <Chip
-                                                        label={`${stats.offline} Offline`}
-                                                        color="error"
-                                                        size="small"
-                                                    />
-                                                )}
                                             </Box>
                                         </Box>
 
@@ -167,7 +138,7 @@ const StatusCards = ({}: {}) => {
                                                 }}
                                             >
                                                 <Typography variant="body2" color="text.secondary">
-                                                    No Controllers Detected
+                                                    No Controllers Assigned
                                                 </Typography>
                                             </Box>
                                         )}
@@ -289,6 +260,17 @@ const TimelineView = ({}: {}) => {
 };
 
 export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
+    const dispatch = useDispatch<AppDispatch>();
+    const pstat = useSelector((s: RootState) => s.playerStatus);
+
+    if (!pstat.playerStatus || pstat.loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                <CircularProgress />
+            </Box>
+        );
+    }
+
     return (
         <Box
             sx={{
@@ -305,6 +287,23 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
 
             {/* Now Playing Card and Controller Status */}
             <StatusCards />
+
+            {/* Playback Queue Card */}
+            {pstat?.playerStatus?.player?.queue &&
+                <Box sx={{ padding: 2, flexShrink: 0 }}>
+                    <QueueCard
+                        sx={{
+                            padding: 2, 
+                        }}
+                        queue={pstat.playerStatus.player.queue}
+                        onRemoveItem={async (i, _index)=>{await dispatch(callImmediateCommand({
+                            command: 'deleterequest',
+                            requestId: i.request_id ?? '',
+                        }));}}
+                    >
+                    </QueueCard>
+                </Box>
+            }
 
             {/* Timeline View */}
             <TimelineView />

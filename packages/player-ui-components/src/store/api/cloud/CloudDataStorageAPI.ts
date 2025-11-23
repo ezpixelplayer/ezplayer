@@ -19,6 +19,8 @@ import {
     UserPlayer,
     JSONEditSheet,
     JSONEditState,
+    EZPlayerCommand,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 
 import {
@@ -148,9 +150,9 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     }
 
     // Player immediate
-    async requestImmediatePlay(req: { id: string }) {
-        return true;
-    }
+    async issuePlayerCommand(req: EZPlayerCommand) { return false; }
+    async setPlayerSettings(s: PlaybackSettings) { return false; }
+
 
     static EZP_BASE_URL_DEFAULT =
         (window as any).__APP_CONFIG__?.API_BASE ?? 'https://api.ezplayer.dev/';
