@@ -23,10 +23,17 @@ import {
     blankUserProfile,
 } from './data/FileStorage.js';
 
+import {
+    applySettingsFromRenderer,
+    getSettingsCache,
+    loadSettingsFromDisk,
+} from './data/SettingsStorage.js';
+
 import type {
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
+    PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -89,6 +96,7 @@ export async function loadShowFolder() {
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);
     curUser = await loadUserProfileAPI(showFolder);
+    await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -106,6 +114,7 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:user', curUser);
     updateWindow?.webContents?.send('update:show', curShow);
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
+    updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
     // Broadcast via WebSocket (for React web app)
     wsBroadcaster.broadcast('update:showFolder', showFolder);
@@ -125,6 +134,13 @@ export async function loadShowFolder() {
     if (curShow) wsBroadcaster.broadcast('update:show', curShow);
     wsBroadcaster.broadcast('update:combinedstatus', curStatus);
 
+    const settings = getSettingsCache();
+    if (settings) {
+        playWorker?.postMessage({
+            type: 'settings',
+            settings,
+        } as PlayerCommand);
+    }
     scheduleUpdated();
 }
 
@@ -283,6 +299,15 @@ export async function registerContentHandlers(
         playWorker.postMessage({
             type: 'frontendcmd',
             cmd,
+        } as PlayerCommand);
+        return true;
+    });
+    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<Boolean> => {
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+        playWorker?.postMessage({
+            type: 'settings',
+            settings,
         } as PlayerCommand);
         return true;
     });

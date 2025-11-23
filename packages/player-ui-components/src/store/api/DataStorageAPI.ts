@@ -9,6 +9,7 @@ import type {
     JSONEditSheet,
     JSONEditState,
     EZPlayerCommand,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 
 import { AppDispatch } from '../..';
@@ -154,6 +155,7 @@ export interface DataStorageAPI {
     getCloudPreviewVideo: (fileId: string) => Promise<CloudFileDownloadResponse>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
+    setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 
     /** This fetches the layout options JSON */
     getLayoutOptions: () => Promise<JSONEditSheet | null>;

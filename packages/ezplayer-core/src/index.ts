@@ -26,6 +26,9 @@ export type {
     JSONEditProp,
     JSONEditSheet,
     JSONEditState,
+    PlaybackSettings,
+    ViewerControlScheduleEntry,
+    VolumeScheduleEntry,
 } from './types/DataTypes';
 
 export type {
@@ -51,3 +54,8 @@ export {
     priorityToNumber,
     PlayerRunState,
 } from './util/schedulecomp';
+
+export {
+    getActiveVolumeSchedule,
+    getActiveViewerControlSchedule,
+} from './util/SettingsScheduleUtils';

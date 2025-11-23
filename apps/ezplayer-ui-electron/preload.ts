@@ -6,6 +6,7 @@ import type {
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -92,6 +93,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
     },
+    setPlaybackSettings(s: PlaybackSettings): Promise<boolean> {
+        return ipcRenderer.invoke('ipcSetPlaybackSettings', s);
+    },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
         ipcRenderer.on('update:showFolder', (_event: any, data: string) => {
@@ -128,7 +132,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-
+    onPlaybackSettingsUpdated: (callback: (data: PlaybackSettings) => void) => {
+        ipcRenderer.on('update:playbacksettings', (_event: any, data: PlaybackSettings) => {
+            callback(data);
+        });
+    },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
         ipcRenderer.on('audio:get-devices', async (_event: any, req: M2RIPC<void>) => {
             const devices = await callback();

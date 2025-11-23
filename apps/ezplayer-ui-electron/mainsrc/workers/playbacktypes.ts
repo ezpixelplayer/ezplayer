@@ -9,6 +9,7 @@ import type {
     PlayerCStatusContent,
     PlayerNStatusContent,
     EZPlayerCommand,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 
 export interface PlaybackWorkerData {
@@ -56,6 +57,7 @@ export type PlayerCommand =
           sched: ScheduledPlaylist[];
       }
     | { type: 'frontendcmd'; cmd: EZPlayerCommand}
+    | { type: 'settings', settings: PlaybackSettings}
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };
 
