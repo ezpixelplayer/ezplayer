@@ -94,6 +94,31 @@ function toRelative(p: string, base: string): string {
     return rel;
 }
 
+/**
+ * Convert an absolute path under the show folder into a public asset URL segment.
+ * Returns undefined when the file is not inside the show folder.
+ */
+function toPublicAssetSegment(p: string, base: string): string | undefined {
+    const rel = path.relative(base, p);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return undefined;
+    }
+    return rel.split(path.sep).join('/');
+}
+
+function hydrateThumbMetadata(seq: SequenceRecord, base: string) {
+    if (!seq.files) return;
+    const existingPublic = seq.files.thumbPublicUrl;
+    const computedSegment = seq.files.thumb ? toPublicAssetSegment(seq.files.thumb, base) : undefined;
+    const publicUrl = existingPublic ?? (computedSegment ? `/show-assets/${computedSegment}` : undefined);
+    if (publicUrl) {
+        seq.files.thumbPublicUrl = publicUrl;
+        if (!seq.work.artwork) {
+            seq.work.artwork = publicUrl;
+        }
+    }
+}
+
 export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
     try {
         const p: TempSeqsAPIPayload = await JSON.parse(
@@ -110,6 +135,7 @@ export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]
             if (s.files?.thumb) {
                 s.files.thumb = ensureAbsolute(s.files.thumb, folder);
             }
+            hydrateThumbMetadata(s, folder);
             if (s.files?.fseq && (!s.work.length || s.work.length > 10000)) {
                 try {
                     const fhdr = await FSEQReaderAsync.readFSEQHeaderAsync(s.files.fseq);
@@ -226,8 +252,7 @@ export async function saveUserProfileAPI(folder: string, data: EndUser) {
 }
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
-    return {
-    };
+    return {};
     /*
     return {
         player_updated: new Date().getTime(),

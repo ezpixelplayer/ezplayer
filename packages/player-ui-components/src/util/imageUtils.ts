@@ -15,11 +15,27 @@ function toFileUrl(maybePath: string): string {
     return pathToFileURLCompat(maybePath).toString();
 }
 
+function isElectronRenderer(): boolean {
+    if (typeof window === 'undefined') return false;
+    return Boolean((window as any).electronAPI);
+}
+
+function looksLikeRemotePath(p: string): boolean {
+    return /^(https?:)?\/\//i.test(p) || p.startsWith('/');
+}
+
 /**
  * Utility function to convert local file path to file:// URL for Electron
  * Prioritizes local images over web URLs and adds cache-busting
  */
 export function getImageUrl(imageUrl?: string, localImagePath?: string): string | undefined {
-    if (localImagePath) return toFileUrl(localImagePath);
+    if (localImagePath) {
+        if (isElectronRenderer()) {
+            return toFileUrl(localImagePath);
+        }
+        if (looksLikeRemotePath(localImagePath)) {
+            return localImagePath;
+        }
+    }
     return imageUrl; // http(s), data:, etc. already fine
 }

@@ -15,6 +15,23 @@ import serve from 'koa-static';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { wsBroadcaster } from './mainsrc/websocket-broadcaster.js';
+import { getCurrentShowFolder } from './showfolder.js';
+
+const ASSET_MIME_TYPES: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.bmp': 'image/bmp',
+};
+
+function inferMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    return ASSET_MIME_TYPES[ext] ?? 'application/octet-stream';
+}
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -157,7 +174,7 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
-    const contentHandlers = await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
+    await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
 
     // 🧩 Start Koa web server with WebSocket support
     const webApp = new Koa();
@@ -166,7 +183,19 @@ app.whenReady().then(async () => {
     const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
     console.log(`🌐 Starting Koa web server on port ${PORT} (source: ${source})`);
 
-    const staticPath = path.resolve(__dirname, '../../ezplayer-ui-react/dist');
+    // const staticPath = path.resolve(process.cwd(), '../ezplayer-ui-react/dist');
+    let staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
+    if (!fs.existsSync(staticPath)) {
+        const altPath1 = path.join(process.cwd(), 'apps/ezplayer-ui-react/dist');
+        const altPath2 = path.join(__dirname, '../../ezplayer-ui-react/dist');
+        if (fs.existsSync(altPath1)) {
+            staticPath = altPath1;
+        } else if (fs.existsSync(altPath2)) {
+            staticPath = altPath2;
+        }
+    }
+
+    // const staticPath = path.resolve(__dirname, '../../ezplayer-ui-react/dist');
     const indexPath = path.join(staticPath, 'index.html');
 
     // Create HTTP server
@@ -183,71 +212,9 @@ app.whenReady().then(async () => {
 
     // Handle WebSocket connections
     wss.on('connection', (ws) => {
-        console.log('🔌 New WebSocket client connected');
         wsBroadcaster.addClient(ws);
 
-        // Send initial data to the newly connected client
-        // This ensures the React web app has all existing data on first load
-        const sendInitialData = async () => {
-            const { getCurrentShowData } = await import('./mainsrc/ipcezplayer.js');
-            const initialData = getCurrentShowData();
-
-            const sendMessage = (type: string, data: any) => {
-                try {
-                    if (ws.readyState === 1) {
-                        // WebSocket.OPEN
-                        ws.send(
-                            JSON.stringify({
-                                type,
-                                data,
-                                timestamp: Date.now(),
-                            }),
-                        );
-                    }
-                } catch (error) {
-                    console.error(`Error sending ${type} message:`, error);
-                }
-            };
-
-            if (initialData.showFolder) {
-                sendMessage('update:showFolder', initialData.showFolder);
-            }
-            if (initialData.sequences) {
-                sendMessage(
-                    'update:sequences',
-                    initialData.sequences.filter((s: any) => !s.deleted),
-                );
-            }
-            if (initialData.playlists) {
-                sendMessage(
-                    'update:playlist',
-                    initialData.playlists.filter((p: any) => !p.deleted),
-                );
-            }
-            if (initialData.schedule) {
-                sendMessage(
-                    'update:schedule',
-                    initialData.schedule.filter((s: any) => !s.deleted),
-                );
-            }
-            if (initialData.user) {
-                sendMessage('update:user', initialData.user);
-            }
-            if (initialData.show) {
-                sendMessage('update:show', initialData.show);
-            }
-            if (initialData.status) {
-                sendMessage('update:combinedstatus', initialData.status);
-            }
-            console.log('✅ Sent initial data to new WebSocket client');
-        };
-
-        sendInitialData().catch((err) => {
-            console.error('❌ Error sending initial data to WebSocket client:', err);
-        });
-
         ws.on('close', () => {
-            console.log('🔌 WebSocket client disconnected');
             wsBroadcaster.removeClient(ws);
         });
 
@@ -267,6 +234,60 @@ app.whenReady().then(async () => {
             }
         } else {
             await next();
+        }
+    });
+
+    webApp.use(async (ctx: any, next: () => Promise<any>) => {
+        if (!ctx.path.startsWith('/show-assets/')) {
+            return next();
+        }
+
+        // Set CORS headers
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        ctx.set('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (ctx.method === 'OPTIONS') {
+            ctx.status = 204;
+            return;
+        }
+
+        const showFolder = getCurrentShowFolder();
+        if (!showFolder) {
+            ctx.status = 404;
+            ctx.body = 'Show folder not selected';
+            return;
+        }
+        const requestedPath = ctx.path.slice('/show-assets/'.length);
+        // Convert forward slashes to platform-specific separators
+        const platformPath = requestedPath.replace(/\//g, path.sep);
+        const normalized = path
+            .normalize(platformPath)
+            .replace(/^[\\/]+/, '')
+            .replace(/(\.\.(\/|\\|$))+/g, '');
+        if (!normalized) {
+            ctx.status = 404;
+            return;
+        }
+        const targetPath = path.join(showFolder, normalized);
+        const resolvedTarget = path.resolve(targetPath);
+        const resolvedBase = path.resolve(showFolder);
+        if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
+            ctx.status = 403;
+            ctx.body = 'Forbidden';
+            return;
+        }
+        try {
+            const stats = await fs.promises.stat(resolvedTarget);
+            if (!stats.isFile()) {
+                ctx.status = 404;
+                return;
+            }
+            ctx.type = inferMimeType(resolvedTarget);
+            ctx.body = fs.createReadStream(resolvedTarget);
+        } catch (_err) {
+            ctx.status = 404;
+            ctx.body = 'Asset not found';
         }
     });
 

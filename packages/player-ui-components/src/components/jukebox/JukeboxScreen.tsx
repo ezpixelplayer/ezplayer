@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Button, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
 import { MusicNote, Lightbulb } from '@mui/icons-material';
-import { PageHeader } from '@ezplayer/shared-ui-components';
+import { PageHeader, isElectron } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
@@ -35,10 +35,39 @@ interface SequenceItem {
     files?: {
         fseq?: string;
         thumb?: string;
+        thumbPublicUrl?: string;
     };
     settings?: {
         tags?: string[];
     };
+}
+
+function resolveThumbPath(files?: SequenceItem['files']): string | undefined {
+    if (!files) return undefined;
+    const electronThumb = files.thumb;
+    const publicThumb = files.thumbPublicUrl;
+
+    // In Electron, use the local file path
+    if (isElectron()) {
+        return electronThumb;
+    }
+
+    // In web browser, prefer the public URL
+    if (publicThumb) {
+        return publicThumb;
+    }
+
+    // Fallback to thumb if it's already a web URL
+    if (electronThumb && /^(https?:)?\/\//i.test(electronThumb)) {
+        return electronThumb;
+    }
+
+    // Fallback to thumb if it's a /show-assets/ path
+    if (electronThumb && electronThumb.startsWith('/show-assets/')) {
+        return electronThumb;
+    }
+
+    return undefined;
 }
 
 export interface JukeboxAreaProps {
@@ -190,7 +219,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
             urlPart: song.files?.fseq || '', // Using fseq file name as the URL part
             id: song.id,
             artwork: song.work?.artwork, // Add artwork field
-            localImagePath: song.files?.thumb, // Add local image path field
+            localImagePath: resolveThumbPath(song.files), // Add local image path field
         })) || [];
 
     const song: Song | undefined = songs[index];
@@ -211,7 +240,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const playSong = async () => {
         if (!song?.id) return;
         onInteract?.();
-        await dispatch(callImmediateCommand({command: 'playsong', songId: song.id, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+        await dispatch(callImmediateCommand({ command: 'playsong', songId: song.id, immediate: true, priority: 5, requestId: crypto.randomUUID() })).unwrap();
     };
 
     // Calculate responsive sizes
@@ -565,7 +594,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                     urlPart: song.files?.fseq || '',
                     id: song.id,
                     artworkUrl: song.work?.artwork,
-                    localImagePath: song.files?.thumb,
+                    localImagePath: resolveThumbPath(song.files),
                 }),
             ) || [];
 
@@ -616,11 +645,11 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     }, [songs, searchQuery, sortBy, selectedFilterTags, tagInputValue, sequenceData]);
 
     const handlePlay = async (songId: string) => {
-        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+        await dispatch(callImmediateCommand({ command: 'playsong', songId, immediate: true, priority: 5, requestId: crypto.randomUUID() })).unwrap();
     };
 
     const handleQueue = async (songId: string) => {
-        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: false, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+        await dispatch(callImmediateCommand({ command: 'playsong', songId, immediate: false, priority: 5, requestId: crypto.randomUUID() })).unwrap();
     };
 
     const sortOptions = [
@@ -668,11 +697,13 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                         <QueueCard
                             sx={{ padding: 2 }}
                             queue={pstat.playerStatus.player.queue}
-                            onRemoveItem={async (i, index)=>{console.log(`Remove ${index}`); await dispatch(callImmediateCommand({
-                                command: 'deleterequest',
-                                requestId: i.request_id ?? '',
-                            }))}
-                        }>
+                            onRemoveItem={async (i, index) => {
+                                console.log(`Remove ${index}`); await dispatch(callImmediateCommand({
+                                    command: 'deleterequest',
+                                    requestId: i.request_id ?? '',
+                                }))
+                            }
+                            }>
                         </QueueCard>
                     </Box>
                 }

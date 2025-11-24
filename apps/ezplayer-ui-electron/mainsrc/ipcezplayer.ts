@@ -2,10 +2,13 @@
 import { fileURLToPath } from 'url';
 
 import * as path from 'path';
+import * as fs from 'fs';
 
 import { BrowserWindow, ipcMain } from 'electron';
 
 import { Worker } from 'node:worker_threads';
+import fsp from 'fs/promises';
+import { randomUUID } from 'crypto';
 
 import {
     loadPlaylistsAPI,
@@ -23,11 +26,7 @@ import {
     blankUserProfile,
 } from './data/FileStorage.js';
 
-import {
-    applySettingsFromRenderer,
-    getSettingsCache,
-    loadSettingsFromDisk,
-} from './data/SettingsStorage.js';
+import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
 
 import type {
     CombinedPlayerStatus,
@@ -98,6 +97,15 @@ export async function loadShowFolder() {
     curUser = await loadUserProfileAPI(showFolder);
     await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
 
+    let sequenceAssetsUpdated = false;
+    for (const seq of curSequences) {
+        const mutated = await ensureSequenceThumbAvailability(seq, showFolder);
+        sequenceAssetsUpdated = sequenceAssetsUpdated || mutated;
+    }
+    if (sequenceAssetsUpdated) {
+        await saveSequencesAPI(showFolder, curSequences);
+    }
+
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
         'update:sequences',
@@ -147,6 +155,74 @@ export async function loadShowFolder() {
 const audioConverter = new ClockConverter('audio', 0, performance.now());
 let lastAudioLatency: number = 10;
 let rtConverter: ClockConverter | undefined = undefined;
+
+const SONG_IMAGE_SUBDIR = path.join('assets', 'song-images');
+
+function normalizeAssetSegment(p: string, base: string): string | undefined {
+    const rel = path.relative(base, p);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return undefined;
+    }
+    return rel.split(path.sep).join('/');
+}
+
+async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: string): Promise<boolean> {
+    if (!seq.files) return false;
+    let mutated = false;
+    const previousPublicUrl = seq.files.thumbPublicUrl;
+
+    if (!seq.files.thumb) {
+        if (previousPublicUrl && seq.work?.artwork === previousPublicUrl) {
+            delete seq.work.artwork;
+            mutated = true;
+        }
+        if (previousPublicUrl) {
+            delete seq.files.thumbPublicUrl;
+            mutated = true;
+        }
+        return mutated;
+    }
+
+    const resolvedShowFolder = path.resolve(showFolder);
+    const resolvedThumb = path.resolve(seq.files.thumb);
+    const isInsideShowFolder = resolvedThumb.startsWith(resolvedShowFolder + path.sep);
+
+    if (!isInsideShowFolder) {
+        try {
+            await fsp.access(resolvedThumb, fs.constants.R_OK);
+        } catch (err) {
+            console.warn(`Unable to access uploaded image ${resolvedThumb}:`, err);
+            return mutated;
+        }
+        const destinationDir = path.join(showFolder, SONG_IMAGE_SUBDIR);
+        await fsp.mkdir(destinationDir, { recursive: true });
+        const ext = path.extname(resolvedThumb) || '.png';
+        const baseId = seq.id || seq.instanceId || randomUUID();
+        const sanitizedId = baseId.replace(/[^a-zA-Z0-9-_]/g, '') || randomUUID();
+        const safeId = sanitizedId;
+        const assetName = `${safeId}-${Date.now()}${ext}`;
+        const destinationPath = path.join(destinationDir, assetName);
+        await fsp.copyFile(resolvedThumb, destinationPath);
+        if (seq.files.thumb !== destinationPath) {
+            seq.files.thumb = destinationPath;
+            mutated = true;
+        }
+    }
+
+    const assetSegment = normalizeAssetSegment(seq.files.thumb, showFolder);
+    if (assetSegment) {
+        const publicUrl = `/show-assets/${assetSegment}`;
+        if (seq.files.thumbPublicUrl !== publicUrl) {
+            seq.files.thumbPublicUrl = publicUrl;
+            mutated = true;
+        }
+        if (!seq.work.artwork) {
+            seq.work.artwork = publicUrl;
+            mutated = true;
+        }
+    }
+    return mutated;
+}
 
 const handlers: MainRPCAPI = {
     add: ({ a, b }) => a + b,
@@ -209,9 +285,19 @@ export async function registerContentHandlers(
                 await fseq.close();
             }
         }
-        const updList = mergeSequences(uppl, curSequences ?? []);
         const showFolder = getCurrentShowFolder();
-        if (showFolder) await saveSequencesAPI(showFolder, updList);
+        if (showFolder) {
+            for (const seq of uppl) {
+                await ensureSequenceThumbAvailability(seq, showFolder);
+            }
+        }
+        const updList = mergeSequences(uppl, curSequences ?? []);
+        if (showFolder) {
+            for (const seq of updList) {
+                await ensureSequenceThumbAvailability(seq, showFolder);
+            }
+            await saveSequencesAPI(showFolder, updList);
+        }
         curSequences = updList;
         const filtered = updList.filter((r) => r.deleted !== true);
         updateWindow?.webContents?.send('update:sequences', filtered);
