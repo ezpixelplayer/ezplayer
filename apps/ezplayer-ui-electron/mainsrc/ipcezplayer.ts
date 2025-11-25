@@ -24,6 +24,7 @@ import {
     saveUserProfileAPI,
     blankShowProfile,
     blankUserProfile,
+    type SequenceAssetConfig,
 } from './data/FileStorage.js';
 
 import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
@@ -72,6 +73,7 @@ export let curUser: EndUser | undefined = undefined;
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 let commandSeqNum = 1;
+let sequenceAssetsConfig: SequenceAssetConfig | undefined;
 
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
@@ -90,7 +92,7 @@ export async function loadShowFolder() {
     if (!showFolder) {
         return;
     }
-    curSequences = await loadSequencesAPI(showFolder);
+    curSequences = await loadSequencesAPI(showFolder, sequenceAssetsConfig);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);
@@ -157,6 +159,42 @@ let lastAudioLatency: number = 10;
 let rtConverter: ClockConverter | undefined = undefined;
 
 const SONG_IMAGE_SUBDIR = path.join('assets', 'song-images');
+const DEFAULT_USER_IMAGE_ROUTE = '/user-images';
+
+function sanitizeBaseUrl(url?: string): string | undefined {
+    if (!url) {
+        return undefined;
+    }
+    const trimmed = url.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    return trimmed.replace(/\/+$/, '');
+}
+
+function normalizePublicRoute(route?: string): string {
+    if (!route) {
+        return DEFAULT_USER_IMAGE_ROUTE;
+    }
+    const trimmed = route.trim();
+    if (!trimmed) {
+        return DEFAULT_USER_IMAGE_ROUTE;
+    }
+    const ensured = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    return ensured.replace(/\/+$/, '');
+}
+
+function setSequenceAssetConfig(config?: SequenceAssetConfig) {
+    if (!config?.imageStorageRoot) {
+        sequenceAssetsConfig = undefined;
+        return;
+    }
+    sequenceAssetsConfig = {
+        imageStorageRoot: path.resolve(config.imageStorageRoot),
+        imagePublicRoute: normalizePublicRoute(config.imagePublicRoute),
+        imagePublicBaseUrl: sanitizeBaseUrl(config.imagePublicBaseUrl),
+    };
+}
 
 function normalizeAssetSegment(p: string, base: string): string | undefined {
     const rel = path.relative(base, p);
@@ -164,6 +202,17 @@ function normalizeAssetSegment(p: string, base: string): string | undefined {
         return undefined;
     }
     return rel.split(path.sep).join('/');
+}
+
+function buildConfiguredPublicUrl(route: string, segment: string): string {
+    const prefix = route.endsWith('/') ? route.slice(0, -1) : route || '/';
+    const normalizedSegment = segment.replace(/^\/+/, '');
+    const relativePath = normalizedSegment ? `${prefix}/${normalizedSegment}` : prefix;
+    const baseUrl = sequenceAssetsConfig?.imagePublicBaseUrl;
+    if (baseUrl) {
+        return `${baseUrl}${relativePath}`;
+    }
+    return relativePath;
 }
 
 async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: string): Promise<boolean> {
@@ -185,23 +234,27 @@ async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: 
 
     const resolvedShowFolder = path.resolve(showFolder);
     const resolvedThumb = path.resolve(seq.files.thumb);
-    const isInsideShowFolder = resolvedThumb.startsWith(resolvedShowFolder + path.sep);
+    const configuredStorageRoot = sequenceAssetsConfig?.imageStorageRoot;
+    const storageRoot = configuredStorageRoot ?? path.join(resolvedShowFolder, SONG_IMAGE_SUBDIR);
+    const resolvedStorageRoot = path.resolve(storageRoot);
+    const publicBase = configuredStorageRoot ? resolvedStorageRoot : resolvedShowFolder;
+    const publicRoutePrefix = sequenceAssetsConfig?.imagePublicRoute ?? '/show-assets';
+    const storageRootWithSep = resolvedStorageRoot + path.sep;
+    const isInsideStorageRoot = resolvedThumb === resolvedStorageRoot || resolvedThumb.startsWith(storageRootWithSep);
 
-    if (!isInsideShowFolder) {
+    if (!isInsideStorageRoot) {
         try {
             await fsp.access(resolvedThumb, fs.constants.R_OK);
         } catch (err) {
             console.warn(`Unable to access uploaded image ${resolvedThumb}:`, err);
             return mutated;
         }
-        const destinationDir = path.join(showFolder, SONG_IMAGE_SUBDIR);
-        await fsp.mkdir(destinationDir, { recursive: true });
+        await fsp.mkdir(resolvedStorageRoot, { recursive: true });
         const ext = path.extname(resolvedThumb) || '.png';
         const baseId = seq.id || seq.instanceId || randomUUID();
         const sanitizedId = baseId.replace(/[^a-zA-Z0-9-_]/g, '') || randomUUID();
-        const safeId = sanitizedId;
-        const assetName = `${safeId}-${Date.now()}${ext}`;
-        const destinationPath = path.join(destinationDir, assetName);
+        const assetName = `${sanitizedId}-${Date.now()}${ext}`;
+        const destinationPath = path.join(resolvedStorageRoot, assetName);
         await fsp.copyFile(resolvedThumb, destinationPath);
         if (seq.files.thumb !== destinationPath) {
             seq.files.thumb = destinationPath;
@@ -209,17 +262,28 @@ async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: 
         }
     }
 
-    const assetSegment = normalizeAssetSegment(seq.files.thumb, showFolder);
+    let assetSegment = normalizeAssetSegment(seq.files.thumb, publicBase);
+    if (!assetSegment && publicBase !== resolvedShowFolder) {
+        assetSegment = normalizeAssetSegment(seq.files.thumb, resolvedShowFolder);
+    }
+
     if (assetSegment) {
-        const publicUrl = `/show-assets/${assetSegment}`;
+        const publicUrl = buildConfiguredPublicUrl(publicRoutePrefix, assetSegment);
         if (seq.files.thumbPublicUrl !== publicUrl) {
             seq.files.thumbPublicUrl = publicUrl;
             mutated = true;
         }
-        if (!seq.work.artwork) {
+        if (
+            seq.work &&
+            (!seq.work.artwork || seq.work.artwork === previousPublicUrl) &&
+            seq.work.artwork !== publicUrl
+        ) {
             seq.work.artwork = publicUrl;
             mutated = true;
         }
+    } else if (seq.files.thumbPublicUrl) {
+        delete seq.files.thumbPublicUrl;
+        mutated = true;
     }
     return mutated;
 }
@@ -247,10 +311,14 @@ export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
     realTimeClock: ClockConverter,
     nPlayWorker: Worker,
+    options?: {
+        sequenceAssets?: SequenceAssetConfig;
+    },
 ) {
     updateWindow = mainWindow;
     rtConverter = realTimeClock;
     playWorker = nPlayWorker;
+    setSequenceAssetConfig(options?.sequenceAssets);
 
     ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
         await loadShowFolder();

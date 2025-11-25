@@ -37,6 +37,62 @@ interface WebSocketProviderProps {
     children: React.ReactNode;
 }
 
+function normalizeAssetUrl(url: string | undefined, baseUrl: string): string | undefined {
+    if (!url) return url;
+    const sanitizedBase = baseUrl.replace(/\/+$/, '');
+    try {
+        if (/^https?:\/\//i.test(url)) {
+            const parsed = new URL(url);
+            if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+                const baseParsed = new URL(`${sanitizedBase}/`);
+                parsed.protocol = baseParsed.protocol;
+                parsed.host = baseParsed.host;
+                return parsed.toString();
+            }
+            return url;
+        }
+        if (url.startsWith('/')) {
+            return `${sanitizedBase}${url}`;
+        }
+        return url;
+    } catch {
+        return url;
+    }
+}
+
+function normalizeSequenceAssets(records: SequenceRecord[], baseUrl?: string): SequenceRecord[] {
+    if (!baseUrl) {
+        return records;
+    }
+    return records.map((seq) => {
+        let mutated = false;
+        let nextFiles = seq.files;
+        if (seq.files?.thumbPublicUrl) {
+            const updatedThumb = normalizeAssetUrl(seq.files.thumbPublicUrl, baseUrl);
+            if (updatedThumb !== seq.files.thumbPublicUrl) {
+                nextFiles = { ...(nextFiles ?? seq.files), thumbPublicUrl: updatedThumb };
+                mutated = true;
+            }
+        }
+        let nextWork = seq.work;
+        if (seq.work?.artwork) {
+            const updatedArtwork = normalizeAssetUrl(seq.work.artwork, baseUrl);
+            if (updatedArtwork !== seq.work.artwork) {
+                nextWork = { ...seq.work, artwork: updatedArtwork };
+                mutated = true;
+            }
+        }
+        if (!mutated) {
+            return seq;
+        }
+        return {
+            ...seq,
+            files: nextFiles,
+            work: nextWork,
+        };
+    });
+}
+
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
     const dispatch = useDispatch();
 
@@ -56,7 +112,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         });
 
         const unsubscribeSequences = wsService.subscribe('update:sequences', (data: SequenceRecord[]) => {
-            dispatch(setSequenceData(data));
+            dispatch(setSequenceData(normalizeSequenceAssets(data, wsService.getHttpBaseUrl())));
         });
 
         const unsubscribePlaylists = wsService.subscribe('update:playlist', (data: PlaylistRecord[]) => {

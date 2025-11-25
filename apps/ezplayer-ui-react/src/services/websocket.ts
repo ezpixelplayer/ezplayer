@@ -13,9 +13,78 @@ export type MessageHandler<T = any> = (data: T) => void;
 type ConnectionHandler = () => void;
 type ErrorHandler = (error: Event) => void;
 
+interface WebSocketConfig {
+    explicitUrl?: string;
+    protocol: string;
+    host: string;
+    candidatePorts: number[];
+}
+
+function toProtocol(value?: string): string {
+    if (!value) {
+        return window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    }
+    return trimmed.endsWith(':') ? trimmed : `${trimmed}:`;
+}
+
+function toHost(value?: string): string {
+    if (value && value.trim()) {
+        return value.trim();
+    }
+    return window.location.hostname || 'localhost';
+}
+
+function toPort(value?: string | number | null | undefined): number | undefined {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined;
+    }
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    const parsed = parseInt(`${value}`.trim(), 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildConfig(): WebSocketConfig {
+    const explicitUrlEnv = import.meta.env.VITE_WS_BASE_URL?.trim();
+    if (explicitUrlEnv) {
+        const sanitized = explicitUrlEnv.replace(/\/+$/, '');
+        return {
+            explicitUrl: `${sanitized}/ws`,
+            protocol: '',
+            host: '',
+            candidatePorts: [],
+        };
+    }
+
+    const envPort = toPort(import.meta.env.VITE_WS_PORT);
+    const locationPort = typeof window !== 'undefined' ? toPort(window.location.port) : undefined;
+    const defaultPort = 3000;
+    const candidatePorts = [envPort, locationPort, defaultPort]
+        .filter((port): port is number => typeof port === 'number' && port > 0)
+        .filter((port, index, arr) => arr.indexOf(port) === index);
+
+    if (candidatePorts.length === 0) {
+        candidatePorts.push(defaultPort);
+    }
+
+    return {
+        protocol: toProtocol(import.meta.env.VITE_WS_PROTOCOL),
+        host: toHost(import.meta.env.VITE_WS_HOST),
+        candidatePorts,
+    };
+}
+
 class WebSocketService {
     private ws: WebSocket | null = null;
     private url: string;
+    private config: WebSocketConfig;
+    private currentPortIndex = 0;
+    private httpBaseUrl?: string;
     private reconnectAttempts = 0;
     private maxReconnectAttempts = 10;
     private reconnectDelay = 1000; // Start with 1 second
@@ -26,11 +95,46 @@ class WebSocketService {
     private errorHandlers: Set<ErrorHandler> = new Set();
     private isConnecting = false;
     private isConnected = false;
+    private hasConnectedSuccessfully = false;
 
-    constructor(port: number = 3000) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const hostname = window.location.hostname || 'localhost';
-        this.url = `${protocol}//${hostname}:${port}/ws`;
+    constructor() {
+        this.config = buildConfig();
+        this.url = this.computeUrl();
+        this.updateHttpBaseFromWsUrl();
+    }
+
+    private computeUrl(): string {
+        if (this.config.explicitUrl) {
+            return this.config.explicitUrl;
+        }
+        const port = this.config.candidatePorts[this.currentPortIndex] ?? 3000;
+        return `${this.config.protocol}//${this.config.host}:${port}/ws`;
+    }
+
+    private updateHttpBaseFromWsUrl(): void {
+        try {
+            const parsed = new URL(this.url);
+            const protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:';
+            this.httpBaseUrl = `${protocol}//${parsed.host}`;
+        } catch {
+            this.httpBaseUrl = undefined;
+        }
+    }
+
+    private advancePortCandidate(): boolean {
+        if (this.config.explicitUrl) {
+            return false;
+        }
+        if (this.currentPortIndex >= this.config.candidatePorts.length - 1) {
+            return false;
+        }
+        this.currentPortIndex += 1;
+        this.url = this.computeUrl();
+        this.updateHttpBaseFromWsUrl();
+        console.warn(
+            `🔁 Retrying WebSocket connection on alternate port ${this.config.candidatePorts[this.currentPortIndex]}`,
+        );
+        return true;
     }
 
     /**
@@ -57,6 +161,7 @@ class WebSocketService {
                 console.log('✅ WebSocket connected');
                 this.isConnecting = false;
                 this.isConnected = true;
+                this.hasConnectedSuccessfully = true;
                 this.reconnectAttempts = 0;
                 this.reconnectDelay = 1000;
 
@@ -99,6 +204,11 @@ class WebSocketService {
                 this.isConnecting = false;
                 this.isConnected = false;
                 this.ws = null;
+                const advancedPort = !this.hasConnectedSuccessfully && this.advancePortCandidate();
+                if (advancedPort) {
+                    this.reconnectAttempts = 0;
+                    this.reconnectDelay = 1000;
+                }
 
                 if (event.code !== 1000) {
                     this.scheduleReconnect();
@@ -107,6 +217,10 @@ class WebSocketService {
         } catch (error) {
             console.error('Error creating WebSocket connection:', error);
             this.isConnecting = false;
+            if (!this.hasConnectedSuccessfully && this.advancePortCandidate()) {
+                this.reconnectAttempts = 0;
+                this.reconnectDelay = 1000;
+            }
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
                 this.scheduleReconnect();
             }
@@ -225,40 +339,20 @@ class WebSocketService {
     getConnectionStatus(): boolean {
         return this.isConnected && this.ws?.readyState === WebSocket.OPEN;
     }
+
+    getHttpBaseUrl(): string | undefined {
+        return this.httpBaseUrl;
+    }
 }
 
-// Singleton instance
-let wsServiceInstance: WebSocketService | null = null;
+const wsServiceInstance = new WebSocketService();
 
 /**
  * Get or create WebSocket service instance
  */
-export function getWebSocketService(port?: number): WebSocketService {
-    if (!wsServiceInstance) {
-        wsServiceInstance = new WebSocketService(port);
-    }
+export function getWebSocketService(): WebSocketService {
     return wsServiceInstance;
 }
 
-/**
- * Get WebSocket port from environment or use default
- */
-function getWebSocketPort(): number {
-    // Try to get port from window location if available
-    const port = window.location.port;
-    if (port) {
-        return parseInt(port, 10);
-    }
-
-    // Try environment variable
-    const envPort = import.meta.env.VITE_WS_PORT;
-    if (envPort) {
-        return parseInt(envPort, 10);
-    }
-
-    // Default port
-    return 3000;
-}
-
 // Export default instance
-export const wsService = getWebSocketService(getWebSocketPort());
+export const wsService = wsServiceInstance;

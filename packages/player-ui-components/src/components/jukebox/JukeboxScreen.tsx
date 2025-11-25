@@ -19,7 +19,7 @@ interface Song {
     artist: string;
     urlPart: string;
     id: string;
-    artworkUrl?: string;
+    artwork?: string;
     localImagePath?: string;
     playlistIds?: string[];
 }
@@ -42,6 +42,45 @@ interface SequenceItem {
     };
 }
 
+function alignWithPageOrigin(url: string): string {
+    if (typeof window === 'undefined') {
+        return url;
+    }
+    try {
+        const parsed = new URL(url, window.location.origin);
+        if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+            parsed.protocol = window.location.protocol;
+            parsed.host = window.location.host;
+        }
+        return parsed.toString();
+    } catch {
+        if (url.startsWith('/')) {
+            return `${window.location.origin}${url}`;
+        }
+        return url;
+    }
+}
+
+function inferUserImagesUrl(localPath?: string): string | undefined {
+    if (typeof window === 'undefined' || !localPath) {
+        return undefined;
+    }
+    const normalized = localPath.replace(/\\/g, '/');
+    const lower = normalized.toLowerCase();
+    const marker = '/user_data/images/';
+    const idx = lower.indexOf(marker);
+    if (idx !== -1) {
+        const relative = normalized.slice(idx + marker.length);
+        if (relative) {
+            return `${window.location.origin}/user-images/${relative}`;
+        }
+    }
+    if (normalized.startsWith('/user-images/')) {
+        return `${window.location.origin}${normalized}`;
+    }
+    return undefined;
+}
+
 function resolveThumbPath(files?: SequenceItem['files']): string | undefined {
     if (!files) return undefined;
     const electronThumb = files.thumb;
@@ -52,19 +91,25 @@ function resolveThumbPath(files?: SequenceItem['files']): string | undefined {
         return electronThumb;
     }
 
-    // In web browser, prefer the public URL
+    // In web browser, prefer the public URL (aligned with host)
     if (publicThumb) {
-        return publicThumb;
+        return alignWithPageOrigin(publicThumb);
+    }
+
+    // Fallback to thumb if we can infer a served path
+    const inferredFromThumb = inferUserImagesUrl(electronThumb);
+    if (inferredFromThumb) {
+        return inferredFromThumb;
     }
 
     // Fallback to thumb if it's already a web URL
     if (electronThumb && /^(https?:)?\/\//i.test(electronThumb)) {
-        return electronThumb;
+        return alignWithPageOrigin(electronThumb);
     }
 
     // Fallback to thumb if it's a /show-assets/ path
     if (electronThumb && electronThumb.startsWith('/show-assets/')) {
-        return electronThumb;
+        return alignWithPageOrigin(electronThumb);
     }
 
     return undefined;
@@ -286,7 +331,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                 }}
             >
                 <SongThumbnail
-                    artwork={song?.artworkUrl}
+                    artwork={song?.artwork}
                     localImagePath={song?.localImagePath}
                     isMusical={song?.isMusical || false}
                     size={getIconSize()}
@@ -593,7 +638,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                     artist: song.work?.artist || '',
                     urlPart: song.files?.fseq || '',
                     id: song.id,
-                    artworkUrl: song.work?.artwork,
+                    artwork: song.work?.artwork,
                     localImagePath: resolveThumbPath(song.files),
                 }),
             ) || [];
@@ -854,7 +899,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                 id={song.id}
                                 title={song.title}
                                 artist={song.artist}
-                                artwork={song.artworkUrl}
+                                artwork={song.artwork}
                                 localImagePath={song.localImagePath}
                                 buttons={songButtons}
                             />

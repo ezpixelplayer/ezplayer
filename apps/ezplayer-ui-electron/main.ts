@@ -28,6 +28,8 @@ const ASSET_MIME_TYPES: Record<string, string> = {
     '.bmp': 'image/bmp',
 };
 
+const USER_IMAGE_ROUTE = '/user-images';
+
 function inferMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
     return ASSET_MIME_TYPES[ext] ?? 'application/octet-stream';
@@ -156,6 +158,21 @@ app.whenReady().then(async () => {
         return;
     }
 
+    const userImageDir = path.join(app.getPath('userData'), 'user_data', 'images');
+    const resolvedUserImageDir = path.resolve(userImageDir);
+    await fs.promises.mkdir(resolvedUserImageDir, { recursive: true });
+
+    const portInfo = getWebPort(true);
+    const PORT = typeof portInfo === 'number' ? portInfo : portInfo.port;
+    const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
+    const hostEnv = process.env.EZP_WEB_HOST?.trim();
+    const protocolEnv = process.env.EZP_WEB_PROTOCOL?.trim();
+    const baseEnv = process.env.EZP_WEB_BASE_URL?.trim();
+    const webHost = hostEnv && hostEnv.length > 0 ? hostEnv : 'localhost';
+    const webProtocol = protocolEnv && protocolEnv.length > 0 ? protocolEnv : 'http';
+    const defaultBaseUrl = `${webProtocol}://${webHost}:${PORT}`;
+    const webBaseUrl = baseEnv && baseEnv.length > 0 ? baseEnv.replace(/\/+$/, '') : defaultBaseUrl;
+
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {
             name: 'main',
@@ -174,13 +191,16 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
-    await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
+    await registerContentHandlers(mainWindow, dateNowConverter, playWorker, {
+        sequenceAssets: {
+            imageStorageRoot: resolvedUserImageDir,
+            imagePublicRoute: USER_IMAGE_ROUTE,
+            imagePublicBaseUrl: webBaseUrl,
+        },
+    });
 
     // 🧩 Start Koa web server with WebSocket support
     const webApp = new Koa();
-    const portInfo = getWebPort(true);
-    const PORT = typeof portInfo === 'number' ? portInfo : portInfo.port;
-    const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
     console.log(`🌐 Starting Koa web server on port ${PORT} (source: ${source})`);
 
     // const staticPath = path.resolve(process.cwd(), '../ezplayer-ui-react/dist');
@@ -237,6 +257,8 @@ app.whenReady().then(async () => {
         }
     });
 
+    const userImageRoutePrefix = `${USER_IMAGE_ROUTE}/`;
+
     webApp.use(async (ctx: any, next: () => Promise<any>) => {
         if (!ctx.path.startsWith('/show-assets/')) {
             return next();
@@ -272,6 +294,57 @@ app.whenReady().then(async () => {
         const targetPath = path.join(showFolder, normalized);
         const resolvedTarget = path.resolve(targetPath);
         const resolvedBase = path.resolve(showFolder);
+        if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
+            ctx.status = 403;
+            ctx.body = 'Forbidden';
+            return;
+        }
+        try {
+            const stats = await fs.promises.stat(resolvedTarget);
+            if (!stats.isFile()) {
+                ctx.status = 404;
+                return;
+            }
+            ctx.type = inferMimeType(resolvedTarget);
+            ctx.body = fs.createReadStream(resolvedTarget);
+        } catch (_err) {
+            ctx.status = 404;
+            ctx.body = 'Asset not found';
+        }
+    });
+
+    webApp.use(async (ctx: any, next: () => Promise<any>) => {
+        if (ctx.path !== USER_IMAGE_ROUTE && !ctx.path.startsWith(userImageRoutePrefix)) {
+            return next();
+        }
+
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        ctx.set('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (ctx.method === 'OPTIONS') {
+            ctx.status = 204;
+            return;
+        }
+
+        const requestedPath = ctx.path === USER_IMAGE_ROUTE ? '' : ctx.path.slice(userImageRoutePrefix.length);
+        if (!requestedPath) {
+            ctx.status = 404;
+            ctx.body = 'Asset not found';
+            return;
+        }
+        const platformPath = requestedPath.replace(/\//g, path.sep);
+        const normalized = path
+            .normalize(platformPath)
+            .replace(/^[\\/]+/, '')
+            .replace(/(\.\.(\/|\\|$))+/g, '');
+        if (!normalized) {
+            ctx.status = 404;
+            return;
+        }
+        const targetPath = path.join(resolvedUserImageDir, normalized);
+        const resolvedTarget = path.resolve(targetPath);
+        const resolvedBase = path.resolve(resolvedUserImageDir);
         if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
             ctx.status = 403;
             ctx.body = 'Forbidden';

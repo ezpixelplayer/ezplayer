@@ -12,6 +12,12 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 import * as path from 'path';
 import fsp from 'fs/promises';
 
+export interface SequenceAssetConfig {
+    imageStorageRoot?: string;
+    imagePublicRoute?: string;
+    imagePublicBaseUrl?: string;
+}
+
 // sequences.json
 interface TempSeqsAPIPayload {
     data: {
@@ -106,20 +112,62 @@ function toPublicAssetSegment(p: string, base: string): string | undefined {
     return rel.split(path.sep).join('/');
 }
 
-function hydrateThumbMetadata(seq: SequenceRecord, base: string) {
+function normalizeRoutePrefix(route: string): string {
+    if (!route) {
+        return '';
+    }
+    const trimmed = route.trim();
+    if (!trimmed) {
+        return '';
+    }
+    const ensured = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    return ensured.replace(/\/+$/, '');
+}
+
+function buildAssetPublicUrl(route: string, segment: string, baseUrl?: string): string {
+    const normalizedRoute = normalizeRoutePrefix(route) || '/';
+    const normalizedSegment = segment.replace(/^\/+/, '');
+    const relativePath = normalizedSegment ? `${normalizedRoute}/${normalizedSegment}` : normalizedRoute;
+    if (!baseUrl) {
+        return relativePath;
+    }
+    const sanitizedBase = baseUrl.replace(/\/+$/, '');
+    return `${sanitizedBase}${relativePath}`;
+}
+
+function resolveThumbPublicUrl(filePath: string, base: string, assetConfig?: SequenceAssetConfig): string | undefined {
+    if (!filePath) return undefined;
+    const absoluteFile = path.resolve(filePath);
+    const imageRoot = assetConfig?.imageStorageRoot ? path.resolve(assetConfig.imageStorageRoot) : undefined;
+    if (imageRoot) {
+        const segment = toPublicAssetSegment(absoluteFile, imageRoot);
+        if (segment) {
+            const prefix = normalizeRoutePrefix(assetConfig?.imagePublicRoute ?? '/user-images') || '/user-images';
+            return buildAssetPublicUrl(prefix, segment, assetConfig?.imagePublicBaseUrl);
+        }
+    }
+    const resolvedBase = path.resolve(base);
+    const fallbackSegment = toPublicAssetSegment(absoluteFile, resolvedBase);
+    if (fallbackSegment) {
+        return `/show-assets/${fallbackSegment}`;
+    }
+    return undefined;
+}
+
+function hydrateThumbMetadata(seq: SequenceRecord, base: string, assetConfig?: SequenceAssetConfig) {
     if (!seq.files) return;
     const existingPublic = seq.files.thumbPublicUrl;
-    const computedSegment = seq.files.thumb ? toPublicAssetSegment(seq.files.thumb, base) : undefined;
-    const publicUrl = existingPublic ?? (computedSegment ? `/show-assets/${computedSegment}` : undefined);
+    const computedPublic = seq.files.thumb ? resolveThumbPublicUrl(seq.files.thumb, base, assetConfig) : undefined;
+    const publicUrl = computedPublic ?? existingPublic;
     if (publicUrl) {
         seq.files.thumbPublicUrl = publicUrl;
-        if (!seq.work.artwork) {
+        if (seq.work && (!seq.work.artwork || seq.work.artwork === existingPublic)) {
             seq.work.artwork = publicUrl;
         }
     }
 }
 
-export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
+export async function loadSequencesAPI(folder: string, assetConfig?: SequenceAssetConfig): Promise<SequenceRecord[]> {
     try {
         const p: TempSeqsAPIPayload = await JSON.parse(
             await fsp.readFile(path.join(folder, 'sequences.json'), 'utf-8'),
@@ -135,7 +183,7 @@ export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]
             if (s.files?.thumb) {
                 s.files.thumb = ensureAbsolute(s.files.thumb, folder);
             }
-            hydrateThumbMetadata(s, folder);
+            hydrateThumbMetadata(s, folder, assetConfig);
             if (s.files?.fseq && (!s.work.length || s.work.length > 10000)) {
                 try {
                     const fhdr = await FSEQReaderAsync.readFSEQHeaderAsync(s.files.fseq);
