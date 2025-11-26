@@ -532,6 +532,7 @@ let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 //  Say, we run it 100ms in advance, we're giving it audio for 100-200ms out.
 // We will use its current time as the target and try to keep it out in front
 let audioPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
+let volumeSF = 1.0; // Most representations are 0-100, not this one
 
 let mp3Cache: MP3PrefetchCache | undefined = undefined;
 let fseqCache: FSeqPrefetchCache | undefined = undefined;
@@ -836,7 +837,30 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - Fseq prefetched`);
 
-            // Send out audio in advance
+            function sendSilence(startTime: number, ms: number) {
+                if (ms <= 0) return;
+                if (ms > playbackParams.sendAudioChunkMs) {
+                    ms = playbackParams.sendAudioChunkMs;
+                }
+                ms = Math.ceil(ms);
+                const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
+                send(
+                    {
+                        type: 'audioChunk',
+                        chunk: {
+                            sampleRate: 48000,
+                            channels: 1,
+                            buffer: quiet.buffer,
+                            startTime,
+                            incarnation: audioConverter.curIncarnation,
+                        },
+                    },
+                    [quiet.buffer],
+                );
+
+            }
+
+            // Send out audio in advance (at lease sendAudioInAdvanceMs at all times)
             emitAudioDebug(
                 `Send audio time: ${audioPlayerRunState.currentTime} vs ${curPerfNowTime + playbackParams.sendAudioInAdvanceMs}`,
             );
@@ -848,17 +872,29 @@ async function processQueue() {
                     break;
                 }
 
+                let startTime = Math.floor(
+                    audioPlayerRunState.currentTime -
+                        clockBaseTime +
+                        clockBasePN +
+                        audioBaseTime -
+                        audioBasePN +
+                        playbackParams.audioTimeAdjMs,
+                );
+
                 const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
                 let audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
+                    sendSilence(startTime, audioAction.atTime - audioPlayerRunState.currentTime);
                     audioPlayerRunState.runUntil(audioAction.atTime);
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    audioPlayerRunState.runUntil(Math.max(audioPlayerRunState.currentTime, curPerfNowTime));
+                    const nextTime = Math.max(audioPlayerRunState.currentTime, curPerfNowTime)
+                    sendSilence(startTime, nextTime - audioPlayerRunState.currentTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
+                    audioPlayerRunState.runUntil(nextTime);
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
@@ -900,7 +936,7 @@ async function processQueue() {
                             for (let ch = 0; ch < channels; ch++) {
                                 const adata = audio.channelData[ch];
                                 for (let i = 0; i < nSamplesToSend; i++) {
-                                    chunk[i * channels + ch] = adata[i + sampleOffset] ?? 0;
+                                    chunk[i * channels + ch] = (adata[i + sampleOffset] ?? 0) * volumeSF;
                                 }
                             }
 
