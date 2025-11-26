@@ -11,7 +11,6 @@ import { Autocomplete, Box } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import ShoppingBagIcon from '@mui/icons-material/ShoppingBag';
 
 import { AddSongProps } from './AddSongDialogBrowser';
 import { DeleteSongDialog } from './DeleteSongDialog';
@@ -20,9 +19,11 @@ import { GridRowParams } from '@mui/x-data-grid';
 
 export interface SongListProps {
     title: string;
-    storeUrl?: string;
     AddSongDialog?: React.ComponentType<AddSongProps>;
     statusArea: React.ReactNode[];
+    showEditAction?: boolean;
+    showDeleteAction?: boolean;
+    showAddSongButton?: boolean;
 }
 
 interface SongListRow {
@@ -35,7 +36,14 @@ interface SongListRow {
     isDeletableSong: boolean;
 }
 
-export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongListProps) {
+export function SongList({
+    title,
+    AddSongDialog,
+    statusArea,
+    showEditAction = true,
+    showDeleteAction = true,
+    showAddSongButton = true,
+}: SongListProps) {
     const [openAddDialog, setOpenAddDialog] = useState(false);
     const [openEditDialog, setOpenEditDialog] = useState(false);
     const [rows, setRows] = useState<SongListRow[]>([]);
@@ -180,7 +188,7 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
     /**
      * Returns the columns for the table based on the current path.
      */
-    const columns = [
+    const baseColumns = [
         {
             field: 'title',
             headerName: 'SONGS',
@@ -208,21 +216,21 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {params.value && params.value.length > 0
                             ? params.value.map((tag: string, index: number) => (
-                                  <Typography
-                                      key={`${params.row.id}-tag-${index}-${tag}`}
-                                      variant="body2"
-                                      sx={{
-                                          backgroundColor: 'primary.light',
-                                          color: 'primary.contrastText',
-                                          padding: '2px 8px',
-                                          borderRadius: '12px',
-                                          fontSize: '0.75rem',
-                                          fontWeight: 500,
-                                      }}
-                                  >
-                                      {tag}
-                                  </Typography>
-                              ))
+                                <Typography
+                                    key={`${params.row.id}-tag-${index}-${tag}`}
+                                    variant="body2"
+                                    sx={{
+                                        backgroundColor: 'primary.light',
+                                        color: 'primary.contrastText',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    {tag}
+                                </Typography>
+                            ))
                             : null}
                     </Box>
                 </RowWrapper>
@@ -236,48 +244,63 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
             renderHeader: () => <Typography fontWeight="bold">DURATION</Typography>,
             renderCell: (params: RowParams) => <RowWrapper>{params.row.length}</RowWrapper>,
         },
-        {
-            field: 'actions',
-            headerName: '',
-            flex: 0.8,
-            minWidth: 120,
-            renderCell: (params: any) => {
-                return (
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            gap: 1,
-                            minWidth: '100%',
-                            justifyContent: 'flex-end',
-                            '@media (max-width: 600px)': {
-                                flexDirection: 'column',
-                                alignItems: 'flex-end',
-                                gap: 0.5,
-                            },
-                        }}
-                    >
-                        <Button
-                            aria-label="edit"
-                            icon={<EditIcon />}
-                            size="small"
-                            onClick={() => handleSongSetupClick(params.row)}
-                            sx={{ minWidth: 'auto' }}
-                        />
-                        {params.row.isDeletableSong && (
-                            <Button
-                                aria-label="delete"
-                                icon={<DeleteIcon />}
-                                size="small"
-                                color="error"
-                                onClick={() => handleDeleteClick(params.row.id)}
-                                sx={{ minWidth: 'auto' }}
-                            />
-                        )}
-                    </Box>
-                );
-            },
-        },
     ];
+
+    const actionColumn =
+        showEditAction || showDeleteAction
+            ? {
+                field: 'actions',
+                headerName: '',
+                flex: 0.8,
+                minWidth: 120,
+                renderCell: (params: any) => {
+                    const canShowEdit = showEditAction;
+                    const canShowDelete = showDeleteAction && params.row.isDeletableSong;
+
+                    if (!canShowEdit && !canShowDelete) {
+                        return null;
+                    }
+
+                    return (
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                gap: 1,
+                                minWidth: '100%',
+                                justifyContent: 'flex-end',
+                                '@media (max-width: 600px)': {
+                                    flexDirection: 'column',
+                                    alignItems: 'flex-end',
+                                    gap: 0.5,
+                                },
+                            }}
+                        >
+                            {canShowEdit && (
+                                <Button
+                                    aria-label="edit"
+                                    icon={<EditIcon />}
+                                    size="small"
+                                    onClick={() => handleSongSetupClick(params.row)}
+                                    sx={{ minWidth: 'auto' }}
+                                />
+                            )}
+                            {canShowDelete && (
+                                <Button
+                                    aria-label="delete"
+                                    icon={<DeleteIcon />}
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handleDeleteClick(params.row.id)}
+                                    sx={{ minWidth: 'auto' }}
+                                />
+                            )}
+                        </Box>
+                    );
+                },
+            }
+            : null;
+
+    const columns = actionColumn ? [...baseColumns, actionColumn] : baseColumns;
 
     return (
         <Box
@@ -334,20 +357,7 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
                         />
                     </Box>
 
-                    {storeUrl && (
-                        <Button
-                            size={'small'}
-                            sx={{ pt: 1, pb: 1 }}
-                            className="letter-spacing"
-                            variant={'contained'}
-                            href={storeUrl}
-                            rel="noopener noreferrer"
-                            component="a"
-                            btnText="Add Song"
-                            startIcon={<ShoppingBagIcon />}
-                        />
-                    )}
-                    {AddSongDialog && (
+                    {showAddSongButton && AddSongDialog && (
                         <Button
                             size={'small'}
                             sx={{ pt: 1, pb: 1 }}

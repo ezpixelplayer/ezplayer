@@ -31,7 +31,6 @@ import type {
     PlayerPStatusContent,
 } from '@ezplayer/ezplayer-core';
 import { wsService } from '../services/websocket';
-import { useWebSocketConnection } from '../hooks/useWebSocket';
 
 interface WebSocketProviderProps {
     children: React.ReactNode;
@@ -96,9 +95,6 @@ function normalizeSequenceAssets(records: SequenceRecord[], baseUrl?: string): S
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
     const dispatch = useDispatch();
 
-    // Initialize WebSocket connection (only if not in Electron)
-    useWebSocketConnection();
-
     useEffect(() => {
         // Check if we're in Electron - if so, don't use WebSocket
         // @ts-ignore - window.electronAPI might not exist in web version
@@ -106,7 +102,44 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
             return;
         }
 
-        // Subscribe to all WebSocket message types and dispatch Redux actions
+        const bootstrapInitialData = async () => {
+            const baseUrl = wsService.getHttpBaseUrl();
+            if (!baseUrl) {
+                return;
+            }
+            try {
+                const response = await fetch(`${baseUrl}/api/current-show`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch current show data (${response.status})`);
+                }
+                const payload = await response.json();
+                if (payload?.showFolder) {
+                    dispatch(authSliceActions.setShowDirectory(payload.showFolder));
+                }
+                if (Array.isArray(payload?.sequences)) {
+                    dispatch(setSequenceData(normalizeSequenceAssets(payload.sequences, baseUrl)));
+                }
+                if (Array.isArray(payload?.playlists)) {
+                    dispatch(setPlaylists(payload.playlists));
+                }
+                if (Array.isArray(payload?.schedule)) {
+                    dispatch(setScheduledPlaylists(payload.schedule));
+                }
+                if (payload?.show) {
+                    dispatch(setShowProfile(payload.show));
+                }
+                if (payload?.user) {
+                    dispatch(setEndUser(payload.user));
+                }
+                if (payload?.status) {
+                    dispatch(setPlayerStatus(payload.status));
+                }
+            } catch (error) {
+                console.warn('Unable to bootstrap show data from Electron API:', error);
+            }
+        };
+
+        // Subscribe to all WebSocket message types before connecting so we don't miss initial payloads
         const unsubscribeShowFolder = wsService.subscribe('update:showFolder', (data: string) => {
             dispatch(authSliceActions.setShowDirectory(data));
         });
@@ -151,6 +184,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
             dispatch(setPStatus(data));
         });
 
+        // Connect after handlers are registered to avoid dropping initial messages
+        wsService.connect();
+        bootstrapInitialData();
+
         return () => {
             unsubscribeShowFolder();
             unsubscribeSequences();
@@ -163,6 +200,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
             unsubscribeCStatus();
             unsubscribeNStatus();
             unsubscribePStatus();
+            wsService.disconnect();
         };
     }, [dispatch]);
 

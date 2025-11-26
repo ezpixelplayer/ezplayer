@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
+import { registerContentHandlers, getCurrentShowData } from './mainsrc/ipcezplayer.js';
 import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { getWebPort } from './webport.js';
@@ -12,7 +12,7 @@ import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import Koa from 'koa';
 import serve from 'koa-static';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import { wsBroadcaster } from './mainsrc/websocket-broadcaster.js';
 import { getCurrentShowFolder } from './showfolder.js';
@@ -233,6 +233,7 @@ app.whenReady().then(async () => {
     // Handle WebSocket connections
     wss.on('connection', (ws) => {
         wsBroadcaster.addClient(ws);
+        sendInitialDataToClient(ws);
 
         ws.on('close', () => {
             wsBroadcaster.removeClient(ws);
@@ -243,18 +244,57 @@ app.whenReady().then(async () => {
             wsBroadcaster.removeClient(ws);
         });
     });
+    function sendInitialDataToClient(ws: WebSocket) {
+        const snapshot = getCurrentShowData();
+
+        const safeSend = (type: string, data: any) => {
+            if (data === undefined) {
+                return;
+            }
+            try {
+                ws.send(
+                    JSON.stringify({
+                        type,
+                        data,
+                        timestamp: Date.now(),
+                    }),
+                );
+            } catch (error) {
+                console.warn(`Failed to send initial "${type}" payload to WebSocket client:`, error);
+            }
+        };
+
+        if (snapshot.showFolder) {
+            safeSend('update:showFolder', snapshot.showFolder);
+        }
+        safeSend('update:sequences', snapshot.sequences ?? []);
+        safeSend('update:playlist', snapshot.playlists ?? []);
+        safeSend('update:schedule', snapshot.schedule ?? []);
+        if (snapshot.user) {
+            safeSend('update:user', snapshot.user);
+        }
+        if (snapshot.show) {
+            safeSend('update:show', snapshot.show);
+        }
+        safeSend('update:combinedstatus', snapshot.status ?? {});
+    }
 
     webApp.use(async (ctx: any, next: () => Promise<any>) => {
         if (ctx.path.startsWith('/api/')) {
-            if (ctx.path === '/api/hello') {
-                ctx.body = { message: 'Hello from Koa + Electron!' };
-            } else {
-                ctx.status = 404;
-                ctx.body = { error: 'API endpoint not found' };
+            switch (ctx.path) {
+                case '/api/hello':
+                    ctx.body = { message: 'Hello from Koa + Electron!' };
+                    return;
+                case '/api/current-show':
+                    ctx.body = getCurrentShowData();
+                    return;
+                default:
+                    ctx.status = 404;
+                    ctx.body = { error: 'API endpoint not found' };
+                    return;
             }
-        } else {
-            await next();
         }
+        await next();
     });
 
     const userImageRoutePrefix = `${USER_IMAGE_ROUTE}/`;

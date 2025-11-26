@@ -23,7 +23,16 @@ const routes: RouteObject[] = [
             },
             {
                 path: ROUTES.SONGS,
-                element: <SongList title="Songs" AddSongDialog={AddSongDialogElectron} statusArea={getStatusArea()} />,
+                element: (
+                    <SongList
+                        title="Songs"
+                        AddSongDialog={AddSongDialogElectron}
+                        statusArea={getStatusArea()}
+                        showEditAction={false}
+                        showDeleteAction={false}
+                        showAddSongButton={false}
+                    />
+                ),
             },
             {
                 path: ROUTES.PLAYLIST,

@@ -14,24 +14,28 @@ import { WebSocketProvider } from './components/WebSocketProvider';
 const App = () => {
     const content = useRoutes(router);
 
-    return (
+    const isElectronRuntime = typeof window !== 'undefined' && Boolean((window as any).electronAPI);
+
+    const appShell = (
         <>
-            <Provider store={store}>
-                <WebSocketProvider>
-                    <InitialDataProvider api={storeApi}>
-                        <ToastContainer />
-                        <StylesProvider injectFirst>
-                            <ThemeProviderWrapper>
-                                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                    <CssBaseline />
-                                    {content}
-                                </LocalizationProvider>
-                            </ThemeProviderWrapper>
-                        </StylesProvider>
-                    </InitialDataProvider>
-                </WebSocketProvider>
-            </Provider>
+            <ToastContainer />
+            <StylesProvider injectFirst>
+                <ThemeProviderWrapper>
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                        <CssBaseline />
+                        {content}
+                    </LocalizationProvider>
+                </ThemeProviderWrapper>
+            </StylesProvider>
         </>
+    );
+
+    return (
+        <Provider store={store}>
+            <WebSocketProvider>
+                {isElectronRuntime ? <InitialDataProvider api={storeApi}>{appShell}</InitialDataProvider> : appShell}
+            </WebSocketProvider>
+        </Provider>
     );
 };
 

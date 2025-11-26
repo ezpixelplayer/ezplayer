@@ -546,9 +546,9 @@ export async function registerContentHandlers(
 export function getCurrentShowData() {
     return {
         showFolder: getCurrentShowFolder(),
-        sequences: curSequences,
-        playlists: curPlaylists,
-        schedule: curSchedule,
+        sequences: curSequences.filter((seq) => !seq.deleted),
+        playlists: curPlaylists.filter((pl) => !pl.deleted),
+        schedule: curSchedule.filter((item) => !item.deleted),
         user: curUser,
         show: curShow,
         status: curStatus,
