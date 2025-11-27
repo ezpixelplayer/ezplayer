@@ -31,6 +31,7 @@ interface SongListRow {
     id: string;
     title: string;
     artist: string;
+    vendor: string;
     length: string;
     settings?: SequenceSettings;
     isDeletableSong: boolean;
@@ -104,10 +105,12 @@ export function SongList({
                     return null; // Skip songs without ID
                 }
 
+                const artist = (song?.work?.artist || 'Unknown Artist') + `${song?.sequence?.vendor ? '('+song.sequence.vendor+')' : ''}`;
+
                 return {
                     id: song.id,
                     title: song?.work?.title || 'Untitled',
-                    artist: song?.work?.artist || 'Unknown Artist',
+                    artist,
                     tags: song?.settings?.tags || [],
                     length: formatDuration(song?.work?.length || 0),
                     settings: song?.settings || {},

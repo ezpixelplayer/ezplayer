@@ -184,12 +184,12 @@ export async function loadSequencesAPI(folder: string, assetConfig?: SequenceAss
                 s.files.thumb = ensureAbsolute(s.files.thumb, folder);
             }
             hydrateThumbMetadata(s, folder, assetConfig);
+            // This is supposed to be seconds; for now if it looks like it could be milliseconds we will verify it.
             if (s.files?.fseq && (!s.work.length || s.work.length > 10000)) {
                 try {
                     const fhdr = await FSEQReaderAsync.readFSEQHeaderAsync(s.files.fseq);
                     s.work.length = (fhdr.frames * fhdr.msperframe) / 1000;
                 } catch (e) {
-                    if (s.work.length && s.work.length > 10000) s.work.length /= 1000;
                     console.log(e);
                 }
             }

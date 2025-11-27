@@ -67,6 +67,20 @@ interface AvailableSongsContainerProps {
     filteredAndSortedSongs: SequenceRecord[];
 }
 
+function songDesc(
+    song: {
+        work?: {
+            title?: string,
+            artist?: string,
+        },
+        sequence?: {
+            vendor?: string,
+        }
+    }
+) {
+    return `${song.work?.title}${song.work?.artist && song.work?.artist !== '' ? ` - ${song.work?.artist}` : ''}${song.sequence?.vendor ? `(${song.sequence?.vendor})` : ''}`;
+}
+
 const AvailableSongsContainer = ({
     searchQuery,
     onSearchQueryChange,
@@ -193,7 +207,7 @@ const AvailableSongsContainer = ({
                         <SortableItem
                             key={song.id}
                             id={song.id}
-                            songName={`${song.work?.title} ${song.work?.artist && song.work?.artist !== '' ? `- ${song.work?.artist}` : ''}`}
+                            songName={songDesc(song)}
                             containerId="available"
                             showRemove={false}
                             isInPlaylist={usedSongIds.has(song.id)}
@@ -346,7 +360,7 @@ const PlaylistContainer = ({
                             )}
                             <SortableItem
                                 id={song.instanceId}
-                                songName={`${song.work?.title} ${song.work?.artist && song.work?.artist !== '' ? `- ${song.work?.artist}` : ''}`}
+                                songName={songDesc(song)}
                                 containerId="playlist"
                                 showRemove={true}
                                 onRemoveSong={onRemoveSong}
@@ -1009,13 +1023,13 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                                     // First check in playlist songs
                                     const playlistSong = playlistSongs?.find((s) => s.instanceId === activeId);
                                     if (playlistSong) {
-                                        return `${playlistSong.work?.title} ${playlistSong.work?.artist && playlistSong.work?.artist !== '' ? `- ${playlistSong.work?.artist}` : ''}`;
+                                        return songDesc(playlistSong);
                                     }
 
                                     // Then check in server songs
                                     const serverSong = sequenceData?.find((s) => s.id === activeId);
                                     if (serverSong) {
-                                        return `${serverSong.work?.title} ${serverSong.work?.artist && serverSong.work?.artist !== '' ? `- ${serverSong.work?.artist}` : ''}`;
+                                        return songDesc(serverSong);
                                     }
 
                                     return '';
