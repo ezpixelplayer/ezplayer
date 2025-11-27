@@ -21,6 +21,7 @@ export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackS
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
+export { LocalWebDataStorageAPI } from './store/api/local/LocalWebDataStorageAPI';
 export type { DataStorageAPI } from './store/api/DataStorageAPI';
 export { createAppStore } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';

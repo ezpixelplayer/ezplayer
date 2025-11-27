@@ -50,6 +50,7 @@ const nodeExternals = [
     'koa',
     'koa-router',
     'koa-static',
+    'koa-bodyparser',
     'ws',
     'http',
     ...builtinModules,

@@ -29,6 +29,13 @@
                     "EZPlayerLogoTransparent.png",
                     "EZPlayerLogoTransparent.icns"
                 ]
+            },
+            {
+                "from": "../ezplayer-ui-react/dist",
+                "to": "webapp",
+                "filter": [
+                    "**/*"
+                ]
             }
         ],
         "win": {
@@ -77,6 +84,7 @@
     },
     "devDependencies": {
         "@types/koa": "^3.0.1",
+        "@types/koa-bodyparser": "^4.3.13",
         "@types/koa-static": "^4.0.4",
         "@types/proper-lockfile": "^4.1.4",
         "@types/react": "^18.3.18",
@@ -88,6 +96,7 @@
         "electron-builder": "^25.1.8",
         "electron-builder-squirrel-windows": "^25.1.8",
         "esbuild": "^0.25.4",
+        "koa-bodyparser": "^4.4.1",
         "node-gyp": "^10.3.1",
         "typescript": "^5.7.3",
         "vite": "^5.4.14",

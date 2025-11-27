@@ -11,11 +11,13 @@ import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import Koa from 'koa';
+import bodyParser from 'koa-bodyparser';
 import serve from 'koa-static';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import { wsBroadcaster } from './mainsrc/websocket-broadcaster.js';
 import { getCurrentShowFolder } from './showfolder.js';
+import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 const ASSET_MIME_TYPES: Record<string, string> = {
     '.png': 'image/png',
@@ -203,19 +205,34 @@ app.whenReady().then(async () => {
     const webApp = new Koa();
     console.log(`🌐 Starting Koa web server on port ${PORT} (source: ${source})`);
 
-    // const staticPath = path.resolve(process.cwd(), '../ezplayer-ui-react/dist');
-    let staticPath = path.join(__dirname, '../ezplayer-ui-react/dist');
-    if (!fs.existsSync(staticPath)) {
-        const altPath1 = path.join(process.cwd(), 'apps/ezplayer-ui-react/dist');
-        const altPath2 = path.join(__dirname, '../../ezplayer-ui-react/dist');
-        if (fs.existsSync(altPath1)) {
-            staticPath = altPath1;
-        } else if (fs.existsSync(altPath2)) {
-            staticPath = altPath2;
+    // Add body parser middleware for JSON requests
+    webApp.use(bodyParser());
+
+    // Determine static path for React web app
+    let staticPath: string;
+    if (app.isPackaged) {
+        staticPath = path.join(process.resourcesPath, 'webapp');
+    } else {
+        const possiblePaths = [
+            path.join(process.cwd(), 'apps/ezplayer-ui-react/dist'),
+            path.join(__dirname, '../../ezplayer-ui-react/dist'),
+            path.join(__dirname, '../ezplayer-ui-react/dist'),
+        ];
+
+        staticPath = '';
+        for (const possiblePath of possiblePaths) {
+            if (fs.existsSync(possiblePath)) {
+                staticPath = possiblePath;
+                break;
+            }
+        }
+
+        if (!staticPath) {
+            console.warn(`⚠️ React build not found! Please run: pnpm --filter @ezplayer/ui-react build:web`);
+            staticPath = possiblePaths[0];
         }
     }
 
-    // const staticPath = path.resolve(__dirname, '../../ezplayer-ui-react/dist');
     const indexPath = path.join(staticPath, 'index.html');
 
     // Create HTTP server
@@ -287,6 +304,36 @@ app.whenReady().then(async () => {
                     return;
                 case '/api/current-show':
                     ctx.body = getCurrentShowData();
+                    return;
+                case '/api/player-command':
+                    if (ctx.method !== 'POST') {
+                        ctx.status = 405;
+                        ctx.body = { error: 'Method not allowed. Use POST.' };
+                        return;
+                    }
+                    try {
+                        const command = ctx.request.body as EZPlayerCommand;
+                        if (!command || !command.command) {
+                            ctx.status = 400;
+                            ctx.body = { error: 'Invalid command format' };
+                            return;
+                        }
+                        // Send command to the playback worker
+                        if (playWorker) {
+                            playWorker.postMessage({
+                                type: 'frontendcmd',
+                                cmd: command,
+                            });
+                            ctx.body = { success: true, message: 'Command sent' };
+                        } else {
+                            ctx.status = 503;
+                            ctx.body = { error: 'Playback worker not available' };
+                        }
+                    } catch (error) {
+                        console.error('Error processing player command:', error);
+                        ctx.status = 500;
+                        ctx.body = { error: 'Internal server error' };
+                    }
                     return;
                 default:
                     ctx.status = 404;
