@@ -26,7 +26,7 @@ import type {
     PlaybackSettings,
     EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
-import { getActiveViewerControlSchedule, PlayerRunState } from '@ezplayer/ezplayer-core';
+import { getActiveViewerControlSchedule, getActiveVolumeSchedule, PlayerRunState } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -194,6 +194,10 @@ function sendPlayerStateUpdate() {
         status: 'Stopped',
         reported_time: Date.now(),
         upcoming: [],
+        volume: {
+            level: volume,
+            muted
+        },
     };
     if (ps.curPLActions?.actions?.length) {
         for (const pla of ps.curPLActions.actions) {
@@ -311,6 +315,26 @@ function sendRemoteUpdate() {
     }
 }
 
+let lastVolCheck: number = Date.now();
+function doVolumeAdjust(dn: number) {
+    if (dn - lastVolCheck < 10) return;
+    lastVolCheck = dn;
+    const settings = latestSettings;
+    if (!settings || !settings.volumeControl) {
+        return;
+    }
+    const volsched = getActiveVolumeSchedule(settings.volumeControl);
+    let tgtvol = settings.volumeControl.defaultVolume ?? 100;
+    if (volsched) {
+        tgtvol = volsched.volumeLevel;
+    }
+
+    // Change 1% at a time toward target
+    if (tgtvol > volume) ++volume;
+    if (tgtvol < volume) --volume;
+    volumeSF = muted ? 0 : volume / 100;
+}
+
 /////////
 // Inbound messages
 function processCommand(cmd: EZPlayerCommand) {
@@ -351,6 +375,15 @@ function processCommand(cmd: EZPlayerCommand) {
             foregroundPlayerRunState.removeInteractiveCommands();
             audioPlayerRunState.removeInteractiveCommands();
             break;
+        }
+        case 'setvolume': {
+            if (cmd?.volume !== undefined) {
+                volume = cmd.volume;
+            }
+            if (cmd.mute !== undefined) {
+                muted = cmd.mute;
+            }
+            volumeSF = muted ? 0 : volume / 100;
         }
         // lots of TODOs here...
         case 'pause':
@@ -518,6 +551,8 @@ const _pollTimes = setInterval(async () => {
 // The actual variables here
 let showFolder: string | undefined = undefined;
 let isPaused = false;
+let volume = 100;
+let muted = false;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
 let curPlaylists: PlaylistRecord[] | undefined = undefined;
@@ -656,9 +691,12 @@ async function processQueue() {
                 sendControllerStateUpdate();
                 lastNStatusUpdate += 1000 * Math.floor((curPerfNow - lastNStatusUpdate) / 1000);
             }
-            if (curPerfNow - lastRFUpdate >= 1000 && iteration % 4 === 3) {
-                sendRemoteUpdate();
-                lastRFUpdate += 1000 * Math.floor((curPerfNow - lastRFUpdate) / 1000);
+            if (iteration %4 === 3) {
+                doVolumeAdjust(Date.now());
+                if (curPerfNow - lastRFUpdate >= 1000) {
+                    sendRemoteUpdate();
+                    lastRFUpdate += 1000 * Math.floor((curPerfNow - lastRFUpdate) / 1000);
+                }
             }
 
             // See if a schedule update has been passed in.  If so, do something.
