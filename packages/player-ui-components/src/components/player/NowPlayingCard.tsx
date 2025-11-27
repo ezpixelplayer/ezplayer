@@ -1,5 +1,9 @@
-import { Card, CardContent, Typography, Box, Chip, useTheme } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, useTheme, IconButton, Slider } from '@mui/material';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
+import { VolumeOff, VolumeUp } from '@mui/icons-material';
+import { useDispatch } from 'react-redux';
+import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { AppDispatch } from '../../store/Store';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
@@ -29,6 +33,9 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
     const isPlaying = player.status === 'Playing';
     const hasNowPlaying = !!player.now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
+    const volume = player.volume?.level ?? 100;
+    const muted = player.volume?.muted ?? false;
+    const dispatch = useDispatch<AppDispatch>();
 
     return (
         <Card
@@ -58,6 +65,31 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                     <Typography variant="caption" color="text.secondary">
                         Last checkin: {formatTime(player.reported_time)}
                     </Typography>
+                </Box>
+
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 2 }}>
+                    <IconButton
+                        size="small"
+                        onClick={async () => {
+                            if (!muted) {
+                                await dispatch(callImmediateCommand({command: 'setvolume', mute: true})).unwrap();
+                            } else {
+                                await dispatch(callImmediateCommand({command: 'setvolume', mute: false})).unwrap();
+                            }
+                        }}
+                    >
+                        {muted || volume == 0 ? <VolumeOff fontSize="small" /> : <VolumeUp fontSize="small" />}
+                    </IconButton>
+
+                    <Slider
+                        size="small"
+                        min={0}
+                        max={100}
+                        disabled={true}
+                        value={muted ? 0 : volume}
+                        sx={{ width: compact ? 80 : 120 }}
+                    />
                 </Box>
 
                 {/* Now Playing Section */}

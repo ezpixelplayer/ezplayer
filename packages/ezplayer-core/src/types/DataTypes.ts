@@ -151,7 +151,7 @@ export interface PlayerPStatusContent {
     preemptedItems?: PlayingItem[];
 
     volume?: {
-        level: number,
+        level: number, // 0-100
         muted?: boolean,
     }
 
@@ -288,6 +288,10 @@ export type EZPlayerCommand =
     requestId: string; // Identity, for canceling, of a song or a
 } | {
     command: 'clearrequests'; // Clear all requests
+} | {
+    command: 'setvolume';
+    volume?: number;
+    mute?: boolean;
 };
 
 export interface EndUser {
