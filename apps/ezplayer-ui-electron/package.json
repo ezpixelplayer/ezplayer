@@ -18,7 +18,7 @@
         "files": [
             "dist/**/*",
             "package.json",
-            "build/Release/**"
+            "build/Release/*.node"
         ],
         "extraResources": [
             {
@@ -46,7 +46,10 @@
         },
         "mac": {
             "target": [
-                "dmg"
+                {
+                    "target": "dmg",
+                    "arch": "universal"
+                }
             ],
             "icon": "src/assets/images/EZPlayerLogoTransparent.icns"
         },
