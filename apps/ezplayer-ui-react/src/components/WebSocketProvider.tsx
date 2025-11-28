@@ -16,6 +16,7 @@ import {
     setCStatus,
     setNStatus,
     setPStatus,
+    hydratePlaybackSettings,
     authSliceActions,
 } from '@ezplayer/player-ui-components';
 import type {
@@ -29,6 +30,7 @@ import type {
     PlayerCStatusContent,
     PlayerNStatusContent,
     PlayerPStatusContent,
+    PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
 import { wsService } from '../services/websocket';
 
@@ -184,6 +186,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
             dispatch(setPStatus(data));
         });
 
+        const unsubscribePlaybackSettings = wsService.subscribe('update:playbacksettings', (data: PlaybackSettings) => {
+            dispatch(hydratePlaybackSettings(data));
+        });
+
         // Connect after handlers are registered to avoid dropping initial messages
         wsService.connect();
         bootstrapInitialData();
@@ -200,6 +206,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
             unsubscribeCStatus();
             unsubscribeNStatus();
             unsubscribePStatus();
+            unsubscribePlaybackSettings();
             wsService.disconnect();
         };
     }, [dispatch]);

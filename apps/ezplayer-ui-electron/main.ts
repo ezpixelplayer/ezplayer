@@ -4,7 +4,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { registerContentHandlers, getCurrentShowData } from './mainsrc/ipcezplayer.js';
+import {
+    registerContentHandlers,
+    getCurrentShowData,
+    updatePlaylistsHandler,
+    updateScheduleHandler,
+} from './mainsrc/ipcezplayer.js';
 import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { getWebPort } from './webport.js';
@@ -331,6 +336,85 @@ app.whenReady().then(async () => {
                         }
                     } catch (error) {
                         console.error('Error processing player command:', error);
+                        ctx.status = 500;
+                        ctx.body = { error: 'Internal server error' };
+                    }
+                    return;
+                case '/api/playlists':
+                    if (ctx.method !== 'POST') {
+                        ctx.status = 405;
+                        ctx.body = { error: 'Method not allowed. Use POST.' };
+                        return;
+                    }
+                    try {
+                        const playlists = ctx.request.body;
+                        if (!Array.isArray(playlists)) {
+                            ctx.status = 400;
+                            ctx.body = { error: 'Invalid playlists format. Expected array.' };
+                            return;
+                        }
+                        const result = await updatePlaylistsHandler(playlists);
+                        ctx.body = { success: true, playlists: result };
+                    } catch (error) {
+                        console.error('Error processing playlists update:', error);
+                        ctx.status = 500;
+                        ctx.body = { error: 'Internal server error' };
+                    }
+                    return;
+                case '/api/schedules':
+                    if (ctx.method !== 'POST') {
+                        ctx.status = 405;
+                        ctx.body = { error: 'Method not allowed. Use POST.' };
+                        return;
+                    }
+                    try {
+                        const schedules = ctx.request.body;
+                        if (!Array.isArray(schedules)) {
+                            ctx.status = 400;
+                            ctx.body = { error: 'Invalid schedules format. Expected array.' };
+                            return;
+                        }
+                        const result = await updateScheduleHandler(schedules);
+                        ctx.body = { success: true, schedules: result };
+                    } catch (error) {
+                        console.error('Error processing schedules update:', error);
+                        ctx.status = 500;
+                        ctx.body = { error: 'Internal server error' };
+                    }
+                    return;
+                case '/api/playback-settings':
+                    if (ctx.method !== 'POST') {
+                        ctx.status = 405;
+                        ctx.body = { error: 'Method not allowed. Use POST.' };
+                        return;
+                    }
+                    try {
+                        const settings = ctx.request.body;
+                        if (!settings || typeof settings !== 'object') {
+                            ctx.status = 400;
+                            ctx.body = { error: 'Invalid playback settings format. Expected object.' };
+                            return;
+                        }
+                        // Import the settings handler
+                        const { applySettingsFromRenderer } = await import('./mainsrc/data/SettingsStorage.js');
+                        const showFolder = getCurrentShowFolder();
+                        if (showFolder) {
+                            await applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+                        }
+                        // Send settings to playback worker
+                        if (playWorker) {
+                            playWorker.postMessage({
+                                type: 'settings',
+                                settings,
+                            });
+                        }
+                        // Broadcast to Electron renderer and web clients
+                        mainWindow?.webContents?.send('update:playbacksettings', settings);
+                        wsBroadcaster.broadcast('update:playbacksettings', settings);
+
+                        ctx.body = { success: true };
+                    } catch (error) {
+                        console.error('Error processing playback settings update:', error);
                         ctx.status = 500;
                         ctx.body = { error: 'Internal server error' };
                     }

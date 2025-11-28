@@ -86,9 +86,25 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
     }
 
     async setPlayerSettings(s: PlaybackSettings): Promise<boolean> {
-        // Not implemented for local web yet
-        console.warn('setPlayerSettings not implemented for LocalWebDataStorageAPI');
-        return false;
+        try {
+            const response = await fetch(`${this.baseUrl}/api/playback-settings`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(s),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update playback settings: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            return result.success || false;
+        } catch (error) {
+            console.error('Error posting playback settings to Electron:', error);
+            return false;
+        }
     }
 
     // The following methods are not used by the web app when connected locally
@@ -114,7 +130,25 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
     }
 
     async postCloudPlaylists(data: PlaylistRecord[]): Promise<PlaylistRecord[]> {
-        return data;
+        try {
+            const response = await fetch(`${this.baseUrl}/api/playlists`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update playlists: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            return result.playlists || [];
+        } catch (error) {
+            console.error('Error posting playlists to Electron:', error);
+            throw error;
+        }
     }
 
     async getCloudSchedule(): Promise<ScheduledPlaylist[]> {
@@ -122,7 +156,25 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
     }
 
     async postCloudSchedule(data: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
-        return data;
+        try {
+            const response = await fetch(`${this.baseUrl}/api/schedules`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to update schedules: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            return result.schedules || [];
+        } catch (error) {
+            console.error('Error posting schedules to Electron:', error);
+            throw error;
+        }
     }
 
     async getCloudStatus(): Promise<CombinedPlayerStatus> {

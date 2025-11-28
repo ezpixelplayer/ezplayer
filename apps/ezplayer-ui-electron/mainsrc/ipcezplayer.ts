@@ -70,6 +70,41 @@ export let curErrors: string[] = [];
 export let curShow: EndUserShowSettings | undefined = undefined;
 export let curUser: EndUser | undefined = undefined;
 
+// Exported handler functions that can be called from both IPC and REST endpoints
+export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
+    const uppl = recs.map((r) => {
+        return { ...r, updatedAt: Date.now() };
+    });
+    const updList = mergePlaylists(uppl, curPlaylists);
+    const showFolder = getCurrentShowFolder();
+    if (showFolder) {
+        await savePlaylistsAPI(showFolder, updList);
+    }
+    curPlaylists = updList;
+    const filtered = updList.filter((r) => r.deleted !== true);
+    updateWindow?.webContents?.send('update:playlist', filtered);
+    wsBroadcaster.broadcast('update:playlist', filtered);
+    scheduleUpdated();
+    return filtered;
+}
+
+export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
+    const uppl = recs.map((r) => {
+        return { ...r, updatedAt: Date.now() };
+    });
+    const updList = mergeSchedule(uppl, curSchedule);
+    const showFolder = getCurrentShowFolder();
+    if (showFolder) {
+        await saveScheduleAPI(showFolder, updList);
+    }
+    curSchedule = updList;
+    const filtered = updList.filter((r) => r.deleted !== true);
+    updateWindow?.webContents?.send('update:schedule', filtered);
+    wsBroadcaster.broadcast('update:schedule', filtered);
+    scheduleUpdated();
+    return filtered;
+}
+
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 let commandSeqNum = 1;
@@ -379,37 +414,14 @@ export async function registerContentHandlers(
         //return await loadPlaylistsAPI(showFolder);
     });
     ipcMain.handle('ipcPutCloudPlaylists', async (_event, recs: PlaylistRecord[]): Promise<PlaylistRecord[]> => {
-        const uppl = recs.map((r) => {
-            return { ...r, updatedAt: Date.now() };
-        });
-        // TODO Cloud sync if that makes sense...
-        const updList = mergePlaylists(uppl, curPlaylists);
-        const showFolder = getCurrentShowFolder();
-        if (showFolder) await savePlaylistsAPI(showFolder, updList);
-        curPlaylists = updList;
-        const filtered = updList.filter((r) => r.deleted !== true);
-        updateWindow?.webContents?.send('update:playlist', filtered);
-        wsBroadcaster.broadcast('update:playlist', filtered);
-        scheduleUpdated();
-        return filtered;
+        return await updatePlaylistsHandler(recs);
     });
 
     ipcMain.handle('ipcGetCloudSchedule', async (_event): Promise<ScheduledPlaylist[]> => {
         return Promise.resolve(curSchedule);
     });
     ipcMain.handle('ipcPutCloudSchedule', async (_event, recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> => {
-        const uppl = recs.map((r) => {
-            return { ...r, updatedAt: Date.now() };
-        });
-        const updList = mergeSchedule(uppl, curSchedule);
-        const showFolder = getCurrentShowFolder();
-        if (showFolder) await saveScheduleAPI(showFolder, updList);
-        curSchedule = updList;
-        const filtered = updList.filter((r) => r.deleted !== true);
-        updateWindow?.webContents?.send('update:schedule', filtered);
-        wsBroadcaster.broadcast('update:schedule', filtered);
-        scheduleUpdated();
-        return filtered;
+        return await updateScheduleHandler(recs);
     });
 
     ipcMain.handle('ipcGetCloudStatus', async (_event): Promise<CombinedPlayerStatus> => {
@@ -463,6 +475,9 @@ export async function registerContentHandlers(
             type: 'settings',
             settings,
         } as PlayerCommand);
+        // Broadcast to all clients (Electron renderer and web app)
+        updateWindow?.webContents?.send('update:playbacksettings', settings);
+        wsBroadcaster.broadcast('update:playbacksettings', settings);
         return true;
     });
     ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {

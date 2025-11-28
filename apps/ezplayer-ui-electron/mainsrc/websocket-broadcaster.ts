@@ -50,7 +50,6 @@ class WebSocketBroadcaster {
         };
 
         const messageStr = JSON.stringify(message);
-        let sentCount = 0;
         let errorCount = 0;
 
         this.clients.forEach((client) => {
@@ -58,7 +57,6 @@ class WebSocketBroadcaster {
                 if (client.readyState === 1) {
                     // WebSocket.OPEN === 1
                     client.send(messageStr);
-                    sentCount++;
                 } else {
                     // Client is not open, remove it
                     this.clients.delete(client);
