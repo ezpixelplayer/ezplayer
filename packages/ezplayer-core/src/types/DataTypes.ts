@@ -255,6 +255,11 @@ export interface PlaybackStatistics {
         fileReadTime: number,
         decompressTime: number,
     }
+
+    // Effects Processing
+    effectsProcessing?: {
+        backgroundBlendTime: number,
+    }
 }
 
 export type EZPlayerCommand =

@@ -513,7 +513,12 @@ const playbackStats: PlaybackStatistics = {
     sequenceDecompress: {
         fileReadTime: 0,
         decompressTime: 0,
-    }
+    },
+
+    // Effects Processing
+    effectsProcessing: {
+        backgroundBlendTime: 0,
+    },
 };
 
 const playbackStatsAgg: OverallFrameSendStats = {

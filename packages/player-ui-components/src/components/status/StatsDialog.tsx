@@ -209,6 +209,12 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                                 {formatValue(stats.audioDecode?.fileReadTime)}ms read; {formatValue(stats.audioDecode?.decodeTime)}ms decode
                                             </Typography>
                                         </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Effect Processing:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.effectsProcessing?.backgroundBlendTime)}ms background blending
+                                            </Typography>
+                                        </Box>
                                     </Box>
                                 </CardContent>
                             </Card>
