@@ -153,8 +153,8 @@ export interface PlayerPStatusContent {
     preemptedItems?: PlayingItem[];
 
     volume?: {
-        level: number;
-        muted?: boolean;
+        level: number, // 0-100
+        muted?: boolean,
     };
 
     // TODO: system status, storage, memory, temp, etc?
@@ -292,7 +292,12 @@ export type EZPlayerCommand =
       }
     | {
           command: 'clearrequests'; // Clear all requests
-      };
+      }
+    | {
+          command: 'setvolume';
+          volume?: number;
+          mute?: boolean;
+    };
 
 export interface EndUser {
     user_id: string; // UUID

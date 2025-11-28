@@ -17,6 +17,7 @@ interface Song {
     isMusical: boolean;
     title: string;
     artist: string;
+    vendor: string;
     urlPart: string;
     id: string;
     artwork?: string;
@@ -40,6 +41,9 @@ interface SequenceItem {
     settings?: {
         tags?: string[];
     };
+    sequence?: {
+        vendor?: string;
+    }
 }
 
 function alignWithPageOrigin(url: string): string {
@@ -265,6 +269,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
             id: song.id,
             artwork: song.work?.artwork, // Add artwork field
             localImagePath: resolveThumbPath(song.files), // Add local image path field
+            vendor: song.sequence?.vendor || '',
         })) || [];
 
     const song: Song | undefined = songs[index];
@@ -386,7 +391,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                         zIndex: 2, // Ensure text is above the icon
                     }}
                 >
-                    {song?.artist}
+                    {song?.artist + `${song?.vendor ? '('+song+')' : ''}`}
                 </Typography>
 
                 {/* Control Buttons */}
@@ -640,6 +645,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                     id: song.id,
                     artwork: song.work?.artwork,
                     localImagePath: resolveThumbPath(song.files),
+                    vendor: song.sequence?.vendor || '',
                 }),
             ) || [];
 
