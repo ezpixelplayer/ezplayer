@@ -123,7 +123,10 @@ Because this project is **AGPL**, the full source code is available and the buil
 git clone https://github.com/ezpixelplayer/ezplayer.git
 cd ezplayer
 pnpm install
-pnpm build
+pnpm build          # Build for current platform
+pnpm build:win      # Build for Windows
+pnpm build:mac      # Build for macOS
+pnpm build:linux    # Build for Linux
 ```
 
 Then, fix whatever went wrong :-).
