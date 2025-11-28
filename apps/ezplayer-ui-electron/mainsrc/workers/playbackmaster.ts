@@ -36,6 +36,7 @@ import {
     ModelRec,
     readControllersFromXlights,
     ControllerState,
+    FrameReference,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -526,6 +527,7 @@ const playbackStatsAgg: OverallFrameSendStats = {
     intervalStart: 0,
     totalSendTime: 0,
     totalIdleTime: 0,
+    totalMixTime: 0,
 };
 
 ///////
@@ -636,6 +638,7 @@ async function processQueue() {
         const nChannels = Math.max(...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
+        sender.mixFrame = new Uint8Array(nChannels);
     } catch (e) {
         const err = e as Error;
         playbackStats.lastError = err.message;
@@ -677,6 +680,9 @@ async function processQueue() {
                 playbackStats.sequenceDecompress = {
                     decompressTime: getZstdStats().decompTime,
                     fileReadTime: fseqStats.fileReadTime,
+                }
+                playbackStats.effectsProcessing = {
+                    backgroundBlendTime: playbackStatsAgg.totalMixTime,
                 }
                 send({ type: 'stats', stats: playbackStats });
                 lastStatsUpdate += 1000 * Math.floor((curPerfNow - lastStatsUpdate) / 1000);
@@ -826,20 +832,20 @@ async function processQueue() {
                     playbackParams.foregroundFseqPrefetchTime,
                     playbackParams.scheduleLoadTime,
                 );
-                const _upcomingBackground = backgroundPlayerRunState?.getUpcomingItems(
+                const upcomingBackground = backgroundPlayerRunState?.getUpcomingItems(
                     playbackParams.backgroundFseqPrefetchTime,
                     playbackParams.scheduleLoadTime,
                 );
 
                 // Issue FSEQ prefetches
-                function prefetchActionFseq(actions?: PlaybackActions) {
+                function prefetchActionFseq(runState: PlayerRunState, actions?: PlaybackActions) {
                     if (!actions) return;
 
                     for (const action of actions?.actions ?? []) {
                         if (!action.seqId) continue;
                         if (action.end) continue;
                         const actStart = action.atTime;
-                        const seq = foregroundPlayerRunState.sequencesById.get(action.seqId);
+                        const seq = runState.sequencesById.get(action.seqId);
                         if (!seq) continue;
                         // Always fetch header
                         let fsf = seq.files?.fseq;
@@ -870,11 +876,18 @@ async function processQueue() {
                 }
 
                 fseqCache.setNow(curPerfNowTime);
-                prefetchActionFseq(upcomingForeground.curPLActions);
-                upcomingForeground.stackedPLActions?.forEach((s) => prefetchActionFseq(s));
-                upcomingForeground.upcomingSchedules?.forEach((s) => prefetchActionFseq(s));
-                upcomingForeground.interactive?.forEach((s) => prefetchActionFseq(s));
-                upcomingForeground.heapSchedules?.forEach((s) => prefetchActionFseq(s));
+                prefetchActionFseq(foregroundPlayerRunState, upcomingForeground.curPLActions);
+                upcomingForeground.stackedPLActions?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
+                upcomingForeground.upcomingSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
+                upcomingForeground.interactive?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
+                upcomingForeground.heapSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
+
+                prefetchActionFseq(backgroundPlayerRunState, upcomingBackground.curPLActions);
+                upcomingBackground.stackedPLActions?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
+                upcomingBackground.upcomingSchedules?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
+                upcomingBackground.interactive?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
+                upcomingBackground.heapSchedules?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
+
                 fseqCache.dispatch();
             }
 
@@ -1052,6 +1065,7 @@ async function processQueue() {
                 continue;
             }
 
+
             const curForegroundSeq = foregroundPlayerRunState.sequencesById.get(foregroundAction.seqId);
             let fsf = curForegroundSeq?.files?.fseq;
             if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
@@ -1075,12 +1089,36 @@ async function processQueue() {
             const frameInterval = header.ref.header.msperframe;
             const targetFrameNum = Math.floor(frameTimeOffset / frameInterval);
 
+            const backgroundAction = upcomingForeground.curPLActions?.actions[0];
+            let bframeRef: FrameReference | undefined = undefined;
+            if (backgroundAction?.seqId) {
+                const curBackgroundSeq = backgroundPlayerRunState.sequencesById.get(backgroundAction.seqId);
+                let bsf = curBackgroundSeq?.files?.fseq;
+                if (bsf && !path.isAbsolute(bsf)) bsf = path.join(showFolder!, bsf);
+                if (!bsf) {
+                    emitError(`Error: No FSEQ in scheduled background item`);
+                }
+                else {
+                    const bframeTimeOffset = backgroundAction.offsetMS ?? 0;
+                    const header = fseqCache.getHeaderInfo({ fseqfile: bsf });
+                    if (!header?.ref) {
+                        emitError(`Sequence header for ${bsf} was not ready.`);
+                        ++playbackStats.missedHeaders;
+                    }
+                    else {
+                        const bres = fseqCache.getFrame(bsf, { time: bframeTimeOffset });
+                        bframeRef = bres?.ref;
+                    }
+                }
+            }
+
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
             targetFramePN = await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
+                bframe: bframeRef,
                 targetFramePN,
                 targetFrameNum,
                 playbackStats,
