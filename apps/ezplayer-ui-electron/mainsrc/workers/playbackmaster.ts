@@ -46,7 +46,7 @@ import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 import process from "node:process";
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
-import { decompressZStdWithWorker } from './zstdparent';
+import { decompressZStdWithWorker, getZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats } from './pingparent';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
@@ -503,6 +503,17 @@ const playbackStats: PlaybackStatistics = {
     measurementPeriod: 0,
     totalIdle: 0,
     totalSend: 0,
+
+    audioDecode: {
+        fileReadTime: 0,
+        decodeTime: 0,
+    },
+
+    // Sequence Decompress
+    sequenceDecompress: {
+        fileReadTime: 0,
+        decompressTime: 0,
+    }
 };
 
 const playbackStatsAgg: OverallFrameSendStats = {
@@ -652,6 +663,16 @@ async function processQueue() {
             const curPerfNowTime = curPerfNow - clockBasePN + clockBaseTime; // rtcConverter.computeTime(curPerfNow);
 
             if (curPerfNow - lastStatsUpdate >= 1000 && iteration % 4 === 0) {
+                const astat = mp3Cache.getStats();
+                playbackStats.audioDecode = {
+                    fileReadTime: astat.fileReadTime,
+                    decodeTime: astat.decodeTime,
+                }
+                const fseqStats = fseqCache.getStats();
+                playbackStats.sequenceDecompress = {
+                    decompressTime: getZstdStats().decompTime,
+                    fileReadTime: fseqStats.fileReadTime,
+                }
                 send({ type: 'stats', stats: playbackStats });
                 lastStatsUpdate += 1000 * Math.floor((curPerfNow - lastStatsUpdate) / 1000);
             }

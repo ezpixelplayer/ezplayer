@@ -13,6 +13,7 @@ type WorkerOk = {
     ok: true;
     decompBuf: ArrayBuffer;
     compBuf: ArrayBuffer;
+    decompTime: number;
 };
 type WorkerErr = {
     id: number;
@@ -23,6 +24,7 @@ type WorkerErr = {
 };
 
 let nextId = 1;
+let decompTime = 0;
 
 const nworkers = 2;
 const workers: Worker[] = [];
@@ -30,6 +32,13 @@ for (let i=0; i<nworkers; ++i) {
     workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: {name: 'zstddecode'} }));
 }
 const inuse: Worker[] = [];
+
+export function getZstdStats() {
+    return {
+        decompTime,
+        nWorkers: nworkers,
+    }
+}
 
 export const decompressZStdWithWorker: DecompZStd = (
     decomp: ArrayBuffer,
@@ -54,6 +63,8 @@ export const decompressZStdWithWorker: DecompZStd = (
                 reject(new Error(msg.error));
                 return;
             }
+
+            decompTime += msg.ok ? msg.decompTime : 0;
 
             // Recreate views on the returned (transferred-back) buffers
             resolve({ decompBuf: msg.decompBuf, compBuf: msg.compBuf });
