@@ -227,6 +227,16 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={6}>
                             <TextField
+                                label="Vendor"
+                                name="vendor"
+                                value={newSongData.vendor}
+                                onChange={handleNewSongDataChange}
+                                fullWidth
+                                placeholder="e.g., Local, xLights, etc."
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
                                 label="Lead Time"
                                 name="lead_time"
                                 type="number"
