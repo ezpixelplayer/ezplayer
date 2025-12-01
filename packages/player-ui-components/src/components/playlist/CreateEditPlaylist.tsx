@@ -230,8 +230,10 @@ interface PlaylistContainerProps {
     dragOverItemId: string | null;
     onRemoveSong: (instanceId: string) => void;
     sortOrder: 'asc' | 'desc' | null;
-    onSort: (order: 'asc' | 'desc') => void;
+    sortType: 'title' | 'artist' | null;
+    onSort: (type: 'title' | 'artist', order: 'asc' | 'desc') => void;
     setSortOrder: (order: 'asc' | 'desc' | null) => void;
+    setSortType: (type: 'title' | 'artist' | null) => void;
     onShuffle: () => void;
 }
 
@@ -240,8 +242,10 @@ const PlaylistContainer = ({
     dragOverItemId,
     onRemoveSong,
     sortOrder,
+    sortType,
     onSort,
     setSortOrder,
+    setSortType,
     onShuffle,
 }: PlaylistContainerProps) => {
     const { setNodeRef: setPlaylistRef } = useDroppable({
@@ -280,26 +284,51 @@ const PlaylistContainer = ({
                 }}
             >
                 <Grid container spacing={1}>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Select
                             size="small"
-                            value={sortOrder || ''}
+                            value={sortType || ''}
                             onChange={(e) => {
-                                const value = e.target.value as 'asc' | 'desc' | '';
-                                if (value) {
-                                    onSort(value);
-                                } else {
+                                const value = e.target.value as 'title' | 'artist' | '';
+                                if (value === '') {
+                                    setSortType(null);
                                     setSortOrder(null);
+                                } else {
+                                    setSortType(value);
+                                    // Default to ascending when type is selected
+                                    if (!sortOrder) {
+                                        setSortOrder('asc');
+                                        onSort(value, 'asc');
+                                    } else {
+                                        onSort(value, sortOrder);
+                                    }
                                 }
                             }}
                             fullWidth
                             displayEmpty
                         >
                             <MenuItem value="">Sort by</MenuItem>
-                            <MenuItem value="asc">A to Z</MenuItem>
-                            <MenuItem value="desc">Z to A</MenuItem>
+                            <MenuItem value="title">Sort by Title</MenuItem>
+                            <MenuItem value="artist">Sort by Artist</MenuItem>
                         </Select>
                     </Grid>
+                    {sortType && (
+                        <Grid item xs={12} md={3}>
+                            <Select
+                                size="small"
+                                value={sortOrder || 'asc'}
+                                onChange={(e) => {
+                                    const value = e.target.value as 'asc' | 'desc';
+                                    setSortOrder(value);
+                                    onSort(sortType, value);
+                                }}
+                                fullWidth
+                            >
+                                <MenuItem value="asc">A-Z</MenuItem>
+                                <MenuItem value="desc">Z-A</MenuItem>
+                            </Select>
+                        </Grid>
+                    )}
                     <Grid item xs={12} md={2}>
                         <Button
                             startIcon={<ShuffleIcon />}
@@ -411,6 +440,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [savePlaylistClicked, setSavePlaylistClicked] = useState(false);
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+    const [sortType, setSortType] = useState<'title' | 'artist' | null>(null);
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
     const [isNavigationDialogOpen, setIsNavigationDialogOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<'navigate' | 'discard' | null>(null);
@@ -558,20 +588,30 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
         }
     };
 
-    const sortSongs = (songs: typeof playlistSongs, order: 'asc' | 'desc') => {
+    const sortSongs = (songs: typeof playlistSongs, type: 'title' | 'artist', order: 'asc' | 'desc') => {
         return [...songs].sort((a, b) => {
-            const titleA = (a.work?.title || '').toLowerCase();
-            const titleB = (b.work?.title || '').toLowerCase();
-            if (order === 'desc') {
-                return titleB.localeCompare(titleA); // Z to A
+            let valueA: string;
+            let valueB: string;
+            
+            if (type === 'title') {
+                valueA = (a.work?.title || '').toLowerCase();
+                valueB = (b.work?.title || '').toLowerCase();
+            } else {
+                valueA = (a.work?.artist || '').toLowerCase();
+                valueB = (b.work?.artist || '').toLowerCase();
             }
-            return titleA.localeCompare(titleB); // A to Z
+            
+            if (order === 'desc') {
+                return valueB.localeCompare(valueA); // Z to A
+            }
+            return valueA.localeCompare(valueB); // A to Z
         });
     };
 
-    const handleSort = (order: 'asc' | 'desc') => {
+    const handleSort = (type: 'title' | 'artist', order: 'asc' | 'desc') => {
+        setSortType(type);
         setSortOrder(order);
-        setPlaylistSongs((prevSongs) => sortSongs(prevSongs, order));
+        setPlaylistSongs((prevSongs) => sortSongs(prevSongs, type, order));
     };
 
     const handleShuffle = () => {
@@ -584,6 +624,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             return shuffledSongs;
         });
         setSortOrder(null); // Reset sort order when shuffling
+        setSortType(null); // Reset sort type when shuffling
     };
 
     const handleAddSong = (id: string): void => {
@@ -603,8 +644,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 ];
 
                 // If there's a sort order, use it
-                if (sortOrder) {
-                    return sortSongs(newSongs, sortOrder);
+                if (sortOrder && sortType) {
+                    return sortSongs(newSongs, sortType, sortOrder);
                 }
 
                 // If no sort order, just add to the end
@@ -679,7 +720,10 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
 
                     // If sort order is active, add and sort
                     newSongs.push(newSongInstance);
-                    return sortSongs(newSongs, sortOrder);
+                    if (sortType && sortOrder) {
+                        return sortSongs(newSongs, sortType, sortOrder);
+                    }
+                    return newSongs;
                 });
 
                 setUsedSongIds((prev) => new Set(prev).add(itemToAdd.id));
@@ -1006,8 +1050,10 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                                         dragOverItemId={dragOverItemId}
                                         onRemoveSong={handleRemoveSong}
                                         sortOrder={sortOrder}
+                                        sortType={sortType}
                                         onSort={handleSort}
                                         setSortOrder={setSortOrder}
+                                        setSortType={setSortType}
                                         onShuffle={handleShuffle}
                                     />
                                 </Box>
