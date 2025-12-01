@@ -146,6 +146,12 @@ const createWindow = (showFolder: string) => {
         //setTimeout(async ()=>console.log(JSON.stringify(await getAudioOutputDevices(mainWindow!), undefined, 4)), 3000);
         //setTimeout(async ()=>console.log(JSON.stringify(await getAudioSyncTime(mainWindow!), undefined, 4)), 3000);
     });
+    // On macOS, quit the app when the window is closed (instead of just hiding it)
+    mainWindow.on('close', (event) => {
+        if (process.platform === 'darwin') {
+            app.quit();
+        }
+    });
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -580,15 +586,18 @@ app.on('before-quit', async () => {
 
 app.on('window-all-closed', () => {
     clearTimeout(dateRateTimeout);
-    if (process.platform !== 'darwin') app.quit();
+    // Quit on all platforms, including macOS
+    app.quit();
 });
 
-app.on('activate', async () => {
-    // This is for MacOS - for relaunching.  Use prev folder if we can get it.
-    if (BrowserWindow.getAllWindows().length === 0) {
-        const sf = await ensureExclusiveFolder();
-        if (sf) {
-            createWindow(sf);
-        }
-    }
-});
+// Note: 'activate' handler removed since we now quit on window close on macOS
+// If we want to support reopening windows via dock click, we can restore this
+// app.on('activate', async () => {
+//     // This is for MacOS - for relaunching.  Use prev folder if we can get it.
+//     if (BrowserWindow.getAllWindows().length === 0) {
+//         const sf = await ensureExclusiveFolder();
+//         if (sf) {
+//             createWindow(sf);
+//         }
+//     }
+// });
