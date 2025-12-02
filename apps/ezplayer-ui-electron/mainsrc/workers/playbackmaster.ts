@@ -447,10 +447,10 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 16384_000_000,
+    mp3CacheSpace: 16_384_000_000,
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
-    fseqSpace: 500_000_000,
+    fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
     interactiveCommandPrefetchDelay: 200,
     timePollInterval: 200,
@@ -494,6 +494,7 @@ const playbackStats: PlaybackStatistics = {
     missedFrames: 0,
     missedHeaders: 0,
     skippedFrames: 0,
+    missedBackgroundFrames: 0,
     framesSkippedDueToManyOutstandingFrames: 0,
     sentAudioChunks: 0,
     skippedAudioChunks: 0,
@@ -1090,7 +1091,7 @@ async function processQueue() {
             const targetFrameNum = Math.floor(frameTimeOffset / frameInterval);
 
             const upcomingBackground = backgroundPlayerRunState?.getUpcomingItems(
-                playbackParams.foregroundFseqPrefetchTime,
+                playbackParams.backgroundFseqPrefetchTime,
                 playbackParams.scheduleLoadTime,
             );
             const backgroundAction = upcomingBackground.curPLActions?.actions[0];
@@ -1112,6 +1113,9 @@ async function processQueue() {
                     else {
                         const bres = fseqCache.getFrame(bsf, { time: bframeTimeOffset });
                         bframeRef = bres?.ref;
+                        if (!bres?.ref?.frame) {
+                            ++playbackStats.missedBackgroundFrames;
+                        }
                     }
                 }
             }

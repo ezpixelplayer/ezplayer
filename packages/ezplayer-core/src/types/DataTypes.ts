@@ -232,6 +232,7 @@ export interface PlaybackStatistics {
     // Frame delivery
     missedFrames: number;
     missedHeaders: number;
+    missedBackgroundFrames: number;
     sentFrames: number;
     skippedFrames: number;
     framesSkippedDueToManyOutstandingFrames: number;

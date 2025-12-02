@@ -138,6 +138,12 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Missed Background Frames:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.missedBackgroundFrames)}
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Skipped Frames:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.skippedFrames)}
