@@ -1089,7 +1089,11 @@ async function processQueue() {
             const frameInterval = header.ref.header.msperframe;
             const targetFrameNum = Math.floor(frameTimeOffset / frameInterval);
 
-            const backgroundAction = upcomingForeground.curPLActions?.actions[0];
+            const upcomingBackground = backgroundPlayerRunState?.getUpcomingItems(
+                playbackParams.foregroundFseqPrefetchTime,
+                playbackParams.scheduleLoadTime,
+            );
+            const backgroundAction = upcomingBackground.curPLActions?.actions[0];
             let bframeRef: FrameReference | undefined = undefined;
             if (backgroundAction?.seqId) {
                 const curBackgroundSeq = backgroundPlayerRunState.sequencesById.get(backgroundAction.seqId);
