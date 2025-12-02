@@ -142,6 +142,7 @@ export class FrameSender
                     const preMax = performance.now();
                     maxUint8(this.mixFrame, args.frame.frame, args.bframe.frame)
                     const mixTime = performance.now() - preMax;
+                    args.playbackStatsAgg.totalMixTime += mixTime;
                     this.job.dataBuffers = [this.mixFrame];
                 }
                 else {
