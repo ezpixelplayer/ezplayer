@@ -88,6 +88,7 @@
     "devDependencies": {
         "@types/koa": "^3.0.1",
         "@types/koa-bodyparser": "^4.3.13",
+        "@types/koa-router": "^7.4.9",
         "@types/koa-static": "^4.0.4",
         "@types/proper-lockfile": "^4.1.4",
         "@types/react": "^18.3.18",
@@ -125,6 +126,7 @@
         "electron-store": "^10.1.0",
         "i18next": "^23.16.8",
         "koa": "^3.1.1",
+        "koa-router": "^14.0.0",
         "koa-static": "^5.0.0",
         "mpg123-decoder": "^1.0.2",
         "node-addon-api": "^7.1.1",

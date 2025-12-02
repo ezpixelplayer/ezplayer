@@ -53,6 +53,7 @@ const nodeExternals = [
     'koa-bodyparser',
     'ws',
     'http',
+    'fs/promises',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];
