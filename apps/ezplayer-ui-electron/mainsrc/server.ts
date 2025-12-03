@@ -1,6 +1,5 @@
 import Koa from 'koa';
-import bodyParser from 'koa-bodyparser';
-import serve from 'koa-static';
+import bodyParser from '@koa/bodyparser';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, Server } from 'http';
 import * as path from 'path';
@@ -13,7 +12,8 @@ import { getCurrentShowFolder } from '../showfolder.js';
 import { getCurrentShowData, updatePlaylistsHandler, updateScheduleHandler } from './ipcezplayer.js';
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import Router from '@koa/router';
-import send from 'koa-send';
+import { send } from '@koa/send';
+import serve from 'koa-static';
 
 const ASSET_MIME_TYPES: Record<string, string> = {
     '.png': 'image/png',
