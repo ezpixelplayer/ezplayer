@@ -145,5 +145,11 @@
         "uuid": "^11.0.5",
         "ws": "^8.18.3",
         "zstddec": "^0.1.0"
+    },
+    "pnpm": {
+        "overrides": {
+            "http-errors": "^2.0.1",
+            "statuses": "^2.0.2"
+        }
     }
 }
