@@ -495,14 +495,13 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                         // First check in server songs
                         const song = sequenceData?.find((s) => s.id === item.id);
 
-                        return song ? { ...song, sequence: item.sequence } : null;
+                        return song ? { ...song, seqnum: item.sequence } : null;
                     })
                     .filter((song): song is NonNullable<typeof song> => song !== null)
                     .map((song) => ({
                         ...song,
-                        sequence: song.sequence as unknown as SequenceDetails,
                         instanceId: `${song.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    }));
+                    } as PlaylistSongInstance));
 
                 setPlaylistSongs(selectedSongs);
 
