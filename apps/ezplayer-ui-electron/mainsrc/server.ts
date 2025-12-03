@@ -12,6 +12,8 @@ import { wsBroadcaster } from './websocket-broadcaster.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import { getCurrentShowData, updatePlaylistsHandler, updateScheduleHandler } from './ipcezplayer.js';
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import Router from '@koa/router';
+import send from 'koa-send';
 
 const ASSET_MIME_TYPES: Record<string, string> = {
     '.png': 'image/png',
@@ -26,9 +28,21 @@ const ASSET_MIME_TYPES: Record<string, string> = {
 
 const USER_IMAGE_ROUTE = '/user-images';
 
+const router = new Router();
+
 function inferMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
     return ASSET_MIME_TYPES[ext] ?? 'application/octet-stream';
+}
+
+function safePath(requestPath: string): string | null {
+    const platformPath = requestPath.replace(/\//g, path.sep);
+    const normalized = path
+        .normalize(platformPath)
+        .replace(/^[\\/]+/, '')
+        .replace(/(\.\.(\/|\\|$))+/g, '');
+
+    return normalized || null;
 }
 
 export interface ServerConfig {
@@ -50,8 +64,87 @@ export function setupServer(config: ServerConfig): Server {
     const webApp = new Koa();
     console.log(`🌐 Starting Koa web server on port ${port} (source: ${portSource})`);
 
+    // ----------------------------------------------
+    // ⭐ New API: GET /api/getimage/:sequenceid
+    // ----------------------------------------------
+    router.get('/api/getimage/:sequenceid', async (ctx) => {
+        const { sequenceid } = ctx.params;
+
+        // Build a path inside the user-images folder
+        const filePath = path.join(config.resolvedUserImageDir, `${sequenceid}.jpg`);
+
+        if (!fs.existsSync(filePath)) {
+            ctx.status = 404;
+            ctx.body = { error: 'Image not found' };
+            return;
+        }
+
+        // koa-send requires { root } + filename
+        const root = path.dirname(filePath);
+        const filename = path.basename(filePath);
+
+        await send(ctx, filename, { root });
+    });
+
+    // ----------------------------
+    // /show-assets/* route
+    // ----------------------------
+    router.get('/show-assets/(.*)', async (ctx) => {
+        const relative = ctx.params[0];
+        const sanitized = safePath(relative);
+
+        if (!sanitized) {
+            ctx.status = 404;
+            return;
+        }
+
+        const showFolder = getCurrentShowFolder();
+        if (!showFolder) {
+            ctx.status = 404;
+            ctx.body = 'Show folder not selected';
+            return;
+        }
+
+        await send(ctx, sanitized, { root: showFolder });
+    });
+
+    // ----------------------------
+    // /user-images/* route
+    // ----------------------------
+    router.get(`${USER_IMAGE_ROUTE}/(.*)`, async (ctx) => {
+        const relative = ctx.params[0];
+        const sanitized = safePath(relative);
+
+        if (!sanitized) {
+            ctx.status = 404;
+            return;
+        }
+
+        await send(ctx, sanitized, { root: resolvedUserImageDir });
+    });
+
+    webApp.use(router.routes());
+    webApp.use(router.allowedMethods());
+
     // Add body parser middleware for JSON requests
     webApp.use(bodyParser());
+
+    // ----------------------------
+    // Local mode uses /assets and optional frontend dev-server proxy
+    // ----------------------------
+    if (process.env.APP_MODE === 'local') {
+        console.log('🧩 Local mode enabled. Serving /assets from local assets folder.');
+        webApp.use(async (ctx, next) => {
+            ctx.set('Access-Control-Allow-Origin', '*');
+            ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            ctx.set('Access-Control-Allow-Headers', 'Content-Type');
+            if (ctx.method === 'OPTIONS') {
+                ctx.status = 204;
+                return;
+            }
+            await next();
+        });
+    }
 
     // Determine static path for React web app
     let staticPath: string;
@@ -273,112 +366,112 @@ export function setupServer(config: ServerConfig): Server {
     });
 
     // Show assets route middleware
-    const userImageRoutePrefix = `${USER_IMAGE_ROUTE}/`;
-    webApp.use(async (ctx: any, next: () => Promise<any>) => {
-        if (!ctx.path.startsWith('/show-assets/')) {
-            return next();
-        }
+    // const userImageRoutePrefix = `${USER_IMAGE_ROUTE}/`;
+    // webApp.use(async (ctx: any, next: () => Promise<any>) => {
+    //     if (!ctx.path.startsWith('/show-assets/')) {
+    //         return next();
+    //     }
 
-        // Set CORS headers
-        ctx.set('Access-Control-Allow-Origin', '*');
-        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        ctx.set('Access-Control-Allow-Headers', 'Content-Type');
+    //     // Set CORS headers
+    //     ctx.set('Access-Control-Allow-Origin', '*');
+    //     ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    //     ctx.set('Access-Control-Allow-Headers', 'Content-Type');
 
-        if (ctx.method === 'OPTIONS') {
-            ctx.status = 204;
-            return;
-        }
+    //     if (ctx.method === 'OPTIONS') {
+    //         ctx.status = 204;
+    //         return;
+    //     }
 
-        const showFolder = getCurrentShowFolder();
-        if (!showFolder) {
-            ctx.status = 404;
-            ctx.body = 'Show folder not selected';
-            return;
-        }
-        const requestedPath = ctx.path.slice('/show-assets/'.length);
-        // Convert forward slashes to platform-specific separators
-        const platformPath = requestedPath.replace(/\//g, path.sep);
-        const normalized = path
-            .normalize(platformPath)
-            .replace(/^[\\/]+/, '')
-            .replace(/(\.\.(\/|\\|$))+/g, '');
-        if (!normalized) {
-            ctx.status = 404;
-            return;
-        }
-        const targetPath = path.join(showFolder, normalized);
-        const resolvedTarget = path.resolve(targetPath);
-        const resolvedBase = path.resolve(showFolder);
-        if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
-            ctx.status = 403;
-            ctx.body = 'Forbidden';
-            return;
-        }
-        try {
-            const stats = await fs.promises.stat(resolvedTarget);
-            if (!stats.isFile()) {
-                ctx.status = 404;
-                return;
-            }
-            ctx.type = inferMimeType(resolvedTarget);
-            ctx.body = fs.createReadStream(resolvedTarget);
-        } catch (_err) {
-            ctx.status = 404;
-            ctx.body = 'Asset not found';
-        }
-    });
+    //     const showFolder = getCurrentShowFolder();
+    //     if (!showFolder) {
+    //         ctx.status = 404;
+    //         ctx.body = 'Show folder not selected';
+    //         return;
+    //     }
+    //     const requestedPath = ctx.path.slice('/show-assets/'.length);
+    //     // Convert forward slashes to platform-specific separators
+    //     const platformPath = requestedPath.replace(/\//g, path.sep);
+    //     const normalized = path
+    //         .normalize(platformPath)
+    //         .replace(/^[\\/]+/, '')
+    //         .replace(/(\.\.(\/|\\|$))+/g, '');
+    //     if (!normalized) {
+    //         ctx.status = 404;
+    //         return;
+    //     }
+    //     const targetPath = path.join(showFolder, normalized);
+    //     const resolvedTarget = path.resolve(targetPath);
+    //     const resolvedBase = path.resolve(showFolder);
+    //     if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
+    //         ctx.status = 403;
+    //         ctx.body = 'Forbidden';
+    //         return;
+    //     }
+    //     try {
+    //         const stats = await fs.promises.stat(resolvedTarget);
+    //         if (!stats.isFile()) {
+    //             ctx.status = 404;
+    //             return;
+    //         }
+    //         ctx.type = inferMimeType(resolvedTarget);
+    //         ctx.body = fs.createReadStream(resolvedTarget);
+    //     } catch (_err) {
+    //         ctx.status = 404;
+    //         ctx.body = 'Asset not found';
+    //     }
+    // });
 
-    // User images route middleware
-    webApp.use(async (ctx: any, next: () => Promise<any>) => {
-        if (ctx.path !== USER_IMAGE_ROUTE && !ctx.path.startsWith(userImageRoutePrefix)) {
-            return next();
-        }
+    // // User images route middleware
+    // webApp.use(async (ctx: any, next: () => Promise<any>) => {
+    //     if (ctx.path !== USER_IMAGE_ROUTE && !ctx.path.startsWith(userImageRoutePrefix)) {
+    //         return next();
+    //     }
 
-        ctx.set('Access-Control-Allow-Origin', '*');
-        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        ctx.set('Access-Control-Allow-Headers', 'Content-Type');
+    //     ctx.set('Access-Control-Allow-Origin', '*');
+    //     ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    //     ctx.set('Access-Control-Allow-Headers', 'Content-Type');
 
-        if (ctx.method === 'OPTIONS') {
-            ctx.status = 204;
-            return;
-        }
+    //     if (ctx.method === 'OPTIONS') {
+    //         ctx.status = 204;
+    //         return;
+    //     }
 
-        const requestedPath = ctx.path === USER_IMAGE_ROUTE ? '' : ctx.path.slice(userImageRoutePrefix.length);
-        if (!requestedPath) {
-            ctx.status = 404;
-            ctx.body = 'Asset not found';
-            return;
-        }
-        const platformPath = requestedPath.replace(/\//g, path.sep);
-        const normalized = path
-            .normalize(platformPath)
-            .replace(/^[\\/]+/, '')
-            .replace(/(\.\.(\/|\\|$))+/g, '');
-        if (!normalized) {
-            ctx.status = 404;
-            return;
-        }
-        const targetPath = path.join(resolvedUserImageDir, normalized);
-        const resolvedTarget = path.resolve(targetPath);
-        const resolvedBase = path.resolve(resolvedUserImageDir);
-        if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
-            ctx.status = 403;
-            ctx.body = 'Forbidden';
-            return;
-        }
-        try {
-            const stats = await fs.promises.stat(resolvedTarget);
-            if (!stats.isFile()) {
-                ctx.status = 404;
-                return;
-            }
-            ctx.type = inferMimeType(resolvedTarget);
-            ctx.body = fs.createReadStream(resolvedTarget);
-        } catch (_err) {
-            ctx.status = 404;
-            ctx.body = 'Asset not found';
-        }
-    });
+    //     const requestedPath = ctx.path === USER_IMAGE_ROUTE ? '' : ctx.path.slice(userImageRoutePrefix.length);
+    //     if (!requestedPath) {
+    //         ctx.status = 404;
+    //         ctx.body = 'Asset not found';
+    //         return;
+    //     }
+    //     const platformPath = requestedPath.replace(/\//g, path.sep);
+    //     const normalized = path
+    //         .normalize(platformPath)
+    //         .replace(/^[\\/]+/, '')
+    //         .replace(/(\.\.(\/|\\|$))+/g, '');
+    //     if (!normalized) {
+    //         ctx.status = 404;
+    //         return;
+    //     }
+    //     const targetPath = path.join(resolvedUserImageDir, normalized);
+    //     const resolvedTarget = path.resolve(targetPath);
+    //     const resolvedBase = path.resolve(resolvedUserImageDir);
+    //     if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
+    //         ctx.status = 403;
+    //         ctx.body = 'Forbidden';
+    //         return;
+    //     }
+    //     try {
+    //         const stats = await fs.promises.stat(resolvedTarget);
+    //         if (!stats.isFile()) {
+    //             ctx.status = 404;
+    //             return;
+    //         }
+    //         ctx.type = inferMimeType(resolvedTarget);
+    //         ctx.body = fs.createReadStream(resolvedTarget);
+    //     } catch (_err) {
+    //         ctx.status = 404;
+    //         ctx.body = 'Asset not found';
+    //     }
+    // });
 
     // Static file serving middleware
     webApp.use(

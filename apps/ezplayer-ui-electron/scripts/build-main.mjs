@@ -54,6 +54,9 @@ const nodeExternals = [
     'ws',
     'http',
     'fs/promises',
+    'koa-send',
+    'debug',
+    'path',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];
