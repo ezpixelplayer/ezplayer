@@ -282,6 +282,17 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={6}>
                             <TextField
+                                label="Volume Adjustment"
+                                name="volume_adj"
+                                type="number"
+                                value={newSongData.volume_adj}
+                                onChange={handleNewSongDataChange}
+                                inputProps={{ min: -100, max: 100 }}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
                                 label="Lead Time"
                                 name="lead_time"
                                 type="number"
@@ -302,17 +313,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 fullWidth
                             />
                         </Grid>
-                        <Grid item xs={6}>
-                            <TextField
-                                label="Volume Adjustment"
-                                name="volume_adj"
-                                type="number"
-                                value={newSongData.volume_adj}
-                                onChange={handleNewSongDataChange}
-                                inputProps={{ min: -100, max: 100 }}
-                                fullWidth
-                            />
-                        </Grid>
+
                         <Grid item xs={6}>
                             <Autocomplete
                                 multiple
