@@ -89,8 +89,8 @@ export function setupServer(config: ServerConfig): Server {
     // ----------------------------
     // /show-assets/* route
     // ----------------------------
-    router.get('/show-assets/(.*)', async (ctx) => {
-        const relative = ctx.params[0];
+    router.get('/show-assets/*path', async (ctx) => {
+        const relative = ctx.path;
         const sanitized = safePath(relative);
 
         if (!sanitized) {
@@ -111,8 +111,8 @@ export function setupServer(config: ServerConfig): Server {
     // ----------------------------
     // /user-images/* route
     // ----------------------------
-    router.get(`${USER_IMAGE_ROUTE}/(.*)`, async (ctx) => {
-        const relative = ctx.params[0];
+    router.get(`${USER_IMAGE_ROUTE}/*img`, async (ctx) => {
+        const relative = ctx.img;
         const sanitized = safePath(relative);
 
         if (!sanitized) {

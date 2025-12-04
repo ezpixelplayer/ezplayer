@@ -183,13 +183,18 @@ app.whenReady().then(async () => {
     });
 
     // 🧩 Start Koa web server with WebSocket support
-    setupServer({
-        port: PORT,
-        portSource: source,
-        resolvedUserImageDir,
-        playWorker,
-        mainWindow,
-    });
+    try {
+        setupServer({
+            port: PORT,
+            portSource: source,
+            resolvedUserImageDir,
+            playWorker,
+            mainWindow,
+        });
+    }
+    catch (e) {
+        console.error(e);
+    }
 
     dateRateTimeout = setInterval(async () => {
         const mperfNow = performance.now();
