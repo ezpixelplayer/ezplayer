@@ -76,10 +76,10 @@ function inferUserImagesUrl(localPath?: string): string | undefined {
     if (idx !== -1) {
         const relative = normalized.slice(idx + marker.length);
         if (relative) {
-            return `${window.location.origin}/user-images/${relative}`;
+            return `${window.location.origin}/api/getimage/${relative}`;
         }
     }
-    if (normalized.startsWith('/user-images/')) {
+    if (normalized.startsWith('/api/getimage/')) {
         return `${window.location.origin}${normalized}`;
     }
     return undefined;
@@ -391,7 +391,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                         zIndex: 2, // Ensure text is above the icon
                     }}
                 >
-                    {song?.artist + `${song?.vendor ? '('+song+')' : ''}`}
+                    {song?.artist + `${song?.vendor ? '(' + song + ')' : ''}`}
                 </Typography>
 
                 {/* Control Buttons */}

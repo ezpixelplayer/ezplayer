@@ -63,7 +63,7 @@ function looksLikeLocalFilePath(p: string): boolean {
     // URL paths start with / but don't have backslashes and typically have known prefixes
     if (
         p.startsWith('/') &&
-        !p.startsWith('/user-images/') &&
+        !p.startsWith('/api/getimage/') &&
         !p.startsWith('/show-assets/') &&
         !p.startsWith('/api/')
     ) {
@@ -94,7 +94,7 @@ function inferWebUrlFromLocalPath(localPath: string): string | undefined {
             const markerLen = marker.length;
             const relative = normalized.slice(idx + markerLen);
             if (relative) {
-                return `${window.location.origin}/user-images/${relative}`;
+                return `${window.location.origin}/api/getimage/${relative}`;
             }
         }
     }

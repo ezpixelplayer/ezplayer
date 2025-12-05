@@ -26,8 +26,6 @@ const ASSET_MIME_TYPES: Record<string, string> = {
     '.bmp': 'image/bmp',
 };
 
-const USER_IMAGE_ROUTE = '/user-images';
-
 const router = new Router();
 
 function inferMimeType(filePath: string): string {
@@ -65,25 +63,20 @@ export function setupServer(config: ServerConfig): Server {
     console.log(`🌐 Starting Koa web server on port ${port} (source: ${portSource})`);
 
     // ----------------------------------------------
-    // ⭐ New API: GET /api/getimage/:sequenceid
+    // ⭐ API: GET /api/getimage/*path - serves images from user-images folder
     // ----------------------------------------------
-    router.get('/api/getimage/:sequenceid', async (ctx) => {
-        const { sequenceid } = ctx.params;
+    router.get('/api/getimage/*path', async (ctx) => {
+        // Extract the path after /api/getimage/
+        const requestedPath = ctx.path.slice('/api/getimage/'.length);
+        const sanitized = safePath(requestedPath);
 
-        // Build a path inside the user-images folder
-        const filePath = path.join(config.resolvedUserImageDir, `${sequenceid}.jpg`);
-
-        if (!fs.existsSync(filePath)) {
+        if (!sanitized) {
             ctx.status = 404;
             ctx.body = { error: 'Image not found' };
             return;
         }
 
-        // koa-send requires { root } + filename
-        const root = path.dirname(filePath);
-        const filename = path.basename(filePath);
-
-        await send(ctx, filename, { root });
+        await send(ctx, sanitized, { root: resolvedUserImageDir });
     });
 
     // ----------------------------
@@ -106,21 +99,6 @@ export function setupServer(config: ServerConfig): Server {
         }
 
         await send(ctx, sanitized, { root: showFolder });
-    });
-
-    // ----------------------------
-    // /user-images/* route
-    // ----------------------------
-    router.get(`${USER_IMAGE_ROUTE}/*img`, async (ctx) => {
-        const relative = ctx.img;
-        const sanitized = safePath(relative);
-
-        if (!sanitized) {
-            ctx.status = 404;
-            return;
-        }
-
-        await send(ctx, sanitized, { root: resolvedUserImageDir });
     });
 
     webApp.use(router.routes());

@@ -177,7 +177,7 @@ app.whenReady().then(async () => {
     await registerContentHandlers(mainWindow, dateNowConverter, playWorker, {
         sequenceAssets: {
             imageStorageRoot: resolvedUserImageDir,
-            imagePublicRoute: '/user-images',
+            imagePublicRoute: '/api/getimage',
             imagePublicBaseUrl: webBaseUrl,
         },
     });
@@ -191,8 +191,7 @@ app.whenReady().then(async () => {
             playWorker,
             mainWindow,
         });
-    }
-    catch (e) {
+    } catch (e) {
         console.error(e);
     }
 

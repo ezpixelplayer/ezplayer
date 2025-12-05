@@ -142,7 +142,7 @@ function resolveThumbPublicUrl(filePath: string, base: string, assetConfig?: Seq
     if (imageRoot) {
         const segment = toPublicAssetSegment(absoluteFile, imageRoot);
         if (segment) {
-            const prefix = normalizeRoutePrefix(assetConfig?.imagePublicRoute ?? '/user-images') || '/user-images';
+            const prefix = normalizeRoutePrefix(assetConfig?.imagePublicRoute ?? '/api/getimage') || '/api/getimage';
             return buildAssetPublicUrl(prefix, segment, assetConfig?.imagePublicBaseUrl);
         }
     }

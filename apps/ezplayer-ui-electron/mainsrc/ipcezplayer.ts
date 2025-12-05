@@ -194,7 +194,7 @@ let lastAudioLatency: number = 10;
 let rtConverter: ClockConverter | undefined = undefined;
 
 const SONG_IMAGE_SUBDIR = path.join('assets', 'song-images');
-const DEFAULT_USER_IMAGE_ROUTE = '/user-images';
+const DEFAULT_USER_IMAGE_ROUTE = '/api/getimage';
 
 function sanitizeBaseUrl(url?: string): string | undefined {
     if (!url) {
