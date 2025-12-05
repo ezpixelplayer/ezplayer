@@ -47,7 +47,7 @@ import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 import process from "node:process";
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
-import { decompressZStdWithWorker, getZstdStats } from './zstdparent';
+import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats } from './pingparent';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
@@ -393,6 +393,10 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'resume':
             isPaused = false;
             break;
+        case 'resetstats': {
+            resetCumulativeCounters();
+            break;
+        }
         case 'activateoutput': break;
         case 'suppressoutput': break;
         case 'playplaylist': break;
@@ -486,42 +490,73 @@ function dispatchSettings(settings: PlaybackSettings) {
 // Playback stats
 const playbackStats: PlaybackStatistics = {
     iteration: 0,
-    sentFrames: 0,
-    worstLag: 0,
-    worstAdvance: 0,
+    sentFramesCumulative: 0,
+    worstLagHistorical: 0,
+    worstAdvanceHistorical: 0,
     avgSendTime: 0,
-    maxSendTime: 0,
-    missedFrames: 0,
-    missedHeaders: 0,
-    skippedFrames: 0,
-    missedBackgroundFrames: 0,
-    framesSkippedDueToManyOutstandingFrames: 0,
-    sentAudioChunks: 0,
-    skippedAudioChunks: 0,
-    cframesSkippedDueToDirective: 0,
-    cframesSkippedDueToIncompletePrior: 0,
+    maxSendTimeHistorical: 0,
+    missedFramesCumulative: 0,
+    missedHeadersCumulative: 0,
+    skippedFramesCumulative: 0,
+    missedBackgroundFramesCumulative: 0,
+    framesSkippedDueToManyOutstandingFramesCumulative: 0,
+    sentAudioChunksCumulative: 0,
+    skippedAudioChunksCumulative: 0,
+    cframesSkippedDueToDirectiveCumulative: 0,
+    cframesSkippedDueToIncompletePriorCumulative: 0,
     lastError: undefined as string | undefined,
 
     measurementPeriod: 0,
-    totalIdle: 0,
-    totalSend: 0,
+    idleTimePeriod: 0,
+    sendTimePeriod: 0,
 
     audioDecode: {
-        fileReadTime: 0,
-        decodeTime: 0,
+        fileReadTimeCumulative: 0,
+        decodeTimeCumulative: 0,
     },
 
     // Sequence Decompress
     sequenceDecompress: {
-        fileReadTime: 0,
-        decompressTime: 0,
+        fileReadTimeCumulative: 0,
+        decompressTimeCumulative: 0,
     },
 
     // Effects Processing
     effectsProcessing: {
-        backgroundBlendTime: 0,
+        backgroundBlendTimeCumulative: 0,
     },
 };
+
+
+function resetCumulativeCounters() {
+    playbackStats.iteration = 0;
+    playbackStats.worstAdvanceHistorical = 0;
+    playbackStats.worstLagHistorical = 0;
+    playbackStats.maxSendTimeHistorical = 0;
+
+    playbackStats.missedHeadersCumulative = 0;
+    playbackStats.missedBackgroundFramesCumulative = 0;
+    playbackStats.missedFramesCumulative = 0;
+
+    playbackStats.sentFramesCumulative = 0;
+    playbackStats.skippedFramesCumulative = 0;
+    playbackStats.framesSkippedDueToManyOutstandingFramesCumulative = 0;
+
+    playbackStats.cframesSkippedDueToDirectiveCumulative = 0;
+    playbackStats.cframesSkippedDueToIncompletePriorCumulative = 0;
+
+    playbackStats.sentAudioChunksCumulative = 0;
+    playbackStats.skippedAudioChunksCumulative = 0;
+
+    playbackStats.effectsProcessing!.backgroundBlendTimeCumulative = 0;
+
+    playbackStats.lastError = undefined;
+
+    resetZstdStats();
+    fseqCache?.resetStats();
+    mp3Cache?.resetStats();
+
+}
 
 const playbackStatsAgg: OverallFrameSendStats = {
     nSends: 0,
@@ -674,16 +709,16 @@ async function processQueue() {
             if (curPerfNow - lastStatsUpdate >= 1000 && iteration % 4 === 0) {
                 const astat = mp3Cache.getStats();
                 playbackStats.audioDecode = {
-                    fileReadTime: astat.fileReadTime,
-                    decodeTime: astat.decodeTime,
+                    fileReadTimeCumulative: astat.fileReadTimeCumulative,
+                    decodeTimeCumulative: astat.decodeTimeCumulative,
                 }
                 const fseqStats = fseqCache.getStats();
                 playbackStats.sequenceDecompress = {
-                    decompressTime: getZstdStats().decompTime,
-                    fileReadTime: fseqStats.fileReadTime,
+                    decompressTimeCumulative: getZstdStats().decompTime,
+                    fileReadTimeCumulative: fseqStats.fileReadTimeCumulative,
                 }
                 playbackStats.effectsProcessing = {
-                    backgroundBlendTime: playbackStatsAgg.totalMixTime,
+                    backgroundBlendTimeCumulative: playbackStatsAgg.totalMixTime,
                 }
                 send({ type: 'stats', stats: playbackStats });
                 lastStatsUpdate += 1000 * Math.floor((curPerfNow - lastStatsUpdate) / 1000);
@@ -692,10 +727,10 @@ async function processQueue() {
                 playbackStats.iteration = iteration;
                 playbackStats.avgSendTime = avgFrameSendTime(playbackStatsAgg);
                 playbackStats.measurementPeriod = curPerfNow - playbackStatsAgg.intervalStart;
-                playbackStats.totalIdle = playbackStatsAgg.totalIdleTime;
-                playbackStats.totalSend = playbackStatsAgg.totalSendTime;
+                playbackStats.idleTimePeriod = playbackStatsAgg.totalIdleTime;
+                playbackStats.sendTimePeriod = playbackStatsAgg.totalSendTime;
                 sendPlayerStateUpdate();
-                playbackStats.maxSendTime = 0;
+                playbackStats.maxSendTimeHistorical = 0;
                 resetFrameSendStats(playbackStatsAgg, curPerfNow);
                 lastPStatusUpdate += 1000 * Math.floor((curPerfNow - lastPStatusUpdate) / 1000);
             }
@@ -1000,7 +1035,7 @@ async function processQueue() {
                                     [chunk.buffer],
                                 );
                             } else {
-                                ++playbackStats.skippedAudioChunks;
+                                ++playbackStats.skippedAudioChunksCumulative;
                             }
 
                             audioPlayerRunState.runUntil(audioPlayerRunState.currentTime + msToSend);
@@ -1081,7 +1116,7 @@ async function processQueue() {
             const header = fseqCache.getHeaderInfo({ fseqfile: fsf });
             if (!header?.ref) {
                 emitError(`Sequence header for ${fsf} was not ready.`);
-                ++playbackStats.missedHeaders;
+                ++playbackStats.missedHeadersCumulative;
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -1108,13 +1143,13 @@ async function processQueue() {
                     const header = fseqCache.getHeaderInfo({ fseqfile: bsf });
                     if (!header?.ref) {
                         emitError(`Sequence header for ${bsf} was not ready.`);
-                        ++playbackStats.missedHeaders;
+                        ++playbackStats.missedHeadersCumulative;
                     }
                     else {
                         const bres = fseqCache.getFrame(bsf, { time: bframeTimeOffset });
                         bframeRef = bres?.ref;
                         if (!bres?.ref?.frame) {
-                            ++playbackStats.missedBackgroundFrames;
+                            ++playbackStats.missedBackgroundFramesCumulative;
                         }
                     }
                 }

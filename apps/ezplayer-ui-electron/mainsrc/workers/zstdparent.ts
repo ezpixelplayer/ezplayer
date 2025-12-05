@@ -40,6 +40,10 @@ export function getZstdStats() {
     }
 }
 
+export function resetZstdStats() {
+    decompTime = 0;
+}
+
 export const decompressZStdWithWorker: DecompZStd = (
     decomp: ArrayBuffer,
     comp: ArrayBuffer,

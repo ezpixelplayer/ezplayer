@@ -112,7 +112,7 @@ parentPort.on('message', async (msg: DecodeReq) => {
             id,
             ok: true,
             result: mrv,
-            fileReadTime,
+            fileReadTime: fileReadTime,
             decodeTime,
         } satisfies DecodedAudioResp, mrv.channelData.map((v)=>v.buffer));
     } catch (err: any) {

@@ -217,49 +217,49 @@ export interface PlaybackStatistics {
 
     // Timing Distribution
     measurementPeriod: number;
-    totalIdle: number;
-    totalSend: number;
+    idleTimePeriod: number;
+    sendTimePeriod: number;
     // Presumably, the rest is other things...
 
     // Timing Stability
-    worstLag: number;
-    worstAdvance: number;
+    worstLagHistorical: number;
+    worstAdvanceHistorical: number;
 
     // Frame Timings
     avgSendTime: number;
-    maxSendTime: number;
+    maxSendTimeHistorical: number;
 
     // Frame delivery
-    missedFrames: number;
-    missedHeaders: number;
-    missedBackgroundFrames: number;
-    sentFrames: number;
-    skippedFrames: number;
-    framesSkippedDueToManyOutstandingFrames: number;
+    missedFramesCumulative: number;
+    missedHeadersCumulative: number;
+    missedBackgroundFramesCumulative: number;
+    sentFramesCumulative: number;
+    skippedFramesCumulative: number;
+    framesSkippedDueToManyOutstandingFramesCumulative: number;
 
     // Skipped controller frames
-    cframesSkippedDueToDirective: number;
-    cframesSkippedDueToIncompletePrior: number;
+    cframesSkippedDueToDirectiveCumulative: number;
+    cframesSkippedDueToIncompletePriorCumulative: number;
 
     // Audio delivery
-    sentAudioChunks: number;
-    skippedAudioChunks: number;
+    sentAudioChunksCumulative: number;
+    skippedAudioChunksCumulative: number;
 
     // Audio Decode
     audioDecode?: {
-        fileReadTime: number,
-        decodeTime: number,
+        fileReadTimeCumulative: number,
+        decodeTimeCumulative: number,
     }
 
     // Sequence Decompress
     sequenceDecompress?: {
-        fileReadTime: number,
-        decompressTime: number,
+        fileReadTimeCumulative: number,
+        decompressTimeCumulative: number,
     }
 
     // Effects Processing
     effectsProcessing?: {
-        backgroundBlendTime: number,
+        backgroundBlendTimeCumulative: number,
     }
 }
 
@@ -269,6 +269,9 @@ export type EZPlayerCommand =
 } |
 {
     command: 'resetplayback'; // Reread and reset playback from current schedule items
+} |
+{
+    command: 'resetstats'; // Reset cumulative stats counters
 } |
 {
     command: 'stopnow'; // Stop all playing

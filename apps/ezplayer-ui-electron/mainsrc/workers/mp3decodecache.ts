@@ -102,9 +102,13 @@ export class MP3PrefetchCache {
             mp3Prefetch: this.mp3PrefetchCache.getStats(),
             readBufPool,
             totalDecompMem: totalReadMem,
-            fileReadTime: this.decodewc.fileReadTime,
-            decodeTime: this.decodewc.decodeTime,
+            fileReadTimeCumulative: this.decodewc.fileReadTimeCumulative,
+            decodeTimeCumulative: this.decodewc.decodeTimeCumulative,
         };
+    }
+
+    resetStats() {
+        this.decodewc.resetStats();
     }
 }
 
@@ -123,8 +127,13 @@ export class Mp3DecodeWorkerClient {
         }
     >();
 
-    fileReadTime: number = 0;
-    decodeTime: number = 0;
+    fileReadTimeCumulative: number = 0;
+    decodeTimeCumulative: number = 0;
+
+    resetStats() {
+        this.fileReadTimeCumulative = 0;
+        this.decodeTimeCumulative = 0;
+    }
 
     constructor() {
         this.worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
@@ -138,8 +147,8 @@ export class Mp3DecodeWorkerClient {
             const pending = this.inflight.get(msg.id);
             if (!pending) return;
 
-            this.fileReadTime += msg.fileReadTime;
-            this.decodeTime += msg.decodeTime;
+            this.fileReadTimeCumulative += msg.fileReadTime;
+            this.decodeTimeCumulative += msg.decodeTime;
 
             this.inflight.delete(msg.id);
 

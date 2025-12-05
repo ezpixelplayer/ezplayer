@@ -101,7 +101,7 @@ export class FrameSender
         try {
             if (args.frame?.frame && this.state && this.job) {
             } else {
-                ++args.playbackStats.missedFrames;
+                ++args.playbackStats.missedFramesCumulative;
             }
 
             const preSleepPN = performance.now();
@@ -116,7 +116,7 @@ export class FrameSender
 
             const sleep = args.targetFramePN - preSleepPN;
             if (sleep < -args.skipFrameIfLateByMoreThan) {
-                ++args.playbackStats.skippedFrames;
+                ++args.playbackStats.skippedFramesCumulative;
                 // TODO increment frame?  Or do we just let calculations establish this from current time?
                 return args.targetFramePN += args.frameInterval;
             }
@@ -130,9 +130,9 @@ export class FrameSender
             const nowTime = performance.now();
 
             if (nowTime < args.targetFramePN) {
-                args.playbackStats.worstAdvance = Math.max(args.playbackStats.worstAdvance, args.targetFramePN - nowTime);
+                args.playbackStats.worstAdvanceHistorical = Math.max(args.playbackStats.worstAdvanceHistorical, args.targetFramePN - nowTime);
             } else {
-                args.playbackStats.worstLag = Math.max(args.playbackStats.worstLag, nowTime - args.targetFramePN);
+                args.playbackStats.worstLagHistorical = Math.max(args.playbackStats.worstLagHistorical, nowTime - args.targetFramePN);
             }
 
             // Actually send the frame
@@ -150,14 +150,14 @@ export class FrameSender
                 }
 
                 const res = this.state.initialize(args.targetFramePN, this.job);
-                args.playbackStats.cframesSkippedDueToDirective += res.skipsDueToReq;
-                args.playbackStats.cframesSkippedDueToIncompletePrior += res.skipsDueToSlowCtrl;
+                args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
+                args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
                 if (this.outstandingFrames.has(args.frame)) {
                     this.emitWarning?.("WARNING: THIS FRAME HANDLE ALREADY BEING SENT");
-                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
                 }
                 else if (this.outstandingFrames.size > 10) {
-                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
                 }
                 else {
                     await this.doSendFrame(args);
@@ -215,8 +215,8 @@ export class FrameSender
                 ++args.playbackStatsAgg.nSends;
             }
             if (args.playbackStats) {
-                args.playbackStats.maxSendTime = Math.max(sendTime, args.playbackStats.maxSendTime);
-                ++args.playbackStats.sentFrames;
+                args.playbackStats.maxSendTimeHistorical = Math.max(sendTime, args.playbackStats.maxSendTimeHistorical);
+                ++args.playbackStats.sentFramesCumulative;
             }
         }
         catch (e) {
