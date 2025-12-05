@@ -11,6 +11,8 @@ export { CreateEditPlaylist } from './components/playlist/CreateEditPlaylist';
 export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
+export { BulkPasteButton } from './components/song/BulkPasteButton';
+export type { BulkPasteButtonProps } from './components/song/BulkPasteButton';
 export { ControlButton } from './components/player/ControlButton';
 export { FullPlayerControlStack } from './components/player/FullPlayerControlStack';
 export { PlayerScreen } from './components/player/PlayerScreen';

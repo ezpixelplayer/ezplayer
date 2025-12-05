@@ -4,7 +4,7 @@ import { Autocomplete, Box, Divider, Grid } from '@mui/material';
 
 import { Button, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
 
-import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '@ezplayer/player-ui-components';
+import { AppDispatch, BulkPasteButton, postSequenceData, RootState, setSequenceTags } from '@ezplayer/player-ui-components';
 
 import { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
 
@@ -236,9 +236,20 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 </Box>
                                 {/* Image URL Input */}
                                 <Box>
-                                    <Typography variant="body2" sx={{ mb: 1 }} color="text.secondary">
-                                        Or use Image URL (works in web and Electron)
-                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Or use Image URL (works in web and Electron)
+                                        </Typography>
+                                        <BulkPasteButton
+                                            onTitleChange={(title) => setNewSongData((prev) => ({ ...prev, title }))}
+                                            onArtistChange={(artist) => setNewSongData((prev) => ({ ...prev, artist }))}
+                                            onVendorChange={(vendor) => setNewSongData((prev) => ({ ...prev, vendor }))}
+                                            onImageUrlChange={setImageUrl}
+                                            onTagsChange={(tags) => {
+                                                setNewSongData((prev) => ({ ...prev, tags }));
+                                            }}
+                                        />
+                                    </Box>
                                     <TextField
                                         label="Image URL"
                                         name="imageUrl"

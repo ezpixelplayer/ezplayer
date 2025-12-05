@@ -6,7 +6,7 @@ import { Autocomplete, Box, Divider, Grid } from '@mui/material';
 import { Button, isElectron, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '../..';
+import { AppDispatch, BulkPasteButton, postSequenceData, RootState, setSequenceTags } from '../..';
 
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
@@ -358,9 +358,21 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
                     {/* Image URL (available in both Electron and Web) */}
                     <Grid item xs={12}>
-                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-                            Image URL
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                                Image URL
+                            </Typography>
+                            <BulkPasteButton
+                                onTitleChange={(title) => setFormData((prev) => ({ ...prev, title }))}
+                                onArtistChange={(artist) => setFormData((prev) => ({ ...prev, artist }))}
+                                onVendorChange={(vendor) => setFormData((prev) => ({ ...prev, vendor }))}
+                                onImageUrlChange={setImageUrl}
+                                onTagsChange={(tags) => {
+                                    setFormData((prev) => ({ ...prev, tags }));
+                                    setSelectedTags(tags);
+                                }}
+                            />
+                        </Box>
                         <TextField
                             label="Image URL"
                             name="imageUrl"
