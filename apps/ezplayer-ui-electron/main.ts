@@ -44,7 +44,68 @@ export function getMainWindow() {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-Menu.setApplicationMenu(null);
+// Helper function to send navigation events to renderer
+function sendNavigation(path: string) {
+    const window = getMainWindow();
+    if (window && !window.isDestroyed()) {
+        window.webContents.send('navigate', path);
+    }
+}
+
+// Create a minimal menu with Edit menu to enable copy/paste shortcuts
+const template: Electron.MenuItemConstructorOptions[] = [
+    {
+        label: 'View',
+        submenu: [
+            { label: 'Player', click: () => sendNavigation('/player') },
+            { label: 'Songs', click: () => sendNavigation('/songs') },
+            { label: 'Playlists', click: () => sendNavigation('/playlist') },
+            { label: 'Schedule', click: () => sendNavigation('/schedule') },
+            { label: 'Background Schedule', click: () => sendNavigation('/background-schedule') },
+            { label: 'Schedule Preview', click: () => sendNavigation('/schedule-preview') },
+            { label: 'Jukebox', click: () => sendNavigation('/jukeboxscreen') },
+            { label: 'Show Status', click: () => sendNavigation('/showstatus') },
+            { type: 'separator' },
+            { label: 'Playback Settings', click: () => sendNavigation('/playbacksettings') },
+        ],
+    },
+    {
+        label: 'Edit',
+        submenu: [
+            { role: 'undo', label: 'Undo' },
+            { role: 'redo', label: 'Redo' },
+            { type: 'separator' },
+            { role: 'cut', label: 'Cut' },
+            { role: 'copy', label: 'Copy' },
+            { role: 'paste', label: 'Paste' },
+            { role: 'pasteAndMatchStyle', label: 'Paste and Match Style' },
+            { role: 'delete', label: 'Delete' },
+            { role: 'selectAll', label: 'Select All' },
+        ],
+    },
+];
+
+// On macOS, add the app menu
+if (process.platform === 'darwin') {
+    const appName = 'EZPlayer'; // Use product name instead of package name
+    template.unshift({
+        label: appName,
+        submenu: [
+            { role: 'about', label: `About ${appName}` },
+            { type: 'separator' },
+            { role: 'services', label: 'Services', submenu: [] },
+            { type: 'separator' },
+            { role: 'hide', label: `Hide ${appName}` },
+            { role: 'hideOthers', label: 'Hide Others' },
+            { role: 'unhide', label: 'Show All' },
+            { type: 'separator' },
+            { role: 'quit', label: `Quit ${appName}` },
+        ],
+    });
+}
+
+const menu = Menu.buildFromTemplate(template);
+Menu.setApplicationMenu(menu);
 
 const createWindow = (showFolder: string) => {
     let iconFile = 'EZPlayerLogoTransparent.png';

@@ -10,6 +10,7 @@ import { Provider } from 'react-redux';
 import { ThemeProviderWrapper, InitialDataProvider } from '@ezplayer/player-ui-components';
 import { store, storeApi } from './store/configure-store';
 import { ToastContainer } from 'react-toastify';
+import { MenuNavigationListener } from './components/MenuNavigationListener';
 
 const App = () => {
     const content = useRoutes(router);
@@ -24,6 +25,7 @@ const App = () => {
                         <ThemeProviderWrapper>
                             <LocalizationProvider dateAdapter={AdapterDayjs}>
                                 <CssBaseline />
+                                <MenuNavigationListener />
                                 {content}
                             </LocalizationProvider>
                         </ThemeProviderWrapper>

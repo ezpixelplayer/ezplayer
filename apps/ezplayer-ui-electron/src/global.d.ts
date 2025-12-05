@@ -1,9 +1,11 @@
-import { EZPElectronAPI } from '../sharedsrc/EZPElectronAPI';
+/// <reference types="@ezplayer/ezplayer-core" />
 
-export {}; // Ensure this file is treated as a module
+import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 
 declare global {
     interface Window {
         electronAPI: EZPElectronAPI;
     }
 }
+
+export {};

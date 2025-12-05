@@ -183,4 +183,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
+    onNavigate: (callback: (path: string) => void) => {
+        ipcRenderer.on('navigate', (_event: any, path: string) => {
+            callback(path);
+        });
+    },
 } satisfies EZPElectronAPI);

@@ -107,6 +107,9 @@ export interface EZPElectronAPI {
     onPStatusUpdated: (callback: (data: PlayerPStatusContent) => void) => void;
     onStatsUpdated: (callback: (data: PlaybackStatistics) => void) => void;
 
+    // Navigation callback for menu bar navigation
+    onNavigate: (callback: (path: string) => void) => void;
+
     // Time management
     getMainSyncTime: () => Promise<AudioTimeSyncM2R>;
     sendAudioSyncTime: (sync: AudioTimeSyncR2M) => Promise<void>;
