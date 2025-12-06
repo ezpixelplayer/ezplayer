@@ -103,15 +103,9 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Worst Lag:</Typography>
+                                            <Typography variant="body2">Effect Processing:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.worstLagHistorical)}ms
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Worst Advance:</Typography>
-                                            <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.worstAdvanceHistorical)}ms
+                                                {formatValue(stats.effectsProcessing?.backgroundBlendTimePeriod)}ms background blending
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -181,6 +175,18 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Worst Lag:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.worstLagHistorical)}ms
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Worst Advance:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.worstAdvanceHistorical)}ms
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Controller Frame Skips (intentional):</Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.cframesSkippedDueToDirectiveCumulative)}
@@ -220,12 +226,6 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             <Typography variant="body2">Audio Read:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.audioDecode?.fileReadTimeCumulative)}ms read; {formatValue(stats.audioDecode?.decodeTimeCumulative)}ms decode
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Effect Processing:</Typography>
-                                            <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.effectsProcessing?.backgroundBlendTimeCumulative)}ms background blending
                                             </Typography>
                                         </Box>
                                     </Box>

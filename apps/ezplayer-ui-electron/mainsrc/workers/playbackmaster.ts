@@ -523,7 +523,7 @@ const playbackStats: PlaybackStatistics = {
 
     // Effects Processing
     effectsProcessing: {
-        backgroundBlendTimeCumulative: 0,
+        backgroundBlendTimePeriod: 0,
     },
 };
 
@@ -548,7 +548,7 @@ function resetCumulativeCounters() {
     playbackStats.sentAudioChunksCumulative = 0;
     playbackStats.skippedAudioChunksCumulative = 0;
 
-    playbackStats.effectsProcessing!.backgroundBlendTimeCumulative = 0;
+    playbackStats.effectsProcessing!.backgroundBlendTimePeriod = 0;
 
     playbackStats.lastError = undefined;
 
@@ -718,7 +718,7 @@ async function processQueue() {
                     fileReadTimeCumulative: fseqStats.fileReadTimeCumulative,
                 }
                 playbackStats.effectsProcessing = {
-                    backgroundBlendTimeCumulative: playbackStatsAgg.totalMixTime,
+                    backgroundBlendTimePeriod: playbackStatsAgg.totalMixTime,
                 }
                 send({ type: 'stats', stats: playbackStats });
                 lastStatsUpdate += 1000 * Math.floor((curPerfNow - lastStatsUpdate) / 1000);
@@ -902,7 +902,7 @@ async function processQueue() {
                                 );
                                 fseqCache!.prefetchSeqTimes({
                                     fseqfile: fsf,
-                                    needByTime: action.atTime,
+                                    needByTime: actStart,
                                     startTime: action.offsetMS ?? 0,
                                     durationms: ourDur,
                                 });

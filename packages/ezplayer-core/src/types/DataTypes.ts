@@ -259,7 +259,7 @@ export interface PlaybackStatistics {
 
     // Effects Processing
     effectsProcessing?: {
-        backgroundBlendTimeCumulative: number,
+        backgroundBlendTimePeriod: number,
     }
 }
 
