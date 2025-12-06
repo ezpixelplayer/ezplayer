@@ -46,7 +46,7 @@ These UI surfaces do not exist in browsers or on mobile, and allowing them on th
 *A minimal, hidden macOS-only menu may exist solely for required system behaviors (e.g., Copy/Paste roles), but it is not considered part of the EZPlayer UI and must never contain app-level actions.
 
 ### Minimize Settings Through Universal Design
-Wherever possible, EZPlayer chooses designs that work reasonably for everyone without requiring configuration. Settings multiply support burden and cause divergence between users. For example, a date like `11/12/2025` is ambiguous internationally and would require a user preference to resolve. Instead, EZPlayer uses formats such as `11-Dec-2025` (or `12-Nov-2025`), which have universal clarity. While these may not be everyone's favorite style, they ensure that screenshots, tutorials, and user-to-user communication remain consistent.
+Wherever possible, EZPlayer chooses designs that work reasonably for everyone without configuration. For example, a date like `11/12/2025` is ambiguous internationally and would require a user preference to resolve. Instead, EZPlayer uses formats such as `11-Dec-2025` (or `12-Nov-2025`), which have universal clarity. While these may not be everyone's favorite style, they ensure that screenshots, tutorials, and user-to-user communication remain consistent, reducing the support burden.
 
 ---
 
