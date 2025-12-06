@@ -548,14 +548,11 @@ function resetCumulativeCounters() {
     playbackStats.sentAudioChunksCumulative = 0;
     playbackStats.skippedAudioChunksCumulative = 0;
 
-    playbackStats.effectsProcessing!.backgroundBlendTimePeriod = 0;
-
     playbackStats.lastError = undefined;
 
     resetZstdStats();
     fseqCache?.resetStats();
     mp3Cache?.resetStats();
-
 }
 
 const playbackStatsAgg: OverallFrameSendStats = {
