@@ -28,7 +28,7 @@ All pull requests are understood to include your agreement to the above contribu
 Please act professionally and respectfully. Abusive, harassing, or exclusionary behavior
 is not tolerated and may result in removal from the community.
 
-### User Interface Guidelines
+## User Interface Guidelines
 
 EZPlayer values simplicity and internal consistency. But "consistency" is always relative: one can be consistent with platform conventions, or one can be consistent across the environments in which the product actually runs.  EZPlayer chooses the latter.
 
