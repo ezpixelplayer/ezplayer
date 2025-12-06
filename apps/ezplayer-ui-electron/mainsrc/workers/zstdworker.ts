@@ -202,7 +202,7 @@ type InMsg = {
 };
 
 type OutMsg =
-    | { id: number; ok: true; decompBuf: ArrayBuffer; compBuf: ArrayBuffer }
+    | { id: number; ok: true; decompBuf: ArrayBuffer; compBuf: ArrayBuffer, decompTime: number }
     | { id: number; ok: false; error: string; decompBuf: ArrayBuffer; compBuf: ArrayBuffer };
 
 let decoder: ZSTDDecoder | null = null;
@@ -224,6 +224,7 @@ parentPort.on('message', async (msg: InMsg) => {
     try {
         await ensureDecoder();
 
+        const startTime = performance.now();
         // Recreate views on the transferred buffers
         const decompView = new Uint8Array(decompBuf, 0, expLen);
         const compView = new Uint8Array(compBuf, compOff, compLen);
@@ -237,7 +238,7 @@ parentPort.on('message', async (msg: InMsg) => {
             );
         }
 
-        const out: OutMsg = { id, ok: true, decompBuf, compBuf };
+        const out: OutMsg = { id, ok: true, decompBuf, compBuf, decompTime: performance.now() - startTime };
 
         // Transfer buffers back so the parent can recycle them
         parentPort!.postMessage(out, [decompBuf, compBuf]);
