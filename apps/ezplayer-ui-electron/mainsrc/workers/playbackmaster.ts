@@ -1036,9 +1036,9 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - runUntil done`);
 
-            // Get the background frame, for future
+            // Get the background frame
             while (true) {
-                backgroundPlayerRunState.runUntil(targetFramePN - clockBasePN + clockBaseTime);
+                backgroundPlayerRunState.runUntil(foregroundPlayerRunState.currentTime);
                 break;
             }
 
