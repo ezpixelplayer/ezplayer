@@ -5,7 +5,6 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
-import { ClockConverter } from './sharedsrc/ClockConverter.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
@@ -112,7 +111,6 @@ const createWindow = (showFolder: string) => {
         mainWindow?.setAlwaysOnTop(false);
 
         //setTimeout(async ()=>console.log(JSON.stringify(await getAudioOutputDevices(mainWindow!), undefined, 4)), 3000);
-        //setTimeout(async ()=>console.log(JSON.stringify(await getAudioSyncTime(mainWindow!), undefined, 4)), 3000);
     });
     // On macOS, quit the app when the window is closed (instead of just hiding it)
     mainWindow.on('close', (event) => {
@@ -125,9 +123,6 @@ const createWindow = (showFolder: string) => {
     });
 };
 
-const dateNowConverter = new ClockConverter('rtc', Date.now(), performance.now());
-
-let dateRateTimeout: NodeJS.Timeout | undefined = undefined;
 let playWorker: Worker | null = null;
 
 app.whenReady().then(async () => {
@@ -157,12 +152,7 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
-    await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
-    dateRateTimeout = setInterval(async () => {
-        const mperfNow = performance.now();
-        const mdateNow = Date.now();
-        dateNowConverter.addSample(mdateNow, mperfNow);
-    }, dateNowConverter.getSampleInterval());
+    await registerContentHandlers(mainWindow, playWorker);
 });
 
 app.on('before-quit', async () => {
@@ -170,7 +160,6 @@ app.on('before-quit', async () => {
 });
 
 app.on('window-all-closed', () => {
-    clearTimeout(dateRateTimeout);
     // Quit on all platforms, including macOS
     app.quit();
 });

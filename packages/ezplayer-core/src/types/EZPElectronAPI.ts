@@ -21,23 +21,12 @@ export interface AudioDevice {
     label: string;
 }
 
-export interface AudioTimeSyncR2M {
-    audioCtxTime: number; // Time from audio context
-    perfNowTime: number; // Main process assumed process performance.now()
-    incarnation: number;
-    latency?: number;
-}
-
-export interface AudioTimeSyncM2R {
-    perfNowTime: number; // Main thread performance.now()
-    realTime: number; // Real time, as understood by performance.now()
-}
-
 export interface AudioChunk {
+    playAtRealTime: number; // Sent in advance, adjustment already applied to compensate for display
+    incarnation: number; // Increments if a break in the audio is convenient
+
     sampleRate: number;
     channels: number;
-    incarnation: number;
-    startTime: number;
     buffer: ArrayBuffer;
 }
 
@@ -106,11 +95,6 @@ export interface EZPElectronAPI {
     onNStatusUpdated: (callback: (data: PlayerNStatusContent) => void) => void;
     onPStatusUpdated: (callback: (data: PlayerPStatusContent) => void) => void;
     onStatsUpdated: (callback: (data: PlaybackStatistics) => void) => void;
-
-    // Time management
-    getMainSyncTime: () => Promise<AudioTimeSyncM2R>;
-    sendAudioSyncTime: (sync: AudioTimeSyncR2M) => Promise<void>;
-    ipcGetAudioSyncTime: (callback: (mSync: AudioTimeSyncM2R) => AudioTimeSyncR2M) => void;
 
     // Audio
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => void;

@@ -43,17 +43,15 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
 
-import type { AudioTimeSyncM2R, AudioTimeSyncR2M, EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import {
     PlayerCommand,
     type MainRPCAPI,
     type PlayWorkerRPCAPI,
     WorkerToMainMessage,
-    AudioTimeSyncWorker,
 } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
-import { ClockConverter } from '../sharedsrc/ClockConverter.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 
 // Polyfill for `__dirname` in ES Modules
@@ -125,32 +123,17 @@ export async function loadShowFolder() {
     scheduleUpdated();
 }
 
-const audioConverter = new ClockConverter('audio', 0, performance.now());
-let lastAudioLatency: number = 10;
-let rtConverter: ClockConverter | undefined = undefined;
-
 const handlers: MainRPCAPI = {
     add: ({ a, b }) => a + b,
     fail: ({ msg }) => {
         throw new Error(msg);
     },
-    timesync: () => {
-        const pn = performance.now();
-        return {
-            realTime: rtConverter ? rtConverter.computeTime(pn) : undefined,
-            perfNowTime: performance.now(),
-            audioCtxIncarnation: audioConverter.curIncarnation,
-            audioCtxTime: audioConverter.computeTime(),
-            latency: lastAudioLatency,
-        } satisfies AudioTimeSyncWorker;
-    },
 };
 
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
-export async function registerContentHandlers(mainWindow: BrowserWindow | null, realTimeClock: ClockConverter, nPlayWorker: Worker) {
+export async function registerContentHandlers(mainWindow: BrowserWindow | null, nPlayWorker: Worker) {
     updateWindow = mainWindow;
-    rtConverter = realTimeClock;
     playWorker = nPlayWorker;
 
     ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
@@ -274,15 +257,6 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             settings,
         } as PlayerCommand);
         return true;
-    });
-    ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {
-        audioConverter.setTime(data.audioCtxTime, data.perfNowTime, data.incarnation);
-    });
-    ipcMain.handle('audio:getm2r', (_event): AudioTimeSyncM2R => {
-        return {
-            perfNowTime: performance.now(),
-            realTime: Date.now(),
-        };
     });
 
     /// Connection from player worker thread

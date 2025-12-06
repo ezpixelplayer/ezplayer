@@ -1,8 +1,6 @@
 import type {
     AudioChunk,
     AudioDevice,
-    AudioTimeSyncM2R,
-    AudioTimeSyncR2M,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -145,19 +143,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         });
     },
 
-    sendAudioSyncTime(sync: AudioTimeSyncR2M): Promise<void> {
-        return ipcRenderer.invoke('audio:syncr2m', sync);
-    },
-    getMainSyncTime(): Promise<AudioTimeSyncM2R> {
-        return ipcRenderer.invoke('audio:getm2r');
-    },
-
-    ipcGetAudioSyncTime: (callback: (mSync: AudioTimeSyncM2R) => AudioTimeSyncR2M) => {
-        ipcRenderer.on('audio:syncm2r', (_event: any, req: M2RIPC<AudioTimeSyncM2R>) => {
-            const ct = callback(req.req);
-            ipcRenderer.send(`audio:syncm2r-response#${req.reqid}`, ct);
-        });
-    },
     onAudioChunk: (callback: (data: AudioChunk) => void) => {
         ipcRenderer.on('audio:chunk', (_event: any, data: AudioChunk) => {
             callback(data);

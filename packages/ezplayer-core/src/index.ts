@@ -34,8 +34,6 @@ export type {
 export type {
     AudioDevice,
     AudioChunk,
-    AudioTimeSyncM2R,
-    AudioTimeSyncR2M,
     EZPElectronAPI,
     FileSelectOptions,
 } from './types/EZPElectronAPI';

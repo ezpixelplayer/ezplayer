@@ -565,26 +565,12 @@ const playbackStatsAgg: OverallFrameSendStats = {
 
 ///////
 // Clockkeeping
-const audioConverter = new ClockConverter('maudio', 0, performance.now());
 const rtcConverter = new ClockConverter('mrtc', 0, performance.now());
 
-let perfNowDelta: number = 0;
-
 const _pollTimes = setInterval(async () => {
-    const spn = performance.now();
-    const pt = await rpcc.call('timesync', {});
-    const epn = performance.now();
-    if (epn - spn <= 2) {
-        const pn = (epn + spn) / 2;
-        const cpnDelta = pn - pt.perfNowTime;
-        if (Math.abs(cpnDelta - perfNowDelta) > 2) perfNowDelta = cpnDelta;
-        if (pt.audioCtxIncarnation !== undefined && pt.audioCtxTime !== undefined) {
-            audioConverter.setTime(pt.audioCtxTime, pn, pt.audioCtxIncarnation);
-        }
-        if (pt.realTime !== undefined) {
-            rtcConverter.addSample(pt.realTime, pn);
-        }
-    }
+    const pn = performance.now();
+    const realTime = Date.now();
+    rtcConverter.addSample(realTime, pn);
 }, playbackParams.timePollInterval);
 
 ///////
@@ -682,11 +668,9 @@ async function processQueue() {
     let iteration = -1;
 
     // OK - all the clocks are sync to perf.now.  But we can skew to that.
-    // TODO: For now, let us just set the time once.  We can move to per song.
     const clockBasePN = Math.ceil(performance.now());
     const clockBaseTime = Math.ceil(rtcConverter.computeTime(clockBasePN));
-    let audioBaseTime = Math.ceil(audioConverter.computeTime(clockBasePN));
-    let audioBasePN = clockBasePN;
+    let curAudioSongNum = 1;
     // The schedule time is kept in the player run states
     // These should really be base times / detect when the song changes...
     let targetFramePN = clockBasePN;
@@ -952,8 +936,7 @@ async function processQueue() {
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
-                    audioBasePN = curPerfNow;
-                    audioBaseTime = audioConverter.computeTime(audioBasePN);
+                    curAudioSongNum++;
                 }
 
                 let audioref: ReturnType<MP3PrefetchCache['getMp3']> | undefined = undefined;
@@ -994,27 +977,7 @@ async function processQueue() {
                                 }
                             }
 
-                            const startTime = Math.floor(
-                                audioPlayerRunState.currentTime -
-                                    clockBaseTime +
-                                    clockBasePN +
-                                    audioBaseTime -
-                                    audioBasePN +
-                                    playbackParams.audioTimeAdjMs,
-                            );
-                            const audioContextEstTime = audioConverter.computeTime(
-                                audioPlayerRunState.currentTime -
-                                    clockBaseTime +
-                                    clockBasePN +
-                                    playbackParams.audioTimeAdjMs,
-                            );
-                            if (Math.abs(audioContextEstTime - startTime) > 100) {
-                                emitWarning(
-                                    `Audio time adjust: Sending ${msToSend}(${nSamplesToSend})@${sampleOffset}; ${audioPlayerRunState.currentTime} / ${startTime} ${startTime - audioContextEstTime}`,
-                                );
-                                audioBasePN = curPerfNow;
-                                audioBaseTime = audioConverter.computeTime(audioBasePN);
-                            }
+                            const playAtRealTime = Math.floor(audioPlayerRunState.currentTime);
 
                             if (audioPlayerRunState.currentTime >= curPerfNowTime) {
                                 send(
@@ -1024,9 +987,8 @@ async function processQueue() {
                                             sampleRate: audio.sampleRate,
                                             channels,
                                             buffer: chunk.buffer,
-                                            // TODO let the dog wag the tail
-                                            startTime,
-                                            incarnation: audioConverter.curIncarnation,
+                                            playAtRealTime,
+                                            incarnation: curAudioSongNum,
                                         },
                                     },
                                     [chunk.buffer],
