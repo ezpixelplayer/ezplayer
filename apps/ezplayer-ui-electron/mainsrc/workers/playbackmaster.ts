@@ -469,7 +469,11 @@ let latestSettings: PlaybackSettings | undefined = undefined;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
-    playbackParams.audioTimeAdjMs = settings.audioSyncAdjust ?? 0;
+    const nasa = settings.audioSyncAdjust ?? 0;
+    if (nasa != playbackParams.audioTimeAdjMs) {
+        playbackParams.audioTimeAdjMs = nasa;
+        ++curAudioSyncNum;
+    }
     setRFConfig({
         remoteToken: settings.viewerControl.remoteFalconToken,
     },
@@ -579,6 +583,7 @@ let showFolder: string | undefined = undefined;
 let isPaused = false;
 let volume = 100;
 let muted = false;
+let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
 let curPlaylists: PlaylistRecord[] | undefined = undefined;
@@ -670,7 +675,6 @@ async function processQueue() {
     // OK - all the clocks are sync to perf.now.  But we can skew to that.
     const clockBasePN = Math.ceil(performance.now());
     const clockBaseTime = Math.ceil(rtcConverter.computeTime(clockBasePN));
-    let curAudioSongNum = 1;
     // The schedule time is kept in the player run states
     // These should really be base times / detect when the song changes...
     let targetFramePN = clockBasePN;
@@ -936,7 +940,7 @@ async function processQueue() {
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
-                    curAudioSongNum++;
+                    curAudioSyncNum++;
                 }
 
                 let audioref: ReturnType<MP3PrefetchCache['getMp3']> | undefined = undefined;
@@ -977,7 +981,7 @@ async function processQueue() {
                                 }
                             }
 
-                            const playAtRealTime = Math.floor(audioPlayerRunState.currentTime);
+                            const playAtRealTime = Math.floor(audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0));
 
                             if (audioPlayerRunState.currentTime >= curPerfNowTime) {
                                 send(
@@ -988,7 +992,7 @@ async function processQueue() {
                                             channels,
                                             buffer: chunk.buffer,
                                             playAtRealTime,
-                                            incarnation: curAudioSongNum,
+                                            incarnation: curAudioSyncNum,
                                         },
                                     },
                                     [chunk.buffer],
