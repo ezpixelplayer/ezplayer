@@ -25,9 +25,6 @@ export const Tables = (props: any) => {
                 columns={columns}
                 checkboxSelection={checkboxSelection}
                 disableColumnFilter={true}
-                pageSizeOptions={[25, 50, 100]}
-                pagination={true}
-                paginationModel={{ pageSize: Array.isArray(rows) ? rows.length : 100000, page: 0 }}
                 hideFooter={true}
                 hideFooterSelectedRowCount={true}
                 hideFooterPagination={true}

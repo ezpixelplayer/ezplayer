@@ -133,10 +133,12 @@ export class FSeqPrefetchCache {
                 // Fetch file data
                 let readBuf = this.decompDataPool.get(key.fileLen);
                 let ref = false;
+                const start = performance.now();
                 try {
                     const fh = await fsp.open(key.fseqfile);
                     try {
                         const rlen = await readHandleRange(fh, {buf: readBuf, offset: key.fileOffset, length: key.fileLen});
+                        this.fileReadTimeCumulative += (performance.now() - start);
                         if (rlen !== key.fileLen) throw new Error (`File read of ${key.fseqfile} expected ${key.fileLen} bytes but could only read ${rlen}`);
                         if (key.compression === 1) {
                             // Decompress
@@ -338,6 +340,7 @@ export class FSeqPrefetchCache {
     decompDataPool: ArrayBufferPool;
     decompFunc: DecompZStd;
     decompPrefetchCache: PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>;
+    fileReadTimeCumulative: number = 0;
 
     getStats() {
         const decompPool = this.decompDataPool.getStats();
@@ -350,7 +353,12 @@ export class FSeqPrefetchCache {
             decompPrefetch: this.decompPrefetchCache.getStats(),
             decompPool,
             totalDecompMem,
+            fileReadTimeCumulative: this.fileReadTimeCumulative,
         }
+    }
+
+    resetStats() {
+        this.fileReadTimeCumulative = 0;
     }
     // TODO:
     //   Cache invalidation for updated .fseq files?
