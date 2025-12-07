@@ -445,8 +445,7 @@ export class PrefetchCache<K, V, P> {
             }
 
             // Expire if not requested recently or aged out
-            const lat = Math.max(item.lastPrefetchedAt,  item.lastAccessedAt);
-            if (lat < notRequestedAfter && item.lastAccessedAt < notRequestedAfter || item.expiry < now) {
+            if ((item.lastPrefetchedAt < notRequestedAfter && item.lastAccessedAt < notRequestedAfter) || item.expiry < now) {
                 toSort.push({item, mustBeKept: false, expired: true});
                 continue;
             }
