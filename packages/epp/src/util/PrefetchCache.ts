@@ -605,20 +605,23 @@ export class PrefetchCache<K, V, P> {
 
 export interface NeededTimePriority {
     neededTime: number;
+    neededThroughTime?: number;
 }
 export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, timeOfIrrelevance: number)=>{
-    if (a.neededTime >= timeOfIrrelevance && b.neededTime >= timeOfIrrelevance) {
+    const nta = a.neededThroughTime ?? a.neededTime;
+    const ntb = b.neededThroughTime ?? b.neededTime;
+    if (nta >= timeOfIrrelevance && ntb >= timeOfIrrelevance) {
         // Sooner need is higher priority
         return a.neededTime-b.neededTime;
     }
-    if (a.neededTime >= timeOfIrrelevance && b.neededTime < timeOfIrrelevance) {
+    if (nta >= timeOfIrrelevance && ntb < timeOfIrrelevance) {
         // Actual need is higher priority
         return -1;
     }
-    if (b.neededTime >= timeOfIrrelevance && a.neededTime < timeOfIrrelevance) {
+    if (ntb >= timeOfIrrelevance && nta < timeOfIrrelevance) {
         // Actual need is higher priority
         return 1;
     }
     // LRU
-    return b.neededTime-a.neededTime;
+    return ntb - nta;
 }

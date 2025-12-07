@@ -14,6 +14,7 @@ export type PrefetchMP3Request = {
     expiry?: number;
     mp3file: string;
     needByTime: number;
+    neededThroughTime: number;
 };
 
 export interface MP3FileKey {
@@ -69,7 +70,7 @@ export class MP3PrefetchCache {
     prefetchMP3(req: PrefetchMP3Request) {
         this.mp3PrefetchCache.prefetch({
             key: { mp3file: req.mp3file },
-            priority: { neededTime: req.needByTime },
+            priority: { neededTime: req.needByTime, neededThroughTime: req.neededThroughTime },
             now: this.now,
             expiry: req.expiry ?? this.now + 24 * 3600 * 1000,
         });
@@ -108,6 +109,7 @@ export class MP3PrefetchCache {
 
     resetStats() {
         this.decodewc.resetStats();
+        this.mp3PrefetchCache.resetStats();
     }
 }
 

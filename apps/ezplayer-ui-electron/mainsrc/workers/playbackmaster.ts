@@ -453,7 +453,7 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 20_000_000_000, // This is obnoxiously large, however it covers a 6-hour playlist and tends to be only half full
+    mp3CacheSpace: 6_500_000_000, // There are issues w/making this bigger
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
@@ -866,6 +866,7 @@ async function processQueue() {
                                 mp3Cache!.prefetchMP3({
                                     mp3file: saf,
                                     needByTime: action.atTime,
+                                    neededThroughTime: action.atTime + (action.durationMS ?? 600000),
                                     expiry: curPerfNowTime + 7 * 24 * 3600_000,
                                 });
                             }
