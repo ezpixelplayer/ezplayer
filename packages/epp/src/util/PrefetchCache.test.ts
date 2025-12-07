@@ -8,6 +8,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
         super({
             fetchFunction: async (key, abort) => {
                 this.counts.set(key, (this.counts.get(key) ?? 0) + 1);
+                if (key.includes('@')) throw new Error();
                 return key;
             },
             budgetPredictor: (key) => {
@@ -24,12 +25,12 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
         });
     }
 
-    placeRequests(s: number, e: number, now: number, prefix = '', suffix = '') {
+    placeRequests(s: number, e: number, now: number, prefix = '', suffix = '', expiry ?: number) {
         for (let i = s; i<= e; ++i) {
             this.prefetch({
                 key: `${prefix}${i}${suffix}`,
                 now,
-                expiry: 1000, 
+                expiry: expiry ?? 1000, 
                 priority: {neededTime: i}
             });
         }
@@ -111,5 +112,67 @@ describe('findMatchingScheduleEntry', () => {
     });
 
     // Test mixed sizes
+    it('keeps a reasonable set of things despite mixed size', async () => {
+        const cache = new TestPrefetchCache(15);
+        for (let i=0; i<4; ++i) {
+            cache.placeRequests(i+1, 10, i, 'f', '-4');
+            cache.placeRequests(i+1, 10, i, 'b');
+            for (let j=0; j<4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i-1);
+                await cache.finishFetches();
+            }
+        }
+        expect(cache.check('f4-4', 3)).toBe(true);
+        expect(cache.check('b4', 3)).toBe(true);
+        expect(cache.check('f3-4', 3)).toBe(true);
+        expect(cache.check('b3', 3)).toBe(true);
+        expect(cache.check('f5-4', 3)).toBe(true);
+        expect(cache.check('b5', 3)).toBe(true);
+        expect(cache.check('f6-4', 3)).toBe(false);
+        expect(cache.check('b6', 3)).toBe(false);
+        expect(cache.check('f2-4', 3)).toBe(false);
+        expect(cache.check('b2', 3)).toBe(false);
+    });
+
     // Test errors
+    it('keeps a reasonable set of things despite errors', async () => {
+        const cache = new TestPrefetchCache(3);
+        for (let i=0; i<4; ++i) {
+            cache.placeRequests(i+1, 10, i, 'f');
+            cache.placeRequests(i+1, 10, i, '@b');
+            for (let j=0; j<4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i-1);
+                await cache.finishFetches();
+            }
+        }
+        expect(cache.check('f4', 3)).toBe(true);
+        expect(cache.check('@b4', 3)).toBe(true);
+        expect(cache.check('f3', 3)).toBe(true);
+        expect(cache.check('@b3', 3)).toBe(true);
+        expect(cache.check('f5', 3)).toBe(true);
+        expect(cache.check('@b5', 3)).toBe(false); // This is order dependent ... if it is last it won't try to fetch as it would go over
+        expect(cache.check('f6', 3)).toBe(false);
+        expect(cache.check('@b6', 3)).toBe(false);
+        expect(cache.check('f2', 3)).toBe(false);
+        expect(cache.check('@b2', 3)).toBe(false);
+    });
+
+    // Test expiry
+    it('keeps a reasonable set of things with expiry', async () => {
+        const cache = new TestPrefetchCache(5);
+        for (let i=0; i<4; ++i) {
+            cache.placeRequests(i+1, 10, i, 'f', '', i+1);
+            for (let j=0; j<4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i-1);
+                await cache.finishFetches();
+            }
+        }
+        expect(cache.check('f4', 3)).toBe(true);
+        expect(cache.check('f3', 3)).toBe(true);
+        expect(cache.check('f2', 3)).toBe(false);
+        expect(cache.check('f5', 3)).toBe(true);
+        expect(cache.check('f6', 3)).toBe(true);
+        expect(cache.check('f7', 3)).toBe(true);
+        expect(cache.check('f8', 3)).toBe(false);
+    });
 });
