@@ -209,6 +209,26 @@ export interface CombinedPlayerStatus {
     };
 }
 
+export interface PrefetchCacheStats {
+    totalItems: number,
+    referencedItems: number,
+    readyItems: number,
+    pendingItems: number,
+    errorItems: number,
+    inProgressItems: number,
+
+    budget: number,
+    used: number,
+
+    refHitsCumulative: number,
+    refMissesCumulative: number,
+    expiredItemsCumulative: number,
+    evictedItemsCumulative: number,
+
+    completedRequestsCumulative: number,
+    erroredRequestsCumulative: number,
+}
+
 export interface PlaybackStatistics {
     iteration: number;
 
@@ -260,6 +280,18 @@ export interface PlaybackStatistics {
     // Effects Processing
     effectsProcessing?: {
         backgroundBlendTimePeriod: number,
+    }
+
+    // FSEQ Cache
+    fseqPrefetch?: {
+        totalMem: number,
+        headerCache: PrefetchCacheStats,
+        chunkCache: PrefetchCacheStats,
+    }
+
+    // Audio decode cache
+    audioPrefetch?: {
+        decodeCache: PrefetchCacheStats,
     }
 }
 

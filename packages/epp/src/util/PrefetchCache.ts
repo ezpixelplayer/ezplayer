@@ -197,7 +197,7 @@ export class PrefetchCache<K, V, P> {
             completedRequests: 0,
             erroredRequests: 0,
             expiredItems: 0,
-            evictedItems: 0
+            evictedItems: 0,
         };
     }
     private stats: CacheStatCounters = PrefetchCache.clearedStats();

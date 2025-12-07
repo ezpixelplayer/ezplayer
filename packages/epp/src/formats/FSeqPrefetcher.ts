@@ -357,6 +357,8 @@ export class FSeqPrefetchCache {
 
     resetStats() {
         this.fileReadTimeCumulative = 0;
+        this.headerPrefetchCache.resetStats();
+        this.decompPrefetchCache.resetStats();
     }
     // TODO:
     //   Cache invalidation for updated .fseq files?
