@@ -12,6 +12,8 @@
 //   (Especially since the passage of time is a factor, and failure to refresh the requests too.)
 //   Also we have plenty of opportunity to do this between frames that are requested.
 
+import { sleepms } from "./Utils";
+
 // Hence, the idea is, at least within the player, to (on each frame or therebouts):
 //   Cancel all old requests
 //   Place new requests
@@ -23,6 +25,7 @@
 
 // Priority comparison, often the deadline that is nearer unless something is higher priority tier
 //   Note for missed deadlines, relative priority can change to irrelevant.
+//   A negative return means a is higher priority than b.
 export type PriorityComparator<P> = (a: P, b: P, now: number) => number;
 export type BudgetPredictor<K> = (key: K) => number; // Predict budget from key (like file space)
 export type BudgetCalculator<K, V> = (key: K, value: V) => number; // Full known budget (like decompressed size)
@@ -181,7 +184,7 @@ export class PrefetchCache<K, V, P> {
     private cache = new Map<string, CacheItem<K, V, P>>();
     private activeFetches = new Set<string>();
 
-    private static clearedCache(): CacheStatCounters {
+    private static clearedStats(): CacheStatCounters {
         return {
             checkHits: 0,
             checkMisses: 0,
@@ -197,7 +200,7 @@ export class PrefetchCache<K, V, P> {
             evictedItems: 0
         };
     }
-    private stats: CacheStatCounters = PrefetchCache.clearedCache();
+    private stats: CacheStatCounters = PrefetchCache.clearedStats();
 
     constructor(private options: PrefetchCacheOptions<K, V, P>) {
     }
@@ -230,7 +233,7 @@ export class PrefetchCache<K, V, P> {
                 // existing.error = undefined; // Interesting semantic - error stays but not marked
                 existing.queuedAt = performance.now();
             }
-            // There is no need to recalculate the queue.  This occurs before dispatch.
+            // There is no need to recalculate the queue, as this occurs before dispatch.
         } else {
             // Create new cache item
             const item: CacheItem<K, V, P> = {
@@ -249,9 +252,9 @@ export class PrefetchCache<K, V, P> {
 
             this.cache.set(id, item);
 
-            // There is no need to recalculate the queue.  This occurs before dispatch
+            // There is no need to recalculate the queue, as this occurs before dispatch.
         }
-        // There is no need to process any items now.  Once the batch is done, it must be rerun.
+        // There is no need to process any items now.  Once the batch is done, the highet priorities are calculated to run.
     }
 
     /**
@@ -325,12 +328,17 @@ export class PrefetchCache<K, V, P> {
         const item = this.cache.get(kid);
 
         if (!item) {
+            ++this.stats.refMisses;
             return undefined;
         }
         if (item.error) {
+            ++this.stats.refHits;
             return {err: item.error}; // May not be it, but can't hurt to check
         }
-        if (!item.value) return {};
+        if (!item.value) {
+            ++this.stats.refMisses;
+            return {};
+        }
 
         ++this.stats.refHits;
         this.addRefInternal(item, now);
@@ -364,6 +372,13 @@ export class PrefetchCache<K, V, P> {
             prefetchBudgetUsed: bstat.estcost,
             cacheBudgetUsed: bstat.valcost,
         };
+    }
+
+    /**
+     * Reset the stats
+     */
+    resetStats() {
+        this.stats = PrefetchCache.clearedStats();
     }
 
     /**
@@ -406,7 +421,7 @@ export class PrefetchCache<K, V, P> {
      *   Discards down to budget (keeping room for prefetches)
      *   Discards far future prefetch requests if not room for all
      */
-    cleanup(now: number, notRequestedAfter: number): void {
+    cleanupAndDispatchRequests(now: number, notRequestedAfter: number): void {
         const toRemove: K[] = [];
 
         for (const [key, item] of this.cache.entries()) {
@@ -435,13 +450,16 @@ export class PrefetchCache<K, V, P> {
 
         // Also run LRU eviction
         this.evictLRU(now);
+
+        // Dispatch requests
+        this.dispatchRequests(now);
     }
 
     /**
      * Initiate any fetches
      * User must call this after a batch of new information is loaded.
      */
-    dispatchRequests(now: number) {
+    private dispatchRequests(now: number) {
         // For this, we build 
         const maxConcurrency: number = this.options.maxConcurrency;
         if (this.activeFetches.size >= maxConcurrency) return;
@@ -624,9 +642,31 @@ export class PrefetchCache<K, V, P> {
 
         this.cache.delete(id);
     }
+
+    // Test / shutdown
+    async finishFetches() {
+        while (this.activeFetches.size) {
+            await sleepms(0);
+        }
+    }
 }
 
 export interface NeededTimePriority {
     neededTime: number;
 }
-export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, _now: number)=>a.neededTime-b.neededTime;
+export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, timeOfIrrelevance: number)=>{
+    if (a.neededTime >= timeOfIrrelevance && b.neededTime >= timeOfIrrelevance) {
+        // Sooner need is higher priority
+        return a.neededTime-b.neededTime;
+    }
+    if (a.neededTime >= timeOfIrrelevance && b.neededTime < timeOfIrrelevance) {
+        // Actual need is higher priority
+        return -1;
+    }
+    if (b.neededTime >= timeOfIrrelevance && a.neededTime < timeOfIrrelevance) {
+        // Actual need is higher priority
+        return 1;
+    }
+    // LRU
+    return b.neededTime-a.neededTime;
+}

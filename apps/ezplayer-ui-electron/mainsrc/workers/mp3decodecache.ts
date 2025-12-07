@@ -83,8 +83,7 @@ export class MP3PrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        this.mp3PrefetchCache.cleanup(this.now, this.now - (ageout ?? 25 * 3600 * 1000)); // Keep for 25 hours
-        this.mp3PrefetchCache.dispatchRequests(this.now);
+        this.mp3PrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 25 * 3600 * 1000)); // Keep for 25 hours
     }
 
     now: number;
