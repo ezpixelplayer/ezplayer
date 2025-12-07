@@ -420,136 +420,89 @@ export class PrefetchCache<K, V, P> {
      *   Calculates budgets and total (including all prefetch)
      *   Discards down to budget (keeping room for prefetches)
      *   Discards far future prefetch requests if not room for all
+     *   Dispatches the things that we want
      */
     cleanupAndDispatchRequests(now: number, notRequestedAfter: number): void {
-        const toRemove: K[] = [];
+        /*
+         * This is a blend of prefetch and LRU behavior.
+         * Sort order:
+         *   Things that must be kept first
+         *   Things (populated or not) that are coming sooner / used recently next
+         *   Things that are expired last
+         */
+        interface PSortable {
+            item: CacheItem<K, V, P>;
+            mustBeKept: boolean; // true if fetching or pinned
+            expired: boolean;
+        };
 
+        const toSort: PSortable[] = [];
         for (const [key, item] of this.cache.entries()) {
             // Don't expire referenced items or active fetches
             if (item.refCount > 0 || this.activeFetches.has(key)) {
+                toSort.push({item, mustBeKept: true, expired: false});
                 continue;
             }
 
-            // Expire if not requested recently
-            if (item.lastPrefetchedAt < notRequestedAfter) {
-                toRemove.push(item.key);
+            // Expire if not requested recently or aged out
+            const lat = Math.max(item.lastPrefetchedAt,  item.lastAccessedAt);
+            if (lat < notRequestedAfter && item.lastAccessedAt < notRequestedAfter || item.expiry < now) {
+                toSort.push({item, mustBeKept: false, expired: true});
                 continue;
             }
 
-            // Expire if not useful in the future
-            if (item.expiry < now) {
-                toRemove.push(item.key);
+            // Generic item
+            toSort.push({item, mustBeKept: false, expired: false});
+        }
+
+        //  Sort
+        toSort.sort((a, b) => {
+            if (a.mustBeKept && !b.mustBeKept) return -1;
+            if (b.mustBeKept && !a.mustBeKept) return 1;
+            if (a.expired && !b.expired) return 1;
+            if (b.expired && !a.expired) return -1;
+            return this.options.priorityComparator(a.item.priority, b.item.priority, now);
+        });
+
+        let cumulativeCost: number = 0;
+        for (const si of toSort) {
+            if (si.expired && !si.mustBeKept) {
+                this.removeItem(si.item.key);
+                this.stats.expiredItems++;
                 continue;
             }
-        }
 
-        for (const key of toRemove) {
-            this.removeItem(key);
-            this.stats.expiredItems++;
-        }
+            const item = si.item;
+            const id = this.options.keyToId(item.key);
 
-        // Also run LRU eviction
-        this.evictLRU(now);
-
-        // Dispatch requests
-        this.dispatchRequests(now);
-    }
-
-    /**
-     * Initiate any fetches
-     * User must call this after a batch of new information is loaded.
-     */
-    private dispatchRequests(now: number) {
-        // For this, we build 
-        const maxConcurrency: number = this.options.maxConcurrency;
-        if (this.activeFetches.size >= maxConcurrency) return;
-
-        // Create the pending queue
-        const pendingQueue: Array<{ key: K; priority: P }> = [];
-        for (const [_k, item] of this.cache) {
-            if (item.state === 'queued' && item.expiry > now) {
-                pendingQueue.push({ key: item.key, priority: item.priority });
+            // TODO: Tally against budget and do any evictions
+            if (item.state === 'queued' || item.state === 'fetching') {
+                cumulativeCost += item.estCost;
             }
-        }
-        pendingQueue.sort((a, b) =>
-            this.options.priorityComparator(a.priority, b.priority, now)
-        );
-
-        while (
-            this.activeFetches.size < maxConcurrency &&
-            pendingQueue.length > 0
-        ) {
-            const { key } = pendingQueue.shift()!;
-
-            const id = this.options.keyToId(key);
-            if (this.activeFetches.has(id)) continue;
-
-            const item = this.cache.get(id);
-            if (!item || item.state !== 'queued') continue;
-
-            this.activeFetches.add(id);
-            item.state = 'fetching';
-            item.fetchingSince = performance.now();
-            const ac = new AbortController();
-            item.abort = ac;
-
-            this.fetchItem(item);
-        }
-    }
-
-    private async evictLRU(now: number): Promise<void> {
-        const curUsage = this.currentGaugeStats();
-        if (curUsage.totalcost < this.options.budgetLimit) return;
-
-        // There is a tension here between "LRU" and "Going To Use"
-        //  Going to use far in the future - we won't do it.  Make it something requested again.
-        //    Use priority
-        //  Hasn't been used in a while, toss it.
-        //  Initial heuristic is divide cache in half
-
-        // Create array of evictable items (not referenced, completed)
-        const lruEvictable: Array<CacheItem<K, V, P>> = [];
-        const prefetchEvictable: Array<CacheItem<K, V, P>> = [];
-
-        for (const [_key, item] of this.cache.entries()) {
-            if (
-                item.refCount === 0 &&
-                (item.state === 'ready' || item.state === 'error')
-            ) {
-                lruEvictable.push(item);
+            if (item.state === 'ready') {
+                cumulativeCost += item.actualCost;
             }
-            else if (item.state === 'queued' && !this.activeFetches.has(this.options.keyToId(item.key))) {
-                prefetchEvictable.push(item);
+
+            if (cumulativeCost > this.options.budgetLimit && !si.mustBeKept) {
+                // Kick it out
+                if (item.state === 'error' || item.state === 'ready') {
+                    this.removeItem(item.key);
+                    this.stats.evictedItems++;
+                }
+                continue;
             }
-        }
 
-        // Sort by last requested time (LRU first)
-        lruEvictable.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
-        // Sort by priority (low first)
-        prefetchEvictable.sort((a, b) =>
-            -this.options.priorityComparator(a.priority, b.priority, now)
-        );
-
-        // First cut
-        for (let i=0; i<lruEvictable.length; ++i) {
-            if (curUsage.valcost <= this.options.budgetLimit / 2) break;
-            const {key} = lruEvictable[i];
-            const item = this.cache.get(this.options.keyToId(key));
-            if (item) {
-                curUsage.valcost -= item.actualCost;
-                this.removeItem(key);
-                this.stats.evictedItems++;
-            }
-        }
-
-        for (let i=0; i<prefetchEvictable.length; ++i) {
-            if (curUsage.estcost < this.options.budgetLimit / 2) break;
-            const {key} = prefetchEvictable[i];
-            const item = this.cache.get(this.options.keyToId(key));
-            if (item) {
-                curUsage.estcost -= item.estCost;
-                this.removeItem(key);
-                this.stats.evictedItems++;
+            // Prefetch candidate
+            if (si.item.state === 'queued' &&
+                this.activeFetches.size < this.options.maxConcurrency &&
+                !this.activeFetches.has(id))
+            {
+                this.activeFetches.add(id);
+                si.item.state = 'fetching';
+                si.item.fetchingSince = performance.now();
+                const ac = new AbortController();
+                si.item.abort = ac;
+                this.fetchItem(si.item);
             }
         }
     }

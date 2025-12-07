@@ -19,27 +19,27 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
             onDispose: (_k, v) => { }
         });
     }
+
+    placeRequests(s: number, e: number, now: number) {
+        for (let i = s; i<= e; ++i) {
+            this.prefetch({
+                key: `${i}`,
+                now,
+                expiry: 1000, 
+                priority: {neededTime: i}
+            });
+        }
+    }
 }
 
 describe('findMatchingScheduleEntry', () => {
     it('behaves ok when oversubscribed', async () => {
-        const cache = new TestPrefetchCache(6);
+        const cache = new TestPrefetchCache(3);
 
-        function placeRequests(s: number, e: number, now: number) {
-            for (let i = s; i<= e; ++i) {
-                cache.prefetch({
-                    key: `${i}`,
-                    now,
-                    expiry: 1000, 
-                    priority: {neededTime: i}
-                });
-            }
-        }
-
-        // The budget is 6, which is 50/50 cache and upcoming/prefetch, so we expect 1-3 to be populated
+        // The budget is 3, so we expect 1-3 to be populated
         // As the concurrency is 1, it will take multiple dispatches to get it filled
 
-        placeRequests(1, 8, 0);
+        cache.placeRequests(1, 8, 0);
         cache.cleanupAndDispatchRequests(0, -1);
         await cache.finishFetches();
         expect(cache.check('1', 0)).toBe(true);
@@ -48,14 +48,14 @@ describe('findMatchingScheduleEntry', () => {
         expect(cache.check('4', 0)).toBe(false);
         expect(true).toBe(true);
 
-        placeRequests(1, 8, 0);
+        cache.placeRequests(1, 8, 0);
         cache.cleanupAndDispatchRequests(0, -1);
         await cache.finishFetches();
         expect(cache.check('1', 0)).toBe(true);
         expect(cache.check('2', 0)).toBe(true);
         expect(cache.check('3', 0)).toBe(false);
 
-        placeRequests(1, 8, 0);
+        cache.placeRequests(1, 8, 0);
         cache.cleanupAndDispatchRequests(0, -1);
         await cache.finishFetches();
         expect(cache.check('1', 0)).toBe(true);
@@ -63,7 +63,7 @@ describe('findMatchingScheduleEntry', () => {
         expect(cache.check('3', 0)).toBe(true);
         expect(cache.check('4', 0)).toBe(false);
 
-        placeRequests(1, 8, 0);
+        cache.placeRequests(1, 8, 0);
         cache.cleanupAndDispatchRequests(0, -1);
         await cache.finishFetches();
         expect(cache.check('1', 0)).toBe(true);
@@ -71,4 +71,7 @@ describe('findMatchingScheduleEntry', () => {
         expect(cache.check('3', 0)).toBe(true);
         expect(cache.check('4', 0)).toBe(false);
     });
+
+    // Test evictions
+    // Test errors
 });
