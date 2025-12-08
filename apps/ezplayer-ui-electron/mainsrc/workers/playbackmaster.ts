@@ -453,7 +453,7 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 6_500_000_000, // There are issues w/making this bigger
+    mp3CacheSpace: 3_500_000_000, // There are issues w/making this bigger
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
@@ -557,6 +557,15 @@ function resetCumulativeCounters() {
     playbackStats.lastError = undefined;
 
     resetZstdStats();
+
+    // Temp diagnostic
+    const fsstats = fseqCache?.getStats();
+    emitInfo(`Logging out the FSEQ backing pool...`);
+    if (fsstats) {
+        for (const dpi of fsstats.decompPool) {
+            emitInfo(`Decomp Pool: size: ${dpi.size}, count: ${dpi.total}, used: ${dpi.inUse}; ${dpi.size * dpi.total} footprint`);
+        }
+    }
     fseqCache?.resetStats();
     mp3Cache?.resetStats();
 }
@@ -631,7 +640,7 @@ async function processQueue() {
             now: performance.now(),
             fseqSpace: playbackParams.fseqSpace,
             decompZstd: decompressZStdWithWorker,
-        });
+        }, emitError);
     }
 
     const sender: FrameSender = new FrameSender();
