@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, Server } from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
+import fsp from 'fs/promises';
 import { app, BrowserWindow } from 'electron';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'url';
@@ -63,20 +64,49 @@ export function setupServer(config: ServerConfig): Server {
     console.log(`🌐 Starting Koa web server on port ${port} (source: ${portSource})`);
 
     // ----------------------------------------------
-    // ⭐ API: GET /api/getimage/*path - serves images from user-images folder
+    // ⭐ API: GET /api/getimage/:sequenceId - serves images by sequence ID
     // ----------------------------------------------
-    router.get('/api/getimage/*path', async (ctx) => {
-        // Extract the path after /api/getimage/
-        const requestedPath = ctx.path.slice('/api/getimage/'.length);
-        const sanitized = safePath(requestedPath);
+    router.get('/api/getimage/:sequenceId', async (ctx) => {
+        const sequenceId = ctx.params.sequenceId;
 
-        if (!sanitized) {
-            ctx.status = 404;
-            ctx.body = { error: 'Image not found' };
+        if (!sequenceId) {
+            ctx.status = 400;
+            ctx.body = { error: 'Sequence ID is required' };
             return;
         }
 
-        await send(ctx, sanitized, { root: resolvedUserImageDir });
+        // Sanitize sequence ID to prevent path traversal
+        const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9-_]/g, '');
+        if (!sanitizedId || sanitizedId !== sequenceId) {
+            ctx.status = 400;
+            ctx.body = { error: 'Invalid sequence ID' };
+            return;
+        }
+
+        // Try common image extensions
+        const extensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+        let imagePath: string | null = null;
+
+        for (const ext of extensions) {
+            const candidatePath = path.join(resolvedUserImageDir, `${sanitizedId}${ext}`);
+            try {
+                await fsp.access(candidatePath, fs.constants.R_OK);
+                imagePath = candidatePath;
+                break;
+            } catch {
+                // Continue to next extension
+            }
+        }
+
+        if (!imagePath) {
+            ctx.status = 404;
+            ctx.body = { error: 'Image not found for sequence ID' };
+            return;
+        }
+
+        // Set appropriate MIME type
+        ctx.type = inferMimeType(imagePath);
+        await send(ctx, path.basename(imagePath), { root: resolvedUserImageDir });
     });
 
     // ----------------------------
@@ -101,11 +131,126 @@ export function setupServer(config: ServerConfig): Server {
         await send(ctx, sanitized, { root: showFolder });
     });
 
-    webApp.use(router.routes());
-    webApp.use(router.allowedMethods());
-
     // Add body parser middleware for JSON requests
     webApp.use(bodyParser());
+
+    // ----------------------------------------------
+    // API: GET /api/hello
+    // ----------------------------------------------
+    router.get('/api/hello', async (ctx) => {
+        ctx.body = { message: 'Hello from Koa + Electron!' };
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/current-show
+    // ----------------------------------------------
+    router.get('/api/current-show', async (ctx) => {
+        ctx.body = getCurrentShowData();
+    });
+
+    // ----------------------------------------------
+    // API: POST /api/player-command
+    // ----------------------------------------------
+    router.post('/api/player-command', async (ctx) => {
+        try {
+            const command = ctx.request.body as EZPlayerCommand;
+            if (!command || !command.command) {
+                ctx.status = 400;
+                ctx.body = { error: 'Invalid command format' };
+                return;
+            }
+            if (playWorker) {
+                playWorker.postMessage({
+                    type: 'frontendcmd',
+                    cmd: command,
+                });
+                ctx.body = { success: true, message: 'Command sent' };
+            } else {
+                ctx.status = 503;
+                ctx.body = { error: 'Playback worker not available' };
+            }
+        } catch (error) {
+            console.error('Error processing player command:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: POST /api/playlists
+    // ----------------------------------------------
+    router.post('/api/playlists', async (ctx) => {
+        try {
+            const playlists = ctx.request.body;
+            if (!Array.isArray(playlists)) {
+                ctx.status = 400;
+                ctx.body = { error: 'Invalid playlists format. Expected array.' };
+                return;
+            }
+            const result = await updatePlaylistsHandler(playlists);
+            ctx.body = { success: true, playlists: result };
+        } catch (error) {
+            console.error('Error processing playlists update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: POST /api/schedules
+    // ----------------------------------------------
+    router.post('/api/schedules', async (ctx) => {
+        try {
+            const schedules = ctx.request.body;
+            if (!Array.isArray(schedules)) {
+                ctx.status = 400;
+                ctx.body = { error: 'Invalid schedules format. Expected array.' };
+                return;
+            }
+            const result = await updateScheduleHandler(schedules);
+            ctx.body = { success: true, schedules: result };
+        } catch (error) {
+            console.error('Error processing schedules update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: POST /api/playback-settings
+    // ----------------------------------------------
+    router.post('/api/playback-settings', async (ctx) => {
+        try {
+            const settings = ctx.request.body;
+            if (!settings || typeof settings !== 'object') {
+                ctx.status = 400;
+                ctx.body = { error: 'Invalid playback settings format. Expected object.' };
+                return;
+            }
+            const { applySettingsFromRenderer } = await import('./data/SettingsStorage.js');
+            const showFolder = getCurrentShowFolder();
+            if (showFolder) {
+                await applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+            }
+            if (playWorker) {
+                playWorker.postMessage({
+                    type: 'settings',
+                    settings,
+                });
+            }
+            mainWindow?.webContents?.send('update:playbacksettings', settings);
+            wsBroadcaster.broadcast('update:playbacksettings', settings);
+
+            ctx.body = { success: true };
+        } catch (error) {
+            console.error('Error processing playback settings update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    webApp.use(router.routes());
+    webApp.use(router.allowedMethods());
 
     // ----------------------------
     // Local mode uses /assets and optional frontend dev-server proxy
@@ -214,134 +359,6 @@ export function setupServer(config: ServerConfig): Server {
         }
         safeSend('update:combinedstatus', snapshot.status ?? {});
     }
-
-    // API routes middleware
-    webApp.use(async (ctx: any, next: () => Promise<any>) => {
-        if (ctx.path.startsWith('/api/')) {
-            switch (ctx.path) {
-                case '/api/hello':
-                    ctx.body = { message: 'Hello from Koa + Electron!' };
-                    return;
-                case '/api/current-show':
-                    ctx.body = getCurrentShowData();
-                    return;
-                case '/api/player-command':
-                    if (ctx.method !== 'POST') {
-                        ctx.status = 405;
-                        ctx.body = { error: 'Method not allowed. Use POST.' };
-                        return;
-                    }
-                    try {
-                        const command = ctx.request.body as EZPlayerCommand;
-                        if (!command || !command.command) {
-                            ctx.status = 400;
-                            ctx.body = { error: 'Invalid command format' };
-                            return;
-                        }
-                        // Send command to the playback worker
-                        if (playWorker) {
-                            playWorker.postMessage({
-                                type: 'frontendcmd',
-                                cmd: command,
-                            });
-                            ctx.body = { success: true, message: 'Command sent' };
-                        } else {
-                            ctx.status = 503;
-                            ctx.body = { error: 'Playback worker not available' };
-                        }
-                    } catch (error) {
-                        console.error('Error processing player command:', error);
-                        ctx.status = 500;
-                        ctx.body = { error: 'Internal server error' };
-                    }
-                    return;
-                case '/api/playlists':
-                    if (ctx.method !== 'POST') {
-                        ctx.status = 405;
-                        ctx.body = { error: 'Method not allowed. Use POST.' };
-                        return;
-                    }
-                    try {
-                        const playlists = ctx.request.body;
-                        if (!Array.isArray(playlists)) {
-                            ctx.status = 400;
-                            ctx.body = { error: 'Invalid playlists format. Expected array.' };
-                            return;
-                        }
-                        const result = await updatePlaylistsHandler(playlists);
-                        ctx.body = { success: true, playlists: result };
-                    } catch (error) {
-                        console.error('Error processing playlists update:', error);
-                        ctx.status = 500;
-                        ctx.body = { error: 'Internal server error' };
-                    }
-                    return;
-                case '/api/schedules':
-                    if (ctx.method !== 'POST') {
-                        ctx.status = 405;
-                        ctx.body = { error: 'Method not allowed. Use POST.' };
-                        return;
-                    }
-                    try {
-                        const schedules = ctx.request.body;
-                        if (!Array.isArray(schedules)) {
-                            ctx.status = 400;
-                            ctx.body = { error: 'Invalid schedules format. Expected array.' };
-                            return;
-                        }
-                        const result = await updateScheduleHandler(schedules);
-                        ctx.body = { success: true, schedules: result };
-                    } catch (error) {
-                        console.error('Error processing schedules update:', error);
-                        ctx.status = 500;
-                        ctx.body = { error: 'Internal server error' };
-                    }
-                    return;
-                case '/api/playback-settings':
-                    if (ctx.method !== 'POST') {
-                        ctx.status = 405;
-                        ctx.body = { error: 'Method not allowed. Use POST.' };
-                        return;
-                    }
-                    try {
-                        const settings = ctx.request.body;
-                        if (!settings || typeof settings !== 'object') {
-                            ctx.status = 400;
-                            ctx.body = { error: 'Invalid playback settings format. Expected object.' };
-                            return;
-                        }
-                        // Import the settings handler
-                        const { applySettingsFromRenderer } = await import('./data/SettingsStorage.js');
-                        const showFolder = getCurrentShowFolder();
-                        if (showFolder) {
-                            await applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
-                        }
-                        // Send settings to playback worker
-                        if (playWorker) {
-                            playWorker.postMessage({
-                                type: 'settings',
-                                settings,
-                            });
-                        }
-                        // Broadcast to Electron renderer and web clients
-                        mainWindow?.webContents?.send('update:playbacksettings', settings);
-                        wsBroadcaster.broadcast('update:playbacksettings', settings);
-
-                        ctx.body = { success: true };
-                    } catch (error) {
-                        console.error('Error processing playback settings update:', error);
-                        ctx.status = 500;
-                        ctx.body = { error: 'Internal server error' };
-                    }
-                    return;
-                default:
-                    ctx.status = 404;
-                    ctx.body = { error: 'API endpoint not found' };
-                    return;
-            }
-        }
-        await next();
-    });
 
     // Show assets route middleware
     // const userImageRoutePrefix = `${USER_IMAGE_ROUTE}/`;

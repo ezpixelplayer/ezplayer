@@ -101,69 +101,30 @@ function toRelative(p: string, base: string): string {
 }
 
 /**
- * Convert an absolute path under the show folder into a public asset URL segment.
- * Returns undefined when the file is not inside the show folder.
+ * Generate public URL for sequence image based on sequence ID
  */
-function toPublicAssetSegment(p: string, base: string): string | undefined {
-    const rel = path.relative(base, p);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
-        return undefined;
-    }
-    return rel.split(path.sep).join('/');
-}
-
-function normalizeRoutePrefix(route: string): string {
-    if (!route) {
-        return '';
-    }
-    const trimmed = route.trim();
-    if (!trimmed) {
-        return '';
-    }
-    const ensured = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-    return ensured.replace(/\/+$/, '');
-}
-
-function buildAssetPublicUrl(route: string, segment: string, baseUrl?: string): string {
-    const normalizedRoute = normalizeRoutePrefix(route) || '/';
-    const normalizedSegment = segment.replace(/^\/+/, '');
-    const relativePath = normalizedSegment ? `${normalizedRoute}/${normalizedSegment}` : normalizedRoute;
-    if (!baseUrl) {
-        return relativePath;
-    }
-    const sanitizedBase = baseUrl.replace(/\/+$/, '');
-    return `${sanitizedBase}${relativePath}`;
-}
-
-function resolveThumbPublicUrl(filePath: string, base: string, assetConfig?: SequenceAssetConfig): string | undefined {
-    if (!filePath) return undefined;
-    const absoluteFile = path.resolve(filePath);
-    const imageRoot = assetConfig?.imageStorageRoot ? path.resolve(assetConfig.imageStorageRoot) : undefined;
-    if (imageRoot) {
-        const segment = toPublicAssetSegment(absoluteFile, imageRoot);
-        if (segment) {
-            const prefix = normalizeRoutePrefix(assetConfig?.imagePublicRoute ?? '/api/getimage') || '/api/getimage';
-            return buildAssetPublicUrl(prefix, segment, assetConfig?.imagePublicBaseUrl);
-        }
-    }
-    const resolvedBase = path.resolve(base);
-    const fallbackSegment = toPublicAssetSegment(absoluteFile, resolvedBase);
-    if (fallbackSegment) {
-        return `/show-assets/${fallbackSegment}`;
-    }
-    return undefined;
-}
-
 function hydrateThumbMetadata(seq: SequenceRecord, base: string, assetConfig?: SequenceAssetConfig) {
-    if (!seq.files) return;
-    const existingPublic = seq.files.thumbPublicUrl;
-    const computedPublic = seq.files.thumb ? resolveThumbPublicUrl(seq.files.thumb, base, assetConfig) : undefined;
-    const publicUrl = computedPublic ?? existingPublic;
-    if (publicUrl) {
-        seq.files.thumbPublicUrl = publicUrl;
-        if (seq.work && (!seq.work.artwork || seq.work.artwork === existingPublic)) {
-            seq.work.artwork = publicUrl;
-        }
+    if (!seq.files || !seq.files.thumb) return;
+
+    // Get sequence ID - use id or instanceId
+    const sequenceId = seq.id || seq.instanceId;
+    if (!sequenceId) return;
+
+    // Sanitize sequence ID for URL
+    const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9-_]/g, '');
+    if (!sanitizedId) return;
+
+    // Generate public URL using sequence ID
+    const routePrefix = assetConfig?.imagePublicRoute ?? '/api/getimage';
+    const baseUrl = assetConfig?.imagePublicBaseUrl;
+    const publicUrl = baseUrl ? `${baseUrl}${routePrefix}/${sanitizedId}` : `${routePrefix}/${sanitizedId}`;
+
+    const previousPublicUrl = seq.files.thumbPublicUrl;
+    seq.files.thumbPublicUrl = publicUrl;
+
+    // Update artwork if it's missing or matches the previous thumbPublicUrl
+    if (seq.work && (!seq.work.artwork || seq.work.artwork === previousPublicUrl) && seq.work.artwork !== publicUrl) {
+        seq.work.artwork = publicUrl;
     }
 }
 

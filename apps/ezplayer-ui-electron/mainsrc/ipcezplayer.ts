@@ -231,25 +231,6 @@ function setSequenceAssetConfig(config?: SequenceAssetConfig) {
     };
 }
 
-function normalizeAssetSegment(p: string, base: string): string | undefined {
-    const rel = path.relative(base, p);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
-        return undefined;
-    }
-    return rel.split(path.sep).join('/');
-}
-
-function buildConfiguredPublicUrl(route: string, segment: string): string {
-    const prefix = route.endsWith('/') ? route.slice(0, -1) : route || '/';
-    const normalizedSegment = segment.replace(/^\/+/, '');
-    const relativePath = normalizedSegment ? `${prefix}/${normalizedSegment}` : prefix;
-    const baseUrl = sequenceAssetsConfig?.imagePublicBaseUrl;
-    if (baseUrl) {
-        return `${baseUrl}${relativePath}`;
-    }
-    return relativePath;
-}
-
 async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: string): Promise<boolean> {
     if (!seq.files) return false;
     let mutated = false;
@@ -267,17 +248,30 @@ async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: 
         return mutated;
     }
 
+    // Get sequence ID - use id or instanceId, fallback to generating one
+    const baseId = seq.id || seq.instanceId;
+    if (!baseId) {
+        console.warn(`Sequence missing ID, cannot save image:`, seq);
+        return mutated;
+    }
+
     const resolvedShowFolder = path.resolve(showFolder);
     const resolvedThumb = path.resolve(seq.files.thumb);
     const configuredStorageRoot = sequenceAssetsConfig?.imageStorageRoot;
     const storageRoot = configuredStorageRoot ?? path.join(resolvedShowFolder, SONG_IMAGE_SUBDIR);
     const resolvedStorageRoot = path.resolve(storageRoot);
-    const publicBase = configuredStorageRoot ? resolvedStorageRoot : resolvedShowFolder;
-    const publicRoutePrefix = sequenceAssetsConfig?.imagePublicRoute ?? '/show-assets';
+    const publicRoutePrefix = sequenceAssetsConfig?.imagePublicRoute ?? '/api/getimage';
     const storageRootWithSep = resolvedStorageRoot + path.sep;
-    const isInsideStorageRoot = resolvedThumb === resolvedStorageRoot || resolvedThumb.startsWith(storageRootWithSep);
 
-    if (!isInsideStorageRoot) {
+    // Determine the file extension from the source image
+    const ext = path.extname(resolvedThumb) || '.png';
+    const sanitizedId = baseId.replace(/[^a-zA-Z0-9-_]/g, '');
+    const assetName = `${sanitizedId}${ext}`;
+    const destinationPath = path.join(resolvedStorageRoot, assetName);
+    const isInsideStorageRoot = resolvedThumb === destinationPath || resolvedThumb.startsWith(storageRootWithSep);
+
+    // If image is not already in the storage root with the correct name, copy it
+    if (!isInsideStorageRoot || path.basename(resolvedThumb) !== assetName) {
         try {
             await fsp.access(resolvedThumb, fs.constants.R_OK);
         } catch (err) {
@@ -285,11 +279,6 @@ async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: 
             return mutated;
         }
         await fsp.mkdir(resolvedStorageRoot, { recursive: true });
-        const ext = path.extname(resolvedThumb) || '.png';
-        const baseId = seq.id || seq.instanceId || randomUUID();
-        const sanitizedId = baseId.replace(/[^a-zA-Z0-9-_]/g, '') || randomUUID();
-        const assetName = `${sanitizedId}-${Date.now()}${ext}`;
-        const destinationPath = path.join(resolvedStorageRoot, assetName);
         await fsp.copyFile(resolvedThumb, destinationPath);
         if (seq.files.thumb !== destinationPath) {
             seq.files.thumb = destinationPath;
@@ -297,29 +286,19 @@ async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: 
         }
     }
 
-    let assetSegment = normalizeAssetSegment(seq.files.thumb, publicBase);
-    if (!assetSegment && publicBase !== resolvedShowFolder) {
-        assetSegment = normalizeAssetSegment(seq.files.thumb, resolvedShowFolder);
-    }
+    // Generate public URL using sequence ID
+    const baseUrl = sequenceAssetsConfig?.imagePublicBaseUrl;
+    const publicUrl = baseUrl ? `${baseUrl}${publicRoutePrefix}/${sanitizedId}` : `${publicRoutePrefix}/${sanitizedId}`;
 
-    if (assetSegment) {
-        const publicUrl = buildConfiguredPublicUrl(publicRoutePrefix, assetSegment);
-        if (seq.files.thumbPublicUrl !== publicUrl) {
-            seq.files.thumbPublicUrl = publicUrl;
-            mutated = true;
-        }
-        if (
-            seq.work &&
-            (!seq.work.artwork || seq.work.artwork === previousPublicUrl) &&
-            seq.work.artwork !== publicUrl
-        ) {
-            seq.work.artwork = publicUrl;
-            mutated = true;
-        }
-    } else if (seq.files.thumbPublicUrl) {
-        delete seq.files.thumbPublicUrl;
+    if (seq.files.thumbPublicUrl !== publicUrl) {
+        seq.files.thumbPublicUrl = publicUrl;
         mutated = true;
     }
+    if (seq.work && (!seq.work.artwork || seq.work.artwork === previousPublicUrl) && seq.work.artwork !== publicUrl) {
+        seq.work.artwork = publicUrl;
+        mutated = true;
+    }
+
     return mutated;
 }
 
