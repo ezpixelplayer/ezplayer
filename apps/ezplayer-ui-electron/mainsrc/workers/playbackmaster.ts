@@ -19,6 +19,7 @@ import type {
     PlaybackActions,
     PlayAction,
     PlaybackLogDetail,
+    PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
     PlayerPStatusContent,
@@ -37,6 +38,7 @@ import {
     readControllersFromXlights,
     ControllerState,
     FrameReference,
+    CacheStats,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -451,7 +453,7 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 16_384_000_000,
+    mp3CacheSpace: 6_500_000_000, // There are issues w/making this bigger
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
@@ -692,15 +694,42 @@ async function processQueue() {
             const curPerfNowTime = curPerfNow - clockBasePN + clockBaseTime; // rtcConverter.computeTime(curPerfNow);
 
             if (curPerfNow - lastStatsUpdate >= 1000 && iteration % 4 === 0) {
+                function toCacheStat(s: CacheStats): PrefetchCacheStats {
+                    return {
+                        totalItems: s.totalItems,
+                        referencedItems: s.referencedItems,
+                        readyItems: s.readyItems,
+                        pendingItems: s.pendingItems,
+                        errorItems: s.erroredItems,
+                        inProgressItems: s.fetchesInProgress,
+
+                        budget: s.totalBudgetLimit,
+                        used: s.prefetchBudgetUsed + s.cacheBudgetUsed,
+
+                        refHitsCumulative: s.refHits,
+                        refMissesCumulative: s.refMisses,
+                        expiredItemsCumulative: s.expiredItems,
+                        evictedItemsCumulative: s.evictedItems,
+
+                        completedRequestsCumulative: s.completedRequests,
+                        erroredRequestsCumulative: s.erroredRequests,
+                    };
+                }
                 const astat = mp3Cache.getStats();
                 playbackStats.audioDecode = {
                     fileReadTimeCumulative: astat.fileReadTimeCumulative,
                     decodeTimeCumulative: astat.decodeTimeCumulative,
                 }
+                playbackStats.audioPrefetch = {decodeCache: toCacheStat(astat.mp3Prefetch)};
                 const fseqStats = fseqCache.getStats();
                 playbackStats.sequenceDecompress = {
                     decompressTimeCumulative: getZstdStats().decompTime,
                     fileReadTimeCumulative: fseqStats.fileReadTimeCumulative,
+                }
+                playbackStats.fseqPrefetch = {
+                    totalMem: fseqStats.totalDecompMem,
+                    headerCache: toCacheStat(fseqStats.headerPrefetch),
+                    chunkCache: toCacheStat(fseqStats.decompPrefetch),
                 }
                 playbackStats.effectsProcessing = {
                     backgroundBlendTimePeriod: playbackStatsAgg.totalMixTime,
@@ -825,6 +854,7 @@ async function processQueue() {
                                 mp3Cache!.prefetchMP3({
                                     mp3file: saf,
                                     needByTime: action.atTime,
+                                    neededThroughTime: action.atTime + (action.durationMS ?? 600000),
                                     expiry: curPerfNowTime + 7 * 24 * 3600_000,
                                 });
                             }

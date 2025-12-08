@@ -309,11 +309,9 @@ export class FSeqPrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        this.headerPrefetchCache.cleanup(this.now, this.now - (ageout ?? 60000));
-        this.headerPrefetchCache.dispatchRequests(this.now);
+        this.headerPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 60000));
 
-        this.decompPrefetchCache.cleanup(this.now, this.now - (ageout ?? 60000));
-        this.decompPrefetchCache.dispatchRequests(this.now);
+        this.decompPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 60000));
     }
 
     now: number;
@@ -359,6 +357,8 @@ export class FSeqPrefetchCache {
 
     resetStats() {
         this.fileReadTimeCumulative = 0;
+        this.headerPrefetchCache.resetStats();
+        this.decompPrefetchCache.resetStats();
     }
     // TODO:
     //   Cache invalidation for updated .fseq files?

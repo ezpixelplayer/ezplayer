@@ -15,6 +15,7 @@ export type {
     PlayerNStatusContent,
     PlayerPStatusContent,
     CombinedPlayerStatus,
+    PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
     EZPlayerCommand,

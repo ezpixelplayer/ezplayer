@@ -12,6 +12,8 @@
 //   (Especially since the passage of time is a factor, and failure to refresh the requests too.)
 //   Also we have plenty of opportunity to do this between frames that are requested.
 
+import { sleepms } from "./Utils";
+
 // Hence, the idea is, at least within the player, to (on each frame or therebouts):
 //   Cancel all old requests
 //   Place new requests
@@ -23,6 +25,7 @@
 
 // Priority comparison, often the deadline that is nearer unless something is higher priority tier
 //   Note for missed deadlines, relative priority can change to irrelevant.
+//   A negative return means a is higher priority than b.
 export type PriorityComparator<P> = (a: P, b: P, now: number) => number;
 export type BudgetPredictor<K> = (key: K) => number; // Predict budget from key (like file space)
 export type BudgetCalculator<K, V> = (key: K, value: V) => number; // Full known budget (like decompressed size)
@@ -181,7 +184,7 @@ export class PrefetchCache<K, V, P> {
     private cache = new Map<string, CacheItem<K, V, P>>();
     private activeFetches = new Set<string>();
 
-    private static clearedCache(): CacheStatCounters {
+    private static clearedStats(): CacheStatCounters {
         return {
             checkHits: 0,
             checkMisses: 0,
@@ -194,10 +197,10 @@ export class PrefetchCache<K, V, P> {
             completedRequests: 0,
             erroredRequests: 0,
             expiredItems: 0,
-            evictedItems: 0
+            evictedItems: 0,
         };
     }
-    private stats: CacheStatCounters = PrefetchCache.clearedCache();
+    private stats: CacheStatCounters = PrefetchCache.clearedStats();
 
     constructor(private options: PrefetchCacheOptions<K, V, P>) {
     }
@@ -230,7 +233,7 @@ export class PrefetchCache<K, V, P> {
                 // existing.error = undefined; // Interesting semantic - error stays but not marked
                 existing.queuedAt = performance.now();
             }
-            // There is no need to recalculate the queue.  This occurs before dispatch.
+            // There is no need to recalculate the queue, as this occurs before dispatch.
         } else {
             // Create new cache item
             const item: CacheItem<K, V, P> = {
@@ -249,9 +252,9 @@ export class PrefetchCache<K, V, P> {
 
             this.cache.set(id, item);
 
-            // There is no need to recalculate the queue.  This occurs before dispatch
+            // There is no need to recalculate the queue, as this occurs before dispatch.
         }
-        // There is no need to process any items now.  Once the batch is done, it must be rerun.
+        // There is no need to process any items now.  Once the batch is done, the highet priorities are calculated to run.
     }
 
     /**
@@ -325,12 +328,17 @@ export class PrefetchCache<K, V, P> {
         const item = this.cache.get(kid);
 
         if (!item) {
+            ++this.stats.refMisses;
             return undefined;
         }
         if (item.error) {
+            ++this.stats.refHits;
             return {err: item.error}; // May not be it, but can't hurt to check
         }
-        if (!item.value) return {};
+        if (!item.value) {
+            ++this.stats.refMisses;
+            return {};
+        }
 
         ++this.stats.refHits;
         this.addRefInternal(item, now);
@@ -364,6 +372,13 @@ export class PrefetchCache<K, V, P> {
             prefetchBudgetUsed: bstat.estcost,
             cacheBudgetUsed: bstat.valcost,
         };
+    }
+
+    /**
+     * Reset the stats
+     */
+    resetStats() {
+        this.stats = PrefetchCache.clearedStats();
     }
 
     /**
@@ -405,133 +420,88 @@ export class PrefetchCache<K, V, P> {
      *   Calculates budgets and total (including all prefetch)
      *   Discards down to budget (keeping room for prefetches)
      *   Discards far future prefetch requests if not room for all
+     *   Dispatches the things that we want
      */
-    cleanup(now: number, notRequestedAfter: number): void {
-        const toRemove: K[] = [];
+    cleanupAndDispatchRequests(now: number, notRequestedAfter: number): void {
+        /*
+         * This is a blend of prefetch and LRU behavior.
+         * Sort order:
+         *   Things that must be kept first
+         *   Things (populated or not) that are coming sooner / used recently next
+         *   Things that are expired last
+         */
+        interface PSortable {
+            item: CacheItem<K, V, P>;
+            mustBeKept: boolean; // true if fetching or pinned
+            expired: boolean;
+        };
 
+        const toSort: PSortable[] = [];
         for (const [key, item] of this.cache.entries()) {
             // Don't expire referenced items or active fetches
             if (item.refCount > 0 || this.activeFetches.has(key)) {
+                toSort.push({item, mustBeKept: true, expired: false});
                 continue;
             }
 
-            // Expire if not requested recently
-            if (item.lastPrefetchedAt < notRequestedAfter) {
-                toRemove.push(item.key);
+            // Expire if not requested recently or aged out
+            if ((item.lastPrefetchedAt < notRequestedAfter && item.lastAccessedAt < notRequestedAfter) || item.expiry < now) {
+                toSort.push({item, mustBeKept: false, expired: true});
                 continue;
             }
 
-            // Expire if not useful in the future
-            if (item.expiry < now) {
-                toRemove.push(item.key);
+            // Generic item
+            toSort.push({item, mustBeKept: false, expired: false});
+        }
+
+        //  Sort
+        toSort.sort((a, b) => {
+            if (a.mustBeKept && !b.mustBeKept) return -1;
+            if (b.mustBeKept && !a.mustBeKept) return 1;
+            if (a.expired && !b.expired) return 1;
+            if (b.expired && !a.expired) return -1;
+            return this.options.priorityComparator(a.item.priority, b.item.priority, now);
+        });
+
+        let cumulativeCost: number = 0;
+        for (const si of toSort) {
+            if (si.expired && !si.mustBeKept) {
+                this.removeItem(si.item.key);
+                this.stats.expiredItems++;
                 continue;
             }
-        }
 
-        for (const key of toRemove) {
-            this.removeItem(key);
-            this.stats.expiredItems++;
-        }
+            const item = si.item;
+            const id = this.options.keyToId(item.key);
 
-        // Also run LRU eviction
-        this.evictLRU(now);
-    }
-
-    /**
-     * Initiate any fetches
-     * User must call this after a batch of new information is loaded.
-     */
-    dispatchRequests(now: number) {
-        // For this, we build 
-        const maxConcurrency: number = this.options.maxConcurrency;
-        if (this.activeFetches.size >= maxConcurrency) return;
-
-        // Create the pending queue
-        const pendingQueue: Array<{ key: K; priority: P }> = [];
-        for (const [_k, item] of this.cache) {
-            if (item.state === 'queued' && item.expiry > now) {
-                pendingQueue.push({ key: item.key, priority: item.priority });
+            // TODO: Tally against budget and do any evictions
+            if (item.state === 'queued' || item.state === 'fetching') {
+                cumulativeCost += item.estCost;
             }
-        }
-        pendingQueue.sort((a, b) =>
-            this.options.priorityComparator(a.priority, b.priority, now)
-        );
-
-        while (
-            this.activeFetches.size < maxConcurrency &&
-            pendingQueue.length > 0
-        ) {
-            const { key } = pendingQueue.shift()!;
-
-            const id = this.options.keyToId(key);
-            if (this.activeFetches.has(id)) continue;
-
-            const item = this.cache.get(id);
-            if (!item || item.state !== 'queued') continue;
-
-            this.activeFetches.add(id);
-            item.state = 'fetching';
-            item.fetchingSince = performance.now();
-            const ac = new AbortController();
-            item.abort = ac;
-
-            this.fetchItem(item);
-        }
-    }
-
-    private async evictLRU(now: number): Promise<void> {
-        const curUsage = this.currentGaugeStats();
-        if (curUsage.totalcost < this.options.budgetLimit) return;
-
-        // There is a tension here between "LRU" and "Going To Use"
-        //  Going to use far in the future - we won't do it.  Make it something requested again.
-        //    Use priority
-        //  Hasn't been used in a while, toss it.
-        //  Initial heuristic is divide cache in half
-
-        // Create array of evictable items (not referenced, completed)
-        const lruEvictable: Array<CacheItem<K, V, P>> = [];
-        const prefetchEvictable: Array<CacheItem<K, V, P>> = [];
-
-        for (const [_key, item] of this.cache.entries()) {
-            if (
-                item.refCount === 0 &&
-                (item.state === 'ready' || item.state === 'error')
-            ) {
-                lruEvictable.push(item);
+            if (item.state === 'ready') {
+                cumulativeCost += item.actualCost;
             }
-            else if (item.state === 'queued' && !this.activeFetches.has(this.options.keyToId(item.key))) {
-                prefetchEvictable.push(item);
+
+            if (cumulativeCost > this.options.budgetLimit && !si.mustBeKept) {
+                // Kick it out
+                if (item.state === 'error' || item.state === 'ready') {
+                    this.removeItem(item.key);
+                    this.stats.evictedItems++;
+                }
+                continue;
             }
-        }
 
-        // Sort by last requested time (LRU first)
-        lruEvictable.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
-        // Sort by priority (low first)
-        prefetchEvictable.sort((a, b) =>
-            -this.options.priorityComparator(a.priority, b.priority, now)
-        );
-
-        // First cut
-        for (let i=0; i<lruEvictable.length; ++i) {
-            if (curUsage.valcost <= this.options.budgetLimit / 2) break;
-            const {key} = lruEvictable[i];
-            const item = this.cache.get(this.options.keyToId(key));
-            if (item) {
-                curUsage.valcost -= item.actualCost;
-                this.removeItem(key);
-                this.stats.evictedItems++;
-            }
-        }
-
-        for (let i=0; i<prefetchEvictable.length; ++i) {
-            if (curUsage.estcost < this.options.budgetLimit / 2) break;
-            const {key} = prefetchEvictable[i];
-            const item = this.cache.get(this.options.keyToId(key));
-            if (item) {
-                curUsage.estcost -= item.estCost;
-                this.removeItem(key);
-                this.stats.evictedItems++;
+            // Prefetch candidate
+            if (si.item.state === 'queued' &&
+                this.activeFetches.size < this.options.maxConcurrency &&
+                !this.activeFetches.has(id))
+            {
+                this.activeFetches.add(id);
+                si.item.state = 'fetching';
+                si.item.fetchingSince = performance.now();
+                const ac = new AbortController();
+                si.item.abort = ac;
+                this.fetchItem(si.item);
             }
         }
     }
@@ -624,9 +594,34 @@ export class PrefetchCache<K, V, P> {
 
         this.cache.delete(id);
     }
+
+    // Test / shutdown
+    async finishFetches() {
+        while (this.activeFetches.size) {
+            await sleepms(0);
+        }
+    }
 }
 
 export interface NeededTimePriority {
     neededTime: number;
+    neededThroughTime?: number;
 }
-export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, _now: number)=>a.neededTime-b.neededTime;
+export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, timeOfIrrelevance: number)=>{
+    const nta = a.neededThroughTime ?? a.neededTime;
+    const ntb = b.neededThroughTime ?? b.neededTime;
+    if (nta >= timeOfIrrelevance && ntb >= timeOfIrrelevance) {
+        // Sooner need is higher priority
+        return a.neededTime-b.neededTime;
+    }
+    if (nta >= timeOfIrrelevance && ntb < timeOfIrrelevance) {
+        // Actual need is higher priority
+        return -1;
+    }
+    if (ntb >= timeOfIrrelevance && nta < timeOfIrrelevance) {
+        // Actual need is higher priority
+        return 1;
+    }
+    // LRU
+    return ntb - nta;
+}

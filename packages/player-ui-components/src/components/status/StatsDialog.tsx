@@ -233,6 +233,112 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                             </Card>
                         </Grid>
 
+                        {/* Audio Cache */}
+                        <Grid item xs={12} md={6}>
+                            <Card>
+                                <CardContent>
+                                    <Typography
+                                        variant="h6"
+                                        fontWeight="bold"
+                                        color={theme.palette.primary.main}
+                                        gutterBottom
+                                    >
+                                        Audio Prefetch
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Cache Budget:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.budget)} budget; {formatValue(stats.audioPrefetch?.decodeCache?.used)} used
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Fetches:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.completedRequestsCumulative)} fetches; {formatValue(stats.audioPrefetch?.decodeCache?.erroredRequestsCumulative)} errored
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Hits/Misses:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.refHitsCumulative)} hits; {formatValue(stats.audioPrefetch?.decodeCache?.refMissesCumulative)} misses
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Evictions/Expirations:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.evictedItemsCumulative)} evicted; {formatValue(stats.audioPrefetch?.decodeCache?.expiredItemsCumulative)} expired
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Occupancy:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.totalItems)} items;{' '}{formatValue(stats.audioPrefetch?.decodeCache?.referencedItems)} referenced;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.readyItems)} ready;{' '}{formatValue(stats.audioPrefetch?.decodeCache?.pendingItems)} pending;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.inProgressItems)} loading;{' '}{formatValue(stats.audioPrefetch?.decodeCache?.errorItems)} errored
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+
+                        {/* FSeq Cache */}
+                        <Grid item xs={12} md={6}>
+                            <Card>
+                                <CardContent>
+                                    <Typography
+                                        variant="h6"
+                                        fontWeight="bold"
+                                        color={theme.palette.primary.main}
+                                        gutterBottom
+                                    >
+                                        FSEQ Data Prefetch
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Memory Footprint:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.fseqPrefetch?.totalMem)} used
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Cache Budget:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.budget)} budget; {formatValue(stats.fseqPrefetch?.chunkCache?.used)} used
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Fetches:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.completedRequestsCumulative)} fetches; {formatValue(stats.fseqPrefetch?.chunkCache?.erroredRequestsCumulative)} errored
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Hits/Misses:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.refHitsCumulative)} hits; {formatValue(stats.fseqPrefetch?.chunkCache?.refMissesCumulative)} misses
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Evictions/Expirations:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.evictedItemsCumulative)} evicted; {formatValue(stats.fseqPrefetch?.chunkCache?.expiredItemsCumulative)} expired
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Occupancy:</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.totalItems)} items;{' '}{formatValue(stats.fseqPrefetch?.chunkCache?.referencedItems)} referenced;{' '} 
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.readyItems)} ready;{' '}{formatValue(stats.fseqPrefetch?.chunkCache?.pendingItems)} pending;{' '}
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.inProgressItems)} loading;{' '}{formatValue(stats.fseqPrefetch?.chunkCache?.errorItems)} errored
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+
                         {/* Error Information */}
                         {stats.lastError && (
                             <Grid item xs={12}>
