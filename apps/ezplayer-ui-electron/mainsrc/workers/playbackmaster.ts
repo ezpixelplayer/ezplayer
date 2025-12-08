@@ -683,26 +683,27 @@ async function processQueue() {
 
     let iteration = -1;
 
-    // OK - all the clocks are sync to perf.now.  But we can skew to that.
-    const clockBasePN = Math.ceil(performance.now());
-    const clockBaseTime = Math.ceil(rtcConverter.computeTime(clockBasePN));
+    // We have a conceptual real time that we follow; this typically follows RTC.
+    //  But we use perf.now() to get times because it is higher resolution
     // The schedule time is kept in the player run states
-    // These should really be base times / detect when the song changes...
-    let targetFramePN = clockBasePN;
-    let lastStatsUpdate = clockBasePN;
-    let lastPStatusUpdate = clockBasePN;
-    let lastNStatusUpdate = clockBasePN;
-    let lastRFUpdate = clockBasePN;
+    const initialPN = performance.now();
+    const initialRTC = rtcConverter.computeTime(initialPN);
+
+    let targetFrameRTC = initialRTC;
+
+    let lastStatsUpdatePN = initialPN;
+    let lastPStatusUpdatePN = initialPN;
+    let lastNStatusUpdatePN = initialPN;
+    let lastRFUpdatePN = initialPN;
 
     try
     {
         while (true) {
             ++iteration;
 
-            const curPerfNow = performance.now();
-            const curPerfNowTime = curPerfNow - clockBasePN + clockBaseTime; // rtcConverter.computeTime(curPerfNow);
+            const curPN = performance.now();
 
-            if (curPerfNow - lastStatsUpdate >= 1000 && iteration % 4 === 0) {
+            if (curPN - lastStatsUpdatePN >= 1000 && iteration % 4 === 0) {
                 function toCacheStat(s: CacheStats): PrefetchCacheStats {
                     return {
                         totalItems: s.totalItems,
@@ -744,40 +745,41 @@ async function processQueue() {
                     backgroundBlendTimePeriod: playbackStatsAgg.totalMixTime,
                 }
                 send({ type: 'stats', stats: playbackStats });
-                lastStatsUpdate += 1000 * Math.floor((curPerfNow - lastStatsUpdate) / 1000);
+                lastStatsUpdatePN += 1000 * Math.floor((curPN- lastStatsUpdatePN) / 1000);
             }
-            if (curPerfNow - lastPStatusUpdate >= 1000 && iteration % 4 === 1) {
+            if (curPN - lastPStatusUpdatePN >= 1000 && iteration % 4 === 1) {
                 playbackStats.iteration = iteration;
                 playbackStats.avgSendTime = avgFrameSendTime(playbackStatsAgg);
-                playbackStats.measurementPeriod = curPerfNow - playbackStatsAgg.intervalStart;
+                playbackStats.measurementPeriod = curPN - playbackStatsAgg.intervalStart;
                 playbackStats.idleTimePeriod = playbackStatsAgg.totalIdleTime;
                 playbackStats.sendTimePeriod = playbackStatsAgg.totalSendTime;
                 sendPlayerStateUpdate();
                 playbackStats.maxSendTimeHistorical = 0;
-                resetFrameSendStats(playbackStatsAgg, curPerfNow);
-                lastPStatusUpdate += 1000 * Math.floor((curPerfNow - lastPStatusUpdate) / 1000);
+                resetFrameSendStats(playbackStatsAgg, curPN);
+                lastPStatusUpdatePN += 1000 * Math.floor((curPN - lastPStatusUpdatePN) / 1000);
             }
-            if (curPerfNow - lastNStatusUpdate >= 1000 && iteration % 4 === 2) {
+            if (curPN - lastNStatusUpdatePN >= 1000 && iteration % 4 === 2) {
                 sendControllerStateUpdate();
-                lastNStatusUpdate += 1000 * Math.floor((curPerfNow - lastNStatusUpdate) / 1000);
+                lastNStatusUpdatePN += 1000 * Math.floor((curPN - lastNStatusUpdatePN) / 1000);
             }
             if (iteration %4 === 3) {
                 doVolumeAdjust(Date.now());
-                if (curPerfNow - lastRFUpdate >= 1000) {
+                if (curPN - lastRFUpdatePN >= 1000) {
                     sendRemoteUpdate();
-                    lastRFUpdate += 1000 * Math.floor((curPerfNow - lastRFUpdate) / 1000);
+                    lastRFUpdatePN += 1000 * Math.floor((curPN - lastRFUpdatePN) / 1000);
                 }
             }
 
             // See if a schedule update has been passed in.  If so, do something.
             if (installNewSchedule()) {
                 emitInfo(`New schedule installed`);
-                const preserveAudioTime = audioPlayerRunState?.currentTime || curPerfNowTime;
-                const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || curPerfNowTime;
-                const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || curPerfNowTime;
-                foregroundPlayerRunState = new PlayerRunState(curPerfNowTime);
-                audioPlayerRunState = new PlayerRunState(curPerfNowTime);
-                backgroundPlayerRunState = new PlayerRunState(curPerfNowTime);
+                const initializeTime = rtcConverter.computeTime(curPN); // MoC - Review
+                const preserveAudioTime = audioPlayerRunState?.currentTime || initializeTime;
+                const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || initializeTime;
+                const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
+                foregroundPlayerRunState = new PlayerRunState(initializeTime);
+                audioPlayerRunState = new PlayerRunState(initializeTime);
+                backgroundPlayerRunState = new PlayerRunState(initializeTime);
                 const errs: string[] = [];
                 foregroundPlayerRunState.setUpSequences(
                     curSequences ?? [],
@@ -798,19 +800,19 @@ async function processQueue() {
                     errs,
                 );
                 foregroundPlayerRunState.addTimeRangeToSchedule(
-                    curPerfNowTime,
-                    curPerfNowTime + playbackParams.scheduleLoadTime,
+                    initializeTime,
+                    initializeTime + playbackParams.scheduleLoadTime,
                 );
                 audioPlayerRunState.addTimeRangeToSchedule(
-                    curPerfNowTime,
-                    curPerfNowTime + playbackParams.scheduleLoadTime,
+                    initializeTime,
+                    initializeTime + playbackParams.scheduleLoadTime,
                 );
                 backgroundPlayerRunState.addTimeRangeToSchedule(
-                    curPerfNowTime,
-                    curPerfNowTime + playbackParams.scheduleLoadTime,
+                    initializeTime,
+                    initializeTime + playbackParams.scheduleLoadTime,
                 );
 
-                lastPRSSchedUpdate = curPerfNowTime + playbackParams.scheduleLoadTime;
+                lastPRSSchedUpdate = initializeTime + playbackParams.scheduleLoadTime;
                 if (errs.length) {
                     emitError(`New schedule install errors: ${errs.join('\n')}`);
                 }
@@ -824,20 +826,20 @@ async function processQueue() {
             }
 
             // Make sure we see a day in advance
-            if (lastPRSSchedUpdate < curPerfNowTime + (playbackParams.scheduleLoadTime * 24) / 25) {
+            if (lastPRSSchedUpdate < targetFrameRTC + (playbackParams.scheduleLoadTime * 24) / 25) {
                 foregroundPlayerRunState.addTimeRangeToSchedule(
                     lastPRSSchedUpdate,
-                    curPerfNowTime + playbackParams.scheduleLoadTime,
+                    targetFrameRTC + playbackParams.scheduleLoadTime,
                 );
                 audioPlayerRunState.addTimeRangeToSchedule(
                     lastPRSSchedUpdate,
-                    curPerfNowTime + playbackParams.scheduleLoadTime,
+                    targetFrameRTC + playbackParams.scheduleLoadTime,
                 );
                 backgroundPlayerRunState.addTimeRangeToSchedule(
                     lastPRSSchedUpdate,
-                    curPerfNowTime + playbackParams.scheduleLoadTime,
+                    targetFrameRTC + playbackParams.scheduleLoadTime,
                 );
-                lastPRSSchedUpdate = curPerfNowTime + playbackParams.scheduleLoadTime;
+                lastPRSSchedUpdate = targetFrameRTC + playbackParams.scheduleLoadTime;
             }
 
             // TODO: Divvy up the tasks so they are not all on each iteration: music, fseq, bg, status update to FE
@@ -850,7 +852,7 @@ async function processQueue() {
                     if (!actions) return;
 
                     for (const action of actions?.actions ?? []) {
-                        if (action.atTime > curPerfNowTime + playbackParams.audioPrefetchTime) break;
+                        if (action.atTime > targetFrameRTC + playbackParams.audioPrefetchTime) break;
                         if (action.end) continue;
 
                         if (action.seqId) {
@@ -864,7 +866,7 @@ async function processQueue() {
                                     mp3file: saf,
                                     needByTime: action.atTime,
                                     neededThroughTime: action.atTime + (action.durationMS ?? 600000),
-                                    expiry: curPerfNowTime + 7 * 24 * 3600_000,
+                                    expiry: targetFrameRTC + 7 * 24 * 3600_000,
                                 });
                             }
                         }
@@ -877,7 +879,7 @@ async function processQueue() {
                     playbackParams.maxAudioPrefetchItems,
                 );
 
-                mp3Cache.setNow(curPerfNowTime);
+                mp3Cache.setNow(targetFrameRTC);
                 prefetchActionMedia(upcomingAudio.curPLActions);
                 upcomingAudio.stackedPLActions?.forEach((s) => prefetchActionMedia(s));
                 upcomingAudio.upcomingSchedules?.forEach((s) => prefetchActionMedia(s));
@@ -915,14 +917,14 @@ async function processQueue() {
                         }
 
                         // Be less aggressive about fetching the frames
-                        if (actStart >= curPerfNowTime + playbackParams.foregroundFseqPrefetchTime) continue;
-                        let ourDur = curPerfNowTime + playbackParams.foregroundFseqPrefetchTime - actStart;
+                        if (actStart >= targetFrameRTC + playbackParams.foregroundFseqPrefetchTime) continue;
+                        let ourDur = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime - actStart;
                         if (action.durationMS !== undefined) ourDur = Math.min(ourDur, action.durationMS);
                         if (action.seqId) {
                             emitFrameDebug(`Do fseq prefetch of ${action.seqId}`);
                             if (fsf) {
                                 emitFrameDebug(
-                                    `Prefetch FSEQ ${fsf} @${action.offsetMS}:${ourDur}ms (${actStart} vs ${curPerfNowTime})`,
+                                    `Prefetch FSEQ ${fsf} @${action.offsetMS}:${ourDur}ms (${actStart} vs ${targetFrameRTC})`,
                                 );
                                 fseqCache!.prefetchSeqTimes({
                                     fseqfile: fsf,
@@ -935,7 +937,7 @@ async function processQueue() {
                     }
                 }
 
-                fseqCache.setNow(curPerfNowTime);
+                fseqCache.setNow(targetFrameRTC);
                 prefetchActionFseq(foregroundPlayerRunState, upcomingForeground.curPLActions);
                 upcomingForeground.stackedPLActions?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
                 upcomingForeground.upcomingSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
@@ -955,10 +957,10 @@ async function processQueue() {
 
             // Send out audio in advance
             emitAudioDebug(
-                `Send audio time: ${audioPlayerRunState.currentTime} vs ${curPerfNowTime + playbackParams.sendAudioInAdvanceMs}`,
+                `Send audio time: ${audioPlayerRunState.currentTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
             );
             let aiter = 0;
-            while (audioPlayerRunState.currentTime <= curPerfNowTime + playbackParams.sendAudioInAdvanceMs) {
+            while (audioPlayerRunState.currentTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs) {
                 ++aiter;
                 if (aiter > 100) {
                     emitError(`Way too many audio iterations!`);
@@ -975,7 +977,7 @@ async function processQueue() {
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    audioPlayerRunState.runUntil(Math.max(audioPlayerRunState.currentTime, curPerfNowTime));
+                    audioPlayerRunState.runUntil(Math.max(audioPlayerRunState.currentTime, targetFrameRTC));
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
@@ -1022,7 +1024,7 @@ async function processQueue() {
 
                             const playAtRealTime = Math.floor(audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0));
 
-                            if (audioPlayerRunState.currentTime >= curPerfNowTime) {
+                            if (audioPlayerRunState.currentTime >= targetFrameRTC) {
                                 send(
                                     {
                                         type: 'audioChunk',
@@ -1059,13 +1061,13 @@ async function processQueue() {
 
             while (true) {
                 const plog: PlaybackLogDetail[] = [];
-                foregroundPlayerRunState.runUntil(targetFramePN - clockBasePN + clockBaseTime, 1, plog);
+                foregroundPlayerRunState.runUntil(targetFrameRTC, 1, plog);
                 let foundTime = plog.length === 0;
                 for (const l of plog) {
                     if (l.eventType === 'Sequence Ended') {
                         // TODO - Could reset clock base here.
                     } else if (l.eventType === 'Sequence Started') {
-                        targetFramePN = foregroundPlayerRunState.currentTime - clockBaseTime + clockBasePN;
+                        targetFrameRTC = foregroundPlayerRunState.currentTime;
                         foundTime = true;
                         break;
                     }
@@ -1087,8 +1089,8 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                await sender.sendBlackFrame({targetFramePN});
-                targetFramePN += playbackParams.idleSleepInterval;
+                await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
+                targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
             }
@@ -1096,9 +1098,9 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 if (!isPaused) {
-                    await sender.sendBlackFrame({targetFramePN});
+                    await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 }
-                targetFramePN += playbackParams.idleSleepInterval;
+                targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
             }
@@ -1109,7 +1111,7 @@ async function processQueue() {
             if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
             if (!fsf) {
                 emitError(`Error: No FSEQ in scheduled item`);
-                targetFramePN += playbackParams.idleSleepInterval;
+                targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
             }
@@ -1119,7 +1121,7 @@ async function processQueue() {
             if (!header?.ref) {
                 emitError(`Sequence header for ${fsf} was not ready.`);
                 ++playbackStats.missedHeadersCumulative;
-                targetFramePN += playbackParams.idleSleepInterval;
+                targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
             }
@@ -1161,10 +1163,10 @@ async function processQueue() {
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
-            targetFramePN = await sender.sendNextFrameAt({
+            targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
                 bframe: bframeRef,
-                targetFramePN,
+                targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
                 targetFrameNum,
                 playbackStats,
                 playbackStatsAgg,

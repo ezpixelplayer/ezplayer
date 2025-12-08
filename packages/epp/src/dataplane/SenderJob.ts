@@ -104,7 +104,7 @@ export class SendJobState {
         for (const s of this.states) {
             s.reset();
             const frameTime = job.senders[i].sender?.minFrameTime() ?? 0;
-            if (sendTime < s.lastSendTime + frameTime) {
+            if (sendTime < s.lastSendTime + frameTime - .1) {
                 s.skippingThisFrame = true;
                 ++skipsDueToReq;
             }
