@@ -1,6 +1,5 @@
 import type {
     AudioDevice,
-    AudioTimeSyncM2R,
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
@@ -89,34 +88,54 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
                         }) satisfies AudioDevice,
                 );
         });
-        window.electronAPI!.ipcGetAudioSyncTime((_mSync: AudioTimeSyncM2R) => {
-            const act = this.audioCtx?.currentTime;
-
-            return {
-                audioCtxTime: act !== undefined ? act * 1000 : -1, // TODO should we send this at all?
-                perfNowTime: performance.now(),
-                incarnation: this.audioCtxIncarnation,
-                latency: this.audioCtx?.outputLatency ?? this.audioCtx?.baseLatency,
-            };
-        });
-        window.electronAPI!.onAudioChunk(({ sampleRate, channels, startTime, buffer, incarnation }) => {
-            if (!this.audioCtx || incarnation !== this.audioCtxIncarnation) return;
+        window.electronAPI!.onAudioChunk(({ incarnation, playAtRealTime, sampleRate, channels, buffer }) => {
+            if (!this.audioCtx) return;
 
             const floatArray = new Float32Array(buffer);
             const numSamples = floatArray.length / channels;
-            const audioBuffer = this.audioCtx.createBuffer(channels, numSamples, sampleRate);
+            const audioLenMs = 1000*numSamples/sampleRate;
+            const dn = Math.round(Date.now());
+            const act = Math.round(this.audioCtx.currentTime * 1000);
 
+            let startTime: number | undefined = undefined;
+            // See if this is a fresh song or otherwise no history
+            if (incarnation !== this.audioCleanBreakInterval || playAtRealTime !== this.audioPlayAtNextRealTime) {
+                console.log(`Starting new song/audio segment`);
+                this.audioCleanBreakInterval = incarnation;
+                this.audioPlayAtNextRealTime = playAtRealTime;
+                startTime = act + (playAtRealTime - dn);
+                this.audioPlayAtNextACT = startTime;
+            }
+            else {
+                startTime = this.audioPlayAtNextACT;
+            }
+
+            // See if this is wildly off ... who knows why, maybe we ought to tally it
+            if (Math.abs(startTime! - (act + (playAtRealTime - dn))) > 50) {
+                console.log(`Start time way off: ${startTime} vs ${(act + (playAtRealTime - dn))}`);
+                startTime = act + (playAtRealTime - dn);
+                this.audioPlayAtNextRealTime = playAtRealTime;
+                this.audioPlayAtNextACT = startTime;
+            }
+
+            this.audioPlayAtNextRealTime += audioLenMs;
+            this.audioPlayAtNextACT = startTime!+audioLenMs;
+
+            if (playAtRealTime < dn) return; // Too late TODO STAT
+
+            // deinterleave
+            const audioBuffer = this.audioCtx.createBuffer(channels, numSamples, sampleRate);
             for (let ch = 0; ch < channels; ch++) {
                 const channelData = audioBuffer.getChannelData(ch);
                 for (let i = 0; i < numSamples; i++) {
-                    channelData[i] = floatArray[i * channels + ch]; // deinterleave
+                    channelData[i] = floatArray[i * channels + ch];
                 }
             }
 
             const source = this.audioCtx.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(this.audioCtx.destination);
-            source.start(startTime / 1000);
+            source.start(startTime! / 1000);
         });
         window.electronAPI!.onStatsUpdated((data: PlaybackStatistics) => {
             if (this.dispatch) {
@@ -196,7 +215,10 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         await window.electronAPI!.connect();
         this.audioCtx = new AudioContext();
         ++this.audioCtxIncarnation;
-        this.heartbeater = setInterval(() => this.sendAudioTimeHeartbeat(), 100);
+        this.audioCleanBreakInterval = undefined;
+        this.audioPlayAtNextRealTime = undefined;
+        this.audioPlayAtNextACT = undefined;
+        this.heartbeater = setInterval(() => this.compareAudioAndRealTimes(), 1000);
     }
 
     override async disconnect(): Promise<void> {
@@ -209,21 +231,19 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
 
     audioCtx?: AudioContext;
     audioCtxIncarnation: number = 1;
+    // Keeps track of whether audio should be played contiguously with the previous chunk
+    //  (vs having a fresh start time calculated)
+    // If audioCleanBreak interval changes, we've switched songs, fine to recalibrate.
+    //  Otherwise, if audioPlayAtNextRealTime == the time of the chunk, play exactly at
+    //  audioPlayAtNextCT
+    audioCleanBreakInterval: number | undefined = undefined;
+    audioPlayAtNextRealTime: number | undefined = undefined;
+    audioPlayAtNextACT: number | undefined = undefined;
     heartbeater?: NodeJS.Timeout;
-    async sendAudioTimeHeartbeat() {
-        const pn1 = performance.now();
-        const theirTime = await window.electronAPI!.getMainSyncTime();
-        const pn2 = performance.now();
-        if (pn2 - pn1 > 2) return; // Invalid sample...
-
-        const act = this.audioCtx?.currentTime;
-
-        await window.electronAPI!.sendAudioSyncTime({
-            audioCtxTime: act !== undefined ? act * 1000 : -1, // TODO should we send this at all?
-            perfNowTime: theirTime.perfNowTime + (pn2 - pn1) / 2,
-            incarnation: this.audioCtx ? this.audioCtxIncarnation : -1,
-            latency: this.audioCtx?.outputLatency ?? this.audioCtx?.baseLatency,
-        });
+    async compareAudioAndRealTimes() {
+        // TODO something with this data to estimate clock drift
+        // const pn1 = performance.now();
+        // const act = this.audioCtx?.currentTime;
     }
 
     /*
