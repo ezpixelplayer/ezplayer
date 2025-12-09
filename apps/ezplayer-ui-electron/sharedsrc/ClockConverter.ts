@@ -90,8 +90,13 @@ export class ClockConverter {
         }
     }
 
-    computeTime(pn?: number) {
+    computeTime(pn: number) {
         if (this.perfNowBase < 0) return this.timeSampler.ctBase;
-        return ((pn ?? performance.now()) - this.perfNowBase) * this.computedClockRate + this.computedClockBase;
+        return (pn - this.perfNowBase) * this.computedClockRate + this.computedClockBase;
+    }
+
+    computePerfNow(dn: number) {
+        return this.perfNowBase +
+            (dn - this.computedClockBase) / (this.computedClockRate || 1);
     }
 }
