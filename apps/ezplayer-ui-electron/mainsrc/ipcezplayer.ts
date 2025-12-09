@@ -43,17 +43,15 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
 
-import type { AudioTimeSyncM2R, AudioTimeSyncR2M, EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import {
     PlayerCommand,
     type MainRPCAPI,
     type PlayWorkerRPCAPI,
     WorkerToMainMessage,
-    AudioTimeSyncWorker,
 } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
-import { ClockConverter } from '../sharedsrc/ClockConverter.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 import { wsBroadcaster } from './websocket-broadcaster.js';
 
@@ -189,10 +187,6 @@ export async function loadShowFolder() {
     scheduleUpdated();
 }
 
-const audioConverter = new ClockConverter('audio', 0, performance.now());
-let lastAudioLatency: number = 10;
-let rtConverter: ClockConverter | undefined = undefined;
-
 const SONG_IMAGE_SUBDIR = path.join('assets', 'song-images');
 const DEFAULT_USER_IMAGE_ROUTE = '/api/getimage';
 
@@ -307,30 +301,18 @@ const handlers: MainRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
-    timesync: () => {
-        const pn = performance.now();
-        return {
-            realTime: rtConverter ? rtConverter.computeTime(pn) : undefined,
-            perfNowTime: performance.now(),
-            audioCtxIncarnation: audioConverter.curIncarnation,
-            audioCtxTime: audioConverter.computeTime(),
-            latency: lastAudioLatency,
-        } satisfies AudioTimeSyncWorker;
-    },
 };
 
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
 export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
-    realTimeClock: ClockConverter,
     nPlayWorker: Worker,
     options?: {
         sequenceAssets?: SequenceAssetConfig;
     },
 ) {
     updateWindow = mainWindow;
-    rtConverter = realTimeClock;
     playWorker = nPlayWorker;
     setSequenceAssetConfig(options?.sequenceAssets);
 
@@ -458,15 +440,6 @@ export async function registerContentHandlers(
         updateWindow?.webContents?.send('update:playbacksettings', settings);
         wsBroadcaster.broadcast('update:playbacksettings', settings);
         return true;
-    });
-    ipcMain.handle('audio:syncr2m', (_event, data: AudioTimeSyncR2M): void => {
-        audioConverter.setTime(data.audioCtxTime, data.perfNowTime, data.incarnation);
-    });
-    ipcMain.handle('audio:getm2r', (_event): AudioTimeSyncM2R => {
-        return {
-            perfNowTime: performance.now(),
-            realTime: Date.now(),
-        };
     });
 
     /// Connection from player worker thread

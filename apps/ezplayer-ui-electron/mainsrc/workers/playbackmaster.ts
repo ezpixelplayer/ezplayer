@@ -19,6 +19,7 @@ import type {
     PlaybackActions,
     PlayAction,
     PlaybackLogDetail,
+    PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
     PlayerPStatusContent,
@@ -37,6 +38,7 @@ import {
     readControllersFromXlights,
     ControllerState,
     FrameReference,
+    CacheStats,
 } from '@ezplayer/epp';
 import { MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -451,7 +453,7 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 16_384_000_000,
+    mp3CacheSpace: 6_500_000_000, // There are issues w/making this bigger
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
@@ -469,7 +471,11 @@ let latestSettings: PlaybackSettings | undefined = undefined;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
-    playbackParams.audioTimeAdjMs = settings.audioSyncAdjust ?? 0;
+    const nasa = settings.audioSyncAdjust ?? 0;
+    if (nasa != playbackParams.audioTimeAdjMs) {
+        playbackParams.audioTimeAdjMs = nasa;
+        ++curAudioSyncNum;
+    }
     setRFConfig({
         remoteToken: settings.viewerControl.remoteFalconToken,
     },
@@ -565,26 +571,12 @@ const playbackStatsAgg: OverallFrameSendStats = {
 
 ///////
 // Clockkeeping
-const audioConverter = new ClockConverter('maudio', 0, performance.now());
 const rtcConverter = new ClockConverter('mrtc', 0, performance.now());
 
-let perfNowDelta: number = 0;
-
 const _pollTimes = setInterval(async () => {
-    const spn = performance.now();
-    const pt = await rpcc.call('timesync', {});
-    const epn = performance.now();
-    if (epn - spn <= 2) {
-        const pn = (epn + spn) / 2;
-        const cpnDelta = pn - pt.perfNowTime;
-        if (Math.abs(cpnDelta - perfNowDelta) > 2) perfNowDelta = cpnDelta;
-        if (pt.audioCtxIncarnation !== undefined && pt.audioCtxTime !== undefined) {
-            audioConverter.setTime(pt.audioCtxTime, pn, pt.audioCtxIncarnation);
-        }
-        if (pt.realTime !== undefined) {
-            rtcConverter.addSample(pt.realTime, pn);
-        }
-    }
+    const pn = performance.now();
+    const realTime = Date.now();
+    rtcConverter.addSample(realTime, pn);
 }, playbackParams.timePollInterval);
 
 ///////
@@ -593,6 +585,7 @@ let showFolder: string | undefined = undefined;
 let isPaused = false;
 let volume = 100;
 let muted = false;
+let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
 let curPlaylists: PlaylistRecord[] | undefined = undefined;
@@ -682,11 +675,8 @@ async function processQueue() {
     let iteration = -1;
 
     // OK - all the clocks are sync to perf.now.  But we can skew to that.
-    // TODO: For now, let us just set the time once.  We can move to per song.
     const clockBasePN = Math.ceil(performance.now());
     const clockBaseTime = Math.ceil(rtcConverter.computeTime(clockBasePN));
-    let audioBaseTime = Math.ceil(audioConverter.computeTime(clockBasePN));
-    let audioBasePN = clockBasePN;
     // The schedule time is kept in the player run states
     // These should really be base times / detect when the song changes...
     let targetFramePN = clockBasePN;
@@ -704,15 +694,42 @@ async function processQueue() {
             const curPerfNowTime = curPerfNow - clockBasePN + clockBaseTime; // rtcConverter.computeTime(curPerfNow);
 
             if (curPerfNow - lastStatsUpdate >= 1000 && iteration % 4 === 0) {
+                function toCacheStat(s: CacheStats): PrefetchCacheStats {
+                    return {
+                        totalItems: s.totalItems,
+                        referencedItems: s.referencedItems,
+                        readyItems: s.readyItems,
+                        pendingItems: s.pendingItems,
+                        errorItems: s.erroredItems,
+                        inProgressItems: s.fetchesInProgress,
+
+                        budget: s.totalBudgetLimit,
+                        used: s.prefetchBudgetUsed + s.cacheBudgetUsed,
+
+                        refHitsCumulative: s.refHits,
+                        refMissesCumulative: s.refMisses,
+                        expiredItemsCumulative: s.expiredItems,
+                        evictedItemsCumulative: s.evictedItems,
+
+                        completedRequestsCumulative: s.completedRequests,
+                        erroredRequestsCumulative: s.erroredRequests,
+                    };
+                }
                 const astat = mp3Cache.getStats();
                 playbackStats.audioDecode = {
                     fileReadTimeCumulative: astat.fileReadTimeCumulative,
                     decodeTimeCumulative: astat.decodeTimeCumulative,
                 }
+                playbackStats.audioPrefetch = {decodeCache: toCacheStat(astat.mp3Prefetch)};
                 const fseqStats = fseqCache.getStats();
                 playbackStats.sequenceDecompress = {
                     decompressTimeCumulative: getZstdStats().decompTime,
                     fileReadTimeCumulative: fseqStats.fileReadTimeCumulative,
+                }
+                playbackStats.fseqPrefetch = {
+                    totalMem: fseqStats.totalDecompMem,
+                    headerCache: toCacheStat(fseqStats.headerPrefetch),
+                    chunkCache: toCacheStat(fseqStats.decompPrefetch),
                 }
                 playbackStats.effectsProcessing = {
                     backgroundBlendTimePeriod: playbackStatsAgg.totalMixTime,
@@ -837,6 +854,7 @@ async function processQueue() {
                                 mp3Cache!.prefetchMP3({
                                     mp3file: saf,
                                     needByTime: action.atTime,
+                                    neededThroughTime: action.atTime + (action.durationMS ?? 600000),
                                     expiry: curPerfNowTime + 7 * 24 * 3600_000,
                                 });
                             }
@@ -952,8 +970,7 @@ async function processQueue() {
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
-                    audioBasePN = curPerfNow;
-                    audioBaseTime = audioConverter.computeTime(audioBasePN);
+                    curAudioSyncNum++;
                 }
 
                 let audioref: ReturnType<MP3PrefetchCache['getMp3']> | undefined = undefined;
@@ -994,27 +1011,7 @@ async function processQueue() {
                                 }
                             }
 
-                            const startTime = Math.floor(
-                                audioPlayerRunState.currentTime -
-                                    clockBaseTime +
-                                    clockBasePN +
-                                    audioBaseTime -
-                                    audioBasePN +
-                                    playbackParams.audioTimeAdjMs,
-                            );
-                            const audioContextEstTime = audioConverter.computeTime(
-                                audioPlayerRunState.currentTime -
-                                    clockBaseTime +
-                                    clockBasePN +
-                                    playbackParams.audioTimeAdjMs,
-                            );
-                            if (Math.abs(audioContextEstTime - startTime) > 100) {
-                                emitWarning(
-                                    `Audio time adjust: Sending ${msToSend}(${nSamplesToSend})@${sampleOffset}; ${audioPlayerRunState.currentTime} / ${startTime} ${startTime - audioContextEstTime}`,
-                                );
-                                audioBasePN = curPerfNow;
-                                audioBaseTime = audioConverter.computeTime(audioBasePN);
-                            }
+                            const playAtRealTime = Math.floor(audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0));
 
                             if (audioPlayerRunState.currentTime >= curPerfNowTime) {
                                 send(
@@ -1024,9 +1021,8 @@ async function processQueue() {
                                             sampleRate: audio.sampleRate,
                                             channels,
                                             buffer: chunk.buffer,
-                                            // TODO let the dog wag the tail
-                                            startTime,
-                                            incarnation: audioConverter.curIncarnation,
+                                            playAtRealTime,
+                                            incarnation: curAudioSyncNum,
                                         },
                                     },
                                     [chunk.buffer],
@@ -1070,9 +1066,9 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - runUntil done`);
 
-            // Get the background frame, for future
+            // Get the background frame
             while (true) {
-                backgroundPlayerRunState.runUntil(targetFramePN - clockBasePN + clockBaseTime);
+                backgroundPlayerRunState.runUntil(foregroundPlayerRunState.currentTime);
                 break;
             }
 
