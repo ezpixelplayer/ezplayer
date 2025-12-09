@@ -33,6 +33,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { postScheduledPlaylists } from '../../store/slices/ScheduleStore';
+import { formatDateStandard } from '../../util/dateUtils';
 import { AppDispatch, RootState } from '../../store/Store';
 import DailyView from './DailyView';
 import MonthlyView from './MonthlyView';
@@ -1174,7 +1175,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             <ChevronLeft />
                         </IconButton>
                         <Typography variant="h6" sx={{ minWidth: 200, textAlign: 'center' }}>
-                            {format(currentDate, 'MMMM yyyy')}
+                            {format(currentDate, 'MMM yyyy')}
                         </Typography>
                         <IconButton onClick={handleNextMonth} size="small">
                             <ChevronRight />
@@ -1256,7 +1257,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             <Typography>
                                 {selectedDate && (
                                     <Typography variant="subtitle1">
-                                        Date: {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                                        Date: {formatDateStandard(selectedDate)}
                                     </Typography>
                                 )}
                             </Typography>
@@ -1582,6 +1583,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                                     setSelectedDate(newDate);
                                                 }
                                             }}
+                                            inputFormat="dd-MMM-yyyy"
                                             renderInput={(props) => <TextField {...props} />}
                                             disabled={!selectedSchedule && formData.recurrence === 'once'} // Disable for new single schedules
                                         />
@@ -1596,6 +1598,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                                         endDate: newDate,
                                                     }))
                                                 }
+                                                inputFormat="dd-MMM-yyyy"
                                                 renderInput={(props) => <TextField {...props} />}
                                             />
                                         )}
@@ -1637,6 +1640,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                                     startDate: newDate,
                                                 }))
                                             }
+                                            inputFormat="dd-MMM-yyyy"
                                             renderInput={(props) => <TextField {...props} />}
                                         />
                                         <DatePicker
@@ -1648,6 +1652,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                                     endDate: newDate,
                                                 }))
                                             }
+                                            inputFormat="dd-MMM-yyyy"
                                             renderInput={(props) => <TextField {...props} />}
                                         />
                                     </LocalizationProvider>

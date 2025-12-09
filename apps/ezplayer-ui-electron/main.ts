@@ -1,13 +1,14 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker, workerData } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
+import { isScheduleActive, registerContentHandlers, requestBlackoutFrame } from './mainsrc/ipcezplayer.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
+import type { Event as ElectronEvent } from 'electron';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -38,6 +39,7 @@ let mainWindow: BrowserWindow | null = null;
 export function getMainWindow() {
     return mainWindow;
 }
+let isQuitting = false;
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -52,10 +54,10 @@ const createWindow = (showFolder: string) => {
     } else if (process.platform === 'darwin') {
         iconFile = 'EZPlayerLogoTransparent.icns';
     }
-    const iconPath = app.isPackaged 
+    const iconPath = app.isPackaged
         ? path.join(process.resourcesPath, `images/${iconFile}`)
         : path.join(__dirname, `images/${iconFile}`);
-    
+
     // Splash screen
     const splash = new BrowserWindow({
         width: 500,
@@ -112,11 +114,45 @@ const createWindow = (showFolder: string) => {
 
         //setTimeout(async ()=>console.log(JSON.stringify(await getAudioOutputDevices(mainWindow!), undefined, 4)), 3000);
     });
-    // On macOS, quit the app when the window is closed (instead of just hiding it)
-    mainWindow.on('close', (event) => {
-        if (process.platform === 'darwin') {
+    const handleCloseRequest = async (event: ElectronEvent) => {
+        if (!mainWindow) return;
+        if (!isScheduleActive()) {
+            // Preserve macOS behavior
+            if (process.platform === 'darwin') {
+                app.quit();
+            }
+            return;
+        }
+
+        event.preventDefault();
+        const { response } = await dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            buttons: ['Exit', 'Cancel'],
+            defaultId: 0,
+            cancelId: 1,
+            title: 'Exit EZPlayer?',
+            message: 'A schedule is currently running. Do you want to exit?',
+            detail: 'Exiting will turn off all pixels and stop the active schedule.',
+            noLink: true,
+            normalizeAccessKeys: true,
+        });
+
+        if (response === 0) {
+            isQuitting = true;
+            try {
+                await requestBlackoutFrame();
+            } catch (err) {
+                console.error(`Failed to send blackout frame: ${err}`);
+            }
             app.quit();
         }
+    };
+
+    mainWindow.on('close', (event) => {
+        if (isQuitting) {
+            return;
+        }
+        void handleCloseRequest(event);
     });
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -143,8 +179,8 @@ app.whenReady().then(async () => {
     await new Promise<void>((resolve) => {
         const onMessage = (msg: any) => {
             if (msg.type === 'ready') {
-            playWorker!.off('message', onMessage);
-            resolve();
+                playWorker!.off('message', onMessage);
+                resolve();
             }
         };
         playWorker!.on('message', onMessage);

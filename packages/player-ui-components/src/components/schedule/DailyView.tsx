@@ -3,6 +3,7 @@ import { format, isSameDay } from 'date-fns';
 import { Box, Typography, styled } from '@mui/material';
 import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 import { timestampToDate } from '@ezplayer/shared-ui-components';
+import { formatDateStandard } from '../../util/dateUtils';
 
 interface DailyViewProps {
     currentDate: Date;
@@ -123,7 +124,7 @@ const DailyView: React.FC<DailyViewProps> = ({
                     zIndex: 3,
                 }}
             >
-                <Typography variant="h6">{format(currentDate, 'EEEE, MMMM d, yyyy')}</Typography>
+                <Typography variant="h6">{formatDateStandard(currentDate)}</Typography>
             </Box>
             <Box sx={{ display: 'flex' }}>
                 {/* Time column */}
