@@ -124,7 +124,8 @@ export class FSeqPrefetchCache {
         now: number,
         fseqSpace?: number,
         decompZstd?: DecompZStd, // Allow a worker thread...
-    }) {
+    },
+    emitError: (msg: string)=>void) {
         this.now = arg.now;
         this.decompDataPool = new ArrayBufferPool();
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
@@ -148,7 +149,7 @@ export class FSeqPrefetchCache {
                             return { decompChunk: decres.decompBuf }
                         }
                         else if (key.compression === 2) {
-                            throw new Error()
+                            throw new Error("Compression type 2 not supported");
                         }
                         else {
                             ref = true;
@@ -156,6 +157,10 @@ export class FSeqPrefetchCache {
                                 decompChunk: readBuf,
                             };
                         }
+                    }
+                    catch (e) {
+                        emitError((e as Error).message);
+                        throw e;
                     }
                     finally {
                         try {await fh.close();} catch(_e) {}

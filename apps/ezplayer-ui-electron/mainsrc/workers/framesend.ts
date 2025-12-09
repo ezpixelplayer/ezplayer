@@ -85,6 +85,7 @@ export class FrameSender
         await this.doSendFrame({...args, frame: undefined});
     }
 
+    /** Return: ms of frame advance */
     async sendNextFrameAt(
         args: {
             frame: FrameReference | undefined,
@@ -111,14 +112,14 @@ export class FrameSender
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
                 if (this.blackFrame) this.sendBlackFrame({targetFramePN: preSleepPN});
-                return args.targetFramePN;
+                return 0;
             }
 
             const sleep = args.targetFramePN - preSleepPN;
             if (sleep < -args.skipFrameIfLateByMoreThan) {
                 ++args.playbackStats.skippedFramesCumulative;
                 // TODO increment frame?  Or do we just let calculations establish this from current time?
-                return args.targetFramePN += args.frameInterval;
+                return args.frameInterval;
             }
 
             if (sleep > args.dontSleepIfDurationLessThan) {
@@ -163,7 +164,7 @@ export class FrameSender
                     await this.doSendFrame(args);
                 }
             }
-            return args.targetFramePN += args.frameInterval;
+            return args.frameInterval;
         }
         finally {
             if (args.frame) {
