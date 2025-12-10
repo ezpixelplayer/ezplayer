@@ -66,12 +66,17 @@ export function isScheduleActive(): boolean {
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
 }
 
-export async function requestBlackoutFrame(targetFramePN?: number): Promise<boolean> {
+/**
+ * Stops player playback and sends a black frame if needed.
+ * This function is thread-safe and works independently of frame numbers.
+ * After calling this, no further frames will be sent.
+ */
+export async function stopPlayerPlayback(): Promise<boolean> {
     try {
-        const res = await rpcc?.call('blackoutControllers', { targetFramePN });
+        const res = await rpcc?.call('stopPlayback', {});
         return !!res;
     } catch (err) {
-        console.error(`Failed to request blackout frame: ${err}`);
+        console.error(`Failed to stop player playback: ${err}`);
         return false;
     }
 }

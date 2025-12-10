@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { isScheduleActive, registerContentHandlers, requestBlackoutFrame } from './mainsrc/ipcezplayer.js';
+import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
@@ -140,9 +140,9 @@ const createWindow = (showFolder: string) => {
         if (response === 0) {
             isQuitting = true;
             try {
-                await requestBlackoutFrame();
+                await stopPlayerPlayback();
             } catch (err) {
-                console.error(`Failed to send blackout frame: ${err}`);
+                console.error(`Failed to stop player playback: ${err}`);
             }
             app.quit();
         }
