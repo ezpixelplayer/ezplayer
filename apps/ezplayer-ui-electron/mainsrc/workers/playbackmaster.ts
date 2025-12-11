@@ -153,6 +153,11 @@ if (logAsyncs) {
 }
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function sleepUntil(dn: number) {
+    const cur = Date.now();
+    const st = Math.max(dn - cur, 0);
+    await sleepms(st);
+}
 
 ///////
 // That there is one instance going
@@ -1138,7 +1143,8 @@ async function processQueue() {
                 emitInfo(`No foreground actions ${targetFrameRTC-Date.now()} ${foregroundPlayerRunState.currentTime-Date.now()}`);
                 await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 targetFrameRTC += playbackParams.idleSleepInterval;
-                await sleepms(playbackParams.idleSleepInterval);
+                
+                await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
@@ -1149,7 +1155,7 @@ async function processQueue() {
                     await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 }
                 targetFrameRTC += playbackParams.idleSleepInterval;
-                await sleepms(playbackParams.idleSleepInterval);
+                await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
 
@@ -1159,7 +1165,7 @@ async function processQueue() {
             if (!fsf) {
                 emitError(`Error: No FSEQ in scheduled item`);
                 targetFrameRTC += playbackParams.idleSleepInterval;
-                await sleepms(playbackParams.idleSleepInterval);
+                await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
 
@@ -1169,7 +1175,7 @@ async function processQueue() {
                 emitError(`Sequence header for ${fsf} was not ready.`);
                 ++playbackStats.missedHeadersCumulative;
                 targetFrameRTC += playbackParams.idleSleepInterval;
-                await sleepms(playbackParams.idleSleepInterval);
+                await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
 
