@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, dialog } from 'electron';
-import { Worker, workerData } from 'node:worker_threads';
+import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';

@@ -67,9 +67,7 @@ export function isScheduleActive(): boolean {
 }
 
 /**
- * Stops player playback and sends a black frame if needed.
- * This function is thread-safe and works independently of frame numbers.
- * After calling this, no further frames will be sent.
+ * Tell player RPC to stop playing (for shutdown).
  */
 export async function stopPlayerPlayback(): Promise<boolean> {
     try {
@@ -83,7 +81,6 @@ export async function stopPlayerPlayback(): Promise<boolean> {
 
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
-let commandSeqNum = 1;
 
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)

@@ -170,9 +170,9 @@ const handlers: PlayWorkerRPCAPI = {
         throw new Error(msg);
     },
     stopPlayback: async (_args: {}) => {
-        if (!activeSender) return false;
         // Send black frame once as part of shutdown behavior
-        await activeSender.sendBlackFrame({});
+        isStopped = true;
+        await sleepms(60);
         return true;
     },
 };
@@ -416,38 +416,10 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         case 'stopgraceful': {
             emitInfo('Stop graceful command received');
-            isStopped = true;
-            // Clear all playback queues
-            foregroundPlayerRunState.removeInteractiveCommands();
-            audioPlayerRunState.removeInteractiveCommands();
-            foregroundPlayerRunState.stopAll(foregroundPlayerRunState.currentTime);
-            audioPlayerRunState.stopAll(audioPlayerRunState.currentTime);
-            backgroundPlayerRunState.stopAll(backgroundPlayerRunState.currentTime);
-            // Send black frame once as part of shutdown
-            if (activeSender) {
-                activeSender.sendBlackFrame({}).catch((err) => {
-                    emitError(`Failed to send black frame during stop: ${err}`);
-                });
-            }
-            sendPlayerStateUpdate();
             break;
         }
         case 'stopnow': {
             emitInfo('Stop now command received');
-            isStopped = true;
-            // Clear all playback queues immediately
-            foregroundPlayerRunState.removeInteractiveCommands();
-            audioPlayerRunState.removeInteractiveCommands();
-            foregroundPlayerRunState.stopAll(foregroundPlayerRunState.currentTime);
-            audioPlayerRunState.stopAll(audioPlayerRunState.currentTime);
-            backgroundPlayerRunState.stopAll(backgroundPlayerRunState.currentTime);
-            // Send black frame once as part of shutdown
-            if (activeSender) {
-                activeSender.sendBlackFrame({}).catch((err) => {
-                    emitError(`Failed to send black frame during stop: ${err}`);
-                });
-            }
-            sendPlayerStateUpdate();
             break;
         }
     }
@@ -669,7 +641,6 @@ let isStopped = false;
 
 let mp3Cache: MP3PrefetchCache | undefined = undefined;
 let fseqCache: FSeqPrefetchCache | undefined = undefined;
-let activeSender: FrameSender | undefined = undefined;
 
 /////
 // Update time variables
@@ -704,7 +675,6 @@ async function processQueue() {
     }
 
     const sender: FrameSender = new FrameSender();
-    activeSender = sender;
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
 
@@ -763,6 +733,7 @@ async function processQueue() {
         while (true) {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
+                sender?.sendBlackFrame({});
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
             }
@@ -1161,10 +1132,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                // Only send black frame if not stopped
-                if (!isStopped) {
-                    await sender.sendBlackFrame({});
-                }
+                await sender.sendBlackFrame({});
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -1173,7 +1141,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 // Only send black frame if not paused and not stopped
-                if (!isPaused && !isStopped) {
+                if (!isPaused) {
                     await sender.sendBlackFrame({});
                 }
                 targetFrameRTC += playbackParams.idleSleepInterval;
@@ -1236,16 +1204,6 @@ async function processQueue() {
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
-            // Don't send frames if playback has been stopped
-            if (isStopped) {
-                if (frameRef?.ref) {
-                    frameRef.ref.release();
-                }
-                if (bframeRef) {
-                    bframeRef.release();
-                }
-                break;
-            }
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
                 bframe: bframeRef,
