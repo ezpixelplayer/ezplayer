@@ -733,7 +733,7 @@ async function processQueue() {
         while (true) {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
-                sender?.sendBlackFrame({});
+                sender?.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
             }
@@ -1132,7 +1132,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                await sender.sendBlackFrame({});
+                await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -1140,9 +1140,8 @@ async function processQueue() {
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
-                // Only send black frame if not paused and not stopped
                 if (!isPaused) {
-                    await sender.sendBlackFrame({});
+                    await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 }
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);

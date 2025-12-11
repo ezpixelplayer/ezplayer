@@ -1,24 +1,13 @@
-import {
-    busySleep,
-    endBatch,
-    endFrame,
-    FrameReference,
-    SendBatch,
-    sendFull,
-    SendJob,
-    SendJobState,
-    startBatch,
-    startFrame,
-} from '@ezplayer/epp';
-import { PlaybackStatistics } from '@ezplayer/ezplayer-core';
-import { snapshotAsyncCounts } from './perfmon';
-import { maxUint8 } from '../processing/blend';
+import { busySleep, endBatch, endFrame, FrameReference, SendBatch, sendFull, SendJob, SendJobState, startBatch, startFrame } from "@ezplayer/epp";
+import { PlaybackStatistics } from "@ezplayer/ezplayer-core";
+import { snapshotAsyncCounts } from "./perfmon";
+import { maxUint8 } from "../processing/blend";
 
 ////////
 // Sleep utilities
 const unsharedSharedBuffer = new SharedArrayBuffer(1024);
 const int32USB = new Int32Array(unsharedSharedBuffer);
-export async function xbusySleep(nextTime: number, emitWarning: ((s: string) => void) | undefined): Promise<void> {
+export async function xbusySleep(nextTime: number, emitWarning: ((s: string)=>void) | undefined): Promise<void> {
     while (performance.now() < nextTime) {
         const nt = performance.now();
         if (nt + 0.1 > nextTime) return;
@@ -34,9 +23,7 @@ export async function xbusySleep(nextTime: number, emitWarning: ((s: string) => 
             const cpuUserMs = nowCPU.user / 1000;
             const cpuSysMs = nowCPU.system / 1000;
             const cpuTotalMs = cpuUserMs + cpuSysMs;
-            emitWarning?.(
-                `Hiccup - long setImmediate: ${pe - ps} - CPU ${cpuTotalMs} (${cpuUserMs}+${cpuSysMs}); async counts:`,
-            );
+            emitWarning?.(`Hiccup - long setImmediate: ${pe - ps} - CPU ${cpuTotalMs} (${cpuUserMs}+${cpuSysMs}); async counts:`);
             for (const [type, count] of ahs) {
                 emitWarning?.(`  ${type}: ${count}`);
             }
@@ -44,7 +31,8 @@ export async function xbusySleep(nextTime: number, emitWarning: ((s: string) => 
     }
 }
 
-export interface OverallFrameSendStats {
+export interface OverallFrameSendStats
+{
     nSends: number;
     intervalStart: number;
     totalSendTime: number;
@@ -64,7 +52,8 @@ export function resetFrameSendStats(stats: OverallFrameSendStats, pn: number) {
     stats.totalMixTime = 0;
 }
 
-export interface ControllerSendStats {
+export interface ControllerSendStats
+{
     nSends: number;
     nPackets: number;
     nBytes: number;
@@ -72,7 +61,8 @@ export interface ControllerSendStats {
     lastError?: string;
 }
 
-export class FrameSender {
+export class FrameSender
+{
     job: SendJob | undefined = undefined;
     state: SendJobState = new SendJobState();
     outstandingFrames: Set<FrameReference> = new Set();
@@ -83,28 +73,32 @@ export class FrameSender {
     emitWarning?: (msg: string) => void;
     emitError?: (err: Error) => void;
 
-    async sendBlackFrame(args: { playbackStats?: PlaybackStatistics; playbackStatsAgg?: OverallFrameSendStats }) {
+    async sendBlackFrame(args: {
+        targetFramePN: number,
+        playbackStats?: PlaybackStatistics,
+        playbackStatsAgg?: OverallFrameSendStats,
+    }) {
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
-        // Use current time internally - thread-safe and independent of frame numbers
-        const currentTimePN = performance.now();
-        this.state.initialize(currentTimePN, this.job);
-        await this.doSendFrame({ ...args, frame: undefined });
+        this.state.initialize(args.targetFramePN, this.job);
+        await this.doSendFrame({...args, frame: undefined});
     }
 
     /** Return: ms of frame advance */
-    async sendNextFrameAt(args: {
-        frame: FrameReference | undefined;
-        bframe: FrameReference | undefined;
-        targetFramePN: number;
-        targetFrameNum: number;
-        playbackStats: PlaybackStatistics;
-        playbackStatsAgg: OverallFrameSendStats;
-        frameInterval: number;
-        skipFrameIfLateByMoreThan: number;
-        dontSleepIfDurationLessThan: number;
-    }): Promise<number> {
+    async sendNextFrameAt(
+        args: {
+            frame: FrameReference | undefined,
+            bframe: FrameReference | undefined,
+            targetFramePN: number,
+            targetFrameNum: number,
+            playbackStats: PlaybackStatistics,
+            playbackStatsAgg: OverallFrameSendStats,
+            frameInterval: number,
+            skipFrameIfLateByMoreThan: number,
+            dontSleepIfDurationLessThan: number,
+        }
+    ): Promise<number> {
         try {
             if (args.frame?.frame && this.state && this.job) {
             } else {
@@ -117,7 +111,7 @@ export class FrameSender {
                 // Send black
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({});
+                if (this.blackFrame) this.sendBlackFrame({targetFramePN: preSleepPN});
                 return 0;
             }
 
@@ -137,15 +131,9 @@ export class FrameSender {
             const nowTime = performance.now();
 
             if (nowTime < args.targetFramePN) {
-                args.playbackStats.worstAdvanceHistorical = Math.max(
-                    args.playbackStats.worstAdvanceHistorical,
-                    args.targetFramePN - nowTime,
-                );
+                args.playbackStats.worstAdvanceHistorical = Math.max(args.playbackStats.worstAdvanceHistorical, args.targetFramePN - nowTime);
             } else {
-                args.playbackStats.worstLagHistorical = Math.max(
-                    args.playbackStats.worstLagHistorical,
-                    nowTime - args.targetFramePN,
-                );
+                args.playbackStats.worstLagHistorical = Math.max(args.playbackStats.worstLagHistorical, nowTime - args.targetFramePN);
             }
 
             // Actually send the frame
@@ -153,11 +141,12 @@ export class FrameSender {
                 this.job.frameNumber = args.targetFrameNum;
                 if (this.mixFrame && args.bframe?.frame && args.frame?.frame) {
                     const preMax = performance.now();
-                    maxUint8(this.mixFrame, args.frame.frame, args.bframe.frame);
+                    maxUint8(this.mixFrame, args.frame.frame, args.bframe.frame)
                     const mixTime = performance.now() - preMax;
                     args.playbackStatsAgg.totalMixTime += mixTime;
                     this.job.dataBuffers = [this.mixFrame];
-                } else {
+                }
+                else {
                     this.job.dataBuffers = [args.frame.frame];
                 }
 
@@ -165,16 +154,19 @@ export class FrameSender {
                 args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
                 args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
                 if (this.outstandingFrames.has(args.frame)) {
-                    this.emitWarning?.('WARNING: THIS FRAME HANDLE ALREADY BEING SENT');
+                    this.emitWarning?.("WARNING: THIS FRAME HANDLE ALREADY BEING SENT");
                     ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
-                } else if (this.outstandingFrames.size > 10) {
+                }
+                else if (this.outstandingFrames.size > 10) {
                     ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
-                } else {
+                }
+                else {
                     await this.doSendFrame(args);
                 }
             }
             return args.frameInterval;
-        } finally {
+        }
+        finally {
             if (args.frame) {
                 args.frame.release();
                 args.frame = undefined;
@@ -189,7 +181,7 @@ export class FrameSender {
     private async doSendFrame(args: {
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
-        frame: FrameReference | undefined;
+        frame: FrameReference | undefined,
     }) {
         try {
             const frameref = args.frame;
@@ -213,7 +205,7 @@ export class FrameSender {
                 }
                 if (frameref) {
                     if (!this.outstandingFrames.has(frameref)) {
-                        this.emitWarning?.('FRAME REFERENCE GOT REMOVED ALREADY');
+                        this.emitWarning?.("FRAME REFERENCE GOT REMOVED ALREADY");
                     }
                     frameref.release();
                     this.outstandingFrames.delete(frameref);
@@ -227,7 +219,8 @@ export class FrameSender {
                 args.playbackStats.maxSendTimeHistorical = Math.max(sendTime, args.playbackStats.maxSendTimeHistorical);
                 ++args.playbackStats.sentFramesCumulative;
             }
-        } catch (e) {
+        }
+        catch (e) {
             const err = e as Error;
             this.emitError?.(err);
         }
