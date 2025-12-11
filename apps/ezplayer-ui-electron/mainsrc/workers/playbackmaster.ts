@@ -190,8 +190,8 @@ function actionToPlayingItem(interactive: boolean, pla: PlayAction) {
         item: 'Song', // TODO
         title: playingItemDesc(pla),
         sequence_id: pla.seqId,
-        at: foregroundPlayerRunState.currentTime,
-        until: foregroundPlayerRunState.currentTime + (pla.durationMS ?? 0),
+        at: pla.atTime,
+        until: pla.atTime + (pla.durationMS ?? 0),
     } as PlayingItem;
 }
 
@@ -357,13 +357,13 @@ function processCommand(cmd: EZPlayerCommand) {
                 foregroundPlayerRunState.addInteractiveCommand({
                     immediate: cmd.immediate,
                     requestId: cmd.requestId,
-                    startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                    startTime: foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay,
                     seqId: cmd.songId,
                 });
                 audioPlayerRunState.addInteractiveCommand({
                     immediate: cmd.immediate,
                     requestId: cmd.requestId,
-                    startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                    startTime: foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay,
                     seqId: cmd.songId,
                 });
                 emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
@@ -474,7 +474,7 @@ const playbackParams = {
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
-    interactiveCommandPrefetchDelay: 200,
+    interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
     foregroundFseqPrefetchTime: 5 * 1000,
@@ -1105,13 +1105,15 @@ async function processQueue() {
 
             while (true) {
                 const plog: PlaybackLogDetail[] = [];
+                // Really want to run until time or something interesting
                 foregroundPlayerRunState.runUntil(targetFrameRTC, 1, plog);
                 let foundTime = plog.length === 0;
                 for (const l of plog) {
                     if (l.eventType === 'Sequence Ended') {
                         // TODO - Could reset clock base here.
-                    } else if (l.eventType === 'Sequence Started') {
+                    } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                         targetFrameRTC = foregroundPlayerRunState.currentTime;
+                        emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
                         foundTime = true;
                         break;
                     }
@@ -1133,6 +1135,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
+                emitInfo(`No foreground actions ${targetFrameRTC-Date.now()} ${foregroundPlayerRunState.currentTime-Date.now()}`);
                 await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
@@ -1141,6 +1144,7 @@ async function processQueue() {
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
+                emitInfo(`No foreground action seq`);
                 if (!isPaused) {
                     await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 }

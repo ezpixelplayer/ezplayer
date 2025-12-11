@@ -627,6 +627,13 @@ interface PlaybackCursor {
     item: PlaybackItem;
 }
 
+function forkState<T extends object>(state: T): T {
+  return Object.assign(
+    Object.create(Object.getPrototypeOf(state)),
+    state
+  );
+}
+
 /**
  * State entry of playback as it goes, capable of tracking something as complex as a single multi-playlist schedule item
  * It is its own cursor (though other cursors can be created)
@@ -641,11 +648,17 @@ class PlaybackStateEntry {
         this.seqDurs = [pi.preSectionDurs, pi.mainSectionDurs, pi.postSectionDurs];
     }
 
+    clone() {
+        // Everything here is shallow copy
+        //  Schedule item and all the extracted IDs are read-only
+        //  Cursors and times are read-only
+        return forkState(this);
+    }
+
     schedStartTime: number = 0; // Time when this was supposed to start
     schedEndTime: number = 0; // Time when this was supposed to end
-    startTimeAdjust: number = 0; // If > 0, we started late / are running late / have been paused, if < 0 we are early
 
-    suspendTime?: number = undefined; // Time when suspended, indicates suspended, and will adjust startTimeAdjust
+    suspendTime?: number = undefined; // Time when suspended, indicates suspended
 
     item: PlaybackItem; // The expanded item, full instructions
     itemId: string = '';
@@ -745,6 +758,7 @@ class PlaybackStateEntry {
         out?: PlayAction[],
         paLimit?: number,
         log?: PlaybackLogDetail[],
+        dbg?: boolean,
     ) {
         const pthis = this;
 
@@ -772,6 +786,14 @@ class PlaybackStateEntry {
             }
         }
 
+        if (dbg && runToTime < c.baseTime + c.offsetInto) {
+            console.log(`PSE running backwards by ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);
+        }
+        if (runToTime > c.baseTime + c.offsetInto && this.suspendTime) {
+            //This is bad but the prefetcher does it and we have taken steps to make that unimportant
+            //console.log(`PSE running forwards while suspended ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);            
+        }
+
         while (true) {
             const curTime = c.baseTime + c.offsetInto;
             if (curTime > runToTime) break;
@@ -782,10 +804,12 @@ class PlaybackStateEntry {
                 c.itemPart <= 2 &&
                 (c.itemCursor >= this.seqIds[c.itemPart].length || c.endingPartEarly)
             ) {
+                if (dbg) console.log('PSE endCurrentPart');
                 this.endCurrentPart(depth, c, curTime, log);
                 continue;
             }
             if (c.itemPart >= 3) {
+                if (dbg) console.log('PSE is over');
                 // This is over.
                 out?.push({
                     end: true,
@@ -796,20 +820,28 @@ class PlaybackStateEntry {
 
             // Do any trivial transitions, always
             if (!this.seqIds[c.itemPart]?.length) {
+                if (dbg) console.log('Trivial transition');
                 startNextPart(curTime);
                 this.endCurrentPart(depth, c, curTime, log);
                 continue;
             }
 
             // See if we're at end time
-            if (curTime >= runToTime) break;
+            if (curTime >= runToTime) {
+                if (dbg) console.log('PSE at runToTime');
+                break;
+            }
             // Limit output
             if (out !== undefined) {
-                if (paLimit && out.length >= paLimit) break;
+                if (paLimit && out.length >= paLimit) {
+                    if (dbg) console.log('PSE  output limit hit');
+                    break;
+                }
             }
 
             // Look for start transitions
             if (c.itemCursor < 0) {
+                if (dbg) console.log('PSE starting next part')
                 startNextPart(curTime);
             }
 
@@ -819,6 +851,7 @@ class PlaybackStateEntry {
                 // Pre list
                 const itime = c.item.preSectionDurs[c.itemCursor];
                 if (c.offsetInto === 0) {
+                    if (dbg) console.log('PSE start intro because offset is 0');
                     this.addLog(depth, 'Sequence Started', c.baseTime, c, log);
                 }
                 if (itime - c.offsetInto > left) {
@@ -831,6 +864,7 @@ class PlaybackStateEntry {
                         durationMS: itime - c.offsetInto,
                     });
                     c.offsetInto += left;
+                    if (dbg) console.log('PSE reporting 1 sequence part in intro');
                     break; // Have exceeded
                 }
 
@@ -842,6 +876,7 @@ class PlaybackStateEntry {
                     offsetMS: c.offsetInto,
                     durationMS: itime - c.offsetInto,
                 });
+                if (dbg) console.log('PSE reporting part of intro sequence and continuing to next');
 
                 this.nextItem(depth, c, c.baseTime + itime, false, log);
                 c.baseTime += itime;
@@ -857,9 +892,11 @@ class PlaybackStateEntry {
                 if (shouldStartOutro === undefined) {
                     // No effect from outro yet
                     if (c.offsetInto === 0) {
+                        if (dbg) console.log('PSE start sequence from main PL because offset is 0');
                         this.addLog(depth, 'Sequence Started', c.baseTime, c, log);
                     }
 
+                    if (dbg) console.log('PSE setting part of main PL sequence');
                     out?.push({
                         end: false,
                         atTime: curTime,
@@ -869,15 +906,18 @@ class PlaybackStateEntry {
                     });
 
                     if (itime - c.offsetInto > left) {
+                        if (dbg) console.log('PSE main sequence covers full run time');
                         // Enough time in c to cover it
                         c.offsetInto += left;
                         break;
                     }
 
                     // Advance
+                    if (dbg) console.log('PSE needs part of next item');
                     this.nextItem(depth, c, c.baseTime + itime, c.item.mainSectionLoop, log);
                     c.baseTime += itime; // Use whole thing
                 } else if (shouldStartOutro < 1) {
+                    if (dbg) console.log('PSE going to outro');
                     // NOW!  (Do not indicate play sequence)
                     c.endingPartEarly = true;
                     c.baseTime += c.offsetInto;
@@ -891,10 +931,12 @@ class PlaybackStateEntry {
                 } else {
                     // Outro is going to cut into this seq
                     if (c.offsetInto === 0) {
+                        if (dbg) console.log('PSE outro going to cut off');
                         this.addLog(depth, 'Sequence Started', c.baseTime, c, log);
                     }
                     // Use up to outro
                     if (shouldStartOutro >= left) {
+                       if (dbg) console.log('PSE no outro yet');
                         // We just adjust, no outro yet
                         out?.push({
                             end: false,
@@ -906,6 +948,7 @@ class PlaybackStateEntry {
                         c.offsetInto += left;
                     } else {
                         // Use up the time until outro
+                        if (dbg) console.log('Use up time until outro');
                         const useOutro = Math.max(0, shouldStartOutro);
                         if (useOutro > 0) {
                             out?.push({
@@ -924,10 +967,12 @@ class PlaybackStateEntry {
             } else if (c.itemPart === 2) {
                 // Post
                 if (c.offsetInto === 0) {
+                    if (dbg) console.log('PSE outro seq started');
                     this.addLog(depth, 'Sequence Started', c.baseTime, c, log);
                 }
 
                 // Advance, use this sequence
+                if (dbg) console.log('PSE Use outro seq');
                 const itime = c.item.postSectionDurs[c.itemCursor];
                 out?.push({
                     end: false,
@@ -937,6 +982,7 @@ class PlaybackStateEntry {
                     durationMS: itime - c.offsetInto,
                 });
                 if (itime - c.offsetInto > left) {
+                    if (dbg) console.log('PSE outro seq covers it');
                     // Enough time in c to cover it
                     c.offsetInto += left;
                     break;
@@ -974,7 +1020,6 @@ class PlaybackStateEntry {
     //  actualStart will be in the future.  Current time is whatever.
     //  advanceToTime will do nothing
     initializeToTime(depth: number, actualStart: number, currentTime: number) {
-        this.startTimeAdjust = actualStart - this.schedStartTime;
         this.baseTime = actualStart;
         this.offsetInto = 0;
 
@@ -1002,6 +1047,7 @@ class PlaybackStateEntry {
         this.advanceToTime(this, depth, currentTime);
         // Not sure if there is anything to do
         this.suspendTime = currentTime;
+        console.log(`PSE Suspend: ${currentTime}`);
         if (this.offsetInto > 0) {
             this.addLog(depth, 'Sequence Paused', currentTime, this, logs);
         }
@@ -1009,6 +1055,7 @@ class PlaybackStateEntry {
     }
 
     advancePausedTime(depth: number, currentTime: number, _logs?: PlaybackLogDetail[]) {
+        console.log(`PSE advance paused time: ${currentTime} - ${this.suspendTime}`);
         const st = this.suspendTime ?? currentTime;
         this.suspendTime = currentTime;
         const delta = currentTime - st;
@@ -1019,13 +1066,13 @@ class PlaybackStateEntry {
         } else {
             // As if we lost time
             this.baseTime += delta;
-            this.startTimeAdjust += delta;
             this.advanceToTime(this, depth, currentTime);
         }
     }
 
     // This is called when the item is resumed
     resumeAtTime(depth: number, currentTime: number, logs?: PlaybackLogDetail[]) {
+        console.log(`PSE Resume: ${currentTime}`);
         this.advancePausedTime(depth, currentTime, logs);
         this.suspendTime = undefined;
         this.noteScheduleEvent(depth, this, currentTime, 'Schedule Resumed', logs);
@@ -1035,10 +1082,10 @@ class PlaybackStateEntry {
     }
 
     // List of things occurring next
-    getUpcomingItems(depth: number, currentTime: number, readDuration: number, readNActions: number): PlayAction[] {
-        this.advanceToTime(this, depth, currentTime);
+    getUpcomingItems(depth: number, currentTime: number, readDuration: number, readNActions: number, dbg?: boolean): PlayAction[] {
+        this.advanceToTime(this, depth, currentTime, undefined, undefined, undefined, dbg);
         const pa: PlayAction[] = [];
-        this.advanceToTime(this.getCursor(), depth, currentTime + readDuration, pa, readNActions);
+        this.advanceToTime(this.getCursor(), depth, currentTime + readDuration, pa, readNActions, undefined, dbg);
         return pa;
     }
 
@@ -1055,14 +1102,21 @@ class PlaybackStateEntry {
         return this.baseTime + this.getCurDur();
     }
 
-    getNextDecisionTime(depth: number, currentTime: number) {
+    getNextDecisionTime(depth: number, currentTime: number, dbg?: boolean) {
         // Based on an item?
-        const sdur = this.getUpcomingItems(depth, currentTime, 1, 1)[0]?.durationMS;
-        if (sdur === undefined) return currentTime; // This is it
+        if (dbg) console.log(`Times: ${this.baseTime}+${this.offsetInto} vs ${currentTime}`);
+        const sdur = this.getUpcomingItems(depth, currentTime, 1, 1, dbg)[0]?.durationMS;
+        if (sdur === undefined) {
+            if (dbg) console.log(`Decision time - no upcoming items`);
+            return currentTime; // This is it
+        }
 
         // Based on hard cut out?
         let nextDecisionTime = currentTime + sdur;
+        if (dbg) console.log(`Decision time forward by ${sdur}`);
+
         if (this.item.endPolicy === 'hardcut') {
+            if (dbg) console.log(`Overridden by hardcut`);
             nextDecisionTime = Math.min(nextDecisionTime, this.item.schedEnd);
         }
         return nextDecisionTime;
@@ -1498,6 +1552,10 @@ export class PlayerRunState {
         let iterLimit = (limit || 1000) * 10 + 100;
         if (iterLimit < 0) iterLimit = 10000;
 
+        function logLowIters(msg: string) {
+            if (iterLimit < 3) console.log(msg);
+        }
+
         while (!log || !limit || log.length < limit) {
             if (this.currentTime > et) {
                 break;
@@ -1506,6 +1564,7 @@ export class PlayerRunState {
             // Make sure everything up to the current time is represented correctly in the heap
             // First, discard obsolete items
             while (this.heap.top && this.heap.top.schedEnd <= this.currentTime) {
+                logLowIters('Heap top deleted');
                 // This is a prevented event - never ran
                 log?.push({
                     eventTime: this.currentTime,
@@ -1523,6 +1582,7 @@ export class PlayerRunState {
             while (nti < this.upcomingOccurrences.length) {
                 const add = this.upcomingOccurrences[nti];
                 if (add.schedStart > heapUntil) break;
+                logLowIters('Add upcoming occurrence');
                 this.upcomingById.delete(add.itemId);
                 if (this.heapById.has(add.itemId)) continue;
                 this.#addToHeap(add);
@@ -1532,6 +1592,7 @@ export class PlayerRunState {
 
             // See if there is an immediate item
             if (this.immediateItem && this.immediateItem.startTime <= this.currentTime) {
+                logLowIters('Immediate item promoted');
                 if (!this.heapById.has(this.immediateItem.requestId)) {
                     const qi = new PlaybackItem();
                     this.#populatePlaybackInteractiveItem(qi, this.immediateItem, this.currentTime);
@@ -1544,9 +1605,11 @@ export class PlayerRunState {
             const queueUntil = this.currentTime;
             let nqi = 0;
             while (nqi < this.interactiveQueue.length) {
+                logLowIters('Interactive Q has items');
                 const add = this.interactiveQueue[nqi];
                 if (add.startTime > queueUntil) break;
                 if (this.heapById.has(add.requestId)) continue;
+                logLowIters('Taking item');
                 const qi = new PlaybackItem();
                 this.#populatePlaybackInteractiveItem(qi, add, this.currentTime);
                 this.#addToHeap(qi);
@@ -1566,6 +1629,8 @@ export class PlayerRunState {
             while (this.#stackTop) {
                 const st = this.#stackTop;
                 if (st.shouldAbort(this.depth, this.currentTime)) {
+                    logLowIters('Aborting stack item');
+
                     console.log(`Popped stack item ${st.item.itemType} ${st.item.itemId} is aborted.`);
                     st.stopAtTime(this.depth, this.currentTime, log);
                     this.#stackPop();
@@ -1585,6 +1650,7 @@ export class PlayerRunState {
                 break;
             }
             if (iterLimit-- < 0) {
+                console.error(`Iteration limit hit, probably a bug.`);
                 break;
             }
 
@@ -1596,12 +1662,14 @@ export class PlayerRunState {
             let heapCutIn: number | undefined = undefined;
             const ht = this.heap.top;
             if (ht) {
+                logLowIters('Heap has items');
                 //     See if heap item is supposed to preempt this
                 //         either in the middle or not
                 // Event for the preemption, or lack thereof
                 let shouldPush = false;
                 const st = this.#stackTop;
                 if (!st) {
+                    logLowIters('Nothing on stack, should take heap');
                     shouldPush = true;
                 } else if (SchedulerMinHeap.compare(ht, st.item) < 0) {
                     if (
@@ -1609,9 +1677,11 @@ export class PlayerRunState {
                         ht.hardCutIn ||
                         st.getNextGracefulInterruptionTime(this.depth, this.currentTime) === this.currentTime
                     ) {
+                        logLowIters('Heap interrupts stack');
                         shouldPush = true;
                     } else {
                         heapCutIn = st.getNextGracefulInterruptionTime(this.depth, this.currentTime);
+                        logLowIters(`Getting interruption time as ${heapCutIn}`);
                     }
                 } else if (ht.schedStart === this.currentTime) {
                     log?.push({
@@ -1624,6 +1694,7 @@ export class PlayerRunState {
                 }
 
                 if (shouldPush) {
+                    logLowIters('Should push');
                     const shouldKeep = st?.item.itemType !== 'Immediate';
                     if (st) {
                         if (shouldKeep) {
@@ -1640,9 +1711,10 @@ export class PlayerRunState {
                     const nst = new PlaybackStateEntry(ht, ht.itemId);
                     nst.initializeToTime(this.depth, this.currentTime, this.currentTime);
 
-                    if (shouldKeep) {
-                        this.#stackPush(nst);
+                    if (!shouldKeep) {
+                        this.#stackPop();
                     }
+                    this.#stackPush(nst);
 
                     nst.noteScheduleEvent(this.depth, nst, this.currentTime, 'Schedule Started', log);
                 }
@@ -1654,10 +1726,14 @@ export class PlayerRunState {
             //  Something ends off the stack? / Stack says to do that?  Check that.
             const se = this.#stackTop;
             if (se) {
+                logLowIters('Stack provides decision time')
                 if (se.suspendTime !== undefined) {
+                    logLowIters('Stack item resume')
                     se.resumeAtTime(this.depth, this.currentTime, log);
                 }
-                nextDecisionTime = Math.min(se.getNextDecisionTime(this.depth, this.currentTime), nextDecisionTime);
+                const sdt = se.getNextDecisionTime(this.depth, this.currentTime, iterLimit < 3);
+                nextDecisionTime = Math.min(sdt, nextDecisionTime);
+                logLowIters(`Stack provides decision time ${sdt} vs ${this.currentTime} (${sdt-this.currentTime})`);
             }
 
             // The heap says do something?
@@ -1668,12 +1744,14 @@ export class PlayerRunState {
             //  The upcoming items says to do something?
             const ue = this.upcomingOccurrences[0];
             if (ue && ue.schedStart < nextDecisionTime) {
+                logLowIters(`Upcoming provides decision time ${ue.schedStart} vs ${this.currentTime}`);
                 nextDecisionTime = ue.schedStart;
             }
 
             //  Immediates / commands say to do something / schedule gets modified?
             const im = this.immediateItem;
             if (im && im.startTime < nextDecisionTime) {
+                logLowIters(`Immediate provides decision time ${im.startTime} vs ${this.currentTime}`);
                 nextDecisionTime = im.startTime;
             }
             /*
@@ -1685,7 +1763,7 @@ export class PlayerRunState {
 
             // Run advance
             const nextTime = Math.max(nextDecisionTime, this.currentTime);
-            if (this.depth && nextTime > this.currentTime) {
+            if (this.depth) {
                 this.#stackTop?.advanceToTime(this.#stackTop, this.depth, nextTime, undefined, undefined, log);
             }
             this.currentTime = nextTime;
@@ -1770,13 +1848,13 @@ export class PlayerRunState {
         const upcoming: UpcomingPlaybackActions = {};
         if (this.#stackTop) {
             const item = this.#stackTop.item;
-            upcoming.curPLActions = this.actionsForItem(item, this.#stackTop, readahead, maxItems);
+            upcoming.curPLActions = this.actionsForItem(item, this.#stackTop.clone(), readahead, maxItems);
         }
 
         upcoming.stackedPLActions = [];
         for (let i = 0; i < this.stack.length - 1; ++i) {
             const item = this.stack[i].item;
-            upcoming.stackedPLActions.push(this.actionsForItem(item, this.stack[i], readahead, maxItems));
+            upcoming.stackedPLActions.push(this.actionsForItem(item, this.stack[i].clone(), readahead, maxItems));
         }
 
         upcoming.heapSchedules = [];
