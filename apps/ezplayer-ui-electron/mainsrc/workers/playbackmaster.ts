@@ -733,6 +733,7 @@ async function processQueue() {
         while (true) {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
+                await sleepms(60); // TODO clean shutdown
                 sender?.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
