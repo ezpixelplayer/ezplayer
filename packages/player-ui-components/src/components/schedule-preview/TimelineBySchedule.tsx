@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/Store';
 import { type PlaybackLogDetail } from '@ezplayer/ezplayer-core';
+import { formatDateStandard } from '../../util/dateUtils';
 import {
     Box,
     Card,
@@ -392,7 +393,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                         const interruptionContent = `Interruption`;
                         let interruptionTitle = `${scheduleName} - Interruption Period`;
                         interruptionTitle += `\n${format(lastSuspendTime, 'HH:mm:ss')} - ${format(eventTime, 'HH:mm:ss')}`;
-                        interruptionTitle += `\nDate: ${format(eventTime, 'MMM d, yyyy')}`;
+                        interruptionTitle += `\nDate: ${formatDateStandard(eventTime)}`;
                         interruptionTitle += `\nStatus: Interrupted by higher priority schedule`;
 
                         // Use grey color for interruptions, but if it's a background schedule, use a darker grey
@@ -432,7 +433,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                     const content = `${scheduleName}`;
                     let title = `${scheduleName}`;
                     title += `\n${format(currentSegmentStart, 'HH:mm:ss')} - ${format(segmentEnd, 'HH:mm:ss')}`;
-                    title += `\nDate: ${format(eventTime, 'MMM d, yyyy')}`;
+                    title += `\nDate: ${formatDateStandard(eventTime)}`;
 
                     if (isSuspended) {
                         title += `\nStatus: Suspended (interrupted by higher priority)`;
@@ -523,7 +524,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                 const content = `${scheduleName}`;
                 let title = `${scheduleName}`;
                 title += `\n${format(startTime, 'HH:mm:ss')} - ${simulationEndTime && defaultEnd.getTime() === simulationEndTime ? format(defaultEnd, 'HH:mm:ss') : '(ongoing)'}`;
-                title += `\nDate: ${format(startTime, 'MMM d, yyyy')}`;
+                title += `\nDate: ${formatDateStandard(startTime)}`;
                 title += `\nStatus: Running`;
 
                 // Add simulation boundary information if schedule extends beyond simulation
@@ -590,7 +591,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                     const scheduledContent = `${scheduleName} (Scheduled)`;
                     let scheduledTitle = `${scheduleName} - Scheduled Only`;
                     scheduledTitle += `\nScheduled: ${format(scheduledStart, 'HH:mm:ss')} - ${format(scheduledEnd, 'HH:mm:ss')}`;
-                    scheduledTitle += `\nDate: ${format(scheduledStart, 'MMM d, yyyy')}`;
+                    scheduledTitle += `\nDate: ${formatDateStandard(scheduledStart)}`;
                     scheduledTitle += `\nStatus: Never Executed`;
 
                     items.push({
@@ -624,7 +625,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                     const scheduledMarkerContent = `${scheduleName} (Scheduled)`;
                     let scheduledMarkerTitle = `${scheduleName} - Scheduled Time`;
                     scheduledMarkerTitle += `\nScheduled: ${format(scheduledStart, 'HH:mm:ss')} - ${format(scheduledEnd, 'HH:mm:ss')}`;
-                    scheduledMarkerTitle += `\nDate: ${format(scheduledStart, 'MMM d, yyyy')}`;
+                    scheduledMarkerTitle += `\nDate: ${formatDateStandard(scheduledStart)}`;
 
                     items.push({
                         id: scheduledMarkerId,

@@ -33,11 +33,11 @@ export async function xbusySleep(nextTime: number, emitWarning: ((s: string)=>vo
 
 export interface OverallFrameSendStats
 {
-    nSends: number,
-    intervalStart: number,
-    totalSendTime: number,
-    totalIdleTime: number,
-    totalMixTime: number,
+    nSends: number;
+    intervalStart: number;
+    totalSendTime: number;
+    totalIdleTime: number;
+    totalMixTime: number;
 }
 
 export function avgFrameSendTime(stats: OverallFrameSendStats) {
@@ -54,11 +54,11 @@ export function resetFrameSendStats(stats: OverallFrameSendStats, pn: number) {
 
 export interface ControllerSendStats
 {
-    nSends: number,
-    nPackets: number,
-    nBytes: number
-    nMissedSendWindow: number,
-    lastError?: string,
+    nSends: number;
+    nPackets: number;
+    nBytes: number;
+    nMissedSendWindow: number;
+    lastError?: string;
 }
 
 export class FrameSender
@@ -75,8 +75,8 @@ export class FrameSender
 
     async sendBlackFrame(args: {
         targetFramePN: number,
-        playbackStats?: PlaybackStatistics;
-        playbackStatsAgg?: OverallFrameSendStats;
+        playbackStats?: PlaybackStatistics,
+        playbackStatsAgg?: OverallFrameSendStats,
     }) {
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();

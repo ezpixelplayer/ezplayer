@@ -23,11 +23,7 @@ import {
     blankUserProfile,
 } from './data/FileStorage.js';
 
-import {
-    applySettingsFromRenderer,
-    getSettingsCache,
-    loadSettingsFromDisk,
-} from './data/SettingsStorage.js';
+import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
 
 import type {
     CombinedPlayerStatus,
@@ -45,12 +41,7 @@ import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplaye
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
-import {
-    PlayerCommand,
-    type MainRPCAPI,
-    type PlayWorkerRPCAPI,
-    WorkerToMainMessage,
-} from './workers/playbacktypes.js';
+import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 
@@ -66,10 +57,30 @@ export let curStatus: CombinedPlayerStatus = {};
 export let curErrors: string[] = [];
 export let curShow: EndUserShowSettings | undefined = undefined;
 export let curUser: EndUser | undefined = undefined;
+let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
+
+export function isScheduleActive(): boolean {
+    const player = curStatus.player;
+    if (!player || player.status !== 'Playing') return false;
+    const nowPlaying = player.now_playing;
+    return !!(nowPlaying && nowPlaying.type === 'Scheduled');
+}
+
+/**
+ * Tell player RPC to stop playing (for shutdown).
+ */
+export async function stopPlayerPlayback(): Promise<boolean> {
+    try {
+        const res = await rpcc?.call('stopPlayback', {});
+        return !!res;
+    } catch (err) {
+        console.error(`Failed to stop player playback: ${err}`);
+        return false;
+    }
+}
 
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
-let commandSeqNum = 1;
 
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
@@ -129,8 +140,6 @@ const handlers: MainRPCAPI = {
         throw new Error(msg);
     },
 };
-
-let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
 export async function registerContentHandlers(mainWindow: BrowserWindow | null, nPlayWorker: Worker) {
     updateWindow = mainWindow;
