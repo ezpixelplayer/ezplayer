@@ -480,6 +480,7 @@ export function getScheduleTimes(sched: ScheduledPlaylist) {
 
 /**
  * Get time of a playlist as scheduled
+ * NOTE: Currently a testing-only function not used in production
  */
 export function getScheduleDurationMS(
     seqs: SequenceRecord[],
@@ -563,50 +564,73 @@ export type PlaybackLogDetailType =
     | 'Sequence Resumed';
 
 export interface PlaybackLogDetail {
-    // What happened
+    /** What happened */
     eventType: PlaybackLogDetailType;
 
-    // Time this happened
+    /** Time this happened */
     eventTime: number;
-    // Push depth, in case it is interrupting something
+    /** Push depth, in case it is interrupting something */
     stackDepth: number;
 
-    // If this is part of a scheduled item, this will be set
-    //   If it is not set, it must be an override command or something
+    /** Request ID if override command */
+    requestId?: string;
+
+    /**
+     * If this is part of a scheduled item, this will be set
+     * If it is not set, it must be an override command or something
+     */
     scheduleId?: string;
-    // If this is part of a playlist, this will be set, otherwise it may be immediate
+    /** If this is part of a playlist, this will be set, otherwise it may be immediate */
     playlistId?: string;
-    // If this is a sequence, this will be set.  Maybe other things get done sometime
-    //   or this represents the start/end and no sequence is there now
+    /**
+     * If this is a sequence, this will be set.  Maybe other things get done sometime
+     * or this represents the start/end and no sequence is there now
+     */
     sequenceId?: string;
 
     ////
     //// Progress base point (interpret relative to actualStartTime)
     ////
-    // If this is a playlist, this is the section + entry index (0-based)
+    /* If this is a playlist, this is the section + entry index (0-based) */
     entryIntoPlaylist?: [number, number];
-    // If this is a resume, this will be nonzero
+    /* If this is a resume, this will be nonzero */
     timeIntoSeqMS?: number;
 }
 
+/** A simplified version of what play actions the player takes */
 export interface PlayAction {
-    end: boolean;
+    /** The time at which action is to occur */
     atTime: number;
+    /** Is this an "end" action (otherwise it is a start) */
+    end: boolean;
+    /** The seq ID (if applicable) */
     seqId?: string;
+    /** Offset into the sequence (at atTime) */
     offsetMS?: number;
+    /** Duration of the action - this is the amount remaining as of atTime, until another action would occur */
     durationMS?: number;
 }
 
+/** This is a cursor into a single playback state entry */
 interface PlaybackCursor {
-    itemCursor: number;
+    /** Which part of the item (schedule can have intro/main/outro parts) */
     itemPart: number;
+    /** Which item index within playlist */
+    itemCursor: number;
+    /** If part is cut off */
     endingPartEarly: boolean;
+    /** Time when current playlist entry started (or resumed) */
     baseTime: number;
+    /** Offset (ms) into the current sequence (at baseTime) */
     offsetInto: number;
+    /** Item that this cursor indexes */
     item: PlaybackItem;
 }
 
-// State entry of playback as it goes
+/**
+ * State entry of playback as it goes, capable of tracking something as complex as a single multi-playlist schedule item
+ * It is its own cursor (though other cursors can be created)
+ */
 class PlaybackStateEntry {
     constructor(pi: PlaybackItem, itemId: string) {
         this.item = pi;
@@ -680,19 +704,11 @@ class PlaybackStateEntry {
         };
     }
 
-    setCursor(c: PlaybackCursor) {
-        this.itemCursor = c.itemCursor;
-        this.itemPart = c.itemPart;
-        this.endingPartEarly = c.endingPartEarly;
-        this.baseTime = c.baseTime;
-        this.offsetInto = c.offsetInto;
-        this.item = c.item;
-    }
-
     addLog(depth: number, et: PlaybackLogDetailType, ctime: number, c: PlaybackCursor, log?: PlaybackLogDetail[]) {
         log?.push({
             eventType: et,
             eventTime: ctime,
+            requestId: c.item.requestId,
             scheduleId: c.item.scheduleId,
             playlistId: c.item.playlistIds?.[c.itemPart],
             stackDepth: depth,
@@ -943,6 +959,7 @@ class PlaybackStateEntry {
             eventType: eventType,
             scheduleId: st.item.scheduleId,
             playlistId: st.item.playlistIds?.[st.itemPart],
+            requestId: st.item.requestId,
             eventTime: currentTime,
             stackDepth: depth,
             entryIntoPlaylist: [st.itemPart, st.itemCursor],
@@ -1152,6 +1169,7 @@ export function createShuffleList(
 }
 
 export interface PlaybackStateSnapshot {
+    requestId?: string
     scheduleId?: string; // Which schedule it is
     itemId: string;
 
@@ -1413,6 +1431,13 @@ export class PlayerRunState {
         sc.itemType = ipc.immediate ? 'Immediate' : 'Queued';
     }
 
+    isAlreadyLoaded(scheduleId: string) {
+        if (this.upcomingById.has(scheduleId)) return true;
+        if (this.heapById.has(scheduleId)) return true;
+        if (this.stackById.has(scheduleId)) return true;
+        return false;
+    }
+
     //  Feeding in the whole schedule and a time range to update the relevant part
     addTimeRangeToSchedule(start: number, end: number, preferStartingNew: boolean = true) {
         // Filter to time window
@@ -1427,7 +1452,7 @@ export class PlayerRunState {
 
         // See if this is past, future, or current based on our currentTime
         for (const s of itemsToAdd) {
-            if (this.heapById.has(s.id)) continue;
+            if (this.isAlreadyLoaded(s.id)) continue;
 
             const times = getScheduleTimes(s);
 
@@ -1485,6 +1510,7 @@ export class PlayerRunState {
                     eventType: 'Schedule Prevented',
                     stackDepth: this.depth,
                     scheduleId: this.heap.top.scheduleId,
+                    requestId: this.heap.top.requestId,
                 });
                 this.heap.deleteTop();
             }
@@ -1591,6 +1617,7 @@ export class PlayerRunState {
                         eventType: 'Schedule Deferred',
                         stackDepth: this.depth,
                         scheduleId: ht.scheduleId,
+                        requestId: ht.requestId,
                     });
                 }
 
@@ -1699,6 +1726,7 @@ export class PlayerRunState {
             const spl = s.itemPart;
             const spi = s.itemCursor;
             pss.push({
+                requestId: s.item.requestId,
                 scheduleId: s.item.scheduleId,
                 itemId: s.item.itemId,
                 playlistNumber: spl,
@@ -1732,7 +1760,7 @@ export class PlayerRunState {
                   startTime: item.schedStart,
                   scheduleId: item.scheduleId,
                   actions: st.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
-              };
+            };
     }
 
     // Peek aheads for telling player core what to fetch / also what's up next
@@ -1753,13 +1781,7 @@ export class PlayerRunState {
         for (const item of this.heapById.values()) {
             const nst = new PlaybackStateEntry(item, item.itemId);
             nst.initializeToTime(this.depth, this.currentTime, this.currentTime);
-            upcoming.heapSchedules.push({
-                type: 'scheduled',
-                schedStart: item.schedStart,
-                schedEnd: item.schedEnd,
-                scheduleId: item.scheduleId!,
-                actions: nst.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
-            });
+            upcoming.heapSchedules.push(this.actionsForItem(item, nst, readahead, maxItems));
         }
 
         upcoming.upcomingSchedules = [];
