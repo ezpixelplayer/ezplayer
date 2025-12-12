@@ -90,6 +90,17 @@ const plof9: PlaylistRecord = {
 
 const playlists_3_9 = [plof2, plof4, plof9];
 
+const scheduleOf2: ScheduledPlaylist = {
+    id: 'scheduleOf2',
+    title: 'Just2Songs',
+    playlistTitle: 'Just2Songs',
+    playlistId: 'plof2',
+    date: 0,
+    fromTime: '18:00',
+    toTime: '19:00',
+    duration: 0, // ???
+};
+
 const parts3straight: ScheduledPlaylist = {
     id: 'parts3straight',
     title: '3PartsStraight',
@@ -410,7 +421,7 @@ function toTextLog(log: PlaybackLogDetail[]) {
     return log
         .map(
             (e) =>
-                `${e.eventType}: ${e.stackDepth} @${e.eventTime} (${e.entryIntoPlaylist ? e.entryIntoPlaylist.map((e) => e.toString()).join(',') : '?'}.${e.timeIntoSeqMS ? e.timeIntoSeqMS.toString() : ''}) : ${e.scheduleId}.${e.playlistId ? e.playlistId : 'N/A'}.${e.sequenceId ? e.sequenceId : 'N/A'}`,
+                `${e.eventType}: ${e.stackDepth} @${e.eventTime} (${e.entryIntoPlaylist ? e.entryIntoPlaylist.map((e) => e.toString()).join(',') : '?'}@${e.timeIntoSeqMS ? e.timeIntoSeqMS.toString() : ''}) : ${e.scheduleId}.${e.playlistId ? e.playlistId : 'N/A'}.${e.sequenceId ? e.sequenceId : 'N/A'}`,
         )
         .join('\n');
 }
@@ -1028,5 +1039,254 @@ describe('calcschedule', () => {
         expect(logs.length).toBe(6);
     });
 
-    // TODO External events
+    // Simple schedule, in bits
+    it('should just run 2 songs', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // This should put it in the middle of the first song
+        const logs = plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 30 * 1000, 100);
+        expect(logs.length).toBe(8);
+
+        expect(logs[0].eventType).toBe('Schedule Started');
+        expect(logs[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logs[0].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[1].eventType).toBe('Playlist Started');
+        expect(logs[1].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logs[1].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[1].playlistId).toBe(plof2.id);
+        expect(logs[2].eventType).toBe('Sequence Started');
+        expect(logs[2].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logs[2].sequenceId).toBe(s1.id);
+        expect(logs[3].eventType).toBe('Sequence Ended');
+        expect(logs[3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[3].sequenceId).toBe(s1.id);
+        expect(logs[4].eventType).toBe('Sequence Started');
+        expect(logs[4].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[4].sequenceId).toBe(s2.id);
+
+        expect(logs[logs.length - 3].eventType).toBe('Sequence Ended');
+        expect(logs[logs.length - 3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 3].sequenceId).toBe(s2.id);
+        expect(logs[logs.length - 2].eventType).toBe('Playlist Ended');
+        expect(logs[logs.length - 2].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 2].playlistId).toBe(plof2.id);
+        expect(logs[logs.length - 2].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[logs.length - 1].eventType).toBe('Schedule Ended');
+        expect(logs[logs.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
+    });
+
+    // Simple schedule, in bits
+    it('should just run 2 songs even if 2 calls', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // This should put it in the middle of the first song
+        const logs = plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 5 * 1000, 100);
+        logs.push(...plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 30 * 1000, 100))
+        //console.log(toTextLog(logs));
+        expect(logs.length).toBe(8);
+
+        expect(logs[0].eventType).toBe('Schedule Started');
+        expect(logs[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logs[0].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[1].eventType).toBe('Playlist Started');
+        expect(logs[1].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logs[1].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[1].playlistId).toBe(plof2.id);
+        expect(logs[2].eventType).toBe('Sequence Started');
+        expect(logs[2].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logs[2].sequenceId).toBe(s1.id);
+        expect(logs[3].eventType).toBe('Sequence Ended');
+        expect(logs[3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[3].sequenceId).toBe(s1.id);
+        expect(logs[4].eventType).toBe('Sequence Started');
+        expect(logs[4].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[4].sequenceId).toBe(s2.id);
+
+        expect(logs[logs.length - 3].eventType).toBe('Sequence Ended');
+        expect(logs[logs.length - 3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 3].sequenceId).toBe(s2.id);
+        expect(logs[logs.length - 2].eventType).toBe('Playlist Ended');
+        expect(logs[logs.length - 2].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 2].playlistId).toBe(plof2.id);
+        expect(logs[logs.length - 2].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[logs.length - 1].eventType).toBe('Schedule Ended');
+        expect(logs[logs.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
+    });
+
+    // External events
+    it('queue should go back to what it was doing', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // This should put it in the middle of the first song
+        const logspre = plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 5 * 1000, 100);
+        //console.log(toTextLog(logs));
+        expect(logspre.length).toBe(3);
+
+        expect(logspre[0].eventType).toBe('Schedule Started');
+        expect(logspre[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logspre[0].scheduleId).toBe(scheduleOf2.id);
+        expect(logspre[1].eventType).toBe('Playlist Started');
+        expect(logspre[1].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logspre[1].scheduleId).toBe(scheduleOf2.id);
+        expect(logspre[1].playlistId).toBe(plof2.id);
+        expect(logspre[2].eventType).toBe('Sequence Started');
+        expect(logspre[2].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logspre[2].sequenceId).toBe(s1.id);
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: bt + 18 * 3600 * 1000 + 6 * 1000,
+            seqId: s3.id,
+            requestId: 'aaaaaa',
+        });
+        const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
+        expect (logs.length).toBe(13);
+        // song ended, sched suspended ; ...(new 1-songsched) ; sched resumed, pl resumed, song start, song end, pl end, sched end
+        //console.log(toTextLog(logs));
+        expect(logs[0].eventType).toBe('Sequence Ended');
+        expect(logs[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[0].sequenceId).toBe(s1.id);
+        expect(logs[1].eventType).toBe('Schedule Suspended');
+        expect(logs[1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[1].scheduleId).toBe(scheduleOf2.id);
+
+        expect(logs[2].eventType).toBe('Schedule Started');
+        expect(logs[2].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[2].requestId).toBe('aaaaaa');
+        expect(logs[3].eventType).toBe('Playlist Started');
+        expect(logs[3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[3].requestId).toBe('aaaaaa');
+        expect(logs[4].eventType).toBe('Sequence Started');
+        expect(logs[4].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 10_000);
+        expect(logs[4].sequenceId).toBe(s3.id);
+        expect(logs[5].eventType).toBe('Sequence Ended');
+        expect(logs[5].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[5].sequenceId).toBe(s3.id);
+        expect(logs[6].eventType).toBe('Playlist Ended');
+        expect(logs[6].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[6].requestId).toBe('aaaaaa');
+        expect(logs[7].eventType).toBe('Schedule Ended');
+        expect(logs[7].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[7].requestId).toBe('aaaaaa');
+
+        expect(logs[logs.length - 5].eventType).toBe('Schedule Resumed');
+        expect(logs[logs.length - 5].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 5].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[logs.length - 4].eventType).toBe('Sequence Started');
+        expect(logs[logs.length - 4].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 4].sequenceId).toBe(s2.id);
+        expect(logs[logs.length - 3].eventType).toBe('Sequence Ended');
+        expect(logs[logs.length - 3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
+        expect(logs[logs.length - 3].sequenceId).toBe(s2.id);
+        expect(logs[logs.length - 2].eventType).toBe('Playlist Ended');
+        expect(logs[logs.length - 2].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
+        expect(logs[logs.length - 2].playlistId).toBe(plof2.id);
+        expect(logs[logs.length - 2].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[logs.length - 1].eventType).toBe('Schedule Ended');
+        expect(logs[logs.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
+        expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
+    });
+
+    it('immediate should go back to what it was doing', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // This should put it in the middle of the first song
+        const logspre = plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 5 * 1000, 100);
+        //console.log(toTextLog(logs));
+        expect(logspre.length).toBe(3);
+
+        expect(logspre[0].eventType).toBe('Schedule Started');
+        expect(logspre[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logspre[0].scheduleId).toBe(scheduleOf2.id);
+        expect(logspre[1].eventType).toBe('Playlist Started');
+        expect(logspre[1].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logspre[1].scheduleId).toBe(scheduleOf2.id);
+        expect(logspre[1].playlistId).toBe(plof2.id);
+        expect(logspre[2].eventType).toBe('Sequence Started');
+        expect(logspre[2].eventTime).toBe(bt + 18 * 60 * 60 * 1000);
+        expect(logspre[2].sequenceId).toBe(s1.id);
+        plr.addInteractiveCommand({
+            immediate: true,
+            startTime: bt + 18 * 3600 * 1000 + 6 * 1000,
+            seqId: s3.id,
+            requestId: 'aaaaaa',
+        });
+        const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
+        console.log(toTextLog(logs));
+        expect (logs.length).toBe(15);
+        // song ended, sched suspended ; ...(new 1-songsched) ; sched resumed, pl resumed, song start, song end, pl end, sched end
+        expect(logs[0].eventType).toBe('Sequence Paused');
+        expect(logs[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 6_000);
+        expect(logs[0].sequenceId).toBe(s1.id);
+        expect(logs[1].eventType).toBe('Schedule Suspended');
+        expect(logs[1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 6_000);
+        expect(logs[1].scheduleId).toBe(scheduleOf2.id);
+
+        expect(logs[2].eventType).toBe('Schedule Started');
+        expect(logs[2].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 6_000);
+        expect(logs[2].requestId).toBe('aaaaaa');
+        expect(logs[3].eventType).toBe('Playlist Started');
+        expect(logs[3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 6_000);
+        expect(logs[3].requestId).toBe('aaaaaa');
+        expect(logs[4].eventType).toBe('Sequence Started');
+        expect(logs[4].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 6_000);
+        expect(logs[4].sequenceId).toBe(s3.id);
+        expect(logs[5].eventType).toBe('Sequence Ended');
+        expect(logs[5].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 16_000);
+        expect(logs[5].sequenceId).toBe(s3.id);
+        expect(logs[6].eventType).toBe('Playlist Ended');
+        expect(logs[6].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 16_000);
+        expect(logs[6].requestId).toBe('aaaaaa');
+        expect(logs[7].eventType).toBe('Schedule Ended');
+        expect(logs[7].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 16_000);
+        expect(logs[7].requestId).toBe('aaaaaa');
+
+        expect(logs[logs.length - 7].eventType).toBe('Schedule Resumed');
+        expect(logs[logs.length - 7].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 16_000);
+        expect(logs[logs.length - 7].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[logs.length - 6].eventType).toBe('Sequence Resumed');
+        expect(logs[logs.length - 6].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 16_000);
+        expect(logs[logs.length - 6].sequenceId).toBe(s1.id);
+        expect(logs[logs.length - 5].eventType).toBe('Sequence Ended');
+        expect(logs[logs.length - 5].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 5].sequenceId).toBe(s1.id);
+        expect(logs[logs.length - 4].eventType).toBe('Sequence Started');
+        expect(logs[logs.length - 4].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 20_000);
+        expect(logs[logs.length - 4].sequenceId).toBe(s2.id);
+        expect(logs[logs.length - 3].eventType).toBe('Sequence Ended');
+        expect(logs[logs.length - 3].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
+        expect(logs[logs.length - 3].sequenceId).toBe(s2.id);
+        expect(logs[logs.length - 2].eventType).toBe('Playlist Ended');
+        expect(logs[logs.length - 2].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
+        expect(logs[logs.length - 2].playlistId).toBe(plof2.id);
+        expect(logs[logs.length - 2].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[logs.length - 1].eventType).toBe('Schedule Ended');
+        expect(logs[logs.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
+        expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
+    });
 });
