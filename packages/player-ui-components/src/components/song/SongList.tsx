@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 
 import { Button, Card, PageHeader, TextField, Typography } from '@ezplayer/shared-ui-components';
@@ -193,11 +193,21 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
     const [rows, setRows] = useState<SongListRow[]>([]);
     const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const availableTags = useSelector((state: RootState) => state.sequences.tags);
     const [filterTags, setFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
 
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
+
+    // Extract all unique tags from songs for the filter dropdown (similar to CreateEditPlaylist)
+    const availableTags = useMemo(() => {
+        const allTags = new Set<string>();
+        (sequenceData || []).forEach((song) => {
+            song.settings?.tags?.forEach((tag) => {
+                allTags.add(tag);
+            });
+        });
+        return Array.from(allTags);
+    }, [sequenceData]);
 
     // Add state for managing delete confirmation dialog
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
