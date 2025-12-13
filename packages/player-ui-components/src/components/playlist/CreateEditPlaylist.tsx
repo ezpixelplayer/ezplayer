@@ -9,7 +9,7 @@ import {
     useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { PlaylistRecord, SequenceDetails, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type { PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import SearchIcon from '@mui/icons-material/Search';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
@@ -296,18 +296,13 @@ const PlaylistContainer = ({
         }, 0);
     }, [playlistSongs]);
 
-    // Format duration as MM:SS
+    // Format duration as MM:SS rounded to nearest second
     const formattedTotalDuration = useMemo(() => {
-        const minutes = Math.floor(totalDuration / 60);
-        const seconds = totalDuration % 60;
-        const secondsWithDecimals = seconds.toFixed(3);
-        const [wholeSeconds, decimals] = secondsWithDecimals.split('.');
+        const roundedTotalSeconds = Math.round(totalDuration);
+        const minutes = Math.floor(roundedTotalSeconds / 60);
+        const seconds = roundedTotalSeconds % 60;
 
-        // Only show decimals if they're not all zeros
-        const formattedSeconds =
-            decimals === '000' ? wholeSeconds.padStart(2, '0') : secondsWithDecimals.padStart(6, '0');
-
-        return `${minutes}:${formattedSeconds}`;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }, [totalDuration]);
 
     return (
@@ -550,7 +545,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 setHasUnsavedChanges(false);
             }
         }
-    }, [id, sequenceData, anythingUpdating]);
+    }, [id, sequenceData, anythingUpdating, playlists]);
 
     const handleDragStart = (event: DragStartEvent) => {
         setActiveId(event.active.id as string);
@@ -869,6 +864,11 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     };
 
     const handleDiscardClick = () => {
+        if (!hasUnsavedChanges) {
+            navigate(ROUTES.PLAYLIST);
+            return;
+        }
+
         setPendingAction('discard');
         setIsNavigationDialogOpen(true);
     };
