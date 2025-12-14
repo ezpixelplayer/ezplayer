@@ -39,6 +39,12 @@ let mainWindow: BrowserWindow | null = null;
 export function getMainWindow() {
     return mainWindow;
 }
+
+let audioWindow: BrowserWindow | null = null;
+export function getAudioWindow() {
+    return audioWindow;
+}
+
 let isQuitting = false;
 
 // Polyfill for `__dirname` in ES Modules
@@ -78,6 +84,19 @@ const createWindow = (showFolder: string) => {
     } else {
         splash.loadURL(`file://${path.join(__dirname, '../dist/splash.html')}`);
     }
+
+    audioWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            backgroundThrottling: false,
+        },
+    });
+
+    // Light-weight HTML/JS just for audio
+    audioWindow.loadFile(path.join(__dirname, '../dist/audio-window.html'));
+    //audioWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
 
     mainWindow = new BrowserWindow({
         width: 800,
@@ -155,7 +174,10 @@ const createWindow = (showFolder: string) => {
         void handleCloseRequest(event);
     });
     mainWindow.on('closed', () => {
+        audioWindow?.destroy();
+        audioWindow = null;
         mainWindow = null;
+        // app quit?
     });
 };
 
@@ -188,7 +210,7 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
-    await registerContentHandlers(mainWindow, playWorker);
+    await registerContentHandlers(mainWindow, audioWindow, playWorker);
 });
 
 app.on('before-quit', async () => {

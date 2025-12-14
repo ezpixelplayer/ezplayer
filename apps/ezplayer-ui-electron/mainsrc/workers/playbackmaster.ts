@@ -1140,7 +1140,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                emitInfo(`No foreground actions ${targetFrameRTC-Date.now()} ${foregroundPlayerRunState.currentTime-Date.now()}`);
+                emitFrameDebug(`No foreground actions ${targetFrameRTC-Date.now()} ${foregroundPlayerRunState.currentTime-Date.now()}`);
                 await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 
@@ -1150,7 +1150,7 @@ async function processQueue() {
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
-                emitInfo(`No foreground action seq`);
+                emitFrameDebug(`No foreground action seq`);
                 if (!isPaused) {
                     await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
                 }
