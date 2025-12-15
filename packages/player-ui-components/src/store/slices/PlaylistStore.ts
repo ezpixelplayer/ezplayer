@@ -23,6 +23,7 @@ export function createPlaylistSlice(extraReducers: (builder: ActionReducerMapBui
         reducers: {
             setPlaylists: (state: PlaylistState, action: PayloadAction<PlaylistRecord[]>) => {
                 state.playlists = action.payload;
+                state.tags = [...new Set(action.payload.flatMap((entry) => entry.tags || []))];
             },
             addTag: (state: PlaylistState, action: PayloadAction<string>) => {
                 if (!state.tags.includes(action.payload)) {

@@ -17,7 +17,7 @@ import {
     Paper,
     TableSortLabel,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -185,15 +185,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     const dispatch = useDispatch<AppDispatch>();
     const playlistRecords = useSelector((s: RootState) => s.playlists.playlists);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
-
-    // Get all unique tags from playlists
-    const availableTags = useMemo(() => {
-        const tags = new Set<string>();
-        playlistRecords.forEach((playlist) => {
-            playlist.tags?.forEach((tag) => tags.add(tag));
-        });
-        return Array.from(tags);
-    }, [playlistRecords]);
+    const availableTags = useSelector((state: RootState) => state.playlists.tags || []);
 
     const deletePlaylist = async (id: string) => {
         const item = playlistRecords.find((e) => e.id == id);
