@@ -958,18 +958,15 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     };
 
     const formatDuration = (seconds: number): string => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const remainingSeconds = (seconds % 60).toFixed(3);
-        const [wholeSeconds, decimals] = remainingSeconds.split('.');
-
-        // Only show decimals if they're not all zeros
-        const formattedSeconds = decimals === '000' ? wholeSeconds : remainingSeconds;
+        const totalSeconds = Math.round(seconds);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const remainingSeconds = totalSeconds % 60;
 
         if (hours > 0) {
-            return `${hours}h ${minutes}m ${formattedSeconds}s`;
+            return `${hours}h ${minutes}m ${remainingSeconds}s`;
         }
-        return `${minutes}m ${formattedSeconds}s`;
+        return `${minutes}m ${remainingSeconds}s`;
     };
 
     const deletePlaylist = async (selectedSchedule: ScheduledPlaylist, mode: EditMode) => {

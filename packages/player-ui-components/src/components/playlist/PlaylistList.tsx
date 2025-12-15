@@ -17,7 +17,7 @@ import {
     Paper,
     TableSortLabel,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -185,15 +185,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     const dispatch = useDispatch<AppDispatch>();
     const playlistRecords = useSelector((s: RootState) => s.playlists.playlists);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
-
-    // Get all unique tags from playlists
-    const availableTags = useMemo(() => {
-        const tags = new Set<string>();
-        playlistRecords.forEach((playlist) => {
-            playlist.tags?.forEach((tag) => tags.add(tag));
-        });
-        return Array.from(tags);
-    }, [playlistRecords]);
+    const availableTags = useSelector((state: RootState) => state.playlists.tags || []);
 
     const deletePlaylist = async (id: string) => {
         const item = playlistRecords.find((e) => e.id == id);
@@ -277,18 +269,15 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     };
 
     const formatDuration = (seconds: number): string => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const remainingSeconds = (seconds % 60).toFixed(3);
-        const [wholeSeconds, decimals] = remainingSeconds.split('.');
-
-        // Only show decimals if they're not all zeros
-        const formattedSeconds = decimals === '000' ? wholeSeconds : remainingSeconds;
+        const totalSeconds = Math.round(seconds);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const remainingSeconds = totalSeconds % 60;
 
         if (hours > 0) {
-            return `${hours}h ${minutes}m ${formattedSeconds}s`;
+            return `${hours}h ${minutes}m ${remainingSeconds}s`;
         }
-        return `${minutes}m ${formattedSeconds}s`;
+        return `${minutes}m ${remainingSeconds}s`;
     };
 
     const RowWrapper = ({ row, children }: { row: PlaylistRow; children: React.ReactNode }) => {
