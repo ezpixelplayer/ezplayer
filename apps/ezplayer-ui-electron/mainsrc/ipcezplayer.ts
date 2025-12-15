@@ -141,7 +141,7 @@ const handlers: MainRPCAPI = {
     },
 };
 
-export async function registerContentHandlers(mainWindow: BrowserWindow | null, nPlayWorker: Worker) {
+export async function registerContentHandlers(mainWindow: BrowserWindow | null, audioWindow: BrowserWindow | null, nPlayWorker: Worker) {
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
@@ -276,7 +276,8 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                mainWindow?.webContents.send('audio:chunk', msg.chunk);
+                //mainWindow?.webContents.send('audio:chunk', msg.chunk);
+                audioWindow?.webContents.send('audio:chunk', msg.chunk);
                 break;
             }
             case 'stats': {
