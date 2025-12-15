@@ -193,11 +193,11 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
     const [rows, setRows] = useState<SongListRow[]>([]);
     const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const availableTags = useSelector((state: RootState) => state.sequences.tags);
     const [filterTags, setFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
 
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
+    const availableTags = useSelector((state: RootState) => state.sequences.tags || []);
 
     // Add state for managing delete confirmation dialog
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
