@@ -119,7 +119,7 @@ const windows = new Map<string, RollingSuccessWindow>();
 
 let cfg: PingConfig = {
     hosts: [],
-    intervalS: 5,
+    intervalS: 60,
     maxSamples: 10,
     concurrency: 10,
 };

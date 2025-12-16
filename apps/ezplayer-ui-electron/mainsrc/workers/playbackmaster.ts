@@ -690,7 +690,7 @@ async function processQueue() {
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             concurrency: 10,
             maxSamples: 10,
-            intervalS: 5,
+            intervalS: 60,
         });
         sender.job = sendJob;
         modelRecs = models;
