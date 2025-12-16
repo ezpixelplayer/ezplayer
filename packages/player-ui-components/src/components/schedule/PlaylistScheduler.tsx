@@ -406,7 +406,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 formData.recurrence === 'once' &&
                 (mode === null || mode === 'single');
 
-            if (selectedSchedule && !isSimpleSingleOccurrenceUpdate) {
+            // When mode is 'single' and editing a recurring schedule, we update in place (no deletion)
+            const isSingleOccurrenceUpdateOfRecurring =
+                mode === 'single' &&
+                selectedSchedule &&
+                ['daily', 'selectedDays'].includes(selectedSchedule.recurrence ?? '');
+
+            if (selectedSchedule && !isSimpleSingleOccurrenceUpdate && !isSingleOccurrenceUpdateOfRecurring) {
                 if (mode === 'all') {
                     // Remove all schedules in the series
                     const baseId = selectedSchedule.baseScheduleId || selectedSchedule.id;
@@ -416,7 +422,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                     allInSeries.forEach((s) => idsToRemoveLocally.add(s.id));
                     schedulesToSubmit.push(...allInSeries.map((s) => ({ ...s, deleted: true })));
                 } else {
-                    // mode is 'single' or null
+                    // mode is null (not 'single' or 'all')
                     // Remove just the single occurrence we're editing
                     idsToRemoveLocally.add(selectedSchedule.id);
                     schedulesToSubmit.push({ ...selectedSchedule, deleted: true });
@@ -462,7 +468,24 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                     : (formData.startDate || selectedDate);
             if (!startDateForGeneration) return;
 
-            if (formData.recurrence === 'daily' && formData.endDate) {
+            // When mode is 'single', we should only update the single occurrence being edited,
+            // not regenerate the entire series, even if it's a recurring schedule
+            if (mode === 'single' && selectedSchedule) {
+                // Update the existing schedule in place for the selected date
+                // Keep the original ID and baseScheduleId to maintain the relationship
+                schedulesToUpdateLocally = [
+                    {
+                        ...selectedSchedule, // Preserve original schedule properties
+                        ...baseSchedule, // Override with new form data
+                        id: selectedSchedule.id, // Keep the same ID
+                        date: convertDateToMilliseconds(selectedDate!), // Update to selected date
+                        baseScheduleId: selectedSchedule.baseScheduleId || '', // Preserve baseScheduleId
+                        // Keep the original recurrence type to maintain series relationship
+                        recurrence: selectedSchedule.recurrence || 'once',
+                        scheduleType: baseSchedule.scheduleType || 'main',
+                    },
+                ];
+            } else if (formData.recurrence === 'daily' && formData.endDate) {
                 schedulesToUpdateLocally = generateDailyOccurrences(startDateForGeneration, formData.endDate, {
                     ...baseSchedule,
                     baseScheduleId,
@@ -512,6 +535,17 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 // For simple single occurrence updates, we need to replace the existing schedule
                 // instead of adding a duplicate
                 if (isSimpleSingleOccurrenceUpdate && selectedSchedule) {
+                    const existingScheduleIndex = filteredSchedules.findIndex((s) => s.id === selectedSchedule.id);
+                    if (existingScheduleIndex !== -1) {
+                        // Replace the existing schedule with the updated one
+                        const updatedSchedules = [...filteredSchedules];
+                        updatedSchedules[existingScheduleIndex] = schedulesToUpdateLocally[0];
+                        return updatedSchedules;
+                    }
+                }
+
+                // For single occurrence updates of recurring schedules, replace the existing one
+                if (isSingleOccurrenceUpdateOfRecurring && selectedSchedule) {
                     const existingScheduleIndex = filteredSchedules.findIndex((s) => s.id === selectedSchedule.id);
                     if (existingScheduleIndex !== -1) {
                         // Replace the existing schedule with the updated one
