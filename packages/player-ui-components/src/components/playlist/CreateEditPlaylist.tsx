@@ -400,14 +400,15 @@ const PlaylistContainer = ({
                         <Box
                             sx={{
                                 display: 'flex',
-                                justifyContent: 'space-between',
+                                justifyContent: 'flex-end',
                                 alignItems: 'center',
+                                gap: 2,
                                 height: '100%',
                                 pt: 0.5,
                             }}
                         >
                             <Typography variant="body1">Songs: {songCount}</Typography>
-                            <Typography variant="body1" sx={{ textAlign: 'right' }}>
+                            <Typography variant="body1">
                                 Total Duration: {formattedTotalDuration}
                             </Typography>
                         </Box>
