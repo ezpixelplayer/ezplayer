@@ -43,7 +43,6 @@ interface PlaylistSongInstance extends SequenceRecord {
     instanceId: string; // Unique identifier for each instance
 }
 
-const MAX_PLAYLIST_SONGS = 200;
 
 // Helper function to format duration in seconds to MM:SS
 const formatDuration = (durationInSeconds: number) => {
@@ -69,8 +68,6 @@ interface AvailableSongsContainerProps {
     usedSongIds: Set<string>;
     onAddSong: (id: string) => void;
     filteredAndSortedSongs: SequenceRecord[];
-    playlistSongCount: number;
-    maxSongs: number;
 }
 
 function songDesc(
@@ -102,8 +99,6 @@ const AvailableSongsContainer = ({
     onAddSong,
     sequenceData,
     filteredAndSortedSongs,
-    playlistSongCount,
-    maxSongs,
 }: AvailableSongsContainerProps) => {
     const { setNodeRef: setAvailableRef } = useDroppable({
         id: 'available',
@@ -168,25 +163,9 @@ const AvailableSongsContainer = ({
                                 size="small"
                                 fullWidth
                                 onClick={() => {
-                                    const remainingSlots = maxSongs - playlistSongCount;
-                                    if (remainingSlots <= 0) {
-                                        ToastMsgs.showErrorMessage(
-                                            `You can add up to ${maxSongs} songs in a playlist.`,
-                                            {
-                                                theme: 'colored',
-                                                position: 'bottom-right',
-                                                autoClose: 2000,
-                                            },
-                                        );
-                                        return;
-                                    }
-
-                                    let added = 0;
                                     filteredAndSortedSongs?.forEach((song) => {
-                                        if (added >= remainingSlots) return;
                                         if (!usedSongIds.has(song.id)) {
                                             onAddSong(song.id);
-                                            added += 1;
                                         }
                                     });
                                 }}
@@ -700,15 +679,9 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
         const songToAdd = sequenceData?.find((song) => song.id === id);
 
         if (songToAdd) {
-            let limitReached = false;
             const uniqueInstanceId = `${songToAdd.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
             setPlaylistSongs((prevSongs) => {
-                if (prevSongs.length >= MAX_PLAYLIST_SONGS) {
-                    limitReached = true;
-                    return prevSongs;
-                }
-
                 const newSongs = [
                     ...prevSongs,
                     {
@@ -725,15 +698,6 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 // If no sort order, just add to the end
                 return newSongs;
             });
-
-            if (limitReached) {
-                ToastMsgs.showErrorMessage(`You can add up to ${MAX_PLAYLIST_SONGS} songs in a playlist.`, {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2000,
-                });
-                return;
-            }
 
             setUsedSongIds((prev) => new Set(prev).add(songToAdd.id));
         }
@@ -774,21 +738,9 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             const itemToAdd = sequenceData?.find((item) => item.id === active.id);
 
             if (itemToAdd) {
-                if (playlistSongs.length >= MAX_PLAYLIST_SONGS) {
-                    ToastMsgs.showErrorMessage(`You can add up to ${MAX_PLAYLIST_SONGS} songs in a playlist.`, {
-                        theme: 'colored',
-                        position: 'bottom-right',
-                        autoClose: 2000,
-                    });
-                    return;
-                }
-
                 const uniqueInstanceId = `${itemToAdd.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
                 setPlaylistSongs((prevSongs) => {
-                    if (prevSongs.length >= MAX_PLAYLIST_SONGS) {
-                        return prevSongs;
-                    }
                     const newSongInstance = {
                         ...itemToAdd,
                         instanceId: uniqueInstanceId,
@@ -921,9 +873,6 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
         }
         if (!playlistSongs || playlistSongs.length === 0) {
             return { isValid: false, error: 'At least one song is required' };
-        }
-        if (playlistSongs.length > MAX_PLAYLIST_SONGS) {
-            return { isValid: false, error: `You can add up to ${MAX_PLAYLIST_SONGS} songs` };
         }
 
         return { isValid: true, error: '' };
@@ -1150,8 +1099,6 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                                         usedSongIds={usedSongIds}
                                         onAddSong={handleAddSong}
                                         filteredAndSortedSongs={filteredAndSortedSongs}
-                                        playlistSongCount={playlistSongs.length}
-                                        maxSongs={MAX_PLAYLIST_SONGS}
                                     />
                                 </Box>
                             </Card>
