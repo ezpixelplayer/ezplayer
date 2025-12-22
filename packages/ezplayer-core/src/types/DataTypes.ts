@@ -153,8 +153,8 @@ export interface PlayerPStatusContent {
     preemptedItems?: PlayingItem[];
 
     volume?: {
-        level: number, // 0-100
-        muted?: boolean,
+        level: number; // 0-100
+        muted?: boolean;
     };
 
     // TODO: system status, storage, memory, temp, etc?
@@ -212,23 +212,23 @@ export interface CombinedPlayerStatus {
 }
 
 export interface PrefetchCacheStats {
-    totalItems: number,
-    referencedItems: number,
-    readyItems: number,
-    pendingItems: number,
-    errorItems: number,
-    inProgressItems: number,
+    totalItems: number;
+    referencedItems: number;
+    readyItems: number;
+    pendingItems: number;
+    errorItems: number;
+    inProgressItems: number;
 
-    budget: number,
-    used: number,
+    budget: number;
+    used: number;
 
-    refHitsCumulative: number,
-    refMissesCumulative: number,
-    expiredItemsCumulative: number,
-    evictedItemsCumulative: number,
+    refHitsCumulative: number;
+    refMissesCumulative: number;
+    expiredItemsCumulative: number;
+    evictedItemsCumulative: number;
 
-    completedRequestsCumulative: number,
-    erroredRequestsCumulative: number,
+    completedRequestsCumulative: number;
+    erroredRequestsCumulative: number;
 }
 
 export interface PlaybackStatistics {
@@ -269,32 +269,32 @@ export interface PlaybackStatistics {
 
     // Audio Decode
     audioDecode?: {
-        fileReadTimeCumulative: number,
-        decodeTimeCumulative: number,
-    }
+        fileReadTimeCumulative: number;
+        decodeTimeCumulative: number;
+    };
 
     // Sequence Decompress
     sequenceDecompress?: {
-        fileReadTimeCumulative: number,
-        decompressTimeCumulative: number,
-    }
+        fileReadTimeCumulative: number;
+        decompressTimeCumulative: number;
+    };
 
     // Effects Processing
     effectsProcessing?: {
-        backgroundBlendTimePeriod: number,
-    }
+        backgroundBlendTimePeriod: number;
+    };
 
     // FSEQ Cache
     fseqPrefetch?: {
-        totalMem: number,
-        headerCache: PrefetchCacheStats,
-        chunkCache: PrefetchCacheStats,
-    }
+        totalMem: number;
+        headerCache: PrefetchCacheStats;
+        chunkCache: PrefetchCacheStats;
+    };
 
     // Audio decode cache
     audioPrefetch?: {
-        decodeCache: PrefetchCacheStats,
-    }
+        decodeCache: PrefetchCacheStats;
+    };
 }
 
 export type EZPlayerCommand =
@@ -350,7 +350,7 @@ export type EZPlayerCommand =
           command: 'setvolume';
           volume?: number;
           mute?: boolean;
-    };
+      };
 
 export interface EndUser {
     user_id: string; // UUID

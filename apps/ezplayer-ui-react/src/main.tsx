@@ -20,6 +20,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 </BrowserRouter>
             </SidebarProvider>
         </HelmetProvider>
-    </React.StrictMode>
+    </React.StrictMode>,
 );
-

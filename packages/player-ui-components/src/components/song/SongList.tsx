@@ -105,7 +105,9 @@ export function SongList({
                     return null; // Skip songs without ID
                 }
 
-                const artist = (song?.work?.artist || 'Unknown Artist') + `${song?.sequence?.vendor ? '('+song.sequence.vendor+')' : ''}`;
+                const artist =
+                    (song?.work?.artist || 'Unknown Artist') +
+                    `${song?.sequence?.vendor ? '(' + song.sequence.vendor + ')' : ''}`;
 
                 return {
                     id: song.id,
@@ -219,21 +221,21 @@ export function SongList({
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {params.value && params.value.length > 0
                             ? params.value.map((tag: string, index: number) => (
-                                <Typography
-                                    key={`${params.row.id}-tag-${index}-${tag}`}
-                                    variant="body2"
-                                    sx={{
-                                        backgroundColor: 'primary.light',
-                                        color: 'primary.contrastText',
-                                        padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    {tag}
-                                </Typography>
-                            ))
+                                  <Typography
+                                      key={`${params.row.id}-tag-${index}-${tag}`}
+                                      variant="body2"
+                                      sx={{
+                                          backgroundColor: 'primary.light',
+                                          color: 'primary.contrastText',
+                                          padding: '2px 8px',
+                                          borderRadius: '12px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 500,
+                                      }}
+                                  >
+                                      {tag}
+                                  </Typography>
+                              ))
                             : null}
                     </Box>
                 </RowWrapper>
@@ -252,55 +254,55 @@ export function SongList({
     const actionColumn =
         showEditAction || showDeleteAction
             ? {
-                field: 'actions',
-                headerName: '',
-                flex: 0.8,
-                minWidth: 120,
-                renderCell: (params: any) => {
-                    const canShowEdit = showEditAction;
-                    const canShowDelete = showDeleteAction && params.row.isDeletableSong;
+                  field: 'actions',
+                  headerName: '',
+                  flex: 0.8,
+                  minWidth: 120,
+                  renderCell: (params: any) => {
+                      const canShowEdit = showEditAction;
+                      const canShowDelete = showDeleteAction && params.row.isDeletableSong;
 
-                    if (!canShowEdit && !canShowDelete) {
-                        return null;
-                    }
+                      if (!canShowEdit && !canShowDelete) {
+                          return null;
+                      }
 
-                    return (
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                gap: 1,
-                                minWidth: '100%',
-                                justifyContent: 'flex-end',
-                                '@media (max-width: 600px)': {
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-end',
-                                    gap: 0.5,
-                                },
-                            }}
-                        >
-                            {canShowEdit && (
-                                <Button
-                                    aria-label="edit"
-                                    icon={<EditIcon />}
-                                    size="small"
-                                    onClick={() => handleSongSetupClick(params.row)}
-                                    sx={{ minWidth: 'auto' }}
-                                />
-                            )}
-                            {canShowDelete && (
-                                <Button
-                                    aria-label="delete"
-                                    icon={<DeleteIcon />}
-                                    size="small"
-                                    color="error"
-                                    onClick={() => handleDeleteClick(params.row.id)}
-                                    sx={{ minWidth: 'auto' }}
-                                />
-                            )}
-                        </Box>
-                    );
-                },
-            }
+                      return (
+                          <Box
+                              sx={{
+                                  display: 'flex',
+                                  gap: 1,
+                                  minWidth: '100%',
+                                  justifyContent: 'flex-end',
+                                  '@media (max-width: 600px)': {
+                                      flexDirection: 'column',
+                                      alignItems: 'flex-end',
+                                      gap: 0.5,
+                                  },
+                              }}
+                          >
+                              {canShowEdit && (
+                                  <Button
+                                      aria-label="edit"
+                                      icon={<EditIcon />}
+                                      size="small"
+                                      onClick={() => handleSongSetupClick(params.row)}
+                                      sx={{ minWidth: 'auto' }}
+                                  />
+                              )}
+                              {canShowDelete && (
+                                  <Button
+                                      aria-label="delete"
+                                      icon={<DeleteIcon />}
+                                      size="small"
+                                      color="error"
+                                      onClick={() => handleDeleteClick(params.row.id)}
+                                      sx={{ minWidth: 'auto' }}
+                                  />
+                              )}
+                          </Box>
+                      );
+                  },
+              }
             : null;
 
     const columns = actionColumn ? [...baseColumns, actionColumn] : baseColumns;

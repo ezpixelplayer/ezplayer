@@ -457,8 +457,10 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             // This allows editing the start date for both single and recurring schedules
             const startDateForGeneration =
                 formData.recurrence === 'once'
-                    ? (selectedSchedule ? formData.startDate : selectedDate)
-                    : (formData.startDate || selectedDate);
+                    ? selectedSchedule
+                        ? formData.startDate
+                        : selectedDate
+                    : formData.startDate || selectedDate;
             if (!startDateForGeneration) return;
 
             if (formData.recurrence === 'daily' && formData.endDate) {
@@ -1351,16 +1353,16 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 }}
                                 helperText={
                                     formData.fromTime &&
-                                        formData.toTime &&
-                                        !isToTimeAfterFromTime(formData.fromTime, formData.toTime)
+                                    formData.toTime &&
+                                    !isToTimeAfterFromTime(formData.fromTime, formData.toTime)
                                         ? `To Time must be after From Time. Try ${suggestValidToTime(formData.fromTime)} or later.`
                                         : 'Extended time format (e.g., 14:30, 25:00, 26:30). Use 25:00 for 1:00 AM next day, 48:00 for midnight 2 days later.'
                                 }
                                 error={Boolean(
                                     formData.toTime &&
-                                    (!isExtendedTimeValid(formData.toTime) ||
-                                        (formData.fromTime &&
-                                            !isToTimeAfterFromTime(formData.fromTime, formData.toTime))),
+                                        (!isExtendedTimeValid(formData.toTime) ||
+                                            (formData.fromTime &&
+                                                !isToTimeAfterFromTime(formData.fromTime, formData.toTime))),
                                 )}
                                 sx={{ flex: 1 }}
                             />
@@ -1563,7 +1565,11 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         {(formData.recurrence === 'daily' || (formData.recurrence === 'once' && selectedSchedule)) && (
                             <Box sx={{ mt: 1 }}>
                                 {selectedSchedule && formData.recurrence === 'once' && (
-                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                    <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        sx={{ mb: 1, display: 'block' }}
+                                    >
                                         You can edit the start date for this schedule
                                     </Typography>
                                 )}
@@ -1706,8 +1712,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 <DialogTitle>Delete Schedule</DialogTitle>
                 <DialogContent>
                     {selectedSchedule &&
-                        ['daily', 'selectedDays'].includes(formData.recurrence) &&
-                        !deleteDialogState.mode ? (
+                    ['daily', 'selectedDays'].includes(formData.recurrence) &&
+                    !deleteDialogState.mode ? (
                         <>
                             <Typography gutterBottom>
                                 Would you like to delete this event or all related events?

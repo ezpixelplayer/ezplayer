@@ -45,12 +45,7 @@ import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplaye
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
-import {
-    PlayerCommand,
-    type MainRPCAPI,
-    type PlayWorkerRPCAPI,
-    WorkerToMainMessage,
-} from './workers/playbacktypes.js';
+import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 import { wsBroadcaster } from './websocket-broadcaster.js';

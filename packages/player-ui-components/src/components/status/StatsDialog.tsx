@@ -12,9 +12,7 @@ import {
     Box,
     useTheme,
 } from '@mui/material';
-import {
-    useDispatch
-} from 'react-redux';
+import { useDispatch } from 'react-redux';
 
 import { PlaybackStatistics } from '@ezplayer/ezplayer-core';
 import { AppDispatch } from '../../store/Store';
@@ -105,7 +103,8 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Effect Processing:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.effectsProcessing?.backgroundBlendTimePeriod)}ms background blending
+                                                {formatValue(stats.effectsProcessing?.backgroundBlendTimePeriod)}ms
+                                                background blending
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -187,13 +186,17 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Controller Frame Skips (intentional):</Typography>
+                                            <Typography variant="body2">
+                                                Controller Frame Skips (intentional):
+                                            </Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.cframesSkippedDueToDirectiveCumulative)}
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Controller Frame Skips (incomplete):</Typography>
+                                            <Typography variant="body2">
+                                                Controller Frame Skips (incomplete):
+                                            </Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.cframesSkippedDueToIncompletePriorCumulative)}
                                             </Typography>
@@ -219,13 +222,16 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Sequence Read:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.sequenceDecompress?.fileReadTimeCumulative)}ms read; {formatValue(stats.sequenceDecompress?.decompressTimeCumulative)}ms decompress
+                                                {formatValue(stats.sequenceDecompress?.fileReadTimeCumulative)}ms read;{' '}
+                                                {formatValue(stats.sequenceDecompress?.decompressTimeCumulative)}ms
+                                                decompress
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Audio Read:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioDecode?.fileReadTimeCumulative)}ms read; {formatValue(stats.audioDecode?.decodeTimeCumulative)}ms decode
+                                                {formatValue(stats.audioDecode?.fileReadTimeCumulative)}ms read;{' '}
+                                                {formatValue(stats.audioDecode?.decodeTimeCumulative)}ms decode
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -249,33 +255,51 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Cache Budget:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.budget)} budget; {formatValue(stats.audioPrefetch?.decodeCache?.used)} used
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.budget)} budget;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.used)} used
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Fetches:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.completedRequestsCumulative)} fetches; {formatValue(stats.audioPrefetch?.decodeCache?.erroredRequestsCumulative)} errored
+                                                {formatValue(
+                                                    stats.audioPrefetch?.decodeCache?.completedRequestsCumulative,
+                                                )}{' '}
+                                                fetches;{' '}
+                                                {formatValue(
+                                                    stats.audioPrefetch?.decodeCache?.erroredRequestsCumulative,
+                                                )}{' '}
+                                                errored
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Hits/Misses:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.refHitsCumulative)} hits; {formatValue(stats.audioPrefetch?.decodeCache?.refMissesCumulative)} misses
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.refHitsCumulative)} hits;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.refMissesCumulative)}{' '}
+                                                misses
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Evictions/Expirations:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.evictedItemsCumulative)} evicted; {formatValue(stats.audioPrefetch?.decodeCache?.expiredItemsCumulative)} expired
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.evictedItemsCumulative)}{' '}
+                                                evicted;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.expiredItemsCumulative)}{' '}
+                                                expired
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Occupancy:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.totalItems)} items;{' '}{formatValue(stats.audioPrefetch?.decodeCache?.referencedItems)} referenced;{' '}
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.readyItems)} ready;{' '}{formatValue(stats.audioPrefetch?.decodeCache?.pendingItems)} pending;{' '}
-                                                {formatValue(stats.audioPrefetch?.decodeCache?.inProgressItems)} loading;{' '}{formatValue(stats.audioPrefetch?.decodeCache?.errorItems)} errored
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.totalItems)} items;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.referencedItems)}{' '}
+                                                referenced; {formatValue(stats.audioPrefetch?.decodeCache?.readyItems)}{' '}
+                                                ready; {formatValue(stats.audioPrefetch?.decodeCache?.pendingItems)}{' '}
+                                                pending;{' '}
+                                                {formatValue(stats.audioPrefetch?.decodeCache?.inProgressItems)}{' '}
+                                                loading; {formatValue(stats.audioPrefetch?.decodeCache?.errorItems)}{' '}
+                                                errored
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -305,33 +329,48 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Cache Budget:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.budget)} budget; {formatValue(stats.fseqPrefetch?.chunkCache?.used)} used
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.budget)} budget;{' '}
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.used)} used
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Fetches:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.completedRequestsCumulative)} fetches; {formatValue(stats.fseqPrefetch?.chunkCache?.erroredRequestsCumulative)} errored
+                                                {formatValue(
+                                                    stats.fseqPrefetch?.chunkCache?.completedRequestsCumulative,
+                                                )}{' '}
+                                                fetches;{' '}
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.erroredRequestsCumulative)}{' '}
+                                                errored
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Hits/Misses:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.refHitsCumulative)} hits; {formatValue(stats.fseqPrefetch?.chunkCache?.refMissesCumulative)} misses
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.refHitsCumulative)} hits;{' '}
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.refMissesCumulative)}{' '}
+                                                misses
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Evictions/Expirations:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.evictedItemsCumulative)} evicted; {formatValue(stats.fseqPrefetch?.chunkCache?.expiredItemsCumulative)} expired
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.evictedItemsCumulative)}{' '}
+                                                evicted;{' '}
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.expiredItemsCumulative)}{' '}
+                                                expired
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Occupancy:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.totalItems)} items;{' '}{formatValue(stats.fseqPrefetch?.chunkCache?.referencedItems)} referenced;{' '} 
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.readyItems)} ready;{' '}{formatValue(stats.fseqPrefetch?.chunkCache?.pendingItems)} pending;{' '}
-                                                {formatValue(stats.fseqPrefetch?.chunkCache?.inProgressItems)} loading;{' '}{formatValue(stats.fseqPrefetch?.chunkCache?.errorItems)} errored
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.totalItems)} items;{' '}
+                                                {formatValue(stats.fseqPrefetch?.chunkCache?.referencedItems)}{' '}
+                                                referenced; {formatValue(stats.fseqPrefetch?.chunkCache?.readyItems)}{' '}
+                                                ready; {formatValue(stats.fseqPrefetch?.chunkCache?.pendingItems)}{' '}
+                                                pending; {formatValue(stats.fseqPrefetch?.chunkCache?.inProgressItems)}{' '}
+                                                loading; {formatValue(stats.fseqPrefetch?.chunkCache?.errorItems)}{' '}
+                                                errored
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -372,9 +411,13 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                 )}
             </DialogContent>
             <DialogActions>
-                <Button onClick={async ()=> {
-                    await dispatch(callImmediateCommand({command: 'resetstats'})).unwrap();
-                }} variant="contained" color="primary">
+                <Button
+                    onClick={async () => {
+                        await dispatch(callImmediateCommand({ command: 'resetstats' })).unwrap();
+                    }}
+                    variant="contained"
+                    color="primary"
+                >
                     Reset
                 </Button>
                 <Button onClick={onClose} variant="contained" color="primary">

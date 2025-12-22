@@ -48,9 +48,8 @@ export class ModelRec {
     }
 }
 
-export class FSEQHeader
-{
-    hdr4: string = "";
+export class FSEQHeader {
+    hdr4: string = '';
     modelcount: number = 0;
     stepsize: number = 0;
     modelstart: number = 0;
@@ -79,7 +78,7 @@ export class FSEQHeader
     compblocklist: CompBlock[] = [];
     chranges: SparseRange[] = [];
 
-    headers: {[key:string]: string} = {};
+    headers: { [key: string]: string } = {};
 }
 
 class CompBlockIndex {
@@ -88,7 +87,6 @@ class CompBlockIndex {
     fileOffset: number = 0;
     fileSize: number = 0;
 }
-
 
 class CompBlockCacheEntry {
     decompBuf?: Uint8Array;
@@ -101,11 +99,11 @@ export class CompBlockCache {
     findChunk(frame: number): number | undefined {
         let low = 0;
         let high = this.index.length - 1;
-          
+
         while (low <= high) {
             const mid = (low + high) >>> 1;
             const range = this.index[mid];
-        
+
             if (frame < range.startFrame) {
                 high = mid - 1;
             } else if (frame >= range.endFrame) {
@@ -123,15 +121,14 @@ export class CompBlockCache {
 // Sync reader
 ////////////////
 
-export class FSEQReaderSync
-{
+export class FSEQReaderSync {
     filename: string;
     fd?: fsp.FileHandle;
     fdo: number = 0;
     header?: FSEQHeader;
 
     async read(n: number) {
-        if (!this.fd) throw new Error("Not open");
+        if (!this.fd) throw new Error('Not open');
         const pos = null;
         const len = n;
         const boff = 0;
@@ -142,7 +139,7 @@ export class FSEQReaderSync
     }
 
     async readAt(n: number, at: number) {
-        if (!this.fd) throw new Error("Not open");
+        if (!this.fd) throw new Error('Not open');
         const pos = at;
         const len = n;
         const boff = 0;
@@ -152,22 +149,22 @@ export class FSEQReaderSync
         return buffer;
     }
 
-    async read8bit() : Promise<number> {
+    async read8bit(): Promise<number> {
         const arr = await this.read(1);
         return arr.getUint8(0);
     }
 
-    async read16bit()  : Promise<number> {
+    async read16bit(): Promise<number> {
         const arr = await this.read(2);
         return arr.getUint16(0, true);
     }
 
-    async read24bit() : Promise<number> {
+    async read24bit(): Promise<number> {
         const arr = await this.read(3);
-        return arr.getUint8(0) + arr.getUint8(1)*256 + arr.getUint8(2)*65536;
+        return arr.getUint8(0) + arr.getUint8(1) * 256 + arr.getUint8(2) * 65536;
     }
 
-    async read32bit() : Promise<number> {
+    async read32bit(): Promise<number> {
         const arr = await this.read(4);
         return arr.getUint32(0, true);
     }
@@ -178,7 +175,7 @@ export class FSEQReaderSync
 
     async open() {
         if (this.fd) {
-            throw new Error("Already open");
+            throw new Error('Already open');
         }
         this.fdo = 0;
         this.fd = await fsp.open(this.filename, 'r');
@@ -187,28 +184,25 @@ export class FSEQReaderSync
     async close() {
         try {
             await this.fd?.close();
-        }
-        catch (e)
-        {
-        }
+        } catch (e) {}
         this.fd = undefined;
     }
 
     async readHeader() {
-        if (!this.fd) throw new Error("Not open");
+        if (!this.fd) throw new Error('Not open');
         const hdr = await this.read(4);
         const shdr = utfDecoder.decode(hdr);
-        const isEseq = (shdr === 'ESEQ');
+        const isEseq = shdr === 'ESEQ';
         if (shdr !== 'PSEQ' && shdr !== 'ESEQ' && shdr !== 'FSEQ') {
-            throw new Error("Not a PSEQ file");
+            throw new Error('Not a PSEQ file');
         }
 
         // Things we will need to read the frames
         let nframes = 0; // Number of frames
         let stepsz = 0; // Size of uncompressed frame
-        const compblocklist : CompBlock[] = []; // Bit about reading the file and decompressing
+        const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
-        const v1headers: {[key:string]: string} = {};
+        const v1headers: { [key: string]: string } = {};
         let comp = 0;
         let ccount = 0;
         let stepms = 50;
@@ -225,7 +219,8 @@ export class FSEQReaderSync
         let gamma = 0;
         let colorenc = 0;
         let reserved2 = 0;
-        let uuid1 = 0, uuid2 = 0;
+        let uuid1 = 0,
+            uuid2 = 0;
         let blks = 0;
         let nranges = 0;
 
@@ -243,15 +238,14 @@ export class FSEQReaderSync
             //Noting the lack of // of frames, frame timing, or any compression.  This format sucks.
             const flen = (await this.fd.stat()).size;
             nframes = Math.floor((flen - off2chdata) / stepsz);
-            compblocklist.push({framenum: 0, blocksize: nframes * stepsz});
-            chrangelist.push({startch: modelstart, chcount: modelsize});
-        }
-        else {
+            compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
+            chrangelist.push({ startch: modelstart, chcount: modelsize });
+        } else {
             off2chdata = await this.read16bit();
             minver = await this.read8bit();
             majver = await this.read8bit();
 
-            const isv1 = (majver === 1);
+            const isv1 = majver === 1;
 
             //console.log("offset to channel data: "+str(off2chdata))
             //console.log("Version "+str(majver)+'.'+str(minver))
@@ -271,9 +265,8 @@ export class FSEQReaderSync
                 reserved2 = await this.read16bit();
 
                 // Double check this math, is it rounded up?
-                compblocklist.push({framenum: 0, blocksize: nframes*ccount});
-            }
-            else {
+                compblocklist.push({ framenum: 0, blocksize: nframes * ccount });
+            } else {
                 const compandblks = await this.read8bit();
                 comp = compandblks & 15;
                 blks = (compandblks & 240) * 16;
@@ -287,7 +280,7 @@ export class FSEQReaderSync
                 // Compression blocks
                 // Compress block index: 4 frame num, 4 length
                 let seenEmpty = false;
-                for (let i=0; i<blks; ++i) {
+                for (let i = 0; i < blks; ++i) {
                     const framenum = await this.read32bit();
                     const blocksize = await this.read32bit();
                     if (!blocksize) {
@@ -298,27 +291,27 @@ export class FSEQReaderSync
                         continue;
                     }
                     if (seenEmpty) {
-                        throw new Error("Empty blocks followed by nonempty blocks "+i.toString());
+                        throw new Error('Empty blocks followed by nonempty blocks ' + i.toString());
                     }
-                    compblocklist.push({framenum, blocksize});
+                    compblocklist.push({ framenum, blocksize });
                 }
 
                 // Sparse range map
                 // Sparse ranges: 3 ch num, 3 num ch
-                for (let i=0; i<nranges; ++i) {
+                for (let i = 0; i < nranges; ++i) {
                     const startnum = await this.read24bit();
                     const chcount = await this.read24bit();
-                    chrangelist.push({startch:startnum, chcount:chcount});
+                    chrangelist.push({ startch: startnum, chcount: chcount });
                 }
             }
 
             if (!chrangelist.length) {
-                chrangelist.push({startch: 1, chcount: ccount});
+                chrangelist.push({ startch: 1, chcount: ccount });
             }
 
             while (this.fdo + 4 <= off2chdata) {
                 //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
-                const hlen = await this.read16bit() - 4;
+                const hlen = (await this.read16bit()) - 4;
                 const hname = utfDecoder.decode(await this.read(2));
                 //console.log ("Header "+hname+": "+str(hlen))
                 const hval = utfDecoder.decode(await this.read(hlen));
@@ -355,9 +348,11 @@ export class FSEQReaderSync
         };
     }
 
-    async processFrames(visitframe: (param: {frame: Uint8Array, fnum: number, ftime: number, hdr: FSEQHeader})=>void) {
+    async processFrames(
+        visitframe: (param: { frame: Uint8Array; fnum: number; ftime: number; hdr: FSEQHeader }) => void,
+    ) {
         if (!this.fd || !this.header) {
-            throw new Error("Not open");
+            throw new Error('Not open');
         }
 
         //console.log("Decode "+str(nframes)+" frames")
@@ -366,11 +361,12 @@ export class FSEQReaderSync
 
         let foff = this.header.chdata_offset;
         let cn = 0;
-        for (const blk of this.header.compblocklist)
-        {
-            const {framenum: sframe, blocksize: dsz} = blk;
+        for (const blk of this.header.compblocklist) {
+            const { framenum: sframe, blocksize: dsz } = blk;
             if (sframe !== curframe) {
-                throw new Error(`Unexpected start frame ${sframe} vs ${curframe} ; ${dsz} / ${this.header.compblocklist.length}`);
+                throw new Error(
+                    `Unexpected start frame ${sframe} vs ${curframe} ; ${dsz} / ${this.header.compblocklist.length}`,
+                );
             }
 
             let raw: Uint8Array = toUint8Array(await this.readAt(dsz, foff));
@@ -380,26 +376,24 @@ export class FSEQReaderSync
             if (this.header.compression === 1) {
                 let nframes = this.header.frames - curframe;
                 if (cn < this.header.compblocklist.length - 1) {
-                    nframes = this.header.compblocklist[cn+1].framenum-curframe;
+                    nframes = this.header.compblocklist[cn + 1].framenum - curframe;
                 }
-                lenraw = nframes*this.header.stepsize;
+                lenraw = nframes * this.header.stepsize;
                 const decoder = new ZSTDDecoder();
                 await decoder.init();
                 //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
                 raw = decoder.decode(raw, lenraw);
-            }
-            else if (this.header.compression === 2) {
-                throw new Error("Need to implement zlib");
+            } else if (this.header.compression === 2) {
+                throw new Error('Need to implement zlib');
             }
 
             let frmoffset = 0;
             //console.log("Raw len: "+str(len(raw))+"; step size "+str(stepsz))
-            while (frmoffset < lenraw)
-            {
-                const frame = raw.subarray(frmoffset, frmoffset+this.header.stepsize);
+            while (frmoffset < lenraw) {
+                const frame = raw.subarray(frmoffset, frmoffset + this.header.stepsize);
                 // At this point we have:
                 // frame, curms, curframe, etc.
-                visitframe({frame, fnum:curframe, ftime: curms, hdr: this.header});
+                visitframe({ frame, fnum: curframe, ftime: curms, hdr: this.header });
 
                 //console.log('Frame '+str(curframe)+' done')
                 //console.log ("Frame //"+str(len(frames))+"/"+str(curms)+" done")
@@ -408,20 +402,28 @@ export class FSEQReaderSync
                 curms = curms + this.header.msperframe;
             }
             if (frmoffset !== lenraw) {
-                throw new Error("Partial frame");
+                throw new Error('Partial frame');
             }
             ++cn;
         }
         if (curframe !== this.header.frames) {
-            throw new Error("Frame count mismatch");
+            throw new Error('Frame count mismatch');
         }
     }
 
-    async processFrameModels(models: ModelRec[], srcmodels: string[],
-        visitmodel:(param:{model:ModelRec, frame:Uint8Array, fnum: number, ftime: number, hdr: FSEQHeader})=>void,
-        frameEnd?:(param: {frame: Uint8Array, fnum: number, ftime: number, hdr: FSEQHeader})=>void,
-        frameStart?:(param: {frame: Uint8Array, fnum: number, ftime: number, hdr: FSEQHeader})=>void)
-    {
+    async processFrameModels(
+        models: ModelRec[],
+        srcmodels: string[],
+        visitmodel: (param: {
+            model: ModelRec;
+            frame: Uint8Array;
+            fnum: number;
+            ftime: number;
+            hdr: FSEQHeader;
+        }) => void,
+        frameEnd?: (param: { frame: Uint8Array; fnum: number; ftime: number; hdr: FSEQHeader }) => void,
+        frameStart?: (param: { frame: Uint8Array; fnum: number; ftime: number; hdr: FSEQHeader }) => void,
+    ) {
         return this.processFrames((param) => {
             if (frameStart) frameStart(param);
             // Go through each model and visit it
@@ -436,13 +438,13 @@ export class FSEQReaderSync
                 let curoff = 0;
                 //console.log("Model channel range "+str(sch)+"-"+str(ech))
                 for (const schrng of param.hdr.chranges) {
-                    const {startch: rstart, chcount: rcnt} = schrng;
+                    const { startch: rstart, chcount: rcnt } = schrng;
                     //console.log("Seq channel range "+str(rstart)+"-"+str(rstart+rcnt))
-                    if (sch >= rstart && ech <= rstart+rcnt) {
+                    if (sch >= rstart && ech <= rstart + rcnt) {
                         //console.log("Using it... @"+str(sch-rstart))
                         const msub = param.frame.subarray(curoff + sch - rstart, curoff + ech - rstart + 1);
                         //console.log("Starting model "+m.name)
-                        visitmodel({model:m, frame:msub, fnum:param.fnum, ftime:param.ftime, hdr:param.hdr});
+                        visitmodel({ model: m, frame: msub, fnum: param.fnum, ftime: param.ftime, hdr: param.hdr });
                         //console.log("Finished model "+m.name)
                     }
                     curoff += rcnt;
@@ -457,9 +459,13 @@ export class FSEQReaderSync
 // Async reader
 ////////////////
 
-export class FSEQReaderAsync
-{
-    static async readFixedHeaderAsync(fr: FileReadWorker, clientid: number, fileid: number, reqid: number) : Promise<FSEQHeader> {
+export class FSEQReaderAsync {
+    static async readFixedHeaderAsync(
+        fr: FileReadWorker,
+        clientid: number,
+        fileid: number,
+        reqid: number,
+    ): Promise<FSEQHeader> {
         const hreq1: FileReadRequest = {
             clientid,
             fileid,
@@ -467,7 +473,7 @@ export class FSEQReaderAsync
             offset: 0,
             length: 32,
         };
-        const {readBytes: readBytes1} = await fr.asyncRead(hreq1);
+        const { readBytes: readBytes1 } = await fr.asyncRead(hreq1);
         if (readBytes1 !== 32) throw new Error(`Did not read 32 bytes from purported FSEQ file`);
 
         const baseHdr = FSEQReaderAsync.decodeFSEQHeader(hreq1.buf!, hreq1.bufoffset!, true);
@@ -480,27 +486,28 @@ export class FSEQReaderAsync
             offset: 0,
             length: realhlen,
         };
-        const {readBytes: readBytes2} = await fr.asyncRead(hreq2);
+        const { readBytes: readBytes2 } = await fr.asyncRead(hreq2);
         if (readBytes2 !== realhlen) throw new Error(`Did not read full proper header from purported FSEQ file`);
         return FSEQReaderAsync.decodeFSEQHeader(hreq2.buf!, hreq2.bufoffset!, false);
     }
 
     static decodeFSEQHeader(ibuf: Uint8Array, off: number, fixed: boolean, flen?: number): FSEQHeader {
         const origoff = off;
-    
+
         const buf = toDataView(ibuf);
-        const shdr = utfDecoder.decode(ibuf.subarray(off, off+4)); off += 4;
-        const isEseq = (shdr === 'ESEQ');
+        const shdr = utfDecoder.decode(ibuf.subarray(off, off + 4));
+        off += 4;
+        const isEseq = shdr === 'ESEQ';
         if (shdr !== 'PSEQ' && shdr !== 'ESEQ' && shdr !== 'FSEQ') {
-            throw new Error("Not an xSEQ file");
+            throw new Error('Not an xSEQ file');
         }
 
         // Things we will need to read the frames
         let nframes = 0; // Number of frames
         let stepsz = 0; // Size of uncompressed frame
-        const compblocklist : CompBlock[] = []; // Bit about reading the file and decompressing
+        const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
-        const v1headers: {[key:string]: string} = {};
+        const v1headers: { [key: string]: string } = {};
         let comp = 0;
         let ccount = 0;
         let stepms = 50;
@@ -517,67 +524,91 @@ export class FSEQReaderAsync
         let gamma = 0;
         let colorenc = 0;
         let reserved2 = 0;
-        let uuid1 = 0, uuid2 = 0;
+        let uuid1 = 0,
+            uuid2 = 0;
         let blks = 0;
         let nranges = 0;
-        
+
         if (isEseq) {
             off2chdata = 20;
             minver = 0;
             majver = 2;
 
-            modelcnt = buf.getUint32(off, true); off += 4;
-            stepsz = buf.getUint32(off, true); off += 4;
-            modelstart = buf.getUint32(off, true); off += 4;
-            ccount = buf.getUint32(off, true); off += 4;
+            modelcnt = buf.getUint32(off, true);
+            off += 4;
+            stepsz = buf.getUint32(off, true);
+            off += 4;
+            modelstart = buf.getUint32(off, true);
+            off += 4;
+            ccount = buf.getUint32(off, true);
+            off += 4;
             modelsize = ccount;
 
             // Noting the lack of #frames, frame timing, or any compression.  This format sucks.
             nframes = Math.floor(((flen ?? 0) - off2chdata) / stepsz);
-            compblocklist.push({framenum: 0, blocksize: nframes * stepsz});
-            chrangelist.push({startch: modelstart, chcount: modelsize});
-        }
-        else {
-            off2chdata = buf.getUint16(off, true); off += 2;
-            minver = buf.getUint8(off); off += 1;
-            majver = buf.getUint8(off); off += 1;
+            compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
+            chrangelist.push({ startch: modelstart, chcount: modelsize });
+        } else {
+            off2chdata = buf.getUint16(off, true);
+            off += 2;
+            minver = buf.getUint8(off);
+            off += 1;
+            majver = buf.getUint8(off);
+            off += 1;
 
-            const isv1 = (majver === 1);
+            const isv1 = majver === 1;
 
-            shdrlen = buf.getUint16(off, true); off += 2;
-            ccount = buf.getUint32(off, true); off += 4;
+            shdrlen = buf.getUint16(off, true);
+            off += 2;
+            ccount = buf.getUint32(off, true);
+            off += 4;
             stepsz = Math.floor((ccount + 3) / 4) * 4;
-            nframes = buf.getUint32(off, true); off += 4;
-            stepms = buf.getUint8(off); off += 1;
-            reserved = buf.getUint8(off); off += 1;
+            nframes = buf.getUint32(off, true);
+            off += 4;
+            stepms = buf.getUint8(off);
+            off += 1;
+            reserved = buf.getUint8(off);
+            off += 1;
 
             if (isv1) {
-                univcnt = buf.getUint16(off, true); off += 2;
-                univsz = buf.getUint16(off, true); off += 2;
-                gamma = buf.getUint8(off); off += 1;
-                colorenc = buf.getUint8(off); off += 1;
-                reserved2 = buf.getUint16(off, true); off += 2;
+                univcnt = buf.getUint16(off, true);
+                off += 2;
+                univsz = buf.getUint16(off, true);
+                off += 2;
+                gamma = buf.getUint8(off);
+                off += 1;
+                colorenc = buf.getUint8(off);
+                off += 1;
+                reserved2 = buf.getUint16(off, true);
+                off += 2;
 
                 // Double check this math, is it rounded up?
-                compblocklist.push({framenum: 0, blocksize: nframes*ccount});
-            }
-            else {
-                const compandblks = buf.getUint8(off); off += 1;
+                compblocklist.push({ framenum: 0, blocksize: nframes * ccount });
+            } else {
+                const compandblks = buf.getUint8(off);
+                off += 1;
                 comp = compandblks & 15;
                 blks = (compandblks & 240) * 16;
-                blks += buf.getUint8(off); off += 1;
-                nranges = buf.getUint8(off); off += 1;
-                reserved2 = buf.getUint8(off); off += 1;
-                uuid1 = buf.getUint32(off, true); off += 4;
-                uuid2 = buf.getUint32(off, true); off += 4;
+                blks += buf.getUint8(off);
+                off += 1;
+                nranges = buf.getUint8(off);
+                off += 1;
+                reserved2 = buf.getUint8(off);
+                off += 1;
+                uuid1 = buf.getUint32(off, true);
+                off += 4;
+                uuid2 = buf.getUint32(off, true);
+                off += 4;
 
                 if (!fixed) {
                     // Compression blocks
                     // Compress block index: 4 frame num, 4 length
                     let seenEmpty = false;
-                    for (let i=0; i<blks; ++i) {
-                        const framenum = buf.getUint32(off, true); off += 4;
-                        const blocksize = buf.getUint32(off, true); off += 4;
+                    for (let i = 0; i < blks; ++i) {
+                        const framenum = buf.getUint32(off, true);
+                        off += 4;
+                        const blocksize = buf.getUint32(off, true);
+                        off += 4;
                         if (!blocksize) {
                             seenEmpty = true;
                             if (framenum) {
@@ -586,32 +617,38 @@ export class FSEQReaderAsync
                             continue;
                         }
                         if (seenEmpty) {
-                            throw new Error("Empty blocks followed by nonempty blocks "+i.toString());
+                            throw new Error('Empty blocks followed by nonempty blocks ' + i.toString());
                         }
-                        compblocklist.push({framenum, blocksize});
+                        compblocklist.push({ framenum, blocksize });
                     }
 
                     // Sparse range map
                     // Sparse ranges: 3 ch num, 3 num ch
-                    for (let i=0; i<nranges; ++i) {
-                        const startnum = buf.getUint32(off, true); off += 4;
-                        const chcount = readUInt24LE(buf, off); off += 3;
-                        chrangelist.push({startch:startnum, chcount:chcount});
+                    for (let i = 0; i < nranges; ++i) {
+                        const startnum = buf.getUint32(off, true);
+                        off += 4;
+                        const chcount = readUInt24LE(buf, off);
+                        off += 3;
+                        chrangelist.push({ startch: startnum, chcount: chcount });
                     }
                 }
             }
 
             if (!chrangelist.length) {
-                chrangelist.push({startch: 1, chcount: ccount});
+                chrangelist.push({ startch: 1, chcount: ccount });
             }
 
             if (!fixed) {
                 while (off + 4 - origoff <= off2chdata) {
                     //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
-                    const hlen = buf.getUint16(off, true); - 4; off += 2;
-                    const hname = utfDecoder.decode(ibuf.subarray(off, off+2)); off += 2;
+                    const hlen = buf.getUint16(off, true);
+                    -4;
+                    off += 2;
+                    const hname = utfDecoder.decode(ibuf.subarray(off, off + 2));
+                    off += 2;
                     //console.log ("Header "+hname+": "+str(hlen))
-                    const hval = utfDecoder.decode(ibuf.subarray(off, off+hlen)); off += hlen;
+                    const hval = utfDecoder.decode(ibuf.subarray(off, off + hlen));
+                    off += hlen;
                     v1headers[hname] = hval; // TODO: Does it need subarray(-1) off the end for trailing \0;
                 }
             }
@@ -649,15 +686,14 @@ export class FSEQReaderAsync
     }
 
     static async readFSEQHeaderFRAsync(fr: FileReadWorker, path: string, clientid = 0, fileid = 0) {
-        fr.openClient({clientid});
-        await fr.asyncOpenFile({clientid, fileid, path});
+        fr.openClient({ clientid });
+        await fr.asyncOpenFile({ clientid, fileid, path });
 
         try {
             return await FSEQReaderAsync.readFixedHeaderAsync(fr, clientid, fileid, 0);
-        }
-        finally {
-            await fr.asyncCloseFile({clientid, fileid});
-            await fr.asyncCloseClient({clientid});
+        } finally {
+            await fr.asyncCloseFile({ clientid, fileid });
+            await fr.asyncCloseClient({ clientid });
         }
     }
 
@@ -665,25 +701,24 @@ export class FSEQReaderAsync
         const fr = new FileReadWorker();
         try {
             return await FSEQReaderAsync.readFSEQHeaderFRAsync(fr, path);
-        }
-        finally {
+        } finally {
             await fr.asyncClose();
         }
     }
 
     async readFrame(frame: number): Promise<Uint8Array> {
-        if (!this.header) throw new Error("Not open");
+        if (!this.header) throw new Error('Not open');
         const chunknum = this.cache.findChunk(frame);
         const cpf = this.header.stepsize;
         if (chunknum === undefined) throw new Error(`Invalid frame number ${frame} / ${this.header.frames}`); // Could go *all black*
         const chunk = this.cache.entries[chunknum];
         const cidx = this.cache.index[chunknum];
         if (chunk.decompBuf) {
-            return chunk.decompBuf.subarray(cpf * (frame-cidx.startFrame), cpf * (1+frame-cidx.startFrame));
+            return chunk.decompBuf.subarray(cpf * (frame - cidx.startFrame), cpf * (1 + frame - cidx.startFrame));
         }
 
-        const clientid=0;
-        const fileid=0;
+        const clientid = 0;
+        const fileid = 0;
 
         const req: FileReadRequest = {
             clientid,
@@ -693,25 +728,24 @@ export class FSEQReaderAsync
             length: cidx.fileSize,
         };
 
-        const {readBytes} = await this.filereader.asyncRead(req);
-        if (readBytes !== cidx.fileSize) throw new Error(`Incomplete read on ${this.filename} @ ${req.offset}:${req.length}`);
-        const nframes = cidx.endFrame-cidx.startFrame;
-        const lenraw = nframes*this.header.stepsize;
+        const { readBytes } = await this.filereader.asyncRead(req);
+        if (readBytes !== cidx.fileSize)
+            throw new Error(`Incomplete read on ${this.filename} @ ${req.offset}:${req.length}`);
+        const nframes = cidx.endFrame - cidx.startFrame;
+        const lenraw = nframes * this.header.stepsize;
 
         if (this.header.compression === 1) {
             const decoder = new ZSTDDecoder();
             await decoder.init();
             //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
             chunk.decompBuf = decoder.decode(req.buf!, lenraw);
-        }
-        else if (this.header.compression === 2) {
-            throw new Error("Need to implement zlib");
-        }
-        else {
+        } else if (this.header.compression === 2) {
+            throw new Error('Need to implement zlib');
+        } else {
             chunk.decompBuf = req.buf!;
         }
 
-        return chunk.decompBuf.subarray(cpf * (frame-cidx.startFrame), cpf * (1+frame-cidx.startFrame));
+        return chunk.decompBuf.subarray(cpf * (frame - cidx.startFrame), cpf * (1 + frame - cidx.startFrame));
     }
 
     filename: string;
@@ -727,8 +761,8 @@ export class FSEQReaderAsync
         this.header = await FSEQReaderAsync.readFSEQHeaderFRAsync(this.filereader, this.filename);
         FSEQReaderAsync.createCompBlockCache(this.header, this.cache);
 
-        this.filereader.openClient({clientid: 0});
-        await this.filereader.asyncOpenFile({clientid: 0, fileid: 0, path: this.filename});
+        this.filereader.openClient({ clientid: 0 });
+        await this.filereader.asyncOpenFile({ clientid: 0, fileid: 0, path: this.filename });
     }
 
     static createCompBlockCache(header: FSEQHeader, cache: CompBlockCache) {
@@ -750,7 +784,7 @@ export class FSEQReaderAsync
     }
 
     async close() {
-        await this.filereader.asyncCloseFile({clientid: 0, fileid: 0});
-        await this.filereader.asyncCloseClient({clientid: 0});
+        await this.filereader.asyncCloseFile({ clientid: 0, fileid: 0 });
+        await this.filereader.asyncCloseClient({ clientid: 0 });
     }
 }

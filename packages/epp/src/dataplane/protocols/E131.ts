@@ -1,6 +1,6 @@
-import { UdpClient, UDPSender } from "./UDP";
-import { SenderJob, SendJob, SendJobSenderState } from "../SenderJob";
-import { toDataView } from "../../util/Utils";
+import { UdpClient, UDPSender } from './UDP';
+import { SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
+import { toDataView } from '../../util/Utils';
 
 export const E131_PORT_DEFAULT = 5568;
 export const E131_DEFAULT_PAYLOAD = 510;
@@ -8,15 +8,25 @@ export const E131_MAX_PAYLOAD = 512;
 
 const E131_PACKET_HEADERLEN = 126;
 const E131_SYNCPACKET_LEN = 49;
-const E131_PACKET_LEN_MAX = (E131_PACKET_HEADERLEN + E131_MAX_PAYLOAD);
+const E131_PACKET_LEN_MAX = E131_PACKET_HEADERLEN + E131_MAX_PAYLOAD;
 const E131_DEFAULT_PRIORITY = 100;
 const E131_EZP_UUID = 'e4eaaaf2-d142-11e1-b3e4-080027620cdd';
 const E131_EZP_UUID_BUF = Buffer.from(E131_EZP_UUID.replace(/-/g, ''), 'hex');
 const E131_ROOT_PREAMBLE_SIZE = 0x0010;
 const E131_ROOT_POSTAMBLE_SIZE = 0x0000;
 const ACN_PACKET_IDENTIFIER = Buffer.from([
-  0x41, 0x53, 0x43, 0x2d, 0x45, 0x31, 0x2e, 0x31,
-  0x37, 0x00, 0x00, 0x00  // "ASC-E1.17\0\0\0"
+    0x41,
+    0x53,
+    0x43,
+    0x2d,
+    0x45,
+    0x31,
+    0x2e,
+    0x31,
+    0x37,
+    0x00,
+    0x00,
+    0x00, // "ASC-E1.17\0\0\0"
 ]);
 const E131_VECTOR_EXTENDED_SYNCHRONIZATION = 0x00000001;
 const E131_VECTOR_DATA_PACKET = 0x00000002;
@@ -27,7 +37,7 @@ const E131_START_CODE = 0x00;
 
 // NB: This supports a 12-bit length
 function setE131LengthField(buffer: DataView, offset: number, length: number) {
-    buffer.setUint16(offset, 0x7000 | length, false);  // This is the framing length protocol flags + length
+    buffer.setUint16(offset, 0x7000 | length, false); // This is the framing length protocol flags + length
 }
 
 //
@@ -37,12 +47,12 @@ function setE131LengthField(buffer: DataView, offset: number, length: number) {
 /**
  * Headerize a single E1.31 packet containing pixel data;
  *  (according to ChatGPT, which is admittedly spotty on this.)
- * 
+ *
  * 1. Root Layer
  *    Preamble, Postamble: Standard constants
  *    CID: UUID identifying your sender
  *    Vector: Should be 0x00000004 (indicating Data Packet)
- * 
+ *
  * 2. Framing Layer
  *    Source Name: 64-byte UTF-8 string (can be any ASCII name)
  *    Priority: Typically 100 (default), 0–200
@@ -70,7 +80,7 @@ function fillE131PacketHeader(
     sourceName: string,
     sequence: number,
     dataLen: number,
-    cid?: Uint8Array
+    cid?: Uint8Array,
 ) {
     if (dataLen > 512) {
         throw new Error('DMX data cannot exceed 512 bytes.');
@@ -99,27 +109,21 @@ function fillE131PacketHeader(
     rdataPacket.set(bytes, 44);
     rdataPacket[108] = E131_DEFAULT_PRIORITY;
     dataPacket.setUint16(109, 0, false); // Synchronization address
-    rdataPacket[111] = sequence & 0xFF;
+    rdataPacket[111] = sequence & 0xff;
     rdataPacket[112] = 0; // Options: Bit 7 = Preview_Data, Bit 6 = Stream_Terminated, Bit 5 = Force_Synchronization
     dataPacket.setUint16(113, universe, false); // Universe
-    
+
     // DMP layer
     setE131LengthField(dataPacket, 115, E131_PACKET_HEADERLEN + dataLen - 115); // dmp layer flag and length;
     rdataPacket[117] = E131_VECTOR_DMP_SET_PROPERTY;
-    rdataPacket[118] = 0xA1; // This is not explained.  It "identifies format of address and data"
+    rdataPacket[118] = 0xa1; // This is not explained.  It "identifies format of address and data"
     dataPacket.setUint16(119, 0, false); // Start address (0)
     dataPacket.setUint16(121, 1, false); // Address increment (1)
-    dataPacket.setUint16(123, dataLen+1, false); // Property value count
+    dataPacket.setUint16(123, dataLen + 1, false); // Property value count
     rdataPacket[125] = E131_START_CODE;
 }
 
-function buildE131SyncPacket(
-    rsyncData: Uint8Array,
-    syncUniverse: number,
-    sequence: number,
-    cid?: Uint8Array
-)
-{
+function buildE131SyncPacket(rsyncData: Uint8Array, syncUniverse: number, sequence: number, cid?: Uint8Array) {
     const syncData = toDataView(rsyncData);
     rsyncData.fill(0, 0, E131_SYNCPACKET_LEN);
 
@@ -135,12 +139,11 @@ function buildE131SyncPacket(
     setE131LengthField(syncData, 38, E131_SYNCPACKET_LEN - 38); // Framing layer flag and length
     syncData.setUint32(40, E131_VECTOR_EXTENDED_SYNCHRONIZATION, false);
 
-    rsyncData[44] = sequence & 0xff;   // sequence number
+    rsyncData[44] = sequence & 0xff; // sequence number
     syncData.setUint16(45, syncUniverse, false);
 }
 
-export class E131Sender extends UDPSender
-{
+export class E131Sender extends UDPSender {
     startUniverse: number = 0; // Unclear how to do refragmentation on this...
     syncUniverse: number = 0;
     channelsPerPacket: number = 510;
@@ -154,7 +157,12 @@ export class E131Sender extends UDPSender
     // This could throw - if you ignore it, send won't work...
     async connect() {
         if (!this.client) {
-            this.client = new UdpClient("udp4", this.address, E131_PORT_DEFAULT, this.sendBufSize ?? 625_000 /*100Mbps 50ms*/);
+            this.client = new UdpClient(
+                'udp4',
+                this.address,
+                E131_PORT_DEFAULT,
+                this.sendBufSize ?? 625_000 /*100Mbps 50ms*/,
+            );
         }
         if (!this.client.isConnected()) {
             await this.client.connect();
@@ -182,7 +190,7 @@ export class E131Sender extends UDPSender
         // TODO: We may be asked to do scattered universes and fractional packets.  Not now, but at some point.
         const sendOut = (sourceName: string, _last: boolean) => {
             if (!bytesThisPacket) return;
-            const univ = state.sendPacketNum()+this.startUniverse;
+            const univ = state.sendPacketNum() + this.startUniverse;
             if (this.curPacketNum >= this.headers.length) {
                 this.headers.push(Buffer.alloc(E131_PACKET_HEADERLEN));
             }
@@ -198,7 +206,7 @@ export class E131Sender extends UDPSender
         // Outer loop - go through all the parts
         //  When to return: all done, or budget hit and we're about to enqueue
         // OK go through and do it ALL... and update the next send time based on the token bucket
-        for (; state.curPart < job.parts.length;) {
+        for (; state.curPart < job.parts.length; ) {
             const part = job.parts[state.curPart];
             const leftThisJob = part.bufLen - state.curOffset;
             if (!leftThisJob) {
@@ -212,7 +220,7 @@ export class E131Sender extends UDPSender
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
                 rlLeftToSend -= bytesThisPacket;
-                sendOut("blaBlaBLA", false);
+                sendOut('blaBlaBLA', false);
                 continue;
             }
 
@@ -227,7 +235,7 @@ export class E131Sender extends UDPSender
         // TODO EZP Rate limit write-back
 
         // May have stuff left...
-        sendOut("blaBlaBLA", true);
+        sendOut('blaBlaBLA', true);
         return true;
     }
 

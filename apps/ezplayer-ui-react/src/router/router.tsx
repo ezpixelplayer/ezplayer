@@ -1,5 +1,17 @@
 import { Navigate, RouteObject } from 'react-router-dom';
-import { ShowStatusScreen, SidebarLayout, Routes as ROUTES, JukeboxScreen, SongList, PlaylistList, PlayerScreen, SchedulePreview, Schedule, CreateEditPlaylist, PlaybackSettingsDrawer } from '@ezplayer/player-ui-components';
+import {
+    ShowStatusScreen,
+    SidebarLayout,
+    Routes as ROUTES,
+    JukeboxScreen,
+    SongList,
+    PlaylistList,
+    PlayerScreen,
+    SchedulePreview,
+    Schedule,
+    CreateEditPlaylist,
+    PlaybackSettingsDrawer,
+} from '@ezplayer/player-ui-components';
 import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
 const getStatusArea = () => [];
@@ -69,4 +81,3 @@ const routes: RouteObject[] = [
 ];
 
 export default routes;
-

@@ -266,8 +266,10 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
             const priorityB = scheduleB?.priority || 'normal';
 
             // Convert priority to number for comparison
-            const priorityValueA = priorityToNumber[priorityA as keyof typeof priorityToNumber] || priorityToNumber.normal;
-            const priorityValueB = priorityToNumber[priorityB as keyof typeof priorityToNumber] || priorityToNumber.normal;
+            const priorityValueA =
+                priorityToNumber[priorityA as keyof typeof priorityToNumber] || priorityToNumber.normal;
+            const priorityValueB =
+                priorityToNumber[priorityB as keyof typeof priorityToNumber] || priorityToNumber.normal;
 
             // Sort by priority (higher number = lower priority, so we want low priority first)
             if (priorityValueA !== priorityValueB) {

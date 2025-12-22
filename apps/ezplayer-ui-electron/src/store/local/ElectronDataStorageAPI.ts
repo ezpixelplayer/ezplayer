@@ -93,7 +93,7 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
 
             const floatArray = new Float32Array(buffer);
             const numSamples = floatArray.length / channels;
-            const audioLenMs = 1000*numSamples/sampleRate;
+            const audioLenMs = (1000 * numSamples) / sampleRate;
             const dn = Math.round(Date.now());
             const act = Math.round(this.audioCtx.currentTime * 1000);
 
@@ -105,21 +105,20 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
                 this.audioPlayAtNextRealTime = playAtRealTime;
                 startTime = act + (playAtRealTime - dn);
                 this.audioPlayAtNextACT = startTime;
-            }
-            else {
+            } else {
                 startTime = this.audioPlayAtNextACT;
             }
 
             // See if this is wildly off ... who knows why, maybe we ought to tally it
             if (Math.abs(startTime! - (act + (playAtRealTime - dn))) > 50) {
-                console.log(`Start time way off: ${startTime} vs ${(act + (playAtRealTime - dn))}`);
+                console.log(`Start time way off: ${startTime} vs ${act + (playAtRealTime - dn)}`);
                 startTime = act + (playAtRealTime - dn);
                 this.audioPlayAtNextRealTime = playAtRealTime;
                 this.audioPlayAtNextACT = startTime;
             }
 
             this.audioPlayAtNextRealTime += audioLenMs;
-            this.audioPlayAtNextACT = startTime!+audioLenMs;
+            this.audioPlayAtNextACT = startTime! + audioLenMs;
 
             if (playAtRealTime < dn) return; // Too late TODO STAT
 

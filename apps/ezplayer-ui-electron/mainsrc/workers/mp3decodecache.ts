@@ -192,11 +192,12 @@ export class Mp3DecodeWorkerClient {
     }
 
     returnBuffer(v: DecodedAudio) {
-        this.worker.postMessage({
+        this.worker.postMessage(
+            {
                 type: 'return',
                 buffers: v.channelData,
             } satisfies DecodeReq,
-            v.channelData.map((a)=>a.buffer)
+            v.channelData.map((a) => a.buffer),
         );
     }
 

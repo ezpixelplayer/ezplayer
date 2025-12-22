@@ -6,7 +6,7 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/ezpixelplayer/ezplayer.git"
-     },
+    },
     "workspaces": [
         "apps/*",
         "packages/*"
@@ -23,7 +23,7 @@
         "pack:shared": "cd packages/shared-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "pack:player": "cd packages/player-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "pack:core": "cd packages/ezplayer-core && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
-	"pack:epp": "cd packages/epp && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
+        "pack:epp": "cd packages/epp && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "lint": "pnpm --recursive --workspace-root=false lint",
         "format": "prettier --check .",
         "format:fix": "prettier --write ."

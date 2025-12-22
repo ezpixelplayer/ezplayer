@@ -65,7 +65,10 @@ const StatusCards = ({}: {}) => {
                                         {/* Controller Count Summary */}
                                         <Box sx={{ mb: 2 }}>
                                             <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                                Controllers: {stats.total}{(controller.controllers?.length ?? 0) === stats.total ? '' :  ` (${controller.controllers?.length} including skipped)`}
+                                                Controllers: {stats.total}
+                                                {(controller.controllers?.length ?? 0) === stats.total
+                                                    ? ''
+                                                    : ` (${controller.controllers?.length} including skipped)`}
                                             </Typography>
 
                                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
@@ -289,21 +292,24 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
             <StatusCards />
 
             {/* Playback Queue Card */}
-            {pstat?.playerStatus?.player?.queue &&
+            {pstat?.playerStatus?.player?.queue && (
                 <Box sx={{ padding: 2, flexShrink: 0 }}>
                     <QueueCard
                         sx={{
-                            padding: 2, 
+                            padding: 2,
                         }}
                         queue={pstat.playerStatus.player.queue}
-                        onRemoveItem={async (i, _index)=>{await dispatch(callImmediateCommand({
-                            command: 'deleterequest',
-                            requestId: i.request_id ?? '',
-                        }));}}
-                    >
-                    </QueueCard>
+                        onRemoveItem={async (i, _index) => {
+                            await dispatch(
+                                callImmediateCommand({
+                                    command: 'deleterequest',
+                                    requestId: i.request_id ?? '',
+                                }),
+                            );
+                        }}
+                    ></QueueCard>
                 </Box>
-            }
+            )}
 
             {/* Timeline View */}
             <TimelineView />
