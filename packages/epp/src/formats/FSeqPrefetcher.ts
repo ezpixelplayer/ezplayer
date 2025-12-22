@@ -127,11 +127,14 @@ export class FrameReference {
  * Handles fseq prefetching
  */
 export class FSeqPrefetchCache {
-    constructor(arg: {
-        now: number;
-        fseqSpace?: number;
-        decompZstd?: DecompZStd; // Allow a worker thread...
-    }) {
+    constructor(
+        arg: {
+            now: number;
+            fseqSpace?: number;
+            decompZstd?: DecompZStd; // Allow a worker thread...
+        },
+        emitError: (msg: string) => void,
+    ) {
         this.now = arg.now;
         this.decompDataPool = new ArrayBufferPool();
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
@@ -161,13 +164,16 @@ export class FSeqPrefetchCache {
                             readBuf = decres.compBuf; // May not be same as input due to transfer to/from worker
                             return { decompChunk: decres.decompBuf };
                         } else if (key.compression === 2) {
-                            throw new Error();
+                            throw new Error('Compression type 2 not supported');
                         } else {
                             ref = true;
                             return {
                                 decompChunk: readBuf,
                             };
                         }
+                    } catch (e) {
+                        emitError((e as Error).message);
+                        throw e;
                     } finally {
                         try {
                             await fh.close();

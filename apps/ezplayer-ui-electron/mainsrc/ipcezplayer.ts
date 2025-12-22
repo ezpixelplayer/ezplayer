@@ -62,6 +62,27 @@ export let curStatus: CombinedPlayerStatus = {};
 export let curErrors: string[] = [];
 export let curShow: EndUserShowSettings | undefined = undefined;
 export let curUser: EndUser | undefined = undefined;
+let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
+
+export function isScheduleActive(): boolean {
+    const player = curStatus.player;
+    if (!player || player.status !== 'Playing') return false;
+    const nowPlaying = player.now_playing;
+    return !!(nowPlaying && nowPlaying.type === 'Scheduled');
+}
+
+/**
+ * Tell player RPC to stop playing (for shutdown).
+ */
+export async function stopPlayerPlayback(): Promise<boolean> {
+    try {
+        const res = await rpcc?.call('stopPlayback', {});
+        return !!res;
+    } catch (err) {
+        console.error(`Failed to stop player playback: ${err}`);
+        return false;
+    }
+}
 
 // Exported handler functions that can be called from both IPC and REST endpoints
 export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
@@ -100,7 +121,6 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
 
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
-let commandSeqNum = 1;
 let sequenceAssetsConfig: SequenceAssetConfig | undefined;
 
 // Passes our current info to the player
@@ -298,10 +318,9 @@ const handlers: MainRPCAPI = {
     },
 };
 
-let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
-
 export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
+    audioWindow: BrowserWindow | null,
     nPlayWorker: Worker,
     options?: {
         sequenceAssets?: SequenceAssetConfig;
@@ -445,8 +464,10 @@ export async function registerContentHandlers(
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                mainWindow?.webContents.send('audio:chunk', msg.chunk);
+                // TODO MOC - maybe not now :-)
                 wsBroadcaster.broadcast('audio:chunk', msg.chunk);
+                //mainWindow?.webContents.send('audio:chunk', msg.chunk);
+                audioWindow?.webContents.send('audio:chunk', msg.chunk);
                 break;
             }
             case 'stats': {

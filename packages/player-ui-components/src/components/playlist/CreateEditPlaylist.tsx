@@ -9,7 +9,7 @@ import {
     useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { PlaylistRecord, SequenceDetails, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type { PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import SearchIcon from '@mui/icons-material/Search';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
@@ -287,6 +287,8 @@ const PlaylistContainer = ({
         id: 'playlist',
     });
 
+    const songCount = useMemo(() => playlistSongs.length, [playlistSongs]);
+
     // Calculate total duration of all songs in the playlist
     const totalDuration = useMemo(() => {
         return playlistSongs.reduce((total, song) => {
@@ -294,18 +296,13 @@ const PlaylistContainer = ({
         }, 0);
     }, [playlistSongs]);
 
-    // Format duration as MM:SS
+    // Format duration as MM:SS rounded to nearest second
     const formattedTotalDuration = useMemo(() => {
-        const minutes = Math.floor(totalDuration / 60);
-        const seconds = totalDuration % 60;
-        const secondsWithDecimals = seconds.toFixed(3);
-        const [wholeSeconds, decimals] = secondsWithDecimals.split('.');
+        const roundedTotalSeconds = Math.round(totalDuration);
+        const minutes = Math.floor(roundedTotalSeconds / 60);
+        const seconds = roundedTotalSeconds % 60;
 
-        // Only show decimals if they're not all zeros
-        const formattedSeconds =
-            decimals === '000' ? wholeSeconds.padStart(2, '0') : secondsWithDecimals.padStart(6, '0');
-
-        return `${minutes}:${formattedSeconds}`;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }, [totalDuration]);
 
     return (
@@ -376,9 +373,19 @@ const PlaylistContainer = ({
                         </Button>
                     </Grid>
                     <Grid item xs={12} md={6}>
-                        <Typography variant="body1" sx={{ textAlign: 'right', pt: 0.5 }}>
-                            Total Duration: {formattedTotalDuration}
-                        </Typography>
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                alignItems: 'center',
+                                gap: 2,
+                                height: '100%',
+                                pt: 0.5,
+                            }}
+                        >
+                            <Typography variant="body1">Songs: {songCount}</Typography>
+                            <Typography variant="body1">Total Duration: {formattedTotalDuration}</Typography>
+                        </Box>
                     </Grid>
                 </Grid>
             </Box>
@@ -551,7 +558,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 setHasUnsavedChanges(false);
             }
         }
-    }, [id, sequenceData, anythingUpdating]);
+    }, [id, sequenceData, anythingUpdating, playlists]);
 
     const handleDragStart = (event: DragStartEvent) => {
         setActiveId(event.active.id as string);
@@ -870,6 +877,11 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     };
 
     const handleDiscardClick = () => {
+        if (!hasUnsavedChanges) {
+            navigate(ROUTES.PLAYLIST);
+            return;
+        }
+
         setPendingAction('discard');
         setIsNavigationDialogOpen(true);
     };

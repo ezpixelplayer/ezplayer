@@ -1,15 +1,16 @@
-import { app, BrowserWindow, Menu } from 'electron';
-import { Worker, workerData } from 'node:worker_threads';
+import { app, BrowserWindow, Menu, dialog } from 'electron';
+import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
+import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setupServer } from './mainsrc/server.js';
+import type { Event as ElectronEvent } from 'electron';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -40,6 +41,13 @@ let mainWindow: BrowserWindow | null = null;
 export function getMainWindow() {
     return mainWindow;
 }
+
+let audioWindow: BrowserWindow | null = null;
+export function getAudioWindow() {
+    return audioWindow;
+}
+
+let isQuitting = false;
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -79,6 +87,19 @@ const createWindow = (showFolder: string) => {
         splash.loadURL(`file://${path.join(__dirname, '../dist/splash.html')}`);
     }
 
+    audioWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            backgroundThrottling: false,
+        },
+    });
+
+    // Light-weight HTML/JS just for audio
+    audioWindow.loadFile(path.join(__dirname, '../dist/audio-window.html'));
+    //audioWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
+
     mainWindow = new BrowserWindow({
         width: 800,
         height: 600,
@@ -114,14 +135,51 @@ const createWindow = (showFolder: string) => {
 
         //setTimeout(async ()=>console.log(JSON.stringify(await getAudioOutputDevices(mainWindow!), undefined, 4)), 3000);
     });
-    // On macOS, quit the app when the window is closed (instead of just hiding it)
-    mainWindow.on('close', (event) => {
-        if (process.platform === 'darwin') {
+    const handleCloseRequest = async (event: ElectronEvent) => {
+        if (!mainWindow) return;
+        if (!isScheduleActive()) {
+            // Preserve macOS behavior
+            if (process.platform === 'darwin') {
+                app.quit();
+            }
+            return;
+        }
+
+        event.preventDefault();
+        const { response } = await dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            buttons: ['Exit', 'Cancel'],
+            defaultId: 0,
+            cancelId: 1,
+            title: 'Exit EZPlayer?',
+            message: 'A schedule is currently running. Do you want to exit?',
+            detail: 'Exiting will turn off all pixels and stop the active schedule.',
+            noLink: true,
+            normalizeAccessKeys: true,
+        });
+
+        if (response === 0) {
+            isQuitting = true;
+            try {
+                await stopPlayerPlayback();
+            } catch (err) {
+                console.error(`Failed to stop player playback: ${err}`);
+            }
             app.quit();
         }
+    };
+
+    mainWindow.on('close', (event) => {
+        if (isQuitting) {
+            return;
+        }
+        void handleCloseRequest(event);
     });
     mainWindow.on('closed', () => {
+        audioWindow?.destroy();
+        audioWindow = null;
         mainWindow = null;
+        // app quit?
     });
 };
 
@@ -170,7 +228,7 @@ app.whenReady().then(async () => {
     registerFileListHandlers();
     createWindow(showFolderSpec);
 
-    await registerContentHandlers(mainWindow, playWorker, {
+    await registerContentHandlers(mainWindow, audioWindow, playWorker, {
         sequenceAssets: {
             imageStorageRoot: resolvedUserImageDir,
             imagePublicRoute: '/api/getimage',

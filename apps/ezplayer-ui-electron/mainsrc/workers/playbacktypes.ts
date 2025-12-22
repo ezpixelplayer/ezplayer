@@ -32,6 +32,7 @@ export interface QueueEntry {
 export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
+    stopPlayback: (args: {}) => Promise<boolean> | boolean;
 };
 
 export type MainRPCAPI = {

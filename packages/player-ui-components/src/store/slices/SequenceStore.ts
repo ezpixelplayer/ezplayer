@@ -25,6 +25,7 @@ export function createSongSlice(extraReducers: (builder: ActionReducerMapBuilder
         reducers: {
             setSequenceData: (state: SequenceState, action: PayloadAction<SequenceRecord[]>) => {
                 state.sequenceData = action.payload;
+                state.tags = [...new Set(action.payload.flatMap((entry) => entry.settings?.tags || []))];
             },
             setUpdatedSequenceData: (state: SequenceState, action: PayloadAction<SequenceRecord[]>) => {
                 state.updatedSequenceData = action.payload;

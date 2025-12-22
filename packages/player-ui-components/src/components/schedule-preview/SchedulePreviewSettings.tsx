@@ -140,6 +140,7 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
                                 label="Start Date"
                                 value={localSettings.startDate}
                                 onChange={(newDate) => handleDateChange('startDate', newDate)}
+                                inputFormat="dd-MMM-yyyy"
                                 renderInput={(props) => <TextField {...props} size="small" fullWidth />}
                             />
                         </LocalizationProvider>
@@ -197,6 +198,7 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
                                 value={localSettings.endDate}
                                 onChange={(newDate) => handleDateChange('endDate', newDate)}
                                 minDate={localSettings.startDate}
+                                inputFormat="dd-MMM-yyyy"
                                 shouldDisableDate={(date) => {
                                     if (!localSettings.startDate || !date) return false;
                                     // Disable dates that are before start date (same date is allowed)
