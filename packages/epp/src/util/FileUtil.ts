@@ -18,39 +18,38 @@ export async function loadXmlFile(filePath: string) {
 }
 
 export async function getFileSize(path: string): Promise<number> {
-  const stats = await fsp.stat(path);
-  return stats.size; // size in bytes
+    const stats = await fsp.stat(path);
+    return stats.size; // size in bytes
 }
 
 export type ReadFileRangeOptions = {
-    start: number;                 // default 0
-    length: number;                // cannot be used with end
+    start: number; // default 0
+    length: number; // cannot be used with end
     buffer: Buffer;
-    signal?: AbortSignal;           // optional AbortController signal
-    encoding?: BufferEncoding;      // e.g. "utf8" to get a string back
+    signal?: AbortSignal; // optional AbortController signal
+    encoding?: BufferEncoding; // e.g. "utf8" to get a string back
 };
 
-export async function readFileRange(
-    path: string,
-    opts: ReadFileRangeOptions
-) {
+export async function readFileRange(path: string, opts: ReadFileRangeOptions) {
     const start = opts.start ?? 0;
-    if (start < 0) throw new RangeError("start must be >= 0");
+    if (start < 0) throw new RangeError('start must be >= 0');
 
     let length: number = opts.length;
     const buf = opts.buffer;
 
-    const fh = await fsp.open(path, "r");
+    const fh = await fsp.open(path, 'r');
     let aborted = false;
 
     const { signal } = opts;
-    const onAbort = () => { aborted = true; };
+    const onAbort = () => {
+        aborted = true;
+    };
 
     try {
         if (signal?.aborted) {
             throwAbort();
         }
-        signal?.addEventListener("abort", onAbort, { once: true });
+        signal?.addEventListener('abort', onAbort, { once: true });
 
         let total = 0;
         while (total < length) {
@@ -60,34 +59,39 @@ export async function readFileRange(
                 buf,
                 total, // bufferOffset
                 length - total, // length to read this iteration
-                start + total // absolute file position
+                start + total, // absolute file position
             );
 
             if (bytesRead === 0) {
                 // Hit EOF before fulfilling the requested range
                 throw new RangeError(
-                    `EOF before reading requested ${length} bytes from offset ${start} (got ${total}).`
+                    `EOF before reading requested ${length} bytes from offset ${start} (got ${total}).`,
                 );
             }
 
             total += bytesRead;
         }
     } finally {
-        signal?.removeEventListener("abort", onAbort);
-        await fh.close().catch(() => { });
+        signal?.removeEventListener('abort', onAbort);
+        await fh.close().catch(() => {});
     }
 
     function throwAbort(): never {
-        const err = new Error("The operation was aborted");
-        (err as any).name = "AbortError";
+        const err = new Error('The operation was aborted');
+        (err as any).name = 'AbortError';
         throw err;
     }
 }
 
-export async function readHandleRange(handle: fsp.FileHandle, req: {
-    buf: ArrayBuffer, offset: number, length:number, bufoffset ?: number,
-})
-{
+export async function readHandleRange(
+    handle: fsp.FileHandle,
+    req: {
+        buf: ArrayBuffer;
+        offset: number;
+        length: number;
+        bufoffset?: number;
+    },
+) {
     let totalBytesRead = 0;
     while (totalBytesRead < req.length) {
         const { bytesRead } = await handle.read(
@@ -106,4 +110,3 @@ export async function readHandleRange(handle: fsp.FileHandle, req: {
     }
     return totalBytesRead;
 }
-

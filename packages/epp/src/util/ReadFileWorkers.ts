@@ -32,16 +32,16 @@ interface ClientClose {
 }
 
 export interface FileReadRequest {
-    clientid: number,
-    fileid: number,
-    reqid: number,
-    offset: number,
-    length: number,
-    buf?: Uint8Array,
+    clientid: number;
+    fileid: number;
+    reqid: number;
+    offset: number;
+    length: number;
+    buf?: Uint8Array;
     bufoffset?: number;
 
-    callback?: (status: boolean, err?: Error)=>void;
-    cancel?: ()=>void;    
+    callback?: (status: boolean, err?: Error) => void;
+    cancel?: () => void;
 }
 
 class FRRequest {
@@ -53,11 +53,14 @@ class FRRequest {
 }
 
 class FRFile {
-    requests: Map<number, FRRequest> = new Map();    
+    requests: Map<number, FRRequest> = new Map();
 
     handle: fsp.FileHandle;
 
-    constructor(handle: fsp.FileHandle, readonly details: FileOpen) {
+    constructor(
+        handle: fsp.FileHandle,
+        readonly details: FileOpen,
+    ) {
         this.handle = handle;
     }
 }
@@ -78,9 +81,10 @@ export class FileReadWorker {
     async asyncOpenFile(file: FileOpen) {
         const client = this.clients.get(file.clientid);
         if (!client) throw new Error(`FileReader client ${file.clientid} is not open`);
-        if (client.files.has(file.fileid)) throw new Error(`FileReader client ${file.clientid} already has file ${file.fileid}`);
+        if (client.files.has(file.fileid))
+            throw new Error(`FileReader client ${file.clientid} already has file ${file.fileid}`);
         const fh = await fsp.open(file.path);
-        const f = new FRFile(fh, {...file});
+        const f = new FRFile(fh, { ...file });
         client.files.set(file.fileid, f);
     }
 
@@ -99,7 +103,7 @@ export class FileReadWorker {
         if (!c) throw new Error(`FileReader client ${client.clientid} is not open`);
         const fids = c.files.keys();
         for (const f of fids) {
-            await this.asyncCloseFile({clientid: client.clientid, fileid: f});
+            await this.asyncCloseFile({ clientid: client.clientid, fileid: f });
         }
         this.clients.delete(client.clientid);
     }
@@ -116,13 +120,13 @@ export class FileReadWorker {
             req.bufoffset = 0;
         }
         const r = await FileReadWorker.readFull(fr.handle, req);
-        return {readBytes: r};
+        return { readBytes: r };
     }
 
     async asyncClose() {
         const cl = this.clients.keys();
         for (const cid of cl) {
-            await this.asyncCloseClient({clientid: cid});
+            await this.asyncCloseClient({ clientid: cid });
         }
     }
 
@@ -135,12 +139,12 @@ export class FileReadWorker {
                 req.length - totalBytesRead,
                 req.offset + totalBytesRead,
             );
-    
+
             if (bytesRead === 0) {
                 // EOF
                 break;
             }
-    
+
             totalBytesRead += bytesRead;
         }
         return totalBytesRead;

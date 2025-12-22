@@ -1,4 +1,3 @@
-
 export interface OpenControllerReport {
     name: string;
     status: 'open' | 'skipped' | 'error';
@@ -14,4 +13,3 @@ export interface ControllerSetup {
     nCh: number;
     proto: 'DDP' | 'E131' | undefined;
 }
-

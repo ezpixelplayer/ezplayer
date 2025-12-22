@@ -1,14 +1,14 @@
-import { BufferPool } from "./BufferRecycler";
-import { NeededTimePriority, needTimePriorityCompare, PrefetchCache } from "./PrefetchCache";
+import { BufferPool } from './BufferRecycler';
+import { NeededTimePriority, needTimePriorityCompare, PrefetchCache } from './PrefetchCache';
 import { getFileSize, readFileRange } from './FileUtil';
 
 export interface FileCacheKey {
     filename: string;
-};
+}
 
 export interface FileCacheValue {
     data: Buffer;
-};
+}
 
 export class WholeFilePrefetchCache extends PrefetchCache<FileCacheKey, FileCacheValue, NeededTimePriority> {
     constructor(readonly pool: BufferPool) {
@@ -22,7 +22,7 @@ export class WholeFilePrefetchCache extends PrefetchCache<FileCacheKey, FileCach
                     signal: abort,
                     buffer: buf,
                 });
-                return {data: buf};
+                return { data: buf };
             },
             budgetPredictor: (_key) => 10000000,
             budgetCalculator: (_key, val) => val.data.byteLength,
@@ -30,8 +30,9 @@ export class WholeFilePrefetchCache extends PrefetchCache<FileCacheKey, FileCach
             budgetLimit: 100000000,
             maxConcurrency: 2,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => { pool.release(v.data); }
+            onDispose: (_k, v) => {
+                pool.release(v.data);
+            },
         });
     }
 }
-

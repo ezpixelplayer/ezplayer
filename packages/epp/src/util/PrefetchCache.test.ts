@@ -3,7 +3,9 @@ import { NeededTimePriority, needTimePriorityCompare, PrefetchCache } from './Pr
 
 export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimePriority> {
     counts: Map<string, number> = new Map();
-    clearCounts() {this.counts = new Map();}
+    clearCounts() {
+        this.counts = new Map();
+    }
     constructor(budget: number) {
         super({
             fetchFunction: async (key, abort) => {
@@ -12,26 +14,26 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
                 return key;
             },
             budgetPredictor: (key) => {
-                return parseInt(key.split('-')[1] ?? '1')
+                return parseInt(key.split('-')[1] ?? '1');
             },
             budgetCalculator: (key) => {
-                return parseInt(key.split('-')[1] ?? '1')
+                return parseInt(key.split('-')[1] ?? '1');
             },
             keyToId: (key) => key,
             budgetLimit: budget,
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => { }
+            onDispose: (_k, v) => {},
         });
     }
 
-    placeRequests(s: number, e: number, now: number, prefix = '', suffix = '', expiry ?: number) {
-        for (let i = s; i<= e; ++i) {
+    placeRequests(s: number, e: number, now: number, prefix = '', suffix = '', expiry?: number) {
+        for (let i = s; i <= e; ++i) {
             this.prefetch({
                 key: `${prefix}${i}${suffix}`,
                 now,
-                expiry: expiry ?? 1000, 
-                priority: {neededTime: i}
+                expiry: expiry ?? 1000,
+                priority: { neededTime: i },
             });
         }
     }
@@ -91,11 +93,11 @@ describe('findMatchingScheduleEntry', () => {
     // Test evictions
     it('keeps a reasonable set of things', async () => {
         const cache = new TestPrefetchCache(6);
-        for (let i=0; i<4; ++i) {
-            cache.placeRequests(i+1, 10, i, 'f');
-            cache.placeRequests(i+1, 10, i, 'b');
-            for (let j=0; j<4; ++j) {
-                cache.cleanupAndDispatchRequests(i, i-1);
+        for (let i = 0; i < 4; ++i) {
+            cache.placeRequests(i + 1, 10, i, 'f');
+            cache.placeRequests(i + 1, 10, i, 'b');
+            for (let j = 0; j < 4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i - 1);
                 await cache.finishFetches();
             }
         }
@@ -114,11 +116,11 @@ describe('findMatchingScheduleEntry', () => {
     // Test mixed sizes
     it('keeps a reasonable set of things despite mixed size', async () => {
         const cache = new TestPrefetchCache(15);
-        for (let i=0; i<4; ++i) {
-            cache.placeRequests(i+1, 10, i, 'f', '-4');
-            cache.placeRequests(i+1, 10, i, 'b');
-            for (let j=0; j<4; ++j) {
-                cache.cleanupAndDispatchRequests(i, i-1);
+        for (let i = 0; i < 4; ++i) {
+            cache.placeRequests(i + 1, 10, i, 'f', '-4');
+            cache.placeRequests(i + 1, 10, i, 'b');
+            for (let j = 0; j < 4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i - 1);
                 await cache.finishFetches();
             }
         }
@@ -137,11 +139,11 @@ describe('findMatchingScheduleEntry', () => {
     // Test errors
     it('keeps a reasonable set of things despite errors', async () => {
         const cache = new TestPrefetchCache(3);
-        for (let i=0; i<4; ++i) {
-            cache.placeRequests(i+1, 10, i, 'f');
-            cache.placeRequests(i+1, 10, i, '@b');
-            for (let j=0; j<4; ++j) {
-                cache.cleanupAndDispatchRequests(i, i-1);
+        for (let i = 0; i < 4; ++i) {
+            cache.placeRequests(i + 1, 10, i, 'f');
+            cache.placeRequests(i + 1, 10, i, '@b');
+            for (let j = 0; j < 4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i - 1);
                 await cache.finishFetches();
             }
         }
@@ -160,10 +162,10 @@ describe('findMatchingScheduleEntry', () => {
     // Test expiry
     it('keeps a reasonable set of things with expiry', async () => {
         const cache = new TestPrefetchCache(5);
-        for (let i=0; i<4; ++i) {
-            cache.placeRequests(i+1, 10, i, 'f', '', i+1);
-            for (let j=0; j<4; ++j) {
-                cache.cleanupAndDispatchRequests(i, i-1);
+        for (let i = 0; i < 4; ++i) {
+            cache.placeRequests(i + 1, 10, i, 'f', '', i + 1);
+            for (let j = 0; j < 4; ++j) {
+                cache.cleanupAndDispatchRequests(i, i - 1);
                 await cache.finishFetches();
             }
         }
