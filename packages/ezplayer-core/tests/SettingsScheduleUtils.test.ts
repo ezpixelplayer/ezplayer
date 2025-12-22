@@ -20,20 +20,12 @@ import type {
 function makeLocalDate(
     dayOfWeek: number, // 0=Sunday .. 6=Saturday
     hour: number,
-    minute: number
+    minute: number,
 ): Date {
     // 2024-09-01 is a Sunday
     const base = new Date(2024, 8, 1, 0, 0, 0, 0);
     const deltaDays = dayOfWeek; // 0 → same day, 1 → Monday, etc.
-    return new Date(
-        base.getFullYear(),
-        base.getMonth(),
-        base.getDate() + deltaDays,
-        hour,
-        minute,
-        0,
-        0
-    );
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate() + deltaDays, hour, minute, 0, 0);
 }
 
 describe('findMatchingScheduleEntry', () => {
@@ -92,7 +84,7 @@ describe('findMatchingScheduleEntry', () => {
                 id: 'fri-late',
                 days: 'friday',
                 startTime: '20:00', // 8pm Friday
-                endTime: '26:00',   // 2am Saturday
+                endTime: '26:00', // 2am Saturday
                 playlist: 'LateShow',
             },
         ];
@@ -116,14 +108,14 @@ describe('findMatchingScheduleEntry', () => {
                 id: 'sat-night',
                 days: 'saturday',
                 startTime: '20:00', // 8pm Saturday
-                endTime: '26:00',   // 2am Sunday (wrap across week boundary)
+                endTime: '26:00', // 2am Sunday (wrap across week boundary)
                 playlist: 'WeekendEnd',
             },
         ];
 
         const saturday23 = makeLocalDate(6, 23, 0); // Saturday 23:00
-        const sunday01 = makeLocalDate(0, 1, 0);    // Sunday 01:00 (next week)
-        const sunday03 = makeLocalDate(0, 3, 0);    // Sunday 03:00
+        const sunday01 = makeLocalDate(0, 1, 0); // Sunday 01:00 (next week)
+        const sunday03 = makeLocalDate(0, 3, 0); // Sunday 03:00
 
         const matchSat23 = findMatchingScheduleEntry(entries, saturday23);
         const matchSun01 = findMatchingScheduleEntry(entries, sunday01);
@@ -283,7 +275,7 @@ describe('getActiveVolumeSchedule', () => {
         };
 
         const evening = makeLocalDate(4, 19, 0); // Thursday 19:00
-        const morning = makeLocalDate(4, 9, 0);  // Thursday 09:00
+        const morning = makeLocalDate(4, 9, 0); // Thursday 09:00
 
         const activeEvening = getActiveVolumeSchedule(volumeState, evening);
         const activeMorning = getActiveVolumeSchedule(volumeState, morning);
