@@ -28,8 +28,8 @@ let decompTime = 0;
 
 const nworkers = 2;
 const workers: Worker[] = [];
-for (let i=0; i<nworkers; ++i) {
-    workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: {name: 'zstddecode'} }));
+for (let i = 0; i < nworkers; ++i) {
+    workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: { name: 'zstddecode' } }));
 }
 const inuse: Worker[] = [];
 
@@ -37,7 +37,7 @@ export function getZstdStats() {
     return {
         decompTime,
         nWorkers: nworkers,
-    }
+    };
 }
 
 export function resetZstdStats() {
@@ -53,7 +53,7 @@ export const decompressZStdWithWorker: DecompZStd = (
 ) => {
     const id = nextId++;
     const worker = workers.pop();
-    if (!worker) throw new Error("Too many outstanding requests");
+    if (!worker) throw new Error('Too many outstanding requests');
 
     return new Promise((resolve, reject) => {
         const onMessage = (msg: WorkerOk | WorkerErr) => {

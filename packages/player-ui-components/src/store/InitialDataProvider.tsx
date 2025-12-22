@@ -24,11 +24,11 @@ export const InitialDataProvider = ({ children, api }: IDPProps) => {
         (async () => {
             try {
                 const vers = await window.electronAPI?.getVersions(); // assume always defined
-                    if (alive && vers) {
-                        dispatch(authSliceActions.setPlayerVersion(vers));
-                    }
-                } catch (err) {
-                console.error("getVersions failed:", err);
+                if (alive && vers) {
+                    dispatch(authSliceActions.setPlayerVersion(vers));
+                }
+            } catch (err) {
+                console.error('getVersions failed:', err);
             }
         })();
     });

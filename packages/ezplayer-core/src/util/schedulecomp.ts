@@ -1,4 +1,10 @@
-import type { PlayingItem, PlaylistRecord, ScheduledPlaylist, ScheduleEndPolicy, SequenceRecord } from '../types/DataTypes';
+import type {
+    PlayingItem,
+    PlaylistRecord,
+    ScheduledPlaylist,
+    ScheduleEndPolicy,
+    SequenceRecord,
+} from '../types/DataTypes';
 
 // Module goals:
 //   Deep understanding of the schedule - simulate a run
@@ -147,16 +153,16 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
         this.heap = [];
     }
 
-    findIndex(func: (e: T)=>boolean) {
-        for (let i=0; i<this.heap.length; ++i) {
+    findIndex(func: (e: T) => boolean) {
+        for (let i = 0; i < this.heap.length; ++i) {
             if (func(this.heap[i])) return i;
         }
         return undefined;
     }
 
-    findMatching(func: (e: T)=>boolean) {
+    findMatching(func: (e: T) => boolean) {
         const res: T[] = [];
-        for (let i=0; i<this.heap.length; ++i) {
+        for (let i = 0; i < this.heap.length; ++i) {
             if (func(this.heap[i])) res.push(this.heap[i]);
         }
         return res;
@@ -216,10 +222,7 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
 
             // Decide whether to bubble up or down
             const parentIndex = index > 0 ? Math.floor((index - 1) / 2) : -1;
-            if (
-                parentIndex >= 0 &&
-                SchedulerMinHeap.compare(this.heap[index], this.heap[parentIndex]) < 0
-            ) {
+            if (parentIndex >= 0 && SchedulerMinHeap.compare(this.heap[index], this.heap[parentIndex]) < 0) {
                 this.bubbleUp(index);
             } else {
                 this.bubbleDown(index);
@@ -628,10 +631,7 @@ interface PlaybackCursor {
 }
 
 function forkState<T extends object>(state: T): T {
-  return Object.assign(
-    Object.create(Object.getPrototypeOf(state)),
-    state
-  );
+    return Object.assign(Object.create(Object.getPrototypeOf(state)), state);
 }
 
 /**
@@ -787,11 +787,11 @@ class PlaybackStateEntry {
         }
 
         if (dbg && runToTime < c.baseTime + c.offsetInto) {
-            console.log(`PSE running backwards by ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);
+            console.log(`PSE running backwards by ${c.baseTime + c.offsetInto - runToTime}; ${Date.now() - runToTime}`);
         }
         if (runToTime > c.baseTime + c.offsetInto && this.suspendTime) {
             //This is bad but the prefetcher does it and we have taken steps to make that unimportant
-            //console.log(`PSE running forwards while suspended ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);            
+            //console.log(`PSE running forwards while suspended ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);
         }
 
         while (true) {
@@ -841,7 +841,7 @@ class PlaybackStateEntry {
 
             // Look for start transitions
             if (c.itemCursor < 0) {
-                if (dbg) console.log('PSE starting next part')
+                if (dbg) console.log('PSE starting next part');
                 startNextPart(curTime);
             }
 
@@ -936,7 +936,7 @@ class PlaybackStateEntry {
                     }
                     // Use up to outro
                     if (shouldStartOutro >= left) {
-                       if (dbg) console.log('PSE no outro yet');
+                        if (dbg) console.log('PSE no outro yet');
                         // We just adjust, no outro yet
                         out?.push({
                             end: false,
@@ -1082,7 +1082,13 @@ class PlaybackStateEntry {
     }
 
     // List of things occurring next
-    getUpcomingItems(depth: number, currentTime: number, readDuration: number, readNActions: number, dbg?: boolean): PlayAction[] {
+    getUpcomingItems(
+        depth: number,
+        currentTime: number,
+        readDuration: number,
+        readNActions: number,
+        dbg?: boolean,
+    ): PlayAction[] {
         this.advanceToTime(this, depth, currentTime, undefined, undefined, undefined, dbg);
         const pa: PlayAction[] = [];
         this.advanceToTime(this.getCursor(), depth, currentTime + readDuration, pa, readNActions, undefined, dbg);
@@ -1124,7 +1130,7 @@ class PlaybackStateEntry {
 
     shouldAbort(depth: number, currentTime: number) {
         const pa = this.getUpcomingItems(depth, currentTime, 1_000_000, 10);
-        if (pa.filter((a)=>!a.end).length === 0) {
+        if (pa.filter((a) => !a.end).length === 0) {
             console.log(`No upcoming items - ${Date.now()} vs ${currentTime}`);
             return true;
         }
@@ -1225,7 +1231,7 @@ export function createShuffleList(
 }
 
 export interface PlaybackStateSnapshot {
-    requestId?: string
+    requestId?: string;
     scheduleId?: string; // Which schedule it is
     itemId: string;
 
@@ -1699,8 +1705,7 @@ export class PlayerRunState {
                     if (st) {
                         if (shouldKeep) {
                             st.suspendAtTime(this.depth, this.currentTime, log);
-                        }
-                        else {
+                        } else {
                             st.stopAtTime(this.depth, this.currentTime, log);
                         }
                     }
@@ -1726,14 +1731,14 @@ export class PlayerRunState {
             //  Something ends off the stack? / Stack says to do that?  Check that.
             const se = this.#stackTop;
             if (se) {
-                logLowIters('Stack provides decision time')
+                logLowIters('Stack provides decision time');
                 if (se.suspendTime !== undefined) {
-                    logLowIters('Stack item resume')
+                    logLowIters('Stack item resume');
                     se.resumeAtTime(this.depth, this.currentTime, log);
                 }
                 const sdt = se.getNextDecisionTime(this.depth, this.currentTime, iterLimit < 3);
                 nextDecisionTime = Math.min(sdt, nextDecisionTime);
-                logLowIters(`Stack provides decision time ${sdt} vs ${this.currentTime} (${sdt-this.currentTime})`);
+                logLowIters(`Stack provides decision time ${sdt} vs ${this.currentTime} (${sdt - this.currentTime})`);
             }
 
             // The heap says do something?
@@ -1840,7 +1845,7 @@ export class PlayerRunState {
                   startTime: item.schedStart,
                   scheduleId: item.scheduleId,
                   actions: st.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
-            };
+              };
     }
 
     // Peek aheads for telling player core what to fetch / also what's up next
@@ -1911,8 +1916,7 @@ export class PlayerRunState {
     addInteractiveCommand(cmd: InteractivePlayCommand) {
         if (cmd.immediate) {
             this.immediateItem = cmd;
-        }
-        else {
+        } else {
             this.interactiveQueue.push(cmd);
             this.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
         }
@@ -1926,15 +1930,16 @@ export class PlayerRunState {
         // Search the schedule
         this.upcomingOccurrences = this.upcomingOccurrences.filter((i) => i.itemId !== id);
         const nmap = new Map<string, PlaybackItem>();
-        for (const i of this.upcomingOccurrences) {nmap.set(i.itemId, i)}
+        for (const i of this.upcomingOccurrences) {
+            nmap.set(i.itemId, i);
+        }
         this.upcomingById = nmap;
 
         // Search the stack
-        for (let i=0; i<this.stack.length;) {
+        for (let i = 0; i < this.stack.length; ) {
             if (this.stack[i].itemId === id) {
-                this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i+1)];
-            }
-            else {
+                this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i + 1)];
+            } else {
                 ++i;
             }
         }
@@ -1945,7 +1950,7 @@ export class PlayerRunState {
         // Search the heap
         if (this.heapById.has(id)) {
             this.heapById.delete(id);
-            const idx = this.heap.findIndex((s)=>s.itemId === id);
+            const idx = this.heap.findIndex((s) => s.itemId === id);
             if (idx !== undefined) {
                 this.heap.deleteAt(idx);
             }
@@ -1970,17 +1975,17 @@ export class PlayerRunState {
             const nsc = this.schedulesById.get(schedId);
             return `${nsc?.title ?? 'unknown sched'}`;
         } else {
-            return "<Command>";
+            return '<Command>';
         }
     }
 
     getQueueItems(): PlayingItem[] {
         const items: PlayingItem[] = [];
-        const ia = [...(this.immediateItem ? [this.immediateItem]: []), ...this.interactiveQueue];
+        const ia = [...(this.immediateItem ? [this.immediateItem] : []), ...this.interactiveQueue];
         for (const q of ia) {
             items.push({
                 type: q.immediate ? 'Immediate' : 'Queued',
-                item: q.seqId ? 'Song' : (q.playlistId ? 'Playlist' : (q.scheduleId ? 'Schedule' : 'Command')),
+                item: q.seqId ? 'Song' : q.playlistId ? 'Playlist' : q.scheduleId ? 'Schedule' : 'Command',
                 sequence_id: q.seqId,
                 playlist_id: q.playlistId,
                 schedule_id: q.scheduleId,
@@ -2002,8 +2007,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, undefined, s.scheduleId),
                 } as PlayingItem);
-            }
-            else if (s.playlistIds?.[1]) {
+            } else if (s.playlistIds?.[1]) {
                 items.push({
                     type: s.itemType,
                     item: 'Playlist',
@@ -2011,8 +2015,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
-            }
-            else if (s.mainSectionIds?.[0]) {
+            } else if (s.mainSectionIds?.[0]) {
                 items.push({
                     type: s.itemType,
                     item: 'Song',
@@ -2022,7 +2025,7 @@ export class PlayerRunState {
                 } as PlayingItem);
             }
         }
-        return items.sort((a,b)=>(b.at ?? 0) - (a.at ?? 0));
+        return items.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
     }
 
     getUpcomingSchedules(): PlayingItem[] {
@@ -2055,8 +2058,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, undefined, s.scheduleId),
                 } as PlayingItem);
-            }
-            else if (s.playlistIds?.[1]) {
+            } else if (s.playlistIds?.[1]) {
                 items.push({
                     type: 'Immediate',
                     item: 'Playlist',
@@ -2064,8 +2066,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
-            }
-            else if (s.mainSectionIds?.[0]) {
+            } else if (s.mainSectionIds?.[0]) {
                 items.push({
                     type: 'Immediate',
                     item: 'Song',
@@ -2088,7 +2089,7 @@ export class PlayerRunState {
                 schedule_id: s.scheduleId,
                 sequence_id: s.playlistIds?.[Math.max(s.seqIdx, 0)],
                 title: this.titleForIds(s.playlistIds?.[s.seqIdx], undefined, s.scheduleId),
-            })
+            });
         }
         return items;
     }

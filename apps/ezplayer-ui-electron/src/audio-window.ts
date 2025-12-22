@@ -47,10 +47,7 @@ export class RealTimeChunkPlayer {
         let startTimeMs: number | undefined;
 
         // Fresh song/segment?
-        if (
-            incarnation !== this.audioCleanBreakInterval ||
-            playAtRealTime !== this.audioPlayAtNextRealTime
-        ) {
+        if (incarnation !== this.audioCleanBreakInterval || playAtRealTime !== this.audioPlayAtNextRealTime) {
             console.log(`Starting new song/audio segment`);
             this.audioCleanBreakInterval = incarnation;
             this.audioPlayAtNextRealTime = playAtRealTime;
@@ -64,9 +61,7 @@ export class RealTimeChunkPlayer {
         // Sanity check: if we drift too far, snap back to real-time alignment
         const idealStart = actNow + (playAtRealTime - dn);
         if (Math.abs(startTimeMs! - idealStart) > 50) {
-            console.log(
-                `Start time way off: ${startTimeMs} vs ${idealStart}, snapping back`
-            );
+            console.log(`Start time way off: ${startTimeMs} vs ${idealStart}, snapping back`);
             startTimeMs = idealStart;
             this.audioPlayAtNextRealTime = playAtRealTime;
             this.audioPlayAtNextACT = startTimeMs;
@@ -83,11 +78,7 @@ export class RealTimeChunkPlayer {
         }
 
         // Deinterleave into Web Audio buffer
-        const audioBuffer = this.audioCtx.createBuffer(
-            channels,
-            numSamples,
-            sampleRate
-        );
+        const audioBuffer = this.audioCtx.createBuffer(channels, numSamples, sampleRate);
 
         for (let ch = 0; ch < channels; ch++) {
             const channelData = audioBuffer.getChannelData(ch);
@@ -123,15 +114,11 @@ const player = new RealTimeChunkPlayer();
 log('Audio engine ready (TS)');
 
 // Listen for chunks from main
-ipcRenderer.on(
-    'audio:chunk',
-    (_event, payload: AudioChunk) => {
-        try {
-            player.handleChunk(payload);
-        } catch (err) {
-            const msg =
-                err instanceof Error ? err.message : String(err);
-            log(`Error handling audio chunk: ${msg}`);
-        }
+ipcRenderer.on('audio:chunk', (_event, payload: AudioChunk) => {
+    try {
+        player.handleChunk(payload);
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`Error handling audio chunk: ${msg}`);
     }
-);
+});

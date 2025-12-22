@@ -1094,7 +1094,7 @@ describe('calcschedule', () => {
 
         // This should put it in the middle of the first song
         const logs = plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 5 * 1000, 100);
-        logs.push(...plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 30 * 1000, 100))
+        logs.push(...plr.readOutScheduleUntil(bt + 18 * 3600 * 1000 + 30 * 1000, 100));
         //console.log(toTextLog(logs));
         expect(logs.length).toBe(8);
 
@@ -1159,7 +1159,7 @@ describe('calcschedule', () => {
             requestId: 'aaaaaa',
         });
         const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
-        expect (logs.length).toBe(13);
+        expect(logs.length).toBe(13);
         // song ended, sched suspended ; ...(new 1-songsched) ; sched resumed, pl resumed, song start, song end, pl end, sched end
         //console.log(toTextLog(logs));
         expect(logs[0].eventType).toBe('Sequence Ended');
@@ -1238,7 +1238,7 @@ describe('calcschedule', () => {
         });
         const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
         console.log(toTextLog(logs));
-        expect (logs.length).toBe(15);
+        expect(logs.length).toBe(15);
         // song ended, sched suspended ; ...(new 1-songsched) ; sched resumed, pl resumed, song start, song end, pl end, sched end
         expect(logs[0].eventType).toBe('Sequence Paused');
         expect(logs[0].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 6_000);

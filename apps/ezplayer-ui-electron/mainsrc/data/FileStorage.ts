@@ -226,8 +226,7 @@ export async function saveUserProfileAPI(folder: string, data: EndUser) {
 }
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
-    return {
-    };
+    return {};
     /*
     return {
         player_updated: new Date().getTime(),

@@ -1,24 +1,24 @@
-import { OpenControllerReport } from "../controllers/controllertypes";
-import { ControllerRec } from "../xlcompat/XLXmlUtil";
+import { OpenControllerReport } from '../controllers/controllertypes';
+import { ControllerRec } from '../xlcompat/XLXmlUtil';
 import { ControllerSetup } from '../controllers/controllertypes';
-import { SendBatch } from "./protocols/UDP";
-import { SchedulerHeapItem, SchedulerMinHeap } from "./SchedulerHeap";
+import { SendBatch } from './protocols/UDP';
+import { SchedulerHeapItem, SchedulerMinHeap } from './SchedulerHeap';
 
 export interface Sender {
     controllerSetup?: ControllerSetup;
     controllerReport?: OpenControllerReport;
     controllerRecord?: ControllerRec;
 
-    startFrame() : void;
-    endFrame() : void;
-    startBatch() : void;
+    startFrame(): void;
+    endFrame(): void;
+    startBatch(): void;
     endBatch(): SendBatch | undefined;
     sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;
     sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
-    suspend() : void,
-    resume() : void,
-    minFrameTime() : number;
-    isCurrentlySending() : boolean;
+    suspend(): void;
+    resume(): void;
+    minFrameTime(): number;
+    isCurrentlySending(): boolean;
 }
 
 // What's in here?  The description of the job, containing:
@@ -27,9 +27,9 @@ export interface Sender {
 // Controllers scatter-gather lists (fixed instructions)
 // Whether to send each controller or skip it
 export class SenderJobPart {
-    bufIdx : number = -1; // Which buffer
-    bufStart : number = -1; // 
-    bufLen : number = -1;
+    bufIdx: number = -1; // Which buffer
+    bufStart: number = -1; //
+    bufLen: number = -1;
 }
 
 export class SenderJob {
@@ -61,15 +61,32 @@ export class SendJobSenderState implements SchedulerHeapItem {
     lastSendTime: number = 0;
 
     curDDPSeqNum: number = 1; // E131 uses low bits.
-    getDDPSeqNum() {return this.curDDPSeqNum;}
-    nextDDPSeqNum() {const rv = this.curDDPSeqNum; ++this.curDDPSeqNum; if (this.curDDPSeqNum > 15) this.curDDPSeqNum = 1; return rv;}
+    getDDPSeqNum() {
+        return this.curDDPSeqNum;
+    }
+    nextDDPSeqNum() {
+        const rv = this.curDDPSeqNum;
+        ++this.curDDPSeqNum;
+        if (this.curDDPSeqNum > 15) this.curDDPSeqNum = 1;
+        return rv;
+    }
 
     curE131SeqNum: number = 0; // DDP uses this as 1-15; E131 uses low bits.
-    getE131SeqNum() {return this.curE131SeqNum & 0xFF;}
-    nextE131SeqNum() {const rv = this.curE131SeqNum; ++this.curE131SeqNum; return rv & 0xFF;}
+    getE131SeqNum() {
+        return this.curE131SeqNum & 0xff;
+    }
+    nextE131SeqNum() {
+        const rv = this.curE131SeqNum;
+        ++this.curE131SeqNum;
+        return rv & 0xff;
+    }
 
     sendPacketNumber: number = 0;
-    sendPacketNum() {const rv = this.sendPacketNumber; ++this.sendPacketNumber; return rv;}
+    sendPacketNum() {
+        const rv = this.sendPacketNumber;
+        ++this.sendPacketNumber;
+        return rv;
+    }
 
     reset() {
         this.curPart = 0;
@@ -104,20 +121,17 @@ export class SendJobState {
         for (const s of this.states) {
             s.reset();
             const frameTime = job.senders[i].sender?.minFrameTime() ?? 0;
-            if (sendTime < s.lastSendTime + frameTime - .1) {
+            if (sendTime < s.lastSendTime + frameTime - 0.1) {
                 s.skippingThisFrame = true;
                 ++skipsDueToReq;
-            }
-            else if (job.senders[i].sender?.isCurrentlySending()){
+            } else if (job.senders[i].sender?.isCurrentlySending()) {
                 s.skippingThisFrame = true;
                 ++skipsDueToSlowCtrl;
-            }
-            else {
+            } else {
                 s.skippingThisFrame = false;
-                if ((sendTime - s.lastSendTime) >= frameTime * 2) {
+                if (sendTime - s.lastSendTime >= frameTime * 2) {
                     s.lastSendTime = sendTime;
-                }
-                else {
+                } else {
                     // This allows interop of 40FPS and 100FPS, say, by bringing it up 25ms instead of 30
                     //  But some things can't deal with it.
                     // s.lastSendTime += frameTime;
@@ -126,6 +140,6 @@ export class SendJobState {
             }
             ++i;
         }
-        return {skipsDueToReq, skipsDueToSlowCtrl};
+        return { skipsDueToReq, skipsDueToSlowCtrl };
     }
 }

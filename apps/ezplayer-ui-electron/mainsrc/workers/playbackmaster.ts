@@ -739,7 +739,7 @@ async function processQueue() {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
+                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
             }
@@ -1140,10 +1140,12 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                emitFrameDebug(`No foreground actions ${targetFrameRTC-Date.now()} ${foregroundPlayerRunState.currentTime-Date.now()}`);
-                await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
+                emitFrameDebug(
+                    `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
+                );
+                await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
-                
+
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
@@ -1152,7 +1154,7 @@ async function processQueue() {
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(`No foreground action seq`);
                 if (!isPaused) {
-                    await sender.sendBlackFrame({targetFramePN: rtcConverter.computePerfNow(targetFrameRTC)});
+                    await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 }
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);

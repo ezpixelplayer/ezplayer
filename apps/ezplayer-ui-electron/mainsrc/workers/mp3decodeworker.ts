@@ -5,7 +5,7 @@ import { Buffer } from 'node:buffer';
 import { MPEGDecoder } from 'mpg123-decoder';
 import { getFileSize } from '@ezplayer/epp';
 
-import {getHeapStatistics} from 'node:v8';
+import { getHeapStatistics } from 'node:v8';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
@@ -17,14 +17,15 @@ if (!parentPort) {
 console.log(`Decode worker start...`);
 
 export type DecodeReq =
-{
-    type: 'decode';
-    id: number;
-    filePath: string;
-} | {
-    type: 'return';
-    buffers: Float32Array<ArrayBuffer>[],
-};
+    | {
+          type: 'decode';
+          id: number;
+          filePath: string;
+      }
+    | {
+          type: 'return';
+          buffers: Float32Array<ArrayBuffer>[];
+      };
 
 const decoder = new MPEGDecoder();
 let readyPromise: Promise<void> | null = null;
@@ -37,9 +38,9 @@ function decoderReady() {
 }
 
 export type DecodedAudio = {
-    sampleRate: number,
-    nSamples: number,
-    channelData: Float32Array<ArrayBuffer>[],
+    sampleRate: number;
+    nSamples: number;
+    channelData: Float32Array<ArrayBuffer>[];
 };
 
 export type DecodedAudioResp = {
@@ -55,16 +56,16 @@ export type DecodedAudioResp = {
 let scratchBuf: Buffer | null = Buffer.allocUnsafe(32000000);
 
 function getScratchBuf(size: number) {
-  if (!scratchBuf || scratchBuf.byteLength < size) {
-    scratchBuf = Buffer.allocUnsafe(size);
-  }
-  return scratchBuf;
+    if (!scratchBuf || scratchBuf.byteLength < size) {
+        scratchBuf = Buffer.allocUnsafe(size);
+    }
+    return scratchBuf;
 }
 
 parentPort.on('message', async (msg: DecodeReq) => {
     const { type } = msg;
     if (type !== 'decode') return;
-    const {id, filePath} = msg;
+    const { id, filePath } = msg;
 
     try {
         const fileLen = await getFileSize(filePath);
@@ -105,34 +106,52 @@ parentPort.on('message', async (msg: DecodeReq) => {
 
         try {
             const mrv = {
-                channelData: decomp.channelData.map((v)=>new Float32Array(v)),
+                channelData: decomp.channelData.map((v) => new Float32Array(v)),
                 sampleRate: decomp.sampleRate,
                 nSamples: decomp.samplesDecoded,
             };
 
-            parentPort!.postMessage({
-                type: 'result',
-                id,
-                ok: true,
-                result: mrv,
-                fileReadTime: fileReadTime,
-                decodeTime,
-            } satisfies DecodedAudioResp, mrv.channelData.map((v)=>v.buffer));
-        }
-        catch (e) {
+            parentPort!.postMessage(
+                {
+                    type: 'result',
+                    id,
+                    ok: true,
+                    result: mrv,
+                    fileReadTime: fileReadTime,
+                    decodeTime,
+                } satisfies DecodedAudioResp,
+                mrv.channelData.map((v) => v.buffer),
+            );
+        } catch (e) {
             const err = e as Error;
             const hi = getHeapStatistics();
             console.log(`V8 Heap Size Limit: ${hi.heap_size_limit / (1024 * 1024)} MB`);
-            console.error(`Allocation of result failed (${err.message}); # elements is ${decomp.channelData[0]?.length}`);
+            console.error(
+                `Allocation of result failed (${err.message}); # elements is ${decomp.channelData[0]?.length}`,
+            );
             throw e;
         }
     } catch (err: any) {
         console.error(err);
         // Return mp3 buffer if we still own it so the main thread can reclaim
         try {
-            parentPort!.postMessage({ type: 'result', id, ok: false, error: String(err), decodeTime: 0, fileReadTime: 0 } satisfies DecodedAudioResp);
+            parentPort!.postMessage({
+                type: 'result',
+                id,
+                ok: false,
+                error: String(err),
+                decodeTime: 0,
+                fileReadTime: 0,
+            } satisfies DecodedAudioResp);
         } catch {
-            parentPort!.postMessage({ type: 'result', id, ok: false, error: String(err), decodeTime: 0, fileReadTime: 0 } satisfies DecodedAudioResp);
+            parentPort!.postMessage({
+                type: 'result',
+                id,
+                ok: false,
+                error: String(err),
+                decodeTime: 0,
+                fileReadTime: 0,
+            } satisfies DecodedAudioResp);
         }
     }
 });

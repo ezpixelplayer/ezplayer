@@ -96,7 +96,6 @@ export class ClockConverter {
     }
 
     computePerfNow(dn: number) {
-        return this.perfNowBase +
-            (dn - this.computedClockBase) / (this.computedClockRate || 1);
+        return this.perfNowBase + (dn - this.computedClockBase) / (this.computedClockRate || 1);
     }
 }

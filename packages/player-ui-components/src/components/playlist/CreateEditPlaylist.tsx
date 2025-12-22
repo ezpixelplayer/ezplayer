@@ -43,7 +43,6 @@ interface PlaylistSongInstance extends SequenceRecord {
     instanceId: string; // Unique identifier for each instance
 }
 
-
 // Helper function to format duration in seconds to MM:SS
 const formatDuration = (durationInSeconds: number) => {
     if (!durationInSeconds) return '';
@@ -70,17 +69,15 @@ interface AvailableSongsContainerProps {
     filteredAndSortedSongs: SequenceRecord[];
 }
 
-function songDesc(
-    song: {
-        work?: {
-            title?: string,
-            artist?: string,
-        },
-        sequence?: {
-            vendor?: string,
-        }
-    }
-) {
+function songDesc(song: {
+    work?: {
+        title?: string;
+        artist?: string;
+    };
+    sequence?: {
+        vendor?: string;
+    };
+}) {
     return `${song.work?.title}${song.work?.artist && song.work?.artist !== '' ? ` - ${song.work?.artist}` : ''}${song.sequence?.vendor ? `(${song.sequence?.vendor})` : ''}`;
 }
 
@@ -387,9 +384,7 @@ const PlaylistContainer = ({
                             }}
                         >
                             <Typography variant="body1">Songs: {songCount}</Typography>
-                            <Typography variant="body1">
-                                Total Duration: {formattedTotalDuration}
-                            </Typography>
+                            <Typography variant="body1">Total Duration: {formattedTotalDuration}</Typography>
                         </Box>
                     </Grid>
                 </Grid>
@@ -515,7 +510,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                     playlistName !== existingPlaylist.title ||
                     JSON.stringify(selectedTags) !== JSON.stringify(existingPlaylist.tags) ||
                     JSON.stringify(playlistSongs.map((song) => song.id)) !==
-                    JSON.stringify(existingPlaylist.items.map((item) => item.id));
+                        JSON.stringify(existingPlaylist.items.map((item) => item.id));
 
                 setHasUnsavedChanges(hasChanges);
             }
@@ -546,10 +541,13 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                         return song ? { ...song, seqnum: item.sequence } : null;
                     })
                     .filter((song): song is NonNullable<typeof song> => song !== null)
-                    .map((song) => ({
-                        ...song,
-                        instanceId: `${song.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    } as PlaylistSongInstance));
+                    .map(
+                        (song) =>
+                            ({
+                                ...song,
+                                instanceId: `${song.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            }) as PlaylistSongInstance,
+                    );
 
                 setPlaylistSongs(selectedSongs);
 
@@ -713,8 +711,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             over.id === 'available'
                 ? 'available'
                 : over.id === 'playlist'
-                    ? 'playlist'
-                    : over.data.current?.containerId;
+                  ? 'playlist'
+                  : over.data.current?.containerId;
 
         // Handle reordering within playlist container
         if (sourceContainerId === 'playlist' && destinationContainerId === 'playlist') {
