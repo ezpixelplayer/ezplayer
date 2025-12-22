@@ -444,7 +444,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 fromTime: formData.fromTime,
                 toTime: formData.toTime,
                 playlistTitle: selectedPlaylist?.title || '',
-                duration: totalDuration, // TODO CRAZ: This is not accurate w/ loop or priority
+                duration: totalDuration, // TODO CRAZ: This is not accurate w/ loop or priority, should we delete it from here?
                 recurrence: formData.recurrence,
                 shuffle: formData.shuffle,
                 loop: formData.loop,
