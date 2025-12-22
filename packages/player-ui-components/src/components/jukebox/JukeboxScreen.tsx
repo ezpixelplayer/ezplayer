@@ -12,6 +12,7 @@ import { PlaylistDropdown, Playlist } from './PlaylistDropdown';
 import { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
 import { getImageUrl } from '../../util/imageUtils';
 import { QueueCard } from '../status/QueueCard';
+import { QueueAndControlStack } from '../player/QueueAndControlStack';
 
 interface Song {
     isMusical: boolean;
@@ -541,7 +542,6 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     const [selectedPlaylist, setSelectedPlaylist] = useState('all');
     const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
-    const pstat = useSelector((s: RootState) => s.playerStatus);
 
     // Get available tags from the Redux store
     const availableTags = useSelector((state: RootState) => state.sequences.tags || []);
@@ -551,13 +551,6 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
             id: playlist.id,
             name: playlist.title,
         })),
-    );
-
-    // Transform sequenceData into the format needed for the jukebox
-    // Get the currently selected playlist
-    const selectedPlaylistData = useMemo(
-        () => (selectedPlaylist !== 'all' ? playlists.find((p: Playlist) => p.id === selectedPlaylist) : null),
-        [selectedPlaylist, playlists],
     );
 
     // Get the playlist items (song IDs) for the selected playlist
@@ -678,38 +671,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 }}
             >
                 {/* Playback Queue Card */}
-                {pstat?.playerStatus?.player?.queue && (
-                    <Box
-                        sx={{
-                            mb: 3,
-                            display: 'flex',
-                            gap: '16px',
-                            alignItems: 'center',
-                            flexWrap: { xs: 'wrap', md: 'nowrap' },
-                            '& .MuiFormControl-root': {
-                                margin: 0,
-                                width: '100%',
-                            },
-                            '& .MuiOutlinedInput-root': {
-                                margin: 0,
-                            },
-                        }}
-                    >
-                        <QueueCard
-                            sx={{ padding: 2 }}
-                            queue={pstat.playerStatus.player.queue}
-                            onRemoveItem={async (i, index) => {
-                                console.log(`Remove ${index}`);
-                                await dispatch(
-                                    callImmediateCommand({
-                                        command: 'deleterequest',
-                                        requestId: i.request_id ?? '',
-                                    }),
-                                );
-                            }}
-                        ></QueueCard>
-                    </Box>
-                )}
+                <QueueAndControlStack />
 
                 {/* Search and Sort Controls */}
                 <Box
