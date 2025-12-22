@@ -43,6 +43,7 @@ interface PlaylistSongInstance extends SequenceRecord {
     instanceId: string; // Unique identifier for each instance
 }
 
+
 // Helper function to format duration in seconds to MM:SS
 const formatDuration = (durationInSeconds: number) => {
     if (!durationInSeconds) return '';
@@ -289,6 +290,8 @@ const PlaylistContainer = ({
         id: 'playlist',
     });
 
+    const songCount = useMemo(() => playlistSongs.length, [playlistSongs]);
+
     // Calculate total duration of all songs in the playlist
     const totalDuration = useMemo(() => {
         return playlistSongs.reduce((total, song) => {
@@ -373,9 +376,21 @@ const PlaylistContainer = ({
                         </Button>
                     </Grid>
                     <Grid item xs={12} md={6}>
-                        <Typography variant="body1" sx={{ textAlign: 'right', pt: 0.5 }}>
-                            Total Duration: {formattedTotalDuration}
-                        </Typography>
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                alignItems: 'center',
+                                gap: 2,
+                                height: '100%',
+                                pt: 0.5,
+                            }}
+                        >
+                            <Typography variant="body1">Songs: {songCount}</Typography>
+                            <Typography variant="body1">
+                                Total Duration: {formattedTotalDuration}
+                            </Typography>
+                        </Box>
                     </Grid>
                 </Grid>
             </Box>
