@@ -26,7 +26,7 @@ import { AboutDialog } from './AboutDialog';
 import { EZPElectronAPI, ViewerControlScheduleEntry, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { LicenseDialog, LicenseEntry } from './LicenseDialog';
 import { useMemo } from 'react';
-import Licenses from "../../constants/licenses.json"
+import Licenses from '../../constants/licenses.json';
 import { playerStatusActions } from '../../store/slices/PlayerStatusStore';
 
 interface UISettings {
@@ -252,10 +252,7 @@ const TimeInput: React.FC<{
                     ? '24-hour format (e.g., 14:30, 22:00). Start time must be within the same day.'
                     : 'Extended time format (e.g., 14:30, 25:00, 26:30). Use 25:00 for 1:00 AM next day, 48:00 for midnight 2 days later.'
             }
-            error={Boolean(
-                localValue &&
-                (!isFromTime ? !isExtendedTimeValid(localValue) : !isTimeValid(localValue))
-            )}
+            error={Boolean(localValue && (!isFromTime ? !isExtendedTimeValid(localValue) : !isTimeValid(localValue)))}
             sx={sx}
         />
     );
@@ -356,14 +353,10 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         if (initialLoadComplete) {
             const uiSettings = {
                 theme: themeName,
-            }
+            };
             localStorage.setItem('playbackSettings', JSON.stringify(uiSettings));
         }
-    }, [
-        themeName,
-        selectedDirectory,
-        initialLoadComplete,
-    ]);
+    }, [themeName, selectedDirectory, initialLoadComplete]);
 
     const handleThemeSwitch = (event: SelectChangeEvent<unknown>) => {
         const currentTheme = event.target.value as string;
@@ -443,7 +436,6 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 minWidth: '500px',
             }}
         >
-
             {/* Days Selection */}
             <Box>
                 <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
@@ -520,7 +512,11 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                     <TimeInput
                         size="small"
                         label="Start Time"
-                        value={dialogType === 'schedule' ? newScheduleEntry.startTime || '' : newVolumeScheduleEntry.startTime || ''}
+                        value={
+                            dialogType === 'schedule'
+                                ? newScheduleEntry.startTime || ''
+                                : newVolumeScheduleEntry.startTime || ''
+                        }
                         onChange={(value) => {
                             if (dialogType === 'schedule') {
                                 setNewScheduleEntry({ ...newScheduleEntry, startTime: value });
@@ -534,7 +530,11 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                     <TimeInput
                         size="small"
                         label="End Time"
-                        value={dialogType === 'schedule' ? newScheduleEntry.endTime || '' : newVolumeScheduleEntry.endTime || ''}
+                        value={
+                            dialogType === 'schedule'
+                                ? newScheduleEntry.endTime || ''
+                                : newVolumeScheduleEntry.endTime || ''
+                        }
                         onChange={(value) => {
                             if (dialogType === 'schedule') {
                                 setNewScheduleEntry({ ...newScheduleEntry, endTime: value });
@@ -616,20 +616,18 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
             )}
 
             {/* Action Buttons */}
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 2,
-                mt: 2,
-                pt: 2,
-                borderTop: '1px solid',
-                borderColor: 'divider'
-            }}>
-                <Button
-                    variant="outlined"
-                    onClick={handleCloseUnifiedDialog}
-                    sx={{ minWidth: 100 }}
-                >
+            <Box
+                sx={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: 2,
+                    mt: 2,
+                    pt: 2,
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                }}
+            >
+                <Button variant="outlined" onClick={handleCloseUnifiedDialog} sx={{ minWidth: 100 }}>
                     Cancel
                 </Button>
                 <Button
@@ -639,17 +637,17 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                     disabled={
                         dialogType === 'schedule'
                             ? !newScheduleEntry.days ||
-                            !newScheduleEntry.startTime ||
-                            !newScheduleEntry.endTime ||
-                            !newScheduleEntry.playlist ||
-                            !isValidTimeFormat(newScheduleEntry.startTime) ||
-                            !isValidExtendedTimeFormat(newScheduleEntry.endTime)
+                              !newScheduleEntry.startTime ||
+                              !newScheduleEntry.endTime ||
+                              !newScheduleEntry.playlist ||
+                              !isValidTimeFormat(newScheduleEntry.startTime) ||
+                              !isValidExtendedTimeFormat(newScheduleEntry.endTime)
                             : !newVolumeScheduleEntry.days ||
-                            !newVolumeScheduleEntry.startTime ||
-                            !newVolumeScheduleEntry.endTime ||
-                            newVolumeScheduleEntry.volumeLevel === undefined ||
-                            !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
-                            !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
+                              !newVolumeScheduleEntry.startTime ||
+                              !newVolumeScheduleEntry.endTime ||
+                              newVolumeScheduleEntry.volumeLevel === undefined ||
+                              !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
+                              !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
                     }
                     sx={{ minWidth: 140 }}
                 >
@@ -671,39 +669,34 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         };
 
         return (
-            <Box sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 3,
-                minWidth: '400px'
-            }}>
-                <Box >
+            <Box
+                sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    minWidth: '400px',
+                }}
+            >
+                <Box>
                     <Typography variant="body1" color="text.secondary">
                         Are you sure you want to delete this {getItemType()}
                     </Typography>
                 </Box>
-                <Box sx={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: 2,
-                    mt: 2,
-                    pt: 2,
-                    borderTop: '1px solid',
-                    borderColor: 'divider'
-                }}>
-                    <Button
-                        variant="outlined"
-                        onClick={handleCloseDeleteDialog}
-                        sx={{ minWidth: 100 }}
-                    >
+                <Box
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        gap: 2,
+                        mt: 2,
+                        pt: 2,
+                        borderTop: '1px solid',
+                        borderColor: 'divider',
+                    }}
+                >
+                    <Button variant="outlined" onClick={handleCloseDeleteDialog} sx={{ minWidth: 100 }}>
                         Cancel
                     </Button>
-                    <Button
-                        variant="contained"
-                        color="error"
-                        onClick={confirmDelete}
-                        sx={{ minWidth: 100 }}
-                    >
+                    <Button variant="contained" color="error" onClick={confirmDelete} sx={{ minWidth: 100 }}>
                         Delete
                     </Button>
                 </Box>
@@ -881,7 +874,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         <Box sx={{ px: 2 }}>
                             <Slider
                                 value={settings.audioSyncAdjust}
-                                onChange={(_, value) => dispatch(playerStatusActions.setAudioSyncAdjust(value as number))}
+                                onChange={(_, value) =>
+                                    dispatch(playerStatusActions.setAudioSyncAdjust(value as number))
+                                }
                                 min={-100}
                                 max={100}
                                 step={1}
@@ -939,7 +934,11 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                 itemText="name"
                                 itemValue="id"
                                 onChange={(e) =>
-                                    dispatch(playerStatusActions.setBackgroundSequence((e.target as HTMLSelectElement).value as 'overlay' | 'underlay'))
+                                    dispatch(
+                                        playerStatusActions.setBackgroundSequence(
+                                            (e.target as HTMLSelectElement).value as 'overlay' | 'underlay',
+                                        ),
+                                    )
                                 }
                                 label="Background Sequence"
                                 value={settings.backgroundSequence}
@@ -1030,7 +1029,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                                         size="small"
                                                                     />
                                                                     <Typography variant="body2">
-                                                                        {formatTime24Hour(entry.startTime)} - {formatTime24Hour(entry.endTime)}
+                                                                        {formatTime24Hour(entry.startTime)} -{' '}
+                                                                        {formatTime24Hour(entry.endTime)}
                                                                     </Typography>
                                                                     <Typography variant="body2" fontWeight="medium">
                                                                         {entry.playlist}
@@ -1042,7 +1042,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                         <ListItemSecondaryAction>
                                                             <IconButton
                                                                 edge="end"
-                                                                onClick={() => removeViewerControlScheduleEntry(entry.id)}
+                                                                onClick={() =>
+                                                                    removeViewerControlScheduleEntry(entry.id)
+                                                                }
                                                                 size="small"
                                                                 color="error"
                                                             >
@@ -1093,7 +1095,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             <Box sx={{ px: 2 }}>
                                 <Slider
                                     value={settings.volumeControl.defaultVolume}
-                                    onChange={(_, value) => dispatch(playerStatusActions.setDefaultVolume(value as number))}
+                                    onChange={(_, value) =>
+                                        dispatch(playerStatusActions.setDefaultVolume(value as number))
+                                    }
                                     min={0}
                                     max={100}
                                     step={1}
@@ -1160,7 +1164,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                                                     size="small"
                                                                 />
                                                                 <Typography variant="body2">
-                                                                    {formatTime24Hour(entry.startTime)} - {formatTime24Hour(entry.endTime)}
+                                                                    {formatTime24Hour(entry.startTime)} -{' '}
+                                                                    {formatTime24Hour(entry.endTime)}
                                                                 </Typography>
                                                                 <Chip
                                                                     label={`${entry.volumeLevel}%`}
@@ -1253,7 +1258,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             sx={{
                                 textTransform: 'none',
                                 minWidth: 'auto',
-                                px: 3
+                                px: 3,
                             }}
                         >
                             About EZPlayer
@@ -1266,7 +1271,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             sx={{
                                 textTransform: 'none',
                                 minWidth: 'auto',
-                                px: 3
+                                px: 3,
                             }}
                         >
                             License
@@ -1331,8 +1336,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         {itemToDelete?.type === 'schedule'
                             ? 'Schedule Entry'
                             : itemToDelete?.type === 'volume'
-                                ? 'Volume Override'
-                                : 'Item'}
+                              ? 'Volume Override'
+                              : 'Item'}
                     </Typography>
                 }
                 model_content={<DeleteDialogContent />}

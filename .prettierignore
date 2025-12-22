@@ -5,3 +5,4 @@ release
 pnpm-lock.yaml
 pnpm-workspace.yaml
 json_examples/
+packages/shared-ui-components/
