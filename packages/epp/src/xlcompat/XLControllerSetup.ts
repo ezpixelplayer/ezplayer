@@ -1,12 +1,9 @@
-import { DDPSender } from "../dataplane/protocols/DDP";
-import { E131Sender } from "../dataplane/protocols/E131";
-import { Sender, SenderJob, SendJob } from "../dataplane/SenderJob";
-import {
-    ControllerSetup,
-    OpenControllerReport,
-} from "../controllers/controllertypes";
+import { DDPSender } from '../dataplane/protocols/DDP';
+import { E131Sender } from '../dataplane/protocols/E131';
+import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
+import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
-import { ControllerRec, readControllersAndModels } from "./XLXmlUtil";
+import { ControllerRec, readControllersAndModels } from './XLXmlUtil';
 
 export interface ControllerState {
     setup: ControllerSetup; // This is the name and channel map (as it pertains to xLights fseq layout)
@@ -17,28 +14,24 @@ export interface ControllerState {
 
 export async function readControllersFromXlights(showdir: string) {
     const ctrls: ControllerState[] = [];
-    const {
-        controllers: xcontrollers, models: osmodels
-    } = await readControllersAndModels(showdir);
+    const { controllers: xcontrollers, models: osmodels } = await readControllersAndModels(showdir);
 
     function makeErrorState(exc: ControllerRec, sum: string, skipped: boolean) {
-        return (
-            {
-                setup: {
-                    usable: false,
-                    skipped,
-                    summary: sum,
-                    name: exc.name,
-                    address: exc.address,
-                    proto: (exc.protocol === 'DDP' || exc.protocol === 'E131') ? exc.protocol : undefined,
-                    startCh: exc.startch,
-                    nCh: exc.maxch,
-                },
-                xlRecord: exc,
-            } satisfies ControllerState
-        );
+        return {
+            setup: {
+                usable: false,
+                skipped,
+                summary: sum,
+                name: exc.name,
+                address: exc.address,
+                proto: exc.protocol === 'DDP' || exc.protocol === 'E131' ? exc.protocol : undefined,
+                startCh: exc.startch,
+                nCh: exc.maxch,
+            },
+            xlRecord: exc,
+        } satisfies ControllerState;
     }
-    
+
     for (const xc of xcontrollers) {
         if (xc.protocol !== 'DDP' && xc.protocol !== 'E131') {
             ctrls.push(makeErrorState(xc, `Unsupported controller protocol ${xc.protocol}`, false));
@@ -47,12 +40,10 @@ export async function readControllersFromXlights(showdir: string) {
         if (xc.activeState !== 'Active') {
             ctrls.push(makeErrorState(xc, `Skipped controller ${xc.name} because it is ${xc.activeState}`, true));
             continue;
-        }
-        else if (xc.type !== 'Ethernet') {
+        } else if (xc.type !== 'Ethernet') {
             if (xc.type === 'Null') {
                 ctrls.push(makeErrorState(xc, `Skipped null controller ${xc.name}`, true));
-            }
-            else {
+            } else {
                 ctrls.push(makeErrorState(xc, `Unsupported controller type: ${xc.type}`, false));
             }
             continue;
@@ -67,16 +58,16 @@ export async function readControllersFromXlights(showdir: string) {
             address: xc.address,
             nCh: xc.maxch,
             proto: xc.protocol as 'DDP' | 'E131',
-        }
+        };
 
         const ctrl: ControllerState = {
             setup: c,
             xlRecord: xc,
-        }
+        };
         ctrls.push(ctrl);
     }
 
-    return {controllers: ctrls, models: osmodels};
+    return { controllers: ctrls, models: osmodels };
 }
 
 export async function openControllersForDataSend(ctrls: ControllerState[]) {
@@ -86,8 +77,8 @@ export async function openControllersForDataSend(ctrls: ControllerState[]) {
             c.report = {
                 name: c.setup.name,
                 status: 'skipped',
-                error: `${c.setup.summary}`
-            }
+                error: `${c.setup.summary}`,
+            };
             continue;
         }
         const xc = c.xlRecord;
@@ -96,14 +87,13 @@ export async function openControllersForDataSend(ctrls: ControllerState[]) {
             const dsender = new DDPSender();
             dsender.address = c.setup.address;
             dsender.pushAtEnd = false; // TODO try variety
-            dsender.startChNum = xc.keepChannelNumbers ? xc.startch - 1 : 0; 
+            dsender.startChNum = xc.keepChannelNumbers ? xc.startch - 1 : 0;
             dsender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;
             dsender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
 
             try {
                 await dsender.connect();
-            }
-            catch(e) {
+            } catch (e) {
                 const err = e as Error;
                 c.report = {
                     name: xc.name,
@@ -113,7 +103,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[]) {
                 continue;
             }
             const jobSender = new SenderJob();
-            jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh-1, bufLen: c.setup.nCh });
+            jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh - 1, bufLen: c.setup.nCh });
             jobSender.sender = dsender;
             job.senders.push(jobSender);
             c.report = {
@@ -134,7 +124,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[]) {
             esender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;
             await esender.connect();
             const jobSender = new SenderJob();
-            jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh-1, bufLen: c.setup.nCh });
+            jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh - 1, bufLen: c.setup.nCh });
             jobSender.sender = esender;
             job.senders.push(jobSender);
             c.report = {

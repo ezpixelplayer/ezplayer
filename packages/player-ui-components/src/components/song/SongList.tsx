@@ -94,9 +94,7 @@ function SongTable({ rows, columns, onRowDoubleClick, getRowId }: SongTableProps
             if (av === undefined || av === null) return 1;
             if (bv === undefined || bv === null) return -1;
             if (typeof av === 'number' && typeof bv === 'number') return direction === 'asc' ? av - bv : bv - av;
-            return direction === 'asc'
-                ? String(av).localeCompare(String(bv))
-                : String(bv).localeCompare(String(av));
+            return direction === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
         });
         return copy;
     })();
@@ -130,7 +128,11 @@ function SongTable({ rows, columns, onRowDoubleClick, getRowId }: SongTableProps
                                             {headerContent}
                                         </Typography>
                                     ) : (
-                                        <TableSortLabel active={isActive} direction={direction} hideSortIcon={!isActive}>
+                                        <TableSortLabel
+                                            active={isActive}
+                                            direction={direction}
+                                            hideSortIcon={!isActive}
+                                        >
                                             <Typography variant="body2" fontWeight="bold" noWrap>
                                                 {headerContent}
                                             </Typography>
@@ -248,7 +250,9 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
                     return null; // Skip songs without ID
                 }
 
-                const artist = (song?.work?.artist || 'Unknown Artist') + `${song?.sequence?.vendor ? '(' + song.sequence.vendor + ')' : ''}`;
+                const artist =
+                    (song?.work?.artist || 'Unknown Artist') +
+                    `${song?.sequence?.vendor ? '(' + song.sequence.vendor + ')' : ''}`;
 
                 return {
                     id: song.id,
@@ -362,21 +366,21 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {params.value && params.value.length > 0
                             ? params.value.map((tag: string, index: number) => (
-                                <Typography
-                                    key={`${params.row.id}-tag-${index}-${tag}`}
-                                    variant="body2"
-                                    sx={{
-                                        backgroundColor: 'primary.light',
-                                        color: 'primary.contrastText',
-                                        padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    {tag}
-                                </Typography>
-                            ))
+                                  <Typography
+                                      key={`${params.row.id}-tag-${index}-${tag}`}
+                                      variant="body2"
+                                      sx={{
+                                          backgroundColor: 'primary.light',
+                                          color: 'primary.contrastText',
+                                          padding: '2px 8px',
+                                          borderRadius: '12px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 500,
+                                      }}
+                                  >
+                                      {tag}
+                                  </Typography>
+                              ))
                             : null}
                     </Box>
                 </RowWrapper>

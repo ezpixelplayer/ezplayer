@@ -1,4 +1,10 @@
-import { ScheduleDays, ViewerControlScheduleEntry, ViewerControlState, VolumeControlState, VolumeScheduleEntry } from "src/types/DataTypes";
+import {
+    ScheduleDays,
+    ViewerControlScheduleEntry,
+    ViewerControlState,
+    VolumeControlState,
+    VolumeScheduleEntry,
+} from 'src/types/DataTypes';
 
 const MINUTES_PER_DAY = 24 * 60;
 const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY;
@@ -16,13 +22,7 @@ function parseExtendedTimeToMinutes(time: string): number {
     const [hStr, mStr] = time.split(':');
     const hours = parseInt(hStr, 10);
     const mins = parseInt(mStr, 10);
-    if (
-        Number.isNaN(hours) ||
-        Number.isNaN(mins) ||
-        mins < 0 ||
-        mins > 59 ||
-        hours < 0
-    ) {
+    if (Number.isNaN(hours) || Number.isNaN(mins) || mins < 0 || mins > 59 || hours < 0) {
         throw new Error(`Invalid time string: ${time}`);
     }
     return hours * 60 + mins;
@@ -64,10 +64,7 @@ type BaseScheduleEntry = {
     endTime: string;
 };
 
-function scheduleEntryMatchesNow<T extends BaseScheduleEntry>(
-    entry: T,
-    nowMinutesOfWeek: number
-): boolean {
+function scheduleEntryMatchesNow<T extends BaseScheduleEntry>(entry: T, nowMinutesOfWeek: number): boolean {
     const startMinutesLocal = parseExtendedTimeToMinutes(entry.startTime);
     const endMinutesLocal = parseExtendedTimeToMinutes(entry.endTime);
 
@@ -115,10 +112,7 @@ function scheduleEntryMatchesNow<T extends BaseScheduleEntry>(
  * Find the applicable schedule entry at the given time.
  * Later entries in the array have higher priority.
  */
-export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(
-    entries: T[],
-    now: Date = new Date()
-): T | null {
+export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(entries: T[], now: Date = new Date()): T | null {
     if (!entries.length) return null;
 
     const nowMinutes = getMinutesOfWeek(now);
@@ -135,7 +129,7 @@ export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(
 
 export function getActiveViewerControlSchedule(
     viewerControl: ViewerControlState,
-    now: Date = new Date()
+    now: Date = new Date(),
 ): ViewerControlScheduleEntry | null {
     if (!viewerControl.enabled || viewerControl.type !== 'remote-falcon') {
         return null;
@@ -146,7 +140,7 @@ export function getActiveViewerControlSchedule(
 
 export function getActiveVolumeSchedule(
     volumeControl: VolumeControlState,
-    now: Date = new Date()
+    now: Date = new Date(),
 ): VolumeScheduleEntry | null {
     if (!volumeControl.schedule.length) {
         return null;

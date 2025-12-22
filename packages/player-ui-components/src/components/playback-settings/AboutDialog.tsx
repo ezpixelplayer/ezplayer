@@ -96,7 +96,9 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                                 textDecoration: 'underline',
                                             },
                                         }}
-                                        onClick={() => window.electronAPI?.openExternal('https://discord.gg/gpwxM4bR94')}
+                                        onClick={() =>
+                                            window.electronAPI?.openExternal('https://discord.gg/gpwxM4bR94')
+                                        }
                                     >
                                         Join our Discord community
                                     </Link>
@@ -136,7 +138,11 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                                 textDecoration: 'underline',
                                             },
                                         }}
-                                        onClick={() => window.electronAPI?.openExternal('https://github.com/ezpixelplayer/ezplayer')}
+                                        onClick={() =>
+                                            window.electronAPI?.openExternal(
+                                                'https://github.com/ezpixelplayer/ezplayer',
+                                            )
+                                        }
                                     >
                                         Get source code and contribute
                                     </Link>
@@ -169,14 +175,20 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                             <Typography variant="body2" color="text.secondary">
                                 Player Version:
                             </Typography>
-                            <Typography variant="body2">{playerVersion ? `${playerVersion.version} / ${playerVersion.packages['Electron App']} / ${playerVersion?.git['branch']}` : 'N/A'}</Typography>
+                            <Typography variant="body2">
+                                {playerVersion
+                                    ? `${playerVersion.version} / ${playerVersion.packages['Electron App']} / ${playerVersion?.git['branch']}`
+                                    : 'N/A'}
+                            </Typography>
                         </Box>
                         <Box sx={{ mt: 1 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                                 <Typography variant="caption" color="text.secondary">
                                     Version Details (EZPlayerVersions)
                                 </Typography>
-                                <Tooltip title="Copy to clipboard" placement="top"
+                                <Tooltip
+                                    title="Copy to clipboard"
+                                    placement="top"
                                     PopperProps={{
                                         disablePortal: true,
                                         modifiers: [
@@ -230,12 +242,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                             borderColor: 'divider',
                         }}
                     >
-                        <Button
-                            variant="contained"
-                            onClick={handleClose}
-                            size="small"
-                            sx={{ minWidth: 80 }}
-                        >
+                        <Button variant="contained" onClick={handleClose} size="small" sx={{ minWidth: 80 }}>
                             Close
                         </Button>
                     </Box>

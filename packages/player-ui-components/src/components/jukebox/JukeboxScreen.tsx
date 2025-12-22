@@ -42,7 +42,7 @@ interface SequenceItem {
     };
     sequence?: {
         vendor?: string;
-    }
+    };
 }
 
 export interface JukeboxAreaProps {
@@ -216,7 +216,15 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const playSong = async () => {
         if (!song?.id) return;
         onInteract?.();
-        await dispatch(callImmediateCommand({command: 'playsong', songId: song.id, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+        await dispatch(
+            callImmediateCommand({
+                command: 'playsong',
+                songId: song.id,
+                immediate: true,
+                priority: 5,
+                requestId: crypto.randomUUID(),
+            }),
+        ).unwrap();
     };
 
     // Calculate responsive sizes
@@ -317,7 +325,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                         zIndex: 2, // Ensure text is above the icon
                     }}
                 >
-                    {song?.artist + `${song?.vendor ? '('+song+')' : ''}`}
+                    {song?.artist + `${song?.vendor ? '(' + song + ')' : ''}`}
                 </Typography>
 
                 {/* Control Buttons */}
@@ -622,11 +630,27 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     }, [songs, searchQuery, sortBy, selectedFilterTags, tagInputValue, sequenceData]);
 
     const handlePlay = async (songId: string) => {
-        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: true, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+        await dispatch(
+            callImmediateCommand({
+                command: 'playsong',
+                songId,
+                immediate: true,
+                priority: 5,
+                requestId: crypto.randomUUID(),
+            }),
+        ).unwrap();
     };
 
     const handleQueue = async (songId: string) => {
-        await dispatch(callImmediateCommand({command: 'playsong', songId, immediate: false, priority: 5, requestId: crypto.randomUUID()})).unwrap();
+        await dispatch(
+            callImmediateCommand({
+                command: 'playsong',
+                songId,
+                immediate: false,
+                priority: 5,
+                requestId: crypto.randomUUID(),
+            }),
+        ).unwrap();
     };
 
     const sortOptions = [
@@ -654,7 +678,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 }}
             >
                 {/* Playback Queue Card */}
-                {pstat?.playerStatus?.player?.queue &&
+                {pstat?.playerStatus?.player?.queue && (
                     <Box
                         sx={{
                             mb: 3,
@@ -674,14 +698,18 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                         <QueueCard
                             sx={{ padding: 2 }}
                             queue={pstat.playerStatus.player.queue}
-                            onRemoveItem={async (i, index)=>{console.log(`Remove ${index}`); await dispatch(callImmediateCommand({
-                                command: 'deleterequest',
-                                requestId: i.request_id ?? '',
-                            }))}
-                        }>
-                        </QueueCard>
+                            onRemoveItem={async (i, index) => {
+                                console.log(`Remove ${index}`);
+                                await dispatch(
+                                    callImmediateCommand({
+                                        command: 'deleterequest',
+                                        requestId: i.request_id ?? '',
+                                    }),
+                                );
+                            }}
+                        ></QueueCard>
                     </Box>
-                }
+                )}
 
                 {/* Search and Sort Controls */}
                 <Box

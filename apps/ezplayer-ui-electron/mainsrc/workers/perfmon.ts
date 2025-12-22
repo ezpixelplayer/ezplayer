@@ -1,5 +1,11 @@
 // perfmon.ts
-import { monitorEventLoopDelay, performance, PerformanceObserver, PerformanceEntry, IntervalHistogram } from 'node:perf_hooks';
+import {
+    monitorEventLoopDelay,
+    performance,
+    PerformanceObserver,
+    PerformanceEntry,
+    IntervalHistogram,
+} from 'node:perf_hooks';
 import inspector from 'node:inspector';
 import { createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,8 +33,10 @@ export function startGCLogging(log: (l: string) => void) {
     obs = new PerformanceObserver((list) => {
         list.getEntries().forEach((entry: PerformanceEntry) => {
             if (entry.duration < 2) return;
-            const dkind = entry as {detail?: { kind?: number } }; // This is for PerformanceMeasure really
-            const kind = dkind?.detail?.kind ? (GC_KINDS[dkind?.detail?.kind] ?? `Kind ${dkind?.detail?.kind}`) : `<UNKNOWN>`;
+            const dkind = entry as { detail?: { kind?: number } }; // This is for PerformanceMeasure really
+            const kind = dkind?.detail?.kind
+                ? (GC_KINDS[dkind?.detail?.kind] ?? `Kind ${dkind?.detail?.kind}`)
+                : `<UNKNOWN>`;
             log(`[GC] ${kind} took ${entry.duration.toFixed(2)}ms`);
         });
     });
@@ -54,8 +62,8 @@ function eluNow() {
 ////////
 // Event loop delay
 // Periodic health sampler
-const LOOP_DELAY_THRESHOLD_MS = 10;   // flag if single-tick delay exceeds this
-const BUSY_UTIL_THRESHOLD = 0.90;      // flag if ELU > 95%
+const LOOP_DELAY_THRESHOLD_MS = 10; // flag if single-tick delay exceeds this
+const BUSY_UTIL_THRESHOLD = 0.9; // flag if ELU > 95%
 
 let eldHist: IntervalHistogram | undefined = undefined;
 let eldTimeout: NodeJS.Timeout | undefined = undefined;
@@ -70,8 +78,10 @@ export function startELDMonitor(log: (l: string) => void): void {
         const asyncTop = snapshotAsyncCounts();
 
         if (delay > LOOP_DELAY_THRESHOLD_MS || elu.utilization > BUSY_UTIL_THRESHOLD) {
-            log(`[STALLKIT] delay(p99)=${delay}ms, ELU=${(elu.utilization * 100).toFixed(1)}%, outstanding=${JSON.stringify(asyncTop)}`);
-            captureProfile(log, `delay${delay}-elu${(elu.utilization * 100) | 0}`).catch(() => { });
+            log(
+                `[STALLKIT] delay(p99)=${delay}ms, ELU=${(elu.utilization * 100).toFixed(1)}%, outstanding=${JSON.stringify(asyncTop)}`,
+            );
+            captureProfile(log, `delay${delay}-elu${(elu.utilization * 100) | 0}`).catch(() => {});
         }
     }, 200);
 }
@@ -92,7 +102,7 @@ let profiling = false;
 let session: inspector.Session | undefined = undefined;
 let tracing: import('node:trace_events').Tracing | undefined = undefined;
 
-const PROFILE_DURATION_MS = 2000;      // capture 2s CPU profile on stall
+const PROFILE_DURATION_MS = 2000; // capture 2s CPU profile on stall
 const TRACE_CATS = ['node.perf', 'v8', 'node.async_hooks', 'node.fs', 'node.http', 'uv', 'node.worker'];
 
 async function captureProfile(log: (msg: string) => void, tag: string) {
@@ -103,8 +113,7 @@ async function captureProfile(log: (msg: string) => void, tag: string) {
         try {
             const trace = require('node:trace_events') as typeof import('node:trace_events');
             tracing = trace.createTracing({ categories: TRACE_CATS });
-        }
-        catch (e) {
+        } catch (e) {
             log(`Note: Trace events are not available: ${(e as Error).message}`);
         }
     }
@@ -119,15 +128,14 @@ async function captureProfile(log: (msg: string) => void, tag: string) {
     // Start V8 CPU profiler
     await new Promise<void>((res, rej) => {
         session!.post('Profiler.enable', () => {
-            session!.post('Profiler.start', (err) => err ? rej(err) : res());
+            session!.post('Profiler.start', (err) => (err ? rej(err) : res()));
         });
     });
 
     // Start trace-events (writes continuously to file)
     try {
         tracing?.enable();
-    }
-    catch (e) {
+    } catch (e) {
         log(`Note: Trace events are not available: ${(e as Error).message}`);
         tracing = undefined;
     }
@@ -140,7 +148,10 @@ async function captureProfile(log: (msg: string) => void, tag: string) {
         // Stop profiler
         let pres: ((_v: unknown) => void) | undefined = undefined;
         let prej: ((reason: unknown) => void) | undefined = undefined;
-        const ppromise = new Promise((resolve, reject) => { pres = resolve; prej = reject; })
+        const ppromise = new Promise((resolve, reject) => {
+            pres = resolve;
+            prej = reject;
+        });
 
         session!.post('Profiler.stop', async (err, { profile }) => {
             try {
@@ -150,8 +161,9 @@ async function captureProfile(log: (msg: string) => void, tag: string) {
                 }
                 session!.post('Profiler.disable');
                 pres?.(undefined);
+            } catch (e) {
+                prej?.(e);
             }
-            catch (e) { prej?.(e) }
         });
         await ppromise;
 
@@ -177,7 +189,9 @@ export function startAsyncCounts() {
         init(_asyncId, type, _triggerAsyncId, _resource) {
             asyncCounts!.set(type, (asyncCounts!.get(type) ?? 0) + 1);
         },
-        destroy(_asyncId) { /* no-op: we only sample counts periodically */ }
+        destroy(_asyncId) {
+            /* no-op: we only sample counts periodically */
+        },
     });
     asyncHook.enable();
 }

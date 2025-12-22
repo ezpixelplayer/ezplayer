@@ -1,5 +1,5 @@
-import { SendBatch } from "./protocols/UDP";
-import { SendJobState } from "./SenderJob";
+import { SendBatch } from './protocols/UDP';
+import { SendJobState } from './SenderJob';
 
 export function startFrame(state?: SendJobState) {
     if (!state?.job) return -1;
@@ -28,7 +28,7 @@ export function startBatch(state?: SendJobState) {
     }
 }
 
-export function endBatch(state?: SendJobState): SendBatch [] {
+export function endBatch(state?: SendJobState): SendBatch[] {
     if (!state?.job) return [];
     const b: SendBatch[] = [];
     for (let i = 0; i < state.states.length; ++i) {
@@ -51,7 +51,10 @@ export function sendPartial(state?: SendJobState): number {
     return -1; // Done!
 }
 
-export async function sendFull(state: SendJobState | undefined, sleepfn: (sleepUntil: number) => Promise<void>): Promise<void> {
+export async function sendFull(
+    state: SendJobState | undefined,
+    sleepfn: (sleepUntil: number) => Promise<void>,
+): Promise<void> {
     if (!state?.job) return;
     startFrame();
     while (true) {

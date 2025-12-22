@@ -1,5 +1,4 @@
-export class XMLConstants
-{
+export class XMLConstants {
     static ELEMENT_NODE = 1;
     static ATTRIBUTE_NODE = 2;
     static TEXT_NODE = 3;
@@ -25,8 +24,7 @@ export function getElementByTag(e: Element, t: string): Element {
     throw new Error(`Element does not contain child with tag ${t}`);
 }
 
-export function getNumAttrDef(n: Node | null | undefined, nm: string, def: number) : number
-{
+export function getNumAttrDef(n: Node | null | undefined, nm: string, def: number): number {
     if (!n) return def;
     const el = n as Element;
     const v = el.getAttribute(nm);
@@ -34,8 +32,7 @@ export function getNumAttrDef(n: Node | null | undefined, nm: string, def: numbe
     return Number.parseFloat(v);
 }
 
-export function getIntAttrDef(n: Node | null | undefined, nm: string, def: number) : number
-{
+export function getIntAttrDef(n: Node | null | undefined, nm: string, def: number): number {
     if (!n) return def;
     const el = n as Element;
     const v = el.getAttribute(nm);
@@ -43,18 +40,16 @@ export function getIntAttrDef(n: Node | null | undefined, nm: string, def: numbe
     return Number.parseInt(v);
 }
 
-export function getBoolAttrDef(n: Node | null | undefined, nm: string, def: boolean) : boolean
-{
+export function getBoolAttrDef(n: Node | null | undefined, nm: string, def: boolean): boolean {
     if (!n) return def;
     const el = n as Element;
     const v = el.getAttribute(nm);
     if (!v) return def;
-    if (['1','t', 'T', 'y', 'Y'].includes(v[0])) return true;
+    if (['1', 't', 'T', 'y', 'Y'].includes(v[0])) return true;
     return false;
 }
 
-export function getAttrDef(n: Node | null | undefined, nm: string, def: string) : string
-{
+export function getAttrDef(n: Node | null | undefined, nm: string, def: string): string {
     if (!n) return def;
     const el = n as Element;
     const v = el.getAttribute(nm);
@@ -62,6 +57,6 @@ export function getAttrDef(n: Node | null | undefined, nm: string, def: string) 
     return v;
 }
 
-export function newDocument(rname: string) : Document {
+export function newDocument(rname: string): Document {
     return new DOMImplementation().createDocument(null, rname, null);
 }

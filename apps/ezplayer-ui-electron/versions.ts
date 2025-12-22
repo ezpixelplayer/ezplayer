@@ -1,11 +1,11 @@
 import { type EZPlayerVersions } from '@ezplayer/ezplayer-core';
 
 // Build-time version numbers
-import mainPkg from "../../package.json" assert { type: "json" };
-import appPkg from "./package.json" assert { type: "json" };
-import eppPkg from "../../packages/epp/package.json" assert { type: "json" };
-import corePkg from "../../packages/ezplayer-core/package.json" assert { type: "json" };
-import uiPkg from "../../packages/player-ui-components/package.json" assert { type: "json" };
+import mainPkg from '../../package.json' assert { type: 'json' };
+import appPkg from './package.json' assert { type: 'json' };
+import eppPkg from '../../packages/epp/package.json' assert { type: 'json' };
+import corePkg from '../../packages/ezplayer-core/package.json' assert { type: 'json' };
+import uiPkg from '../../packages/player-ui-components/package.json' assert { type: 'json' };
 
 // types/build-constants.d.ts
 declare const __BUILD_DATE__: string;
@@ -26,14 +26,14 @@ export const BUILD_INFO = {
         sha: __GIT_SHA__,
     },
     packages: {
-        "Electron App": appPkg.version,
-        "EPP": eppPkg.version,
-        "Player Core": corePkg.version,
-        "Player UI": uiPkg.version,
+        'Electron App': appPkg.version,
+        EPP: eppPkg.version,
+        'Player Core': corePkg.version,
+        'Player UI': uiPkg.version,
     },
 } as const;
 
 export const ezpVersions: EZPlayerVersions = {
     ...BUILD_INFO,
-    processes: process.versions
-}
+    processes: process.versions,
+};

@@ -41,10 +41,10 @@ export type ControllerTypeChoice = 'Null' | 'Ethernet' | 'Serial' | 'Unknown';
 
 export class ControllerRec {
     // Details of controller
-    id: string = "";
-    name: string = "";
-    address: string = "";
-    description: string = "";
+    id: string = '';
+    name: string = '';
+    address: string = '';
+    description: string = '';
     desc?: ExplicitControllerDesc = undefined;
     activeState?: ActiveStateChoice;
     monitor?: boolean; // This is 0/1
@@ -94,11 +94,11 @@ export async function readControllersAndModels(xldir: string) {
         const rawctype = cn.getAttribute('Type');
         const ctype = ['Null', 'Ethernet', 'Serial'].includes(rawctype ?? '') ? rawctype : 'Unknown';
 
-        const description = cn.getAttribute('Description') || "";
+        const description = cn.getAttribute('Description') || '';
 
         const ctrl: ControllerRec = {
-            id: cn.getAttribute('Id') || "",
-            address: cn.getAttribute('IP') || "",
+            id: cn.getAttribute('Id') || '',
+            address: cn.getAttribute('IP') || '',
             name: cn.getAttribute('Name')!,
             description: description,
             desc: new ExplicitControllerDesc(description),
@@ -114,11 +114,11 @@ export async function readControllersAndModels(xldir: string) {
             channelsPerPacket: 1440,
             keepChannelNumbers: false,
 
-            vendor: cn.getAttribute('Vendor') || "",
-            model: cn.getAttribute('Model') || "",
-            variant: cn.getAttribute('Variant') || "",
+            vendor: cn.getAttribute('Vendor') || '',
+            model: cn.getAttribute('Model') || '',
+            variant: cn.getAttribute('Variant') || '',
 
-            protocol: cn.getAttribute('Protocol') || "",
+            protocol: cn.getAttribute('Protocol') || '',
         };
         controllers.push(ctrl);
         controllersByName.set(cn.getAttribute('Name')!, startch);
@@ -159,8 +159,8 @@ export async function readControllersAndModels(xldir: string) {
             if (mdl.tagName !== 'model') continue;
 
             const name = mdl.getAttribute('name')!;
-            const mtyp = mdl.getAttribute('DisplayAs') ?? "";
-            const chstr = mdl.getAttribute('StartChannel') ?? "";
+            const mtyp = mdl.getAttribute('DisplayAs') ?? '';
+            const chstr = mdl.getAttribute('StartChannel') ?? '';
             if (!name || !chstr) {
                 // Some sort of inactive, degenerate thing
                 continue;
@@ -168,27 +168,22 @@ export async function readControllersAndModels(xldir: string) {
             let channel = -1;
             if (chstr[0] >= '0' && chstr[0] <= '9') {
                 channel = parseInt(chstr);
-            }
-            else if (chstr[0] === '@') {
+            } else if (chstr[0] === '@') {
                 continue;
-            }
-            else if (chstr[0] === '!') {
+            } else if (chstr[0] === '!') {
                 // TODO Look up controller
-                const [ctrlnm,offset] = chstr.slice(1).split(':');
-                channel = controllersByName.get(ctrlnm)!+parseInt(offset)-1;
-            }
-            else if (chstr[0] === '#') {
+                const [ctrlnm, offset] = chstr.slice(1).split(':');
+                channel = controllersByName.get(ctrlnm)! + parseInt(offset) - 1;
+            } else if (chstr[0] === '#') {
                 // Huh, seems to be an IP:universe:channel or universe:channel
                 //(ctrladdr,univ,ch) = chstr[1:].split(':')
                 // TODO we would need to find the channel for the universe or something
                 //channel = ctrlbyname[ctrladdr]
                 continue;
-            }
-            else if (chstr[0] === '>') {
+            } else if (chstr[0] === '>') {
                 // Shadow model name:channel such as ">Spinner 2:1"
                 continue;
-            }
-            else {
+            } else {
                 throw new Error(`Unknown channel string: "${chstr}" in model ${name}`);
             }
 
@@ -249,7 +244,7 @@ export async function readControllersAndModels(xldir: string) {
                         nmrec.gamma = parseFloat(ddc.getAttribute('gamma')!);
                     }
                     if (ddc.hasAttribute('brightness')) {
-                        nmrec.brightness = Math.min(1.0, (100.0+parseFloat(ddc.getAttribute('brightness')!))/100.0);
+                        nmrec.brightness = Math.min(1.0, (100.0 + parseFloat(ddc.getAttribute('brightness')!)) / 100.0);
                     }
                 }
             }
@@ -258,11 +253,13 @@ export async function readControllersAndModels(xldir: string) {
     }
     // Oh heck how to calculate channels per model
     //  Will we eventually just have to add specific logic?
-    models.sort((a, b) => {return a.startch - b.startch;});
+    models.sort((a, b) => {
+        return a.startch - b.startch;
+    });
 
-    for (let i=0; i<models.length; ++i) {
-        if (i === models.length-1) continue;
-        models[i].nch = models[i+1].startch - models[i].startch;
+    for (let i = 0; i < models.length; ++i) {
+        if (i === models.length - 1) continue;
+        models[i].nch = models[i + 1].startch - models[i].startch;
     }
     const osmodels: ModelRec[] = [];
     for (const m of models) {
@@ -273,5 +270,5 @@ export async function readControllersAndModels(xldir: string) {
         models: osmodels,
         controllers,
         controllersByName,
-    }
+    };
 }

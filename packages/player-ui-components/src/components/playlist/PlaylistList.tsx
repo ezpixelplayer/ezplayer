@@ -1,5 +1,14 @@
 import { getPlaylistDurationMS, PlaylistRecord } from '@ezplayer/ezplayer-core';
-import { Autocomplete, Button, Card, PageHeader, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
+import {
+    Autocomplete,
+    Button,
+    Card,
+    PageHeader,
+    SimpleDialog,
+    TextField,
+    ToastMsgs,
+    Typography,
+} from '@ezplayer/shared-ui-components';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -80,9 +89,7 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
             if (av === undefined || av === null) return 1;
             if (bv === undefined || bv === null) return -1;
             if (typeof av === 'number' && typeof bv === 'number') return direction === 'asc' ? av - bv : bv - av;
-            return direction === 'asc'
-                ? String(av).localeCompare(String(bv))
-                : String(bv).localeCompare(String(av));
+            return direction === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
         });
         return copy;
     })();
@@ -116,7 +123,11 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
                                             {headerContent}
                                         </Typography>
                                     ) : (
-                                        <TableSortLabel active={isActive} direction={direction} hideSortIcon={!isActive}>
+                                        <TableSortLabel
+                                            active={isActive}
+                                            direction={direction}
+                                            hideSortIcon={!isActive}
+                                        >
                                             <Typography variant="body2" fontWeight="bold" noWrap>
                                                 {headerContent}
                                             </Typography>
@@ -204,7 +215,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             let newTitle = `${baseTitle}-${cloneNumber}`;
 
             // Check if a playlist with this name already exists
-            while (playlistRecords.some(playlist => playlist.title === newTitle)) {
+            while (playlistRecords.some((playlist) => playlist.title === newTitle)) {
                 cloneNumber++;
                 newTitle = `${baseTitle}-${cloneNumber}`;
             }
@@ -313,21 +324,21 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {params.value && params.value.length > 0
                             ? params.value.split(',').map((tag: string, index: number) => (
-                                <Typography
-                                    key={`${params.row.id}-tag-${index}-${tag}`}
-                                    variant="body2"
-                                    sx={{
-                                        backgroundColor: 'primary.light',
-                                        color: 'primary.contrastText',
-                                        padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    {tag}
-                                </Typography>
-                            ))
+                                  <Typography
+                                      key={`${params.row.id}-tag-${index}-${tag}`}
+                                      variant="body2"
+                                      sx={{
+                                          backgroundColor: 'primary.light',
+                                          color: 'primary.contrastText',
+                                          padding: '2px 8px',
+                                          borderRadius: '12px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 500,
+                                      }}
+                                  >
+                                      {tag}
+                                  </Typography>
+                              ))
                             : null}
                     </Box>
                 </RowWrapper>

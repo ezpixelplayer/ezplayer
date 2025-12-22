@@ -141,7 +141,11 @@ const handlers: MainRPCAPI = {
     },
 };
 
-export async function registerContentHandlers(mainWindow: BrowserWindow | null, audioWindow: BrowserWindow | null, nPlayWorker: Worker) {
+export async function registerContentHandlers(
+    mainWindow: BrowserWindow | null,
+    audioWindow: BrowserWindow | null,
+    nPlayWorker: Worker,
+) {
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 

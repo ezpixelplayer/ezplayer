@@ -5,12 +5,9 @@ import path from 'path';
 // I do not like this whole wrapper design, but for now ... we use the CLI utility
 if (process.platform === 'win32' && !process.env.SystemRoot) {
     const execRoot = path.parse(process.execPath).root;
-    const driveRoot = /^[A-Za-z]:\\/.test(execRoot) ? execRoot : "C:\\";
+    const driveRoot = /^[A-Za-z]:\\/.test(execRoot) ? execRoot : 'C:\\';
     process.env.SystemRoot =
-        process.env.SystemRoot ||
-        process.env.WINDIR ||
-        process.env.windir ||
-        path.join(driveRoot, "Windows");
+        process.env.SystemRoot || process.env.WINDIR || process.env.windir || path.join(driveRoot, 'Windows');
 }
 
 if (!parentPort) {
@@ -24,24 +21,22 @@ export type PingConfig = {
     concurrency: number;
 };
 
-export type ParentMessage =
-    | { type: 'config'; config: PingConfig }
-    | { type: 'stop' };
+export type ParentMessage = { type: 'config'; config: PingConfig } | { type: 'stop' };
 
 export interface PingStat {
-    host: string,
-    nReplies: number,
-    outOf: number,
-    avgResponseTime?: number,
-    lastTime?: number,
-    error?: string,
+    host: string;
+    nReplies: number;
+    outOf: number;
+    avgResponseTime?: number;
+    lastTime?: number;
+    error?: string;
 }
 
 export type RoundResultMessage = {
     type: 'roundResult';
     startedAt: number;
     finishedAt: number;
-    stats: { [address: string]: PingStat },
+    stats: { [address: string]: PingStat };
 };
 
 export type StoppedMessage = {
@@ -53,14 +48,14 @@ export class RollingSuccessWindow {
     private readonly maxSamples: number;
 
     private nextIndex = 0; // where the next sample will go
-    private size = 0;      // how many samples we actually have (<= maxSamples)
-    private nSuccesses = 0;       // sum of successes in the window
+    private size = 0; // how many samples we actually have (<= maxSamples)
+    private nSuccesses = 0; // sum of successes in the window
     private totalTime = 0;
     private lastTime?: number = undefined;
 
     constructor(maxSamples = 10) {
         if (maxSamples <= 0) {
-            throw new Error("maxSamples must be > 0");
+            throw new Error('maxSamples must be > 0');
         }
         this.maxSamples = maxSamples;
         this.responseTimeBuffer = new Array(maxSamples).fill(0);
@@ -76,10 +71,10 @@ export class RollingSuccessWindow {
         } else {
             // Buffer is full: evict the oldest (at nextIndex) and insert new
             const evicted = this.responseTimeBuffer[this.nextIndex];
-            this.nSuccesses -= (evicted !== undefined) ? 1 : 0;
+            this.nSuccesses -= evicted !== undefined ? 1 : 0;
             this.totalTime -= evicted ?? 0;
         }
-        this.nSuccesses += (result !== undefined) ? 1 : 0;
+        this.nSuccesses += result !== undefined ? 1 : 0;
         this.totalTime += result ?? 0;
         this.responseTimeBuffer[this.nextIndex] = result;
         this.nextIndex = (this.nextIndex + 1) % this.maxSamples;

@@ -40,15 +40,15 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
             const left = 2 * index + 1;
             const right = 2 * index + 2;
             let smallest = index;
-    
+
             if (left <= lastIndex && this.heap[left].nextTime < this.heap[smallest].nextTime) {
                 smallest = left;
             }
-            if (right <= lastIndex && this.heap[right].nextTime< this.heap[smallest].nextTime) {
+            if (right <= lastIndex && this.heap[right].nextTime < this.heap[smallest].nextTime) {
                 smallest = right;
             }
             if (smallest === index) break;
-    
+
             [this.heap[index], this.heap[smallest]] = [this.heap[smallest], this.heap[index]];
             index = smallest;
         }

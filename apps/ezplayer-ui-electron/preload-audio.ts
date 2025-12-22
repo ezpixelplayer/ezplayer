@@ -1,8 +1,4 @@
-import type {
-    AudioChunk,
-    AudioDevice,
-    EZPElectronAPI,
-} from '@ezplayer/ezplayer-core';
+import type { AudioChunk, AudioDevice, EZPElectronAPI } from '@ezplayer/ezplayer-core';
 
 export interface M2RIPC<Payload> {
     reqid: number;

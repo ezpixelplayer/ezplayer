@@ -18,7 +18,7 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
         currentSettings = parsed;
         return parsed;
     } catch (e) {
-        const err = e as {code?: string}
+        const err = e as { code?: string };
         if (err?.code === 'ENOENT') {
             // Defaults if file doesn't exist
             const defaults: PlaybackSettings = {

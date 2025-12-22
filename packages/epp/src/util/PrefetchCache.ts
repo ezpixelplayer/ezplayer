@@ -12,7 +12,7 @@
 //   (Especially since the passage of time is a factor, and failure to refresh the requests too.)
 //   Also we have plenty of opportunity to do this between frames that are requested.
 
-import { sleepms } from "./Utils";
+import { sleepms } from './Utils';
 
 // Hence, the idea is, at least within the player, to (on each frame or therebouts):
 //   Cancel all old requests
@@ -40,7 +40,7 @@ export interface PrefetchCacheOptions<K, V, P> {
     fetchFunction: FetchFunction<K, V>;
 
     /** Condense a K to a key string */
-    keyToId: (k: K) => string // caller supplies how to serialize keys for dedupe
+    keyToId: (k: K) => string; // caller supplies how to serialize keys for dedupe
 
     /** Function to compare priorities (lower return value = higher priority) */
     priorityComparator: PriorityComparator<P>;
@@ -69,9 +69,9 @@ export interface PrefetchRequest<K, P> {
 }
 
 export interface AwaitRequest<K, P> {
-    key: K,
-    priority: P;                // if prefetching, use this priority; if absent, use the current time as smallest number (example)
-    now: number;                // override for determinism/tests
+    key: K;
+    priority: P; // if prefetching, use this priority; if absent, use the current time as smallest number (example)
+    now: number; // override for determinism/tests
     expiry: number;
     prefetchIfMissing: boolean;
 }
@@ -118,12 +118,15 @@ class Deferred<T> {
     resolve!: (v: T) => void;
     reject!: (e: any) => void;
     constructor() {
-        this.promise = new Promise<T>((res, rej) => { this.resolve = res; this.reject = rej; });
+        this.promise = new Promise<T>((res, rej) => {
+            this.resolve = res;
+            this.reject = rej;
+        });
     }
 }
 
 interface CacheItem<K, V, P> {
-    key: K,
+    key: K;
     value?: V;
     error?: Error;
     state: 'queued' | 'fetching' | 'ready' | 'error';
@@ -132,8 +135,8 @@ interface CacheItem<K, V, P> {
     refCount: number;
     waiters: Set<Deferred<V>>;
     fetchPromise?: Promise<V>; // Wait on cleanup
-    lastPrefetchedAt: number;  // for staleness of prefetch requests that haven't been renewed in a while
-    lastAccessedAt: number;    // for LRU (check/await/materialize touches)
+    lastPrefetchedAt: number; // for staleness of prefetch requests that haven't been renewed in a while
+    lastAccessedAt: number; // for LRU (check/await/materialize touches)
     expiry: number; // if not fetched by this point, no value
 
     // Perf monitoring - how much time does this take?
@@ -142,7 +145,7 @@ interface CacheItem<K, V, P> {
     abort?: AbortController;
 
     // cost tracking
-    estCost: number;     // pending cost (key-based)
+    estCost: number; // pending cost (key-based)
     actualCost: number;
 }
 
@@ -152,7 +155,7 @@ export class RefHandle<V> {
         // If we get here, the wrapper was collected without being dereferenced.
         const msg = `Leaked RefHandle (not dereferenced): ${info}\n`;
         // Be noisy. You can escalate to process.abort() if you want to fail hard.
-        process.emitWarning(msg, { code: "REF_LEAK" });
+        process.emitWarning(msg, { code: 'REF_LEAK' });
     });
 
     private _releaseCallback: (v: V) => void;
@@ -173,7 +176,9 @@ export class RefHandle<V> {
         }
     }
 
-    get v(): V | undefined { return this._v; }
+    get v(): V | undefined {
+        return this._v;
+    }
 
     get isReleased(): boolean {
         return this._v == undefined;
@@ -202,8 +207,7 @@ export class PrefetchCache<K, V, P> {
     }
     private stats: CacheStatCounters = PrefetchCache.clearedStats();
 
-    constructor(private options: PrefetchCacheOptions<K, V, P>) {
-    }
+    constructor(private options: PrefetchCacheOptions<K, V, P>) {}
 
     /**
      * Place a prefetch request
@@ -305,16 +309,15 @@ export class PrefetchCache<K, V, P> {
         }
 
         ++this.stats.awaitMisses;
-        const d = new Deferred<V>;
+        const d = new Deferred<V>();
         item.waiters.add(d);
         this.addRefInternal(item, req.now);
         try {
-            const v = await (d.promise);
+            const v = await d.promise;
             return new RefHandle<V>(id, item.value!, (_v: V) => {
                 this.releaseRefInternal(item);
             });
-        }
-        catch (e) {
+        } catch (e) {
             this.releaseRefInternal(item);
             throw e;
         }
@@ -323,7 +326,7 @@ export class PrefetchCache<K, V, P> {
     /**
      * Create a reference handle to pin an item in cache
      */
-    reference(key: K, now: number): {ref?: RefHandle<V>, err?:Error} | undefined {
+    reference(key: K, now: number): { ref?: RefHandle<V>; err?: Error } | undefined {
         const kid = this.options.keyToId(key);
         const item = this.cache.get(kid);
 
@@ -333,7 +336,7 @@ export class PrefetchCache<K, V, P> {
         }
         if (item.error) {
             ++this.stats.refHits;
-            return {err: item.error}; // May not be it, but can't hurt to check
+            return { err: item.error }; // May not be it, but can't hurt to check
         }
         if (!item.value) {
             ++this.stats.refMisses;
@@ -343,9 +346,11 @@ export class PrefetchCache<K, V, P> {
         ++this.stats.refHits;
         this.addRefInternal(item, now);
 
-        return {ref: new RefHandle<V>(kid, item.value, (_v: V) => {
-            this.releaseRefInternal(item);
-        })};
+        return {
+            ref: new RefHandle<V>(kid, item.value, (_v: V) => {
+                this.releaseRefInternal(item);
+            }),
+        };
     }
 
     /** Set new budget; still need to run cleanup */
@@ -391,9 +396,7 @@ export class PrefetchCache<K, V, P> {
                 try {
                     item.abort?.abort();
                     fps.push(item.fetchPromise);
-                }
-                catch (e) {
-                }
+                } catch (e) {}
             }
         }
         await Promise.allSettled(fps);
@@ -434,24 +437,27 @@ export class PrefetchCache<K, V, P> {
             item: CacheItem<K, V, P>;
             mustBeKept: boolean; // true if fetching or pinned
             expired: boolean;
-        };
+        }
 
         const toSort: PSortable[] = [];
         for (const [key, item] of this.cache.entries()) {
             // Don't expire referenced items or active fetches
             if (item.refCount > 0 || this.activeFetches.has(key)) {
-                toSort.push({item, mustBeKept: true, expired: false});
+                toSort.push({ item, mustBeKept: true, expired: false });
                 continue;
             }
 
             // Expire if not requested recently or aged out
-            if ((item.lastPrefetchedAt < notRequestedAfter && item.lastAccessedAt < notRequestedAfter) || item.expiry < now) {
-                toSort.push({item, mustBeKept: false, expired: true});
+            if (
+                (item.lastPrefetchedAt < notRequestedAfter && item.lastAccessedAt < notRequestedAfter) ||
+                item.expiry < now
+            ) {
+                toSort.push({ item, mustBeKept: false, expired: true });
                 continue;
             }
 
             // Generic item
-            toSort.push({item, mustBeKept: false, expired: false});
+            toSort.push({ item, mustBeKept: false, expired: false });
         }
 
         //  Sort
@@ -492,10 +498,11 @@ export class PrefetchCache<K, V, P> {
             }
 
             // Prefetch candidate
-            if (si.item.state === 'queued' &&
+            if (
+                si.item.state === 'queued' &&
                 this.activeFetches.size < this.options.maxConcurrency &&
-                !this.activeFetches.has(id))
-            {
+                !this.activeFetches.has(id)
+            ) {
                 this.activeFetches.add(id);
                 si.item.state = 'fetching';
                 si.item.fetchingSince = performance.now();
@@ -507,8 +514,12 @@ export class PrefetchCache<K, V, P> {
     }
 
     private currentGaugeStats() {
-        let estcost = 0, valcost = 0;
-        let pinned = 0, ready = 0, errored = 0, pending = 0;
+        let estcost = 0,
+            valcost = 0;
+        let pinned = 0,
+            ready = 0,
+            errored = 0,
+            pending = 0;
         for (const item of this.cache.values()) {
             if (item.refCount > 0) ++pinned;
             if (item.state === 'queued' || item.state === 'fetching') {
@@ -607,12 +618,12 @@ export interface NeededTimePriority {
     neededTime: number;
     neededThroughTime?: number;
 }
-export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, timeOfIrrelevance: number)=>{
+export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, timeOfIrrelevance: number) => {
     const nta = a.neededThroughTime ?? a.neededTime;
     const ntb = b.neededThroughTime ?? b.neededTime;
     if (nta >= timeOfIrrelevance && ntb >= timeOfIrrelevance) {
         // Sooner need is higher priority
-        return a.neededTime-b.neededTime;
+        return a.neededTime - b.neededTime;
     }
     if (nta >= timeOfIrrelevance && ntb < timeOfIrrelevance) {
         // Actual need is higher priority
@@ -624,4 +635,4 @@ export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePrio
     }
     // LRU
     return ntb - nta;
-}
+};

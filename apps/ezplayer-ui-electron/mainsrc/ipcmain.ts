@@ -87,7 +87,7 @@ export function registerFileListHandlers() {
         shell.openExternal(url);
     });
 
-    ipcMain.handle('getVersions', ()=> {
+    ipcMain.handle('getVersions', () => {
         return ezpVersions;
     });
 }
