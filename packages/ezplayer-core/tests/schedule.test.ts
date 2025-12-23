@@ -1367,6 +1367,36 @@ const krshowsched:  ScheduledPlaylist = {
     duration: 0, // ???
 }
 
+function executeByFrame(plr: PlayerRunState, endTime: number) {
+    let tft = plr.currentTime;
+    console.log(' RUNNING ------------------------- ')
+    const sss: {id: string, d: number} [] = [];
+    const ses: {id: string, d: number} [] = [];
+    while (tft < endTime) {
+        // Really want to run until time or something interesting
+        while (true) {
+            const plog: PlaybackLogDetail[] = [];
+            plr.runUntil(tft, 1, plog);
+            let foundTime = plog.length === 0;
+            for (const l of plog) {
+                if (l.eventType === 'Sequence Ended') {
+                    ses.push({id: l.sequenceId!, d: tft});
+                    console.log(`Seq Ended: ${l.eventType} - ${l.eventTime} - ${l.sequenceId}`);
+                } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
+                    console.log(`Seq Started: ${l.eventType} - ${l.eventTime} - ${l.sequenceId}`);
+                    sss.push({id: l.sequenceId!, d: l.eventTime});
+                    tft = plr.currentTime;
+                    foundTime = true;
+                    break;
+                }
+            }
+            if (foundTime) break;
+        }
+        tft += 25;
+    }
+    return {sss, ses};
+}
+
 describe('calcschedule', () => {
     it('should allow seq to finish', () => {
         const errs: string[] = [];
@@ -1378,7 +1408,7 @@ describe('calcschedule', () => {
         expect(errs.length).toBe(0);
 
         const logs = plr.readOutScheduleUntil(bt + 24 * 3600 * 1000, 100);
-        console.log(toTextLog(logs));
+        //console.log(toTextLog(logs));
 
         const scheds = logs.filter((s)=>s.eventType.startsWith('Schedule'));
         const pls = logs.filter((s)=>s.eventType.startsWith('Playlist'));
@@ -1423,5 +1453,25 @@ describe('calcschedule', () => {
         expect(pls[3].eventTime).toBe(bt + 16 * 3600 * 1000 + 20 * 60 * 1000 + 0 * 1000);
         expect(pls[3].scheduleId).toBe(krstatsched.id);
         expect(pls[3].playlistId).toBe(krstatic.id);
+    });
+
+    it('should run the same way it simulates', ()=> {
+        const bdate = new Date(krshowsched.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([krs1, krs2], [krshow, krstatic], [krstatsched, krshowsched], []);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        const logs = executeByFrame(plr, bt + 24 * 3600 * 1000);
+        const mss = logs.sss.filter((s)=>s.id === krs1.id);
+        const mse = logs.ses.filter((s)=>s.id === krs1.id);
+        expect (mss.length).toBe(4);
+        expect (mse.length).toBe(4);
+        for (let i=0; i<4; i++) {
+            console.log(`Iteration ${i}`);
+            expect(mss[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + i*201 * 1000);
+            // TODO BUG expect(mse[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + (i+1)*201 * 1000);
+        }
     });
 });
