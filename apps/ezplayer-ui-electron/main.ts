@@ -87,15 +87,16 @@ const createWindow = (showFolder: string) => {
 
     audioWindow = new BrowserWindow({
         show: false,
+
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
-            backgroundThrottling: false,
+            preload: path.join(__dirname, 'preload-audio.js'),
+            contextIsolation: true,
+            webSecurity: false,
         },
     });
 
     // Light-weight HTML/JS just for audio
-    audioWindow.loadFile(path.join(__dirname, '../dist/audio-window.html'));
+    audioWindow.loadURL(`file://${path.join(__dirname, '../dist/audio-window.html')}`);
     //audioWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
 
     mainWindow = new BrowserWindow({

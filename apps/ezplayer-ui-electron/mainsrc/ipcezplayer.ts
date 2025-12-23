@@ -281,7 +281,7 @@ export async function registerContentHandlers(
         switch (msg.type) {
             case 'audioChunk': {
                 //mainWindow?.webContents.send('audio:chunk', msg.chunk);
-                audioWindow?.webContents.send('audio:chunk', msg.chunk);
+                audioWindow?.webContents.send('audio:chunk', msg.chunk, [msg.chunk.buffer]);
                 break;
             }
             case 'stats': {
