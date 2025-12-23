@@ -1,5 +1,4 @@
 // Runs in the hidden audio window (renderer) to avoid long renders causing audio disruptions
-import { ipcRenderer } from 'electron';
 import { AudioChunk } from '@ezplayer/ezplayer-core';
 
 export class RealTimeChunkPlayer {
@@ -113,12 +112,8 @@ function log(msg: string) {
 const player = new RealTimeChunkPlayer();
 log('Audio engine ready (TS)');
 
-// Listen for chunks from main
-ipcRenderer.on('audio:chunk', (_event, payload: AudioChunk) => {
-    try {
-        player.handleChunk(payload);
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`Error handling audio chunk: ${msg}`);
-    }
-});
+function handleAudioChunk(chunk: AudioChunk) {
+    player.handleChunk(chunk);
+}
+
+window.electronAPI?.onAudioChunk(handleAudioChunk);

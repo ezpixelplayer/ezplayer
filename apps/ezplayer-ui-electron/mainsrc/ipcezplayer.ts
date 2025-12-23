@@ -467,7 +467,7 @@ export async function registerContentHandlers(
                 // TODO MOC - maybe not now :-)
                 wsBroadcaster.broadcast('audio:chunk', msg.chunk);
                 //mainWindow?.webContents.send('audio:chunk', msg.chunk);
-                audioWindow?.webContents.send('audio:chunk', msg.chunk);
+                audioWindow?.webContents.send('audio:chunk', msg.chunk, [msg.chunk.buffer]);
                 break;
             }
             case 'stats': {

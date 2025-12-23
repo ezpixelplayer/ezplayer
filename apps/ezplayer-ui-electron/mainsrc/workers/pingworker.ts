@@ -1,6 +1,5 @@
 import ping from 'ping';
 import { parentPort } from 'node:worker_threads';
-import os from 'os';
 import path from 'path';
 
 // I do not like this whole wrapper design, but for now ... we use the CLI utility
@@ -114,7 +113,7 @@ const windows = new Map<string, RollingSuccessWindow>();
 
 let cfg: PingConfig = {
     hosts: [],
-    intervalS: 5,
+    intervalS: 60,
     maxSamples: 10,
     concurrency: 10,
 };

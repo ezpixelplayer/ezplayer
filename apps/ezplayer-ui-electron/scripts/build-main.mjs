@@ -87,10 +87,10 @@ const common = {
     },
 };
 
-const uibuild = {
+const _uibuild = {
     bundle: true,
     platform: 'browser',
-    format: 'cjs',
+    format: 'module',
     sourcemap: true,
     external: nodeExternals,
     // Build-time constants (string-literals inlined into code)
@@ -111,8 +111,9 @@ const uibuild = {
 const run = (entryPoints, outfile) =>
     build({ ...common, entryPoints: [entryPoints], outfile }).catch(() => process.exit(1));
 
-const uirun = (entryPoints, outfile) =>
-    build({ ...uibuild, entryPoints: [entryPoints], outfile }).catch(() => process.exit(1));
+//const uirun = (entryPoints, outfile) =>
+//  build({ ...uibuild, entryPoints: [entryPoints], outfile })
+//    .catch(() => process.exit(1));
 
 await run('main.ts', 'dist/main.js');
 await run('showfolder.ts', 'dist/showfolder.js');
@@ -121,4 +122,4 @@ await run('mainsrc/workers/mp3decodeworker.ts', 'dist/workers/mp3decodeworker.js
 await run('mainsrc/workers/zstdworker.ts', 'dist/workers/zstdworker.js');
 await run('mainsrc/workers/pingworker.ts', 'dist/workers/pingworker.js');
 await run('mainsrc/workers/rfsync.ts', 'dist/workers/rfsync.js');
-await uirun('src/audio-window.ts', 'dist/assets/audio-window.js');
+//await uirun('src/audio-window.ts', 'dist/assets/audio-window.js');
