@@ -34,16 +34,6 @@ function inferMimeType(filePath: string): string {
     return ASSET_MIME_TYPES[ext] ?? 'application/octet-stream';
 }
 
-function safePath(requestPath: string): string | null {
-    const platformPath = requestPath.replace(/\//g, path.sep);
-    const normalized = path
-        .normalize(platformPath)
-        .replace(/^[\\/]+/, '')
-        .replace(/(\.\.(\/|\\|$))+/g, '');
-
-    return normalized || null;
-}
-
 export interface ServerConfig {
     port: number;
     portSource: string;
@@ -107,28 +97,6 @@ export function setupServer(config: ServerConfig): Server {
         // Set appropriate MIME type
         ctx.type = inferMimeType(imagePath);
         await send(ctx, path.basename(imagePath), { root: resolvedUserImageDir });
-    });
-
-    // ----------------------------
-    // /show-assets/* route
-    // ----------------------------
-    router.get('/show-assets/*path', async (ctx) => {
-        const relative = ctx.path;
-        const sanitized = safePath(relative);
-
-        if (!sanitized) {
-            ctx.status = 404;
-            return;
-        }
-
-        const showFolder = getCurrentShowFolder();
-        if (!showFolder) {
-            ctx.status = 404;
-            ctx.body = 'Show folder not selected';
-            return;
-        }
-
-        await send(ctx, sanitized, { root: showFolder });
     });
 
     // Add body parser middleware for JSON requests
@@ -328,7 +296,7 @@ export function setupServer(config: ServerConfig): Server {
     function sendInitialDataToClient(ws: WebSocket) {
         const snapshot = getCurrentShowData();
 
-        const safeSend = (type: string, data: any) => {
+        const safeSend = (type: string, data: unknown) => {
             if (data === undefined) {
                 return;
             }
@@ -359,114 +327,6 @@ export function setupServer(config: ServerConfig): Server {
         }
         safeSend('update:combinedstatus', snapshot.status ?? {});
     }
-
-    // Show assets route middleware
-    // const userImageRoutePrefix = `${USER_IMAGE_ROUTE}/`;
-    // webApp.use(async (ctx: any, next: () => Promise<any>) => {
-    //     if (!ctx.path.startsWith('/show-assets/')) {
-    //         return next();
-    //     }
-
-    //     // Set CORS headers
-    //     ctx.set('Access-Control-Allow-Origin', '*');
-    //     ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    //     ctx.set('Access-Control-Allow-Headers', 'Content-Type');
-
-    //     if (ctx.method === 'OPTIONS') {
-    //         ctx.status = 204;
-    //         return;
-    //     }
-
-    //     const showFolder = getCurrentShowFolder();
-    //     if (!showFolder) {
-    //         ctx.status = 404;
-    //         ctx.body = 'Show folder not selected';
-    //         return;
-    //     }
-    //     const requestedPath = ctx.path.slice('/show-assets/'.length);
-    //     // Convert forward slashes to platform-specific separators
-    //     const platformPath = requestedPath.replace(/\//g, path.sep);
-    //     const normalized = path
-    //         .normalize(platformPath)
-    //         .replace(/^[\\/]+/, '')
-    //         .replace(/(\.\.(\/|\\|$))+/g, '');
-    //     if (!normalized) {
-    //         ctx.status = 404;
-    //         return;
-    //     }
-    //     const targetPath = path.join(showFolder, normalized);
-    //     const resolvedTarget = path.resolve(targetPath);
-    //     const resolvedBase = path.resolve(showFolder);
-    //     if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
-    //         ctx.status = 403;
-    //         ctx.body = 'Forbidden';
-    //         return;
-    //     }
-    //     try {
-    //         const stats = await fs.promises.stat(resolvedTarget);
-    //         if (!stats.isFile()) {
-    //             ctx.status = 404;
-    //             return;
-    //         }
-    //         ctx.type = inferMimeType(resolvedTarget);
-    //         ctx.body = fs.createReadStream(resolvedTarget);
-    //     } catch (_err) {
-    //         ctx.status = 404;
-    //         ctx.body = 'Asset not found';
-    //     }
-    // });
-
-    // // User images route middleware
-    // webApp.use(async (ctx: any, next: () => Promise<any>) => {
-    //     if (ctx.path !== USER_IMAGE_ROUTE && !ctx.path.startsWith(userImageRoutePrefix)) {
-    //         return next();
-    //     }
-
-    //     ctx.set('Access-Control-Allow-Origin', '*');
-    //     ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    //     ctx.set('Access-Control-Allow-Headers', 'Content-Type');
-
-    //     if (ctx.method === 'OPTIONS') {
-    //         ctx.status = 204;
-    //         return;
-    //     }
-
-    //     const requestedPath = ctx.path === USER_IMAGE_ROUTE ? '' : ctx.path.slice(userImageRoutePrefix.length);
-    //     if (!requestedPath) {
-    //         ctx.status = 404;
-    //         ctx.body = 'Asset not found';
-    //         return;
-    //     }
-    //     const platformPath = requestedPath.replace(/\//g, path.sep);
-    //     const normalized = path
-    //         .normalize(platformPath)
-    //         .replace(/^[\\/]+/, '')
-    //         .replace(/(\.\.(\/|\\|$))+/g, '');
-    //     if (!normalized) {
-    //         ctx.status = 404;
-    //         return;
-    //     }
-    //     const targetPath = path.join(resolvedUserImageDir, normalized);
-    //     const resolvedTarget = path.resolve(targetPath);
-    //     const resolvedBase = path.resolve(resolvedUserImageDir);
-    //     if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
-    //         ctx.status = 403;
-    //         ctx.body = 'Forbidden';
-    //         return;
-    //     }
-    //     try {
-    //         const stats = await fs.promises.stat(resolvedTarget);
-    //         if (!stats.isFile()) {
-    //             ctx.status = 404;
-    //             return;
-    //         }
-    //         ctx.type = inferMimeType(resolvedTarget);
-    //         ctx.body = fs.createReadStream(resolvedTarget);
-    //     } catch (_err) {
-    //         ctx.status = 404;
-    //         ctx.body = 'Asset not found';
-    //     }
-    // });
 
     // Static file serving middleware
     webApp.use(

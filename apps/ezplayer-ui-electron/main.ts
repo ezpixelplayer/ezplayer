@@ -203,12 +203,10 @@ app.whenReady().then(async () => {
     const PORT = typeof portInfo === 'number' ? portInfo : portInfo.port;
     const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
     const hostEnv = process.env.EZP_WEB_HOST?.trim();
-    const protocolEnv = process.env.EZP_WEB_PROTOCOL?.trim();
-    const baseEnv = process.env.EZP_WEB_BASE_URL?.trim();
     const webHost = hostEnv && hostEnv.length > 0 ? hostEnv : 'localhost';
-    const webProtocol = protocolEnv && protocolEnv.length > 0 ? protocolEnv : 'http';
-    const defaultBaseUrl = `${webProtocol}://${webHost}:${PORT}`;
-    const webBaseUrl = baseEnv && baseEnv.length > 0 ? baseEnv.replace(/\/+$/, '') : defaultBaseUrl;
+    const protocolEnv = process.env.EZP_WEB_PROTOCOL?.trim();
+    const webProtocol = protocolEnv || 'http';
+    const webBaseUrl = `${webProtocol}://${webHost}:${PORT}`;
 
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {

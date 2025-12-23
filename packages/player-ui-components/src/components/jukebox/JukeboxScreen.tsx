@@ -112,11 +112,6 @@ function resolveThumbPath(files?: SequenceItem['files']): string | undefined {
         return alignWithPageOrigin(electronThumb);
     }
 
-    // Fallback to thumb if it's a /show-assets/ path
-    if (electronThumb && electronThumb.startsWith('/show-assets/')) {
-        return alignWithPageOrigin(electronThumb);
-    }
-
     return undefined;
 }
 

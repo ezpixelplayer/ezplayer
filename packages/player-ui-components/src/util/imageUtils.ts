@@ -52,29 +52,6 @@ function makeAbsoluteUrl(url: string): string {
 }
 
 /**
- * Check if a path looks like a Windows or Unix absolute file path (not a URL)
- */
-function looksLikeLocalFilePath(p: string): boolean {
-    // Windows path like C:\Users\... or D:/path/...
-    if (/^[a-zA-Z]:[\\/]/.test(p)) {
-        return true;
-    }
-    // Unix absolute path that's not a URL path
-    // URL paths start with / but don't have backslashes and typically have known prefixes
-    if (
-        p.startsWith('/') &&
-        !p.startsWith('/api/getimage/') &&
-        !p.startsWith('/show-assets/') &&
-        !p.startsWith('/api/')
-    ) {
-        // Could be a Unix file path like /home/user/...
-        // But we can't easily distinguish, so we'll treat paths with common URL prefixes as URLs
-        return false;
-    }
-    return false;
-}
-
-/**
  * Try to extract a usable web URL from a local file path that contains user_data/images
  */
 function inferWebUrlFromLocalPath(localPath: string): string | undefined {
