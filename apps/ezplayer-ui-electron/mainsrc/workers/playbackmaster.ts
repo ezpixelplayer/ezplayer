@@ -474,16 +474,16 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 3_500_000_000, // There are issues w/making this bigger
+    mp3CacheSpace: 1_500_000_000, // There are issues w/making this bigger
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
-    fseqSpace: 1_000_000_000,
+    fseqSpace: 500_000_000,
     idleSleepInterval: 200,
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
-    foregroundFseqPrefetchTime: 5 * 1000,
-    backgroundFseqPrefetchTime: 5 * 1000,
+    foregroundFseqPrefetchTime: 2 * 1000,
+    backgroundFseqPrefetchTime: 2 * 1000,
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
