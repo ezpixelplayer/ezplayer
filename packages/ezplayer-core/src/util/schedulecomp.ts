@@ -684,15 +684,16 @@ class PlaybackStateEntry {
     // Return undefined if this should play
     // Return 0 if outro should start now
     // Return >0 if outro should start part way into seq
-    shouldStartOutro(currentTime: number, nextSeqLen: number): number | undefined {
+    shouldStartOutro(currentTime: number, seqLen: number, offsetInto: number): number | undefined {
+        const itemleft = seqLen - offsetInto;
         if (this.item.endPolicy === 'hardcut') {
-            if (currentTime + nextSeqLen > this.item.schedEnd - this.item.postSectionTotal) {
+            if (currentTime + itemleft > this.item.schedEnd - this.item.postSectionTotal) {
                 return this.item.schedEnd - currentTime - this.item.postSectionTotal;
             }
             return undefined;
         }
         if (this.item.endPolicy === 'seqboundearly') {
-            if (currentTime + nextSeqLen > this.item.schedEnd - this.item.postSectionTotal) {
+            if (currentTime + itemleft > this.item.schedEnd - this.item.postSectionTotal) {
                 return 0;
             }
             return undefined;
@@ -703,7 +704,12 @@ class PlaybackStateEntry {
             }
             return undefined;
         }
-        return currentTime >= this.item.schedEnd - this.item.postSectionTotal ? 0 : undefined;
+        // Seqboundlate
+        if (currentTime >= this.item.schedEnd - this.item.postSectionTotal) {
+            if (offsetInto < 1) return 0;
+            return itemleft;
+        }
+        return undefined;
     }
 
     getCursor(): PlaybackCursor {
@@ -885,10 +891,9 @@ class PlaybackStateEntry {
             } else if (c.itemPart === 1) {
                 // Main (loop?)
                 const itime = c.item.mainSectionDurs[c.itemCursor % c.item.mainSectionDurs.length];
-                const itemleft = itime - c.offsetInto;
 
                 // Advanced outro calculation
-                const shouldStartOutro = this.shouldStartOutro(c.baseTime + c.offsetInto, itemleft);
+                const shouldStartOutro = this.shouldStartOutro(c.baseTime + c.offsetInto, itime, c.offsetInto);
                 if (shouldStartOutro === undefined) {
                     // No effect from outro yet
                     if (c.offsetInto === 0) {
