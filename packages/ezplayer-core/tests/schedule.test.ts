@@ -1237,7 +1237,7 @@ describe('calcschedule', () => {
             requestId: 'aaaaaa',
         });
         const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
-        console.log(toTextLog(logs));
+        //console.log(toTextLog(logs));
         expect(logs.length).toBe(15);
         // song ended, sched suspended ; ...(new 1-songsched) ; sched resumed, pl resumed, song start, song end, pl end, sched end
         expect(logs[0].eventType).toBe('Sequence Paused');
@@ -1288,5 +1288,140 @@ describe('calcschedule', () => {
         expect(logs[logs.length - 1].eventType).toBe('Schedule Ended');
         expect(logs[logs.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
         expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
+    });
+});
+
+const krs1: SequenceRecord = {
+    id: 'krs1',
+    instanceId: 'abcd1krs',
+    work: {
+        title: 'Please Do Not Cut Off The Foreground Sequence',
+        length: 201,
+        artist: '',
+    },
+    settings: {
+        lead_time: 0,
+        trail_time: 0,
+    },
+};
+
+const krs2: SequenceRecord = {
+    id: 'krs2',
+    instanceId: 'abcd2krs',
+    work: {
+        title: 'Please Do Cut Off The Static Sequence',
+        length: 30,
+        artist: '',
+    },
+    settings: {
+        lead_time: 0,
+        trail_time: 0,
+    },
+};
+
+const krshow: PlaylistRecord = {
+    id: 'plkrshow',
+    title: 'Main Show',
+    tags: [],
+    createdAt: Date.now(),
+    items: [{ id: krs1.id, sequence: 1 }],
+};
+
+const krstatic: PlaylistRecord = {
+    id: 'plkrstatic',
+    title: 'Static Lights',
+    tags: [],
+    createdAt: Date.now(),
+    items: [{ id: krs2.id, sequence: 1 }],
+};
+
+const krstatsched: ScheduledPlaylist = {
+    id: 'krschedstatic',
+    title: 'Static Lights Schedule',
+    playlistId: krstatic.id,
+    playlistTitle: 'Static Lights',
+    date: 0,
+    fromTime: '16:00',
+    toTime: '16:20',
+    loop: true,
+    priority: 'low',
+    preferHardCutIn: true,
+    hardCutIn: false,
+    endPolicy: 'hardcut',
+    duration: 0, // ???
+}
+
+const krshowsched:  ScheduledPlaylist = {
+    id: 'krschedshow',
+    title: 'Main Show Schedule',
+    playlistId: krshow.id,
+    playlistTitle: 'Main Show',
+    date: 0,
+    fromTime: '16:02',
+    toTime: '16:15',
+    loop: true,
+    hardCutIn: true,
+    priority: 'normal',
+    preferHardCutIn: false,
+    endPolicy: 'seqboundlate',
+    duration: 0, // ???
+}
+
+describe('calcschedule', () => {
+    it('should allow seq to finish', () => {
+        const errs: string[] = [];
+        const bdate = new Date(krshowsched.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([krs1, krs2], [krshow, krstatic], [krstatsched, krshowsched], errs);
+        expect(errs.length).toBe(0);
+
+        const logs = plr.readOutScheduleUntil(bt + 24 * 3600 * 1000, 100);
+        console.log(toTextLog(logs));
+
+        const scheds = logs.filter((s)=>s.eventType.startsWith('Schedule'));
+        const pls = logs.filter((s)=>s.eventType.startsWith('Playlist'));
+
+        expect (scheds.length).toBe(6);
+        expect (pls.length).toBe(4);
+        
+        // Static sched should start and end exactly on time
+        expect(scheds[0].eventType).toBe('Schedule Started');
+        expect(scheds[0].eventTime).toBe(bt + 16 * 3600 * 1000 +  0 * 60 * 1000 + 0 * 1000);
+        expect(scheds[0].scheduleId).toBe(krstatsched.id);
+        expect(scheds[1].eventType).toBe('Schedule Suspended');
+        expect(scheds[1].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 0 * 1000);
+        expect(scheds[1].scheduleId).toBe(krstatsched.id);
+        expect(scheds[2].eventType).toBe('Schedule Started');
+        expect(scheds[2].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 0 * 1000);
+        expect(scheds[2].scheduleId).toBe(krshowsched.id);
+        expect(scheds[3].eventType).toBe('Schedule Stopped');
+        expect(scheds[3].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 804 * 1000);
+        expect(scheds[3].scheduleId).toBe(krshowsched.id);
+        expect(scheds[4].eventType).toBe('Schedule Resumed');
+        expect(scheds[4].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 804 * 1000);
+        expect(scheds[4].scheduleId).toBe(krstatsched.id);
+        expect(scheds[5].eventType).toBe('Schedule Stopped');
+        expect(scheds[5].eventTime).toBe(bt + 16 * 3600 * 1000 + 20 * 60 * 1000 + 0 * 1000);
+        expect(scheds[5].scheduleId).toBe(krstatsched.id);
+
+        // Static sched should start and end exactly on time
+        expect(pls[0].eventType).toBe('Playlist Started');
+        expect(pls[0].eventTime).toBe(bt + 16 * 3600 * 1000 +  0 * 60 * 1000 + 0 * 1000);
+        expect(pls[0].scheduleId).toBe(krstatsched.id);
+        expect(pls[0].playlistId).toBe(krstatic.id);
+        expect(pls[1].eventType).toBe('Playlist Started');
+        expect(pls[1].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 0 * 1000);
+        expect(pls[1].scheduleId).toBe(krshowsched.id);
+        expect(pls[2].playlistId).toBe(krshow.id);
+        expect(pls[2].eventType).toBe('Playlist Ended');
+        expect(pls[2].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 804 * 1000);
+        expect(pls[2].scheduleId).toBe(krshowsched.id);
+        expect(pls[2].playlistId).toBe(krshow.id);
+        expect(pls[3].eventType).toBe('Playlist Ended');
+        expect(pls[3].eventTime).toBe(bt + 16 * 3600 * 1000 + 20 * 60 * 1000 + 0 * 1000);
+        expect(pls[3].scheduleId).toBe(krstatsched.id);
+        expect(pls[3].playlistId).toBe(krstatic.id);
     });
 });
