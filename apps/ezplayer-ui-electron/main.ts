@@ -199,14 +199,14 @@ app.whenReady().then(async () => {
     const resolvedUserImageDir = path.resolve(userImageDir);
     await fs.promises.mkdir(resolvedUserImageDir, { recursive: true });
 
-    const portInfo = getWebPort(true);
-    const PORT = typeof portInfo === 'number' ? portInfo : portInfo.port;
-    const source = typeof portInfo === 'number' ? 'Default' : portInfo.source;
+    const portInfo = getWebPort();
+    const port = portInfo.port;
+    const portSource = portInfo.source;
     const hostEnv = process.env.EZP_WEB_HOST?.trim();
     const webHost = hostEnv && hostEnv.length > 0 ? hostEnv : 'localhost';
     const protocolEnv = process.env.EZP_WEB_PROTOCOL?.trim();
     const webProtocol = protocolEnv || 'http';
-    const webBaseUrl = `${webProtocol}://${webHost}:${PORT}`;
+    const webBaseUrl = `${webProtocol}://${webHost}:${port}`;
 
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {
@@ -238,8 +238,8 @@ app.whenReady().then(async () => {
     // 🧩 Start Koa web server with WebSocket support
     try {
         setupServer({
-            port: PORT,
-            portSource: source,
+            port    ,
+            portSource,
             resolvedUserImageDir,
             playWorker,
             mainWindow,
