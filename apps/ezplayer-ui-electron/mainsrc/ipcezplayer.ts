@@ -2,13 +2,10 @@
 import { fileURLToPath } from 'url';
 
 import * as path from 'path';
-import * as fs from 'fs';
 
 import { BrowserWindow, ipcMain } from 'electron';
 
 import { Worker } from 'node:worker_threads';
-import fsp from 'fs/promises';
-import { randomUUID } from 'crypto';
 
 import {
     loadPlaylistsAPI,
@@ -63,6 +60,21 @@ export let curErrors: string[] = [];
 export let curShow: EndUserShowSettings | undefined = undefined;
 export let curUser: EndUser | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
+
+export function getSequenceThumbnail(id: string) {
+    const seq = curSequences?.find((s)=>s.id === id);
+    if (seq?.files?.thumb) {
+        if (path.isAbsolute(seq.files.thumb)) {
+            return seq.files.thumb;
+        }
+        const sf = getCurrentShowFolder();
+        if (sf) {
+            return path.join(sf, seq.files.thumb);
+        }
+        return seq.files.thumb;
+    }
+    return undefined;
+}
 
 export function isScheduleActive(): boolean {
     const player = curStatus.player;
@@ -147,15 +159,6 @@ export async function loadShowFolder() {
     curUser = await loadUserProfileAPI(showFolder);
     await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
 
-    let sequenceAssetsUpdated = false;
-    for (const seq of curSequences) {
-        const mutated = await ensureSequenceThumbAvailability(seq, showFolder);
-        sequenceAssetsUpdated = sequenceAssetsUpdated || mutated;
-    }
-    if (sequenceAssetsUpdated) {
-        await saveSequencesAPI(showFolder, curSequences);
-    }
-
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
         'update:sequences',
@@ -202,115 +205,6 @@ export async function loadShowFolder() {
     scheduleUpdated();
 }
 
-const SONG_IMAGE_SUBDIR = path.join('assets', 'song-images');
-const DEFAULT_USER_IMAGE_ROUTE = '/api/getimage';
-
-function sanitizeBaseUrl(url?: string): string | undefined {
-    if (!url) {
-        return undefined;
-    }
-    const trimmed = url.trim();
-    if (!trimmed) {
-        return undefined;
-    }
-    return trimmed.replace(/\/+$/, '');
-}
-
-function normalizePublicRoute(route?: string): string {
-    if (!route) {
-        return DEFAULT_USER_IMAGE_ROUTE;
-    }
-    const trimmed = route.trim();
-    if (!trimmed) {
-        return DEFAULT_USER_IMAGE_ROUTE;
-    }
-    const ensured = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-    return ensured.replace(/\/+$/, '');
-}
-
-function setSequenceAssetConfig(config?: SequenceAssetConfig) {
-    if (!config?.imageStorageRoot) {
-        sequenceAssetsConfig = undefined;
-        return;
-    }
-    sequenceAssetsConfig = {
-        imageStorageRoot: path.resolve(config.imageStorageRoot),
-        imagePublicRoute: normalizePublicRoute(config.imagePublicRoute),
-        imagePublicBaseUrl: sanitizeBaseUrl(config.imagePublicBaseUrl),
-    };
-}
-
-async function ensureSequenceThumbAvailability(seq: SequenceRecord, showFolder: string): Promise<boolean> {
-    if (!seq.files) return false;
-    let mutated = false;
-    const previousPublicUrl = seq.files.thumbPublicUrl;
-
-    if (!seq.files.thumb) {
-        if (previousPublicUrl && seq.work?.artwork === previousPublicUrl) {
-            delete seq.work.artwork;
-            mutated = true;
-        }
-        if (previousPublicUrl) {
-            delete seq.files.thumbPublicUrl;
-            mutated = true;
-        }
-        return mutated;
-    }
-
-    // Get sequence ID - use id or instanceId, fallback to generating one
-    const baseId = seq.id || seq.instanceId;
-    if (!baseId) {
-        console.warn(`Sequence missing ID, cannot save image:`, seq);
-        return mutated;
-    }
-
-    const resolvedShowFolder = path.resolve(showFolder);
-    const resolvedThumb = path.resolve(seq.files.thumb);
-    const configuredStorageRoot = sequenceAssetsConfig?.imageStorageRoot;
-    const storageRoot = configuredStorageRoot ?? path.join(resolvedShowFolder, SONG_IMAGE_SUBDIR);
-    const resolvedStorageRoot = path.resolve(storageRoot);
-    const publicRoutePrefix = sequenceAssetsConfig?.imagePublicRoute ?? '/api/getimage';
-    const storageRootWithSep = resolvedStorageRoot + path.sep;
-
-    // Determine the file extension from the source image
-    const ext = path.extname(resolvedThumb) || '.png';
-    const sanitizedId = baseId.replace(/[^a-zA-Z0-9-_]/g, '');
-    const assetName = `${sanitizedId}${ext}`;
-    const destinationPath = path.join(resolvedStorageRoot, assetName);
-    const isInsideStorageRoot = resolvedThumb === destinationPath || resolvedThumb.startsWith(storageRootWithSep);
-
-    // If image is not already in the storage root with the correct name, copy it
-    if (!isInsideStorageRoot || path.basename(resolvedThumb) !== assetName) {
-        try {
-            await fsp.access(resolvedThumb, fs.constants.R_OK);
-        } catch (err) {
-            console.warn(`Unable to access uploaded image ${resolvedThumb}:`, err);
-            return mutated;
-        }
-        await fsp.mkdir(resolvedStorageRoot, { recursive: true });
-        await fsp.copyFile(resolvedThumb, destinationPath);
-        if (seq.files.thumb !== destinationPath) {
-            seq.files.thumb = destinationPath;
-            mutated = true;
-        }
-    }
-
-    // Generate public URL using sequence ID
-    const baseUrl = sequenceAssetsConfig?.imagePublicBaseUrl;
-    const publicUrl = baseUrl ? `${baseUrl}${publicRoutePrefix}/${sanitizedId}` : `${publicRoutePrefix}/${sanitizedId}`;
-
-    if (seq.files.thumbPublicUrl !== publicUrl) {
-        seq.files.thumbPublicUrl = publicUrl;
-        mutated = true;
-    }
-    if (seq.work && (!seq.work.artwork || seq.work.artwork === previousPublicUrl) && seq.work.artwork !== publicUrl) {
-        seq.work.artwork = publicUrl;
-        mutated = true;
-    }
-
-    return mutated;
-}
-
 const handlers: MainRPCAPI = {
     add: ({ a, b }) => a + b,
     fail: ({ msg }) => {
@@ -322,13 +216,9 @@ export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
     audioWindow: BrowserWindow | null,
     nPlayWorker: Worker,
-    options?: {
-        sequenceAssets?: SequenceAssetConfig;
-    },
 ) {
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
-    setSequenceAssetConfig(options?.sequenceAssets);
 
     ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
         await loadShowFolder();
@@ -364,16 +254,8 @@ export async function registerContentHandlers(
             }
         }
         const showFolder = getCurrentShowFolder();
-        if (showFolder) {
-            for (const seq of uppl) {
-                await ensureSequenceThumbAvailability(seq, showFolder);
-            }
-        }
         const updList = mergeSequences(uppl, curSequences ?? []);
         if (showFolder) {
-            for (const seq of updList) {
-                await ensureSequenceThumbAvailability(seq, showFolder);
-            }
             await saveSequencesAPI(showFolder, updList);
         }
         curSequences = updList;

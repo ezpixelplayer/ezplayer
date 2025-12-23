@@ -10,7 +10,7 @@ import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'url';
 import { wsBroadcaster } from './websocket-broadcaster.js';
 import { getCurrentShowFolder } from '../showfolder.js';
-import { getCurrentShowData, updatePlaylistsHandler, updateScheduleHandler } from './ipcezplayer.js';
+import { getCurrentShowData, getSequenceThumbnail, updatePlaylistsHandler, updateScheduleHandler } from './ipcezplayer.js';
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import Router from '@koa/router';
 import { send } from '@koa/send';
@@ -37,7 +37,6 @@ function inferMimeType(filePath: string): string {
 export interface ServerConfig {
     port: number;
     portSource: string;
-    resolvedUserImageDir: string;
     playWorker: Worker | null;
     mainWindow: BrowserWindow | null;
 }
@@ -48,7 +47,7 @@ export interface ServerConfig {
  * @returns The HTTP server instance
  */
 export function setupServer(config: ServerConfig): Server {
-    const { port, portSource, resolvedUserImageDir, playWorker, mainWindow } = config;
+    const { port, portSource, playWorker, mainWindow } = config;
 
     const webApp = new Koa();
     console.log(`🌐 Starting Koa web server on port ${port} (source: ${portSource})`);
@@ -67,36 +66,24 @@ export function setupServer(config: ServerConfig): Server {
 
         // Sanitize sequence ID to prevent path traversal
         const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9-_]/g, '');
-        if (!sanitizedId || sanitizedId !== sequenceId) {
+        if (sanitizedId !== sequenceId) {
             ctx.status = 400;
             ctx.body = { error: 'Invalid sequence ID' };
             return;
         }
 
-        // Try common image extensions
-        const extensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
-        let imagePath: string | null = null;
+        const seqfile = getSequenceThumbnail(sequenceId);
 
-        for (const ext of extensions) {
-            const candidatePath = path.join(resolvedUserImageDir, `${sanitizedId}${ext}`);
-            try {
-                await fsp.access(candidatePath, fs.constants.R_OK);
-                imagePath = candidatePath;
-                break;
-            } catch {
-                // Continue to next extension
-            }
-        }
-
-        if (!imagePath) {
+        if (!seqfile) {
             ctx.status = 404;
             ctx.body = { error: 'Image not found for sequence ID' };
             return;
         }
 
         // Set appropriate MIME type
-        ctx.type = inferMimeType(imagePath);
-        await send(ctx, path.basename(imagePath), { root: resolvedUserImageDir });
+        ctx.type = inferMimeType(seqfile);
+        console.log(`Sending ${seqfile} type ${ctx.type}`);
+        await send(ctx, path.basename(seqfile), {root: path.dirname(seqfile)});
     });
 
     // Add body parser middleware for JSON requests

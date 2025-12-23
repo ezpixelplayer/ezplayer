@@ -195,10 +195,6 @@ app.whenReady().then(async () => {
         return;
     }
 
-    const userImageDir = path.join(app.getPath('userData'), 'user_data', 'images');
-    const resolvedUserImageDir = path.resolve(userImageDir);
-    await fs.promises.mkdir(resolvedUserImageDir, { recursive: true });
-
     const portInfo = getWebPort();
     const port = portInfo.port;
     const portSource = portInfo.source;
@@ -227,20 +223,13 @@ app.whenReady().then(async () => {
     registerFileListHandlers();
     createWindow(showFolderSpec);
 
-    await registerContentHandlers(mainWindow, audioWindow, playWorker, {
-        sequenceAssets: {
-            imageStorageRoot: resolvedUserImageDir,
-            imagePublicRoute: '/api/getimage',
-            imagePublicBaseUrl: webBaseUrl,
-        },
-    });
+    await registerContentHandlers(mainWindow, audioWindow, playWorker);
 
-    // 🧩 Start Koa web server with WebSocket support
+    // Start web server / WebSocket
     try {
         setupServer({
-            port    ,
+            port,
             portSource,
-            resolvedUserImageDir,
             playWorker,
             mainWindow,
         });
