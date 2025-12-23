@@ -1471,7 +1471,7 @@ describe('calcschedule', () => {
         for (let i=0; i<4; i++) {
             console.log(`Iteration ${i}`);
             expect(mss[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + i*201 * 1000);
-            // TODO BUG expect(mse[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + (i+1)*201 * 1000);
+            expect(mse[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + (i+1)*201 * 1000);
         }
     });
 });
