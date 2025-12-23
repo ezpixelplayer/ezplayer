@@ -21,7 +21,6 @@ import {
     saveUserProfileAPI,
     blankShowProfile,
     blankUserProfile,
-    type SequenceAssetConfig,
 } from './data/FileStorage.js';
 
 import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
@@ -133,7 +132,6 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
 
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
-let sequenceAssetsConfig: SequenceAssetConfig | undefined;
 
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
@@ -152,7 +150,7 @@ export async function loadShowFolder() {
     if (!showFolder) {
         return;
     }
-    curSequences = await loadSequencesAPI(showFolder, sequenceAssetsConfig);
+    curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);

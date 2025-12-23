@@ -12,12 +12,6 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 import * as path from 'path';
 import fsp from 'fs/promises';
 
-export interface SequenceAssetConfig {
-    imageStorageRoot?: string;
-    imagePublicRoute?: string;
-    imagePublicBaseUrl?: string;
-}
-
 // sequences.json
 interface TempSeqsAPIPayload {
     data: {
@@ -103,7 +97,7 @@ function toRelative(p: string, base: string): string {
 /**
  * Generate public URL for sequence image based on sequence ID
  */
-function hydrateThumbMetadata(seq: SequenceRecord, base: string, assetConfig?: SequenceAssetConfig) {
+function hydrateThumbMetadata(seq: SequenceRecord, base: string) {
     if (!seq.files || !seq.files.thumb) return;
 
     // Get sequence ID - use id or instanceId
@@ -115,9 +109,8 @@ function hydrateThumbMetadata(seq: SequenceRecord, base: string, assetConfig?: S
     if (!sanitizedId) return;
 
     // Generate public URL using sequence ID
-    const routePrefix = assetConfig?.imagePublicRoute ?? '/api/getimage';
-    const baseUrl = assetConfig?.imagePublicBaseUrl;
-    const publicUrl = baseUrl ? `${baseUrl}${routePrefix}/${sanitizedId}` : `${routePrefix}/${sanitizedId}`;
+    const routePrefix = '/api/getimage';
+    const publicUrl = `${routePrefix}/${sanitizedId}`;
 
     const previousPublicUrl = seq.files.thumbPublicUrl;
     seq.files.thumbPublicUrl = publicUrl;
@@ -128,7 +121,7 @@ function hydrateThumbMetadata(seq: SequenceRecord, base: string, assetConfig?: S
     }
 }
 
-export async function loadSequencesAPI(folder: string, assetConfig?: SequenceAssetConfig): Promise<SequenceRecord[]> {
+export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
     try {
         const p: TempSeqsAPIPayload = await JSON.parse(
             await fsp.readFile(path.join(folder, 'sequences.json'), 'utf-8'),
@@ -144,7 +137,7 @@ export async function loadSequencesAPI(folder: string, assetConfig?: SequenceAss
             if (s.files?.thumb) {
                 s.files.thumb = ensureAbsolute(s.files.thumb, folder);
             }
-            hydrateThumbMetadata(s, folder, assetConfig);
+            hydrateThumbMetadata(s, folder);
             // This is supposed to be seconds; for now if it looks like it could be milliseconds we will verify it.
             if (s.files?.fseq && (!s.work.length || s.work.length > 10000)) {
                 try {

@@ -82,7 +82,6 @@ export function setupServer(config: ServerConfig): Server {
 
         // Set appropriate MIME type
         ctx.type = inferMimeType(seqfile);
-        console.log(`Sending ${seqfile} type ${ctx.type}`);
         await send(ctx, path.basename(seqfile), {root: path.dirname(seqfile)});
     });
 
