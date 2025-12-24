@@ -198,11 +198,6 @@ app.whenReady().then(async () => {
     const portInfo = getWebPort();
     const port = portInfo.port;
     const portSource = portInfo.source;
-    const hostEnv = process.env.EZP_WEB_HOST?.trim();
-    const webHost = hostEnv && hostEnv.length > 0 ? hostEnv : 'localhost';
-    const protocolEnv = process.env.EZP_WEB_PROTOCOL?.trim();
-    const webProtocol = protocolEnv || 'http';
-    const webBaseUrl = `${webProtocol}://${webHost}:${port}`;
 
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {

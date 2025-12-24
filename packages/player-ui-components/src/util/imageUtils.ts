@@ -23,7 +23,7 @@ function isElectronRenderer(): boolean {
 /**
  * Utility function to get the best image URL for display.
  * - In Electron: converts local paths to file:// URLs
- * - In Web: converts relative paths and localhost URLs to absolute URLs using current origin
+ * - In Web: Makes API calls to get the file
  *
  * @param id - Sequence ID for API-based
  * @param remoteImageUrl - The artwork URL from work.artwork (may be relative or absolute)

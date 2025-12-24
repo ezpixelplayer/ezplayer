@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Button, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
 import { MusicNote, Lightbulb } from '@mui/icons-material';
-import { PageHeader, isElectron } from '@ezplayer/shared-ui-components';
+import { PageHeader } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
@@ -43,25 +43,6 @@ interface SequenceItem {
     sequence?: {
         vendor?: string;
     };
-}
-
-function alignWithPageOrigin(url: string): string {
-    if (typeof window === 'undefined') {
-        return url;
-    }
-    try {
-        const parsed = new URL(url, window.location.origin);
-        if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-            parsed.protocol = window.location.protocol;
-            parsed.host = window.location.host;
-        }
-        return parsed.toString();
-    } catch {
-        if (url.startsWith('/')) {
-            return `${window.location.origin}${url}`;
-        }
-        return url;
-    }
 }
 
 export interface JukeboxAreaProps {
