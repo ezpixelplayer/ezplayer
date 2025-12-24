@@ -1,5 +1,5 @@
 {
-    "name": "@ezplayer/ui-react",
+    "name": "@ezplayer/ui-embedded",
     "private": true,
     "version": "0.0.1",
     "type": "module",

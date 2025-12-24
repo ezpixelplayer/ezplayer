@@ -46,9 +46,9 @@ importers:
       '@ezplayer/shared-ui-components':
         specifier: workspace:*
         version: link:../../packages/shared-ui-components
-      '@ezplayer/ui-react':
+      '@ezplayer/ui-embedded':
         specifier: workspace:*
-        version: link:../ezplayer-ui-react
+        version: link:../ezplayer-ui-embedded
       '@floating-ui/core':
         specifier: ^1.6.9
         version: 1.7.3
@@ -207,7 +207,7 @@ importers:
         specifier: ^3.0.0
         version: 3.1.4(vite@5.4.21(@types/node@22.19.1)(sass@1.94.2))
 
-  apps/ezplayer-ui-react:
+  apps/ezplayer-ui-embedded:
     dependencies:
       '@ezplayer/ezplayer-core':
         specifier: workspace:*

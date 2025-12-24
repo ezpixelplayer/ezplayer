@@ -231,9 +231,9 @@ export function setupServer(config: ServerConfig): Server {
         const __filename = fileURLToPath(import.meta.url);
         const __dirname = path.dirname(__filename);
         const possiblePaths = [
-            path.join(process.cwd(), 'apps/ezplayer-ui-react/dist'),
-            path.join(__dirname, '../../ezplayer-ui-react/dist'),
-            path.join(__dirname, '../ezplayer-ui-react/dist'),
+            path.join(process.cwd(), 'apps/ezplayer-ui-embedded/dist'),
+            path.join(__dirname, '../../ezplayer-ui-embedded/dist'),
+            path.join(__dirname, '../ezplayer-ui-embedded/dist'),
         ];
 
         staticPath = '';
@@ -245,7 +245,7 @@ export function setupServer(config: ServerConfig): Server {
         }
 
         if (!staticPath) {
-            console.warn(`⚠️ React build not found! Please run: pnpm --filter @ezplayer/ui-react build:web`);
+            console.warn(`⚠️ React build not found! Please run: pnpm --filter @ezplayer/ui-embedded build:web`);
             staticPath = possiblePaths[0];
         }
     }
@@ -340,7 +340,7 @@ export function setupServer(config: ServerConfig): Server {
             ctx.body = fs.readFileSync(indexPath, 'utf-8');
         } else {
             ctx.status = 404;
-            ctx.body = 'React app not built. Please run: cd apps/ezplayer-ui-react && pnpm build:web';
+            ctx.body = 'React app not built. Please run: cd apps/ezplayer-ui-embedded && pnpm build:web';
         }
     });
 
