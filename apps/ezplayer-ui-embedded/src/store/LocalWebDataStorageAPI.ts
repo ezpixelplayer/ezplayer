@@ -21,9 +21,9 @@ import type {
     DownloadFileResponse,
     CloudFileDownloadResponse,
     CloudFileUpload,
-} from '../DataStorageAPI';
+} from '@ezplayer/player-ui-components';
 
-import { AppDispatch } from '../../..';
+import { AppDispatch } from '@ezplayer/player-ui-components';
 
 /**
  * LocalWebDataStorageAPI - For web browsers connecting to local Electron Koa server
@@ -109,7 +109,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     // The following methods are not used by the web app when connected locally
     // Data is synced via WebSocket instead
-    async requestChangeServerUrl(data: { cloudURL: string }) {
+    async requestChangeServerUrl(_data: { cloudURL: string }) {
         throw new Error('Not supported in local web mode');
     }
 
@@ -201,7 +201,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return data as EndUser;
     }
 
-    async requestLoginToken(data: UserLoginBody): Promise<string> {
+    async requestLoginToken(_data: UserLoginBody): Promise<string> {
         throw new Error('Authentication not supported in local web mode');
     }
 
@@ -209,25 +209,25 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return;
     }
 
-    async postCloudRegister(data: UserRegisterBody): Promise<UserRegisterBody> {
+    async postCloudRegister(_data: UserRegisterBody): Promise<UserRegisterBody> {
         throw new Error('Registration not supported in local web mode');
     }
 
-    async postRequestPasswordReset(data: { email: string }): Promise<{ message: string }> {
+    async postRequestPasswordReset(_data: { email: string }): Promise<{ message: string }> {
         throw new Error('Password reset not supported in local web mode');
     }
 
-    async postChangePassword(data: { oldPassword: string; newPassword: string }): Promise<{ message: string }> {
+    async postChangePassword(_data: { oldPassword: string; newPassword: string }): Promise<{ message: string }> {
         throw new Error('Password change not supported in local web mode');
     }
 
-    async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
+    async requestSetPlayerIdToken(_data: { playerIdToken?: string }): Promise<{ message: string }> {
         return {
             message: 'Player ID management not needed in local web mode',
         };
     }
 
-    async postRegisterPlayer(data: { playerId: string }): Promise<{ message: string }> {
+    async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {
         return { message: 'Player registration not needed in local web mode' };
     }
 
@@ -243,11 +243,11 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         throw new Error('File upload not supported in local web mode');
     }
 
-    async postCloudDoneUploadLayoutFiles(data: CloudLayoutFileUpload): Promise<CloudFileUploadResponse> {
+    async postCloudDoneUploadLayoutFiles(_data: CloudLayoutFileUpload): Promise<CloudFileUploadResponse> {
         throw new Error('File upload not supported in local web mode');
     }
 
-    async postCloudDoneUploadZip(fileId: string, fileTime: string): Promise<CloudFileUploadResponse> {
+    async postCloudDoneUploadZip(_fileId: string, _fileTime: string): Promise<CloudFileUploadResponse> {
         throw new Error('File upload not supported in local web mode');
     }
 
@@ -255,23 +255,23 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return { sequences: [] };
     }
 
-    async getCloudSeqFile(fileId: string): Promise<CloudFileDownloadResponse> {
+    async getCloudSeqFile(_fileId: string): Promise<CloudFileDownloadResponse> {
         throw new Error('File download not implemented in local web mode');
     }
 
-    async getCloudMediaFile(fileId: string): Promise<CloudFileDownloadResponse> {
+    async getCloudMediaFile(_fileId: string): Promise<CloudFileDownloadResponse> {
         throw new Error('File download not implemented in local web mode');
     }
 
-    async getCloudXsqzFile(fileId: string): Promise<CloudFileDownloadResponse> {
+    async getCloudXsqzFile(_fileId: string): Promise<CloudFileDownloadResponse> {
         throw new Error('File download not implemented in local web mode');
     }
 
-    async getCloudPreviewVideo(fileId: string): Promise<CloudFileDownloadResponse> {
+    async getCloudPreviewVideo(_fileId: string): Promise<CloudFileDownloadResponse> {
         throw new Error('File download not implemented in local web mode');
     }
 
-    async isPlayerRegistered(playerId: string): Promise<boolean> {
+    async isPlayerRegistered(_playerId: string): Promise<boolean> {
         return true;
     }
 
@@ -279,7 +279,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return null;
     }
 
-    async uploadLayoutHints(data: any): Promise<void> {
+    async uploadLayoutHints(_data: any): Promise<void> {
         throw new Error('Layout hints upload not supported in local web mode');
     }
 
