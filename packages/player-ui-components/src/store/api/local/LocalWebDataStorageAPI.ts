@@ -87,7 +87,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async setPlayerSettings(s: PlaybackSettings): Promise<boolean> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/playback-settings`, {
+            const response = await fetch(`${this.apiUrl}playback-settings`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -131,7 +131,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async postCloudPlaylists(data: PlaylistRecord[]): Promise<PlaylistRecord[]> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/playlists`, {
+            const response = await fetch(`${this.apiUrl}playlists`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -157,7 +157,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async postCloudSchedule(data: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/schedules`, {
+            const response = await fetch(`${this.apiUrl}schedules`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
