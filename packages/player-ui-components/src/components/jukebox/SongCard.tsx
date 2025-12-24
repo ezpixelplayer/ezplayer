@@ -26,7 +26,7 @@ export const SongCard: FC<SongCardProps> = ({ id, title, artist, artwork, localI
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
     // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(artwork, localImagePath), [artwork, localImagePath]);
+    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [artwork, localImagePath]);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `${id}-${imageUrl}`, [id, imageUrl]);

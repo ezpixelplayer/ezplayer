@@ -33,6 +33,7 @@ const App = () => {
     return (
         <Provider store={store}>
             <WebSocketProvider>
+                {/*TODO MOC is this ever in electron runtime?*/}
                 {isElectronRuntime ? <InitialDataProvider api={storeApi}>{appShell}</InitialDataProvider> : appShell}
             </WebSocketProvider>
         </Provider>

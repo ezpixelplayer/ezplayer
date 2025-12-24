@@ -21,125 +21,29 @@ function isElectronRenderer(): boolean {
 }
 
 /**
- * Convert a relative path or localhost URL to an absolute URL using the current page origin.
- * This ensures images work when the React app is served from Koa on a different host/port.
- */
-function makeAbsoluteUrl(url: string): string {
-    if (typeof window === 'undefined') {
-        return url;
-    }
-
-    // Already an absolute URL with a non-localhost host - use as-is
-    if (/^https?:\/\//i.test(url)) {
-        try {
-            const parsed = new URL(url);
-            // If it's localhost, rewrite to current origin
-            if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-                return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
-            }
-            return url;
-        } catch {
-            return url;
-        }
-    }
-
-    // Relative path starting with / - prepend current origin
-    if (url.startsWith('/')) {
-        return `${window.location.origin}${url}`;
-    }
-
-    return url;
-}
-
-/**
- * Try to extract a usable web URL from a local file path that contains user_data/images
- */
-function inferWebUrlFromLocalPath(localPath: string): string | undefined {
-    if (typeof window === 'undefined' || !localPath) {
-        return undefined;
-    }
-
-    // Normalize path separators
-    const normalized = localPath.replace(/\\/g, '/');
-    const lower = normalized.toLowerCase();
-
-    // Look for user_data/images pattern
-    const markers = ['/user_data/images/', '\\user_data\\images\\'];
-    for (const marker of markers) {
-        const idx = lower.indexOf(marker.toLowerCase());
-        if (idx !== -1) {
-            const markerLen = marker.length;
-            const relative = normalized.slice(idx + markerLen);
-            if (relative) {
-                return `${window.location.origin}/api/getimage/${relative}`;
-            }
-        }
-    }
-
-    return undefined;
-}
-
-/**
  * Utility function to get the best image URL for display.
  * - In Electron: converts local paths to file:// URLs
  * - In Web: converts relative paths and localhost URLs to absolute URLs using current origin
  *
- * @param artwork - The artwork URL from work.artwork (may be relative or absolute)
+ * @param id - Sequence ID for API-based
+ * @param remoteImageUrl - The artwork URL from work.artwork (may be relative or absolute)
  * @param localImagePath - The local file path or resolved thumb path
  */
-export function getImageUrl(artwork?: string, localImagePath?: string): string | undefined {
+export function getImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
     // In Electron renderer, prefer local file path
     if (isElectronRenderer()) {
         if (localImagePath && !localImagePath.startsWith('http')) {
             return toFileUrl(localImagePath);
         }
-        // Fall back to artwork if it's a valid URL
-        if (artwork) {
-            if (/^https?:\/\//i.test(artwork) || /^file:\/\//i.test(artwork)) {
-                return artwork;
-            }
-            if (artwork.startsWith('/')) {
-                return artwork; // Electron can handle relative paths
-            }
-        }
-        return localImagePath ? toFileUrl(localImagePath) : undefined;
+        return remoteImageUrl;
     }
 
-    // In web browser - need to make URLs absolute
+    // In web browser, could be artwork URL, or could ask our server to get it if a local file exists
+    if (remoteImageUrl) return remoteImageUrl;
 
-    // First, try localImagePath if it looks like a web URL
+    // There IS a local path ... but we should ask the server to handle it by ID.
     if (localImagePath) {
-        // If it's already an http(s) URL or starts with /, make it absolute
-        if (/^https?:\/\//i.test(localImagePath) || localImagePath.startsWith('/')) {
-            return makeAbsoluteUrl(localImagePath);
-        }
-
-        // Try to infer a web URL from a local file path
-        const inferred = inferWebUrlFromLocalPath(localImagePath);
-        if (inferred) {
-            return inferred;
-        }
-    }
-
-    // Try artwork URL
-    if (artwork) {
-        if (/^https?:\/\//i.test(artwork) || artwork.startsWith('/')) {
-            return makeAbsoluteUrl(artwork);
-        }
-
-        // Try to infer from artwork if it looks like a local path
-        const inferred = inferWebUrlFromLocalPath(artwork);
-        if (inferred) {
-            return inferred;
-        }
-    }
-
-    // Last resort - return whatever we have
-    if (localImagePath) {
-        return makeAbsoluteUrl(localImagePath);
-    }
-    if (artwork) {
-        return makeAbsoluteUrl(artwork);
+        return `/api/getimage/${id}`;
     }
 
     return undefined;

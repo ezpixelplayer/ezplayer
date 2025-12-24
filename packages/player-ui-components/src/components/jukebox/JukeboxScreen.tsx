@@ -8,10 +8,9 @@ import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
-import { PlaylistDropdown, Playlist } from './PlaylistDropdown';
+import { PlaylistDropdown } from './PlaylistDropdown';
 import { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
 import { getImageUrl } from '../../util/imageUtils';
-import { QueueCard } from '../status/QueueCard';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
 
 interface Song {
@@ -37,7 +36,6 @@ interface SequenceItem {
     files?: {
         fseq?: string;
         thumb?: string;
-        thumbPublicUrl?: string;
     };
     settings?: {
         tags?: string[];
@@ -66,67 +64,20 @@ function alignWithPageOrigin(url: string): string {
     }
 }
 
-function inferUserImagesUrl(localPath?: string): string | undefined {
-    if (typeof window === 'undefined' || !localPath) {
-        return undefined;
-    }
-    const normalized = localPath.replace(/\\/g, '/');
-    const lower = normalized.toLowerCase();
-    const marker = '/user_data/images/';
-    const idx = lower.indexOf(marker);
-    if (idx !== -1) {
-        const relative = normalized.slice(idx + marker.length);
-        if (relative) {
-            return `${window.location.origin}/api/getimage/${relative}`;
-        }
-    }
-    if (normalized.startsWith('/api/getimage/')) {
-        return `${window.location.origin}${normalized}`;
-    }
-    return undefined;
-}
-
-function resolveThumbPath(files?: SequenceItem['files']): string | undefined {
-    if (!files) return undefined;
-    const electronThumb = files.thumb;
-    const publicThumb = files.thumbPublicUrl;
-
-    // In Electron, use the local file path
-    if (isElectron()) {
-        return electronThumb;
-    }
-
-    // In web browser, prefer the public URL (aligned with host)
-    if (publicThumb) {
-        return alignWithPageOrigin(publicThumb);
-    }
-
-    // Fallback to thumb if we can infer a served path
-    const inferredFromThumb = inferUserImagesUrl(electronThumb);
-    if (inferredFromThumb) {
-        return inferredFromThumb;
-    }
-
-    // Fallback to thumb if it's already a web URL
-    if (electronThumb && /^(https?:)?\/\//i.test(electronThumb)) {
-        return alignWithPageOrigin(electronThumb);
-    }
-
-    return undefined;
-}
-
 export interface JukeboxAreaProps {
     onInteract?: () => void;
 }
 
 // New component to handle thumbnail display with fallback
 function SongThumbnail({
+    id,
     artwork,
     localImagePath,
     isMusical,
     size,
     theme,
 }: {
+    id?: string;
     artwork?: string;
     localImagePath?: string;
     isMusical: boolean;
@@ -137,7 +88,7 @@ function SongThumbnail({
     const [imageLoading, setImageLoading] = useState(true);
 
     // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(artwork, localImagePath), [artwork, localImagePath]);
+    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [id, artwork, localImagePath]);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `thumb-${imageUrl}`, [imageUrl]);
@@ -264,7 +215,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
             urlPart: song.files?.fseq || '', // Using fseq file name as the URL part
             id: song.id,
             artwork: song.work?.artwork, // Add artwork field
-            localImagePath: resolveThumbPath(song.files), // Add local image path field
+            localImagePath: song.files?.thumb, // Add local image path field
             vendor: song.sequence?.vendor || '',
         })) || [];
 
@@ -640,7 +591,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                     urlPart: song.files?.fseq || '',
                     id: song.id,
                     artwork: song.work?.artwork,
-                    localImagePath: resolveThumbPath(song.files),
+                    localImagePath: song.files?.thumb,
                     vendor: song.sequence?.vendor || '',
                 }),
             ) || [];

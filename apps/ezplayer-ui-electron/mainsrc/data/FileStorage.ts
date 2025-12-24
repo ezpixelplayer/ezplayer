@@ -94,33 +94,6 @@ function toRelative(p: string, base: string): string {
     return rel;
 }
 
-/**
- * Generate public URL for sequence image based on sequence ID
- */
-function hydrateThumbMetadata(seq: SequenceRecord, base: string) {
-    if (!seq.files || !seq.files.thumb) return;
-
-    // Get sequence ID - use id or instanceId
-    const sequenceId = seq.id || seq.instanceId;
-    if (!sequenceId) return;
-
-    // Sanitize sequence ID for URL
-    const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9-_]/g, '');
-    if (!sanitizedId) return;
-
-    // Generate public URL using sequence ID
-    const routePrefix = '/api/getimage';
-    const publicUrl = `${routePrefix}/${sanitizedId}`;
-
-    const previousPublicUrl = seq.files.thumbPublicUrl;
-    seq.files.thumbPublicUrl = publicUrl;
-
-    // Update artwork if it's missing or matches the previous thumbPublicUrl
-    if (seq.work && (!seq.work.artwork || seq.work.artwork === previousPublicUrl) && seq.work.artwork !== publicUrl) {
-        seq.work.artwork = publicUrl;
-    }
-}
-
 export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
     try {
         const p: TempSeqsAPIPayload = await JSON.parse(
@@ -137,7 +110,6 @@ export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]
             if (s.files?.thumb) {
                 s.files.thumb = ensureAbsolute(s.files.thumb, folder);
             }
-            hydrateThumbMetadata(s, folder);
             // This is supposed to be seconds; for now if it looks like it could be milliseconds we will verify it.
             if (s.files?.fseq && (!s.work.length || s.work.length > 10000)) {
                 try {

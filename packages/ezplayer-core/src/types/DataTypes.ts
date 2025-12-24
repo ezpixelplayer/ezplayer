@@ -40,7 +40,6 @@ export interface SequenceFiles {
     fseq?: string;
     video?: string;
     thumb?: string;
-    thumbPublicUrl?: string;
 }
 
 export interface SequenceRecord {
