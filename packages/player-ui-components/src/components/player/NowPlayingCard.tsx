@@ -1,4 +1,4 @@
-import { Card, CardContent, Typography, Box, Chip, useTheme, IconButton, Slider } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, IconButton, Slider } from '@mui/material';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
 import { VolumeOff, VolumeUp } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';
@@ -24,8 +24,6 @@ const formatTime = (timestamp?: number | string) => {
 };
 
 export const NowPlayingCard = ({ player, className, compact = false }: NowPlayingCardProps) => {
-    const theme = useTheme();
-
     if (player.ptype !== 'EZP') {
         return null;
     }
@@ -41,19 +39,11 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
         <Card
             className={className}
             sx={{
-                minHeight: compact ? 80 : 120,
-                background: theme.palette.background.paper,
-                border: `1px solid ${theme.palette.divider}`,
-                borderRadius: 2,
-                boxShadow: theme.shadows[2],
-                transition: 'all 0.2s ease-in-out',
-                '&:hover': {
-                    boxShadow: theme.shadows[4],
-                },
+                height: '100%',
                 width: '100%',
             }}
         >
-            <CardContent sx={{ p: compact ? 1.5 : 2, '&:last-child': { pb: compact ? 1.5 : 2 } }}>
+            <CardContent>
                 {/* Status Indicator */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: compact ? 1 : 1.5 }}>
                     <Chip

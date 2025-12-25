@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Card, CardHeader, CardContent, Box, Typography, IconButton, Stack } from '@mui/material';
+import { Card, CardContent, Box, Typography, IconButton, Stack } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { PlayingItem } from '@ezplayer/ezplayer-core';
 
@@ -14,15 +14,16 @@ export const QueueCard: React.FC<QueueCardProps> = ({ title = 'Queue', queue, on
     if (!queue || queue.length === 0) return null;
 
     return (
-        <Card sx={{ mb: 2, ...sx }}>
-            <CardHeader
-                title={
-                    <Typography variant="subtitle1" fontWeight="bold">
-                        {title} ({queue.length})
-                    </Typography>
-                }
-            />
-            <CardContent sx={{ pt: 0 }}>
+        <Card
+            sx={{
+                height: '100%',
+                ...sx,
+            }}
+        >
+            <CardContent>
+                <Typography variant="h6" color="primary" gutterBottom>
+                    {title} ({queue.length})
+                </Typography>
                 <Stack spacing={1}>
                     {queue.map((qi, index) => (
                         <Box

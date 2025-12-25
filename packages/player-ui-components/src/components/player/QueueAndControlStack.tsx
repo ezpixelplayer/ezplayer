@@ -9,7 +9,7 @@ import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 interface QueueAndControlStackProps {
 }
 
-export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) => {
+export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({ }) => {
     const pstat = useSelector((state: RootState) => state.playerStatus);
     const dispatch = useDispatch<AppDispatch>();
 
@@ -27,22 +27,17 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) =>
             <Grid container spacing={2}>
                 <Grid item xs={12} md={12} lg={6} xl={4}>
                     {pstat?.playerStatus?.player?.queue && (
-                        <Box sx={{ padding: 2, flexShrink: 0 }}>
-                            <QueueCard
-                                sx={{
-                                    padding: 2,
-                                }}
-                                queue={pstat.playerStatus.player.queue}
-                                onRemoveItem={async (i, _index) => {
-                                    await dispatch(
-                                        callImmediateCommand({
-                                            command: 'deleterequest',
-                                            requestId: i.request_id ?? '',
-                                        }),
-                                    );
-                                }}
-                            ></QueueCard>
-                        </Box>
+                        <QueueCard
+                            queue={pstat.playerStatus.player.queue}
+                            onRemoveItem={async (i, _index) => {
+                                await dispatch(
+                                    callImmediateCommand({
+                                        command: 'deleterequest',
+                                        requestId: i.request_id ?? '',
+                                    }),
+                                );
+                            }}
+                        />
                     )}
                 </Grid>
             </Grid>
