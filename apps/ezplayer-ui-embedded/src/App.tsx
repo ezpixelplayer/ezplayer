@@ -6,17 +6,16 @@ import './scss/commonStyle.scss';
 import { CssBaseline } from '@mui/material';
 import { StylesProvider } from '@mui/styles';
 import { Provider } from 'react-redux';
-import { ThemeProviderWrapper } from '@ezplayer/player-ui-components';
-import { store } from './store/configure-store';
+import { InitialDataProvider, ThemeProviderWrapper } from '@ezplayer/player-ui-components';
+import { store, storeApi } from './store/configure-store';
 import { ToastContainer } from 'react-toastify';
-import { WebSocketProvider } from './components/WebSocketProvider';
 
 const App = () => {
     const content = useRoutes(router);
 
     return (
         <Provider store={store}>
-            <WebSocketProvider>
+            <InitialDataProvider api={storeApi}>
                 <ToastContainer />
                 <StylesProvider injectFirst>
                     <ThemeProviderWrapper>
@@ -26,7 +25,7 @@ const App = () => {
                         </LocalizationProvider>
                     </ThemeProviderWrapper>
                 </StylesProvider>
-            </WebSocketProvider>
+            </InitialDataProvider>
         </Provider>
     );
 };

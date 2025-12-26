@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { Box, CircularProgress, Grid, Stack } from '@mui/material';
 import { useSelector, useDispatch } from 'react-redux';
-import { PlayArrow, Pause, Stop, Delete, VolumeUp, StopCircle } from '@mui/icons-material';
 
 import { QueueCard } from '../status/QueueCard';
-import { ControlButton } from './ControlButton';
 import { AppDispatch, RootState } from '../../store/Store';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+
+import { PlayArrow, Pause, Stop, Delete, VolumeUp, StopCircle } from '@mui/icons-material';
+import { ControlButton } from './ControlButton';
 
 interface QueueAndControlStackProps {
 }
@@ -59,7 +60,7 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({ }) =
 
     return (
         <Box sx={{ px: 2, pb: 2, flexShrink: 0 }}>
-            {/* Control Buttons */}
+            {/* Control buttons
             <Box sx={{ mb: 2 }}>
                 <Stack direction="row" spacing={2} flexWrap="wrap">
                     <ControlButton
@@ -91,6 +92,7 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({ }) =
                     />
                 </Stack>
             </Box>
+            */}
 
             {/* Now Playing Card and Controller Status */}
             <Grid container spacing={2}>
