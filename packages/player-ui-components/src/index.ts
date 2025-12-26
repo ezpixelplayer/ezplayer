@@ -12,7 +12,6 @@ export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
 export { ControlButton } from './components/player/ControlButton';
-export { FullPlayerControlStack } from './components/player/FullPlayerControlStack';
 export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';

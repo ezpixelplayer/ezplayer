@@ -285,14 +285,6 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
 
             {/* Playback Queue Card */}
             <QueueAndControlStack />
-
-            {/* Controls - Sticks to the bottom 
-            <Box sx={{ 
-                padding: 2, 
-            }}>
-                <FullPlayerControlStack />
-            </Box>
-            */}
         </Box>
     );
 };
