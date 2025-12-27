@@ -3,7 +3,7 @@
  * Connects to Electron's WebSocket server and manages subscriptions
  */
 
-import { PlayerClientWebSocketMessage, type PlayerWebSocketMessage } from "@ezplayer/ezplayer-core";
+import { PlayerClientWebSocketMessage, type PlayerWebSocketMessage } from '@ezplayer/ezplayer-core';
 
 export type MessageHandler = (msg: PlayerWebSocketMessage) => void;
 type ConnectionHandler = () => void;
@@ -332,7 +332,6 @@ class WebSocketService {
             // Reconnect?
         }
     }
-
 
     /**
      * Get connection status

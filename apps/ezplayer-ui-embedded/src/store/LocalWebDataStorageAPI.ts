@@ -104,9 +104,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
         });
 
-        const unsubscribePing = wsService.subscribe('ping', (msg)=>{
+        const unsubscribePing = wsService.subscribe('ping', (msg) => {
             if (msg.type === 'ping') {
-                wsService.send({type: 'pong', now: Date.now()});
+                wsService.send({ type: 'pong', now: Date.now() });
             }
         });
 

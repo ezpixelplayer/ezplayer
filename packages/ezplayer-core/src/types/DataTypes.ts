@@ -456,10 +456,7 @@ export type PlayerWebSocketKick = {
     reason: string;
 };
 
-export type PlayerWebSocketMessage =
-    | PlayerWebSocketSnapshot
-    | PlayerWebSocketPing
-    | PlayerWebSocketKick;
+export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPing | PlayerWebSocketKick;
 
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }

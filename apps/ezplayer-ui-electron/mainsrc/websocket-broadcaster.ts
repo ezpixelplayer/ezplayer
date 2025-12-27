@@ -4,11 +4,7 @@
  * Takes care to not swamp anything
  */
 
-import {
-    FullPlayerState,
-    PlayerWebSocketMessage,
-    PlayerClientWebSocketMessage,
-} from '@ezplayer/ezplayer-core';
+import { FullPlayerState, PlayerWebSocketMessage, PlayerClientWebSocketMessage } from '@ezplayer/ezplayer-core';
 
 import WebSocket, { WebSocketServer } from 'ws';
 
