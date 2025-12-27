@@ -1392,9 +1392,9 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 }
                                 error={Boolean(
                                     formData.toTime &&
-                                        (!isExtendedTimeValid(formData.toTime) ||
-                                            (formData.fromTime &&
-                                                !isToTimeAfterFromTime(formData.fromTime, formData.toTime))),
+                                    (!isExtendedTimeValid(formData.toTime) ||
+                                        (formData.fromTime &&
+                                            !isToTimeAfterFromTime(formData.fromTime, formData.toTime))),
                                 )}
                                 sx={{ flex: 1 }}
                             />

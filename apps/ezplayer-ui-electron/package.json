@@ -29,6 +29,13 @@
                     "EZPlayerLogoTransparent.png",
                     "EZPlayerLogoTransparent.icns"
                 ]
+            },
+            {
+                "from": "../ezplayer-ui-embedded/dist",
+                "to": "webapp",
+                "filter": [
+                    "**/*"
+                ]
             }
         ],
         "win": {
@@ -62,10 +69,11 @@
     },
     "scripts": {
         "start": "pnpm dev",
-        "dev": "concurrently \"pnpm dev:react\" \"pnpm dev:electron\"",
+        "dev": "node scripts/dev-with-port.mjs",
+        "dev:direct": "pnpm --filter @ezplayer/ui-embedded build:web && concurrently \"pnpm --filter @ezplayer/ui-embedded build:web:watch\" \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": " node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder",
+        "build": "pnpm --filter @ezplayer/ui-embedded build && pnpm --filter @ezplayer/ui-embedded build:web && node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
         "build:main": "node scripts/build-main.mjs",
@@ -78,6 +86,8 @@
         "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
     "devDependencies": {
+        "@types/koa": "^3.0.1",
+        "@types/koa-static": "^4.0.4",
         "@types/proper-lockfile": "^4.1.4",
         "@types/react": "^18.3.18",
         "@types/react-dom": "^18.3.5",
@@ -98,21 +108,30 @@
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/player-ui-components": "workspace:*",
         "@ezplayer/shared-ui-components": "workspace:*",
+        "@ezplayer/ui-embedded": "workspace:*",
         "@floating-ui/core": "^1.6.9",
         "@floating-ui/react": "^0.27.3",
+        "@koa/bodyparser": "^6.0.0",
+        "@koa/router": "^15.0.0",
+        "@koa/send": "^6.0.0",
         "@mui/icons-material": "^5.16.14",
         "@mui/material": "^5.16.14",
         "@mui/styles": "^5.16.14",
         "@mui/x-date-pickers": "5.0.0",
         "@reduxjs/toolkit": "^2.5.0",
+        "@types/ws": "^8.18.1",
         "axios": "^1.7.9",
         "bindings": "^1.5.0",
         "crc-32": "^1.2.2",
+        "debug": "^4.4.3",
         "electron-store": "^10.1.0",
         "i18next": "^23.16.8",
+        "koa": "^3.1.1",
+        "koa-static": "^5.0.0",
         "mpg123-decoder": "^1.0.2",
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
+        "path": "^0.12.7",
         "ping": "^1.0.0",
         "proper-lockfile": "^4.1.2",
         "react": "^18.0.0",
@@ -124,6 +143,7 @@
         "react-router-dom": "^6.28.2",
         "react-toastify": "^10.0.6",
         "uuid": "^11.0.5",
+        "ws": "^8.18.3",
         "zstddec": "^0.1.0"
     }
 }

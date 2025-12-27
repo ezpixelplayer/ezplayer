@@ -15,11 +15,36 @@ function toFileUrl(maybePath: string): string {
     return pathToFileURLCompat(maybePath).toString();
 }
 
+function isElectronRenderer(): boolean {
+    if (typeof window === 'undefined') return false;
+    return Boolean((window as any).electronAPI);
+}
+
 /**
- * Utility function to convert local file path to file:// URL for Electron
- * Prioritizes local images over web URLs and adds cache-busting
+ * Utility function to get the best image URL for display.
+ * - In Electron: converts local paths to file:// URLs
+ * - In Web: Makes API calls to get the file
+ *
+ * @param id - Sequence ID for API-based
+ * @param remoteImageUrl - The artwork URL from work.artwork (may be relative or absolute)
+ * @param localImagePath - The local file path or resolved thumb path
  */
-export function getImageUrl(imageUrl?: string, localImagePath?: string): string | undefined {
-    if (localImagePath) return toFileUrl(localImagePath);
-    return imageUrl; // http(s), data:, etc. already fine
+export function getImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
+    // In Electron renderer, prefer local file path
+    if (isElectronRenderer()) {
+        if (localImagePath && !localImagePath.startsWith('http')) {
+            return toFileUrl(localImagePath);
+        }
+        return remoteImageUrl;
+    }
+
+    // In web browser, could be artwork URL, or could ask our server to get it if a local file exists
+    if (remoteImageUrl) return remoteImageUrl;
+
+    // There IS a local path ... but we should ask the server to handle it by ID.
+    if (localImagePath) {
+        return `/api/getimage/${id}`;
+    }
+
+    return undefined;
 }

@@ -267,8 +267,10 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
             const priorityB = scheduleB?.priority || 'normal';
 
             // Convert priority to number for comparison
-            const priorityValueA = priorityToNumber[priorityA] || priorityToNumber.normal;
-            const priorityValueB = priorityToNumber[priorityB] || priorityToNumber.normal;
+            const priorityValueA =
+                priorityToNumber[priorityA as keyof typeof priorityToNumber] || priorityToNumber.normal;
+            const priorityValueB =
+                priorityToNumber[priorityB as keyof typeof priorityToNumber] || priorityToNumber.normal;
 
             // Sort by priority (higher number = lower priority, so we want low priority first)
             if (priorityValueA !== priorityValueB) {
@@ -348,7 +350,8 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
 
             groups.push({
                 id: scheduleId,
-                content: scheduleName, // Keep original content for vis.js
+                // Include schedule ID in content for accurate matching, hidden with zero-width space
+                content: `${scheduleName}\u200B${scheduleId}`,
                 className: groupClassName,
                 // Store priority and type info for later DOM manipulation
                 priorityLabel: priorityLabel,
@@ -833,13 +836,37 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                 visLabels.forEach((labelElement: any) => {
                     const htmlLabel = labelElement as HTMLElement;
 
+                    // Get the full label text including hidden schedule ID
+                    const fullLabelText = htmlLabel.textContent || '';
+
+                    // Extract schedule ID (after zero-width space)
+                    const parts = fullLabelText.split('\u200B');
+                    const scheduleId = parts.length > 1 ? parts[1] : null;
+                    const scheduleName = parts[0];
+
+                    // Always clean up the display first: remove the hidden schedule ID from view
+                    const labelContent = htmlLabel.querySelector('.vis-label-content') || htmlLabel;
+
+                    // Find and update all text nodes that contain the schedule ID
+                    const updateTextNodes = (node: Node) => {
+                        if (node.nodeType === Node.TEXT_NODE && node.textContent) {
+                            // If this text node contains the hidden ID, replace it with just the name
+                            if (node.textContent.includes('\u200B')) {
+                                node.textContent = scheduleName;
+                            }
+                        } else {
+                            // Recursively check child nodes
+                            node.childNodes.forEach(updateTextNodes);
+                        }
+                    };
+
+                    updateTextNodes(labelContent);
+
                     // Check if we already added the labels
                     if (!htmlLabel.querySelector('.priority-badge') && !htmlLabel.querySelector('.type-badge')) {
-                        // Get the label text to find the corresponding group
-                        const labelText = htmlLabel.textContent || '';
+                        // Find the group data by schedule ID (this ensures correct matching even with duplicate names)
+                        const groupData = scheduleId ? timelineData.groups.find((g) => g.id === scheduleId) : null;
 
-                        // Find the corresponding group data by matching the content
-                        const groupData = timelineData.groups.find((g) => g.content === labelText);
                         if (groupData && (groupData as any).priorityLabel && (groupData as any).priorityClass) {
                             // Create type badge element first (appears before priority badge)
                             if ((groupData as any).typeLabel && (groupData as any).typeClass) {

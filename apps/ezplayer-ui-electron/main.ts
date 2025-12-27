@@ -6,8 +6,10 @@ import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
+import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
+import { setUpServer } from './mainsrc/server.js';
 import type { Event as ElectronEvent } from 'electron';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
@@ -193,6 +195,10 @@ app.whenReady().then(async () => {
         return;
     }
 
+    const portInfo = getWebPort();
+    const port = portInfo.port;
+    const portSource = portInfo.source;
+
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {
             name: 'main',
@@ -211,7 +217,20 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
+
     await registerContentHandlers(mainWindow, audioWindow, playWorker);
+
+    // Start web server / WebSocket
+    try {
+        await setUpServer({
+            port,
+            portSource,
+            playWorker,
+            mainWindow,
+        });
+    } catch (e) {
+        console.error(e);
+    }
 });
 
 app.on('before-quit', async () => {
