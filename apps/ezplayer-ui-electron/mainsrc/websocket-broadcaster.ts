@@ -11,7 +11,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 function safeParseClientMsg(raw: WebSocket.RawData): PlayerClientWebSocketMessage | null {
     try {
         const obj = JSON.parse(raw.toString());
-        if (!obj || typeof obj.t !== 'string') return null;
+        if (!obj || typeof obj.type !== 'string') return null;
         return obj as PlayerClientWebSocketMessage;
     } catch {
         return null;

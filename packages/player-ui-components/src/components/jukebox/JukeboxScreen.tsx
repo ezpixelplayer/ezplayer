@@ -49,6 +49,24 @@ export interface JukeboxAreaProps {
     onInteract?: () => void;
 }
 
+export function uuidv4(): string {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+
+    // RFC 4122 v4 fallback
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    return [...bytes].map((b, i) =>
+        ([4, 6, 8, 10].includes(i) ? "-" : "") +
+        b.toString(16).padStart(2, "0")
+    ).join("");
+}
+
 // New component to handle thumbnail display with fallback
 function SongThumbnail({
     id,
@@ -224,7 +242,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                 songId: song.id,
                 immediate: true,
                 priority: 5,
-                requestId: crypto.randomUUID(),
+                requestId: uuidv4(),
             }),
         ).unwrap();
     };
@@ -630,7 +648,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 songId,
                 immediate: true,
                 priority: 5,
-                requestId: crypto.randomUUID(),
+                requestId: uuidv4(),
             }),
         ).unwrap();
     };
@@ -642,7 +660,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 songId,
                 immediate: false,
                 priority: 5,
-                requestId: crypto.randomUUID(),
+                requestId: uuidv4(),
             }),
         ).unwrap();
     };
