@@ -29,6 +29,7 @@ import type {
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
+    FullPlayerState,
     PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -61,7 +62,7 @@ export let curUser: EndUser | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
 export function getSequenceThumbnail(id: string) {
-    const seq = curSequences?.find((s)=>s.id === id);
+    const seq = curSequences?.find((s) => s.id === id);
     if (seq?.files?.thumb) {
         if (path.isAbsolute(seq.files.thumb)) {
             return seq.files.thumb;
@@ -108,7 +109,7 @@ export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<Pl
     curPlaylists = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
     updateWindow?.webContents?.send('update:playlist', filtered);
-    wsBroadcaster.broadcast('update:playlist', filtered);
+    wsBroadcaster.set('playlists', filtered);
     scheduleUpdated();
     return filtered;
 }
@@ -125,7 +126,7 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
     curSchedule = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
     updateWindow?.webContents?.send('update:schedule', filtered);
-    wsBroadcaster.broadcast('update:schedule', filtered);
+    wsBroadcaster.set('schedule', filtered);
     scheduleUpdated();
     return filtered;
 }
@@ -176,22 +177,24 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
     // Broadcast via WebSocket (for React web app)
-    wsBroadcaster.broadcast('update:showFolder', showFolder);
-    wsBroadcaster.broadcast(
-        'update:sequences',
+    wsBroadcaster.set('showFolder', showFolder);
+    wsBroadcaster.set(
+        'sequences',
         curSequences.filter((s) => !s.deleted),
     );
-    wsBroadcaster.broadcast(
-        'update:playlist',
+    wsBroadcaster.set(
+        'playlists',
         curPlaylists.filter((s) => !s.deleted),
     );
-    wsBroadcaster.broadcast(
-        'update:schedule',
+    wsBroadcaster.set(
+        'schedule',
         curSchedule.filter((s) => !s.deleted),
     );
-    if (curUser) wsBroadcaster.broadcast('update:user', curUser);
-    if (curShow) wsBroadcaster.broadcast('update:show', curShow);
-    wsBroadcaster.broadcast('update:combinedstatus', curStatus);
+    if (curUser) wsBroadcaster.set('user', curUser);
+    if (curShow) wsBroadcaster.set('show', curShow);
+    wsBroadcaster.set('cStatus', curStatus.content);
+    wsBroadcaster.set('nStatus', curStatus.controller);
+    wsBroadcaster.set('pStatus', curStatus.player);
 
     const settings = getSettingsCache();
     if (settings) {
@@ -259,7 +262,7 @@ export async function registerContentHandlers(
         curSequences = updList;
         const filtered = updList.filter((r) => r.deleted !== true);
         updateWindow?.webContents?.send('update:sequences', filtered);
-        wsBroadcaster.broadcast('update:sequences', filtered);
+        wsBroadcaster.set('sequences', filtered);
         scheduleUpdated();
         return filtered;
     });
@@ -293,7 +296,7 @@ export async function registerContentHandlers(
             if (showFolder) await saveShowProfileAPI(showFolder, data);
             curShow = data;
             updateWindow?.webContents?.send('update:show', curShow);
-            wsBroadcaster.broadcast('update:show', curShow);
+            wsBroadcaster.set('show', curShow);
             return Promise.resolve(curShow!);
         },
     );
@@ -306,7 +309,7 @@ export async function registerContentHandlers(
         if (showFolder) await saveUserProfileAPI(showFolder, ndata);
         curUser = ndata;
         updateWindow?.webContents?.send('update:user', curUser);
-        wsBroadcaster.broadcast('update:user', curUser);
+        wsBroadcaster.set('user', curUser);
         return ndata;
     });
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
@@ -332,7 +335,7 @@ export async function registerContentHandlers(
         } as PlayerCommand);
         // Broadcast to all clients (Electron renderer and web app)
         updateWindow?.webContents?.send('update:playbacksettings', settings);
-        wsBroadcaster.broadcast('update:playbacksettings', settings);
+        wsBroadcaster.set('playbackSettings', settings);
         return true;
     });
 
@@ -344,15 +347,13 @@ export async function registerContentHandlers(
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                // TODO MOC - maybe not now :-)
-                wsBroadcaster.broadcast('audio:chunk', msg.chunk);
                 //mainWindow?.webContents.send('audio:chunk', msg.chunk);
                 audioWindow?.webContents.send('audio:chunk', msg.chunk, [msg.chunk.buffer]);
                 break;
             }
             case 'stats': {
                 mainWindow?.webContents.send('playback:stats', msg.stats);
-                wsBroadcaster.broadcast('playback:stats', msg.stats);
+                wsBroadcaster.set('playbackStatistics', msg.stats);
                 break;
             }
             case 'cstatus': {
@@ -363,7 +364,7 @@ export async function registerContentHandlers(
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:cstatus', msg.status);
-                wsBroadcaster.broadcast('playback:cstatus', msg.status);
+                wsBroadcaster.set('cStatus', msg.status);
                 break;
             }
             case 'nstatus': {
@@ -374,7 +375,7 @@ export async function registerContentHandlers(
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:nstatus', msg.status);
-                wsBroadcaster.broadcast('playback:nstatus', msg.status);
+                wsBroadcaster.set('nStatus', msg.status);
                 break;
             }
             case 'pstatus': {
@@ -385,7 +386,7 @@ export async function registerContentHandlers(
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:pstatus', msg.status);
-                wsBroadcaster.broadcast('playback:pstatus', msg.status);
+                wsBroadcaster.set('pStatus', msg.status);
                 break;
             }
             case 'rpc': {
@@ -406,14 +407,16 @@ export async function registerContentHandlers(
  * Get current show data for sending to newly connected WebSocket clients
  * This allows the React web app to receive all existing data on first connection
  */
-export function getCurrentShowData() {
+export function getCurrentShowData(): FullPlayerState {
     return {
-        showFolder: getCurrentShowFolder(),
+        showFolder: getCurrentShowFolder() || undefined,
         sequences: curSequences.filter((seq) => !seq.deleted),
         playlists: curPlaylists.filter((pl) => !pl.deleted),
         schedule: curSchedule.filter((item) => !item.deleted),
         user: curUser,
         show: curShow,
-        status: curStatus,
+        pStatus: curStatus.player,
+        cStatus: curStatus.content,
+        nStatus: curStatus.controller,
     };
 }

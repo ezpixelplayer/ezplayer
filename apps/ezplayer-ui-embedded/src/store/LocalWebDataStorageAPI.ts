@@ -10,10 +10,7 @@ import type {
     JSONEditState,
     EZPlayerCommand,
     PlaybackSettings,
-    PlaybackStatistics,
-    PlayerCStatusContent,
-    PlayerNStatusContent,
-    PlayerPStatusContent,
+    PlayerWebSocketMessage,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -27,7 +24,20 @@ import type {
     CloudFileUpload,
 } from '@ezplayer/player-ui-components';
 
-import { AppDispatch, authSliceActions, hydratePlaybackSettings, setCStatus, setEndUser, setNStatus, setPlaybackStatistics, setPlayerStatus, setPlaylists, setPStatus, setScheduledPlaylists, setSequenceData, setShowProfile } from '@ezplayer/player-ui-components';
+import {
+    AppDispatch,
+    authSliceActions,
+    hydratePlaybackSettings,
+    setCStatus,
+    setEndUser,
+    setNStatus,
+    setPlaybackStatistics,
+    setPlaylists,
+    setPStatus,
+    setScheduledPlaylists,
+    setSequenceData,
+    setShowProfile,
+} from '@ezplayer/player-ui-components';
 import { wsService } from '../services/websocket';
 
 /**
@@ -37,7 +47,7 @@ import { wsService } from '../services/websocket';
 export class LocalWebDataStorageAPI implements DataStorageAPI {
     baseUrl: string;
     dispatch?: AppDispatch;
-    onDisconnect?: ()=>void;
+    onDisconnect?: () => void;
 
     constructor(baseUrl?: string) {
         // Default to localhost with common ports
@@ -55,109 +65,57 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
     async connect(dispatch: AppDispatch) {
         this.dispatch = dispatch;
 
-        const bootstrapInitialData = async () => {
-            const baseUrl = wsService.getHttpBaseUrl();
-            if (!baseUrl) {
-                return;
-            }
-            try {
-                const response = await fetch(`${baseUrl}/api/current-show`);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch current show data (${response.status})`);
-                }
-                const payload = await response.json();
-                if (payload?.showFolder) {
-                    dispatch(authSliceActions.setShowDirectory(payload.showFolder));
-                }
-                if (Array.isArray(payload?.sequences)) {
-                    dispatch(setSequenceData(payload.sequences));
-                }
-                if (Array.isArray(payload?.playlists)) {
-                    dispatch(setPlaylists(payload.playlists));
-                }
-                if (Array.isArray(payload?.schedule)) {
-                    dispatch(setScheduledPlaylists(payload.schedule));
-                }
-                if (payload?.show) {
-                    dispatch(setShowProfile(payload.show));
-                }
-                if (payload?.user) {
-                    dispatch(setEndUser(payload.user));
-                }
-                if (payload?.status) {
-                    dispatch(setPlayerStatus(payload.status));
-                }
-            } catch (error) {
-                console.warn('Unable to bootstrap show data from Electron API:', error);
-            }
-        };
-
         // Subscribe to all WebSocket message types before connecting so we don't miss initial payloads
-        const unsubscribeShowFolder = wsService.subscribe('update:showFolder', (data: string) => {
-            dispatch(authSliceActions.setShowDirectory(data));
+        const unsubscribeSnapshot = wsService.subscribe('snapshot', (msg: PlayerWebSocketMessage) => {
+            if (msg.type !== 'snapshot') return;
+            const data = msg.data;
+            if (data.showFolder !== undefined) {
+                dispatch(authSliceActions.setShowDirectory(data.showFolder));
+            }
+            if (data.sequences !== undefined) {
+                dispatch(setSequenceData(data.sequences));
+            }
+            if (data.playlists !== undefined) {
+                dispatch(setPlaylists(data.playlists));
+            }
+            if (data.schedule !== undefined) {
+                dispatch(setScheduledPlaylists(data.schedule));
+            }
+            if (data.show !== undefined) {
+                dispatch(setShowProfile(data.show));
+            }
+            if (data.user !== undefined) {
+                dispatch(setEndUser(data.user));
+            }
+            if (data.playbackSettings !== undefined) {
+                dispatch(hydratePlaybackSettings(data.playbackSettings));
+            }
+            if (data.cStatus !== undefined) {
+                dispatch(setCStatus(data.cStatus));
+            }
+            if (data.nStatus !== undefined) {
+                dispatch(setNStatus(data.nStatus));
+            }
+            if (data.pStatus !== undefined) {
+                dispatch(setPStatus(data.pStatus));
+            }
+            if (data.playbackStatistics !== undefined) {
+                dispatch(setPlaybackStatistics(data.playbackStatistics));
+            }
         });
 
-        const unsubscribeSequences = wsService.subscribe('update:sequences', (data: SequenceRecord[]) => {
-            dispatch(setSequenceData(data));
+        const unsubscribePing = wsService.subscribe('ping', (msg)=>{
+            if (msg.type === 'ping') {
+                wsService.send({type: 'pong', now: Date.now()});
+            }
         });
 
-        const unsubscribePlaylists = wsService.subscribe('update:playlist', (data: PlaylistRecord[]) => {
-            dispatch(setPlaylists(data));
-        });
-
-        const unsubscribeSchedule = wsService.subscribe('update:schedule', (data: ScheduledPlaylist[]) => {
-            dispatch(setScheduledPlaylists(data));
-        });
-
-        const unsubscribeShow = wsService.subscribe('update:show', (data: EndUserShowSettings) => {
-            dispatch(setShowProfile(data));
-        });
-
-        const unsubscribeUser = wsService.subscribe('update:user', (data: EndUser) => {
-            dispatch(setEndUser(data));
-        });
-
-        const unsubscribeStatus = wsService.subscribe('update:combinedstatus', (data: CombinedPlayerStatus) => {
-            dispatch(setPlayerStatus(data));
-        });
-
-        const unsubscribeStats = wsService.subscribe('playback:stats', (data: PlaybackStatistics) => {
-            dispatch(setPlaybackStatistics(data));
-        });
-
-        const unsubscribeCStatus = wsService.subscribe('playback:cstatus', (data: PlayerCStatusContent) => {
-            dispatch(setCStatus(data));
-        });
-
-        const unsubscribeNStatus = wsService.subscribe('playback:nstatus', (data: PlayerNStatusContent) => {
-            dispatch(setNStatus(data));
-        });
-
-        const unsubscribePStatus = wsService.subscribe('playback:pstatus', (data: PlayerPStatusContent) => {
-            dispatch(setPStatus(data));
-        });
-
-        const unsubscribePlaybackSettings = wsService.subscribe('update:playbacksettings', (data: PlaybackSettings) => {
-            dispatch(hydratePlaybackSettings(data));
-        });
-
-        // Connect after handlers are registered to avoid dropping initial messages; bootstrap after that
+        // Connect will send the initial data
         wsService.connect();
-        bootstrapInitialData();
 
-        this.onDisconnect = () => {
-            unsubscribeShowFolder();
-            unsubscribeSequences();
-            unsubscribePlaylists();
-            unsubscribeSchedule();
-            unsubscribeShow();
-            unsubscribeUser();
-            unsubscribeStatus();
-            unsubscribeStats();
-            unsubscribeCStatus();
-            unsubscribeNStatus();
-            unsubscribePStatus();
-            unsubscribePlaybackSettings();
+        this.onDisconnect = async () => {
+            unsubscribeSnapshot();
+            unsubscribePing();
             wsService.disconnect();
         };
     }

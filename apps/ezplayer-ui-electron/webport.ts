@@ -38,8 +38,7 @@ function isValidPort(port: number): boolean {
  * 4. Default port (3000)
  * @returns Object with port number and source information
  */
-export function getWebPort(): { port: number; source: string } 
-{
+export function getWebPort(): { port: number; source: string } {
     // 1. Check CLI arguments first
     const cliPort = parseCliForWebPort(process.argv);
     if (cliPort !== undefined && isValidPort(cliPort)) {

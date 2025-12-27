@@ -10,11 +10,17 @@ import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'url';
 import { wsBroadcaster } from './websocket-broadcaster.js';
 import { getCurrentShowFolder } from '../showfolder.js';
-import { getCurrentShowData, getSequenceThumbnail, updatePlaylistsHandler, updateScheduleHandler } from './ipcezplayer.js';
+import {
+    getCurrentShowData,
+    getSequenceThumbnail,
+    updatePlaylistsHandler,
+    updateScheduleHandler,
+} from './ipcezplayer.js';
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import Router from '@koa/router';
 import { send } from '@koa/send';
 import serve from 'koa-static';
+import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 
 const ASSET_MIME_TYPES: Record<string, string> = {
     '.png': 'image/png',
@@ -26,8 +32,6 @@ const ASSET_MIME_TYPES: Record<string, string> = {
     '.ico': 'image/x-icon',
     '.bmp': 'image/bmp',
 };
-
-const router = new Router();
 
 function inferMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
@@ -41,16 +45,28 @@ export interface ServerConfig {
     mainWindow: BrowserWindow | null;
 }
 
+async function exists(path: string): Promise<boolean> {
+    try {
+        await fsp.access(path, fs.constants.F_OK);
+        return true;
+    } catch {
+        return false;
+    }
+}
 /**
  * Sets up and starts the Koa web server with WebSocket support
  * @param config Server configuration
  * @returns The HTTP server instance
  */
-export function setupServer(config: ServerConfig): Server {
+export async function setUpServer(config: ServerConfig): Promise<Server> {
     const { port, portSource, playWorker, mainWindow } = config;
 
-    const webApp = new Koa();
     console.log(`🌐 Starting Koa web server on port ${port} (source: ${portSource})`);
+    const router = new Router();
+    const webApp = new Koa();
+
+    // Add body parser middleware for JSON requests
+    webApp.use(bodyParser());
 
     // ----------------------------------------------
     // ⭐ API: GET /api/getimage/:sequenceId - serves images by sequence ID
@@ -82,11 +98,8 @@ export function setupServer(config: ServerConfig): Server {
 
         // Set appropriate MIME type
         ctx.type = inferMimeType(seqfile);
-        await send(ctx, path.basename(seqfile), {root: path.dirname(seqfile)});
+        await send(ctx, path.basename(seqfile), { root: path.dirname(seqfile) });
     });
-
-    // Add body parser middleware for JSON requests
-    webApp.use(bodyParser());
 
     // ----------------------------------------------
     // API: GET /api/hello
@@ -181,10 +194,9 @@ export function setupServer(config: ServerConfig): Server {
                 ctx.body = { error: 'Invalid playback settings format. Expected object.' };
                 return;
             }
-            const { applySettingsFromRenderer } = await import('./data/SettingsStorage.js');
             const showFolder = getCurrentShowFolder();
             if (showFolder) {
-                await applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+                applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
             }
             if (playWorker) {
                 playWorker.postMessage({
@@ -193,7 +205,7 @@ export function setupServer(config: ServerConfig): Server {
                 });
             }
             mainWindow?.webContents?.send('update:playbacksettings', settings);
-            wsBroadcaster.broadcast('update:playbacksettings', settings);
+            wsBroadcaster.set('playbackSettings', settings);
 
             ctx.body = { success: true };
         } catch (error) {
@@ -238,7 +250,7 @@ export function setupServer(config: ServerConfig): Server {
 
         staticPath = '';
         for (const possiblePath of possiblePaths) {
-            if (fs.existsSync(possiblePath)) {
+            if (await exists(possiblePath)) {
                 staticPath = possiblePath;
                 break;
             }
@@ -254,65 +266,6 @@ export function setupServer(config: ServerConfig): Server {
 
     // Create HTTP server
     const httpServer = createServer(webApp.callback());
-
-    // Create WebSocket server
-    const wss = new WebSocketServer({
-        server: httpServer,
-        path: '/ws',
-    });
-
-    // Initialize WebSocket broadcaster with the WebSocket server
-    wsBroadcaster.initialize(wss);
-
-    // Handle WebSocket connections
-    wss.on('connection', (ws) => {
-        wsBroadcaster.addClient(ws);
-        sendInitialDataToClient(ws);
-
-        ws.on('close', () => {
-            wsBroadcaster.removeClient(ws);
-        });
-
-        ws.on('error', (error: Error) => {
-            console.error('❌ WebSocket error:', error);
-            wsBroadcaster.removeClient(ws);
-        });
-    });
-
-    function sendInitialDataToClient(ws: WebSocket) {
-        const snapshot = getCurrentShowData();
-
-        const safeSend = (type: string, data: unknown) => {
-            if (data === undefined) {
-                return;
-            }
-            try {
-                ws.send(
-                    JSON.stringify({
-                        type,
-                        data,
-                        timestamp: Date.now(),
-                    }),
-                );
-            } catch (error) {
-                console.warn(`Failed to send initial "${type}" payload to WebSocket client:`, error);
-            }
-        };
-
-        if (snapshot.showFolder) {
-            safeSend('update:showFolder', snapshot.showFolder);
-        }
-        safeSend('update:sequences', snapshot.sequences ?? []);
-        safeSend('update:playlist', snapshot.playlists ?? []);
-        safeSend('update:schedule', snapshot.schedule ?? []);
-        if (snapshot.user) {
-            safeSend('update:user', snapshot.user);
-        }
-        if (snapshot.show) {
-            safeSend('update:show', snapshot.show);
-        }
-        safeSend('update:combinedstatus', snapshot.status ?? {});
-    }
 
     // Static file serving middleware
     webApp.use(
@@ -335,7 +288,7 @@ export function setupServer(config: ServerConfig): Server {
             return;
         }
 
-        if (fs.existsSync(indexPath)) {
+        if (await exists(indexPath)) {
             ctx.type = 'text/html';
             ctx.body = fs.readFileSync(indexPath, 'utf-8');
         } else {
@@ -349,6 +302,15 @@ export function setupServer(config: ServerConfig): Server {
         console.log(`🌐 Koa server running at http://localhost:${port}`);
         console.log(`🔌 WebSocket server available at ws://localhost:${port}/ws`);
     });
+
+    // Create WebSocket server
+    const wss = new WebSocketServer({
+        server: httpServer,
+        path: '/ws',
+    });
+
+    // Initialize WebSocket broadcaster with the WebSocket server
+    wsBroadcaster.attach(wss);
 
     return httpServer;
 }

@@ -424,6 +424,49 @@ export interface PlaybackSettings {
     volumeControl: VolumeControlState;
 }
 
+/// Player full state & websocket sync
+export type FullPlayerState = {
+    showFolder?: string;
+    sequences?: SequenceRecord[];
+    playlists?: PlaylistRecord[];
+    schedule?: ScheduledPlaylist[];
+    user?: EndUser;
+    show?: EndUserShowSettings;
+    cStatus?: PlayerCStatusContent;
+    pStatus?: PlayerPStatusContent;
+    nStatus?: PlayerNStatusContent;
+    playbackSettings?: PlaybackSettings;
+    playbackStatistics?: PlaybackStatistics;
+    versions?: EZPlayerVersions;
+};
+
+export type PlayerWebSocketSnapshot = {
+    type: 'snapshot';
+    v: { [K in keyof FullPlayerState]: number };
+    data: Partial<FullPlayerState>;
+};
+
+export type PlayerWebSocketPing = {
+    type: 'ping';
+    now: number;
+};
+
+export type PlayerWebSocketKick = {
+    type: 'kick';
+    reason: string;
+};
+
+export type PlayerWebSocketMessage =
+    | PlayerWebSocketSnapshot
+    | PlayerWebSocketPing
+    | PlayerWebSocketKick;
+
+export type PlayerClientWebSocketMessage =
+    | { type: 'pong'; now: number }
+    | { type: 'subscribe'; keys: (keyof FullPlayerState)[] };
+
+/// Layout Edit
+
 export interface JSONEditChoice {
     title: string;
     value?: string;

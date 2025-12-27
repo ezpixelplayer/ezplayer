@@ -3,13 +3,9 @@
  * Connects to Electron's WebSocket server and manages subscriptions
  */
 
-export interface WebSocketMessage {
-    type: string;
-    data: any;
-    timestamp?: number;
-}
+import { PlayerClientWebSocketMessage, type PlayerWebSocketMessage } from "@ezplayer/ezplayer-core";
 
-export type MessageHandler<T = any> = (data: T) => void;
+export type MessageHandler = (msg: PlayerWebSocketMessage) => void;
 type ConnectionHandler = () => void;
 type ErrorHandler = (error: Event) => void;
 
@@ -20,28 +16,22 @@ interface WebSocketConfig {
     candidatePorts: number[];
 }
 
-function toProtocol(value?: string): string {
-    if (!value) {
-        return window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    }
-    const trimmed = value.trim();
+function toProtocol(specified?: string): string {
+    const trimmed = specified?.trim();
     if (!trimmed) {
         return window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     }
     return trimmed.endsWith(':') ? trimmed : `${trimmed}:`;
 }
 
-function toHost(value?: string): string {
-    if (value && value.trim()) {
-        return value.trim();
+function toHost(specified?: string): string {
+    if (specified?.trim()) {
+        return specified.trim();
     }
     return window.location.hostname || 'localhost';
 }
 
 function toPort(value?: string | number | null | undefined): number | undefined {
-    if (typeof value === 'number') {
-        return Number.isFinite(value) ? value : undefined;
-    }
     if (value === undefined || value === null) {
         return undefined;
     }
@@ -177,7 +167,7 @@ class WebSocketService {
 
             this.ws.onmessage = (event) => {
                 try {
-                    const message: WebSocketMessage = JSON.parse(event.data);
+                    const message: PlayerWebSocketMessage = JSON.parse(event.data);
                     this.handleMessage(message);
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
@@ -292,12 +282,12 @@ class WebSocketService {
     /**
      * Handle incoming message
      */
-    private handleMessage(message: WebSocketMessage): void {
+    private handleMessage(message: PlayerWebSocketMessage): void {
         const handlers = this.messageHandlers.get(message.type);
         if (handlers) {
             handlers.forEach((handler) => {
                 try {
-                    handler(message.data);
+                    handler(message);
                 } catch (error) {
                     console.error(`Error in handler for "${message.type}":`, error);
                 }
@@ -332,6 +322,17 @@ class WebSocketService {
             this.connect();
         }, delay);
     }
+
+    send(msg: PlayerClientWebSocketMessage) {
+        if (!this.getConnectionStatus()) return;
+
+        try {
+            this.ws?.send(JSON.stringify(msg));
+        } catch {
+            // Reconnect?
+        }
+    }
+
 
     /**
      * Get connection status

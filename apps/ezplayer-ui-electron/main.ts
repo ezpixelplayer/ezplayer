@@ -9,7 +9,7 @@ import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
-import { setupServer } from './mainsrc/server.js';
+import { setUpServer } from './mainsrc/server.js';
 import type { Event as ElectronEvent } from 'electron';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
@@ -222,7 +222,7 @@ app.whenReady().then(async () => {
 
     // Start web server / WebSocket
     try {
-        setupServer({
+        await setUpServer({
             port,
             portSource,
             playWorker,

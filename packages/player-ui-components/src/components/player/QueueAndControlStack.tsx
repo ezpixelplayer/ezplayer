@@ -9,10 +9,9 @@ import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { PlayArrow, Pause, Stop, Delete, VolumeUp, StopCircle } from '@mui/icons-material';
 import { ControlButton } from './ControlButton';
 
-interface QueueAndControlStackProps {
-}
+interface QueueAndControlStackProps {}
 
-export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({ }) => {
+export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) => {
     const pstat = useSelector((state: RootState) => state.playerStatus);
     const dispatch = useDispatch<AppDispatch>();
 

@@ -16,7 +16,7 @@ interface PlayerScreenProps {
     statusArea: React.ReactNode[];
 }
 
-const StatusCards = ({ }: {}) => {
+const StatusCards = ({}: {}) => {
     const playerStatus = useSelector((state: RootState) => state.playerStatus);
 
     return (
@@ -78,8 +78,8 @@ const StatusCards = ({ }: {}) => {
                                                         stats.online === stats.total
                                                             ? 'success'
                                                             : stats.offline > 0
-                                                                ? 'error'
-                                                                : 'warning'
+                                                              ? 'error'
+                                                              : 'warning'
                                                     }
                                                     size="small"
                                                 />
@@ -155,7 +155,7 @@ const StatusCards = ({ }: {}) => {
     );
 };
 
-const TimelineView = ({ }: {}) => {
+const TimelineView = ({}: {}) => {
     // Get data from Redux store
     const sequences = useSelector((state: RootState) => state.sequences.sequenceData || []);
     const playlists = useSelector((state: RootState) => state.playlists.playlists || []);
@@ -240,7 +240,7 @@ const TimelineView = ({ }: {}) => {
             }}
         >
             {error && (
-                <Alert severity="error" sx={{ mb: 2 }} onClose={() => { }}>
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => {}}>
                     {error}
                 </Alert>
             )}

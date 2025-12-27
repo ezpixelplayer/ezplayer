@@ -30,6 +30,12 @@ export type {
     PlaybackSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    PlayerWebSocketSnapshot,
+    PlayerWebSocketPing,
+    PlayerWebSocketKick,
+    PlayerWebSocketMessage,
+    PlayerClientWebSocketMessage,
+    FullPlayerState,
 } from './types/DataTypes';
 
 export type {
