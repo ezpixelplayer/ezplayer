@@ -27,14 +27,16 @@ const StatusCards = ({}: {}) => {
                     {playerStatus.playerStatus?.player ? (
                         <NowPlayingCard player={playerStatus.playerStatus.player} compact={true} />
                     ) : playerStatus.playerStatus?.show ? (
-                        <Box sx={{ p: 2, border: '1px solid #ccc', borderRadius: 2, bgcolor: 'background.paper' }}>
-                            <Typography variant="body2" color="text.secondary">
-                                Show: {playerStatus.playerStatus.show.show_name}
-                            </Typography>
-                            <Typography variant="caption" display="block">
-                                Player data not available
-                            </Typography>
-                        </Box>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography variant="body2" color="text.secondary">
+                                    Show: {playerStatus.playerStatus.show.show_name}
+                                </Typography>
+                                <Typography variant="caption" display="block">
+                                    Player data not available
+                                </Typography>
+                            </CardContent>
+                        </Card>
                     ) : null}
                 </Grid>
 
@@ -283,14 +285,6 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
 
             {/* Playback Queue Card */}
             <QueueAndControlStack />
-
-            {/* Controls - Sticks to the bottom 
-            <Box sx={{ 
-                padding: 2, 
-            }}>
-                <FullPlayerControlStack />
-            </Box>
-            */}
         </Box>
     );
 };

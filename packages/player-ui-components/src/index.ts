@@ -12,7 +12,6 @@ export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
 export { ControlButton } from './components/player/ControlButton';
-export { FullPlayerControlStack } from './components/player/FullPlayerControlStack';
 export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
@@ -21,7 +20,16 @@ export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackS
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
-export type { DataStorageAPI } from './store/api/DataStorageAPI';
+export type {
+    DataStorageAPI,
+    UserLoginBody,
+    UserRegisterBody,
+    CloudLayoutFileUpload,
+    CloudFileUploadResponse,
+    DownloadFileResponse,
+    CloudFileDownloadResponse,
+    CloudFileUpload,
+} from './store/api/DataStorageAPI';
 export { createAppStore } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';
 export { InitialDataProvider } from './store/InitialDataProvider';

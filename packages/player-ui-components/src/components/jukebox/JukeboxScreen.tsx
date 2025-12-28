@@ -8,10 +8,9 @@ import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
-import { PlaylistDropdown, Playlist } from './PlaylistDropdown';
+import { PlaylistDropdown } from './PlaylistDropdown';
 import { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
 import { getImageUrl } from '../../util/imageUtils';
-import { QueueCard } from '../status/QueueCard';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
 
 interface Song {
@@ -21,7 +20,7 @@ interface Song {
     vendor: string;
     urlPart: string;
     id: string;
-    artworkUrl?: string;
+    artwork?: string;
     localImagePath?: string;
     playlistIds?: string[];
 }
@@ -50,14 +49,34 @@ export interface JukeboxAreaProps {
     onInteract?: () => void;
 }
 
+export function uuidv4(): string {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+
+    // RFC 4122 v4 fallback
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    return [...bytes].map((b, i) =>
+        ([4, 6, 8, 10].includes(i) ? "-" : "") +
+        b.toString(16).padStart(2, "0")
+    ).join("");
+}
+
 // New component to handle thumbnail display with fallback
 function SongThumbnail({
+    id,
     artwork,
     localImagePath,
     isMusical,
     size,
     theme,
 }: {
+    id?: string;
     artwork?: string;
     localImagePath?: string;
     isMusical: boolean;
@@ -68,7 +87,7 @@ function SongThumbnail({
     const [imageLoading, setImageLoading] = useState(true);
 
     // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(artwork, localImagePath), [artwork, localImagePath]);
+    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [id, artwork, localImagePath]);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `thumb-${imageUrl}`, [imageUrl]);
@@ -223,7 +242,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                 songId: song.id,
                 immediate: true,
                 priority: 5,
-                requestId: crypto.randomUUID(),
+                requestId: uuidv4(),
             }),
         ).unwrap();
     };
@@ -271,7 +290,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                 }}
             >
                 <SongThumbnail
-                    artwork={song?.artworkUrl}
+                    artwork={song?.artwork}
                     localImagePath={song?.localImagePath}
                     isMusical={song?.isMusical || false}
                     size={getIconSize()}
@@ -570,7 +589,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                     artist: song.work?.artist || '',
                     urlPart: song.files?.fseq || '',
                     id: song.id,
-                    artworkUrl: song.work?.artwork,
+                    artwork: song.work?.artwork,
                     localImagePath: song.files?.thumb,
                     vendor: song.sequence?.vendor || '',
                 }),
@@ -629,7 +648,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 songId,
                 immediate: true,
                 priority: 5,
-                requestId: crypto.randomUUID(),
+                requestId: uuidv4(),
             }),
         ).unwrap();
     };
@@ -641,7 +660,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 songId,
                 immediate: false,
                 priority: 5,
-                requestId: crypto.randomUUID(),
+                requestId: uuidv4(),
             }),
         ).unwrap();
     };
@@ -819,7 +838,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                 id={song.id}
                                 title={song.title}
                                 artist={song.artist}
-                                artwork={song.artworkUrl}
+                                artwork={song.artwork}
                                 localImagePath={song.localImagePath}
                                 buttons={songButtons}
                             />

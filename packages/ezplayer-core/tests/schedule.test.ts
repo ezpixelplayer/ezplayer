@@ -1349,9 +1349,9 @@ const krstatsched: ScheduledPlaylist = {
     hardCutIn: false,
     endPolicy: 'hardcut',
     duration: 0, // ???
-}
+};
 
-const krshowsched:  ScheduledPlaylist = {
+const krshowsched: ScheduledPlaylist = {
     id: 'krschedshow',
     title: 'Main Show Schedule',
     playlistId: krshow.id,
@@ -1365,13 +1365,13 @@ const krshowsched:  ScheduledPlaylist = {
     preferHardCutIn: false,
     endPolicy: 'seqboundlate',
     duration: 0, // ???
-}
+};
 
 function executeByFrame(plr: PlayerRunState, endTime: number) {
     let tft = plr.currentTime;
-    console.log(' RUNNING ------------------------- ')
-    const sss: {id: string, d: number} [] = [];
-    const ses: {id: string, d: number} [] = [];
+    console.log(' RUNNING ------------------------- ');
+    const sss: { id: string; d: number }[] = [];
+    const ses: { id: string; d: number }[] = [];
     while (tft < endTime) {
         // Really want to run until time or something interesting
         while (true) {
@@ -1380,11 +1380,11 @@ function executeByFrame(plr: PlayerRunState, endTime: number) {
             let foundTime = plog.length === 0;
             for (const l of plog) {
                 if (l.eventType === 'Sequence Ended') {
-                    ses.push({id: l.sequenceId!, d: tft});
+                    ses.push({ id: l.sequenceId!, d: tft });
                     console.log(`Seq Ended: ${l.eventType} - ${l.eventTime} - ${l.sequenceId}`);
                 } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                     console.log(`Seq Started: ${l.eventType} - ${l.eventTime} - ${l.sequenceId}`);
-                    sss.push({id: l.sequenceId!, d: l.eventTime});
+                    sss.push({ id: l.sequenceId!, d: l.eventTime });
                     tft = plr.currentTime;
                     foundTime = true;
                     break;
@@ -1394,7 +1394,7 @@ function executeByFrame(plr: PlayerRunState, endTime: number) {
         }
         tft += 25;
     }
-    return {sss, ses};
+    return { sss, ses };
 }
 
 describe('calcschedule', () => {
@@ -1410,27 +1410,27 @@ describe('calcschedule', () => {
         const logs = plr.readOutScheduleUntil(bt + 24 * 3600 * 1000, 100);
         //console.log(toTextLog(logs));
 
-        const scheds = logs.filter((s)=>s.eventType.startsWith('Schedule'));
-        const pls = logs.filter((s)=>s.eventType.startsWith('Playlist'));
+        const scheds = logs.filter((s) => s.eventType.startsWith('Schedule'));
+        const pls = logs.filter((s) => s.eventType.startsWith('Playlist'));
 
-        expect (scheds.length).toBe(6);
-        expect (pls.length).toBe(4);
-        
+        expect(scheds.length).toBe(6);
+        expect(pls.length).toBe(4);
+
         // Static sched should start and end exactly on time
         expect(scheds[0].eventType).toBe('Schedule Started');
-        expect(scheds[0].eventTime).toBe(bt + 16 * 3600 * 1000 +  0 * 60 * 1000 + 0 * 1000);
+        expect(scheds[0].eventTime).toBe(bt + 16 * 3600 * 1000 + 0 * 60 * 1000 + 0 * 1000);
         expect(scheds[0].scheduleId).toBe(krstatsched.id);
         expect(scheds[1].eventType).toBe('Schedule Suspended');
-        expect(scheds[1].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 0 * 1000);
+        expect(scheds[1].eventTime).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + 0 * 1000);
         expect(scheds[1].scheduleId).toBe(krstatsched.id);
         expect(scheds[2].eventType).toBe('Schedule Started');
-        expect(scheds[2].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 0 * 1000);
+        expect(scheds[2].eventTime).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + 0 * 1000);
         expect(scheds[2].scheduleId).toBe(krshowsched.id);
         expect(scheds[3].eventType).toBe('Schedule Stopped');
-        expect(scheds[3].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 804 * 1000);
+        expect(scheds[3].eventTime).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + 804 * 1000);
         expect(scheds[3].scheduleId).toBe(krshowsched.id);
         expect(scheds[4].eventType).toBe('Schedule Resumed');
-        expect(scheds[4].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 804 * 1000);
+        expect(scheds[4].eventTime).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + 804 * 1000);
         expect(scheds[4].scheduleId).toBe(krstatsched.id);
         expect(scheds[5].eventType).toBe('Schedule Stopped');
         expect(scheds[5].eventTime).toBe(bt + 16 * 3600 * 1000 + 20 * 60 * 1000 + 0 * 1000);
@@ -1438,15 +1438,15 @@ describe('calcschedule', () => {
 
         // Static sched should start and end exactly on time
         expect(pls[0].eventType).toBe('Playlist Started');
-        expect(pls[0].eventTime).toBe(bt + 16 * 3600 * 1000 +  0 * 60 * 1000 + 0 * 1000);
+        expect(pls[0].eventTime).toBe(bt + 16 * 3600 * 1000 + 0 * 60 * 1000 + 0 * 1000);
         expect(pls[0].scheduleId).toBe(krstatsched.id);
         expect(pls[0].playlistId).toBe(krstatic.id);
         expect(pls[1].eventType).toBe('Playlist Started');
-        expect(pls[1].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 0 * 1000);
+        expect(pls[1].eventTime).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + 0 * 1000);
         expect(pls[1].scheduleId).toBe(krshowsched.id);
         expect(pls[2].playlistId).toBe(krshow.id);
         expect(pls[2].eventType).toBe('Playlist Ended');
-        expect(pls[2].eventTime).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + 804 * 1000);
+        expect(pls[2].eventTime).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + 804 * 1000);
         expect(pls[2].scheduleId).toBe(krshowsched.id);
         expect(pls[2].playlistId).toBe(krshow.id);
         expect(pls[3].eventType).toBe('Playlist Ended');
@@ -1455,7 +1455,7 @@ describe('calcschedule', () => {
         expect(pls[3].playlistId).toBe(krstatic.id);
     });
 
-    it('should run the same way it simulates', ()=> {
+    it('should run the same way it simulates', () => {
         const bdate = new Date(krshowsched.date);
         bdate.setHours(0, 0, 0);
         const bt = bdate.getTime();
@@ -1464,14 +1464,14 @@ describe('calcschedule', () => {
         plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
 
         const logs = executeByFrame(plr, bt + 24 * 3600 * 1000);
-        const mss = logs.sss.filter((s)=>s.id === krs1.id);
-        const mse = logs.ses.filter((s)=>s.id === krs1.id);
-        expect (mss.length).toBe(4);
-        expect (mse.length).toBe(4);
-        for (let i=0; i<4; i++) {
+        const mss = logs.sss.filter((s) => s.id === krs1.id);
+        const mse = logs.ses.filter((s) => s.id === krs1.id);
+        expect(mss.length).toBe(4);
+        expect(mse.length).toBe(4);
+        for (let i = 0; i < 4; i++) {
             console.log(`Iteration ${i}`);
-            expect(mss[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + i*201 * 1000);
-            expect(mse[i].d).toBe(bt + 16 * 3600 * 1000 +  2 * 60 * 1000 + (i+1)*201 * 1000);
+            expect(mss[i].d).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + i * 201 * 1000);
+            expect(mse[i].d).toBe(bt + 16 * 3600 * 1000 + 2 * 60 * 1000 + (i + 1) * 201 * 1000);
         }
     });
 });
