@@ -5,7 +5,6 @@ import {
     Card,
     PageHeader,
     SimpleDialog,
-    Tables,
     TextField,
     ToastMsgs,
     Typography,
@@ -15,7 +14,19 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import Divider from '@mui/material/Divider';
 import { Box } from '@mui/system';
-import { useEffect, useMemo, useState } from 'react';
+import {
+    alpha,
+    useTheme,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Paper,
+    TableSortLabel,
+} from '@mui/material';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,6 +43,147 @@ export interface PlaylistListProps {
     statusArea: React.ReactNode[];
 }
 
+type PlaylistTableColumn = {
+    field: string;
+    headerName: string;
+    flex?: number;
+    minWidth?: number;
+    renderCell?: (params: { row: PlaylistRow; value: any }) => React.ReactNode;
+    sortable?: boolean;
+    renderHeader?: () => React.ReactNode;
+};
+
+type PlaylistTableProps = {
+    rows: PlaylistRow[];
+    columns: PlaylistTableColumn[];
+    onRowDoubleClick?: (params: { row: PlaylistRow }) => void;
+    getRowId?: (row: PlaylistRow) => string | number;
+};
+
+function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTableProps) {
+    const theme = useTheme();
+    const [sortState, setSortState] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
+
+    const resolveRowId = (row: PlaylistRow) => {
+        if (getRowId) return getRowId(row);
+        return row.id;
+    };
+
+    const handleSort = (col: PlaylistTableColumn) => {
+        if (col.sortable === false) return;
+        setSortState((prev) => {
+            if (!prev || prev.field !== col.field) return { field: col.field, direction: 'asc' };
+            if (prev.direction === 'asc') return { field: col.field, direction: 'desc' };
+            return null;
+        });
+    };
+
+    const sortedRows = (() => {
+        if (!sortState) return rows;
+        const { field, direction } = sortState;
+        const copy = [...rows];
+        copy.sort((a, b) => {
+            const av = (a as any)?.[field];
+            const bv = (b as any)?.[field];
+            if (av === bv) return 0;
+            if (av === undefined || av === null) return 1;
+            if (bv === undefined || bv === null) return -1;
+            if (typeof av === 'number' && typeof bv === 'number') return direction === 'asc' ? av - bv : bv - av;
+            return direction === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+        });
+        return copy;
+    })();
+
+    return (
+        <TableContainer component={Paper} sx={{ width: '100%', overflow: 'auto' }}>
+            <Table size="small" stickyHeader>
+                <TableHead>
+                    <TableRow>
+                        {columns.map((col) => {
+                            const isActive = sortState?.field === col.field;
+                            const direction = isActive ? sortState?.direction : 'asc';
+                            const headerContent = col.renderHeader ? col.renderHeader() : col.headerName;
+                            return (
+                                <TableCell
+                                    key={col.field}
+                                    padding="normal"
+                                    onClick={() => handleSort(col)}
+                                    sortDirection={isActive ? direction : false}
+                                    sx={{
+                                        minWidth: col.minWidth ?? 120,
+                                        width: col.flex ? `${col.flex * 100}px` : 'auto',
+                                        cursor: col.sortable === false ? 'default' : 'pointer',
+                                        userSelect: 'none',
+                                        fontWeight: 'bold',
+                                        backgroundColor: alpha(theme.palette.action.disabledBackground, 0.2),
+                                    }}
+                                >
+                                    {col.sortable === false ? (
+                                        <Typography variant="body2" fontWeight="bold" noWrap>
+                                            {headerContent}
+                                        </Typography>
+                                    ) : (
+                                        <TableSortLabel
+                                            active={isActive}
+                                            direction={direction}
+                                            hideSortIcon={!isActive}
+                                        >
+                                            <Typography variant="body2" fontWeight="bold" noWrap>
+                                                {headerContent}
+                                            </Typography>
+                                        </TableSortLabel>
+                                    )}
+                                </TableCell>
+                            );
+                        })}
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {sortedRows.map((row) => {
+                        const rowId = resolveRowId(row);
+                        return (
+                            <TableRow
+                                key={rowId}
+                                hover
+                                sx={{
+                                    cursor: onRowDoubleClick ? 'pointer' : 'default',
+                                }}
+                                onDoubleClick={() => onRowDoubleClick?.({ row })}
+                            >
+                                {columns.map((col) => {
+                                    const value = (row as any)?.[col.field];
+                                    return (
+                                        <TableCell
+                                            key={`${rowId}-${col.field}`}
+                                            padding="normal"
+                                            sx={{
+                                                minWidth: col.minWidth ?? 120,
+                                                width: col.flex ? `${col.flex * 100}px` : 'auto',
+                                                maxWidth: col.minWidth ?? undefined,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            {col.renderCell ? (
+                                                col.renderCell({ row, value })
+                                            ) : (
+                                                <Typography variant="body2" noWrap>
+                                                    {value}
+                                                </Typography>
+                                            )}
+                                        </TableCell>
+                                    );
+                                })}
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        </TableContainer>
+    );
+}
+
 export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     const [openDialog, setOpenDialog] = useState(false);
     const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
@@ -44,15 +196,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     const dispatch = useDispatch<AppDispatch>();
     const playlistRecords = useSelector((s: RootState) => s.playlists.playlists);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
-
-    // Get all unique tags from playlists
-    const availableTags = useMemo(() => {
-        const tags = new Set<string>();
-        playlistRecords.forEach((playlist) => {
-            playlist.tags?.forEach((tag) => tags.add(tag));
-        });
-        return Array.from(tags);
-    }, [playlistRecords]);
+    const availableTags = useSelector((state: RootState) => state.playlists.tags || []);
 
     const deletePlaylist = async (id: string) => {
         const item = playlistRecords.find((e) => e.id == id);
@@ -136,18 +280,15 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     };
 
     const formatDuration = (seconds: number): string => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const remainingSeconds = (seconds % 60).toFixed(3);
-        const [wholeSeconds, decimals] = remainingSeconds.split('.');
-
-        // Only show decimals if they're not all zeros
-        const formattedSeconds = decimals === '000' ? wholeSeconds : remainingSeconds;
+        const totalSeconds = Math.round(seconds);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const remainingSeconds = totalSeconds % 60;
 
         if (hours > 0) {
-            return `${hours}h ${minutes}m ${formattedSeconds}s`;
+            return `${hours}h ${minutes}m ${remainingSeconds}s`;
         }
-        return `${minutes}m ${formattedSeconds}s`;
+        return `${minutes}m ${remainingSeconds}s`;
     };
 
     const RowWrapper = ({ row, children }: { row: PlaylistRow; children: React.ReactNode }) => {
@@ -165,7 +306,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
         );
     };
 
-    const columns = [
+    const columns: PlaylistTableColumn[] = [
         {
             field: 'title',
             headerName: 'PLAYLIST',
@@ -413,23 +554,11 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                 <Box
                     sx={{
                         flex: 1,
-                        overflow: 'auto', // Enable scrolling for table
+                        overflow: 'auto',
                         padding: 2,
-                        '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': {
-                            outline: 'none',
-                        },
-                        // Remove column header border on focus
-                        '& .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': {
-                            outline: 'none',
-                        },
                     }}
                 >
-                    <Tables
-                        rows={rows}
-                        columns={columns}
-                        checkboxSelection={false}
-                        getRowId={(row: PlaylistRow) => row.id}
-                    />
+                    <PlaylistTable rows={rows} columns={columns} getRowId={(row: PlaylistRow) => row.id} />
                 </Box>
             </Card>
             <SimpleDialog

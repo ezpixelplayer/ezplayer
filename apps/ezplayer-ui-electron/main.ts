@@ -1,14 +1,16 @@
-import { app, BrowserWindow, Menu } from 'electron';
-import { Worker, workerData } from 'node:worker_threads';
+import { app, BrowserWindow, Menu, dialog } from 'electron';
+import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { registerContentHandlers } from './mainsrc/ipcezplayer.js';
-import { ClockConverter } from './sharedsrc/ClockConverter.js';
+import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
+import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
+import { setUpServer } from './mainsrc/server.js';
+import type { Event as ElectronEvent } from 'electron';
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -39,6 +41,13 @@ let mainWindow: BrowserWindow | null = null;
 export function getMainWindow() {
     return mainWindow;
 }
+
+let audioWindow: BrowserWindow | null = null;
+export function getAudioWindow() {
+    return audioWindow;
+}
+
+let isQuitting = false;
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -78,6 +87,20 @@ const createWindow = (showFolder: string) => {
         splash.loadURL(`file://${path.join(__dirname, '../dist/splash.html')}`);
     }
 
+    audioWindow = new BrowserWindow({
+        show: false,
+
+        webPreferences: {
+            preload: path.join(__dirname, 'preload-audio.js'),
+            contextIsolation: true,
+            webSecurity: false,
+        },
+    });
+
+    // Light-weight HTML/JS just for audio
+    audioWindow.loadURL(`file://${path.join(__dirname, '../dist/audio-window.html')}`);
+    //audioWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
+
     mainWindow = new BrowserWindow({
         width: 800,
         height: 600,
@@ -112,16 +135,55 @@ const createWindow = (showFolder: string) => {
         mainWindow?.setAlwaysOnTop(false);
 
         //setTimeout(async ()=>console.log(JSON.stringify(await getAudioOutputDevices(mainWindow!), undefined, 4)), 3000);
-        //setTimeout(async ()=>console.log(JSON.stringify(await getAudioSyncTime(mainWindow!), undefined, 4)), 3000);
+    });
+    const handleCloseRequest = async (event: ElectronEvent) => {
+        if (!mainWindow) return;
+        if (!isScheduleActive()) {
+            // Preserve macOS behavior
+            if (process.platform === 'darwin') {
+                app.quit();
+            }
+            return;
+        }
+
+        event.preventDefault();
+        const { response } = await dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            buttons: ['Exit', 'Cancel'],
+            defaultId: 0,
+            cancelId: 1,
+            title: 'Exit EZPlayer?',
+            message: 'A schedule is currently running. Do you want to exit?',
+            detail: 'Exiting will turn off all pixels and stop the active schedule.',
+            noLink: true,
+            normalizeAccessKeys: true,
+        });
+
+        if (response === 0) {
+            isQuitting = true;
+            try {
+                await stopPlayerPlayback();
+            } catch (err) {
+                console.error(`Failed to stop player playback: ${err}`);
+            }
+            app.quit();
+        }
+    };
+
+    mainWindow.on('close', (event) => {
+        if (isQuitting) {
+            return;
+        }
+        void handleCloseRequest(event);
     });
     mainWindow.on('closed', () => {
+        audioWindow?.destroy();
+        audioWindow = null;
         mainWindow = null;
+        // app quit?
     });
 };
 
-const dateNowConverter = new ClockConverter('rtc', Date.now(), performance.now());
-
-let dateRateTimeout: NodeJS.Timeout | undefined = undefined;
 let playWorker: Worker | null = null;
 
 app.whenReady().then(async () => {
@@ -132,6 +194,10 @@ app.whenReady().then(async () => {
         app.quit();
         return;
     }
+
+    const portInfo = getWebPort();
+    const port = portInfo.port;
+    const portSource = portInfo.source;
 
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {
@@ -151,12 +217,20 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec);
-    await registerContentHandlers(mainWindow, dateNowConverter, playWorker);
-    dateRateTimeout = setInterval(async () => {
-        const mperfNow = performance.now();
-        const mdateNow = Date.now();
-        dateNowConverter.addSample(mdateNow, mperfNow);
-    }, dateNowConverter.getSampleInterval());
+
+    await registerContentHandlers(mainWindow, audioWindow, playWorker);
+
+    // Start web server / WebSocket
+    try {
+        await setUpServer({
+            port,
+            portSource,
+            playWorker,
+            mainWindow,
+        });
+    } catch (e) {
+        console.error(e);
+    }
 });
 
 app.on('before-quit', async () => {
@@ -164,16 +238,18 @@ app.on('before-quit', async () => {
 });
 
 app.on('window-all-closed', () => {
-    clearTimeout(dateRateTimeout);
-    if (process.platform !== 'darwin') app.quit();
+    // Quit on all platforms, including macOS
+    app.quit();
 });
 
-app.on('activate', async () => {
-    // This is for MacOS - for relaunching.  Use prev folder if we can get it.
-    if (BrowserWindow.getAllWindows().length === 0) {
-        const sf = await ensureExclusiveFolder();
-        if (sf) {
-            createWindow(sf);
-        }
-    }
-});
+// Note: 'activate' handler removed since we now quit on window close on macOS
+// If we want to support reopening windows via dock click, we can restore this
+// app.on('activate', async () => {
+//     // This is for MacOS - for relaunching.  Use prev folder if we can get it.
+//     if (BrowserWindow.getAllWindows().length === 0) {
+//         const sf = await ensureExclusiveFolder();
+//         if (sf) {
+//             createWindow(sf);
+//         }
+//     }
+// });

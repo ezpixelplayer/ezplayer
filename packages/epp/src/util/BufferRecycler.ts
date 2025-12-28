@@ -45,8 +45,9 @@ abstract class ABufferPool<B> {
         const buf = bucket.pool.pop();
         if (buf) return buf;
 
+        const b = this.alloc(bucketSize);
         bucket.allocated++;
-        return this.alloc(bucketSize);
+        return b;
     }
 
     /** Return a buffer to the pool */

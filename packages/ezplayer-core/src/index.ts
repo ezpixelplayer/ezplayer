@@ -15,6 +15,7 @@ export type {
     PlayerNStatusContent,
     PlayerPStatusContent,
     CombinedPlayerStatus,
+    PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
     EZPlayerCommand,
@@ -29,13 +30,17 @@ export type {
     PlaybackSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    PlayerWebSocketSnapshot,
+    PlayerWebSocketPing,
+    PlayerWebSocketKick,
+    PlayerWebSocketMessage,
+    PlayerClientWebSocketMessage,
+    FullPlayerState,
 } from './types/DataTypes';
 
 export type {
     AudioDevice,
     AudioChunk,
-    AudioTimeSyncM2R,
-    AudioTimeSyncR2M,
     EZPElectronAPI,
     FileSelectOptions,
 } from './types/EZPElectronAPI';

@@ -14,6 +14,7 @@ export type PrefetchMP3Request = {
     expiry?: number;
     mp3file: string;
     needByTime: number;
+    neededThroughTime: number;
 };
 
 export interface MP3FileKey {
@@ -69,7 +70,7 @@ export class MP3PrefetchCache {
     prefetchMP3(req: PrefetchMP3Request) {
         this.mp3PrefetchCache.prefetch({
             key: { mp3file: req.mp3file },
-            priority: { neededTime: req.needByTime },
+            priority: { neededTime: req.needByTime, neededThroughTime: req.neededThroughTime },
             now: this.now,
             expiry: req.expiry ?? this.now + 24 * 3600 * 1000,
         });
@@ -83,8 +84,7 @@ export class MP3PrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        this.mp3PrefetchCache.cleanup(this.now, this.now - (ageout ?? 25 * 3600 * 1000)); // Keep for 25 hours
-        this.mp3PrefetchCache.dispatchRequests(this.now);
+        this.mp3PrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 25 * 3600 * 1000)); // Keep for 25 hours
     }
 
     now: number;
@@ -102,9 +102,14 @@ export class MP3PrefetchCache {
             mp3Prefetch: this.mp3PrefetchCache.getStats(),
             readBufPool,
             totalDecompMem: totalReadMem,
-            fileReadTime: this.decodewc.fileReadTime,
-            decodeTime: this.decodewc.decodeTime,
+            fileReadTimeCumulative: this.decodewc.fileReadTimeCumulative,
+            decodeTimeCumulative: this.decodewc.decodeTimeCumulative,
         };
+    }
+
+    resetStats() {
+        this.decodewc.resetStats();
+        this.mp3PrefetchCache.resetStats();
     }
 }
 
@@ -123,8 +128,13 @@ export class Mp3DecodeWorkerClient {
         }
     >();
 
-    fileReadTime: number = 0;
-    decodeTime: number = 0;
+    fileReadTimeCumulative: number = 0;
+    decodeTimeCumulative: number = 0;
+
+    resetStats() {
+        this.fileReadTimeCumulative = 0;
+        this.decodeTimeCumulative = 0;
+    }
 
     constructor() {
         this.worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
@@ -138,8 +148,8 @@ export class Mp3DecodeWorkerClient {
             const pending = this.inflight.get(msg.id);
             if (!pending) return;
 
-            this.fileReadTime += msg.fileReadTime;
-            this.decodeTime += msg.decodeTime;
+            this.fileReadTimeCumulative += msg.fileReadTime;
+            this.decodeTimeCumulative += msg.decodeTime;
 
             this.inflight.delete(msg.id);
 

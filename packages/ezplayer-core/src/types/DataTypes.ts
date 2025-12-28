@@ -210,6 +210,26 @@ export interface CombinedPlayerStatus {
     };
 }
 
+export interface PrefetchCacheStats {
+    totalItems: number;
+    referencedItems: number;
+    readyItems: number;
+    pendingItems: number;
+    errorItems: number;
+    inProgressItems: number;
+
+    budget: number;
+    used: number;
+
+    refHitsCumulative: number;
+    refMissesCumulative: number;
+    expiredItemsCumulative: number;
+    evictedItemsCumulative: number;
+
+    completedRequestsCumulative: number;
+    erroredRequestsCumulative: number;
+}
+
 export interface PlaybackStatistics {
     iteration: number;
 
@@ -218,43 +238,61 @@ export interface PlaybackStatistics {
 
     // Timing Distribution
     measurementPeriod: number;
-    totalIdle: number;
-    totalSend: number;
+    idleTimePeriod: number;
+    sendTimePeriod: number;
     // Presumably, the rest is other things...
 
     // Timing Stability
-    worstLag: number;
-    worstAdvance: number;
+    worstLagHistorical: number;
+    worstAdvanceHistorical: number;
 
     // Frame Timings
     avgSendTime: number;
-    maxSendTime: number;
+    maxSendTimeHistorical: number;
 
     // Frame delivery
-    missedFrames: number;
-    missedHeaders: number;
-    sentFrames: number;
-    skippedFrames: number;
-    framesSkippedDueToManyOutstandingFrames: number;
+    missedFramesCumulative: number;
+    missedHeadersCumulative: number;
+    missedBackgroundFramesCumulative: number;
+    sentFramesCumulative: number;
+    skippedFramesCumulative: number;
+    framesSkippedDueToManyOutstandingFramesCumulative: number;
 
     // Skipped controller frames
-    cframesSkippedDueToDirective: number;
-    cframesSkippedDueToIncompletePrior: number;
+    cframesSkippedDueToDirectiveCumulative: number;
+    cframesSkippedDueToIncompletePriorCumulative: number;
 
     // Audio delivery
-    sentAudioChunks: number;
-    skippedAudioChunks: number;
+    sentAudioChunksCumulative: number;
+    skippedAudioChunksCumulative: number;
 
     // Audio Decode
     audioDecode?: {
-        fileReadTime: number;
-        decodeTime: number;
+        fileReadTimeCumulative: number;
+        decodeTimeCumulative: number;
     };
 
     // Sequence Decompress
     sequenceDecompress?: {
-        fileReadTime: number;
-        decompressTime: number;
+        fileReadTimeCumulative: number;
+        decompressTimeCumulative: number;
+    };
+
+    // Effects Processing
+    effectsProcessing?: {
+        backgroundBlendTimePeriod: number;
+    };
+
+    // FSEQ Cache
+    fseqPrefetch?: {
+        totalMem: number;
+        headerCache: PrefetchCacheStats;
+        chunkCache: PrefetchCacheStats;
+    };
+
+    // Audio decode cache
+    audioPrefetch?: {
+        decodeCache: PrefetchCacheStats;
     };
 }
 
@@ -264,6 +302,9 @@ export type EZPlayerCommand =
       }
     | {
           command: 'resetplayback'; // Reread and reset playback from current schedule items
+      }
+    | {
+          command: 'resetstats'; // Reset cumulative stats counters
       }
     | {
           command: 'stopnow'; // Stop all playing
@@ -382,6 +423,46 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
 }
+
+/// Player full state & websocket sync
+export type FullPlayerState = {
+    showFolder?: string;
+    sequences?: SequenceRecord[];
+    playlists?: PlaylistRecord[];
+    schedule?: ScheduledPlaylist[];
+    user?: EndUser;
+    show?: EndUserShowSettings;
+    cStatus?: PlayerCStatusContent;
+    pStatus?: PlayerPStatusContent;
+    nStatus?: PlayerNStatusContent;
+    playbackSettings?: PlaybackSettings;
+    playbackStatistics?: PlaybackStatistics;
+    versions?: EZPlayerVersions;
+};
+
+export type PlayerWebSocketSnapshot = {
+    type: 'snapshot';
+    v: { [K in keyof FullPlayerState]: number };
+    data: Partial<FullPlayerState>;
+};
+
+export type PlayerWebSocketPing = {
+    type: 'ping';
+    now: number;
+};
+
+export type PlayerWebSocketKick = {
+    type: 'kick';
+    reason: string;
+};
+
+export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPing | PlayerWebSocketKick;
+
+export type PlayerClientWebSocketMessage =
+    | { type: 'pong'; now: number }
+    | { type: 'subscribe'; keys: (keyof FullPlayerState)[] };
+
+/// Layout Edit
 
 export interface JSONEditChoice {
     title: string;

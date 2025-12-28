@@ -25,14 +25,6 @@ export interface QueueEntry {
     audiopath: string;
 }
 
-export interface AudioTimeSyncWorker {
-    audioCtxTime?: number;
-    audioCtxIncarnation?: number;
-    perfNowTime: number;
-    realTime?: number;
-    latency?: number;
-}
-
 // Should something be in the RPC API?
 // Yes, if you want to await it (like fetch a value)
 // Not necessarily, otherwise
@@ -40,12 +32,12 @@ export interface AudioTimeSyncWorker {
 export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
+    stopPlayback: (args: {}) => Promise<boolean> | boolean;
 };
 
 export type MainRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
-    timesync: (args: {}) => AudioTimeSyncWorker;
 };
 
 export type PlayerCommand =

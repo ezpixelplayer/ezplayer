@@ -12,6 +12,7 @@ import {
 } from '@ezplayer/epp';
 import { PlaybackStatistics } from '@ezplayer/ezplayer-core';
 import { snapshotAsyncCounts } from './perfmon';
+import { maxUint8 } from '../processing/blend';
 
 ////////
 // Sleep utilities
@@ -48,6 +49,7 @@ export interface OverallFrameSendStats {
     intervalStart: number;
     totalSendTime: number;
     totalIdleTime: number;
+    totalMixTime: number;
 }
 
 export function avgFrameSendTime(stats: OverallFrameSendStats) {
@@ -59,6 +61,7 @@ export function resetFrameSendStats(stats: OverallFrameSendStats, pn: number) {
     stats.nSends = 0;
     stats.totalSendTime = 0;
     stats.totalIdleTime = 0;
+    stats.totalMixTime = 0;
 }
 
 export interface ControllerSendStats {
@@ -76,6 +79,7 @@ export class FrameSender {
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
     blackFrame: Uint8Array | undefined = undefined;
+    mixFrame: Uint8Array | undefined = undefined;
     emitWarning?: (msg: string) => void;
     emitError?: (err: Error) => void;
 
@@ -88,11 +92,13 @@ export class FrameSender {
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
         this.state.initialize(args.targetFramePN, this.job);
-        await this.doSendFrame(performance.now(), { ...args, frame: undefined });
+        await this.doSendFrame({ ...args, frame: undefined });
     }
 
+    /** Return: ms of frame advance */
     async sendNextFrameAt(args: {
         frame: FrameReference | undefined;
+        bframe: FrameReference | undefined;
         targetFramePN: number;
         targetFrameNum: number;
         playbackStats: PlaybackStatistics;
@@ -104,7 +110,7 @@ export class FrameSender {
         try {
             if (args.frame?.frame && this.state && this.job) {
             } else {
-                ++args.playbackStats.missedFrames;
+                ++args.playbackStats.missedFramesCumulative;
             }
 
             const preSleepPN = performance.now();
@@ -114,14 +120,14 @@ export class FrameSender {
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
                 if (this.blackFrame) this.sendBlackFrame({ targetFramePN: preSleepPN });
-                return args.targetFramePN;
+                return 0;
             }
 
             const sleep = args.targetFramePN - preSleepPN;
             if (sleep < -args.skipFrameIfLateByMoreThan) {
-                ++args.playbackStats.skippedFrames;
+                ++args.playbackStats.skippedFramesCumulative;
                 // TODO increment frame?  Or do we just let calculations establish this from current time?
-                return (args.targetFramePN += args.frameInterval);
+                return args.frameInterval;
             }
 
             if (sleep > args.dontSleepIfDurationLessThan) {
@@ -133,59 +139,73 @@ export class FrameSender {
             const nowTime = performance.now();
 
             if (nowTime < args.targetFramePN) {
-                args.playbackStats.worstAdvance = Math.max(
-                    args.playbackStats.worstAdvance,
+                args.playbackStats.worstAdvanceHistorical = Math.max(
+                    args.playbackStats.worstAdvanceHistorical,
                     args.targetFramePN - nowTime,
                 );
             } else {
-                args.playbackStats.worstLag = Math.max(args.playbackStats.worstLag, nowTime - args.targetFramePN);
+                args.playbackStats.worstLagHistorical = Math.max(
+                    args.playbackStats.worstLagHistorical,
+                    nowTime - args.targetFramePN,
+                );
             }
 
             // Actually send the frame
             if (args.frame?.frame && this.state && this.job) {
                 this.job.frameNumber = args.targetFrameNum;
-                this.job.dataBuffers = [args.frame.frame];
+                if (this.mixFrame && args.bframe?.frame && args.frame?.frame) {
+                    const preMax = performance.now();
+                    maxUint8(this.mixFrame, args.frame.frame, args.bframe.frame);
+                    const mixTime = performance.now() - preMax;
+                    args.playbackStatsAgg.totalMixTime += mixTime;
+                    this.job.dataBuffers = [this.mixFrame];
+                } else {
+                    this.job.dataBuffers = [args.frame.frame];
+                }
+
                 const res = this.state.initialize(args.targetFramePN, this.job);
-                args.playbackStats.cframesSkippedDueToDirective += res.skipsDueToReq;
-                args.playbackStats.cframesSkippedDueToIncompletePrior += res.skipsDueToSlowCtrl;
+                args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
+                args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
                 if (this.outstandingFrames.has(args.frame)) {
                     this.emitWarning?.('WARNING: THIS FRAME HANDLE ALREADY BEING SENT');
-                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
                 } else if (this.outstandingFrames.size > 10) {
-                    ++args.playbackStats.framesSkippedDueToManyOutstandingFrames;
+                    ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
                 } else {
-                    await this.doSendFrame(nowTime, args);
+                    await this.doSendFrame(args);
                 }
             }
-            return (args.targetFramePN += args.frameInterval);
+            return args.frameInterval;
         } finally {
             if (args.frame) {
                 args.frame.release();
                 args.frame = undefined;
             }
+            if (args.bframe) {
+                args.bframe.release();
+                args.bframe = undefined;
+            }
         }
     }
 
-    private async doSendFrame(
-        nowTime: number,
-        args: {
-            playbackStats?: PlaybackStatistics;
-            playbackStatsAgg?: OverallFrameSendStats;
-            frame: FrameReference | undefined;
-        },
-    ) {
+    private async doSendFrame(args: {
+        playbackStats?: PlaybackStatistics;
+        playbackStatsAgg?: OverallFrameSendStats;
+        frame: FrameReference | undefined;
+    }) {
         try {
             const frameref = args.frame;
             if (frameref) {
                 this.outstandingFrames.add(frameref);
                 args.frame = undefined;
             }
+            const startSendTime = performance.now();
             startFrame(this.state);
             startBatch(this.state);
             await sendFull(this.state, busySleep);
             const end = endBatch(this.state);
             this.prevSendBatch = end;
-            const sendTime = performance.now() - nowTime;
+            const sendTime = performance.now() - startSendTime;
             Promise.allSettled(end.map((s) => s.promise)).then(() => {
                 for (const sb of end) {
                     if (sb.nECBs > 0) {
@@ -206,8 +226,8 @@ export class FrameSender {
                 ++args.playbackStatsAgg.nSends;
             }
             if (args.playbackStats) {
-                args.playbackStats.maxSendTime = Math.max(sendTime, args.playbackStats.maxSendTime);
-                ++args.playbackStats.sentFrames;
+                args.playbackStats.maxSendTimeHistorical = Math.max(sendTime, args.playbackStats.maxSendTimeHistorical);
+                ++args.playbackStats.sentFramesCumulative;
             }
         } catch (e) {
             const err = e as Error;

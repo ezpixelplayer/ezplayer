@@ -9,7 +9,7 @@ import {
     useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { PlaylistRecord, SequenceDetails, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type { PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import SearchIcon from '@mui/icons-material/Search';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
@@ -58,6 +58,8 @@ interface AvailableSongsContainerProps {
     onSearchQueryChange: (query: string) => void;
     availableSortOrder: 'asc' | 'desc';
     onAvailableSortOrderChange: (order: 'asc' | 'desc') => void;
+    availableSortType: 'title' | 'artist' | null;
+    onAvailableSortTypeChange: (type: 'title' | 'artist' | null) => void;
     selectedFilterTags: string[];
     onSelectedFilterTagsChange: (tags: string[]) => void;
     tagInputValue: string;
@@ -84,6 +86,8 @@ const AvailableSongsContainer = ({
     onSearchQueryChange,
     availableSortOrder,
     onAvailableSortOrderChange,
+    availableSortType,
+    onAvailableSortTypeChange,
     selectedFilterTags,
     onSelectedFilterTagsChange,
     tagInputValue,
@@ -110,73 +114,106 @@ const AvailableSongsContainer = ({
 
     return (
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{ mb: 2 }}>
-                <Grid container spacing={1}>
-                    <Grid item xs={12} md={4}>
-                        <TextField
-                            size="small"
-                            placeholder="Search songs..."
-                            value={searchQuery}
-                            onChange={(e) => onSearchQueryChange(e.target.value)}
-                            fullWidth
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon />
-                                    </InputAdornment>
-                                ),
-                            }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                        <Autocomplete
-                            multiple
-                            size="small"
-                            options={availableSongTags}
-                            value={selectedFilterTags}
-                            inputValue={tagInputValue}
-                            onInputChange={(_, newInputValue) => {
-                                onTagInputValueChange(newInputValue);
-                            }}
-                            onChange={(_, newValue) => {
-                                onSelectedFilterTagsChange(newValue);
-                                if (newValue.length > 0) {
-                                    onTagInputValueChange('');
-                                }
-                            }}
-                            renderInput={(params) => <TextField {...params} placeholder="Filter by tags" />}
-                            sx={{ minWidth: 150 }}
-                        />
-                    </Grid>
-                    <Grid item xs={6} md={2}>
-                        <Select
-                            size="small"
-                            value={availableSortOrder}
-                            onChange={(e) => onAvailableSortOrderChange(e.target.value as 'asc' | 'desc')}
-                            fullWidth
-                        >
-                            <MenuItem value="asc">A-Z</MenuItem>
-                            <MenuItem value="desc">Z-A</MenuItem>
-                        </Select>
-                    </Grid>
-                    <Grid item xs={6} md={2}>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            fullWidth
-                            onClick={() => {
-                                filteredAndSortedSongs?.forEach((song) => {
-                                    if (!usedSongIds.has(song.id)) {
-                                        onAddSong(song.id);
+            <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', width: '100%' }}>
+                {/* First Row: Search, Filter by tags, Add All */}
+                <Box sx={{ mb: 1.5, width: '100%', flexShrink: 0 }}>
+                    <Grid container spacing={1} sx={{ width: '100%' }}>
+                        <Grid item xs={12} sm={6} md={4} lg={4} xl={4}>
+                            <TextField
+                                size="small"
+                                placeholder="Search songs..."
+                                value={searchQuery}
+                                onChange={(e) => onSearchQueryChange(e.target.value)}
+                                fullWidth
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon />
+                                        </InputAdornment>
+                                    ),
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={4} lg={4} xl={4}>
+                            <Autocomplete
+                                multiple
+                                size="small"
+                                options={availableSongTags}
+                                value={selectedFilterTags}
+                                inputValue={tagInputValue}
+                                onInputChange={(_, newInputValue) => {
+                                    onTagInputValueChange(newInputValue);
+                                }}
+                                onChange={(_, newValue) => {
+                                    onSelectedFilterTagsChange(newValue);
+                                    if (newValue.length > 0) {
+                                        onTagInputValueChange('');
                                     }
-                                });
-                            }}
-                            disabled={!filteredAndSortedSongs?.some((song) => !usedSongIds.has(song.id))}
-                        >
-                            Add All
-                        </Button>
+                                }}
+                                renderInput={(params) => <TextField {...params} placeholder="Filter by tags" />}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={12} md={4} lg={4} xl={4}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                fullWidth
+                                onClick={() => {
+                                    filteredAndSortedSongs?.forEach((song) => {
+                                        if (!usedSongIds.has(song.id)) {
+                                            onAddSong(song.id);
+                                        }
+                                    });
+                                }}
+                                disabled={!filteredAndSortedSongs?.some((song) => !usedSongIds.has(song.id))}
+                            >
+                                Add All
+                            </Button>
+                        </Grid>
                     </Grid>
-                </Grid>
+                </Box>
+                {/* Second Row: Sort controls - always on separate row */}
+                <Box sx={{ width: '100%', flexShrink: 0 }}>
+                    <Grid container spacing={1} sx={{ width: '100%' }}>
+                        <Grid item xs={12} sm={6} md={3} lg={3} xl={3}>
+                            <Select
+                                size="small"
+                                value={availableSortType || ''}
+                                onChange={(e) => {
+                                    const value = e.target.value as 'title' | 'artist' | '';
+                                    if (value === '') {
+                                        onAvailableSortTypeChange(null);
+                                    } else {
+                                        onAvailableSortTypeChange(value);
+                                        // Default to ascending when type is selected
+                                        if (availableSortOrder === null || availableSortOrder === undefined) {
+                                            onAvailableSortOrderChange('asc');
+                                        }
+                                    }
+                                }}
+                                fullWidth
+                                displayEmpty
+                            >
+                                <MenuItem value="">Sort by</MenuItem>
+                                <MenuItem value="title">Sort by Title</MenuItem>
+                                <MenuItem value="artist">Sort by Artist</MenuItem>
+                            </Select>
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3} lg={3} xl={3}>
+                            <Select
+                                size="small"
+                                value={availableSortOrder}
+                                onChange={(e) => onAvailableSortOrderChange(e.target.value as 'asc' | 'desc')}
+                                fullWidth
+                                disabled={!availableSortType}
+                            >
+                                <MenuItem value="asc">A-Z</MenuItem>
+                                <MenuItem value="desc">Z-A</MenuItem>
+                            </Select>
+                        </Grid>
+                    </Grid>
+                </Box>
             </Box>
             <Box
                 ref={setAvailableRef}
@@ -228,8 +265,10 @@ interface PlaylistContainerProps {
     dragOverItemId: string | null;
     onRemoveSong: (instanceId: string) => void;
     sortOrder: 'asc' | 'desc' | null;
-    onSort: (order: 'asc' | 'desc') => void;
+    sortType: 'title' | 'artist' | null;
+    onSort: (type: 'title' | 'artist', order: 'asc' | 'desc') => void;
     setSortOrder: (order: 'asc' | 'desc' | null) => void;
+    setSortType: (type: 'title' | 'artist' | null) => void;
     onShuffle: () => void;
 }
 
@@ -238,13 +277,17 @@ const PlaylistContainer = ({
     dragOverItemId,
     onRemoveSong,
     sortOrder,
+    sortType,
     onSort,
     setSortOrder,
+    setSortType,
     onShuffle,
 }: PlaylistContainerProps) => {
     const { setNodeRef: setPlaylistRef } = useDroppable({
         id: 'playlist',
     });
+
+    const songCount = useMemo(() => playlistSongs.length, [playlistSongs]);
 
     // Calculate total duration of all songs in the playlist
     const totalDuration = useMemo(() => {
@@ -253,18 +296,13 @@ const PlaylistContainer = ({
         }, 0);
     }, [playlistSongs]);
 
-    // Format duration as MM:SS
+    // Format duration as MM:SS rounded to nearest second
     const formattedTotalDuration = useMemo(() => {
-        const minutes = Math.floor(totalDuration / 60);
-        const seconds = totalDuration % 60;
-        const secondsWithDecimals = seconds.toFixed(3);
-        const [wholeSeconds, decimals] = secondsWithDecimals.split('.');
+        const roundedTotalSeconds = Math.round(totalDuration);
+        const minutes = Math.floor(roundedTotalSeconds / 60);
+        const seconds = roundedTotalSeconds % 60;
 
-        // Only show decimals if they're not all zeros
-        const formattedSeconds =
-            decimals === '000' ? wholeSeconds.padStart(2, '0') : secondsWithDecimals.padStart(6, '0');
-
-        return `${minutes}:${formattedSeconds}`;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }, [totalDuration]);
 
     return (
@@ -278,26 +316,51 @@ const PlaylistContainer = ({
                 }}
             >
                 <Grid container spacing={1}>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Select
                             size="small"
-                            value={sortOrder || ''}
+                            value={sortType || ''}
                             onChange={(e) => {
-                                const value = e.target.value as 'asc' | 'desc' | '';
-                                if (value) {
-                                    onSort(value);
-                                } else {
+                                const value = e.target.value as 'title' | 'artist' | '';
+                                if (value === '') {
+                                    setSortType(null);
                                     setSortOrder(null);
+                                } else {
+                                    setSortType(value);
+                                    // Default to ascending when type is selected
+                                    if (!sortOrder) {
+                                        setSortOrder('asc');
+                                        onSort(value, 'asc');
+                                    } else {
+                                        onSort(value, sortOrder);
+                                    }
                                 }
                             }}
                             fullWidth
                             displayEmpty
                         >
                             <MenuItem value="">Sort by</MenuItem>
-                            <MenuItem value="asc">A to Z</MenuItem>
-                            <MenuItem value="desc">Z to A</MenuItem>
+                            <MenuItem value="title">Sort by Title</MenuItem>
+                            <MenuItem value="artist">Sort by Artist</MenuItem>
                         </Select>
                     </Grid>
+                    {sortType && (
+                        <Grid item xs={12} md={3}>
+                            <Select
+                                size="small"
+                                value={sortOrder || 'asc'}
+                                onChange={(e) => {
+                                    const value = e.target.value as 'asc' | 'desc';
+                                    setSortOrder(value);
+                                    onSort(sortType, value);
+                                }}
+                                fullWidth
+                            >
+                                <MenuItem value="asc">A-Z</MenuItem>
+                                <MenuItem value="desc">Z-A</MenuItem>
+                            </Select>
+                        </Grid>
+                    )}
                     <Grid item xs={12} md={2}>
                         <Button
                             startIcon={<ShuffleIcon />}
@@ -310,9 +373,19 @@ const PlaylistContainer = ({
                         </Button>
                     </Grid>
                     <Grid item xs={12} md={6}>
-                        <Typography variant="body1" sx={{ textAlign: 'right', pt: 0.5 }}>
-                            Total Duration: {formattedTotalDuration}
-                        </Typography>
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                alignItems: 'center',
+                                gap: 2,
+                                height: '100%',
+                                pt: 0.5,
+                            }}
+                        >
+                            <Typography variant="body1">Songs: {songCount}</Typography>
+                            <Typography variant="body1">Total Duration: {formattedTotalDuration}</Typography>
+                        </Box>
                     </Grid>
                 </Grid>
             </Box>
@@ -409,11 +482,13 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [savePlaylistClicked, setSavePlaylistClicked] = useState(false);
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+    const [sortType, setSortType] = useState<'title' | 'artist' | null>(null);
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
     const [isNavigationDialogOpen, setIsNavigationDialogOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<'navigate' | 'discard' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [availableSortOrder, setAvailableSortOrder] = useState<'asc' | 'desc'>('asc');
+    const [availableSortType, setAvailableSortType] = useState<'title' | 'artist' | null>(null);
     const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
 
@@ -463,14 +538,16 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                         // First check in server songs
                         const song = sequenceData?.find((s) => s.id === item.id);
 
-                        return song ? { ...song, sequence: item.sequence } : null;
+                        return song ? { ...song, seqnum: item.sequence } : null;
                     })
                     .filter((song): song is NonNullable<typeof song> => song !== null)
-                    .map((song) => ({
-                        ...song,
-                        sequence: song.sequence as unknown as SequenceDetails,
-                        instanceId: `${song.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    }));
+                    .map(
+                        (song) =>
+                            ({
+                                ...song,
+                                instanceId: `${song.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            }) as PlaylistSongInstance,
+                    );
 
                 setPlaylistSongs(selectedSongs);
 
@@ -481,7 +558,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 setHasUnsavedChanges(false);
             }
         }
-    }, [id, sequenceData, anythingUpdating]);
+    }, [id, sequenceData, anythingUpdating, playlists]);
 
     const handleDragStart = (event: DragStartEvent) => {
         setActiveId(event.active.id as string);
@@ -556,20 +633,30 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
         }
     };
 
-    const sortSongs = (songs: typeof playlistSongs, order: 'asc' | 'desc') => {
+    const sortSongs = (songs: typeof playlistSongs, type: 'title' | 'artist', order: 'asc' | 'desc') => {
         return [...songs].sort((a, b) => {
-            const titleA = (a.work?.title || '').toLowerCase();
-            const titleB = (b.work?.title || '').toLowerCase();
-            if (order === 'desc') {
-                return titleB.localeCompare(titleA); // Z to A
+            let valueA: string;
+            let valueB: string;
+
+            if (type === 'title') {
+                valueA = (a.work?.title || '').toLowerCase();
+                valueB = (b.work?.title || '').toLowerCase();
+            } else {
+                valueA = (a.work?.artist || '').toLowerCase();
+                valueB = (b.work?.artist || '').toLowerCase();
             }
-            return titleA.localeCompare(titleB); // A to Z
+
+            if (order === 'desc') {
+                return valueB.localeCompare(valueA); // Z to A
+            }
+            return valueA.localeCompare(valueB); // A to Z
         });
     };
 
-    const handleSort = (order: 'asc' | 'desc') => {
+    const handleSort = (type: 'title' | 'artist', order: 'asc' | 'desc') => {
+        setSortType(type);
         setSortOrder(order);
-        setPlaylistSongs((prevSongs) => sortSongs(prevSongs, order));
+        setPlaylistSongs((prevSongs) => sortSongs(prevSongs, type, order));
     };
 
     const handleShuffle = () => {
@@ -582,6 +669,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             return shuffledSongs;
         });
         setSortOrder(null); // Reset sort order when shuffling
+        setSortType(null); // Reset sort type when shuffling
     };
 
     const handleAddSong = (id: string): void => {
@@ -601,8 +689,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 ];
 
                 // If there's a sort order, use it
-                if (sortOrder) {
-                    return sortSongs(newSongs, sortOrder);
+                if (sortOrder && sortType) {
+                    return sortSongs(newSongs, sortType, sortOrder);
                 }
 
                 // If no sort order, just add to the end
@@ -677,7 +765,10 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
 
                     // If sort order is active, add and sort
                     newSongs.push(newSongInstance);
-                    return sortSongs(newSongs, sortOrder);
+                    if (sortType && sortOrder) {
+                        return sortSongs(newSongs, sortType, sortOrder);
+                    }
+                    return newSongs;
                 });
 
                 setUsedSongIds((prev) => new Set(prev).add(itemToAdd.id));
@@ -751,11 +842,28 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 return matchesSearch && matchesTags;
             })
             .sort((a, b) => {
-                const titleA = a.work?.title?.toLowerCase() || '';
-                const titleB = b.work?.title?.toLowerCase() || '';
-                return availableSortOrder === 'asc' ? titleA.localeCompare(titleB) : titleB.localeCompare(titleA);
+                // If no sort type is selected, don't sort (or maintain original order)
+                if (!availableSortType) {
+                    return 0;
+                }
+
+                let valueA: string;
+                let valueB: string;
+
+                if (availableSortType === 'title') {
+                    valueA = (a.work?.title || '').toLowerCase();
+                    valueB = (b.work?.title || '').toLowerCase();
+                } else {
+                    valueA = (a.work?.artist || '').toLowerCase();
+                    valueB = (b.work?.artist || '').toLowerCase();
+                }
+
+                if (availableSortOrder === 'desc') {
+                    return valueB.localeCompare(valueA); // Z to A
+                }
+                return valueA.localeCompare(valueB); // A to Z
             });
-    }, [searchQuery, availableSortOrder, selectedFilterTags, tagInputValue, sequenceData]);
+    }, [searchQuery, availableSortOrder, availableSortType, selectedFilterTags, tagInputValue, sequenceData]);
 
     const isPlaylistValid = (): { isValid: boolean; error: string } => {
         if (!playlistName || playlistName.trim() === '') {
@@ -769,6 +877,11 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     };
 
     const handleDiscardClick = () => {
+        if (!hasUnsavedChanges) {
+            navigate(ROUTES.PLAYLIST);
+            return;
+        }
+
         setPendingAction('discard');
         setIsNavigationDialogOpen(true);
     };
@@ -975,6 +1088,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                                         onSearchQueryChange={setSearchQuery}
                                         availableSortOrder={availableSortOrder}
                                         onAvailableSortOrderChange={setAvailableSortOrder}
+                                        availableSortType={availableSortType}
+                                        onAvailableSortTypeChange={setAvailableSortType}
                                         selectedFilterTags={selectedFilterTags}
                                         onSelectedFilterTagsChange={setSelectedFilterTags}
                                         tagInputValue={tagInputValue}
@@ -1004,8 +1119,10 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                                         dragOverItemId={dragOverItemId}
                                         onRemoveSong={handleRemoveSong}
                                         sortOrder={sortOrder}
+                                        sortType={sortType}
                                         onSort={handleSort}
                                         setSortOrder={setSortOrder}
+                                        setSortType={setSortType}
                                         onShuffle={handleShuffle}
                                     />
                                 </Box>

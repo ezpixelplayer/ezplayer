@@ -32,6 +32,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         artist: '',
         lead_time: '',
         trail_time: '',
+        vendor: '',
         volume_adj: '',
         tags: [] as string[],
         length: 0,
@@ -45,6 +46,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             artist: '',
             lead_time: '',
             trail_time: '',
+            vendor: '',
             volume_adj: '',
             tags: [],
             length: 0,
@@ -223,6 +225,16 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 fullWidth
                                 required
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Vendor"
+                                name="vendor"
+                                value={newSongData.vendor}
+                                onChange={handleNewSongDataChange}
+                                fullWidth
+                                placeholder="e.g., Local, xLights, etc."
                             />
                         </Grid>
                         <Grid item xs={6}>

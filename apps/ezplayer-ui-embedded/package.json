@@ -1,0 +1,63 @@
+{
+    "name": "@ezplayer/ui-embedded",
+    "private": true,
+    "version": "0.0.1",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "development": "./src/index.ts",
+            "import": "./dist/index.js",
+            "require": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            "*": [
+                "dist/index.d.ts"
+            ]
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -b",
+        "build:web": "vite build",
+        "build:web:watch": "vite build --watch",
+        "dev": "vite",
+        "preview": "vite preview",
+        "lint": "eslint ."
+    },
+    "dependencies": {
+        "@ezplayer/ezplayer-core": "workspace:*",
+        "@ezplayer/player-ui-components": "workspace:*",
+        "@ezplayer/shared-ui-components": "workspace:*",
+        "@mui/material": "^5.18.0",
+        "@mui/styles": "^5.16.14",
+        "@mui/x-date-pickers": "5.0.0",
+        "@reduxjs/toolkit": "^2.5.0",
+        "dayjs": "^1.11.13",
+        "react": "^18.0.0",
+        "react-dom": "^18.0.0",
+        "react-redux": "^9.2.0",
+        "react-router-dom": "^6.28.2",
+        "react-toastify": "^10.0.6",
+        "react-helmet-async": "^2.0.5",
+        "nprogress": "^0.2.0"
+    },
+    "peerDependencies": {
+        "react": "^18.0.0",
+        "react-dom": "^18.0.0"
+    },
+    "devDependencies": {
+        "@types/react": "^18.3.18",
+        "@types/react-dom": "^18.3.5",
+        "@vitejs/plugin-react": "^4.3.4",
+        "sass": "^1.83.4",
+        "typescript": "^5.7.3",
+        "vite": "^5.4.14"
+    }
+}

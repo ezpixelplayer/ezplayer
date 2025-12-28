@@ -127,11 +127,14 @@ export class FrameReference {
  * Handles fseq prefetching
  */
 export class FSeqPrefetchCache {
-    constructor(arg: {
-        now: number;
-        fseqSpace?: number;
-        decompZstd?: DecompZStd; // Allow a worker thread...
-    }) {
+    constructor(
+        arg: {
+            now: number;
+            fseqSpace?: number;
+            decompZstd?: DecompZStd; // Allow a worker thread...
+        },
+        emitError: (msg: string) => void,
+    ) {
         this.now = arg.now;
         this.decompDataPool = new ArrayBufferPool();
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
@@ -149,7 +152,7 @@ export class FSeqPrefetchCache {
                             offset: key.fileOffset,
                             length: key.fileLen,
                         });
-                        this.fileReadTime += performance.now() - start;
+                        this.fileReadTimeCumulative += performance.now() - start;
                         if (rlen !== key.fileLen)
                             throw new Error(
                                 `File read of ${key.fseqfile} expected ${key.fileLen} bytes but could only read ${rlen}`,
@@ -161,13 +164,16 @@ export class FSeqPrefetchCache {
                             readBuf = decres.compBuf; // May not be same as input due to transfer to/from worker
                             return { decompChunk: decres.decompBuf };
                         } else if (key.compression === 2) {
-                            throw new Error();
+                            throw new Error('Compression type 2 not supported');
                         } else {
                             ref = true;
                             return {
                                 decompChunk: readBuf,
                             };
                         }
+                    } catch (e) {
+                        emitError((e as Error).message);
+                        throw e;
                     } finally {
                         try {
                             await fh.close();
@@ -329,11 +335,9 @@ export class FSeqPrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        this.headerPrefetchCache.cleanup(this.now, this.now - (ageout ?? 60000));
-        this.headerPrefetchCache.dispatchRequests(this.now);
+        this.headerPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 60000));
 
-        this.decompPrefetchCache.cleanup(this.now, this.now - (ageout ?? 60000));
-        this.decompPrefetchCache.dispatchRequests(this.now);
+        this.decompPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 60000));
     }
 
     now: number;
@@ -360,7 +364,7 @@ export class FSeqPrefetchCache {
     decompDataPool: ArrayBufferPool;
     decompFunc: DecompZStd;
     decompPrefetchCache: PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>;
-    fileReadTime: number = 0;
+    fileReadTimeCumulative: number = 0;
 
     getStats() {
         const decompPool = this.decompDataPool.getStats();
@@ -373,8 +377,14 @@ export class FSeqPrefetchCache {
             decompPrefetch: this.decompPrefetchCache.getStats(),
             decompPool,
             totalDecompMem,
-            fileReadTime: this.fileReadTime,
+            fileReadTimeCumulative: this.fileReadTimeCumulative,
         };
+    }
+
+    resetStats() {
+        this.fileReadTimeCumulative = 0;
+        this.headerPrefetchCache.resetStats();
+        this.decompPrefetchCache.resetStats();
     }
     // TODO:
     //   Cache invalidation for updated .fseq files?

@@ -67,6 +67,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     const [formData, setFormData] = useState({
         title: '',
         artist: '',
+        vendor: '',
         lead_time: '',
         trail_time: '',
         volume_adj: '',
@@ -93,6 +94,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             setFormData({
                 title: selectedSong?.work?.title || '',
                 artist: selectedSong?.work?.artist || '',
+                vendor: selectedSong?.sequence?.vendor || '',
                 lead_time: selectedSong?.settings?.lead_time?.toString() || '0',
                 trail_time: selectedSong?.settings?.trail_time?.toString() || '0',
                 volume_adj: selectedSong?.settings?.volume_adj?.toString() || '0',
@@ -176,6 +178,10 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         artist: formData.artist.trim(),
                         artwork: imageUrl || undefined, // Update image URL
                     },
+                    sequence: {
+                        ...(prevSong.sequence || {}),
+                        vendor: formData.vendor.trim() || 'Local',
+                    },
                     settings: {
                         lead_time: parseFloat(formData.lead_time),
                         trail_time: parseFloat(formData.trail_time),
@@ -213,6 +219,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setFormData({
             title: originalSong?.work?.title || '',
             artist: originalSong?.work?.artist || '',
+            vendor: originalSong?.sequence?.vendor || '',
             lead_time: originalSong?.settings?.lead_time?.toString() || '0',
             trail_time: originalSong?.settings?.trail_time?.toString() || '0',
             volume_adj: originalSong?.settings?.volume_adj?.toString() || '0',
@@ -287,6 +294,17 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         error={errors.artist}
                                         helperText={errors.artist ? 'Artist name is required.' : ''}
                                         required
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        label="Vendor"
+                                        name="vendor"
+                                        value={formData?.vendor}
+                                        onChange={handleChange}
+                                        fullWidth
+                                        margin="normal"
+                                        placeholder="e.g., Local, xLights, etc."
                                     />
                                 </Grid>
                             </Grid>

@@ -1,6 +1,6 @@
 {
     "name": "@ezplayer/epp",
-    "version": "0.0.21",
+    "version": "0.0.22",
     "description": "EZPlayer EPP Core (pixel / controller data layer)",
     "main": "./dist/index.js",
     "module": ".dist/index.mjs",
@@ -15,7 +15,7 @@
     },
     "scripts": {
         "build": "tsc && tsup --format cjs,esm",
-        "jest": "jest",
+        "vitest": "vitest",
         "lint": "eslint . --ext .ts,.tsx --fix",
         "prepack": "npm run build",
         "pack": "npm pack"
@@ -34,9 +34,8 @@
         "@typescript-eslint/eslint-plugin": "^6.18.0",
         "@typescript-eslint/parser": "^6.18.0",
         "eslint": "^8.56.0",
-        "jest": "^29.7.0",
-        "ts-jest": "^29.1.1",
         "tsup": "^8.5.0",
-        "typescript": "^5.4.5"
+        "typescript": "^5.4.5",
+        "vitest": "^2.1.9"
     }
 }

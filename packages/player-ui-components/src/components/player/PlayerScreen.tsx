@@ -2,16 +2,14 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Alert, Box, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
 import { endOfDay, startOfDay } from 'date-fns';
 import React, { useMemo } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { RootState } from '../../store/Store';
 import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
-import { QueueCard } from '../status/QueueCard';
 import { getControllerStats } from '../status/ControllerHelpers';
-import { AppDispatch } from '../../store/Store';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { QueueAndControlStack } from './QueueAndControlStack';
 
 interface PlayerScreenProps {
     title: string;
@@ -29,14 +27,16 @@ const StatusCards = ({}: {}) => {
                     {playerStatus.playerStatus?.player ? (
                         <NowPlayingCard player={playerStatus.playerStatus.player} compact={true} />
                     ) : playerStatus.playerStatus?.show ? (
-                        <Box sx={{ p: 2, border: '1px solid #ccc', borderRadius: 2, bgcolor: 'background.paper' }}>
-                            <Typography variant="body2" color="text.secondary">
-                                Show: {playerStatus.playerStatus.show.show_name}
-                            </Typography>
-                            <Typography variant="caption" display="block">
-                                Player data not available
-                            </Typography>
-                        </Box>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography variant="body2" color="text.secondary">
+                                    Show: {playerStatus.playerStatus.show.show_name}
+                                </Typography>
+                                <Typography variant="caption" display="block">
+                                    Player data not available
+                                </Typography>
+                            </CardContent>
+                        </Card>
                     ) : null}
                 </Grid>
 
@@ -263,17 +263,6 @@ const TimelineView = ({}: {}) => {
 };
 
 export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
-    const dispatch = useDispatch<AppDispatch>();
-    const pstat = useSelector((s: RootState) => s.playerStatus);
-
-    if (!pstat.playerStatus || pstat.loading) {
-        return (
-            <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <CircularProgress />
-            </Box>
-        );
-    }
-
     return (
         <Box
             sx={{
@@ -291,36 +280,11 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
             {/* Now Playing Card and Controller Status */}
             <StatusCards />
 
-            {/* Playback Queue Card */}
-            {pstat?.playerStatus?.player?.queue && (
-                <Box sx={{ padding: 2, flexShrink: 0 }}>
-                    <QueueCard
-                        sx={{
-                            padding: 2,
-                        }}
-                        queue={pstat.playerStatus.player.queue}
-                        onRemoveItem={async (i, _index) => {
-                            await dispatch(
-                                callImmediateCommand({
-                                    command: 'deleterequest',
-                                    requestId: i.request_id ?? '',
-                                }),
-                            );
-                        }}
-                    ></QueueCard>
-                </Box>
-            )}
-
             {/* Timeline View */}
             <TimelineView />
 
-            {/* Controls - Sticks to the bottom 
-            <Box sx={{ 
-                padding: 2, 
-            }}>
-                <FullPlayerControlStack />
-            </Box>
-            */}
+            {/* Playback Queue Card */}
+            <QueueAndControlStack />
         </Box>
     );
 };

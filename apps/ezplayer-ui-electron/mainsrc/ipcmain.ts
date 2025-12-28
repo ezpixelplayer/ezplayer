@@ -4,7 +4,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import fsp from 'fs/promises';
 
-import type { AudioDevice, AudioTimeSyncM2R, FileSelectOptions } from '@ezplayer/ezplayer-core';
+import type { AudioDevice, FileSelectOptions } from '@ezplayer/ezplayer-core';
 import { getMainWindow } from '../main';
 import { ezpVersions } from '../versions';
 
@@ -122,11 +122,4 @@ export async function invokeRenderIPC<Return, Arg>(
 
 export function getAudioOutputDevices(mainWindow: BrowserWindow): Promise<AudioDevice[]> {
     return invokeRenderIPC('audio:get-devices', mainWindow, 1);
-}
-
-export function getAudioSyncTime(mainWindow: BrowserWindow): Promise<AudioTimeSyncM2R> {
-    return invokeRenderIPC('audio:syncm2r', mainWindow, {
-        perfNowTime: performance.now(),
-        realTime: Date.now(),
-    } satisfies AudioTimeSyncM2R);
 }
