@@ -1050,7 +1050,9 @@ async function processQueue() {
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    audioPlayerRunState.runUntil(Math.max(audioPlayerRunState.currentTime, targetFrameRTC));
+                    const etime = Math.max(audioPlayerRunState.currentTime, targetFrameRTC);
+                    audioPlayerRunState.runUntil(etime);
+                    sendSilence(startTime, etime - audioPlayerRunState.currentTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
