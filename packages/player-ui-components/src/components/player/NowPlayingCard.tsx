@@ -67,15 +67,14 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                     </Typography>
                 </Box>
 
-
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 2 }}>
                     <IconButton
                         size="small"
                         onClick={async () => {
                             if (!muted) {
-                                await dispatch(callImmediateCommand({command: 'setvolume', mute: true})).unwrap();
+                                await dispatch(callImmediateCommand({ command: 'setvolume', mute: true })).unwrap();
                             } else {
-                                await dispatch(callImmediateCommand({command: 'setvolume', mute: false})).unwrap();
+                                await dispatch(callImmediateCommand({ command: 'setvolume', mute: false })).unwrap();
                             }
                         }}
                     >
@@ -116,7 +115,7 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                         </Typography>
                         {player.now_playing?.until && (
                             <Typography variant="caption" color="text.secondary">
-                                Until: {formatTime(player.now_playing?.until    )}
+                                Until: {formatTime(player.now_playing?.until)}
                             </Typography>
                         )}
                     </Box>

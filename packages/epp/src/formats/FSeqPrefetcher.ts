@@ -1,10 +1,10 @@
-import { ZSTDDecoder } from "zstddec";
+import { ZSTDDecoder } from 'zstddec';
 import { promises as fsp } from 'fs';
 
-import { ArrayBufferPool } from "../util/BufferRecycler";
-import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from "../util/PrefetchCache";
-import { CompBlockCache, FSEQHeader, FSEQReaderAsync } from "./FSeqUtil";
-import { readHandleRange } from "../util/FileUtil";
+import { ArrayBufferPool } from '../util/BufferRecycler';
+import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '../util/PrefetchCache';
+import { CompBlockCache, FSEQHeader, FSEQReaderAsync } from './FSeqUtil';
+import { readHandleRange } from '../util/FileUtil';
 
 /**
  * Make a request for the sequence metadata... none of its frames... just let us know about it
@@ -33,14 +33,20 @@ export type DecompZStd = (
     compbuf: ArrayBuffer,
     compoff: number,
     complen: number,
-    explen: number
-) => Promise<{decompBuf: ArrayBuffer, compBuf: ArrayBuffer}>;
+    explen: number,
+) => Promise<{ decompBuf: ArrayBuffer; compBuf: ArrayBuffer }>;
 
-export async function defDecompZStd(decompbuf: ArrayBuffer, compbuf: ArrayBuffer, compoff: number, complen: number, explen: number) {
+export async function defDecompZStd(
+    decompbuf: ArrayBuffer,
+    compbuf: ArrayBuffer,
+    compoff: number,
+    complen: number,
+    explen: number,
+) {
     const decoder = new ZSTDDecoder();
     await decoder.init();
     new Uint8Array(decompbuf, 0, explen).set(decoder.decode(new Uint8Array(compbuf, compoff, complen), explen));
-    return {compBuf: compbuf, decompBuf: decompbuf};
+    return { compBuf: compbuf, decompBuf: decompbuf };
 }
 
 /**
@@ -52,16 +58,16 @@ export type PrefetchSeqTime = {
     startTime: number;
     durationms: number;
     needByTime: number; // For first frame
-}
+};
 
 export interface FSeqFileKey {
     fseqfile: string;
-};
+}
 
 export interface FSeqFileVal {
     header: FSEQHeader;
     chunkMap: CompBlockCache;
-};
+}
 
 interface DecompCacheKey {
     fseqfile: string;
@@ -70,13 +76,13 @@ interface DecompCacheKey {
     fileLen: number;
     compression: number;
     decompLen: number;
-};
+}
 
 interface DecompCacheVal {
     decompChunk: ArrayBuffer;
 }
 
-export type FrameTimeOrNumber =  {num?:number, time?:number};
+export type FrameTimeOrNumber = { num?: number; time?: number };
 
 export class FrameReference {
     private static registry = new FinalizationRegistry<string>((info) => {
@@ -84,7 +90,7 @@ export class FrameReference {
         // If we get here, the wrapper was collected without being dereferenced.
         const msg = `Leaked FrameReference (not dereferenced): ${info}\n`;
         // Be noisy. You can escalate to process.abort() if you want to fail hard.
-        process.emitWarning(msg, { code: "FSEQ_FRAME_LEAK" });
+        process.emitWarning(msg, { code: 'FSEQ_FRAME_LEAK' });
     });
 
     _v: Uint8Array<ArrayBufferLike> | undefined;
@@ -108,22 +114,23 @@ export class FrameReference {
         }
     }
 
-    get frame(): Uint8Array<ArrayBufferLike> | undefined { return this._v; }
+    get frame(): Uint8Array<ArrayBufferLike> | undefined {
+        return this._v;
+    }
 
     get isReleased(): boolean {
         return this.underlyingHandle == undefined;
     }
 }
 
-
 /**
  * Handles fseq prefetching
  */
 export class FSeqPrefetchCache {
     constructor(arg: {
-        now: number,
-        fseqSpace?: number,
-        decompZstd?: DecompZStd, // Allow a worker thread...
+        now: number;
+        fseqSpace?: number;
+        decompZstd?: DecompZStd; // Allow a worker thread...
     }) {
         this.now = arg.now;
         this.decompDataPool = new ArrayBufferPool();
@@ -137,31 +144,36 @@ export class FSeqPrefetchCache {
                 try {
                     const fh = await fsp.open(key.fseqfile);
                     try {
-                        const rlen = await readHandleRange(fh, {buf: readBuf, offset: key.fileOffset, length: key.fileLen});
-                        this.fileReadTime += (performance.now() - start);
-                        if (rlen !== key.fileLen) throw new Error (`File read of ${key.fseqfile} expected ${key.fileLen} bytes but could only read ${rlen}`);
+                        const rlen = await readHandleRange(fh, {
+                            buf: readBuf,
+                            offset: key.fileOffset,
+                            length: key.fileLen,
+                        });
+                        this.fileReadTime += performance.now() - start;
+                        if (rlen !== key.fileLen)
+                            throw new Error(
+                                `File read of ${key.fseqfile} expected ${key.fileLen} bytes but could only read ${rlen}`,
+                            );
                         if (key.compression === 1) {
                             // Decompress
                             const dbuf = this.decompDataPool.get(key.decompLen);
                             const decres = await this.decompFunc(dbuf, readBuf, 0, key.fileLen, key.decompLen);
                             readBuf = decres.compBuf; // May not be same as input due to transfer to/from worker
-                            return { decompChunk: decres.decompBuf }
-                        }
-                        else if (key.compression === 2) {
-                            throw new Error()
-                        }
-                        else {
+                            return { decompChunk: decres.decompBuf };
+                        } else if (key.compression === 2) {
+                            throw new Error();
+                        } else {
                             ref = true;
                             return {
                                 decompChunk: readBuf,
                             };
                         }
+                    } finally {
+                        try {
+                            await fh.close();
+                        } catch (_e) {}
                     }
-                    finally {
-                        try {await fh.close();} catch(_e) {}
-                    }
-                }
-                finally {
+                } finally {
                     if (!ref) this.decompDataPool.release(readBuf);
                 }
             },
@@ -171,7 +183,9 @@ export class FSeqPrefetchCache {
             budgetLimit: arg.fseqSpace ?? 512_000_000,
             maxConcurrency: 2,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => {this.decompDataPool.release(v.decompChunk);}
+            onDispose: (_k, v) => {
+                this.decompDataPool.release(v.decompChunk);
+            },
         });
     }
 
@@ -188,45 +202,45 @@ export class FSeqPrefetchCache {
     /** Prefetch seq metadata */
     prefetchSeqMetadata(req: PrefetchSeqMetadataRequest) {
         this.headerPrefetchCache.prefetch({
-            key: {fseqfile: req.fseqfile},
-            priority: {neededTime: req.needByTime},
+            key: { fseqfile: req.fseqfile },
+            priority: { neededTime: req.needByTime },
             now: this.now,
-            expiry: req.expiry ?? this.now + (24*3600*1000),
+            expiry: req.expiry ?? this.now + 24 * 3600 * 1000,
         });
     }
 
-    getHeaderInfo(key: FSeqFileKey): {ref?: FSeqFileVal, err?:Error} | undefined {
+    getHeaderInfo(key: FSeqFileKey): { ref?: FSeqFileVal; err?: Error } | undefined {
         const r = this.headerPrefetchCache.reference(key, this.now);
         if (!r) {
             return undefined;
         }
         if (!r.ref) {
-            return {err: r.err};
+            return { err: r.err };
         }
         // These headers are just GC'd
-        const rv = {ref: r.ref.v};
+        const rv = { ref: r.ref.v };
         r.ref.release();
         return rv;
     }
 
     prefetchSeqFrames(req: PrefetchSeqFramesRequest) {
         //console.log(`  PrefetchSeqFrames: ${req.fseqfile} ${req.startFrame}-${req.nFrames}`);
-        const hdr = this.getHeaderInfo({fseqfile: req.fseqfile});
+        const hdr = this.getHeaderInfo({ fseqfile: req.fseqfile });
         if (!hdr || !hdr.ref) {
-            // We can't prefetch without knowing the 
+            // We can't prefetch without knowing the
             this.prefetchSeqMetadata(req);
             return;
         }
 
-        for (let cframe = req.startFrame; cframe < req.startFrame + req.nFrames;) {
-            const fk = this.getFrameKey(req.fseqfile, {num: cframe});
+        for (let cframe = req.startFrame; cframe < req.startFrame + req.nFrames; ) {
+            const fk = this.getFrameKey(req.fseqfile, { num: cframe });
             if (!fk) return;
             //console.log(`Prefetch chunk: ${fk.dk.chunknum} ${fk.hdr.chunkMap.index[fk.dk.chunknum].startFrame}-${fk.hdr.chunkMap.index[fk.dk.chunknum].endFrame}`);
             this.decompPrefetchCache.prefetch({
                 key: fk.dk,
                 now: this.now,
-                expiry: req.expiry ?? this.now + 24*3600_000, 
-                priority: {neededTime: req.needByTime + hdr.ref.header.msperframe * (cframe - req.startFrame)}
+                expiry: req.expiry ?? this.now + 24 * 3600_000,
+                priority: { neededTime: req.needByTime + hdr.ref.header.msperframe * (cframe - req.startFrame) },
             });
             cframe = fk.hdr.chunkMap.index[fk.dk.chunknum].endFrame;
         }
@@ -235,14 +249,14 @@ export class FSeqPrefetchCache {
     prefetchSeqTimes(req: PrefetchSeqTime) {
         //console.log(`PrefetchSeqTimes: ${req.fseqfile} ${req.startTime}-${req.durationms}`);
         if (req.durationms < 0) return;
-        const hdr = this.getHeaderInfo({fseqfile: req.fseqfile});
+        const hdr = this.getHeaderInfo({ fseqfile: req.fseqfile });
         if (!hdr || !hdr.ref) {
-            // We can't prefetch without knowing the 
+            // We can't prefetch without knowing the
             this.prefetchSeqMetadata(req);
             return;
         }
         const sf = Math.floor(req.startTime / hdr.ref.header.msperframe);
-        let ef = Math.ceil((req.startTime+ req.durationms) / hdr.ref.header.msperframe);
+        let ef = Math.ceil((req.startTime + req.durationms) / hdr.ref.header.msperframe);
         if (req.durationms === 0) {
             ef = sf + 1;
         }
@@ -255,18 +269,18 @@ export class FSeqPrefetchCache {
         });
     }
 
-    private getFrameKey(fseq: string, frame: {num?: number, time?:number}, needByTime?: number) {
-        const hdr = this.getHeaderInfo({fseqfile: fseq})?.ref;
+    private getFrameKey(fseq: string, frame: { num?: number; time?: number }, needByTime?: number) {
+        const hdr = this.getHeaderInfo({ fseqfile: fseq })?.ref;
         if (!hdr) {
-            // We can't prefetch without knowing the 
+            // We can't prefetch without knowing the
             if (needByTime !== undefined) {
-                this.prefetchSeqMetadata({fseqfile: fseq, needByTime: needByTime});
+                this.prefetchSeqMetadata({ fseqfile: fseq, needByTime: needByTime });
             }
             return;
         }
 
         if (frame.num === undefined) {
-            if (frame.time === undefined) throw new TypeError("Should set frame num or time");
+            if (frame.time === undefined) throw new TypeError('Should set frame num or time');
             frame.num = Math.floor(frame.time / hdr.header.msperframe);
         }
 
@@ -274,8 +288,8 @@ export class FSeqPrefetchCache {
         if (chunk === undefined) return undefined;
         const cidx = hdr.chunkMap.index[chunk];
 
-        const nframes = cidx.endFrame-cidx.startFrame;
-        const lenraw = nframes*hdr.header.stepsize;
+        const nframes = cidx.endFrame - cidx.startFrame;
+        const lenraw = nframes * hdr.header.stepsize;
         const comptype = hdr.header.compression;
 
         const dk: DecompCacheKey = {
@@ -286,26 +300,32 @@ export class FSeqPrefetchCache {
             decompLen: lenraw,
             compression: comptype,
         };
-        return {dk, hdr};
+        return { dk, hdr };
     }
 
-    getFrame(fseq: string, frame: FrameTimeOrNumber): {ref?: FrameReference, err ?: Error} | undefined {
+    getFrame(fseq: string, frame: FrameTimeOrNumber): { ref?: FrameReference; err?: Error } | undefined {
         const fk = this.getFrameKey(fseq, frame, undefined);
         if (!fk || frame.num === undefined) return undefined;
 
         // Fetch the chunk and wrap as a frame reference
         const cref = this.decompPrefetchCache.reference(fk.dk, this.now);
         if (!cref) return undefined;
-        if (!cref.ref?.v) return {err: cref.err};
+        if (!cref.ref?.v) return { err: cref.err };
 
         const cnum = fk.dk.chunknum;
         const chunk = fk.hdr.chunkMap.index[cnum];
 
-        return {ref: new FrameReference(
-            cref.ref,
-            new Uint8Array(cref.ref.v.decompChunk, (frame.num - chunk.startFrame) * fk.hdr.header.stepsize, fk.hdr.header.stepsize),
-            `${fseq}:${frame}`
-        )};
+        return {
+            ref: new FrameReference(
+                cref.ref,
+                new Uint8Array(
+                    cref.ref.v.decompChunk,
+                    (frame.num - chunk.startFrame) * fk.hdr.header.stepsize,
+                    fk.hdr.header.stepsize,
+                ),
+                `${fseq}:${frame}`,
+            ),
+        };
     }
 
     dispatch(ageout?: number) {
@@ -334,7 +354,7 @@ export class FSeqPrefetchCache {
         budgetLimit: 10000,
         maxConcurrency: 2,
         priorityComparator: needTimePriorityCompare,
-        onDispose: (_k, _v) => {}
+        onDispose: (_k, _v) => {},
     });
 
     decompDataPool: ArrayBufferPool;
@@ -354,7 +374,7 @@ export class FSeqPrefetchCache {
             decompPool,
             totalDecompMem,
             fileReadTime: this.fileReadTime,
-        }
+        };
     }
     // TODO:
     //   Cache invalidation for updated .fseq files?

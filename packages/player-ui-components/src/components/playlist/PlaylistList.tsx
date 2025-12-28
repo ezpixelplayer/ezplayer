@@ -71,7 +71,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             let newTitle = `${baseTitle}-${cloneNumber}`;
 
             // Check if a playlist with this name already exists
-            while (playlistRecords.some(playlist => playlist.title === newTitle)) {
+            while (playlistRecords.some((playlist) => playlist.title === newTitle)) {
                 cloneNumber++;
                 newTitle = `${baseTitle}-${cloneNumber}`;
             }
@@ -183,21 +183,21 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {params.value && params.value.length > 0
                             ? params.value.split(',').map((tag: string, index: number) => (
-                                <Typography
-                                    key={`${params.row.id}-tag-${index}-${tag}`}
-                                    variant="body2"
-                                    sx={{
-                                        backgroundColor: 'primary.light',
-                                        color: 'primary.contrastText',
-                                        padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    {tag}
-                                </Typography>
-                            ))
+                                  <Typography
+                                      key={`${params.row.id}-tag-${index}-${tag}`}
+                                      variant="body2"
+                                      sx={{
+                                          backgroundColor: 'primary.light',
+                                          color: 'primary.contrastText',
+                                          padding: '2px 8px',
+                                          borderRadius: '12px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 500,
+                                      }}
+                                  >
+                                      {tag}
+                                  </Typography>
+                              ))
                             : null}
                     </Box>
                 </RowWrapper>

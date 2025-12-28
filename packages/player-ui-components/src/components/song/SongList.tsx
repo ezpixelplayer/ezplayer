@@ -97,7 +97,9 @@ export function SongList({ title, storeUrl, AddSongDialog, statusArea }: SongLis
                     return null; // Skip songs without ID
                 }
 
-                const artist = (song?.work?.artist || 'Unknown Artist') + `${song?.sequence?.vendor ? '('+song.sequence.vendor+')' : ''}`;
+                const artist =
+                    (song?.work?.artist || 'Unknown Artist') +
+                    `${song?.sequence?.vendor ? '(' + song.sequence.vendor + ')' : ''}`;
 
                 return {
                     id: song.id,

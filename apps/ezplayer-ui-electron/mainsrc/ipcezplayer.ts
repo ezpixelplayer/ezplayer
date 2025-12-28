@@ -23,11 +23,7 @@ import {
     blankUserProfile,
 } from './data/FileStorage.js';
 
-import {
-    applySettingsFromRenderer,
-    getSettingsCache,
-    loadSettingsFromDisk,
-} from './data/SettingsStorage.js';
+import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
 
 import type {
     CombinedPlayerStatus,
@@ -148,7 +144,11 @@ const handlers: MainRPCAPI = {
 
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
-export async function registerContentHandlers(mainWindow: BrowserWindow | null, realTimeClock: ClockConverter, nPlayWorker: Worker) {
+export async function registerContentHandlers(
+    mainWindow: BrowserWindow | null,
+    realTimeClock: ClockConverter,
+    nPlayWorker: Worker,
+) {
     updateWindow = mainWindow;
     rtConverter = realTimeClock;
     playWorker = nPlayWorker;

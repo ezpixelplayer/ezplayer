@@ -53,10 +53,10 @@ const createWindow = (showFolder: string) => {
     } else if (process.platform === 'darwin') {
         iconFile = 'EZPlayerLogoTransparent.icns';
     }
-    const iconPath = app.isPackaged 
+    const iconPath = app.isPackaged
         ? path.join(process.resourcesPath, `images/${iconFile}`)
         : path.join(__dirname, `images/${iconFile}`);
-    
+
     // Splash screen
     const splash = new BrowserWindow({
         width: 500,
@@ -142,8 +142,8 @@ app.whenReady().then(async () => {
     await new Promise<void>((resolve) => {
         const onMessage = (msg: any) => {
             if (msg.type === 'ready') {
-            playWorker!.off('message', onMessage);
-            resolve();
+                playWorker!.off('message', onMessage);
+                resolve();
             }
         };
         playWorker!.on('message', onMessage);

@@ -6,7 +6,7 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/ezpixelplayer/ezplayer.git"
-     },
+    },
     "workspaces": [
         "apps/*",
         "packages/*"
@@ -17,10 +17,13 @@
     "scripts": {
         "build": "pnpm --recursive --workspace-root=false build",
         "postbuild": "pnpm run pack:shared && pnpm run pack:player && pnpm run pack:core && pnpm run pack:epp",
+        "build:win": "pnpm --filter './packages/*' build && cd apps/ezplayer-ui-electron && pnpm build:react && pnpm build:tsc && pnpm build:preload && pnpm electron-builder --win",
+        "build:mac": "pnpm --filter './packages/*' build && cd apps/ezplayer-ui-electron && pnpm build:react && pnpm build:tsc && pnpm build:preload && pnpm electron-builder --mac",
+        "build:linux": "pnpm --filter './packages/*' build && cd apps/ezplayer-ui-electron && pnpm build:react && pnpm build:tsc && pnpm build:preload && pnpm electron-builder --linux",
         "pack:shared": "cd packages/shared-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "pack:player": "cd packages/player-ui-components && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "pack:core": "cd packages/ezplayer-core && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
-	"pack:epp": "cd packages/epp && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
+        "pack:epp": "cd packages/epp && rm -rf dist/*.tgz && pnpm pack --pack-destination ./dist",
         "lint": "pnpm --recursive --workspace-root=false lint",
         "format": "prettier --check .",
         "format:fix": "prettier --write ."
@@ -34,5 +37,11 @@
     },
     "dependencies": {
         "@types/node": "^22.13.1"
+    },
+    "pnpm": {
+        "overrides": {
+            "http-errors": "^2.0.1",
+            "statuses": "^2.0.2"
+        }
     }
 }

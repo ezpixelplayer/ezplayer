@@ -43,7 +43,7 @@ import { AsyncBatchLogger } from './logger';
 import { performance } from 'perf_hooks';
 import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 
-import process from "node:process";
+import process from 'node:process';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { decompressZStdWithWorker, getZstdStats } from './zstdparent';
@@ -58,44 +58,44 @@ import { randomUUID } from 'node:crypto';
 
 // Helpful header for every line
 function tag(msg: string) {
-  const name = workerData?.name ?? "unnamed";
-  return `[worker ${name}] ${msg}`;
+    const name = workerData?.name ?? 'unnamed';
+    return `[worker ${name}] ${msg}`;
 }
 
 // Log lifecycle
-console.info(tag("booting"));
+console.info(tag('booting'));
 
 // Catch truly fatal programming errors
-process.on("uncaughtException", (err) => {
-  console.error(tag("uncaughtException"), {
-    name: err.name,
-    message: err.message,
-    stack: err.stack,
-    cause: (err as any).cause,
-  });
-  // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
-  process.exitCode = 1;
+process.on('uncaughtException', (err) => {
+    console.error(tag('uncaughtException'), {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+        cause: (err as any).cause,
+    });
+    // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
+    process.exitCode = 1;
 });
 
 // Promote unhandled rejections to real failures (or at least log them)
-process.on("unhandledRejection", (reason, _promise) => {
-  console.error(tag("unhandledRejection"), { reason });
-  process.exitCode = 1;
+process.on('unhandledRejection', (reason, _promise) => {
+    console.error(tag('unhandledRejection'), { reason });
+    process.exitCode = 1;
 });
 
 // When the event loop is about to go idle; good for final flushes
-process.on("beforeExit", (code) => {
-  console.warn(tag(`beforeExit code=${code}`));
+process.on('beforeExit', (code) => {
+    console.warn(tag(`beforeExit code=${code}`));
 });
 
 // Always runs right before termination (even after uncaughtException)
-process.on("exit", (code) => {
-  console.warn(tag(`exit code=${code}`));
+process.on('exit', (code) => {
+    console.warn(tag(`exit code=${code}`));
 });
 
 // Parent port lifecycle (closed if main thread dies or calls worker.terminate())
-parentPort.on("close", () => {
-  console.warn(tag("parentPort closed"));
+parentPort.on('close', () => {
+    console.warn(tag('parentPort closed'));
 });
 
 const playLogger = new AsyncBatchLogger({
@@ -136,12 +136,12 @@ function emitFrameDebug(msg: string) {
 
 const logGargbageCollection = true;
 if (logGargbageCollection) {
-    startGCLogging((l)=>playLogger.log(l));
+    startGCLogging((l) => playLogger.log(l));
 }
 
 const logEventLoop = false;
 if (logEventLoop) {
-    startELDMonitor((l)=>playLogger.log(l));
+    startELDMonitor((l) => playLogger.log(l));
 }
 
 const logAsyncs = false;
@@ -175,15 +175,14 @@ function playingItemDesc(item?: PlayAction) {
 }
 
 // TODO: Should this move to the run state?
-function actionToPlayingItem(interactive: boolean, pla: PlayAction)
-{
+function actionToPlayingItem(interactive: boolean, pla: PlayAction) {
     return {
         type: interactive ? 'Immediate' : 'Scheduled',
         item: 'Song', // TODO
         title: playingItemDesc(pla),
         sequence_id: pla.seqId,
         at: foregroundPlayerRunState.currentTime,
-        until: foregroundPlayerRunState.currentTime + (pla.durationMS ?? 0)
+        until: foregroundPlayerRunState.currentTime + (pla.durationMS ?? 0),
     } as PlayingItem;
 }
 
@@ -196,7 +195,7 @@ function sendPlayerStateUpdate() {
         upcoming: [],
         volume: {
             level: volume,
-            muted
+            muted,
         },
     };
     if (ps.curPLActions?.actions?.length) {
@@ -223,12 +222,13 @@ function sendControllerStateUpdate() {
         controllers: [],
     };
     cstatus.n_models = modelRecs?.length;
-    cstatus.n_channels = Math.max(...(controllerStates ?? []).map((e: ControllerState) => e.setup.startCh + e.setup.nCh));
+    cstatus.n_channels = Math.max(
+        ...(controllerStates ?? []).map((e: ControllerState) => e.setup.startCh + e.setup.nCh),
+    );
     for (const c of controllerStates ?? []) {
         const pstat = stats.stats?.[c.setup.address];
-        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : "";
-        const connectivity = !c.setup.usable ? "N/A"
-            : (!(pstat?.outOf) ? "Pending" :  pstat.nReplies > 0 ? "Up" : "Down");
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : '';
+        const connectivity = !c.setup.usable ? 'N/A' : !pstat?.outOf ? 'Pending' : pstat.nReplies > 0 ? 'Up' : 'Down';
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -238,7 +238,7 @@ function sendControllerStateUpdate() {
             model: `${c.xlRecord?.vendor} ${c.xlRecord?.model} ${c.xlRecord?.variant}`,
             address: c.setup.address,
             state: c.xlRecord?.activeState,
-            status:  c.setup.skipped ? 'skipped' : (c.setup.usable ? c.report?.status : 'unusable'),
+            status: c.setup.skipped ? 'skipped' : c.setup.usable ? c.report?.status : 'unusable',
             notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
@@ -261,8 +261,7 @@ function sendRemoteUpdate() {
         //emitInfo('Disable RF');
         setRFControlEnabled(false);
         return;
-    }
-    else {
+    } else {
         //emitInfo('Enable RF');
         setRFControlEnabled(true);
     }
@@ -282,8 +281,8 @@ function sendRemoteUpdate() {
     }
     //emitInfo("Set RF Now Playing");
     setRFNowPlaying(now_playing?.title, upcoming?.title);
-    const pl = curPlaylists?.find((p)=>p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
-    const items : PlaylistSyncItem[] = [];
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
+    const items: PlaylistSyncItem[] = [];
     if (pl) {
         for (const i of pl.items) {
             const s = foregroundPlayerRunState.sequencesById.get(i.id);
@@ -292,7 +291,7 @@ function sendRemoteUpdate() {
                 playlistType: 'SEQUENCE',
                 playlistDuration: s.work.length,
                 playlistIndex: i.sequence,
-                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - '+s.sequence.vendor: ''}`,
+                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
             });
         }
         //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
@@ -304,8 +303,7 @@ function sendRemoteUpdate() {
             //emitInfo("Initiate while-playing RF check");
             sendRFInitiateCheck();
         }
-    }
-    else {
+    } else {
         const dn = Date.now();
         if (dn - lastRFCheck > 5000) {
             lastRFCheck = dn;
@@ -339,32 +337,33 @@ function doVolumeAdjust(dn: number) {
 // Inbound messages
 function processCommand(cmd: EZPlayerCommand) {
     switch (cmd.command) {
-        case 'playsong': {
-            emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-            const seq = curSequences?.find((s) => s.id === cmd.songId);
-            if (!seq) {
-                emitError(`Unable to identify sequence ${cmd.songId}`);
-                return false;
+        case 'playsong':
+            {
+                emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+                const seq = curSequences?.find((s) => s.id === cmd.songId);
+                if (!seq) {
+                    emitError(`Unable to identify sequence ${cmd.songId}`);
+                    return false;
+                }
+                foregroundPlayerRunState.addInteractiveCommand({
+                    immediate: cmd.immediate,
+                    requestId: cmd.requestId,
+                    startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                    seqId: cmd.songId,
+                });
+                audioPlayerRunState.addInteractiveCommand({
+                    immediate: cmd.immediate,
+                    requestId: cmd.requestId,
+                    startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
+                    seqId: cmd.songId,
+                });
+                emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                sendPlayerStateUpdate();
+                if (!running) {
+                    running = processQueue(); // kick off first song
+                }
             }
-            foregroundPlayerRunState.addInteractiveCommand({
-                immediate: cmd.immediate,
-                requestId: cmd.requestId,
-                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                seqId: cmd.songId,
-            });
-            audioPlayerRunState.addInteractiveCommand({
-                immediate: cmd.immediate,
-                requestId: cmd.requestId,
-                startTime: Date.now() + playbackParams.interactiveCommandPrefetchDelay,
-                seqId: cmd.songId,
-            });
-            emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
-            sendPlayerStateUpdate();
-            if (!running) {
-                running = processQueue(); // kick off first song
-            }
-        }
-        break;
+            break;
         case 'deleterequest': {
             emitInfo(`Delete ${cmd.requestId}`);
             foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
@@ -392,13 +391,20 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'resume':
             isPaused = false;
             break;
-        case 'activateoutput': break;
-        case 'suppressoutput': break;
-        case 'playplaylist': break;
-        case 'reloadcontrollers': break;
-        case 'resetplayback': break;
-        case 'stopgraceful': break;
-        case 'stopnow': break;
+        case 'activateoutput':
+            break;
+        case 'suppressoutput':
+            break;
+        case 'playplaylist':
+            break;
+        case 'reloadcontrollers':
+            break;
+        case 'resetplayback':
+            break;
+        case 'stopgraceful':
+            break;
+        case 'stopnow':
+            break;
     }
 }
 
@@ -435,7 +441,7 @@ parentPort.on('message', (command: PlayerCommand) => {
     }
 });
 
-send({type: 'ready'});
+send({ type: 'ready' });
 
 const rpcs = new RPCServer<PlayWorkerRPCAPI>(parentPort, handlers);
 const rpcc = new RPCClient<MainRPCAPI>(parentPort);
@@ -465,20 +471,28 @@ let latestSettings: PlaybackSettings | undefined = undefined;
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
     playbackParams.audioTimeAdjMs = settings.audioSyncAdjust ?? 0;
-    setRFConfig({
-        remoteToken: settings.viewerControl.remoteFalconToken,
-    },
-    (next) => {
-        const settings = latestSettings;
-        if (!settings) return;
-        const rfc = getActiveViewerControlSchedule(settings.viewerControl);
-        if (!rfc) return;
-        const pl = curPlaylists?.find((pl)=>pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
-        if (!pl) return;
-        const s = pl.items.find((seq)=>seq.sequence === next.playlistIndex);
-        if (!s) return;
-        processCommand({command: 'playsong', immediate: false, songId: s.id, requestId: randomUUID(), priority: 3});
-    });
+    setRFConfig(
+        {
+            remoteToken: settings.viewerControl.remoteFalconToken,
+        },
+        (next) => {
+            const settings = latestSettings;
+            if (!settings) return;
+            const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+            if (!rfc) return;
+            const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
+            if (!pl) return;
+            const s = pl.items.find((seq) => seq.sequence === next.playlistIndex);
+            if (!s) return;
+            processCommand({
+                command: 'playsong',
+                immediate: false,
+                songId: s.id,
+                requestId: randomUUID(),
+                priority: 3,
+            });
+        },
+    );
 }
 
 ////////
@@ -513,7 +527,7 @@ const playbackStats: PlaybackStatistics = {
     sequenceDecompress: {
         fileReadTime: 0,
         decompressTime: 0,
-    }
+    },
 };
 
 const playbackStatsAgg: OverallFrameSendStats = {
@@ -602,18 +616,18 @@ async function processQueue() {
     }
 
     const sender: FrameSender = new FrameSender();
-    sender.emitError = (e)=>emitError(e.message);
+    sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
 
     try {
         const { controllers, models } = await readControllersFromXlights(showFolder!);
         const sendJob = await openControllersForDataSend(controllers);
         setPingConfig({
-            hosts: controllers.filter((c)=>c.setup.usable).map((c)=>c.setup.address),
+            hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             concurrency: 10,
             maxSamples: 10,
             intervalS: 5,
-        })
+        });
         sender.job = sendJob;
         modelRecs = models;
         controllerStates = controllers;
@@ -624,7 +638,9 @@ async function processQueue() {
             emitInfo(
                 `Controller: ${xc?.name} ${xc?.address} ${xc?.activeState} ${xc?.type} ${xc?.universeNumbers} ${xc?.universeSizes} ${xc?.keepChannelNumbers}`,
             );
-            emitInfo(`Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}; ${c.sender?.minFrameTime()} ms frame time`);
+            emitInfo(
+                `Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}; ${c.sender?.minFrameTime()} ms frame time`,
+            );
             emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
             emitInfo('');
         }
@@ -654,8 +670,7 @@ async function processQueue() {
     let lastNStatusUpdate = clockBasePN;
     let lastRFUpdate = clockBasePN;
 
-    try
-    {
+    try {
         while (true) {
             ++iteration;
 
@@ -667,12 +682,12 @@ async function processQueue() {
                 playbackStats.audioDecode = {
                     fileReadTime: astat.fileReadTime,
                     decodeTime: astat.decodeTime,
-                }
+                };
                 const fseqStats = fseqCache.getStats();
                 playbackStats.sequenceDecompress = {
                     decompressTime: getZstdStats().decompTime,
                     fileReadTime: fseqStats.fileReadTime,
-                }
+                };
                 send({ type: 'stats', stats: playbackStats });
                 lastStatsUpdate += 1000 * Math.floor((curPerfNow - lastStatsUpdate) / 1000);
             }
@@ -691,7 +706,7 @@ async function processQueue() {
                 sendControllerStateUpdate();
                 lastNStatusUpdate += 1000 * Math.floor((curPerfNow - lastNStatusUpdate) / 1000);
             }
-            if (iteration %4 === 3) {
+            if (iteration % 4 === 3) {
                 doVolumeAdjust(Date.now());
                 if (curPerfNow - lastRFUpdate >= 1000) {
                     sendRemoteUpdate();
@@ -895,7 +910,6 @@ async function processQueue() {
                     },
                     [quiet.buffer],
                 );
-
             }
 
             // Send out audio in advance (at lease sendAudioInAdvanceMs at all times)
@@ -930,7 +944,7 @@ async function processQueue() {
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    const nextTime = Math.max(audioPlayerRunState.currentTime, curPerfNowTime)
+                    const nextTime = Math.max(audioPlayerRunState.currentTime, curPerfNowTime);
                     sendSilence(startTime, nextTime - audioPlayerRunState.currentTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
                     audioPlayerRunState.runUntil(nextTime);
                     break;
@@ -965,7 +979,9 @@ async function processQueue() {
                         const sampleRate = audio?.sampleRate ?? 48000;
                         if (audio) {
                             // Send audio
-                            const sampleOffset = Math.floor((Math.floor(audioAction.offsetMS ?? 0) * sampleRate) / 1000);
+                            const sampleOffset = Math.floor(
+                                (Math.floor(audioAction.offsetMS ?? 0) * sampleRate) / 1000,
+                            );
                             const msToSend = Math.min(playbackParams.sendAudioChunkMs);
                             const nSamplesToSend = Math.floor((msToSend * audio.sampleRate) / 1000);
 
@@ -1066,7 +1082,7 @@ async function processQueue() {
             );
             // TODO change this check to look at all the things
             if (!upcomingForeground.curPLActions?.actions?.length) {
-                await sender.sendBlackFrame({targetFramePN});
+                await sender.sendBlackFrame({ targetFramePN });
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
                 continue;
@@ -1075,7 +1091,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 if (!isPaused) {
-                    await sender.sendBlackFrame({targetFramePN});
+                    await sender.sendBlackFrame({ targetFramePN });
                 }
                 targetFramePN += playbackParams.idleSleepInterval;
                 await sleepms(playbackParams.idleSleepInterval);
@@ -1120,8 +1136,7 @@ async function processQueue() {
                 dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
             });
         }
-    }
-    finally {
+    } finally {
         sender.close();
     }
 }

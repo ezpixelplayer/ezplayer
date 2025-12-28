@@ -3,10 +3,10 @@ export interface EZPlayerVersions {
     version: string;
     arch: string;
     builtAtIso: string;
-    git: {[key: string]: string};
-    packages: {[pkg: string]: string};
-    processes: {[proc: string]: string | undefined};
-};
+    git: { [key: string]: string };
+    packages: { [pkg: string]: string };
+    processes: { [proc: string]: string | undefined };
+}
 
 export interface SongDetails {
     title: string;
@@ -121,26 +121,27 @@ export interface UserPlayer {
 }
 
 export interface PlayingItem {
-    type: 'Scheduled' | 'Immediate' | 'Queued',
-    item: 'Song' | 'Playlist' | 'Schedule',
-    title: string,
-    at?: number,
-    until?: number,
-    priority?: number,
-    request_id?: string,
-    sequence_id?: string,
-    playlist_id?: string,
-    schedule_id?: string,
+    type: 'Scheduled' | 'Immediate' | 'Queued';
+    item: 'Song' | 'Playlist' | 'Schedule';
+    title: string;
+    at?: number;
+    until?: number;
+    priority?: number;
+    request_id?: string;
+    sequence_id?: string;
+    playlist_id?: string;
+    schedule_id?: string;
 }
 
 export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
-    status: 'Playing' | // Playing
-            'Stopping' | // Graceful stop happening
-            'Stopped' | // Stopped due to stop request
-            'Paused' | // Paused - time is not advancing
-            'Suppressed'; // Time advancing, but not emitting the sound/light
+    status:
+        | 'Playing' // Playing
+        | 'Stopping' // Graceful stop happening
+        | 'Stopped' // Stopped due to stop request
+        | 'Paused' // Paused - time is not advancing
+        | 'Suppressed'; // Time advancing, but not emitting the sound/light
 
     reported_time: number;
     now_playing?: PlayingItem;
@@ -151,9 +152,9 @@ export interface PlayerPStatusContent {
     preemptedItems?: PlayingItem[];
 
     volume?: {
-        level: number, // 0-100
-        muted?: boolean,
-    }
+        level: number; // 0-100
+        muted?: boolean;
+    };
 
     // TODO: system status, storage, memory, temp, etc?
 
@@ -183,7 +184,7 @@ export interface ControllerStatus {
     status?: 'open' | 'skipped' | 'error' | 'unusable';
     notices?: string[];
     errors?: string[];
-    connectivity?: "Up" | "Down" | "Pending" | "N/A";
+    connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     pingSummary?: string;
     reported_time?: number;
 }
@@ -246,65 +247,68 @@ export interface PlaybackStatistics {
 
     // Audio Decode
     audioDecode?: {
-        fileReadTime: number,
-        decodeTime: number,
-    }
+        fileReadTime: number;
+        decodeTime: number;
+    };
 
     // Sequence Decompress
     sequenceDecompress?: {
-        fileReadTime: number,
-        decompressTime: number,
-    }
+        fileReadTime: number;
+        decompressTime: number;
+    };
 }
 
 export type EZPlayerCommand =
-{
-    command: 'reloadcontrollers'; // Reset playback from current show folder, reloading network, and reopening controllers
-} |
-{
-    command: 'resetplayback'; // Reread and reset playback from current schedule items
-} |
-{
-    command: 'stopnow'; // Stop all playing
-} |
-{ 
-    command: 'stopgraceful'; // Stop all playing, at convenient spot
-} | 
-{
-    command: 'pause'; // Pause all playback
-} |
-{
-    command: 'resume'; // Resume playback
-} |
-{
-    command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
-} |
-{
-    command: 'activateoutput'; // Playback continues, but not audio / video not sent out
-} |
-{
-    command: 'playsong'; // Play or enqueue a song
-    songId: string;
-    immediate: boolean; // If false, enqueue
-    priority: number; // Allows precedence over RF, lower is higher priority
-    requestId: string; // To identify, for canceling
-} |
-{
-    command: 'playplaylist'; // Play or enqueue a playlist
-    playlistId: string;
-    immediate: boolean; 
-    priority: number; // Allows precedence over RF, lower is higher priority
-    requestId: string; // To identify, for canceling
-} | {
-    command: 'deleterequest';
-    requestId: string; // Identity, for canceling, of a song or a
-} | {
-    command: 'clearrequests'; // Clear all requests
-} | {
-    command: 'setvolume';
-    volume?: number;
-    mute?: boolean;
-};
+    | {
+          command: 'reloadcontrollers'; // Reset playback from current show folder, reloading network, and reopening controllers
+      }
+    | {
+          command: 'resetplayback'; // Reread and reset playback from current schedule items
+      }
+    | {
+          command: 'stopnow'; // Stop all playing
+      }
+    | {
+          command: 'stopgraceful'; // Stop all playing, at convenient spot
+      }
+    | {
+          command: 'pause'; // Pause all playback
+      }
+    | {
+          command: 'resume'; // Resume playback
+      }
+    | {
+          command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
+      }
+    | {
+          command: 'activateoutput'; // Playback continues, but not audio / video not sent out
+      }
+    | {
+          command: 'playsong'; // Play or enqueue a song
+          songId: string;
+          immediate: boolean; // If false, enqueue
+          priority: number; // Allows precedence over RF, lower is higher priority
+          requestId: string; // To identify, for canceling
+      }
+    | {
+          command: 'playplaylist'; // Play or enqueue a playlist
+          playlistId: string;
+          immediate: boolean;
+          priority: number; // Allows precedence over RF, lower is higher priority
+          requestId: string; // To identify, for canceling
+      }
+    | {
+          command: 'deleterequest';
+          requestId: string; // Identity, for canceling, of a song or a
+      }
+    | {
+          command: 'clearrequests'; // Clear all requests
+      }
+    | {
+          command: 'setvolume';
+          volume?: number;
+          mute?: boolean;
+      };
 
 export interface EndUser {
     user_id: string; // UUID

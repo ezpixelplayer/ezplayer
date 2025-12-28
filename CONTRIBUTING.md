@@ -15,7 +15,7 @@ Thank you for your interest in contributing!
 
 ## Contribution Workflow
 
-0. It may be a good idea to reach out to us to ask about interest in your contribution.  Someone may already have it in progress, have ideas about the implementation, etc., and we don't want you to waste your effort.
+0. It may be a good idea to reach out to us to ask about interest in your contribution. Someone may already have it in progress, have ideas about the implementation, etc., and we don't want you to waste your effort.
 1. Fork the repository and create a feature branch.
 2. Run tests and ensure code passes linting.
 3. Submit a pull request targeting the `main` branch.
@@ -30,5 +30,5 @@ is not tolerated and may result in removal from the community.
 
 ---
 
-*For questions, the EZPlayer Steering Committee can be contacted
-through the repository’s Issues page.*
+_For questions, the EZPlayer Steering Committee can be contacted
+through the repository’s Issues page._

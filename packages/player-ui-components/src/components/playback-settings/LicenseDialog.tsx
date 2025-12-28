@@ -44,15 +44,24 @@ export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, lic
                                 <React.Fragment key={uniqueKey}>
                                     <ListItem sx={{ alignItems: 'flex-start' }}>
                                         <ListItemText
-                                            primary={<Typography fontWeight={600}>{lic.packages.join(', ')}</Typography>}
+                                            primary={
+                                                <Typography fontWeight={600}>{lic.packages.join(', ')}</Typography>
+                                            }
                                         />
-                                        <Button size="small" variant="outlined" sx={{ ml: 1 }} onClick={() => handleReproduceClick(uniqueKey)}>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            sx={{ ml: 1 }}
+                                            onClick={() => handleReproduceClick(uniqueKey)}
+                                        >
                                             Reproduce License
                                         </Button>
                                     </ListItem>
                                     <Collapse in={expanded === uniqueKey} timeout="auto" unmountOnExit>
                                         <Box sx={{ ml: 3, mb: 2, borderRadius: 1 }}>
-                                            <Typography variant="subtitle2" sx={{ mb: 1, p: 1, pb: 0 }}>License Text:</Typography>
+                                            <Typography variant="subtitle2" sx={{ mb: 1, p: 1, pb: 0 }}>
+                                                License Text:
+                                            </Typography>
                                             <Box
                                                 sx={{
                                                     p: 1,
@@ -62,10 +71,20 @@ export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, lic
                                                     overflowX: 'hidden',
                                                     fontFamily: 'monospace',
                                                     fontSize: '0.8rem',
-                                                    whiteSpace: 'pre-line'
+                                                    whiteSpace: 'pre-line',
                                                 }}
                                             >
-                                                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'pre-line', margin: 0 }}>{lic.text}</Typography>
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{
+                                                        fontFamily: 'monospace',
+                                                        fontSize: '0.8rem',
+                                                        whiteSpace: 'pre-line',
+                                                        margin: 0,
+                                                    }}
+                                                >
+                                                    {lic.text}
+                                                </Typography>
                                             </Box>
                                         </Box>
                                     </Collapse>
@@ -75,7 +94,9 @@ export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, lic
                         })}
                     </List>
                     <Box sx={{ mt: 2, textAlign: 'right' }}>
-                        <Button variant="contained" sx={{ minWidth: 80 }} onClick={onClose}>Close</Button>
+                        <Button variant="contained" sx={{ minWidth: 80 }} onClick={onClose}>
+                            Close
+                        </Button>
                     </Box>
                 </Box>
             }

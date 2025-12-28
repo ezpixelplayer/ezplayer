@@ -1,16 +1,12 @@
-import { ControllerStatus } from "@ezplayer/ezplayer-core";
-import type { ChipProps } from "@mui/material";
+import { ControllerStatus } from '@ezplayer/ezplayer-core';
+import type { ChipProps } from '@mui/material';
 
 export type ControllerStatusSeverity = 'error' | 'warning' | 'pending' | 'success' | 'disabled' | 'neutral';
 
 export function getControllerSeverity(ctrl: ControllerStatus): ControllerStatusSeverity {
     const hasErrors = (ctrl.errors?.length ?? 0) > 0;
 
-    if (
-        ctrl.state === 'Inactive' ||
-        ctrl.state === 'xLights Only' ||
-        ctrl.status === 'skipped'
-    ) {
+    if (ctrl.state === 'Inactive' || ctrl.state === 'xLights Only' || ctrl.status === 'skipped') {
         return 'disabled';
     }
 
@@ -26,29 +22,24 @@ export function getControllerSeverity(ctrl: ControllerStatus): ControllerStatusS
         return 'pending';
     }
 
-    if (
-        ctrl.state === 'Active' ||
-        ctrl.status === 'open' ||
-        ctrl.connectivity === 'Up'
-    ) {
+    if (ctrl.state === 'Active' || ctrl.status === 'open' || ctrl.connectivity === 'Up') {
         return 'success';
     }
 
     return 'neutral';
 }
 
-
 export function getControllersSeverity(controllers?: ControllerStatus[]): ControllerStatusSeverity {
-  if (!controllers || controllers.length === 0) return 'neutral';
+    if (!controllers || controllers.length === 0) return 'neutral';
 
-  const severities = controllers.map(getControllerSeverity);
+    const severities = controllers.map(getControllerSeverity);
 
-  // precedence: error > (disabled) > warning > pending > success > neutral
-  if (severities.includes('error')) return 'error';
-  if (severities.includes('warning')) return 'warning';
-  if (severities.includes('pending')) return 'pending';
-  if (severities.includes('success')) return 'success';
-  return 'neutral';
+    // precedence: error > (disabled) > warning > pending > success > neutral
+    if (severities.includes('error')) return 'error';
+    if (severities.includes('warning')) return 'warning';
+    if (severities.includes('pending')) return 'pending';
+    if (severities.includes('success')) return 'success';
+    return 'neutral';
 }
 
 // Helper function to calculate controller statistics
@@ -65,9 +56,18 @@ export const getControllerStats = (controllers?: ControllerStatus[]) => {
 
     const relevant = controllers.filter((c) => c.status !== 'skipped').length;
     const online = controllers.filter((c) => c.status === 'open' && c.connectivity === 'Up').length;
-    const offline = controllers.filter((c) => c.status === 'error' || c.status === 'unusable' || c.connectivity === 'Down').length;
-    const withErrors = controllers.filter((c) => c.status !== 'skipped' && ((c.errors && c.errors.length > 0) || c.status === 'error' || c.status === 'unusable')).length;
-    const errorCount = controllers.reduce((total, c) => total + (c.status === 'skipped' ? 0 : (c.errors?.length || 0)), 0);
+    const offline = controllers.filter(
+        (c) => c.status === 'error' || c.status === 'unusable' || c.connectivity === 'Down',
+    ).length;
+    const withErrors = controllers.filter(
+        (c) =>
+            c.status !== 'skipped' &&
+            ((c.errors && c.errors.length > 0) || c.status === 'error' || c.status === 'unusable'),
+    ).length;
+    const errorCount = controllers.reduce(
+        (total, c) => total + (c.status === 'skipped' ? 0 : c.errors?.length || 0),
+        0,
+    );
 
     return {
         total: relevant,

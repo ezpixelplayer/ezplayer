@@ -27,8 +27,8 @@ const FileSelectButton = ({
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
-                                        ? ['.mp3']
-                                        : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                      ? ['.mp3']
+                                      : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
                     multi: false,
@@ -162,9 +162,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 // Merge existing files with new files (only in Electron)
                 const updatedFiles = isElectron()
                     ? {
-                        ...prevSong.files,
-                        ...newFiles,
-                    }
+                          ...prevSong.files,
+                          ...newFiles,
+                      }
                     : prevSong.files;
 
                 const updatedSong = {
@@ -255,9 +255,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             }}
         >
             <>
-
-
-                <Grid container spacing={3} >
+                <Grid container spacing={3}>
                     {/* Song Information */}
                     <Grid item xs={12}>
                         <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>

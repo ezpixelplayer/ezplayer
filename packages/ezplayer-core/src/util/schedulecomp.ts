@@ -1,4 +1,10 @@
-import type { PlayingItem, PlaylistRecord, ScheduledPlaylist, ScheduleEndPolicy, SequenceRecord } from '../types/DataTypes';
+import type {
+    PlayingItem,
+    PlaylistRecord,
+    ScheduledPlaylist,
+    ScheduleEndPolicy,
+    SequenceRecord,
+} from '../types/DataTypes';
 
 // Module goals:
 //   Deep understanding of the schedule - simulate a run
@@ -147,16 +153,16 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
         this.heap = [];
     }
 
-    findIndex(func: (e: T)=>boolean) {
-        for (let i=0; i<this.heap.length; ++i) {
+    findIndex(func: (e: T) => boolean) {
+        for (let i = 0; i < this.heap.length; ++i) {
             if (func(this.heap[i])) return i;
         }
         return undefined;
     }
 
-    findMatching(func: (e: T)=>boolean) {
+    findMatching(func: (e: T) => boolean) {
         const res: T[] = [];
-        for (let i=0; i<this.heap.length; ++i) {
+        for (let i = 0; i < this.heap.length; ++i) {
             if (func(this.heap[i])) res.push(this.heap[i]);
         }
         return res;
@@ -216,10 +222,7 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
 
             // Decide whether to bubble up or down
             const parentIndex = index > 0 ? Math.floor((index - 1) / 2) : -1;
-            if (
-                parentIndex >= 0 &&
-                SchedulerMinHeap.compare(this.heap[index], this.heap[parentIndex]) < 0
-            ) {
+            if (parentIndex >= 0 && SchedulerMinHeap.compare(this.heap[index], this.heap[parentIndex]) < 0) {
                 this.bubbleUp(index);
             } else {
                 this.bubbleDown(index);
@@ -1598,8 +1601,7 @@ export class PlayerRunState {
                     if (st) {
                         if (shouldKeep) {
                             st.suspendAtTime(this.depth, this.currentTime, log);
-                        }
-                        else {
+                        } else {
                             st.stopAtTime(this.depth, this.currentTime, log);
                         }
                     }
@@ -1808,8 +1810,7 @@ export class PlayerRunState {
     addInteractiveCommand(cmd: InteractivePlayCommand) {
         if (cmd.immediate) {
             this.immediateItem = cmd;
-        }
-        else {
+        } else {
             this.interactiveQueue.push(cmd);
             this.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
         }
@@ -1823,15 +1824,16 @@ export class PlayerRunState {
         // Search the schedule
         this.upcomingOccurrences = this.upcomingOccurrences.filter((i) => i.itemId !== id);
         const nmap = new Map<string, PlaybackItem>();
-        for (const i of this.upcomingOccurrences) {nmap.set(i.itemId, i)}
+        for (const i of this.upcomingOccurrences) {
+            nmap.set(i.itemId, i);
+        }
         this.upcomingById = nmap;
 
         // Search the stack
-        for (let i=0; i<this.stack.length;) {
+        for (let i = 0; i < this.stack.length; ) {
             if (this.stack[i].itemId === id) {
-                this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i+1)];
-            }
-            else {
+                this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i + 1)];
+            } else {
                 ++i;
             }
         }
@@ -1842,7 +1844,7 @@ export class PlayerRunState {
         // Search the heap
         if (this.heapById.has(id)) {
             this.heapById.delete(id);
-            const idx = this.heap.findIndex((s)=>s.itemId === id);
+            const idx = this.heap.findIndex((s) => s.itemId === id);
             if (idx !== undefined) {
                 this.heap.deleteAt(idx);
             }
@@ -1867,17 +1869,17 @@ export class PlayerRunState {
             const nsc = this.schedulesById.get(schedId);
             return `${nsc?.title ?? 'unknown sched'}`;
         } else {
-            return "<Command>";
+            return '<Command>';
         }
     }
 
     getQueueItems(): PlayingItem[] {
         const items: PlayingItem[] = [];
-        const ia = [...(this.immediateItem ? [this.immediateItem]: []), ...this.interactiveQueue];
+        const ia = [...(this.immediateItem ? [this.immediateItem] : []), ...this.interactiveQueue];
         for (const q of ia) {
             items.push({
                 type: q.immediate ? 'Immediate' : 'Queued',
-                item: q.seqId ? 'Song' : (q.playlistId ? 'Playlist' : (q.scheduleId ? 'Schedule' : 'Command')),
+                item: q.seqId ? 'Song' : q.playlistId ? 'Playlist' : q.scheduleId ? 'Schedule' : 'Command',
                 sequence_id: q.seqId,
                 playlist_id: q.playlistId,
                 schedule_id: q.scheduleId,
@@ -1899,8 +1901,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, undefined, s.scheduleId),
                 } as PlayingItem);
-            }
-            else if (s.playlistIds?.[1]) {
+            } else if (s.playlistIds?.[1]) {
                 items.push({
                     type: s.itemType,
                     item: 'Playlist',
@@ -1908,8 +1909,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
-            }
-            else if (s.mainSectionIds?.[0]) {
+            } else if (s.mainSectionIds?.[0]) {
                 items.push({
                     type: s.itemType,
                     item: 'Song',
@@ -1919,7 +1919,7 @@ export class PlayerRunState {
                 } as PlayingItem);
             }
         }
-        return items.sort((a,b)=>(b.at ?? 0) - (a.at ?? 0));
+        return items.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
     }
 
     getUpcomingSchedules(): PlayingItem[] {
@@ -1952,8 +1952,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, undefined, s.scheduleId),
                 } as PlayingItem);
-            }
-            else if (s.playlistIds?.[1]) {
+            } else if (s.playlistIds?.[1]) {
                 items.push({
                     type: 'Immediate',
                     item: 'Playlist',
@@ -1961,8 +1960,7 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
-            }
-            else if (s.mainSectionIds?.[0]) {
+            } else if (s.mainSectionIds?.[0]) {
                 items.push({
                     type: 'Immediate',
                     item: 'Song',
@@ -1985,7 +1983,7 @@ export class PlayerRunState {
                 schedule_id: s.scheduleId,
                 sequence_id: s.playlistIds?.[Math.max(s.seqIdx, 0)],
                 title: this.titleForIds(s.playlistIds?.[s.seqIdx], undefined, s.scheduleId),
-            })
+            });
         }
         return items;
     }

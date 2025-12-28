@@ -59,8 +59,6 @@ export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer }: SidebarProps
                 elevation={9}
                 keepMounted={false}
                 disableRestoreFocus
-
-
             >
                 <Box
                     className={

@@ -1416,12 +1416,12 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                                     );
                                                                                 const timeString = reduxSchedule
                                                                                     ? formatExtendedTime(
-                                                                                        reduxSchedule.fromTime,
-                                                                                    )
+                                                                                          reduxSchedule.fromTime,
+                                                                                      )
                                                                                     : format(
-                                                                                        new Date(schedule.startTime),
-                                                                                        'HH:mm',
-                                                                                    );
+                                                                                          new Date(schedule.startTime),
+                                                                                          'HH:mm',
+                                                                                      );
                                                                                 const isExtended =
                                                                                     reduxSchedule &&
                                                                                     parseInt(
@@ -1466,12 +1466,12 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                                     );
                                                                                 const timeString = reduxSchedule
                                                                                     ? formatExtendedTime(
-                                                                                        reduxSchedule.toTime,
-                                                                                    )
+                                                                                          reduxSchedule.toTime,
+                                                                                      )
                                                                                     : format(
-                                                                                        new Date(schedule.endTime),
-                                                                                        'HH:mm',
-                                                                                    );
+                                                                                          new Date(schedule.endTime),
+                                                                                          'HH:mm',
+                                                                                      );
                                                                                 const isExtended =
                                                                                     reduxSchedule &&
                                                                                     parseInt(
@@ -1554,25 +1554,25 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                                         ? theme.palette.error.main
                                                                                         : priorityClass ===
                                                                                             'priority-normal'
-                                                                                            ? theme.palette.primary.main
-                                                                                            : theme.palette.info.main,
+                                                                                          ? theme.palette.primary.main
+                                                                                          : theme.palette.info.main,
                                                                                 color:
                                                                                     priorityClass === 'priority-high'
                                                                                         ? theme.palette.error
-                                                                                            .contrastText
+                                                                                              .contrastText
                                                                                         : priorityClass ===
                                                                                             'priority-normal'
-                                                                                            ? theme.palette.primary
+                                                                                          ? theme.palette.primary
                                                                                                 .contrastText
-                                                                                            : theme.palette.info
+                                                                                          : theme.palette.info
                                                                                                 .contrastText,
                                                                                 borderColor:
                                                                                     priorityClass === 'priority-high'
                                                                                         ? theme.palette.error.dark
                                                                                         : priorityClass ===
                                                                                             'priority-normal'
-                                                                                            ? theme.palette.primary.dark
-                                                                                            : theme.palette.info.dark,
+                                                                                          ? theme.palette.primary.dark
+                                                                                          : theme.palette.info.dark,
                                                                                 fontWeight: 600,
                                                                                 letterSpacing: 0.3,
                                                                                 boxShadow:

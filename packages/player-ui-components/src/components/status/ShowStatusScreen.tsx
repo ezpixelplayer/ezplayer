@@ -10,7 +10,15 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
 import { StatsDialog } from './StatsDialog';
 import type { ControllerStatus } from '@ezplayer/ezplayer-core';
-import { type ControllerStatusSeverity, getControllerSeverity, getControllersSeverity, getControllerStats, severityToChipColor, severityToLightColor, severityToMainColor } from './ControllerHelpers';
+import {
+    type ControllerStatusSeverity,
+    getControllerSeverity,
+    getControllersSeverity,
+    getControllerStats,
+    severityToChipColor,
+    severityToLightColor,
+    severityToMainColor,
+} from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 
@@ -68,7 +76,7 @@ function severityToBoxSx(severity: ControllerStatusSeverity): SxProps<Theme> {
                 backgroundColor: 'background.paper',
                 opacity: 1,
             };
-    };
+    }
 }
 
 const formatTime = (timestamp?: number | string) => {
@@ -122,11 +130,11 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 <Typography variant="body1">
                                     Last Checkin: {formatTime(player.reported_time)}
                                 </Typography>
-                                {(
+                                {
                                     <Typography variant="body1">
                                         Status: {player.status === 'Playing' ? '▶ Playing' : '⏸ Not Playing'}
                                     </Typography>
-                                )}
+                                }
                                 {player.now_playing && (
                                     <>
                                         <Typography variant="body2">Now Playing: {player.now_playing.title}</Typography>
@@ -138,60 +146,71 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Upcoming Songs ({player.upcoming.filter((s)=>s.sequence_id).length}):
+                                            Upcoming Songs ({player.upcoming.filter((s) => s.sequence_id).length}):
                                         </Typography>
-                                        {player.upcoming.filter((s)=>s.sequence_id).map((seq, index) => (
-                                            <Box
-                                                key={index}
-                                                sx={{
-                                                    mb: 1,
-                                                    pl: 1,
-                                                    borderLeft: '2px solid',
-                                                    borderColor: 'primary.main',
-                                                }}
-                                            >
-                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                    {seq.title}
-                                                </Typography>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Starts: {formatTime(seq.at ?? 0)}
-                                                </Typography>
-                                            </Box>
-                                        ))}
+                                        {player.upcoming
+                                            .filter((s) => s.sequence_id)
+                                            .map((seq, index) => (
+                                                <Box
+                                                    key={index}
+                                                    sx={{
+                                                        mb: 1,
+                                                        pl: 1,
+                                                        borderLeft: '2px solid',
+                                                        borderColor: 'primary.main',
+                                                    }}
+                                                >
+                                                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                        {seq.title}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Starts: {formatTime(seq.at ?? 0)}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
                                     </>
                                 )}
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Upcoming Shows ({player.upcoming.filter((s)=>s.schedule_id).length}):
+                                            Upcoming Shows ({player.upcoming.filter((s) => s.schedule_id).length}):
                                         </Typography>
-                                        {player.upcoming.filter((s)=>s.schedule_id).map((show, index) => (
-                                            <Box
-                                                key={index}
-                                                sx={{
-                                                    mb: 1,
-                                                    pl: 1,
-                                                    borderLeft: '2px solid',
-                                                    borderColor: 'primary.main',
-                                                }}
-                                            >
-                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                    {show.title}
-                                                </Typography>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Starts: {formatTime(show.at ?? 0)}
-                                                </Typography>
-                                            </Box>
-                                        ))}
+                                        {player.upcoming
+                                            .filter((s) => s.schedule_id)
+                                            .map((show, index) => (
+                                                <Box
+                                                    key={index}
+                                                    sx={{
+                                                        mb: 1,
+                                                        pl: 1,
+                                                        borderLeft: '2px solid',
+                                                        borderColor: 'primary.main',
+                                                    }}
+                                                >
+                                                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                        {show.title}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Starts: {formatTime(show.at ?? 0)}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
                                     </>
                                 )}
-                                {player.queue &&
-                                    <QueueCard queue={player.queue} onRemoveItem={async (i, index)=>{console.log(`Remove ${index}`); await dispatch(callImmediateCommand({
-                                        command: 'deleterequest',
-                                        requestId: i.request_id ?? '',
-                                    }))}}>
-                                    </QueueCard>
-                                }
+                                {player.queue && (
+                                    <QueueCard
+                                        queue={player.queue}
+                                        onRemoveItem={async (i, index) => {
+                                            console.log(`Remove ${index}`);
+                                            await dispatch(
+                                                callImmediateCommand({
+                                                    command: 'deleterequest',
+                                                    requestId: i.request_id ?? '',
+                                                }),
+                                            );
+                                        }}
+                                    ></QueueCard>
+                                )}
                                 {player.suspendedItems && player.suspendedItems.length > 0 && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
@@ -316,7 +335,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                     p: 2,
                                                     border: '1px solid',
                                                     borderRadius: 1,
-                                                    ...severityToBoxSx(getControllerSeverity(ctrl))
+                                                    ...severityToBoxSx(getControllerSeverity(ctrl)),
                                                 }}
                                             >
                                                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -326,7 +345,11 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                     <Chip
                                                         label={ctrl.status || 'unknown'}
                                                         color={severityToChipColor(getControllerSeverity(ctrl))}
-                                                        variant={getControllerSeverity(ctrl) === 'disabled' ? 'outlined' : 'filled'}
+                                                        variant={
+                                                            getControllerSeverity(ctrl) === 'disabled'
+                                                                ? 'outlined'
+                                                                : 'filled'
+                                                        }
                                                         size="small"
                                                     />
                                                 </Box>
@@ -422,12 +445,17 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                             bgcolor: severityToLightColor(getControllerSeverity(ctrl)),
                                                             borderRadius: 1,
                                                             border: '1px solid',
-                                                            borderColor: severityToMainColor(getControllerSeverity(ctrl)),
+                                                            borderColor: severityToMainColor(
+                                                                getControllerSeverity(ctrl),
+                                                            ),
                                                         }}
                                                     >
                                                         <Typography
                                                             variant="body2"
-                                                            sx={{ fontWeight: 'bold', color: severityToMainColor(getControllerSeverity(ctrl)) }}
+                                                            sx={{
+                                                                fontWeight: 'bold',
+                                                                color: severityToMainColor(getControllerSeverity(ctrl)),
+                                                            }}
                                                         >
                                                             Errors:
                                                         </Typography>

@@ -13,16 +13,16 @@ const worker = new Worker(workerPath);
 let latestStats: { [address: string]: PingStat } | undefined = undefined;
 let latestUpdate: number | undefined = undefined;
 
-worker.on('message', (msg: {type?: string}) => {
+worker.on('message', (msg: { type?: string }) => {
     if (msg.type === 'roundResult') {
         const { finishedAt, stats } = msg as RoundResultMessage;
         //console.log(`Ping result: ${JSON.stringify(stats)}`);
         latestStats = stats;
         latestUpdate = finishedAt;
     } else if (msg.type === 'stopped') {
-        console.log('Ping worker stopped')
+        console.log('Ping worker stopped');
     } else if (msg.type === 'error') {
-        console.log(`Ping worker error: ${(msg as {error?: string}).error}`);
+        console.log(`Ping worker error: ${(msg as { error?: string }).error}`);
     } else {
         console.log('UNEXPECTED worker message:', msg);
     }
@@ -44,5 +44,5 @@ export function setPingConfig(cfg: PingConfig) {
 }
 
 export function getLatestPingStats() {
-    return {stats: latestStats, latestUpdate};
+    return { stats: latestStats, latestUpdate };
 }

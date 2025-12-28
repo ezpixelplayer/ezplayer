@@ -168,13 +168,17 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Controller Frame Skips (intentional):</Typography>
+                                            <Typography variant="body2">
+                                                Controller Frame Skips (intentional):
+                                            </Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.cframesSkippedDueToDirective)}
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <Typography variant="body2">Controller Frame Skips (incomplete):</Typography>
+                                            <Typography variant="body2">
+                                                Controller Frame Skips (incomplete):
+                                            </Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.cframesSkippedDueToIncompletePrior)}
                                             </Typography>
@@ -200,13 +204,15 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Sequence Read:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.sequenceDecompress?.fileReadTime)}ms read; {formatValue(stats.sequenceDecompress?.decompressTime)}ms decompress
+                                                {formatValue(stats.sequenceDecompress?.fileReadTime)}ms read;{' '}
+                                                {formatValue(stats.sequenceDecompress?.decompressTime)}ms decompress
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Audio Read:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
-                                                {formatValue(stats.audioDecode?.fileReadTime)}ms read; {formatValue(stats.audioDecode?.decodeTime)}ms decode
+                                                {formatValue(stats.audioDecode?.fileReadTime)}ms read;{' '}
+                                                {formatValue(stats.audioDecode?.decodeTime)}ms decode
                                             </Typography>
                                         </Box>
                                     </Box>

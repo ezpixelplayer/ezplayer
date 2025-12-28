@@ -67,17 +67,15 @@ interface AvailableSongsContainerProps {
     filteredAndSortedSongs: SequenceRecord[];
 }
 
-function songDesc(
-    song: {
-        work?: {
-            title?: string,
-            artist?: string,
-        },
-        sequence?: {
-            vendor?: string,
-        }
-    }
-) {
+function songDesc(song: {
+    work?: {
+        title?: string;
+        artist?: string;
+    };
+    sequence?: {
+        vendor?: string;
+    };
+}) {
     return `${song.work?.title}${song.work?.artist && song.work?.artist !== '' ? ` - ${song.work?.artist}` : ''}${song.sequence?.vendor ? `(${song.sequence?.vendor})` : ''}`;
 }
 

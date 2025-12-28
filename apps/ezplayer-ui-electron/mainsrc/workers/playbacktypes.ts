@@ -56,8 +56,8 @@ export type PlayerCommand =
           pls: PlaylistRecord[];
           sched: ScheduledPlaylist[];
       }
-    | { type: 'frontendcmd'; cmd: EZPlayerCommand}
-    | { type: 'settings', settings: PlaybackSettings}
+    | { type: 'frontendcmd'; cmd: EZPlayerCommand }
+    | { type: 'settings'; settings: PlaybackSettings }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };
 

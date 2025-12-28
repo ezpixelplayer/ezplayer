@@ -8,10 +8,11 @@ Project decisions are guided by the **EZPlayer Steering Committee** (“the Comm
 ## Steering Committee
 
 As of October 2025, the Committee consists of:
- - @CaCtus491
- - @merryoncherry
- - @mjunek
- - @pixelguy
+
+- @CaCtus491
+- @merryoncherry
+- @mjunek
+- @pixelguy
 
 The Committee may adjust membership by majority vote, documented in this file.
 
