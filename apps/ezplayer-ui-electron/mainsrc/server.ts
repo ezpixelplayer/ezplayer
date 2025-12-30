@@ -45,6 +45,18 @@ export interface ServerConfig {
     mainWindow: BrowserWindow | null;
 }
 
+export interface ServerStatus {
+    port: number;
+    portSource: string;
+    status: 'listening' | 'stopped' | 'error';
+}
+
+let currentServerStatus: ServerStatus | null = null;
+
+export function getServerStatus(): ServerStatus | null {
+    return currentServerStatus;
+}
+
 async function exists(path: string): Promise<boolean> {
     try {
         await fsp.access(path, fs.constants.F_OK);
@@ -301,6 +313,28 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
     httpServer.listen(port, () => {
         console.log(`🌐 Koa server running at http://localhost:${port}`);
         console.log(`🔌 WebSocket server available at ws://localhost:${port}/ws`);
+        currentServerStatus = {
+            port,
+            portSource,
+            status: 'listening',
+        };
+    });
+
+    httpServer.on('error', (err) => {
+        currentServerStatus = {
+            port,
+            portSource,
+            status: 'error',
+        };
+        console.error('HTTP server error:', err);
+    });
+
+    httpServer.on('close', () => {
+        currentServerStatus = {
+            port,
+            portSource,
+            status: 'stopped',
+        };
     });
 
     // Create WebSocket server

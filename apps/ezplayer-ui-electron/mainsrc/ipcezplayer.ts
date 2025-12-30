@@ -46,6 +46,7 @@ import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMess
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 import { wsBroadcaster } from './websocket-broadcaster.js';
+import { getServerStatus } from './server.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -337,6 +338,10 @@ export async function registerContentHandlers(
         updateWindow?.webContents?.send('update:playbacksettings', settings);
         wsBroadcaster.set('playbackSettings', settings);
         return true;
+    });
+
+    ipcMain.handle('ipcGetServerStatus', async (_event) => {
+        return getServerStatus();
     });
 
     /// Connection from player worker thread

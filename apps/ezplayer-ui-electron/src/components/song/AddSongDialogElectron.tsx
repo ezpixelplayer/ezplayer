@@ -134,7 +134,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     artwork: imageUrl || undefined, // Add image URL to work.artwork
                 },
                 sequence: {
-                    vendor: newSongData.vendor.trim() || 'Local',
+                    vendor: newSongData.vendor.trim() as string,
                     variant: '',
                     sku: '',
                     vendor_url: '',
