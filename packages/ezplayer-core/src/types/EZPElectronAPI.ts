@@ -80,6 +80,11 @@ export interface EZPElectronAPI {
     putUserProfile: (data: Partial<EndUser>) => Promise<EndUser>;
 
     getCombinedStatus: () => Promise<CombinedPlayerStatus>;
+    getServerStatus: () => Promise<{
+        port: number;
+        portSource: string;
+        status: 'listening' | 'stopped' | 'error';
+    } | null>;
 
     // Data change callbacks:
     onShowFolderUpdated: (callback: (data: string) => void) => void;
