@@ -50,7 +50,7 @@ export interface JukeboxAreaProps {
 }
 
 export function uuidv4(): string {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
     }
 
@@ -61,10 +61,7 @@ export function uuidv4(): string {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
-    return [...bytes].map((b, i) =>
-        ([4, 6, 8, 10].includes(i) ? "-" : "") +
-        b.toString(16).padStart(2, "0")
-    ).join("");
+    return [...bytes].map((b, i) => ([4, 6, 8, 10].includes(i) ? '-' : '') + b.toString(16).padStart(2, '0')).join('');
 }
 
 // New component to handle thumbnail display with fallback

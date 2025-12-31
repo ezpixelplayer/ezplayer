@@ -1,8 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import * as fsp from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
-// If you were using the WebWorker-flavored wrapper before, switch to the direct WASM decoder here.
-import { MPEGDecoder } from 'mpg123-decoder';
+import { MPEGDecoder } from 'mpg123-decoder-moc';
 import { getFileSize } from '@ezplayer/epp';
 
 import { getHeapStatistics } from 'node:v8';
@@ -10,8 +9,52 @@ import { getHeapStatistics } from 'node:v8';
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
 
+class ListPool {
+    private list: ArrayBuffer[] = [];
+
+    take(): ArrayBuffer | null {
+        if (!this.list.length) return null;
+        const item = this.list[this.list.length - 1];
+        this.list.pop();
+        return item;
+    }
+
+    give(item: ArrayBuffer) {
+        this.list.push(item);
+    }
+
+    size() {
+        return this.list.length;
+    }
+
+    bytes() {
+        let sum = 0;
+        for (const i of this.list) sum += i.byteLength;
+    }
+}
+
+const pool = new ListPool();
+let suggestedMaxAudioDur: number | undefined = undefined; // 15*60;
+function getAudioReserveDur() {
+    return suggestedMaxAudioDur || 15 * 60;
+}
+
+function getOrAllocate() {
+    const e = pool.take();
+    if (e) return e;
+    return new ArrayBuffer(getAudioReserveDur() * 50_000 * 4);
+}
+function bufferTooSmall(b: ArrayBuffer) {
+    if (b.byteLength >= getAudioReserveDur() * 50_000 * 4) {
+        suggestedMaxAudioDur = getAudioReserveDur() * 2;
+    }
+    // Otherwise this was not full size.
+    // Leak this.
+    // Should we cap this?
+}
+
 if (!parentPort) {
-    throw new Error('mp3Worker must be run as a worker thread.');
+    throw new Error('mp3decodeworker must be run as a worker thread.');
 }
 
 console.log(`Decode worker start...`);
@@ -21,21 +64,14 @@ export type DecodeReq =
           type: 'decode';
           id: number;
           filePath: string;
+          suggestedMaxAudioDur?: number;
       }
     | {
           type: 'return';
-          buffers: Float32Array<ArrayBuffer>[];
+          buffers: ArrayBuffer[];
       };
 
 const decoder = new MPEGDecoder();
-let readyPromise: Promise<void> | null = null;
-
-function decoderReady() {
-    if (!readyPromise) {
-        readyPromise = decoder.ready;
-    }
-    return readyPromise;
-}
 
 export type DecodedAudio = {
     sampleRate: number;
@@ -64,8 +100,20 @@ function getScratchBuf(size: number) {
 
 parentPort.on('message', async (msg: DecodeReq) => {
     const { type } = msg;
+    if (type === 'return') {
+        for (const b of msg.buffers) {
+            pool.give(b);
+        }
+        return;
+    }
+
     if (type !== 'decode') return;
-    const { id, filePath } = msg;
+    const { id, filePath, suggestedMaxAudioDur: smad } = msg;
+    if (smad) {
+        if (!suggestedMaxAudioDur || suggestedMaxAudioDur < smad) {
+            suggestedMaxAudioDur = smad;
+        }
+    }
 
     try {
         const fileLen = await getFileSize(filePath);
@@ -94,44 +142,55 @@ parentPort.on('message', async (msg: DecodeReq) => {
 
         // Decode (mpg123-decoder expects a Uint8Array)
         const decodeStart = performance.now();
-        await decoder.reset();
-        const decomp = decoder.decode(nodeBuf.subarray(0, fileLen));
-        const decodeTime = performance.now() - decodeStart;
+        await decoder.ready;
 
-        if (decomp.errors?.length) {
-            const e = decomp.errors[0];
-            console.error(`MP3 Decode error: ${e.message} @${e.inputBytes}`);
-            throw new Error(`MP3 Decode error: ${e.message} @${e.inputBytes}`);
+        // Retry loop: if too small, discard the pair, double cap, allocate a new one
+        // (or try the pool again first — optional)
+        while (true) {
+            // Must reset before retry because decoder state advanced
+            await decoder.reset();
+
+            const ldata = getOrAllocate();
+            const rdata = getOrAllocate();
+
+            const lsamp = new Float32Array(ldata);
+            const rsamp = new Float32Array(rdata);
+
+            const res = decoder.decodeInto(nodeBuf.subarray(0, fileLen), lsamp, rsamp, { allowPartial: true });
+
+            const decodeTime = performance.now() - decodeStart;
+
+            if (res.errors?.length) {
+                const e = res.errors[0];
+                console.error(`MP3 Decode error: ${e.message} @${e.inputBytes}`);
+                throw new Error(`MP3 Decode error: ${e.message} @${e.inputBytes}`);
+            }
+
+            if (!res.truncated) {
+                const mrv = {
+                    channelData: [lsamp, rsamp],
+                    sampleRate: res.sampleRate,
+                    nSamples: res.samplesDecoded,
+                };
+                parentPort!.postMessage(
+                    {
+                        type: 'result',
+                        id,
+                        ok: true,
+                        result: mrv,
+                        fileReadTime: fileReadTime,
+                        decodeTime,
+                        kind: 'decoded',
+                    },
+                    [ldata, rdata],
+                );
+                return;
+            }
+
+            // Too small: discard these buffers (do NOT return to pool)
+            bufferTooSmall(ldata.byteLength < rdata.byteLength ? ldata : rdata);
         }
-
-        try {
-            const mrv = {
-                channelData: decomp.channelData.map((v) => new Float32Array(v)),
-                sampleRate: decomp.sampleRate,
-                nSamples: decomp.samplesDecoded,
-            };
-
-            parentPort!.postMessage(
-                {
-                    type: 'result',
-                    id,
-                    ok: true,
-                    result: mrv,
-                    fileReadTime: fileReadTime,
-                    decodeTime,
-                } satisfies DecodedAudioResp,
-                mrv.channelData.map((v) => v.buffer),
-            );
-        } catch (e) {
-            const err = e as Error;
-            const hi = getHeapStatistics();
-            console.log(`V8 Heap Size Limit: ${hi.heap_size_limit / (1024 * 1024)} MB`);
-            console.error(
-                `Allocation of result failed (${err.message}); # elements is ${decomp.channelData[0]?.length}`,
-            );
-            throw e;
-        }
-    } catch (err: any) {
+    } catch (err) {
         console.error(err);
         // Return mp3 buffer if we still own it so the main thread can reclaim
         try {
@@ -144,14 +203,7 @@ parentPort.on('message', async (msg: DecodeReq) => {
                 fileReadTime: 0,
             } satisfies DecodedAudioResp);
         } catch {
-            parentPort!.postMessage({
-                type: 'result',
-                id,
-                ok: false,
-                error: String(err),
-                decodeTime: 0,
-                fileReadTime: 0,
-            } satisfies DecodedAudioResp);
+            console.error(err);
         }
     }
 });

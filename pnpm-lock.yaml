@@ -106,9 +106,9 @@ importers:
       koa-static:
         specifier: ^5.0.0
         version: 5.0.0
-      mpg123-decoder:
-        specifier: ^1.0.2
-        version: 1.0.3
+      mpg123-decoder-moc:
+        specifier: ../../libs/mpg123-decoder-moc-1.0.3.tgz
+        version: file:libs/mpg123-decoder-moc-1.0.3.tgz
       node-addon-api:
         specifier: ^7.1.1
         version: 7.1.1
@@ -4274,8 +4274,9 @@ packages:
   moment@2.30.1:
     resolution: {integrity: sha512-uEmtNhbDOrWPFS+hdjFCBfy9f2YoyzRpwcl+DqpC6taX21FzsTLQVbMV/W7PzNSX6x/bhC1zA3c2UQ5NzH6how==}
 
-  mpg123-decoder@1.0.3:
-    resolution: {integrity: sha512-+fjxnWigodWJm3+4pndi+KUg9TBojgn31DPk85zEsim7C6s0X5Ztc/hQYdytXkwuGXH+aB0/aEkG40Emukv6oQ==}
+  mpg123-decoder-moc@file:libs/mpg123-decoder-moc-1.0.3.tgz:
+    resolution: {integrity: sha512-+i8slD+1uYxIm4xx7VqzahbUnr914jRaf5m8S6v5b8qEsg2368Jo0eLVqXuLswyatvI+tZpQ3/b0oY7FgKDzLw==, tarball: file:libs/mpg123-decoder-moc-1.0.3.tgz}
+    version: 1.0.3
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -9575,7 +9576,7 @@ snapshots:
 
   moment@2.30.1: {}
 
-  mpg123-decoder@1.0.3:
+  mpg123-decoder-moc@file:libs/mpg123-decoder-moc-1.0.3.tgz:
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
 

@@ -474,7 +474,7 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 3_500_000_000, // There are issues w/making this bigger
+    mp3CacheSongs: 6, // 6 songs; we reuse the memory so using a budget is somewhat nonsensical
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
@@ -664,7 +664,7 @@ async function processQueue() {
         mp3Cache = new MP3PrefetchCache({
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
-            mp3Space: playbackParams.mp3CacheSpace,
+            mp3Space: playbackParams.mp3CacheSongs,
         });
     }
 
@@ -1034,10 +1034,7 @@ async function processQueue() {
                     break;
                 }
 
-                let startTime = Math.floor(
-                    audioPlayerRunState.currentTime +
-                        playbackParams.audioTimeAdjMs,
-                );
+                let startTime = Math.floor(audioPlayerRunState.currentTime + playbackParams.audioTimeAdjMs);
 
                 const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,

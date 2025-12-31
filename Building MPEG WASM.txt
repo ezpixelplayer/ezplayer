@@ -29,26 +29,6 @@ npm run configure
 npm run build
 npm run test
 
-
-===================
-
-A lot of env setup went into this...
-git bash
-choco
-msys2
-
-pacman -S autoconf automake libtool m4 make
-pacman -S pkg-config git
-
-And then paths, like:
-export PATH="$PATH:/c/tools/msys64/usr/bin" in .bash_profile
-
-OK we are doing MSYS2 now instead of git bash...
- export EMSDK_PYTHON=/c/Users/Chuck/AppData/Local/Programs/Python/Python311/python
-
-
-OH F that noise.  WSL may be it.  Just use /mnt/c
-
 =================
 
 \\wsl.localhost\Ubuntu\etc\linuxFile.txt = /etc/linuxFile.txt
@@ -78,12 +58,24 @@ OK, so checking out EMSDK in git windows breaks the newlines and it will not run
 git pull
 
 # Download and install the latest SDK tools.
-./emsdk install latest
+Use of emsdk 4.0.7 is important
+
+#./emsdk install latest
+./emsdk install 4.0.7
 
 # Make the "latest" SDK "active" for the current user. (writes .emscripten file)
-./emsdk activate latest
+#./emsdk activate latest
+./emsdk activate 4.0.7
 
 # Activate PATH and other environment variables in the current terminal
 source ./emsdk_env.sh
 
+Then:
+npm run configure
+npm run build
 
+=========
+
+Let's strip it down and clean it up
+
+The only way to do it that is consistent is to use WSL on WSL's own disk using emsdk 4.0.7...

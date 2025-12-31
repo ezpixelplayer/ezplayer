@@ -45,6 +45,7 @@ const nodeExternals = [
     'ping',
     'proxy-from-env',
     'mpg123-decoder',
+    'mpg123-decoder-moc',
     'bindings',
     'node-gyp',
     'koa',
