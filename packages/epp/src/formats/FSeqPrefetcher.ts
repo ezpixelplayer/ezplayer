@@ -187,7 +187,7 @@ export class FSeqPrefetchCache {
             budgetCalculator: (key) => key.decompLen,
             keyToId: (key) => `${key.fseqfile}:${key.chunknum}`,
             budgetLimit: arg.fseqSpace ?? 512_000_000,
-            maxConcurrency: 2,
+            maxConcurrency: 4,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, v) => {
                 this.decompDataPool.release(v.decompChunk);

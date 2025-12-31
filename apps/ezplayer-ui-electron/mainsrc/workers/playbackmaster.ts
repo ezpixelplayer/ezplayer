@@ -482,8 +482,8 @@ const playbackParams = {
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
-    foregroundFseqPrefetchTime: 5 * 1000,
-    backgroundFseqPrefetchTime: 5 * 1000,
+    foregroundFseqPrefetchTime: 2 * 1000,
+    backgroundFseqPrefetchTime: 2 * 1000,
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
