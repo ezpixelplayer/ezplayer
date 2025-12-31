@@ -128,7 +128,7 @@
         "i18next": "^23.16.8",
         "koa": "^3.1.1",
         "koa-static": "^5.0.0",
-        "mpg123-decoder-moc": "../../libs/mpg123-decoder-moc-1.0.3.tgz",
+        "mpg123-decoder-ezp": "../../libs/mpg123-decoder-ezp-1.0.3.tgz",
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
         "path": "^0.12.7",

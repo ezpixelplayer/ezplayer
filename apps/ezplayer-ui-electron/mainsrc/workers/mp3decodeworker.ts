@@ -1,7 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import * as fsp from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
-import { MPEGDecoder } from 'mpg123-decoder-moc';
+import { MPEGDecoder } from 'mpg123-decoder-ezp';
 import { getFileSize } from '@ezplayer/epp';
 
 import { getHeapStatistics } from 'node:v8';

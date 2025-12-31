@@ -120,7 +120,7 @@
         "text": "The source code that originates in this project is licensed under the MIT license. Please note that any external source code included by repository, such as the decoding libraries included as git submodules and compiled into the dist files, may have different licensing terms."
     },
     {
-        "packages": ["mpg123-decoder-moc"],
+        "packages": ["mpg123-decoder-ezp"],
         "text": "The source code that originates in this project is licensed under the MIT license. Please note that any external source code included by repository, such as the decoding libraries included as git submodules and compiled into the dist files, may have different licensing terms."
     },
     {
