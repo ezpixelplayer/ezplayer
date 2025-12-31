@@ -1,7 +1,7 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box, Button, Card, CardContent, Chip, CircularProgress, Grid, Typography, useTheme } from '@mui/material';
 import { format } from 'date-fns';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -21,6 +21,14 @@ import {
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+
+// Extend Window interface to include electronAPI
+declare global {
+    interface Window {
+        electronAPI?: EZPElectronAPI;
+    }
+}
 
 const getControllerStatusLabel = (controllers?: ControllerStatus[]) => {
     if (!controllers) return 'No data';
@@ -95,9 +103,27 @@ export interface ShowStatusScreenProps {
 export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) => {
     const theme = useTheme();
     const [statsDialogOpen, setStatsDialogOpen] = useState(false);
+    const [serverStatus, setServerStatus] = useState<{ port: number; portSource: string; status: 'listening' | 'stopped' | 'error' } | null>(null);
 
     const dispatch = useDispatch<AppDispatch>();
     const pstat = useSelector((s: RootState) => s.playerStatus);
+
+    useEffect(() => {
+        const fetchServerStatus = async () => {
+            if (window.electronAPI?.getServerStatus) {
+                try {
+                    const status = await window.electronAPI.getServerStatus();
+                    setServerStatus(status);
+                } catch (error) {
+                    console.error('Failed to fetch server status:', error);
+                }
+            }
+        };
+
+        fetchServerStatus();
+        const interval = setInterval(fetchServerStatus, 5000); // Update every 5 seconds
+        return () => clearInterval(interval);
+    }, []);
 
     if (!pstat.playerStatus || pstat.loading) {
         return (
@@ -118,6 +144,28 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                 <PageHeader heading={`${title} - ${showName}`} children={statusArea} />
             </Box>
             <Grid container spacing={2} padding={2}>
+                {/* HTTP Listener Status */}
+                {serverStatus && (
+                    <Grid item xs={12}>
+                        <Card>
+                            <CardContent>
+                                <Typography variant="h3" fontWeight="bold" color={theme.palette.secondary.main}>
+                                    HTTP Listener Status
+                                </Typography>
+                                <Typography variant="body1">Port: {serverStatus.port}</Typography>
+                                <Typography variant="body1">Source: {serverStatus.portSource}</Typography>
+                                <Box sx={{ mt: 1 }}>
+                                    <Chip
+                                        label={serverStatus.status === 'listening' ? 'Listening' : serverStatus.status === 'error' ? 'Error' : 'Stopped'}
+                                        color={serverStatus.status === 'listening' ? 'success' : serverStatus.status === 'error' ? 'error' : 'default'}
+                                        size="small"
+                                    />
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                )}
+
                 {/* Player Status */}
                 {player && (
                     <Grid item xs={12}>
