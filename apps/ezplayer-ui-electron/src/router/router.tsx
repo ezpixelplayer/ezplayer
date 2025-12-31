@@ -1,4 +1,4 @@
-import { ComponentType, Suspense, lazy } from 'react';
+import React, { ComponentType, Suspense, lazy } from 'react';
 import { Navigate, RouteObject } from 'react-router';
 
 import { SuspenseLoader } from '@ezplayer/shared-ui-components';
@@ -16,6 +16,7 @@ import {
     ShowStatusScreen,
     PlaybackSettingsDrawer,
     SchedulePreview,
+    ColorPaletteTestView,
 } from '@ezplayer/player-ui-components';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
@@ -24,11 +25,11 @@ const ERROR_PAGE = import('../modules/ErrorPage/ErrorPage');
 
 const Loader =
     <P extends object>(Component: ComponentType<P>) =>
-    (props: P) => (
-        <Suspense fallback={<SuspenseLoader />}>
-            <Component {...props} />
-        </Suspense>
-    );
+        (props: P) => (
+            <Suspense fallback={<SuspenseLoader />}>
+                <Component {...props} />
+            </Suspense>
+        );
 
 // Pages
 const ErrorPage = Loader(lazy(() => ERROR_PAGE));
@@ -86,6 +87,10 @@ const routes: RouteObject[] = [
             {
                 path: ROUTES.PLAYBACKSETTINGS,
                 element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
+            },
+            {
+                path: ROUTES.COLOR_PALETTE_TEST,
+                element: <ColorPaletteTestView title="Color Palette Test" statusArea={getStatusArea()} />,
             },
         ],
     },

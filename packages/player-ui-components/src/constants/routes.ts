@@ -19,3 +19,4 @@ export const GENERALSETTINGS = '/generalsettings';
 export const CLOUDSETTINGS = '/cloudsettings';
 export const PLAYBACKSETTINGS = '/playbacksettings';
 export const LAYOUT_EDITOR = '/layout-editor';
+export const COLOR_PALETTE_TEST = '/color-palette-test';
