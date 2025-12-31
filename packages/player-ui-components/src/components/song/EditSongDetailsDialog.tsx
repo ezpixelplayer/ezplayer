@@ -180,7 +180,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                     },
                     sequence: {
                         ...(prevSong.sequence || {}),
-                        vendor: formData.vendor.trim() as string,
+                        vendor: formData.vendor.trim(),
                     },
                     settings: {
                         lead_time: parseFloat(formData.lead_time),
