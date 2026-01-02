@@ -112,6 +112,8 @@ const createWindow = (showFolder: string) => {
             contextIsolation: true,
             webSecurity: false,
             additionalArguments: [`--show-folder=${showFolder}`].filter(Boolean),
+            // enableWebGL: true,
+            offscreen: false,
         },
     });
 

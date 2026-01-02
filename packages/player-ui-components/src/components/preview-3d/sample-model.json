@@ -1,0 +1,75 @@
+{
+    "version": "1.0",
+    "name": "Sample 3D Model",
+    "points": [
+        {
+            "id": "point-1",
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "color": "#ff0000",
+            "label": "Origin Point"
+        },
+        {
+            "id": "point-2",
+            "x": 2,
+            "y": 0,
+            "z": 0,
+            "color": "#00ff00",
+            "label": "X Axis Point"
+        },
+        {
+            "id": "point-3",
+            "x": 0,
+            "y": 2,
+            "z": 0,
+            "color": "#0000ff",
+            "label": "Y Axis Point"
+        },
+        {
+            "id": "point-4",
+            "x": 0,
+            "y": 0,
+            "z": 2,
+            "color": "#ffff00",
+            "label": "Z Axis Point"
+        },
+        {
+            "id": "point-5",
+            "x": 1,
+            "y": 1,
+            "z": 1,
+            "color": "#ff00ff",
+            "label": "Center Point"
+        },
+        {
+            "id": "point-6",
+            "x": -1,
+            "y": -1,
+            "z": -1,
+            "color": "#00ffff",
+            "label": "Negative Point"
+        }
+    ],
+    "shapes": [
+        {
+            "id": "shape-1",
+            "type": "box",
+            "position": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "color": "#ffffff",
+            "label": "Test Box"
+        }
+    ],
+    "metadata": {
+        "description": "A sample 3D model for testing the preview component"
+    }
+}

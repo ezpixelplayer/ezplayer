@@ -16,6 +16,7 @@ import {
     ShowStatusScreen,
     PlaybackSettingsDrawer,
     SchedulePreview,
+    Preview3DPage,
 } from '@ezplayer/player-ui-components';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
@@ -24,11 +25,11 @@ const ERROR_PAGE = import('../modules/ErrorPage/ErrorPage');
 
 const Loader =
     <P extends object>(Component: ComponentType<P>) =>
-    (props: P) => (
-        <Suspense fallback={<SuspenseLoader />}>
-            <Component {...props} />
-        </Suspense>
-    );
+        (props: P) => (
+            <Suspense fallback={<SuspenseLoader />}>
+                <Component {...props} />
+            </Suspense>
+        );
 
 // Pages
 const ErrorPage = Loader(lazy(() => ERROR_PAGE));
@@ -86,6 +87,10 @@ const routes: RouteObject[] = [
             {
                 path: ROUTES.PLAYBACKSETTINGS,
                 element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
+            },
+            {
+                path: ROUTES.PREVIEW_3D,
+                element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
             },
         ],
     },

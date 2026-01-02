@@ -19,3 +19,4 @@ export const GENERALSETTINGS = '/generalsettings';
 export const CLOUDSETTINGS = '/cloudsettings';
 export const PLAYBACKSETTINGS = '/playbacksettings';
 export const LAYOUT_EDITOR = '/layout-editor';
+export const PREVIEW_3D = '/preview-3d';
