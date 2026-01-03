@@ -121,7 +121,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     music_url: '',
                 },
                 sequence: {
-                    vendor: 'Local',
+                    vendor: newSongData.vendor.trim(),
                     variant: '',
                     sku: '',
                     vendor_url: '',

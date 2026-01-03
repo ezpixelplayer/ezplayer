@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getCombinedStatus() {
         return ipcRenderer.invoke('ipcGetCloudStatus');
     },
+    getServerStatus() {
+        return ipcRenderer.invoke('ipcGetServerStatus');
+    },
     getShowProfile() {
         return ipcRenderer.invoke('ipcGetCloudShowProfile');
     },
