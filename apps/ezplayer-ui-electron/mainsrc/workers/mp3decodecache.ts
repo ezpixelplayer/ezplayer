@@ -44,11 +44,10 @@ export class MP3PrefetchCache {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }
             },
-            budgetPredictor: (_key) => 200_000_000, // 20 min of CD+ audio
-            budgetCalculator: (_key, val) =>
-                (val.decompAudio.channelData.length ?? 2) * (val.decompAudio.channelData[0]?.length ?? 1000) * 4,
+            budgetPredictor: (_key) => 1, // 1 song
+            budgetCalculator: (_key, _val) => 1, // 1 song
             keyToId: (key) => `${key.mp3file}`,
-            budgetLimit: arg.mp3Space ?? 800_000_000, // An hour of CD quality
+            budgetLimit: arg.mp3Space ?? 4, // An hour of CD quality
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, v) => {
@@ -195,7 +194,7 @@ export class Mp3DecodeWorkerClient {
         this.worker.postMessage(
             {
                 type: 'return',
-                buffers: v.channelData,
+                buffers: v.channelData.map((a) => a.buffer),
             } satisfies DecodeReq,
             v.channelData.map((a) => a.buffer),
         );
