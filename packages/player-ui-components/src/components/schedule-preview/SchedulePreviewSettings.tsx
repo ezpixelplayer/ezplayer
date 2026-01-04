@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import {
-    Box,
     Card,
     CardContent,
     TextField,
@@ -11,6 +10,7 @@ import {
     IconButton,
     MenuItem,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import { ExpandMore, ExpandLess, PlayArrow } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';

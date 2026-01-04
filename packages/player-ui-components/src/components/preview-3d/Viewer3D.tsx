@@ -2,7 +2,8 @@ import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Grid, Stats } from '@react-three/drei';
 import * as THREE from 'three';
-import { Box, useTheme, Typography } from '@mui/material';
+import { useTheme, Typography } from '@mui/material';
+import { Box } from '../box/Box';
 import type { Point3D, Shape3D, PointColorData } from '../../types/model3d';
 
 export interface Viewer3DProps {

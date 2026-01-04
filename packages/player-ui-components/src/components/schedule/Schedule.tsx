@@ -1,4 +1,4 @@
-import { Box } from '@mui/material';
+import { Box } from '../box/Box';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import PlaylistScheduler from './PlaylistScheduler';
 import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';

@@ -1,12 +1,15 @@
 // import { useContext } from 'react';
 import {
-    Box,
+    Box as MuiBox,
     Stack,
     Divider,
     // IconButton,
     // Tooltip,
     useTheme,
 } from '@mui/material';
+import {
+    Box
+} from '../box/Box'
 // import MenuTwoToneIcon from '@mui/icons-material/MenuTwoTone';
 // import { SidebarContext } from '@ezplayer/shared-ui-components';
 // import CloseTwoToneIcon from '@mui/icons-material/CloseTwoTone';
@@ -31,7 +34,7 @@ export const Header = () => {
                 spacing={2}
             ></Stack>
             <Box display="flex" alignItems="center">
-                <Box
+                <MuiBox
                     component="span"
                     sx={{
                         ml: 2,
@@ -47,7 +50,7 @@ export const Header = () => {
             )}
           </IconButton> */}
                     {/* </Tooltip> */}
-                </Box>
+                </MuiBox>
             </Box>
         </Box>
     );

@@ -1,4 +1,5 @@
-import { Card, CardContent, Typography, Box, Chip, IconButton, Slider } from '@mui/material';
+import { Card, CardContent, Typography, Chip, IconButton, Slider } from '@mui/material';
+import { Box } from '../box/Box';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
 import { VolumeOff, VolumeUp } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';

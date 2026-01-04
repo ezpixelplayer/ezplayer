@@ -1,7 +1,6 @@
 import { isElectron, PageHeader, Select, SimpleDialog, ToastMsgs } from '@ezplayer/shared-ui-components';
 import { Add, Delete, Info } from '@mui/icons-material';
 import {
-    Box,
     Button,
     Card,
     Chip,
@@ -17,6 +16,7 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import { createSelector } from '@reduxjs/toolkit';
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';

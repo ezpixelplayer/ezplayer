@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-    Box,
+    Box as MuiBox,
     List,
     ListItem,
     ListItemButton,
@@ -12,6 +12,7 @@ import {
     useTheme,
     Paper,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import SearchIcon from '@mui/icons-material/Search';
 import type { Point3D, Shape3D } from '../../types/model3d';
 
@@ -238,9 +239,9 @@ export const ItemList: React.FC<ItemListProps> = ({
                     {selectedIds.size > 0 && (
                         <>
                             {' • '}
-                            <Box component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                            <MuiBox component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
                                 {selectedIds.size} selected
-                            </Box>
+                            </MuiBox>
                         </>
                     )}
                 </Typography>

@@ -2,8 +2,8 @@ import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNum
 import { Button, ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { Box } from '../box/Box';
 import {
-    Box,
     Checkbox,
     CircularProgress,
     Dialog,

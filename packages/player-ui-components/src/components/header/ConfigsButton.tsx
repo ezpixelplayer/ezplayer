@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Box, IconButton, Menu, Divider, ListItemText, FormControl, SelectChangeEvent } from '@mui/material';
+import { IconButton, Menu, Divider, ListItemText, FormControl, SelectChangeEvent } from '@mui/material';
+import { Box } from '../box/Box';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { ezrgbThemeOptions, useThemeContext } from '../../theme/ThemeBase';
 import { Select } from '@ezplayer/shared-ui-components';

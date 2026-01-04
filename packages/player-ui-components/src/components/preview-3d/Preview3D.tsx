@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
-    Box,
     ToggleButton,
     ToggleButtonGroup,
     Button,
@@ -13,6 +12,7 @@ import {
     TextField,
     Popover,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import View3DIcon from '@mui/icons-material/ViewInAr';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
 import ListIcon from '@mui/icons-material/List';

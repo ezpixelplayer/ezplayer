@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { Box, CircularProgress, Alert, Stack, Typography } from '@mui/material';
+import { CircularProgress, Alert, Stack, Typography } from '@mui/material';
+import { Box } from '../box/Box';
 import { useSelector } from 'react-redux';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { RootState } from '../../store/Store';

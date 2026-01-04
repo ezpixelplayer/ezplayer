@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from '@mui/material';
+import { Box } from '../box/Box';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Preview3D } from './Preview3D';
 
