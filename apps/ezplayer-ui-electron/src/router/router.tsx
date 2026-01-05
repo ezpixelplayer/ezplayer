@@ -16,7 +16,6 @@ import {
     ShowStatusScreen,
     PlaybackSettingsDrawer,
     SchedulePreview,
-    ColorPaletteTestView,
 } from '@ezplayer/player-ui-components';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
@@ -87,10 +86,6 @@ const routes: RouteObject[] = [
             {
                 path: ROUTES.PLAYBACKSETTINGS,
                 element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.COLOR_PALETTE_TEST,
-                element: <ColorPaletteTestView title="Color Palette Test" statusArea={getStatusArea()} />,
             },
         ],
     },

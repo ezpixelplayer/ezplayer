@@ -17,7 +17,7 @@ export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/juke
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { StatsDialog } from './components/status/StatsDialog';
 export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackSettingsDrawer';
-export { ColorPaletteTestView } from './components/theme/ColorPaletteTestView';
+export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';

@@ -11,7 +11,6 @@ import {
     Schedule,
     CreateEditPlaylist,
     PlaybackSettingsDrawer,
-    ColorPaletteTestView,
 } from '@ezplayer/player-ui-components';
 import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
@@ -76,10 +75,6 @@ const routes: RouteObject[] = [
             {
                 path: ROUTES.PLAYBACKSETTINGS,
                 element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.COLOR_PALETTE_TEST,
-                element: <ColorPaletteTestView title="Color Palette Test" statusArea={getStatusArea()} />,
             },
         ],
     },

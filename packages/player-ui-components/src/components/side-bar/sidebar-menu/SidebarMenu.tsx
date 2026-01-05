@@ -10,7 +10,6 @@ import PreviewIcon from '@mui/icons-material/Preview';
 import { SidebarMenus } from '@ezplayer/shared-ui-components';
 import { Routes as ROUTES } from '../../..';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
-import PaletteIcon from '@mui/icons-material/Palette';
 import React from 'react';
 //import { useSelector } from 'react-redux';
 //import { RootState } from "../../../../src/store/configure-store";
@@ -116,12 +115,6 @@ export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hi
                                 subpathname: '',
                                 icon: <DisplaySettingsIcon />,
                                 submenuname: 'Playback Settings',
-                            },
-                            {
-                                pathname: ROUTES.COLOR_PALETTE_TEST,
-                                subpathname: '',
-                                icon: <PaletteIcon />,
-                                submenuname: 'Color Palette Test',
                             },
                         ]),
                 ]}
