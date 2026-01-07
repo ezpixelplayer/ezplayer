@@ -1,4 +1,4 @@
-import { ComponentType, Suspense, lazy } from 'react';
+import React, { ComponentType, Suspense, lazy } from 'react';
 import { Navigate, RouteObject } from 'react-router';
 
 import { SuspenseLoader } from '@ezplayer/shared-ui-components';

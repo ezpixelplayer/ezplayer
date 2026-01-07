@@ -17,6 +17,7 @@ export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/juke
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { StatsDialog } from './components/status/StatsDialog';
 export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackSettingsDrawer';
+export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { Preview3D, Preview3DPage, Viewer3D, Viewer2D, ItemList } from './components/preview-3d';
 export type { Preview3DProps, Preview3DPageProps, Viewer3DProps, Viewer2DProps, ItemListProps, ViewMode, ViewPlane } from './components/preview-3d';
