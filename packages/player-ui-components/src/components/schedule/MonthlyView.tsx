@@ -139,8 +139,8 @@ const MonthlyView: React.FC<MonthlyViewProps> = ({
                                         !dayObj.isEmpty && isSameDay(dayObj.date, new Date())
                                             ? 'primary.contrastText'
                                             : dayObj.isEmpty
-                                                ? 'text.disabled'
-                                                : 'text.primary',
+                                              ? 'text.disabled'
+                                              : 'text.primary',
                                 }}
                             >
                                 {format(dayObj.date, 'd')}

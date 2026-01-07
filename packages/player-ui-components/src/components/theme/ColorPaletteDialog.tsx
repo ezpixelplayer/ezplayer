@@ -1,5 +1,16 @@
 import React, { useMemo } from 'react';
-import { Dialog, DialogContent, DialogTitle, IconButton, Box, Card, CardContent, Grid, Typography, useTheme } from '@mui/material';
+import {
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    IconButton,
+    Box,
+    Card,
+    CardContent,
+    Grid,
+    Typography,
+    useTheme,
+} from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useThemeContext } from '../../theme/ThemeBase';
 
@@ -69,9 +80,10 @@ const ColorSwatch: React.FC<ColorSwatchProps> = ({ name, color }) => {
                         fontWeight: 'bold',
                         textAlign: 'center',
                         padding: 1,
-                        backgroundColor: textColor === theme.palette.common.white
-                            ? 'rgba(0, 0, 0, 0.3)'
-                            : 'rgba(255, 255, 255, 0.3)',
+                        backgroundColor:
+                            textColor === theme.palette.common.white
+                                ? 'rgba(0, 0, 0, 0.3)'
+                                : 'rgba(255, 255, 255, 0.3)',
                         borderRadius: 1,
                     }}
                 >
@@ -265,13 +277,22 @@ export const ColorPaletteDialog: React.FC<ColorPaletteDialogProps> = ({ open, on
 
         if ((theme as any).colors?.alpha?.trueWhite) {
             if ((theme as any).colors.alpha.trueWhite?.[100]) {
-                alphaColors.push({ name: 'colors.alpha.trueWhite.100', value: (theme as any).colors.alpha.trueWhite[100] });
+                alphaColors.push({
+                    name: 'colors.alpha.trueWhite.100',
+                    value: (theme as any).colors.alpha.trueWhite[100],
+                });
             }
             if ((theme as any).colors.alpha.trueWhite?.[70]) {
-                alphaColors.push({ name: 'colors.alpha.trueWhite.70', value: (theme as any).colors.alpha.trueWhite[70] });
+                alphaColors.push({
+                    name: 'colors.alpha.trueWhite.70',
+                    value: (theme as any).colors.alpha.trueWhite[70],
+                });
             }
             if ((theme as any).colors.alpha.trueWhite?.[50]) {
-                alphaColors.push({ name: 'colors.alpha.trueWhite.50', value: (theme as any).colors.alpha.trueWhite[50] });
+                alphaColors.push({
+                    name: 'colors.alpha.trueWhite.50',
+                    value: (theme as any).colors.alpha.trueWhite[50],
+                });
             }
             if ((theme as any).colors.alpha.trueWhite?.[5]) {
                 alphaColors.push({ name: 'colors.alpha.trueWhite.5', value: (theme as any).colors.alpha.trueWhite[5] });
@@ -351,4 +372,3 @@ export const ColorPaletteDialog: React.FC<ColorPaletteDialogProps> = ({ open, on
         </Dialog>
     );
 };
-

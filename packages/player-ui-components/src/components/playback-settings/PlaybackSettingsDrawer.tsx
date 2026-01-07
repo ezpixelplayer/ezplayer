@@ -642,17 +642,17 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                     disabled={
                         dialogType === 'schedule'
                             ? !newScheduleEntry.days ||
-                            !newScheduleEntry.startTime ||
-                            !newScheduleEntry.endTime ||
-                            !newScheduleEntry.playlist ||
-                            !isValidTimeFormat(newScheduleEntry.startTime) ||
-                            !isValidExtendedTimeFormat(newScheduleEntry.endTime)
+                              !newScheduleEntry.startTime ||
+                              !newScheduleEntry.endTime ||
+                              !newScheduleEntry.playlist ||
+                              !isValidTimeFormat(newScheduleEntry.startTime) ||
+                              !isValidExtendedTimeFormat(newScheduleEntry.endTime)
                             : !newVolumeScheduleEntry.days ||
-                            !newVolumeScheduleEntry.startTime ||
-                            !newVolumeScheduleEntry.endTime ||
-                            newVolumeScheduleEntry.volumeLevel === undefined ||
-                            !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
-                            !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
+                              !newVolumeScheduleEntry.startTime ||
+                              !newVolumeScheduleEntry.endTime ||
+                              newVolumeScheduleEntry.volumeLevel === undefined ||
+                              !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
+                              !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
                     }
                     sx={{ minWidth: 140 }}
                 >
@@ -1357,8 +1357,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         {itemToDelete?.type === 'schedule'
                             ? 'Schedule Entry'
                             : itemToDelete?.type === 'volume'
-                                ? 'Volume Override'
-                                : 'Item'}
+                              ? 'Volume Override'
+                              : 'Item'}
                     </Typography>
                 }
                 model_content={<DeleteDialogContent />}

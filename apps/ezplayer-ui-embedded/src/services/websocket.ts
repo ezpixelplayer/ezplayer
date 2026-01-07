@@ -329,7 +329,7 @@ class WebSocketService {
         try {
             this.ws?.send(JSON.stringify(msg));
         } catch (e) {
-            console.error(e)
+            console.error(e);
             // Reconnect?
         }
     }
