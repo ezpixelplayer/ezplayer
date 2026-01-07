@@ -12,3 +12,9 @@ export type { Viewer2DProps } from './Viewer2D';
 export { ItemList } from './ItemList';
 export type { ItemListProps } from './ItemList';
 
+export { ModelList } from './ModelList';
+export type { ModelListProps, ModelItem } from './ModelList';
+
+export { ModelSelector } from './ModelSelector';
+export type { ModelSelectorProps } from './ModelSelector';
+

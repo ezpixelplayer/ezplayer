@@ -20,7 +20,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
-import { ItemList } from './ItemList';
+import { ModelList, ModelItem } from './ModelList';
 import { loadModelFromJson, createDefaultModel } from '../../services/model3dLoader';
 import type { Model3DData, PointColorData, SelectionState } from '../../types/model3d';
 
@@ -70,6 +70,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [colorData, setColorData] = useState<PointColorData[]>(externalColorData || []);
     const [colorPickerAnchor, setColorPickerAnchor] = useState<HTMLElement | null>(null);
     const [selectedColor, setSelectedColor] = useState<string>('#ffffff');
+    const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelItem | null>(null);
 
     // Load model from URL if provided
     useEffect(() => {
@@ -178,6 +179,46 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         if (newPlane !== null) {
             setViewPlane(newPlane);
         }
+    }, []);
+
+    // Handle model selection from dropdown
+    const handleModelSelect = useCallback((model: ModelItem) => {
+        setSelectedModelFromDropdown(model);
+        
+        // Convert selected model to Model3DData format
+        const points: any[] = [];
+        let pointIndex = 0;
+        
+        if (model.nodes && Array.isArray(model.nodes)) {
+            model.nodes.forEach((node: any, nodeIndex: number) => {
+                if (node.coords && Array.isArray(node.coords)) {
+                    node.coords.forEach((coord: any, coordIndex: number) => {
+                        points.push({
+                            id: `point-${nodeIndex}-${coordIndex}`,
+                            name: `Point ${pointIndex + 1}`,
+                            x: coord.wX || 0,
+                            y: coord.wY || 0,
+                            z: coord.wZ || 0,
+                            color: '#00ff00', // Default green color
+                        });
+                        pointIndex++;
+                    });
+                }
+            });
+        }
+
+        const newModelData: Model3DData = {
+            name: model.name as string,
+            points: points,
+            shapes: [],
+        };
+
+        setModelData(newModelData);
+        // Clear selection when loading new model
+        setSelectionState({
+            selectedIds: new Set<string>(),
+            hoveredId: null,
+        });
     }, []);
 
     // Animate colors (simulate incoming data) - only if enabled
@@ -319,7 +360,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 flexDirection: 'column',
                 height: '100%',
                 width: '100%',
-                minHeight: 600,
+                overflow: 'hidden',
             }}
         >
             {showControls && (
@@ -333,6 +374,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         borderBottom: `1px solid ${theme.palette.divider}`,
                         backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
                         zIndex: 10,
+                        flexShrink: 0,
                     }}
                 >
                     {/* View Mode Controls */}
@@ -497,7 +539,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             </Typography>
                         )}
                         {showList && (
-                            <Tooltip title={showItemList ? 'Hide item list' : 'Show item list'}>
+                            <Tooltip title={showItemList ? 'Hide model library' : 'Show model library'}>
                                 <IconButton
                                     size="small"
                                     onClick={() => setShowItemList(!showItemList)}
@@ -511,8 +553,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 </Paper>
             )}
 
-            <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 600 }}>
-                <Box sx={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 600 }}>
+            <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+                <Box sx={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
                     {viewMode === '3d' ? (
                         <Viewer3D
                             points={modelData.points}
@@ -546,10 +588,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             width: 320,
                             minWidth: 280,
                             maxWidth: '35%',
+                            height: '100%',
                             display: 'flex',
                             flexDirection: 'column',
                             borderLeft: `1px solid ${theme.palette.divider}`,
                             backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
+                            overflow: 'hidden',
                         }}
                     >
                         <Box
@@ -560,23 +604,20 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 justifyContent: 'space-between',
                                 borderBottom: `1px solid ${theme.palette.divider}`,
                                 backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[50],
+                                flexShrink: 0,
                             }}
                         >
                             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                Items ({modelData.points.length + (modelData.shapes?.length || 0)})
+                                Model Library
                             </Typography>
                             <IconButton size="small" onClick={() => setShowItemList(false)}>
                                 <CloseIcon fontSize="small" />
                             </IconButton>
                         </Box>
-                        <ItemList
-                            points={modelData.points}
-                            shapes={modelData.shapes}
-                            selectedIds={selectionState.selectedIds}
-                            hoveredId={selectionState.hoveredId}
-                            onItemClick={handleItemClick}
-                            onItemHover={handleItemHover}
-                            showShapes={!!modelData.shapes}
+                        <ModelList
+                            selectedModelName={selectedModelFromDropdown?.name}
+                            onModelSelect={handleModelSelect}
+                            searchable={true}
                         />
                     </Paper>
                 )}

@@ -1,0 +1,108 @@
+.model-selector {
+  width: 100%;
+  padding: 20px;
+  background-color: #f9fafb;
+  border-radius: 12px;
+}
+
+.model-selector__container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.model-selector__label {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+}
+
+.model-selector__dropdown {
+  margin-bottom: 24px;
+}
+
+.model-selector__info {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.model-selector__info-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 16px 0;
+  border-bottom: 2px solid #4a90e2;
+  padding-bottom: 8px;
+}
+
+.model-selector__info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.model-selector__info-content p {
+  margin: 0;
+  font-size: 14px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+
+.model-selector__info-content strong {
+  color: #1f2937;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .model-selector {
+    padding: 16px;
+  }
+
+  .model-selector__label {
+    font-size: 14px;
+  }
+
+  .model-selector__info {
+    padding: 16px;
+  }
+
+  .model-selector__info-title {
+    font-size: 16px;
+  }
+
+  .model-selector__info-content p {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .model-selector {
+    padding: 12px;
+  }
+
+  .model-selector__container {
+    max-width: 100%;
+  }
+}
+

@@ -21,9 +21,14 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
             sx={{
                 display: 'flex',
                 flexDirection: 'column',
-                height: '100%',
+                height: '100vh',
                 width: '100%',
                 overflow: 'hidden',
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
             }}
         >
             <PageHeader heading={title} children={statusArea} />
@@ -34,11 +39,13 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     p: 2,
+                    overflow: 'hidden',
                 }}
             >
                 <Box
                     sx={{
                         flex: 1,
+                        minHeight: 0,
                         display: 'flex',
                         flexDirection: 'column',
                         backgroundColor: 'background.paper',
