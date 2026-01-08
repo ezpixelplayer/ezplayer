@@ -24,7 +24,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const models = (sampleModels as SampleModelData).models;
 
   const handleModelSelect = useCallback(
-    (model: ModelItem) => {
+    (model: ModelItem | null) => {
       setSelectedModel(model);
       onModelChange?.(model);
     },

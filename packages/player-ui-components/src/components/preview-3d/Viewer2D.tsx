@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Grid } from '@react-three/drei';
+import { Canvas, useThree } from '@react-three/fiber';
+import { OrthographicCamera, Grid, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useTheme, Typography } from '@mui/material';
 import { Box } from '../box/Box';
@@ -20,92 +20,99 @@ export interface Viewer2DProps {
     pointSize?: number;
 }
 
-interface Point2DMeshProps {
-    point: Point3D;
-    isSelected: boolean;
-    isHovered: boolean;
+// Optimized 2D point cloud rendering using THREE.Points
+function Optimized2DPointCloud({
+    points,
+    selectedIds,
+    hoveredId,
+    colorData,
+    pointSize,
+    viewPlane,
+}: {
+    points: Point3D[];
+    selectedIds?: Set<string>;
+    hoveredId?: string | null;
     colorData?: PointColorData[];
-    size: number;
+    pointSize?: number;
     viewPlane: 'xy' | 'xz' | 'yz';
-    onClick: (pointId: string) => void;
-    onHover: (pointId: string | null) => void;
-}
+}) {
+    const pointsRef = useRef<THREE.Points>(null);
 
-function Point2DMesh({ point, isSelected, isHovered, colorData, size, viewPlane, onClick, onHover }: Point2DMeshProps) {
-    const meshRef = useRef<THREE.Mesh>(null);
-    const [currentColor, setCurrentColor] = React.useState(point.color || '#ffffff');
+    // Memoize geometry and colors based on view plane
+    const { positions, colors } = useMemo(() => {
+        const positions = new Float32Array(points.length * 3);
+        const colors = new Float32Array(points.length * 3);
 
-    // Update color from colorData if available
-    useEffect(() => {
-        if (colorData) {
-            const pointColorData = colorData.find((cd) => cd.pointId === point.id);
-            if (pointColorData) {
-                setCurrentColor(pointColorData.color);
+        points.forEach((point, i) => {
+            // Flatten based on view plane
+            switch (viewPlane) {
+                case 'xy':
+                    positions[i * 3] = point.x;
+                    positions[i * 3 + 1] = point.y;
+                    positions[i * 3 + 2] = 0;
+                    break;
+                case 'xz':
+                    positions[i * 3] = point.x;
+                    positions[i * 3 + 1] = 0;
+                    positions[i * 3 + 2] = point.z;
+                    break;
+                case 'yz':
+                    positions[i * 3] = 0;
+                    positions[i * 3 + 1] = point.y;
+                    positions[i * 3 + 2] = point.z;
+                    break;
             }
-        } else if (point.color) {
-            setCurrentColor(point.color);
-        }
-    }, [colorData, point.id, point.color]);
 
-    // Animate color transitions
-    useFrame(() => {
-        if (meshRef.current && colorData) {
-            const pointColorData = colorData.find((cd) => cd.pointId === point.id);
-            if (pointColorData) {
-                const targetColor = new THREE.Color(pointColorData.color);
-                const current = new THREE.Color(currentColor);
-                const newColor = current.lerp(targetColor, 0.1);
-                setCurrentColor(`#${newColor.getHexString()}`);
+            // Parse color
+            let color = new THREE.Color(point.color || '#00ff00');
+
+            // Apply colorData if available
+            if (colorData) {
+                const pointColorData = colorData.find((cd) => cd.pointId === point.id);
+                if (pointColorData) {
+                    color = new THREE.Color(pointColorData.color);
+                }
             }
-        }
-    });
 
-    // Flatten based on view plane
-    const position = useMemo((): [number, number, number] => {
-        switch (viewPlane) {
-            case 'xy':
-                return [point.x, point.y, 0];
-            case 'xz':
-                return [point.x, 0, point.z];
-            case 'yz':
-                return [0, point.y, point.z];
-            default:
-                return [point.x, point.y, 0];
-        }
-    }, [point, viewPlane]);
+            // Highlight selected/hovered
+            if (selectedIds?.has(point.id)) {
+                color = new THREE.Color('#ffff00');
+            } else if (hoveredId === point.id) {
+                color = new THREE.Color('#00ffff');
+            }
 
-    const handleClick = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onClick(point.id);
-        },
-        [onClick, point.id]
-    );
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        });
 
-    const handlePointerOver = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onHover(point.id);
-        },
-        [onHover, point.id]
-    );
-
-    const handlePointerOut = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onHover(null);
-        },
-        [onHover]
-    );
-
-    const finalColor = isSelected ? '#ffff00' : isHovered ? '#00ffff' : currentColor;
-    const finalSize = isSelected || isHovered ? size * 1.5 : size;
+        return { positions, colors };
+    }, [points, selectedIds, hoveredId, colorData, viewPlane]);
 
     return (
-        <mesh ref={meshRef} position={position} onClick={handleClick} onPointerOver={handlePointerOver} onPointerOut={handlePointerOut}>
-            <circleGeometry args={[finalSize, 32]} />
-            <meshStandardMaterial color={finalColor} emissive={finalColor} emissiveIntensity={0.5} />
-        </mesh>
+        <points ref={pointsRef}>
+            <bufferGeometry>
+                <bufferAttribute
+                    attach="attributes-position"
+                    count={points.length}
+                    array={positions}
+                    itemSize={3}
+                />
+                <bufferAttribute
+                    attach="attributes-color"
+                    count={points.length}
+                    array={colors}
+                    itemSize={3}
+                />
+            </bufferGeometry>
+            <pointsMaterial
+                size={pointSize || 3.0}
+                vertexColors
+                sizeAttenuation={false}
+                transparent={false}
+                depthWrite={true}
+            />
+        </points>
     );
 }
 
@@ -243,7 +250,9 @@ function Scene2DContent({
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        const distance = maxDim * 1.5;
+
+        // Increase distance multiplier to ensure all models fit in view
+        const distance = maxDim * 2.5;
 
         // Position camera based on view plane
         switch (viewPlane) {
@@ -258,6 +267,14 @@ function Scene2DContent({
                 break;
         }
         camera.lookAt(center);
+
+        // Adjust orthographic camera zoom to fit the scene
+        if (camera instanceof THREE.OrthographicCamera && maxDim > 0) {
+            // Calculate appropriate zoom based on scene size
+            const targetZoom = 100 / maxDim;
+            camera.zoom = Math.max(0.5, Math.min(targetZoom, 50));
+            camera.updateProjectionMatrix();
+        }
     }, [points, shapes, camera, viewPlane]);
 
     return (
@@ -277,19 +294,14 @@ function Scene2DContent({
                 />
             ))}
 
-            {points.map((point) => (
-                <Point2DMesh
-                    key={point.id}
-                    point={point}
-                    isSelected={selectedIds?.has(point.id) ?? false}
-                    isHovered={hoveredId === point.id}
-                    colorData={colorData}
-                    size={pointSize || 0.1}
-                    viewPlane={viewPlane}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
-                />
-            ))}
+            <Optimized2DPointCloud
+                points={points}
+                selectedIds={selectedIds}
+                hoveredId={hoveredId}
+                colorData={colorData}
+                pointSize={pointSize}
+                viewPlane={viewPlane}
+            />
         </>
     );
 }
@@ -305,7 +317,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     className,
     viewPlane = 'xy',
     showGrid = true,
-    pointSize = 0.1,
+    pointSize = 3.0,
 }) => {
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
@@ -321,6 +333,39 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                 backgroundColor: '#000',
             }}
         >
+            {/* Control hints overlay */}
+            {!error && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        bottom: 16,
+                        left: 16,
+                        zIndex: 10,
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        color: 'white',
+                        padding: '8px 12px',
+                        borderRadius: 1,
+                        fontSize: '0.75rem',
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 0.5,
+                    }}
+                >
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'white' }}>
+                        Controls:
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                        🖱️ Left drag: Pan
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                        🖱️ Right drag: Pan
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                        🖱️ Scroll: Zoom
+                    </Typography>
+                </Box>
+            )}
             {error ? (
                 <Box
                     sx={{
@@ -348,8 +393,22 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                         powerPreference: 'high-performance',
                     }}
                 >
-                    <OrthographicCamera makeDefault position={[0, 0, 10]} zoom={50} />
-                    {showGrid && <Grid args={[10, 10]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
+                    <OrthographicCamera makeDefault position={[0, 0, 10]} zoom={0.5} near={0.1} far={50000} />
+                    <MapControls
+                        enableDamping
+                        dampingFactor={0.05}
+                        enableRotate={false}
+                        enablePan={true}
+                        enableZoom={true}
+                        panSpeed={1.0}
+                        zoomSpeed={1.0}
+                        mouseButtons={{
+                            LEFT: THREE.MOUSE.PAN,
+                            MIDDLE: THREE.MOUSE.DOLLY,
+                            RIGHT: THREE.MOUSE.PAN
+                        }}
+                    />
+                    {showGrid && <Grid args={[200, 200]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
                     <Scene2DContent
                         points={points}
                         shapes={shapes}

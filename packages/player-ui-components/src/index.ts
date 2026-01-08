@@ -22,7 +22,8 @@ export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { Preview3D, Preview3DPage, Viewer3D, Viewer2D, ItemList } from './components/preview-3d';
 export type { Preview3DProps, Preview3DPageProps, Viewer3DProps, Viewer2DProps, ItemListProps, ViewMode, ViewPlane } from './components/preview-3d';
 export type { Model3DData, Point3D, Shape3D, PointColorData, SelectionState } from './types/model3d';
-export { loadModelFromJson, parseModelData, createDefaultModel } from './services/model3dLoader';
+    export { loadModelFromJson, parseModelData, createDefaultModel, convertSampleModelToModel3D, convertAllSampleModelsToModel3D } from './services/model3dLoader';
+export type { SampleModelData } from './services/model3dLoader';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
 export type {

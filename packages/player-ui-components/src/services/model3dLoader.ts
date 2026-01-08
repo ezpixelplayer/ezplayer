@@ -3,6 +3,26 @@
  */
 
 import type { Model3DData, Point3D, Shape3D } from '../types/model3d';
+import sampleModels from '../components/preview-3d/sample-model.json';
+
+export interface SampleModelData {
+    models: Array<{
+        name: string;
+        pixelSize?: number;
+        pixelStyle?: string;
+        colorOrder?: string;
+        nodes?: Array<{
+            channel?: number;
+            string?: number;
+            coords?: Array<{
+                wX?: number;
+                wY?: number;
+                wZ?: number;
+                [key: string]: unknown;
+            }>;
+        }>;
+    }>;
+}
 
 /**
  * Loads model data from a JSON file
@@ -116,9 +136,126 @@ export function parseModelData(data: unknown): Model3DData {
 }
 
 /**
- * Creates a default/empty model for testing
+ * Converts a sample model from sample-model.json to Model3DData format
+ */
+export function convertSampleModelToModel3D(
+    sampleModel: SampleModelData['models'][0],
+    modelPrefix: string = '',
+): Model3DData {
+    const points: Point3D[] = [];
+    let pointIndex = 0;
+
+    if (sampleModel.nodes && Array.isArray(sampleModel.nodes)) {
+        sampleModel.nodes.forEach((node, nodeIndex) => {
+            if (node.coords && Array.isArray(node.coords)) {
+                node.coords.forEach((coord, coordIndex) => {
+                    points.push({
+                        id: `${modelPrefix}point-${nodeIndex}-${coordIndex}`,
+                        x: coord.wX || 0,
+                        y: coord.wY || 0,
+                        z: coord.wZ || 0,
+                        color: '#00ff00', // Default green color
+                        label: `${sampleModel.name} - Point ${pointIndex + 1}`,
+                    });
+                    pointIndex++;
+                });
+            }
+        });
+    }
+
+    return {
+        name: sampleModel.name,
+        points,
+        shapes: [],
+        metadata: {
+            pixelSize: sampleModel.pixelSize,
+            pixelStyle: sampleModel.pixelStyle,
+            colorOrder: sampleModel.colorOrder,
+            modelName: sampleModel.name,
+        },
+    };
+}
+
+/**
+ * Converts all models from sample-model.json into a combined Model3DData structure
+ */
+export function convertAllSampleModelsToModel3D(): Model3DData {
+    const sampleData = sampleModels as SampleModelData;
+
+    if (!sampleData.models || sampleData.models.length === 0) {
+        return {
+            name: 'Empty Scene',
+            points: [],
+            shapes: [],
+        };
+    }
+
+    const allPoints: Point3D[] = [];
+    const modelMetadata: Array<{ name: string; pointCount: number; startIndex: number; endIndex: number }> = [];
+
+    // Convert each model and combine all points
+    sampleData.models.forEach((model, modelIndex) => {
+        const startIndex = allPoints.length;
+        let pointIndex = 0;
+
+        if (model.nodes && Array.isArray(model.nodes)) {
+            model.nodes.forEach((node, nodeIndex) => {
+                if (node.coords && Array.isArray(node.coords)) {
+                    node.coords.forEach((coord, coordIndex) => {
+                        allPoints.push({
+                            id: `model${modelIndex}-node${nodeIndex}-${coordIndex}`,
+                            x: coord.wX || 0,
+                            y: coord.wY || 0,
+                            z: coord.wZ || 0,
+                            color: '#00ff00',
+                            label: `${model.name} - Point ${pointIndex + 1}`,
+                            metadata: {
+                                modelName: model.name,
+                                modelIndex,
+                                pixelSize: model.pixelSize,
+                                pixelStyle: model.pixelStyle,
+                                colorOrder: model.colorOrder,
+                            },
+                        });
+                        pointIndex++;
+                    });
+                }
+            });
+        }
+
+        const endIndex = allPoints.length - 1;
+        modelMetadata.push({
+            name: model.name,
+            pointCount: pointIndex,
+            startIndex,
+            endIndex,
+        });
+    });
+
+    return {
+        name: 'All Models',
+        points: allPoints,
+        shapes: [],
+        metadata: {
+            totalModels: sampleData.models.length,
+            models: modelMetadata,
+            description: 'Combined view of all available models',
+        },
+    };
+}
+
+/**
+ * Creates a default model containing all models from sample-model.json
  */
 export function createDefaultModel(): Model3DData {
+    const sampleData = sampleModels as SampleModelData;
+
+    if (sampleData.models && sampleData.models.length > 0) {
+        // Return all models combined
+        return convertAllSampleModelsToModel3D();
+    }
+
+    // Fallback to a simple model if sample data is not available
     return {
         name: 'Default Model',
         points: [

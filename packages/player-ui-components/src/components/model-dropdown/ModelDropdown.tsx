@@ -3,13 +3,17 @@ import './ModelDropdown.css';
 
 export interface ModelItem {
   name: string;
+  pixelSize?: number;
+  pixelStyle?: string;
+  colorOrder?: string;
+  nodes?: any[];
   [key: string]: unknown;
 }
 
 export interface ModelDropdownProps {
   models: ModelItem[];
   selectedModel?: ModelItem | null;
-  onModelSelect: (model: ModelItem) => void;
+  onModelSelect: (model: ModelItem | null) => void;
   placeholder?: string;
   maxHeight?: number;
   className?: string;
@@ -53,10 +57,15 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
 
   const handleSelect = useCallback(
     (model: ModelItem) => {
-      onModelSelect(model);
+      // Toggle selection: if the clicked model is already selected, deselect it
+      if (selectedModel?.name === model.name) {
+        onModelSelect(null);
+      } else {
+        onModelSelect(model);
+      }
       setIsOpen(false);
     },
-    [onModelSelect]
+    [onModelSelect, selectedModel]
   );
 
   const handleKeyDown = useCallback(
@@ -124,9 +133,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
               return (
                 <li
                   key={`${model.name}-${index}`}
-                  className={`model-dropdown__item ${
-                    isSelected ? 'model-dropdown__item--selected' : ''
-                  }`}
+                  className={`model-dropdown__item ${isSelected ? 'model-dropdown__item--selected' : ''
+                    }`}
                   onClick={() => handleSelect(model)}
                   onKeyDown={(e) => handleKeyDown(e, model)}
                   role="option"

@@ -12,6 +12,7 @@ import {
     useTheme,
     Paper,
     Divider,
+    alpha,
 } from '@mui/material';
 import { Box } from '../box/Box';
 import SearchIcon from '@mui/icons-material/Search';
@@ -29,7 +30,7 @@ export interface ModelItem {
 
 export interface ModelListProps {
     selectedModelName?: string | null;
-    onModelSelect: (model: ModelItem) => void;
+    onModelSelect: (model: ModelItem | null) => void;
     className?: string;
     searchable?: boolean;
 }
@@ -56,7 +57,7 @@ export const ModelList: React.FC<ModelListProps> = ({
         }
 
         const query = searchQuery.toLowerCase();
-        return allModels.filter((model) => 
+        return allModels.filter((model) =>
             model.name.toLowerCase().includes(query)
         );
     }, [allModels, searchQuery]);
@@ -64,7 +65,7 @@ export const ModelList: React.FC<ModelListProps> = ({
     // Calculate point count for a model
     const getModelPointCount = (model: ModelItem): number => {
         if (!model.nodes || !Array.isArray(model.nodes)) return 0;
-        
+
         return model.nodes.reduce((total, node) => {
             if (node.coords && Array.isArray(node.coords)) {
                 return total + node.coords.length;
@@ -74,7 +75,12 @@ export const ModelList: React.FC<ModelListProps> = ({
     };
 
     const handleModelClick = (model: ModelItem) => {
-        onModelSelect(model);
+        // Toggle selection: if the clicked model is already selected, deselect it
+        if (selectedModelName === model.name) {
+            onModelSelect(null);
+        } else {
+            onModelSelect(model);
+        }
     };
 
     const handleModelMouseEnter = (modelName: string) => {
@@ -98,17 +104,17 @@ export const ModelList: React.FC<ModelListProps> = ({
                 }}
             >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: searchable ? 1.5 : 0 }}>
-                    <ViewInArIcon 
-                        sx={{ 
-                            fontSize: 20, 
-                            color: theme.palette.primary.main 
-                        }} 
+                    <ViewInArIcon
+                        sx={{
+                            fontSize: 20,
+                            color: theme.palette.primary.main
+                        }}
                     />
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                         3D Models
                     </Typography>
-                    <Chip 
-                        label={allModels.length} 
+                    <Chip
+                        label={allModels.length}
                         size="small"
                         sx={{
                             height: 20,
@@ -147,8 +153,8 @@ export const ModelList: React.FC<ModelListProps> = ({
             {/* SCROLLABLE Model List - ONLY THIS SECTION SCROLLS */}
             <Paper
                 elevation={0}
-                sx={{ 
-                    flex: 1, 
+                sx={{
+                    flex: 1,
                     overflowY: 'auto',
                     overflowX: 'hidden',
                     minHeight: 0,
@@ -174,12 +180,12 @@ export const ModelList: React.FC<ModelListProps> = ({
                 <List dense sx={{ p: 0 }}>
                     {filteredModels.length === 0 ? (
                         <ListItem>
-                            <ListItemText 
+                            <ListItemText
                                 primary={
                                     <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
                                         No models found
                                     </Typography>
-                                } 
+                                }
                             />
                         </ListItem>
                     ) : (
@@ -198,7 +204,7 @@ export const ModelList: React.FC<ModelListProps> = ({
                                             backgroundColor: isSelected
                                                 ? theme.palette.primary.main + '15'
                                                 : isHovered
-                                                    ? theme.palette.action.hover
+                                                    ? alpha(theme.palette.primary.light, 0.2)
                                                     : 'transparent',
                                             borderLeft: isSelected
                                                 ? `4px solid ${theme.palette.primary.main}`
@@ -248,8 +254,8 @@ export const ModelList: React.FC<ModelListProps> = ({
                                                 secondary={
                                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.5 }}>
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                                            <Typography 
-                                                                variant="caption" 
+                                                            <Typography
+                                                                variant="caption"
                                                                 color="text.secondary"
                                                                 sx={{ fontWeight: 500 }}
                                                             >
@@ -272,8 +278,8 @@ export const ModelList: React.FC<ModelListProps> = ({
                                                                     height: 18,
                                                                     fontSize: '0.65rem',
                                                                     alignSelf: 'flex-start',
-                                                                    backgroundColor: theme.palette.mode === 'dark' 
-                                                                        ? theme.palette.grey[700] 
+                                                                    backgroundColor: theme.palette.mode === 'dark'
+                                                                        ? theme.palette.grey[700]
                                                                         : theme.palette.grey[200],
                                                                     color: theme.palette.text.secondary,
                                                                 }}
@@ -285,11 +291,11 @@ export const ModelList: React.FC<ModelListProps> = ({
                                         </ListItemButton>
                                     </ListItem>
                                     {index < filteredModels.length - 1 && (
-                                        <Divider 
-                                            sx={{ 
+                                        <Divider
+                                            sx={{
                                                 ml: 2,
                                                 opacity: 0.6,
-                                            }} 
+                                            }}
                                         />
                                     )}
                                 </React.Fragment>

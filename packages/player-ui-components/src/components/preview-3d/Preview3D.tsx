@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     ToggleButton,
     ToggleButtonGroup,
@@ -52,7 +52,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     showControls = true,
     defaultViewMode = '3d',
     defaultViewPlane = 'xy',
-    pointSize = 0.1,
+    pointSize = 3.0,
     enableAutoColorAnimation = false,
     enableColorPicker = false,
 }) => {
@@ -85,11 +85,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 .catch((err) => {
                     setError(err instanceof Error ? err.message : 'Failed to load model');
                     setLoading(false);
-                    // Use default model on error
                     setModelData(createDefaultModel());
                 });
         } else if (!initialModelData && !modelUrl) {
-            // Use default model if no data provided
             setModelData(createDefaultModel());
         }
     }, [modelUrl, initialModelData]);
@@ -182,43 +180,18 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     }, []);
 
     // Handle model selection from dropdown
-    const handleModelSelect = useCallback((model: ModelItem) => {
+    const handleModelSelect = useCallback((model: ModelItem | null) => {
+        // Update the selected model state for UI purposes
         setSelectedModelFromDropdown(model);
-        
-        // Convert selected model to Model3DData format
-        const points: any[] = [];
-        let pointIndex = 0;
-        
-        if (model.nodes && Array.isArray(model.nodes)) {
-            model.nodes.forEach((node: any, nodeIndex: number) => {
-                if (node.coords && Array.isArray(node.coords)) {
-                    node.coords.forEach((coord: any, coordIndex: number) => {
-                        points.push({
-                            id: `point-${nodeIndex}-${coordIndex}`,
-                            name: `Point ${pointIndex + 1}`,
-                            x: coord.wX || 0,
-                            y: coord.wY || 0,
-                            z: coord.wZ || 0,
-                            color: '#00ff00', // Default green color
-                        });
-                        pointIndex++;
-                    });
-                }
-            });
-        }
 
-        const newModelData: Model3DData = {
-            name: model.name as string,
-            points: points,
-            shapes: [],
-        };
-
-        setModelData(newModelData);
-        // Clear selection when loading new model
+        // Clear point selection when changing model selection
         setSelectionState({
             selectedIds: new Set<string>(),
             hoveredId: null,
         });
+
+        // Note: We don't change modelData here anymore - all models remain visible
+        // The selection is purely for UI/informational purposes
     }, []);
 
     // Animate colors (simulate incoming data) - only if enabled

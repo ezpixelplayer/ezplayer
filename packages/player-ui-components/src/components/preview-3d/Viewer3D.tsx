@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Grid, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { useTheme, Typography } from '@mui/material';
@@ -20,85 +20,7 @@ export interface Viewer3DProps {
     pointSize?: number;
 }
 
-interface PointMeshProps {
-    point: Point3D;
-    isSelected: boolean;
-    isHovered: boolean;
-    colorData?: PointColorData[];
-    size: number;
-    onClick: (pointId: string) => void;
-    onHover: (pointId: string | null) => void;
-}
-
-function PointMesh({ point, isSelected, isHovered, colorData, size, onClick, onHover }: PointMeshProps) {
-    const meshRef = useRef<THREE.Mesh>(null);
-    const [currentColor, setCurrentColor] = React.useState(point.color || '#ffffff');
-
-    // Update color from colorData if available
-    useEffect(() => {
-        if (colorData) {
-            const pointColorData = colorData.find((cd) => cd.pointId === point.id);
-            if (pointColorData) {
-                setCurrentColor(pointColorData.color);
-            }
-        } else if (point.color) {
-            setCurrentColor(point.color);
-        }
-    }, [colorData, point.id, point.color]);
-
-    // Animate color transitions
-    useFrame(() => {
-        if (meshRef.current && colorData) {
-            const pointColorData = colorData.find((cd) => cd.pointId === point.id);
-            if (pointColorData) {
-                const targetColor = new THREE.Color(pointColorData.color);
-                const current = new THREE.Color(currentColor);
-                const newColor = current.lerp(targetColor, 0.1);
-                setCurrentColor(`#${newColor.getHexString()}`);
-            }
-        }
-    });
-
-    const handleClick = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onClick(point.id);
-        },
-        [onClick, point.id]
-    );
-
-    const handlePointerOver = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onHover(point.id);
-        },
-        [onHover, point.id]
-    );
-
-    const handlePointerOut = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onHover(null);
-        },
-        [onHover]
-    );
-
-    const finalColor = isSelected ? '#ffff00' : isHovered ? '#00ffff' : currentColor;
-    const finalSize = isSelected || isHovered ? size * 1.5 : size;
-
-    return (
-        <mesh
-            ref={meshRef}
-            position={[point.x, point.y, point.z]}
-            onClick={handleClick}
-            onPointerOver={handlePointerOver}
-            onPointerOut={handlePointerOut}
-        >
-            <sphereGeometry args={[finalSize, 16, 16]} />
-            <meshStandardMaterial color={finalColor} emissive={finalColor} emissiveIntensity={0.5} />
-        </mesh>
-    );
-}
+// PointMesh component removed - using optimized point cloud rendering instead
 
 interface ShapeMeshProps {
     shape: Shape3D;
@@ -170,6 +92,85 @@ function ShapeMesh({ shape, isSelected, isHovered, onClick, onHover }: ShapeMesh
     );
 }
 
+// Optimized point cloud rendering using THREE.Points
+function OptimizedPointCloud({
+    points,
+    selectedIds,
+    hoveredId,
+    colorData,
+    pointSize,
+}: {
+    points: Point3D[];
+    selectedIds?: Set<string>;
+    hoveredId?: string | null;
+    colorData?: PointColorData[];
+    pointSize?: number;
+}) {
+    const pointsRef = useRef<THREE.Points>(null);
+
+    // Memoize geometry and colors
+    const { positions, colors } = useMemo(() => {
+        const positions = new Float32Array(points.length * 3);
+        const colors = new Float32Array(points.length * 3);
+
+        points.forEach((point, i) => {
+            positions[i * 3] = point.x;
+            positions[i * 3 + 1] = point.y;
+            positions[i * 3 + 2] = point.z;
+
+            // Parse color
+            let color = new THREE.Color(point.color || '#00ff00');
+
+            // Apply colorData if available
+            if (colorData) {
+                const pointColorData = colorData.find((cd) => cd.pointId === point.id);
+                if (pointColorData) {
+                    color = new THREE.Color(pointColorData.color);
+                }
+            }
+
+            // Highlight selected/hovered
+            if (selectedIds?.has(point.id)) {
+                color = new THREE.Color('#ffff00');
+            } else if (hoveredId === point.id) {
+                color = new THREE.Color('#00ffff');
+            }
+
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        });
+
+        return { positions, colors };
+    }, [points, selectedIds, hoveredId, colorData]);
+
+    return (
+        <points ref={pointsRef}>
+            <bufferGeometry>
+                <bufferAttribute
+                    attach="attributes-position"
+                    count={points.length}
+                    array={positions}
+                    itemSize={3}
+                />
+                <bufferAttribute
+                    attach="attributes-color"
+                    count={points.length}
+                    array={colors}
+                    itemSize={3}
+                />
+            </bufferGeometry>
+            <pointsMaterial
+                size={pointSize || 3.0}
+                vertexColors
+                sizeAttenuation={true}
+                transparent={false}
+                depthWrite={true}
+            />
+        </points>
+    );
+}
+
 function SceneContent({
     points,
     shapes,
@@ -189,7 +190,7 @@ function SceneContent({
     onPointHover?: (pointId: string | null) => void;
     pointSize?: number;
 }) {
-    const { camera } = useThree();
+    const { camera, controls } = useThree();
 
     // Auto-fit camera to scene
     useEffect(() => {
@@ -209,11 +210,17 @@ function SceneContent({
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        const distance = maxDim * 2;
+        const distance = maxDim * 2.5;
 
         camera.position.set(center.x + distance, center.y + distance, center.z + distance);
         camera.lookAt(center);
-    }, [points, shapes, camera]);
+
+        // Update OrbitControls target to scene center
+        if (controls && 'target' in controls) {
+            (controls as any).target.copy(center);
+            (controls as any).update();
+        }
+    }, [points, shapes, camera, controls]);
 
     return (
         <>
@@ -232,18 +239,13 @@ function SceneContent({
                 />
             ))}
 
-            {points.map((point) => (
-                <PointMesh
-                    key={point.id}
-                    point={point}
-                    isSelected={selectedIds?.has(point.id) ?? false}
-                    isHovered={hoveredId === point.id}
-                    colorData={colorData}
-                    size={pointSize || 0.1}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
-                />
-            ))}
+            <OptimizedPointCloud
+                points={points}
+                selectedIds={selectedIds}
+                hoveredId={hoveredId}
+                colorData={colorData}
+                pointSize={pointSize}
+            />
         </>
     );
 }
@@ -264,22 +266,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        // Log WebGL info for debugging
-        const canvas = document.createElement('canvas');
-        const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
-        if (gl) {
-            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-            if (debugInfo) {
-                console.log('WebGL Renderer:', gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
-                console.log('WebGL Vendor:', gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL));
-            }
-            console.log('WebGL Version:', gl.getParameter(gl.VERSION));
-        } else {
-            console.error('WebGL not available');
-        }
-    }, []);
-
     return (
         <Box
             className={className}
@@ -291,6 +277,37 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 backgroundColor: '#000',
             }}
         >
+            {/* Control hints overlay */}
+            <Box
+                sx={{
+                    position: 'absolute',
+                    bottom: 16,
+                    left: 16,
+                    zIndex: 10,
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    color: 'white',
+                    padding: '8px 12px',
+                    borderRadius: 1,
+                    fontSize: '0.75rem',
+                    pointerEvents: 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.5,
+                }}
+            >
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'white' }}>
+                    Controls:
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                    🖱️ Left drag: Rotate
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                    🖱️ Right drag: Pan
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                    🖱️ Scroll: Zoom
+                </Typography>
+            </Box>
             {error ? (
                 <Box
                     sx={{
@@ -311,10 +328,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 </Box>
             ) : (
                 <Canvas
-                    onCreated={({ gl, scene, camera }) => {
-                        console.log('Three.js Canvas created successfully');
-                        console.log('WebGL Context:', gl.getContext());
-                        // Check if WebGL context was created successfully
+                    onCreated={({ gl }) => {
                         if (!gl.getContext()) {
                             setError('Failed to create WebGL context');
                         }
@@ -325,9 +339,29 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         powerPreference: 'high-performance',
                     }}
                 >
-                    <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={50} />
-                    <OrbitControls enableDamping dampingFactor={0.05} minDistance={1} maxDistance={100} />
-                    {showGrid && <Grid args={[10, 10]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
+                    <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
+                    <OrbitControls
+                        enableDamping
+                        dampingFactor={0.05}
+                        minDistance={10}
+                        maxDistance={10000}
+                        enablePan={true}
+                        enableRotate={true}
+                        enableZoom={true}
+                        panSpeed={1.0}
+                        rotateSpeed={1.0}
+                        zoomSpeed={1.0}
+                        mouseButtons={{
+                            LEFT: THREE.MOUSE.ROTATE,
+                            MIDDLE: THREE.MOUSE.DOLLY,
+                            RIGHT: THREE.MOUSE.PAN
+                        }}
+                        touches={{
+                            ONE: THREE.TOUCH.ROTATE,
+                            TWO: THREE.TOUCH.DOLLY_PAN
+                        }}
+                    />
+                    {showGrid && <Grid args={[200, 200]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
                     <SceneContent
                         points={points}
                         shapes={shapes}
