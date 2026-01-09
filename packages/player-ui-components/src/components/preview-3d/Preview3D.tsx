@@ -23,6 +23,7 @@ import { Viewer2D } from './Viewer2D';
 import { ModelList, ModelItem } from './ModelList';
 import { loadModelFromJson, createDefaultModel } from '../../services/model3dLoader';
 import type { Model3DData, PointColorData, SelectionState } from '../../types/model3d';
+import sampleModels from './sample-model.json';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -71,6 +72,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [colorPickerAnchor, setColorPickerAnchor] = useState<HTMLElement | null>(null);
     const [selectedColor, setSelectedColor] = useState<string>('#ffffff');
     const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelItem | null>(null);
+    const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
     // Load model from URL if provided
     useEffect(() => {
@@ -99,20 +101,70 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, [externalColorData]);
 
-    // Handle item selection
+    // Sync selectedModelNames with selectedModelFromDropdown
+    useEffect(() => {
+        if (selectedModelNames.size === 0) {
+            if (selectedModelFromDropdown) {
+                setSelectedModelFromDropdown(null);
+            }
+        } else if (selectedModelNames.size === 1) {
+            const modelName = Array.from(selectedModelNames)[0];
+            if (selectedModelFromDropdown?.name !== modelName) {
+                const modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName);
+                if (modelItem) {
+                    setSelectedModelFromDropdown(modelItem);
+                }
+            }
+        }
+    }, [selectedModelNames, selectedModelFromDropdown]);
+
+    // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
         (itemId: string) => {
-            setSelectionState((prev) => {
-                const newSelectedIds = new Set(prev.selectedIds);
-                if (newSelectedIds.has(itemId)) {
-                    newSelectedIds.delete(itemId);
-                } else {
-                    newSelectedIds.add(itemId);
+            if (!modelData) return;
+
+            // Find the clicked point to get its model name
+            const clickedPoint = modelData.points.find((p) => p.id === itemId);
+            const modelName = clickedPoint?.metadata?.modelName as string | undefined;
+
+            if (!modelName) return;
+
+            // Get all points belonging to this model
+            const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === modelName);
+            const modelPointIds = new Set(modelPoints.map((p) => p.id));
+
+            // Check if this model is currently selected
+            const isModelSelected = selectedModelNames.has(modelName);
+
+            if (isModelSelected) {
+                // Deselect the entire model
+                setSelectedModelNames((prev) => {
+                    const newSelected = new Set(prev);
+                    newSelected.delete(modelName);
+                    return newSelected;
+                });
+                setSelectionState((prev) => {
+                    const newSelectedIds = new Set(prev.selectedIds);
+                    modelPointIds.forEach((id) => newSelectedIds.delete(id));
+                    return { ...prev, selectedIds: newSelectedIds };
+                });
+            } else {
+                // Select the entire model (clear other selections first)
+                setSelectedModelNames(new Set([modelName]));
+                setSelectionState((prev) => {
+                    return {
+                        selectedIds: new Set([...Array.from(modelPointIds)]),
+                        hoveredId: prev.hoveredId,
+                    };
+                });
+                // Update dropdown selection
+                const modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName);
+                if (modelItem) {
+                    setSelectedModelFromDropdown(modelItem);
                 }
-                return { ...prev, selectedIds: newSelectedIds };
-            });
+            }
         },
-        []
+        [modelData, selectedModelNames]
     );
 
     // Handle item hover
@@ -181,18 +233,62 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Handle model selection from dropdown
     const handleModelSelect = useCallback((model: ModelItem | null) => {
-        // Update the selected model state for UI purposes
-        setSelectedModelFromDropdown(model);
+        if (!model) {
+            // Clear selection
+            setSelectedModelNames(new Set<string>());
+            setSelectedModelFromDropdown(null);
+            setSelectionState({
+                selectedIds: new Set<string>(),
+                hoveredId: null,
+            });
+            return;
+        }
 
-        // Clear point selection when changing model selection
-        setSelectionState({
-            selectedIds: new Set<string>(),
-            hoveredId: null,
-        });
+        // Check if this model is currently selected
+        const isCurrentlySelected = selectedModelNames.has(model.name);
 
-        // Note: We don't change modelData here anymore - all models remain visible
-        // The selection is purely for UI/informational purposes
-    }, []);
+        if (isCurrentlySelected) {
+            // Deselect model
+            setSelectedModelNames((prev) => {
+                const newSelected = new Set(prev);
+                newSelected.delete(model.name);
+                return newSelected;
+            });
+            setSelectedModelFromDropdown(null);
+
+            // Deselect all points of this model
+            if (modelData) {
+                const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
+                const pointIds = new Set(modelPoints.map((p) => p.id));
+
+                setSelectionState((prev) => {
+                    const newSelectedIds = new Set(prev.selectedIds);
+                    pointIds.forEach((id) => newSelectedIds.delete(id));
+                    return {
+                        selectedIds: newSelectedIds,
+                        hoveredId: prev.hoveredId,
+                    };
+                });
+            }
+        } else {
+            // Select model (clear other selections first)
+            setSelectedModelNames(new Set([model.name]));
+            setSelectedModelFromDropdown(model);
+
+            // Select all points of this model
+            if (modelData) {
+                const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
+                const pointIds = new Set(modelPoints.map((p) => p.id));
+
+                setSelectionState((prev) => {
+                    return {
+                        selectedIds: new Set([...Array.from(pointIds)]),
+                        hoveredId: prev.hoveredId,
+                    };
+                });
+            }
+        }
+    }, [modelData, selectedModelNames]);
 
     // Animate colors (simulate incoming data) - only if enabled
     useEffect(() => {
@@ -538,6 +634,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             onPointClick={handleItemClick}
                             onPointHover={handleItemHover}
                             pointSize={pointSize}
+                            selectedModelNames={selectedModelNames}
                         />
                     ) : (
                         <Viewer2D

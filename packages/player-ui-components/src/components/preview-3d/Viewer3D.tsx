@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Grid, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { useTheme, Typography } from '@mui/material';
@@ -18,6 +18,7 @@ export interface Viewer3DProps {
     showGrid?: boolean;
     showStats?: boolean;
     pointSize?: number;
+    selectedModelNames?: Set<string>;
 }
 
 // PointMesh component removed - using optimized point cloud rendering instead
@@ -99,29 +100,54 @@ function OptimizedPointCloud({
     hoveredId,
     colorData,
     pointSize,
+    selectedModelNames,
 }: {
     points: Point3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     colorData?: PointColorData[];
     pointSize?: number;
+    selectedModelNames?: Set<string>;
+    onPointClick?: (pointId: string) => void;
 }) {
     const pointsRef = useRef<THREE.Points>(null);
+    const materialRef = useRef<THREE.PointsMaterial>(null);
+    const animationTimeRef = useRef(0);
 
-    // Memoize geometry and colors
-    const { positions, colors } = useMemo(() => {
-        const positions = new Float32Array(points.length * 3);
-        const colors = new Float32Array(points.length * 3);
+    // Separate points into selected and non-selected for animation
+    const { selectedPoints, nonSelectedPoints } = useMemo(() => {
+        const selected: Point3D[] = [];
+        const nonSelected: Point3D[] = [];
 
-        points.forEach((point, i) => {
+        points.forEach((point) => {
+            const modelName = point.metadata?.modelName as string | undefined;
+            const isModelSelected = modelName && selectedModelNames?.has(modelName);
+            const isPointSelected = selectedIds?.has(point.id);
+
+            if (isModelSelected || isPointSelected) {
+                selected.push(point);
+            } else {
+                nonSelected.push(point);
+            }
+        });
+
+        return { selectedPoints: selected, nonSelectedPoints: nonSelected };
+    }, [points, selectedIds, selectedModelNames]);
+
+    // Memoize geometry for selected points (with animation)
+    const selectedGeometry = useMemo(() => {
+        if (selectedPoints.length === 0) return null;
+
+        const positions = new Float32Array(selectedPoints.length * 3);
+        const colors = new Float32Array(selectedPoints.length * 3);
+
+        selectedPoints.forEach((point, i) => {
             positions[i * 3] = point.x;
             positions[i * 3 + 1] = point.y;
             positions[i * 3 + 2] = point.z;
 
-            // Parse color
             let color = new THREE.Color(point.color || '#00ff00');
 
-            // Apply colorData if available
             if (colorData) {
                 const pointColorData = colorData.find((cd) => cd.pointId === point.id);
                 if (pointColorData) {
@@ -129,8 +155,11 @@ function OptimizedPointCloud({
                 }
             }
 
-            // Highlight selected/hovered
-            if (selectedIds?.has(point.id)) {
+            // Highlight selected models in yellow
+            const modelName = point.metadata?.modelName as string | undefined;
+            const isModelSelected = modelName && selectedModelNames?.has(modelName);
+
+            if (isModelSelected || selectedIds?.has(point.id)) {
                 color = new THREE.Color('#ffff00');
             } else if (hoveredId === point.id) {
                 color = new THREE.Color('#00ffff');
@@ -142,33 +171,190 @@ function OptimizedPointCloud({
         });
 
         return { positions, colors };
-    }, [points, selectedIds, hoveredId, colorData]);
+    }, [selectedPoints, selectedIds, hoveredId, colorData, selectedModelNames]);
+
+    // Memoize geometry for non-selected points
+    const nonSelectedGeometry = useMemo(() => {
+        if (nonSelectedPoints.length === 0) return null;
+
+        const positions = new Float32Array(nonSelectedPoints.length * 3);
+        const colors = new Float32Array(nonSelectedPoints.length * 3);
+
+        nonSelectedPoints.forEach((point, i) => {
+            positions[i * 3] = point.x;
+            positions[i * 3 + 1] = point.y;
+            positions[i * 3 + 2] = point.z;
+
+            let color = new THREE.Color(point.color || '#00ff00');
+
+            if (colorData) {
+                const pointColorData = colorData.find((cd) => cd.pointId === point.id);
+                if (pointColorData) {
+                    color = new THREE.Color(pointColorData.color);
+                }
+            }
+
+            if (hoveredId === point.id) {
+                color = new THREE.Color('#00ffff');
+            }
+
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        });
+
+        return { positions, colors };
+    }, [nonSelectedPoints, hoveredId, colorData]);
+
+    // Animate selected model points with pulsing effect
+    useFrame((_state, delta) => {
+        if (materialRef.current && selectedModelNames && selectedModelNames.size > 0) {
+            animationTimeRef.current += delta;
+            const baseSize = pointSize || 3.0;
+
+            // Create a pulsing animation for selected models
+            const pulseSpeed = 2.0;
+            const pulseAmount = 0.3;
+            const pulse = 1.0 + Math.sin(animationTimeRef.current * pulseSpeed) * pulseAmount;
+
+            // Apply animation to selected points
+            materialRef.current.size = baseSize * pulse;
+        } else if (materialRef.current) {
+            // Smoothly return to base size when no model is selected
+            const baseSize = pointSize || 3.0;
+            if (Math.abs(materialRef.current.size - baseSize) > 0.01) {
+                materialRef.current.size = THREE.MathUtils.lerp(materialRef.current.size, baseSize, 0.1);
+            } else {
+                materialRef.current.size = baseSize;
+            }
+        }
+    });
+
+    const baseSize = pointSize || 3.0;
 
     return (
-        <points ref={pointsRef}>
-            <bufferGeometry>
-                <bufferAttribute
-                    attach="attributes-position"
-                    count={points.length}
-                    array={positions}
-                    itemSize={3}
-                />
-                <bufferAttribute
-                    attach="attributes-color"
-                    count={points.length}
-                    array={colors}
-                    itemSize={3}
-                />
-            </bufferGeometry>
-            <pointsMaterial
-                size={pointSize || 3.0}
-                vertexColors
-                sizeAttenuation={true}
-                transparent={false}
-                depthWrite={true}
-            />
-        </points>
+        <>
+            {/* Selected points with animation */}
+            {selectedGeometry && selectedPoints.length > 0 && (
+                <points ref={pointsRef}>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={selectedPoints.length}
+                            array={selectedGeometry.positions}
+                            itemSize={3}
+                        />
+                        <bufferAttribute
+                            attach="attributes-color"
+                            count={selectedPoints.length}
+                            array={selectedGeometry.colors}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <pointsMaterial
+                        ref={materialRef}
+                        size={baseSize}
+                        vertexColors
+                        sizeAttenuation={true}
+                        transparent={false}
+                        depthWrite={true}
+                    />
+                </points>
+            )}
+
+            {/* Non-selected points - static */}
+            {nonSelectedGeometry && nonSelectedPoints.length > 0 && (
+                <points>
+                    <bufferGeometry>
+                        <bufferAttribute
+                            attach="attributes-position"
+                            count={nonSelectedPoints.length}
+                            array={nonSelectedGeometry.positions}
+                            itemSize={3}
+                        />
+                        <bufferAttribute
+                            attach="attributes-color"
+                            count={nonSelectedPoints.length}
+                            array={nonSelectedGeometry.colors}
+                            itemSize={3}
+                        />
+                    </bufferGeometry>
+                    <pointsMaterial
+                        size={baseSize}
+                        vertexColors
+                        sizeAttenuation={true}
+                        transparent={false}
+                        depthWrite={true}
+                    />
+                </points>
+            )}
+        </>
     );
+}
+
+// Component to handle click events with raycasting
+function ClickHandler({
+    points,
+    onPointClick,
+    pointSize,
+}: {
+    points: Point3D[];
+    onPointClick?: (pointId: string) => void;
+    pointSize?: number;
+}) {
+    const { camera, raycaster, gl } = useThree();
+
+    useEffect(() => {
+        if (!onPointClick) return;
+
+        const handleClick = (event: MouseEvent) => {
+            // Get mouse position in normalized device coordinates
+            const rect = gl.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            // Update raycaster with camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+
+            // Get all points as 3D positions
+            const pointPositions = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+            const pointSizeValue = pointSize || 3.0;
+
+            // Calculate threshold based on point size and camera distance
+            // Use a more generous threshold for point selection
+            const cameraDistance = camera.position.distanceTo(
+                points.length > 0
+                    ? new THREE.Vector3(points[0].x, points[0].y, points[0].z)
+                    : new THREE.Vector3(0, 0, 0)
+            );
+            const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
+
+            // Find the closest point to the ray
+            let closestIndex = -1;
+            let minDistance = Infinity;
+
+            pointPositions.forEach((position, index) => {
+                const distance = raycaster.ray.distanceToPoint(position);
+                if (distance < threshold && distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            // If a point was found, trigger click handler
+            if (closestIndex >= 0 && closestIndex < points.length) {
+                onPointClick(points[closestIndex].id);
+            }
+        };
+
+        gl.domElement.addEventListener('click', handleClick);
+        return () => {
+            gl.domElement.removeEventListener('click', handleClick);
+        };
+    }, [onPointClick, points, raycaster, camera, gl, pointSize]);
+
+    return null;
 }
 
 function SceneContent({
@@ -180,6 +366,7 @@ function SceneContent({
     onPointClick,
     onPointHover,
     pointSize,
+    selectedModelNames,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -189,6 +376,7 @@ function SceneContent({
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     pointSize?: number;
+    selectedModelNames?: Set<string>;
 }) {
     const { camera, controls } = useThree();
 
@@ -217,13 +405,15 @@ function SceneContent({
 
         // Update OrbitControls target to scene center
         if (controls && 'target' in controls) {
-            (controls as any).target.copy(center);
-            (controls as any).update();
+            const orbitControls = controls as unknown as { target: THREE.Vector3; update: () => void };
+            orbitControls.target.copy(center);
+            orbitControls.update();
         }
     }, [points, shapes, camera, controls]);
 
     return (
         <>
+            <ClickHandler points={points} onPointClick={onPointClick} pointSize={pointSize} />
             <ambientLight intensity={0.5} />
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
@@ -245,6 +435,8 @@ function SceneContent({
                 hoveredId={hoveredId}
                 colorData={colorData}
                 pointSize={pointSize}
+                selectedModelNames={selectedModelNames}
+                onPointClick={onPointClick}
             />
         </>
     );
@@ -262,6 +454,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     showGrid = true,
     showStats = false,
     pointSize = 0.1,
+    selectedModelNames,
 }) => {
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
@@ -371,6 +564,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         onPointClick={onPointClick}
                         onPointHover={onPointHover}
                         pointSize={pointSize}
+                        selectedModelNames={selectedModelNames}
                     />
                     {showStats && <Stats />}
                 </Canvas>

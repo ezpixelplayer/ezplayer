@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
     Box as MuiBox,
     List,
@@ -44,6 +44,8 @@ export const ModelList: React.FC<ModelListProps> = ({
     const theme = useTheme();
     const [searchQuery, setSearchQuery] = useState('');
     const [hoveredModelName, setHoveredModelName] = useState<string | null>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const selectedItemRef = useRef<HTMLLIElement>(null);
 
     // Load models from sample-model.json
     const allModels = useMemo(() => {
@@ -90,6 +92,28 @@ export const ModelList: React.FC<ModelListProps> = ({
     const handleModelMouseLeave = () => {
         setHoveredModelName(null);
     };
+
+    // Auto-scroll to selected model
+    useEffect(() => {
+        if (selectedModelName && selectedItemRef.current && scrollContainerRef.current) {
+            const container = scrollContainerRef.current;
+            const item = selectedItemRef.current;
+
+            // Calculate scroll position to center the selected item
+            const itemOffsetTop = item.offsetTop;
+            const containerHeight = container.clientHeight;
+            const itemHeight = item.clientHeight;
+
+            // Calculate the desired scroll position to center the item
+            const targetScrollTop = itemOffsetTop - (containerHeight / 2) + (itemHeight / 2);
+
+            // Smooth scroll to the selected item
+            container.scrollTo({
+                top: Math.max(0, targetScrollTop),
+                behavior: 'smooth',
+            });
+        }
+    }, [selectedModelName, filteredModels]);
 
     return (
         <Box className={className} sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -152,6 +176,7 @@ export const ModelList: React.FC<ModelListProps> = ({
 
             {/* SCROLLABLE Model List - ONLY THIS SECTION SCROLLS */}
             <Paper
+                ref={scrollContainerRef}
                 elevation={0}
                 sx={{
                     flex: 1,
@@ -197,6 +222,7 @@ export const ModelList: React.FC<ModelListProps> = ({
                             return (
                                 <React.Fragment key={`${model.name}-${index}`}>
                                     <ListItem
+                                        ref={isSelected ? selectedItemRef : null}
                                         disablePadding
                                         onMouseEnter={() => handleModelMouseEnter(model.name)}
                                         onMouseLeave={handleModelMouseLeave}
