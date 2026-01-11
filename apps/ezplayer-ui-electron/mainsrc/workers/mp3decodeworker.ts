@@ -156,7 +156,7 @@ parentPort.on('message', async (msg: DecodeReq) => {
             const lsamp = new Float32Array(ldata);
             const rsamp = new Float32Array(rdata);
 
-            const res = decoder.decodeInto(nodeBuf.subarray(0, fileLen), lsamp, rsamp, { allowPartial: true });
+            const res = decoder.decodeIntoChunks(nodeBuf.subarray(0, fileLen), [lsamp], [rsamp], { allowPartial: true });
 
             const decodeTime = performance.now() - decodeStart;
 

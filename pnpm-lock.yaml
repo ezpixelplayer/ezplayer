@@ -107,8 +107,8 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
       mpg123-decoder-ezp:
-        specifier: ../../libs/mpg123-decoder-ezp-1.0.3.tgz
-        version: file:libs/mpg123-decoder-ezp-1.0.3.tgz
+        specifier: ../../libs/mpg123-decoder-ezp-1.0.4.tgz
+        version: file:libs/mpg123-decoder-ezp-1.0.4.tgz
       node-addon-api:
         specifier: ^7.1.1
         version: 7.1.1
@@ -4274,9 +4274,9 @@ packages:
   moment@2.30.1:
     resolution: {integrity: sha512-uEmtNhbDOrWPFS+hdjFCBfy9f2YoyzRpwcl+DqpC6taX21FzsTLQVbMV/W7PzNSX6x/bhC1zA3c2UQ5NzH6how==}
 
-  mpg123-decoder-ezp@file:libs/mpg123-decoder-ezp-1.0.3.tgz:
-    resolution: {integrity: sha512-YtRVwX39jGy+N+qt0NOGOtaEX5Ia7zQ6DiidJRQtVLATtmJj0gutpOWP4mzwzIe1dqML8g1e9cPylQQJysfqRQ==, tarball: file:libs/mpg123-decoder-ezp-1.0.3.tgz}
-    version: 1.0.3
+  mpg123-decoder-ezp@file:libs/mpg123-decoder-ezp-1.0.4.tgz:
+    resolution: {integrity: sha512-fcT/ro4Mkcm5ks3bLRbtAZKr0wUMjU9UzRtKN1zt9cK161MXBxUd6u4b74Asq5i2PnRr8OAuZ0aJh8PQ/jYX2Q==, tarball: file:libs/mpg123-decoder-ezp-1.0.4.tgz}
+    version: 1.0.4
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -9576,7 +9576,7 @@ snapshots:
 
   moment@2.30.1: {}
 
-  mpg123-decoder-ezp@file:libs/mpg123-decoder-ezp-1.0.3.tgz:
+  mpg123-decoder-ezp@file:libs/mpg123-decoder-ezp-1.0.4.tgz:
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
 
