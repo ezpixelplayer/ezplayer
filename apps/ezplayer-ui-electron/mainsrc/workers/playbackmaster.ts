@@ -40,7 +40,7 @@ import {
     FrameReference,
     CacheStats,
 } from '@ezplayer/epp';
-import { MP3PrefetchCache } from './mp3decodecache';
+import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
 import { performance } from 'perf_hooks';
@@ -1087,14 +1087,13 @@ async function processQueue() {
                             const msToSend = Math.min(playbackParams.sendAudioChunkMs);
                             const nSamplesToSend = Math.floor((msToSend * audio.sampleRate) / 1000);
 
-                            const chunk = new Float32Array(nSamplesToSend * channels);
-
-                            for (let ch = 0; ch < channels; ch++) {
-                                const adata = audio.channelData[ch];
-                                for (let i = 0; i < nSamplesToSend; i++) {
-                                    chunk[i * channels + ch] = (adata[i + sampleOffset] ?? 0) * volumeSF;
-                                }
-                            }
+                            const chunk = buildInterleavedAudioChunkFromSegments({
+                                channelData: audio.channelData.map((e)=>[e]),
+                                nSamplesInAudio: audio.nSamples,
+                                sampleOffset,
+                                nSamples: nSamplesToSend,
+                                volumeSF,
+                            })
 
                             const playAtRealTime = Math.floor(
                                 audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0),
