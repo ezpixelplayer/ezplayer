@@ -146,15 +146,13 @@ const MonthlyView: React.FC<MonthlyViewProps> = ({
                                 {format(dayObj.date, 'd')}
                             </Typography>
                         </Box>
-                        {!dayObj.isEmpty && (
-                            <Box sx={{ mt: 1 }}>
-                                {scheduledPlaylists
-                                    .filter((schedule) => isSameDay(new Date(schedule.date), dayObj.date))
-                                    .map((playlist, playlistIndex, array) =>
-                                        renderScheduledPlaylist(playlist, playlistIndex, array),
-                                    )}
-                            </Box>
-                        )}
+                        <Box sx={{ mt: 1 }}>
+                            {scheduledPlaylists
+                                .filter((schedule) => isSameDay(new Date(schedule.date), dayObj.date))
+                                .map((playlist, playlistIndex, array) =>
+                                    renderScheduledPlaylist(playlist, playlistIndex, array),
+                                )}
+                        </Box>
                     </DayCell>
                 ))}
             </Box>

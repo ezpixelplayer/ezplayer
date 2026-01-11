@@ -1,5 +1,6 @@
 import { isElectron, PageHeader, Select, SimpleDialog, ToastMsgs } from '@ezplayer/shared-ui-components';
 import { Add, Delete, Info } from '@mui/icons-material';
+import PaletteIcon from '@mui/icons-material/Palette';
 import {
     Box,
     Button,
@@ -28,6 +29,7 @@ import { LicenseDialog, LicenseEntry } from './LicenseDialog';
 import { useMemo } from 'react';
 import Licenses from '../../constants/licenses.json';
 import { playerStatusActions } from '../../store/slices/PlayerStatusStore';
+import { ColorPaletteDialog } from '../theme/ColorPaletteDialog';
 
 interface UISettings {
     theme?: string;
@@ -308,6 +310,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
 
     // License dialog state
     const [licenseDialogOpen, setLicenseDialogOpen] = useState<boolean>(false);
+
+    // Color palette dialog state
+    const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState<boolean>(false);
 
     const licenseEntries: LicenseEntry[] = useMemo(() => {
         // Map each dependency to a license entry
@@ -846,16 +851,32 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                     role="presentation"
                 >
                     {/* Theme Selector */}
-                    <FormControl fullWidth size="small" sx={{ mb: 3 }}>
-                        <Select
-                            options={ezrgbThemeOptions}
-                            itemText="id"
-                            itemValue="name"
-                            onChange={(e) => handleThemeSwitch(e as SelectChangeEvent<unknown>)}
-                            label="Theme"
-                            value={themeName}
-                        />
-                    </FormControl>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 3 }}>
+                        <FormControl fullWidth size="small" sx={{ flex: 1 }}>
+                            <Select
+                                options={ezrgbThemeOptions}
+                                itemText="id"
+                                itemValue="name"
+                                onChange={(e) => handleThemeSwitch(e as SelectChangeEvent<unknown>)}
+                                label="Theme"
+                                value={themeName}
+                            />
+                        </FormControl>
+                        <IconButton
+                            onClick={() => setColorPaletteDialogOpen(true)}
+                            size="medium"
+                            sx={{
+                                mt: '8px',
+                                color: 'primary.main',
+                                '&:hover': {
+                                    backgroundColor: 'action.hover',
+                                },
+                            }}
+                            title="View Color Palette"
+                        >
+                            <PaletteIcon />
+                        </IconButton>
+                    </Box>
 
                     {/* Audio Sync Adjust Group */}
                     <Card
@@ -1357,6 +1378,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 onClose={() => setLicenseDialogOpen(false)}
                 licenses={licenseEntries}
             />
+
+            {/* Color Palette Dialog */}
+            <ColorPaletteDialog open={colorPaletteDialogOpen} onClose={() => setColorPaletteDialogOpen(false)} />
         </Box>
     );
 };

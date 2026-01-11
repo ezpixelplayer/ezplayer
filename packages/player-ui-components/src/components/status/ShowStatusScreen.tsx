@@ -103,7 +103,11 @@ export interface ShowStatusScreenProps {
 export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) => {
     const theme = useTheme();
     const [statsDialogOpen, setStatsDialogOpen] = useState(false);
-    const [serverStatus, setServerStatus] = useState<{ port: number; portSource: string; status: 'listening' | 'stopped' | 'error' } | null>(null);
+    const [serverStatus, setServerStatus] = useState<{
+        port: number;
+        portSource: string;
+        status: 'listening' | 'stopped' | 'error';
+    } | null>(null);
 
     const dispatch = useDispatch<AppDispatch>();
     const pstat = useSelector((s: RootState) => s.playerStatus);
@@ -535,8 +539,20 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                 <Typography variant="body1">Source: {serverStatus.portSource}</Typography>
                                 <Box sx={{ mt: 1 }}>
                                     <Chip
-                                        label={serverStatus.status === 'listening' ? 'Listening' : serverStatus.status === 'error' ? 'Error' : 'Stopped'}
-                                        color={serverStatus.status === 'listening' ? 'success' : serverStatus.status === 'error' ? 'error' : 'default'}
+                                        label={
+                                            serverStatus.status === 'listening'
+                                                ? 'Listening'
+                                                : serverStatus.status === 'error'
+                                                  ? 'Error'
+                                                  : 'Stopped'
+                                        }
+                                        color={
+                                            serverStatus.status === 'listening'
+                                                ? 'success'
+                                                : serverStatus.status === 'error'
+                                                  ? 'error'
+                                                  : 'default'
+                                        }
                                         size="small"
                                     />
                                 </Box>
