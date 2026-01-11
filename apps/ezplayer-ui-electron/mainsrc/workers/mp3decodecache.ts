@@ -7,12 +7,6 @@ import { Worker } from 'node:worker_threads';
 import { DecodeReq, DecodedAudio, DecodedAudioResp } from './mp3decodeworker';
 import { fileURLToPath } from 'node:url';
 
-type SegmentedAudio = {
-    // channelData[channel][segment] = Float32Array of samples
-    channelData: Float32Array[][];
-    sampleRate: number;
-};
-
 /**
  * Build an interleaved audio chunk from segmented audio.
  *
@@ -271,12 +265,18 @@ export class Mp3DecodeWorkerClient {
     }
 
     returnBuffer(v: DecodedAudio) {
+        const buffers: ArrayBuffer[] = [];
+        for (const bo of v.channelData) {
+            for (const b of bo) {
+                buffers.push(b.buffer);
+            }
+        }
         this.worker.postMessage(
             {
                 type: 'return',
-                buffers: v.channelData.map((a) => a.buffer),
+                buffers,
             } satisfies DecodeReq,
-            v.channelData.map((a) => a.buffer),
+            buffers,
         );
     }
 

@@ -1088,7 +1088,7 @@ async function processQueue() {
                             const nSamplesToSend = Math.floor((msToSend * audio.sampleRate) / 1000);
 
                             const chunk = buildInterleavedAudioChunkFromSegments({
-                                channelData: audio.channelData.map((e)=>[e]),
+                                channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,
                                 sampleOffset,
                                 nSamples: nSamplesToSend,

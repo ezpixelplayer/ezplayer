@@ -9,6 +9,8 @@ import { getHeapStatistics } from 'node:v8';
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
 
+const samplesPerAudioChunk = 256*1024; // A bit over 5 seconds
+
 class ListPool {
     private list: ArrayBuffer[] = [];
 
@@ -20,6 +22,7 @@ class ListPool {
     }
 
     give(item: ArrayBuffer) {
+        if (item.detached) throw new TypeError("Should not be returning a detached buffer");
         this.list.push(item);
     }
 
@@ -41,16 +44,28 @@ function getAudioReserveDur() {
 
 function getOrAllocate() {
     const e = pool.take();
+    if (e?.detached) throw new TypeError("Buffer should not have been detached while on freelist");
     if (e) return e;
-    return new ArrayBuffer(getAudioReserveDur() * 50_000 * 4);
+    return new ArrayBuffer(samplesPerAudioChunk * 4);
 }
-function bufferTooSmall(b: ArrayBuffer) {
-    if (b.byteLength >= getAudioReserveDur() * 50_000 * 4) {
-        suggestedMaxAudioDur = getAudioReserveDur() * 2;
+function reservationTooSmall() {
+    suggestedMaxAudioDur = getAudioReserveDur() * 2;
+}
+
+function makeAllocation(durationSec: number): Float32Array<ArrayBuffer>[] {
+    const nChunks = Math.ceil(durationSec / 5) || 1;
+    const res: Float32Array<ArrayBuffer>[] = [];
+    for (let i=0; i<nChunks; ++i) {
+        res.push(new Float32Array(getOrAllocate()));
     }
-    // Otherwise this was not full size.
-    // Leak this.
-    // Should we cap this?
+    return res;
+}
+
+function trimAllocation(inbufs: Float32Array<ArrayBuffer>[], wcChunk: number, wcSamp: number): Float32Array<ArrayBuffer>[]
+{
+    const nKeep = wcSamp === 0 ? wcChunk : wcChunk + 1;
+    for (let i=nKeep; i<inbufs.length; ++i) pool.give(inbufs[i].buffer);
+    return inbufs.slice(0, nKeep);
 }
 
 if (!parentPort) {
@@ -76,7 +91,7 @@ const decoder = new MPEGDecoder();
 export type DecodedAudio = {
     sampleRate: number;
     nSamples: number;
-    channelData: Float32Array<ArrayBuffer>[];
+    channelData: Float32Array<ArrayBuffer>[][];
 };
 
 export type DecodedAudioResp = {
@@ -150,13 +165,10 @@ parentPort.on('message', async (msg: DecodeReq) => {
             // Must reset before retry because decoder state advanced
             await decoder.reset();
 
-            const ldata = getOrAllocate();
-            const rdata = getOrAllocate();
+            const lsamp = makeAllocation(getAudioReserveDur());
+            const rsamp = makeAllocation(getAudioReserveDur());
 
-            const lsamp = new Float32Array(ldata);
-            const rsamp = new Float32Array(rdata);
-
-            const res = decoder.decodeIntoChunks(nodeBuf.subarray(0, fileLen), [lsamp], [rsamp], { allowPartial: true });
+            const res = decoder.decodeIntoChunks(nodeBuf.subarray(0, fileLen), lsamp, rsamp, { allowPartial: true });
 
             const decodeTime = performance.now() - decodeStart;
 
@@ -167,8 +179,13 @@ parentPort.on('message', async (msg: DecodeReq) => {
             }
 
             if (!res.truncated) {
+                const sendl = trimAllocation(lsamp, res.endAt.chunkIndex, res.endAt.chunkOffset);
+                const sendr = trimAllocation(rsamp, res.endAt.chunkIndex, res.endAt.chunkOffset);
                 const mrv = {
-                    channelData: [lsamp, rsamp],
+                    channelData: [
+                        sendl,
+                        sendr,
+                    ],
                     sampleRate: res.sampleRate,
                     nSamples: res.samplesDecoded,
                 };
@@ -182,13 +199,15 @@ parentPort.on('message', async (msg: DecodeReq) => {
                         decodeTime,
                         kind: 'decoded',
                     },
-                    [ldata, rdata],
+                    [...sendl.map((b)=>b.buffer), ...sendr.map((b)=>b.buffer)],
                 );
                 return;
             }
 
-            // Too small: discard these buffers (do NOT return to pool)
-            bufferTooSmall(ldata.byteLength < rdata.byteLength ? ldata : rdata);
+            // Too small: return buffers and try to get more
+            trimAllocation(lsamp, 0, 0);
+            trimAllocation(rsamp, 0, 0);
+            reservationTooSmall();
         }
     } catch (err) {
         console.error(err);
