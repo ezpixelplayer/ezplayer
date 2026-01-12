@@ -105,7 +105,7 @@ export type MP3Reference = RefHandle<MP3FileCacheVal>;
  * Handles fseq prefetching
  */
 export class MP3PrefetchCache {
-    constructor(arg: { readonly log: (msg: string) => void; now: number; mp3Space?: number }) {
+    constructor(arg: { readonly log: (msg: string) => void; now: number; mp3SpaceSeconds?: number }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
         this.decodewc = new Mp3DecodeWorkerClient();
@@ -118,10 +118,11 @@ export class MP3PrefetchCache {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }
             },
-            budgetPredictor: (_key) => 1, // 1 song
-            budgetCalculator: (_key, _val) => 1, // 1 song
+            budgetPredictor: (_key) => 1200, // 20 min worst case?
+            budgetCalculator: (_key, val) =>
+                Math.ceil(val.decompAudio.nSamples / (val.decompAudio.sampleRate ?? 1) / 5 + 1) * 5,
             keyToId: (key) => `${key.mp3file}`,
-            budgetLimit: arg.mp3Space ?? 4, // An hour of CD quality
+            budgetLimit: arg.mp3SpaceSeconds ?? 5400,
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, v) => {
