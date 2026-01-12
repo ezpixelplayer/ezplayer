@@ -71,6 +71,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [colorData, setColorData] = useState<PointColorData[]>(externalColorData || []);
     const [colorPickerAnchor, setColorPickerAnchor] = useState<HTMLElement | null>(null);
     const [selectedColor, setSelectedColor] = useState<string>('#ffffff');
+    const [originalColor, setOriginalColor] = useState<string>('#ffffff');
     const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelItem | null>(null);
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
@@ -172,10 +173,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         setSelectionState((prev) => ({ ...prev, hoveredId: itemId }));
     }, []);
 
-    // Handle color change for selected points
-    const handleColorChange = useCallback(
+    // Apply color to selected points (only called when Apply button is clicked)
+    const handleApplyColor = useCallback(
         (color: string) => {
-            setSelectedColor(color);
             if (selectionState.selectedIds.size > 0 && modelData) {
                 const newColorData: PointColorData[] = [...colorData];
                 const updatedPoints = modelData.points.map((point) => {
@@ -208,14 +208,23 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             const firstSelectedId = Array.from(selectionState.selectedIds)[0];
             const pointColor = colorData.find((cd) => cd.pointId === firstSelectedId);
             const modelPoint = modelData?.points.find((p) => p.id === firstSelectedId);
-            setSelectedColor(pointColor?.color || modelPoint?.color || '#ffffff');
+            const currentColor = pointColor?.color || modelPoint?.color || '#ffffff';
+            setSelectedColor(currentColor);
+            setOriginalColor(currentColor);
         }
     }, [selectionState.selectedIds, colorData, modelData]);
 
-    // Close color picker
+    // Close color picker (Cancel button will restore original color)
     const handleCloseColorPicker = useCallback(() => {
         setColorPickerAnchor(null);
-    }, []);
+        setSelectedColor(originalColor);
+    }, [originalColor]);
+
+    // Apply color and close picker
+    const handleApplyAndClose = useCallback(() => {
+        handleApplyColor(selectedColor);
+        setColorPickerAnchor(null);
+    }, [handleApplyColor, selectedColor]);
 
     // Handle view mode change
     const handleViewModeChange = useCallback((_event: React.MouseEvent<HTMLElement>, newMode: ViewMode | null) => {
@@ -547,7 +556,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                                 type="color"
                                                 label="Color Picker"
                                                 value={selectedColor}
-                                                onChange={(e) => handleColorChange(e.target.value)}
+                                                onChange={(e) => setSelectedColor(e.target.value)}
                                                 fullWidth
                                                 InputLabelProps={{
                                                     shrink: true,
@@ -563,14 +572,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                             <TextField
                                                 label="Hex Color Code"
                                                 value={selectedColor}
-                                                onChange={(e) => {
-                                                    const value = e.target.value;
-                                                    if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
-                                                        handleColorChange(value);
-                                                    } else {
-                                                        setSelectedColor(value);
-                                                    }
-                                                }}
+                                                onChange={(e) => setSelectedColor(e.target.value)}
                                                 fullWidth
                                                 size="small"
                                                 placeholder="#ffffff"
@@ -582,10 +584,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                                 </Button>
                                                 <Button
                                                     variant="contained"
-                                                    onClick={() => {
-                                                        handleColorChange(selectedColor);
-                                                        handleCloseColorPicker();
-                                                    }}
+                                                    onClick={handleApplyAndClose}
                                                     sx={{ flex: 1 }}
                                                 >
                                                     Apply

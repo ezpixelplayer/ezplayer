@@ -110,9 +110,15 @@ function OptimizedPointCloud({
     selectedModelNames?: Set<string>;
     onPointClick?: (pointId: string) => void;
 }) {
-    const pointsRef = useRef<THREE.Points>(null);
+    const selectedPointsRef = useRef<THREE.Points>(null);
+    const nonSelectedPointsRef = useRef<THREE.Points>(null);
     const materialRef = useRef<THREE.PointsMaterial>(null);
     const animationTimeRef = useRef(0);
+
+    // Reset animation time when selected models change
+    useEffect(() => {
+        animationTimeRef.current = 0;
+    }, [selectedModelNames]);
 
     // Separate points into selected and non-selected for animation
     const { selectedPoints, nonSelectedPoints } = useMemo(() => {
@@ -232,11 +238,22 @@ function OptimizedPointCloud({
 
     const baseSize = pointSize || 3.0;
 
+    // Create a unique key that includes model names to force recreation when switching models
+    const selectedKey = useMemo(() => {
+        const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
+        return `selected-${selectedPoints.length}-${modelNames}`;
+    }, [selectedPoints.length, selectedModelNames]);
+
+    const nonSelectedKey = useMemo(() => {
+        const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
+        return `nonselected-${nonSelectedPoints.length}-${modelNames}`;
+    }, [nonSelectedPoints.length, selectedModelNames]);
+
     return (
         <>
             {/* Selected points with animation */}
             {selectedGeometry && selectedPoints.length > 0 && (
-                <points ref={pointsRef}>
+                <points key={selectedKey} ref={selectedPointsRef}>
                     <bufferGeometry>
                         <bufferAttribute
                             attach="attributes-position"
@@ -264,7 +281,7 @@ function OptimizedPointCloud({
 
             {/* Non-selected points - static */}
             {nonSelectedGeometry && nonSelectedPoints.length > 0 && (
-                <points>
+                <points key={nonSelectedKey} ref={nonSelectedPointsRef}>
                     <bufferGeometry>
                         <bufferAttribute
                             attach="attributes-position"
