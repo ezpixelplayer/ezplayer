@@ -52,14 +52,15 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     showList = true,
     showControls = true,
     defaultViewMode = '3d',
-    defaultViewPlane = 'xy',
+    defaultViewPlane: _defaultViewPlane = 'xy', // Always use 'xy' plane, kept for backward compatibility
     pointSize = 3.0,
     enableAutoColorAnimation = false,
     enableColorPicker = false,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
-    const [viewPlane, setViewPlane] = useState<ViewPlane>(defaultViewPlane);
+    // Always use 'xy' plane for 2D view
+    const viewPlane: ViewPlane = 'xy';
     const [showItemList, setShowItemList] = useState(showList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [loading, setLoading] = useState(false);
@@ -233,12 +234,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, []);
 
-    // Handle view plane change (for 2D view)
-    const handleViewPlaneChange = useCallback((_event: React.MouseEvent<HTMLElement>, newPlane: ViewPlane | null) => {
-        if (newPlane !== null) {
-            setViewPlane(newPlane);
-        }
-    }, []);
 
     // Handle model selection from dropdown
     const handleModelSelect = useCallback((model: ModelItem | null) => {
@@ -451,8 +446,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         gap: 2,
                         borderBottom: `1px solid ${theme.palette.divider}`,
                         backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
-                        zIndex: 10,
+                        zIndex: 100,
                         flexShrink: 0,
+                        position: 'relative',
                     }}
                 >
                     {/* View Mode Controls */}
@@ -460,52 +456,116 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
                             View:
                         </Typography>
-                        <ToggleButtonGroup value={viewMode} exclusive onChange={handleViewModeChange} size="small">
-                            <ToggleButton value="3d" aria-label="3D view">
-                                <Tooltip title="3D View">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <View3DIcon fontSize="small" />
-                                        <Typography variant="caption" sx={{ ml: 0.5 }}>
-                                            3D
-                                        </Typography>
-                                    </Box>
-                                </Tooltip>
+                        <ToggleButtonGroup
+                            value={viewMode}
+                            exclusive
+                            onChange={handleViewModeChange}
+                            size="small"
+                            sx={{
+                                '& .MuiToggleButton-root': {
+                                    color: theme.palette.text.primary,
+                                    '&.Mui-selected': {
+                                        color: theme.palette.primary.contrastText || '#ffffff',
+                                        backgroundColor: theme.palette.primary.main,
+                                        '& .MuiTypography-root': {
+                                            color: theme.palette.primary.contrastText || '#ffffff',
+                                        },
+                                        '& .MuiSvgIcon-root': {
+                                            color: theme.palette.primary.contrastText || '#ffffff',
+                                        },
+                                        '&:hover': {
+                                            backgroundColor: theme.palette.primary.dark,
+                                        },
+                                    },
+                                    '&:not(.Mui-selected)': {
+                                        color: theme.palette.text.primary,
+                                        backgroundColor: 'transparent',
+                                        '& .MuiTypography-root': {
+                                            color: theme.palette.text.primary,
+                                        },
+                                        '& .MuiSvgIcon-root': {
+                                            color: theme.palette.text.primary,
+                                        },
+                                        '&:hover': {
+                                            backgroundColor: theme.palette.action.hover,
+                                        },
+                                    },
+                                },
+                            }}
+                        >
+                            <ToggleButton
+                                value="3d"
+                                aria-label="3D view"
+                                sx={{
+                                    '&.Mui-selected': {
+                                        '& .MuiTypography-root': {
+                                            color: '#ffffff !important',
+                                        },
+                                        '& .MuiSvgIcon-root': {
+                                            color: '#ffffff !important',
+                                        },
+                                    },
+                                    '&:not(.Mui-selected)': {
+                                        '& .MuiTypography-root': {
+                                            color: `${theme.palette.text.primary} !important`,
+                                        },
+                                        '& .MuiSvgIcon-root': {
+                                            color: `${theme.palette.text.primary} !important`,
+                                        },
+                                    },
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <View3DIcon fontSize="small" />
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            ml: 0.5,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        3D
+                                    </Typography>
+                                </Box>
                             </ToggleButton>
-                            <ToggleButton value="2d" aria-label="2D view">
-                                <Tooltip title="2D View">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <View2DIcon fontSize="small" />
-                                        <Typography variant="caption" sx={{ ml: 0.5 }}>
-                                            2D
-                                        </Typography>
-                                    </Box>
-                                </Tooltip>
+                            <ToggleButton
+                                value="2d"
+                                aria-label="2D view"
+                                sx={{
+                                    '&.Mui-selected': {
+                                        '& .MuiTypography-root': {
+                                            color: '#ffffff !important',
+                                        },
+                                        '& .MuiSvgIcon-root': {
+                                            color: '#ffffff !important',
+                                        },
+                                    },
+                                    '&:not(.Mui-selected)': {
+                                        '& .MuiTypography-root': {
+                                            color: `${theme.palette.text.primary} !important`,
+                                        },
+                                        '& .MuiSvgIcon-root': {
+                                            color: `${theme.palette.text.primary} !important`,
+                                        },
+                                    },
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <View2DIcon fontSize="small" />
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            ml: 0.5,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        2D
+                                    </Typography>
+                                </Box>
                             </ToggleButton>
                         </ToggleButtonGroup>
                     </Box>
 
-                    {/* 2D Plane Selection */}
-                    {viewMode === '2d' && (
-                        <>
-                            <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                    Plane:
-                                </Typography>
-                                <ToggleButtonGroup value={viewPlane} exclusive onChange={handleViewPlaneChange} size="small">
-                                    <ToggleButton value="xy" aria-label="XY plane">
-                                        XY
-                                    </ToggleButton>
-                                    <ToggleButton value="xz" aria-label="XZ plane">
-                                        XZ
-                                    </ToggleButton>
-                                    <ToggleButton value="yz" aria-label="YZ plane">
-                                        YZ
-                                    </ToggleButton>
-                                </ToggleButtonGroup>
-                            </Box>
-                        </>
-                    )}
 
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
@@ -646,6 +706,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             onPointHover={handleItemHover}
                             viewPlane={viewPlane}
                             pointSize={pointSize}
+                            selectedModelNames={selectedModelNames}
                         />
                     )}
                 </Box>

@@ -493,8 +493,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     position: 'absolute',
                     bottom: 16,
                     left: 16,
-                    zIndex: 10,
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    zIndex: 1000,
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
                     color: 'white',
                     padding: '8px 12px',
                     borderRadius: 1,
@@ -503,18 +503,20 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 0.5,
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
                 }}
             >
-                <Typography variant="caption" sx={{ fontWeight: 600, color: 'white' }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
                     Controls:
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
                     🖱️ Left drag: Rotate
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
                     🖱️ Right drag: Pan
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
                     🖱️ Scroll: Zoom
                 </Typography>
             </Box>
@@ -537,54 +539,70 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     </Typography>
                 </Box>
             ) : (
-                <Canvas
-                    onCreated={({ gl }) => {
-                        if (!gl.getContext()) {
-                            setError('Failed to create WebGL context');
-                        }
-                    }}
-                    gl={{
-                        antialias: true,
-                        alpha: false,
-                        powerPreference: 'high-performance',
+                <Box
+                    sx={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '100%',
+                        zIndex: 1,
                     }}
                 >
-                    <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
-                    <OrbitControls
-                        enableDamping
-                        dampingFactor={0.05}
-                        minDistance={10}
-                        maxDistance={10000}
-                        enablePan={true}
-                        enableRotate={true}
-                        enableZoom={true}
-                        panSpeed={1.0}
-                        rotateSpeed={1.0}
-                        zoomSpeed={1.0}
-                        mouseButtons={{
-                            LEFT: THREE.MOUSE.ROTATE,
-                            MIDDLE: THREE.MOUSE.DOLLY,
-                            RIGHT: THREE.MOUSE.PAN
+                    <Canvas
+                        onCreated={({ gl }) => {
+                            if (!gl.getContext()) {
+                                setError('Failed to create WebGL context');
+                            }
                         }}
-                        touches={{
-                            ONE: THREE.TOUCH.ROTATE,
-                            TWO: THREE.TOUCH.DOLLY_PAN
+                        gl={{
+                            antialias: true,
+                            alpha: false,
+                            powerPreference: 'high-performance',
                         }}
-                    />
-                    {showGrid && <Grid args={[200, 200]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
-                    <SceneContent
-                        points={points}
-                        shapes={shapes}
-                        selectedIds={selectedIds}
-                        hoveredId={hoveredId}
-                        colorData={colorData}
-                        onPointClick={onPointClick}
-                        onPointHover={onPointHover}
-                        pointSize={pointSize}
-                        selectedModelNames={selectedModelNames}
-                    />
-                    {showStats && <Stats />}
-                </Canvas>
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                        }}
+                    >
+                        <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
+                        <OrbitControls
+                            enableDamping
+                            dampingFactor={0.05}
+                            minDistance={10}
+                            maxDistance={10000}
+                            enablePan={true}
+                            enableRotate={true}
+                            enableZoom={true}
+                            panSpeed={1.0}
+                            rotateSpeed={1.0}
+                            zoomSpeed={1.0}
+                            mouseButtons={{
+                                LEFT: THREE.MOUSE.ROTATE,
+                                MIDDLE: THREE.MOUSE.DOLLY,
+                                RIGHT: THREE.MOUSE.PAN
+                            }}
+                            touches={{
+                                ONE: THREE.TOUCH.ROTATE,
+                                TWO: THREE.TOUCH.DOLLY_PAN
+                            }}
+                        />
+                        {showGrid && <Grid args={[200, 200]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
+                        <SceneContent
+                            points={points}
+                            shapes={shapes}
+                            selectedIds={selectedIds}
+                            hoveredId={hoveredId}
+                            colorData={colorData}
+                            onPointClick={onPointClick}
+                            onPointHover={onPointHover}
+                            pointSize={pointSize}
+                            selectedModelNames={selectedModelNames}
+                        />
+                        {showStats && <Stats />}
+                    </Canvas>
+                </Box>
             )}
         </Box>
     );

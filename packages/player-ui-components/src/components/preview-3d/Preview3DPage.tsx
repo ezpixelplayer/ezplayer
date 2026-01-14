@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box } from '../box/Box';
-import { PageHeader } from '@ezplayer/shared-ui-components';
+import { PageHeader, ExtendedTheme } from '@ezplayer/shared-ui-components';
+import { useTheme } from '@mui/material';
 import { Preview3D } from './Preview3D';
 
 export interface Preview3DPageProps {
@@ -16,6 +17,8 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
     modelUrl,
     enableAutoColorAnimation = false,
 }) => {
+    const theme = useTheme<ExtendedTheme>();
+
     return (
         <Box
             sx={{
@@ -29,6 +32,10 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
                 left: 0,
                 right: 0,
                 bottom: 0,
+                [theme.breakpoints.up('lg')]: {
+                    left: theme.sidebar?.width || '252px',
+                    width: `calc(100% - ${theme.sidebar?.width || '252px'})`,
+                },
             }}
         >
             <PageHeader heading={title} children={statusArea} />
