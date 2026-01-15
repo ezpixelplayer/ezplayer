@@ -788,3 +788,27 @@ export class FSEQReaderAsync {
         await this.filereader.asyncCloseClient({ clientid: 0 });
     }
 }
+
+export function dumpFSEQHeader(hdr: FSEQHeader) {
+    console.log(`Frames: ${hdr.frames} x ${hdr.msperframe}ms = ${hdr.frames*hdr.msperframe}ms; ${hdr.channels} channels`);
+    console.log(`Channels: ${hdr.channels}`);
+    console.log(`Header: ${hdr.chdata_offset} bytes; v${hdr.majver}.${hdr.minver}`);
+    console.log();
+    console.log("Extras:");
+    for (const k of Object.keys(hdr.headers)){
+        console.log(`  ${k}=${hdr.headers[k]}`);
+    }
+    console.log();
+    console.log(`Chunks: ${hdr.compblks}`);
+    let acc:number = 0, i=0;
+    for (const chunk of hdr.compblocklist) {
+        console.log(`  #${i} -> ${chunk.framenum}:${chunk.blocksize}@${acc}`);
+        acc += chunk.blocksize;
+        ++i;
+    }
+    console.log();
+    console.log(`Ranges (if sparse): ${hdr.nsparseranges}`);
+    for (const range of hdr.chranges) {
+        console.log(`  ${range.startch}: ${range.chcount}`);
+    }
+}
