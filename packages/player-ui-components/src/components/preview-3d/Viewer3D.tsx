@@ -19,9 +19,41 @@ export interface Viewer3DProps {
     showStats?: boolean;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    /**
+     * Phase shift (in pixels/points, not bytes) for the procedural color pattern.
+     * Changing this value updates point colors in real time.
+     */
+    colorStartOffset?: number;
 }
 
 // PointMesh component removed - using optimized point cloud rendering instead
+
+function generateProceduralColorBuffer(pointCount: number, period: number, startOffset: number): Uint8Array {
+    const colors = new Uint8Array(pointCount * 3);
+    const safePeriod = Math.max(1, Math.floor(period));
+    const half = safePeriod / 2;
+
+    const triangle = (t: number) => {
+        // Linear ramp 0 -> 255 -> 0 over one period.
+        const tt = ((t % safePeriod) + safePeriod) % safePeriod;
+        const v = tt <= half ? (tt / half) * 255 : ((safePeriod - tt) / half) * 255;
+        const clamped = Math.min(255, Math.max(0, v));
+        return Math.round(clamped);
+    };
+
+    const offset = Math.floor(startOffset);
+    const phaseG = Math.floor(safePeriod / 3);
+    const phaseB = Math.floor((safePeriod * 2) / 3);
+
+    for (let i = 0; i < pointCount; i++) {
+        const p = i + offset;
+        colors[i * 3] = triangle(p);
+        colors[i * 3 + 1] = triangle(p + phaseG);
+        colors[i * 3 + 2] = triangle(p + phaseB);
+    }
+
+    return colors;
+}
 
 interface ShapeMeshProps {
     shape: Shape3D;
@@ -98,9 +130,10 @@ function OptimizedPointCloud({
     points,
     selectedIds,
     hoveredId,
-    colorData,
+    colorData: _colorData,
     pointSize,
     selectedModelNames,
+    colorStartOffset = 0,
 }: {
     points: Point3D[];
     selectedIds?: Set<string>;
@@ -109,10 +142,13 @@ function OptimizedPointCloud({
     pointSize?: number;
     selectedModelNames?: Set<string>;
     onPointClick?: (pointId: string) => void;
+    colorStartOffset?: number;
 }) {
     const selectedPointsRef = useRef<THREE.Points>(null);
     const nonSelectedPointsRef = useRef<THREE.Points>(null);
     const materialRef = useRef<THREE.PointsMaterial>(null);
+    const selectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
+    const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const animationTimeRef = useRef(0);
 
     // Reset animation time when selected models change
@@ -145,72 +181,124 @@ function OptimizedPointCloud({
         if (selectedPoints.length === 0) return null;
 
         const positions = new Float32Array(selectedPoints.length * 3);
-        const colors = new Float32Array(selectedPoints.length * 3);
+        const colors = generateProceduralColorBuffer(selectedPoints.length, 300, colorStartOffset);
 
         selectedPoints.forEach((point, i) => {
             positions[i * 3] = point.x;
             positions[i * 3 + 1] = point.y;
             positions[i * 3 + 2] = point.z;
 
-            let color = new THREE.Color(point.color || '#00ff00');
-
-            if (colorData) {
-                const pointColorData = colorData.find((cd) => cd.pointId === point.id);
-                if (pointColorData) {
-                    color = new THREE.Color(pointColorData.color);
-                }
-            }
-
-            // Highlight selected models in yellow
             const modelName = point.metadata?.modelName as string | undefined;
             const isModelSelected = modelName && selectedModelNames?.has(modelName);
 
             if (isModelSelected || selectedIds?.has(point.id)) {
-                color = new THREE.Color('#ffff00');
+                colors[i * 3] = 255;
+                colors[i * 3 + 1] = 255;
+                colors[i * 3 + 2] = 0;
             } else if (hoveredId === point.id) {
-                color = new THREE.Color('#00ffff');
+                colors[i * 3] = 0;
+                colors[i * 3 + 1] = 255;
+                colors[i * 3 + 2] = 255;
             }
-
-            colors[i * 3] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
         });
 
         return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, colorData, selectedModelNames]);
+    }, [selectedPoints, selectedIds, hoveredId, selectedModelNames, colorStartOffset]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {
         if (nonSelectedPoints.length === 0) return null;
 
         const positions = new Float32Array(nonSelectedPoints.length * 3);
-        const colors = new Float32Array(nonSelectedPoints.length * 3);
+        const colors = generateProceduralColorBuffer(nonSelectedPoints.length, 300, colorStartOffset);
 
         nonSelectedPoints.forEach((point, i) => {
             positions[i * 3] = point.x;
             positions[i * 3 + 1] = point.y;
             positions[i * 3 + 2] = point.z;
 
-            let color = new THREE.Color(point.color || '#00ff00');
-
-            if (colorData) {
-                const pointColorData = colorData.find((cd) => cd.pointId === point.id);
-                if (pointColorData) {
-                    color = new THREE.Color(pointColorData.color);
-                }
-            }
-
             if (hoveredId === point.id) {
-                color = new THREE.Color('#00ffff');
+                colors[i * 3] = 0;
+                colors[i * 3 + 1] = 255;
+                colors[i * 3 + 2] = 255;
             }
-
-            colors[i * 3] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, colorData]);
+    }, [nonSelectedPoints, hoveredId, colorStartOffset]);
+
+    const createOrUpdateBufferGeometry = useCallback(
+        (
+            geometryRef: React.MutableRefObject<THREE.BufferGeometry | null>,
+            positions: Float32Array,
+            colors: Uint8Array
+        ): THREE.BufferGeometry => {
+            const pointCount = positions.length / 3;
+            const existing = geometryRef.current;
+
+            // Reuse geometry + typed arrays when the point count is unchanged; otherwise recreate.
+            if (
+                existing &&
+                (existing.getAttribute('position') as THREE.BufferAttribute | undefined)?.count === pointCount &&
+                (existing.getAttribute('color') as THREE.BufferAttribute | undefined)?.count === pointCount
+            ) {
+                const posAttr = existing.getAttribute('position') as THREE.BufferAttribute;
+                const colAttr = existing.getAttribute('color') as THREE.BufferAttribute;
+
+                (posAttr.array as Float32Array).set(positions);
+                (colAttr.array as Uint8Array).set(colors);
+
+                posAttr.needsUpdate = true;
+                colAttr.needsUpdate = true;
+                return existing;
+            }
+
+            if (existing) existing.dispose();
+
+            const geometry = new THREE.BufferGeometry();
+            const posAttr = new THREE.BufferAttribute(positions, 3);
+            const colAttr = new THREE.BufferAttribute(colors, 3, true);
+
+            // Hint Three.js that these attributes may be updated frequently (future real-time updates).
+            posAttr.setUsage(THREE.DynamicDrawUsage);
+            colAttr.setUsage(THREE.DynamicDrawUsage);
+
+            geometry.setAttribute('position', posAttr);
+            geometry.setAttribute('color', colAttr);
+            geometryRef.current = geometry;
+            return geometry;
+        },
+        []
+    );
+
+    // Keep BufferGeometry instances stable and update their attributes in-place when data changes.
+    const selectedBufferGeometry = useMemo(() => {
+        if (!selectedGeometry) return null;
+        return createOrUpdateBufferGeometry(
+            selectedBufferGeometryRef,
+            selectedGeometry.positions,
+            selectedGeometry.colors
+        );
+    }, [selectedGeometry, createOrUpdateBufferGeometry]);
+
+    const nonSelectedBufferGeometry = useMemo(() => {
+        if (!nonSelectedGeometry) return null;
+        return createOrUpdateBufferGeometry(
+            nonSelectedBufferGeometryRef,
+            nonSelectedGeometry.positions,
+            nonSelectedGeometry.colors
+        );
+    }, [nonSelectedGeometry, createOrUpdateBufferGeometry]);
+
+    // Dispose geometries on unmount.
+    useEffect(() => {
+        return () => {
+            selectedBufferGeometryRef.current?.dispose();
+            nonSelectedBufferGeometryRef.current?.dispose();
+            selectedBufferGeometryRef.current = null;
+            nonSelectedBufferGeometryRef.current = null;
+        };
+    }, []);
 
     // Animate selected model points with pulsing effect
     useFrame((_state, delta) => {
@@ -252,22 +340,8 @@ function OptimizedPointCloud({
     return (
         <>
             {/* Selected points with animation */}
-            {selectedGeometry && selectedPoints.length > 0 && (
-                <points key={selectedKey} ref={selectedPointsRef}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={selectedPoints.length}
-                            array={selectedGeometry.positions}
-                            itemSize={3}
-                        />
-                        <bufferAttribute
-                            attach="attributes-color"
-                            count={selectedPoints.length}
-                            array={selectedGeometry.colors}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
+            {selectedBufferGeometry && selectedPoints.length > 0 && (
+                <points key={selectedKey} ref={selectedPointsRef} geometry={selectedBufferGeometry}>
                     <pointsMaterial
                         ref={materialRef}
                         size={baseSize}
@@ -280,22 +354,8 @@ function OptimizedPointCloud({
             )}
 
             {/* Non-selected points - static */}
-            {nonSelectedGeometry && nonSelectedPoints.length > 0 && (
-                <points key={nonSelectedKey} ref={nonSelectedPointsRef}>
-                    <bufferGeometry>
-                        <bufferAttribute
-                            attach="attributes-position"
-                            count={nonSelectedPoints.length}
-                            array={nonSelectedGeometry.positions}
-                            itemSize={3}
-                        />
-                        <bufferAttribute
-                            attach="attributes-color"
-                            count={nonSelectedPoints.length}
-                            array={nonSelectedGeometry.colors}
-                            itemSize={3}
-                        />
-                    </bufferGeometry>
+            {nonSelectedBufferGeometry && nonSelectedPoints.length > 0 && (
+                <points key={nonSelectedKey} ref={nonSelectedPointsRef} geometry={nonSelectedBufferGeometry}>
                     <pointsMaterial
                         size={baseSize}
                         vertexColors
@@ -384,6 +444,7 @@ function SceneContent({
     onPointHover,
     pointSize,
     selectedModelNames,
+    colorStartOffset,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -394,6 +455,7 @@ function SceneContent({
     onPointHover?: (pointId: string | null) => void;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    colorStartOffset?: number;
 }) {
     const { camera, controls } = useThree();
 
@@ -453,6 +515,7 @@ function SceneContent({
                 colorData={colorData}
                 pointSize={pointSize}
                 selectedModelNames={selectedModelNames}
+                colorStartOffset={colorStartOffset}
                 onPointClick={onPointClick}
             />
         </>
@@ -472,6 +535,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     showStats = false,
     pointSize = 0.1,
     selectedModelNames,
+    colorStartOffset = 150,
 }) => {
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
@@ -599,6 +663,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             onPointHover={onPointHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            colorStartOffset={colorStartOffset}
                         />
                         {showStats && <Stats />}
                     </Canvas>
