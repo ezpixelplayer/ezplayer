@@ -79,23 +79,33 @@ function Optimized2DPointCloud({
     const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
 
     // Separate points into selected and non-selected for better visual feedback
-    const { selectedPoints, nonSelectedPoints } = useMemo(() => {
+    // Track original indices to preserve correct procedural colors
+    const { selectedPoints, nonSelectedPoints, selectedOriginalIndices, nonSelectedOriginalIndices } = useMemo(() => {
         const selected: Point3D[] = [];
         const nonSelected: Point3D[] = [];
+        const selectedIndices: number[] = [];
+        const nonSelectedIndices: number[] = [];
 
-        points.forEach((point) => {
+        points.forEach((point, originalIndex) => {
             const modelName = point.metadata?.modelName as string | undefined;
             const isModelSelected = modelName && selectedModelNames?.has(modelName);
             const isPointSelected = selectedIds?.has(point.id);
 
             if (isModelSelected || isPointSelected) {
                 selected.push(point);
+                selectedIndices.push(originalIndex);
             } else {
                 nonSelected.push(point);
+                nonSelectedIndices.push(originalIndex);
             }
         });
 
-        return { selectedPoints: selected, nonSelectedPoints: nonSelected };
+        return {
+            selectedPoints: selected,
+            nonSelectedPoints: nonSelected,
+            selectedOriginalIndices: selectedIndices,
+            nonSelectedOriginalIndices: nonSelectedIndices
+        };
     }, [points, selectedIds, selectedModelNames]);
 
     // Memoize geometry for selected points
@@ -103,7 +113,9 @@ function Optimized2DPointCloud({
         if (selectedPoints.length === 0) return null;
 
         const positions = new Float32Array(selectedPoints.length * 3);
-        const colors = generateProceduralColorBuffer(selectedPoints.length, 300, colorStartOffset);
+        // Generate color buffer for all points to get correct colors, then we'll override selected ones
+        const allColors = generateProceduralColorBuffer(points.length, 300, colorStartOffset);
+        const colors = new Uint8Array(selectedPoints.length * 3);
 
         selectedPoints.forEach((point, i) => {
             // Flatten based on view plane
@@ -125,30 +137,45 @@ function Optimized2DPointCloud({
                     break;
             }
 
+            // Use original index to get the correct procedural color for this point
+            // This ensures colors don't change when models are selected/deselected
+            const originalIndex = selectedOriginalIndices[i];
+            const baseColorIndex = originalIndex * 3;
+            colors[i * 3] = allColors[baseColorIndex];
+            colors[i * 3 + 1] = allColors[baseColorIndex + 1];
+            colors[i * 3 + 2] = allColors[baseColorIndex + 2];
+
             // Highlight selected models in yellow
             const modelName = point.metadata?.modelName as string | undefined;
             const isModelSelected = modelName && selectedModelNames?.has(modelName);
+            const isPointSelected = selectedIds?.has(point.id);
 
-            if (isModelSelected || selectedIds?.has(point.id)) {
+            // Only color points that are actually selected (by model or individually)
+            // This prevents color bleeding to non-selected models
+            if (isModelSelected || isPointSelected) {
                 colors[i * 3] = 255;
                 colors[i * 3 + 1] = 255;
                 colors[i * 3 + 2] = 0;
             } else if (hoveredId === point.id) {
+                // Hovered points get cyan color
                 colors[i * 3] = 0;
                 colors[i * 3 + 1] = 255;
                 colors[i * 3 + 2] = 255;
             }
+            // If point is neither selected nor hovered, it keeps the procedural color from original index
         });
 
         return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, colorStartOffset]);
+    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, colorStartOffset, selectedOriginalIndices, points.length]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {
         if (nonSelectedPoints.length === 0) return null;
 
         const positions = new Float32Array(nonSelectedPoints.length * 3);
-        const colors = generateProceduralColorBuffer(nonSelectedPoints.length, 300, colorStartOffset);
+        // Generate color buffer for all points to get correct colors
+        const allColors = generateProceduralColorBuffer(points.length, 300, colorStartOffset);
+        const colors = new Uint8Array(nonSelectedPoints.length * 3);
 
         nonSelectedPoints.forEach((point, i) => {
             // Flatten based on view plane
@@ -170,6 +197,14 @@ function Optimized2DPointCloud({
                     break;
             }
 
+            // Use original index to get the correct procedural color for this point
+            // This ensures colors don't change when other models are selected/deselected
+            const originalIndex = nonSelectedOriginalIndices[i];
+            const baseColorIndex = originalIndex * 3;
+            colors[i * 3] = allColors[baseColorIndex];
+            colors[i * 3 + 1] = allColors[baseColorIndex + 1];
+            colors[i * 3 + 2] = allColors[baseColorIndex + 2];
+
             if (hoveredId === point.id) {
                 colors[i * 3] = 0;
                 colors[i * 3 + 1] = 255;
@@ -178,7 +213,7 @@ function Optimized2DPointCloud({
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, viewPlane, colorStartOffset]);
+    }, [nonSelectedPoints, hoveredId, viewPlane, colorStartOffset, nonSelectedOriginalIndices, points.length]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (

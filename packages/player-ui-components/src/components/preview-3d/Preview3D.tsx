@@ -41,6 +41,11 @@ export interface Preview3DProps {
     pointSize?: number;
     enableAutoColorAnimation?: boolean;
     enableColorPicker?: boolean;
+    /**
+     * Phase shift (in pixels/points, not bytes) for the procedural color pattern.
+     * Changing this value updates point colors in real time in both 2D and 3D views.
+     */
+    colorStartOffset?: number;
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -56,6 +61,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     pointSize = 3.0,
     enableAutoColorAnimation = false,
     enableColorPicker = false,
+    colorStartOffset = 0,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
@@ -694,6 +700,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             onPointHover={handleItemHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            colorStartOffset={colorStartOffset}
                         />
                     ) : (
                         <Viewer2D
@@ -707,6 +714,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             viewPlane={viewPlane}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            colorStartOffset={colorStartOffset}
                         />
                     )}
                 </Box>
