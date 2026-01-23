@@ -150,11 +150,21 @@ function OptimizedPointCloud({
     const selectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const animationTimeRef = useRef(0);
+    const colorOffsetRef = useRef(colorStartOffset);
+    const selectedColorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
+    const nonSelectedColorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
+    const selectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
+    const nonSelectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
 
     // Reset animation time when selected models change
     useEffect(() => {
         animationTimeRef.current = 0;
     }, [selectedModelNames]);
+
+    // Update color offset ref when prop changes
+    useEffect(() => {
+        colorOffsetRef.current = colorStartOffset;
+    }, [colorStartOffset]);
 
     // Separate points into selected and non-selected for animation
     // Track original indices to preserve correct procedural colors
@@ -185,6 +195,18 @@ function OptimizedPointCloud({
             nonSelectedOriginalIndices: nonSelectedIndices
         };
     }, [points, selectedIds, selectedModelNames]);
+
+    // Store point data for per-frame color updates
+    useEffect(() => {
+        selectedPointsDataRef.current = selectedPoints.map((point, i) => ({
+            point,
+            originalIndex: selectedOriginalIndices[i],
+        }));
+        nonSelectedPointsDataRef.current = nonSelectedPoints.map((point, i) => ({
+            point,
+            originalIndex: nonSelectedOriginalIndices[i],
+        }));
+    }, [selectedPoints, nonSelectedPoints, selectedOriginalIndices, nonSelectedOriginalIndices]);
 
     // Memoize geometry for selected points (with animation)
     const selectedGeometry = useMemo(() => {
@@ -331,6 +353,26 @@ function OptimizedPointCloud({
         );
     }, [nonSelectedGeometry, createOrUpdateBufferGeometry]);
 
+    // Store color attribute references for per-frame updates
+    useEffect(() => {
+        // Use a small delay to ensure geometry is fully created
+        const timer = setTimeout(() => {
+            if (selectedBufferGeometryRef.current) {
+                const attr = selectedBufferGeometryRef.current.getAttribute('color') as THREE.BufferAttribute | null;
+                if (attr) {
+                    selectedColorAttributeRef.current = attr;
+                }
+            }
+            if (nonSelectedBufferGeometryRef.current) {
+                const attr = nonSelectedBufferGeometryRef.current.getAttribute('color') as THREE.BufferAttribute | null;
+                if (attr) {
+                    nonSelectedColorAttributeRef.current = attr;
+                }
+            }
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [selectedBufferGeometry, nonSelectedBufferGeometry]);
+
     // Dispose geometries on unmount.
     useEffect(() => {
         return () => {
@@ -341,10 +383,23 @@ function OptimizedPointCloud({
         };
     }, []);
 
-    // Animate selected model points with pulsing effect
+    // Triangle wave function for color generation
+    const tri = useCallback((t: number) => {
+        const HALF = 128;
+        const period = HALF * 2;
+        const tt = ((t % period) + period) % period;
+        const v = tt <= HALF ? (tt / HALF) * 255 : ((period - tt) / HALF) * 255;
+        return Math.min(255, Math.max(0, Math.round(v)));
+    }, []);
+
+    // Animate selected model points with pulsing effect and update colors per frame
     useFrame((_state, delta) => {
+        animationTimeRef.current += delta;
+        const t = animationTimeRef.current;
+        const offset = colorOffsetRef.current;
+
+        // Update point size animation
         if (materialRef.current && selectedModelNames && selectedModelNames.size > 0) {
-            animationTimeRef.current += delta;
             const baseSize = pointSize || 3.0;
 
             // Create a pulsing animation for selected models
@@ -361,6 +416,100 @@ function OptimizedPointCloud({
                 materialRef.current.size = THREE.MathUtils.lerp(materialRef.current.size, baseSize, 0.1);
             } else {
                 materialRef.current.size = baseSize;
+            }
+        }
+
+        // Update colors per frame for ALL points using position-based phase calculations
+        const HALF = 128;
+        const pulseCenter = ((t * 10) % (HALF * 2)) - HALF;
+
+        // Update non-selected points - get color attribute directly from geometry
+        const nonSelectedGeometry = nonSelectedBufferGeometryRef.current;
+        if (nonSelectedGeometry && nonSelectedPointsDataRef.current.length > 0) {
+            const colorAttr = nonSelectedGeometry.getAttribute('color') as THREE.BufferAttribute | null;
+            if (colorAttr) {
+                const colorArray = colorAttr.array as Uint8Array;
+
+                nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
+                    // Skip if hovered (will be handled by geometry update)
+                    if (hoveredId === point.id) return;
+
+                    // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
+                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + offset;
+
+                    // RGB with phase offsets
+                    const rPhase = phase;
+                    const gPhase = phase + 341;
+                    const bPhase = phase + 682;
+
+                    // Calculate pulse effect (boost brightness for points near moving center)
+                    const distanceToCenter = Math.abs(phase - pulseCenter);
+                    const pulseBoost = distanceToCenter < HALF ? (1 - distanceToCenter / HALF) * 220 : 0;
+
+                    // Generate RGB values
+                    let r = tri(rPhase) + pulseBoost;
+                    let g = tri(gPhase) + pulseBoost;
+                    let b = tri(bPhase) + pulseBoost;
+
+                    // Clamp to valid range
+                    r = Math.min(255, Math.max(0, Math.round(r)));
+                    g = Math.min(255, Math.max(0, Math.round(g)));
+                    b = Math.min(255, Math.max(0, Math.round(b)));
+
+                    const colorIndex = i * 3;
+                    colorArray[colorIndex] = r;
+                    colorArray[colorIndex + 1] = g;
+                    colorArray[colorIndex + 2] = b;
+                });
+
+                colorAttr.needsUpdate = true;
+            }
+        }
+
+        // Update selected points (only non-selected/non-hovered points get animated colors)
+        const selectedGeometry = selectedBufferGeometryRef.current;
+        if (selectedGeometry && selectedPointsDataRef.current.length > 0) {
+            const colorAttr = selectedGeometry.getAttribute('color') as THREE.BufferAttribute | null;
+            if (colorAttr) {
+                const colorArray = colorAttr.array as Uint8Array;
+
+                selectedPointsDataRef.current.forEach(({ point }, i) => {
+                    const modelName = point.metadata?.modelName as string | undefined;
+                    const isModelSelected = modelName && selectedModelNames?.has(modelName);
+                    const isPointSelected = selectedIds?.has(point.id);
+
+                    // Skip if selected or hovered (these keep their special colors from geometry update)
+                    if (isModelSelected || isPointSelected || hoveredId === point.id) return;
+
+                    // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
+                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + offset;
+
+                    // RGB with phase offsets
+                    const rPhase = phase;
+                    const gPhase = phase + 341;
+                    const bPhase = phase + 682;
+
+                    // Calculate pulse effect (boost brightness for points near moving center)
+                    const distanceToCenter = Math.abs(phase - pulseCenter);
+                    const pulseBoost = distanceToCenter < HALF ? (1 - distanceToCenter / HALF) * 220 : 0;
+
+                    // Generate RGB values
+                    let r = tri(rPhase) + pulseBoost;
+                    let g = tri(gPhase) + pulseBoost;
+                    let b = tri(bPhase) + pulseBoost;
+
+                    // Clamp to valid range
+                    r = Math.min(255, Math.max(0, Math.round(r)));
+                    g = Math.min(255, Math.max(0, Math.round(g)));
+                    b = Math.min(255, Math.max(0, Math.round(b)));
+
+                    const colorIndex = i * 3;
+                    colorArray[colorIndex] = r;
+                    colorArray[colorIndex + 1] = g;
+                    colorArray[colorIndex + 2] = b;
+                });
+
+                colorAttr.needsUpdate = true;
             }
         }
     });
@@ -387,7 +536,7 @@ function OptimizedPointCloud({
                         ref={materialRef}
                         size={baseSize}
                         vertexColors
-                        sizeAttenuation={true}
+                        sizeAttenuation={false}
                         transparent={false}
                         depthWrite={true}
                     />
@@ -400,7 +549,7 @@ function OptimizedPointCloud({
                     <pointsMaterial
                         size={baseSize}
                         vertexColors
-                        sizeAttenuation={true}
+                        sizeAttenuation={false}
                         transparent={false}
                         depthWrite={true}
                     />
@@ -574,7 +723,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     className,
     showGrid = true,
     showStats = false,
-    pointSize = 0.1,
+    pointSize = 1.2,
     selectedModelNames,
     colorStartOffset = 150,
 }) => {

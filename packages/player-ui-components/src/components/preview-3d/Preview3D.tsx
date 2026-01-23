@@ -11,6 +11,7 @@ import {
     Typography,
     TextField,
     Popover,
+    Slider,
 } from '@mui/material';
 import { Box } from '../box/Box';
 import View3DIcon from '@mui/icons-material/ViewInAr';
@@ -61,7 +62,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     pointSize = 3.0,
     enableAutoColorAnimation = false,
     enableColorPicker = false,
-    colorStartOffset = 0,
+    colorStartOffset = 300,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
@@ -81,6 +82,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [originalColor, setOriginalColor] = useState<string>('#ffffff');
     const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelItem | null>(null);
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
+    const [colorOffset, setColorOffset] = useState<number>(colorStartOffset);
 
     // Load model from URL if provided
     useEffect(() => {
@@ -108,6 +110,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setColorData(externalColorData);
         }
     }, [externalColorData]);
+
+    // Sync colorStartOffset prop to internal state
+    useEffect(() => {
+        setColorOffset(colorStartOffset);
+    }, [colorStartOffset]);
 
     // Sync selectedModelNames with selectedModelFromDropdown
     useEffect(() => {
@@ -572,6 +579,53 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         </ToggleButtonGroup>
                     </Box>
 
+                    <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
+
+                    {/* Color Offset Control */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 200 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                            Color Offset:
+                        </Typography>
+                        <Slider
+                            value={colorOffset}
+                            onChange={(_, value) => setColorOffset(value as number)}
+                            min={0}
+                            max={300}
+                            step={1}
+                            size="small"
+                            sx={{
+                                width: 120,
+                                '& .MuiSlider-thumb': {
+                                    width: 14,
+                                    height: 14,
+                                },
+                            }}
+                            aria-label="Color Offset"
+                        />
+                        <TextField
+                            type="number"
+                            value={colorOffset}
+                            onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                if (!isNaN(val)) {
+                                    setColorOffset(Math.max(0, Math.min(300, val)));
+                                }
+                            }}
+                            size="small"
+                            sx={{
+                                width: 80,
+                                '& .MuiInputBase-input': {
+                                    padding: '4px 8px',
+                                    fontSize: '0.75rem',
+                                },
+                            }}
+                            inputProps={{
+                                step: 1,
+                                min: 0,
+                                max: 300,
+                            }}
+                        />
+                    </Box>
 
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
@@ -700,7 +754,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             onPointHover={handleItemHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
-                            colorStartOffset={colorStartOffset}
+                            colorStartOffset={colorOffset}
                         />
                     ) : (
                         <Viewer2D
@@ -714,7 +768,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             viewPlane={viewPlane}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
-                            colorStartOffset={colorStartOffset}
+                            colorStartOffset={colorOffset}
                         />
                     )}
                 </Box>
