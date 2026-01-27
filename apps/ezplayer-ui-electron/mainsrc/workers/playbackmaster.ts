@@ -40,7 +40,7 @@ import {
     FrameReference,
     CacheStats,
 } from '@ezplayer/epp';
-import { MP3PrefetchCache } from './mp3decodecache';
+import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
 import { performance } from 'perf_hooks';
@@ -474,7 +474,7 @@ const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
     sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
-    mp3CacheSpace: 3_500_000_000, // There are issues w/making this bigger
+    mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
     fseqSpace: 1_000_000_000,
@@ -482,8 +482,8 @@ const playbackParams = {
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
-    foregroundFseqPrefetchTime: 5 * 1000,
-    backgroundFseqPrefetchTime: 5 * 1000,
+    foregroundFseqPrefetchTime: 2 * 1000,
+    backgroundFseqPrefetchTime: 2 * 1000,
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
@@ -664,7 +664,7 @@ async function processQueue() {
         mp3Cache = new MP3PrefetchCache({
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
-            mp3Space: playbackParams.mp3CacheSpace,
+            mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
         });
     }
 
@@ -1000,7 +1000,29 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - Fseq prefetched`);
 
-            // Send out audio in advance
+            function sendSilence(startTime: number, ms: number) {
+                if (ms <= 0) return;
+                if (ms > playbackParams.sendAudioChunkMs) {
+                    ms = playbackParams.sendAudioChunkMs;
+                }
+                ms = Math.ceil(ms);
+                const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
+                send(
+                    {
+                        type: 'audioChunk',
+                        chunk: {
+                            sampleRate: 48000,
+                            channels: 1,
+                            buffer: quiet.buffer,
+                            playAtRealTime: startTime,
+                            incarnation: curAudioSyncNum,
+                        },
+                    },
+                    [quiet.buffer],
+                );
+            }
+
+            // Send out audio in advance (at lease sendAudioInAdvanceMs at all times)
             emitAudioDebug(
                 `Send audio time: ${audioPlayerRunState.currentTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
             );
@@ -1012,17 +1034,22 @@ async function processQueue() {
                     break;
                 }
 
+                let startTime = Math.floor(audioPlayerRunState.currentTime + playbackParams.audioTimeAdjMs);
+
                 const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
                 let audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
+                    sendSilence(startTime, audioAction.atTime - audioPlayerRunState.currentTime);
                     audioPlayerRunState.runUntil(audioAction.atTime);
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    audioPlayerRunState.runUntil(Math.max(audioPlayerRunState.currentTime, targetFrameRTC));
+                    const etime = Math.max(audioPlayerRunState.currentTime, targetFrameRTC);
+                    audioPlayerRunState.runUntil(etime);
+                    sendSilence(startTime, etime - audioPlayerRunState.currentTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
@@ -1060,14 +1087,13 @@ async function processQueue() {
                             const msToSend = Math.min(playbackParams.sendAudioChunkMs);
                             const nSamplesToSend = Math.floor((msToSend * audio.sampleRate) / 1000);
 
-                            const chunk = new Float32Array(nSamplesToSend * channels);
-
-                            for (let ch = 0; ch < channels; ch++) {
-                                const adata = audio.channelData[ch];
-                                for (let i = 0; i < nSamplesToSend; i++) {
-                                    chunk[i * channels + ch] = (adata[i + sampleOffset] ?? 0) * volumeSF;
-                                }
-                            }
+                            const chunk = buildInterleavedAudioChunkFromSegments({
+                                channelData: audio.channelData,
+                                nSamplesInAudio: audio.nSamples,
+                                sampleOffset,
+                                nSamples: nSamplesToSend,
+                                volumeSF,
+                            })
 
                             const playAtRealTime = Math.floor(
                                 audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0),

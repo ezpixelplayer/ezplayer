@@ -26,7 +26,7 @@ type WorkerErr = {
 let nextId = 1;
 let decompTime = 0;
 
-const nworkers = 2;
+const nworkers = 4;
 const workers: Worker[] = [];
 for (let i = 0; i < nworkers; ++i) {
     workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: { name: 'zstddecode' } }));

@@ -149,40 +149,6 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                 <PageHeader heading={`${title} - ${showName}`} children={statusArea} />
             </Box>
             <Grid container spacing={2} padding={2}>
-                {/* HTTP Listener Status */}
-                {serverStatus && (
-                    <Grid item xs={12}>
-                        <Card>
-                            <CardContent>
-                                <Typography variant="h3" fontWeight="bold" color={theme.palette.secondary.main}>
-                                    HTTP Listener Status
-                                </Typography>
-                                <Typography variant="body1">Port: {serverStatus.port}</Typography>
-                                <Typography variant="body1">Source: {serverStatus.portSource}</Typography>
-                                <Box sx={{ mt: 1 }}>
-                                    <Chip
-                                        label={
-                                            serverStatus.status === 'listening'
-                                                ? 'Listening'
-                                                : serverStatus.status === 'error'
-                                                  ? 'Error'
-                                                  : 'Stopped'
-                                        }
-                                        color={
-                                            serverStatus.status === 'listening'
-                                                ? 'success'
-                                                : serverStatus.status === 'error'
-                                                  ? 'error'
-                                                  : 'default'
-                                        }
-                                        size="small"
-                                    />
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                )}
-
                 {/* Player Status */}
                 {player && (
                     <Grid item xs={12}>
@@ -557,6 +523,40 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                         ))}
                                     </Box>
                                 )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                )}
+
+                {/* HTTP Listener Status */}
+                {serverStatus && (
+                    <Grid item xs={12}>
+                        <Card>
+                            <CardContent>
+                                <Typography variant="h3" fontWeight="bold" color={theme.palette.secondary.main}>
+                                    HTTP Listener Status
+                                </Typography>
+                                <Typography variant="body1">Port: {serverStatus.port}</Typography>
+                                <Typography variant="body1">Source: {serverStatus.portSource}</Typography>
+                                <Box sx={{ mt: 1 }}>
+                                    <Chip
+                                        label={
+                                            serverStatus.status === 'listening'
+                                                ? 'Listening'
+                                                : serverStatus.status === 'error'
+                                                  ? 'Error'
+                                                  : 'Stopped'
+                                        }
+                                        color={
+                                            serverStatus.status === 'listening'
+                                                ? 'success'
+                                                : serverStatus.status === 'error'
+                                                  ? 'error'
+                                                  : 'default'
+                                        }
+                                        size="small"
+                                    />
+                                </Box>
                             </CardContent>
                         </Card>
                     </Grid>

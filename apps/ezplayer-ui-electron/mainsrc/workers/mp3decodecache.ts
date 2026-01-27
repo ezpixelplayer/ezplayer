@@ -8,6 +8,80 @@ import { DecodeReq, DecodedAudio, DecodedAudioResp } from './mp3decodeworker';
 import { fileURLToPath } from 'node:url';
 
 /**
+ * Build an interleaved audio chunk from segmented audio.
+ *
+ * - channelData is [channels][segments]
+ * - reads starting at sampleOffset (per-channel sample index)
+ * - writes interleaved into a newly-allocated Float32Array of length nSamples * channels
+ * - applies volume scale
+ *
+ * Out-of-range reads are treated as 0.
+ */
+export function buildInterleavedAudioChunkFromSegments(opts: {
+    channelData: Float32Array[][];
+    nSamplesInAudio: number;
+    sampleOffset: number;
+    nSamples: number;
+    volumeSF: number;
+}) {
+    const { channelData, sampleOffset, nSamples, volumeSF, nSamplesInAudio } = opts;
+    const channels = channelData.length;
+
+    if (nSamples === 0) return new Float32Array(0);
+
+    if (channels === 0) throw new Error("channelData must have at least 1 channel");
+
+    // Infer segmentSize if not provided
+    const inferredSegSize = channelData[0]?.[0]?.length ?? 0;
+
+    if (inferredSegSize <= 0) {
+        throw new Error("segmentSize could not be inferred (channelData[0][0] missing/empty)");
+    }
+
+    // Validate shape
+    for (let ch = 0; ch < channels; ch++) {
+        if (!Array.isArray(channelData[ch]) || channelData[ch].length === 0) {
+            throw new Error(`channelData[${ch}] must be a non-empty array of Float32Array segments`);
+        }
+        for (let seg = 0; seg < channelData[ch].length; ++seg) {
+            if (channelData[ch][seg].length !== inferredSegSize) {
+                throw new Error(`channelData[${ch}][${seg}] length does not match the inferred length`);
+            }
+        }
+    }
+
+    const out = new Float32Array(nSamples * channels);
+
+    // read sample at absolute index from segmented array
+    const readSample = (segments: Float32Array[], absIndex: number): number => {
+        if (absIndex < 0 || absIndex >= nSamplesInAudio) return 0;
+
+        const segIndex = (absIndex / inferredSegSize) | 0;
+        if (segIndex < 0 || segIndex >= segments.length) return 0;
+
+        const seg = segments[segIndex];
+        const inSeg = absIndex - segIndex * inferredSegSize;
+
+        // If last segment is shorter, guard
+        if (inSeg < 0 || inSeg >= seg.length) return 0;
+
+        return seg[inSeg];
+    };
+
+    // Fill interleaved output
+    for (let ch = 0; ch < channels; ch++) {
+        const segments = channelData[ch];
+        let abs = sampleOffset;
+
+        for (let i = 0, o = ch; i < nSamples; i++, abs++, o += channels) {
+            out[o] = readSample(segments, abs) * volumeSF;
+        }
+    }
+
+    return out;
+}
+
+/**
  * Make a request for mp3 audio...
  */
 export type PrefetchMP3Request = {
@@ -31,7 +105,7 @@ export type MP3Reference = RefHandle<MP3FileCacheVal>;
  * Handles fseq prefetching
  */
 export class MP3PrefetchCache {
-    constructor(arg: { readonly log: (msg: string) => void; now: number; mp3Space?: number }) {
+    constructor(arg: { readonly log: (msg: string) => void; now: number; mp3SpaceSeconds?: number }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
         this.decodewc = new Mp3DecodeWorkerClient();
@@ -44,11 +118,11 @@ export class MP3PrefetchCache {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }
             },
-            budgetPredictor: (_key) => 200_000_000, // 20 min of CD+ audio
+            budgetPredictor: (_key) => 1200, // 20 min worst case?
             budgetCalculator: (_key, val) =>
-                (val.decompAudio.channelData.length ?? 2) * (val.decompAudio.channelData[0]?.length ?? 1000) * 4,
+                Math.ceil(val.decompAudio.nSamples / (val.decompAudio.sampleRate ?? 1) / 5 + 1) * 5,
             keyToId: (key) => `${key.mp3file}`,
-            budgetLimit: arg.mp3Space ?? 800_000_000, // An hour of CD quality
+            budgetLimit: arg.mp3SpaceSeconds ?? 5400,
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, v) => {
@@ -192,12 +266,18 @@ export class Mp3DecodeWorkerClient {
     }
 
     returnBuffer(v: DecodedAudio) {
+        const buffers: ArrayBuffer[] = [];
+        for (const bo of v.channelData) {
+            for (const b of bo) {
+                buffers.push(b.buffer);
+            }
+        }
         this.worker.postMessage(
             {
                 type: 'return',
-                buffers: v.channelData,
+                buffers,
             } satisfies DecodeReq,
-            v.channelData.map((a) => a.buffer),
+            buffers,
         );
     }
 
