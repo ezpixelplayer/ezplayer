@@ -39,7 +39,13 @@ import {
     ControllerState,
     FrameReference,
     CacheStats,
+    loadXmlFile,
 } from '@ezplayer/epp';
+
+import {
+    getModelCoordinates,
+} from 'xllayoutcalcs';
+
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
@@ -55,6 +61,7 @@ import { setPingConfig, getLatestPingStats } from './pingparent';
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import { randomUUID } from 'node:crypto';
+import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '../xmlutil';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -685,6 +692,29 @@ async function processQueue() {
 
     try {
         const { controllers, models } = await readControllersFromXlights(showFolder!);
+
+        // Read in model x y locations (TODO use these)
+        const xrgb = await loadXmlFile(path.join(showFolder!, `xlights_rgbeffects.xml`));
+
+        // Parsing of an XML
+        if (xrgb.documentElement.tagName !== 'xrgb') {
+            throw new Error(`Type of root element should be 'xrgb'`);
+        }
+        const xmodels = getElementByTag(xrgb.documentElement, 'models');
+
+        for (let im = 0; im < xmodels.childNodes.length; ++im) {
+            const n = xmodels.childNodes[im];
+            if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+            const model = n as Element;
+            if (model.tagName !== 'model') continue;
+
+            const name = getAttrDef(model, 'name', '');
+            const active = getBoolAttrDef(model, 'Active', true);
+            console.log(`     - - - Getting 3D coordinates of model ${name} ${active} - - -`);
+            if (!active) continue;
+            const _nr3d = getModelCoordinates(model, false);
+        }
+
         const sendJob = await openControllersForDataSend(controllers);
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
