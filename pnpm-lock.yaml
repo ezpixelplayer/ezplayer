@@ -154,6 +154,9 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.18.3
+      xllayoutcalcs:
+        specifier: ../../libs/xllayoutcalcs-0.0.3.tgz
+        version: file:libs/xllayoutcalcs-0.0.3.tgz
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
@@ -3738,6 +3741,9 @@ packages:
     resolution: {integrity: sha512-nBF+F1rAZVCu/p7rjzgA+Yb4lfYXrpl7a6VmJrU8wF9I1CKvP/QwPNZHnOlwbTkY6dvtFIzFMSyQXbLoTQPRpA==}
     engines: {node: '>=8'}
 
+  gl-matrix@3.4.4:
+    resolution: {integrity: sha512-latSnyDNt/8zYUB6VIJ6PCh2jBjJX6gnDsoCZ7LyW7GkqrD51EWwa9qCoGixj8YqBtETQK/xY7OmpTF8xz1DdQ==}
+
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
@@ -5873,6 +5879,10 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
+
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.3.tgz:
+    resolution: {integrity: sha512-8v9GwLycm0qn8NbfiEori2ZCjcqrEEWtH357HgxKOgs+Ft1LEfrYE4dUZ5RVhvoshFWrO1Q6YgMyJLY62OR5tQ==, tarball: file:libs/xllayoutcalcs-0.0.3.tgz}
+    version: 0.0.3
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -9262,6 +9272,8 @@ snapshots:
     dependencies:
       pump: 3.0.3
 
+  gl-matrix@3.4.4: {}
+
   glob-parent@5.1.2:
     dependencies:
       is-glob: 4.0.3
@@ -11443,6 +11455,10 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.18.3: {}
+
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.3.tgz:
+    dependencies:
+      gl-matrix: 3.4.4
 
   xml-name-validator@5.0.0: {}
 

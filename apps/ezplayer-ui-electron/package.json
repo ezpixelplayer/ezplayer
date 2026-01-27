@@ -144,6 +144,7 @@
         "react-toastify": "^10.0.6",
         "uuid": "^11.0.5",
         "ws": "^8.18.3",
+        "xllayoutcalcs": "../../libs/xllayoutcalcs-0.0.3.tgz",
         "zstddec": "^0.1.0"
     }
 }
