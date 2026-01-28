@@ -344,6 +344,20 @@ export async function registerContentHandlers(
         return getServerStatus();
     });
 
+    ipcMain.handle('ipcGetModelCoordinates', async (_event) => {
+        if (!playWorker || !rpcc) {
+            return {};
+        }
+        
+        try {
+            const coords = await rpcc.call('getModelCoordinates', {});
+            return coords;
+        } catch (err) {
+            console.error(`[3D Preview IPC] Failed to get model coordinates: ${err}`);
+            return {};
+        }
+    });
+
     /// Connection from player worker thread
 
     const rpcs = new RPCServer<MainRPCAPI>(playWorker, handlers);

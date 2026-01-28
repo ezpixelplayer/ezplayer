@@ -187,6 +187,15 @@ const handlers: PlayWorkerRPCAPI = {
         await sleepms(60);
         return true;
     },
+    getModelCoordinates: async (_args: {}) => {
+        const coords: Record<string, unknown> = {};
+        if (modelCoordinates) {
+            for (const [name, coord] of modelCoordinates.entries()) {
+                coords[name] = coord;
+            }
+        }
+        return coords;
+    },
 };
 
 function playingItemDesc(item?: PlayAction) {
@@ -440,12 +449,20 @@ function processCommand(cmd: EZPlayerCommand) {
 parentPort.on('message', (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
-            emitInfo(
-                `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
-            );
             pendingSchedule = command;
+            if (command.showFolder && command.showFolder !== '<no show folder yet>') {
+                const oldShowFolder = showFolder;
+                showFolder = command.showFolder;
+                
+                // Load XML coordinates immediately when show folder is set
+                if (showFolder !== oldShowFolder) {
+                    loadXmlCoordinates().catch((err) => {
+                        emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
+                    });
+                }
+            }
             if (!running) {
-                running = processQueue(); // kick off first song
+                running = processQueue();
             }
             break;
         }
@@ -638,6 +655,7 @@ let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
 let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
+let modelCoordinates: Map<string, unknown> | undefined = undefined;
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -659,12 +677,81 @@ let fseqCache: FSeqPrefetchCache | undefined = undefined;
 let lastPRSSchedUpdate: number = 0;
 
 ////////
+// Load XML coordinates independently (can be called before processQueue)
+////////
+async function loadXmlCoordinates() {
+    if (!showFolder) {
+        emitWarning(`[loadXmlCoordinates] showFolder not set, skipping XML load`);
+        return;
+    }
+
+    const xmlPath = path.join(showFolder, `xlights_rgbeffects.xml`);
+    
+    let xrgb;
+    try {
+        xrgb = await loadXmlFile(xmlPath);
+    } catch (err) {
+        emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
+        xrgb = null;
+    }
+
+    modelCoordinates = new Map<string, unknown>();
+    
+    if (xrgb) {
+        if (xrgb.documentElement.tagName !== 'xrgb') {
+            emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
+        } else {
+            try {
+                const xmodels = getElementByTag(xrgb.documentElement, 'models');
+                
+                let activeModelCount = 0;
+                let processedModelCount = 0;
+                
+                for (let im = 0; im < xmodels.childNodes.length; ++im) {
+                    const n = xmodels.childNodes[im];
+                    if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                    const model = n as Element;
+                    if (model.tagName !== 'model') continue;
+
+                    const name = getAttrDef(model, 'name', '');
+                    const active = getBoolAttrDef(model, 'Active', true);
+                    
+                    processedModelCount++;
+                    
+                    if (!active) {
+                        continue;
+                    }
+                    
+                    activeModelCount++;
+                    try {
+                        const nr3d = getModelCoordinates(model, false);
+                        if (nr3d) {
+                            modelCoordinates.set(name, nr3d);
+                        }
+                    } catch (coordErr) {
+                        emitError(`[loadXmlCoordinates] Error extracting coordinates for "${name}": ${coordErr}`);
+                    }
+                }
+                
+                emitInfo(`[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with coordinates`);
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
+            }
+        }
+    }
+}
+
+////////
 // Actual logic loops
 ////////
 async function processQueue() {
-    // TODO SHOWFOLDER
     if (!showFolder && pendingSchedule?.type === 'schedupdate') {
         showFolder = pendingSchedule.showFolder;
+    }
+    
+    if (!showFolder) {
+        emitError(`[processQueue] showFolder is not set! Cannot proceed.`);
+        return;
     }
 
     if (!mp3Cache) {
@@ -693,26 +780,9 @@ async function processQueue() {
     try {
         const { controllers, models } = await readControllersFromXlights(showFolder!);
 
-        // Read in model x y locations (TODO use these)
-        const xrgb = await loadXmlFile(path.join(showFolder!, `xlights_rgbeffects.xml`));
-
-        // Parsing of an XML
-        if (xrgb.documentElement.tagName !== 'xrgb') {
-            throw new Error(`Type of root element should be 'xrgb'`);
-        }
-        const xmodels = getElementByTag(xrgb.documentElement, 'models');
-
-        for (let im = 0; im < xmodels.childNodes.length; ++im) {
-            const n = xmodels.childNodes[im];
-            if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-            const model = n as Element;
-            if (model.tagName !== 'model') continue;
-
-            const name = getAttrDef(model, 'name', '');
-            const active = getBoolAttrDef(model, 'Active', true);
-            console.log(`     - - - Getting 3D coordinates of model ${name} ${active} - - -`);
-            if (!active) continue;
-            const _nr3d = getModelCoordinates(model, false);
+        // Load XML coordinates if not already loaded
+        if (!modelCoordinates || modelCoordinates.size === 0) {
+            await loadXmlCoordinates();
         }
 
         const sendJob = await openControllersForDataSend(controllers);
@@ -744,6 +814,10 @@ async function processQueue() {
         sender.mixFrame = new Uint8Array(nChannels);
     } catch (e) {
         const err = e as Error;
+        emitError(`[processQueue] ❌ CRITICAL ERROR in processQueue: ${err.message}`);
+        emitError(`[processQueue] Error name: ${err.name}`);
+        emitError(`[processQueue] Error stack: ${err.stack}`);
+        console.error(`[processQueue] Full error object:`, e);
         playbackStats.lastError = err.message;
     }
 

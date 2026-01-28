@@ -33,6 +33,7 @@ export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
     stopPlayback: (args: {}) => Promise<boolean> | boolean;
+    getModelCoordinates: (args: {}) => Promise<Record<string, unknown>>;
 };
 
 export type MainRPCAPI = {
