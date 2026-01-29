@@ -33,6 +33,12 @@ export interface ModelListProps {
     onModelSelect: (model: ModelItem | null) => void;
     className?: string;
     searchable?: boolean;
+    modelData?: {
+        points: Array<{ metadata?: { modelName?: string } }>;
+        metadata?: {
+            models?: Array<{ name: string; pointCount: number }>;
+        };
+    } | null;
 }
 
 export const ModelList: React.FC<ModelListProps> = ({
@@ -40,6 +46,7 @@ export const ModelList: React.FC<ModelListProps> = ({
     onModelSelect,
     className,
     searchable = true,
+    modelData = null,
 }) => {
     const theme = useTheme();
     const [searchQuery, setSearchQuery] = useState('');
@@ -47,10 +54,42 @@ export const ModelList: React.FC<ModelListProps> = ({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const selectedItemRef = useRef<HTMLLIElement>(null);
 
-    // Load models from sample-model.json
+    // Extract models from modelData if available, otherwise fallback to sample models
     const allModels = useMemo(() => {
-        return (sampleModels as { models: ModelItem[] }).models;
-    }, []);
+        if (modelData?.metadata?.models && modelData.metadata.models.length > 0) {
+            // Use models from XML/modelData
+            return modelData.metadata.models.map((m) => ({
+                name: m.name,
+                pixelSize: undefined,
+                pixelStyle: undefined,
+                colorOrder: undefined,
+                nodes: undefined,
+            })) as ModelItem[];
+        } else if (modelData?.points && modelData.points.length > 0) {
+            // Extract unique model names from points metadata
+            const modelNames = new Set<string>();
+            const modelPointCounts = new Map<string, number>();
+
+            modelData.points.forEach((point) => {
+                const modelName = point.metadata?.modelName;
+                if (modelName) {
+                    modelNames.add(modelName);
+                    modelPointCounts.set(modelName, (modelPointCounts.get(modelName) || 0) + 1);
+                }
+            });
+
+            return Array.from(modelNames).map((name) => ({
+                name,
+                pixelSize: undefined,
+                pixelStyle: undefined,
+                colorOrder: undefined,
+                nodes: undefined,
+            })) as ModelItem[];
+        } else {
+            // Fallback to sample models
+            return (sampleModels as { models: ModelItem[] }).models;
+        }
+    }, [modelData]);
 
     // Filter models based on search query
     const filteredModels = useMemo(() => {
@@ -66,14 +105,30 @@ export const ModelList: React.FC<ModelListProps> = ({
 
     // Calculate point count for a model
     const getModelPointCount = (model: ModelItem): number => {
-        if (!model.nodes || !Array.isArray(model.nodes)) return 0;
-
-        return model.nodes.reduce((total, node) => {
-            if (node.coords && Array.isArray(node.coords)) {
-                return total + node.coords.length;
+        // If we have modelData with metadata, use that
+        if (modelData?.metadata?.models) {
+            const modelInfo = modelData.metadata.models.find((m) => m.name === model.name);
+            if (modelInfo) {
+                return modelInfo.pointCount;
             }
-            return total;
-        }, 0);
+        }
+
+        // If we have modelData with points, count points for this model
+        if (modelData?.points) {
+            return modelData.points.filter((p) => p.metadata?.modelName === model.name).length;
+        }
+
+        // Fallback to sample model structure
+        if (model.nodes && Array.isArray(model.nodes)) {
+            return model.nodes.reduce((total, node) => {
+                if (node.coords && Array.isArray(node.coords)) {
+                    return total + node.coords.length;
+                }
+                return total;
+            }, 0);
+        }
+
+        return 0;
     };
 
     const handleModelClick = (model: ModelItem) => {

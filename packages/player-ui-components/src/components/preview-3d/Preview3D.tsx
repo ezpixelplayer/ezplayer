@@ -178,13 +178,29 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         } else if (selectedModelNames.size === 1) {
             const modelName = Array.from(selectedModelNames)[0];
             if (selectedModelFromDropdown?.name !== modelName) {
-                const modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName);
+                // Try to find model from modelData first, then fallback to sample models
+                let modelItem: ModelItem | null = null;
+                const models = modelData?.metadata?.models as ModelItem[] | undefined;
+                if (Array.isArray(models)) {
+                    const modelInfo = models.find((m) => m && typeof m === 'object' && 'name' in m && (m as any).name === modelName);
+                    if (modelInfo) {
+                        modelItem = {
+                            name: modelInfo.name,
+                            pixelSize: undefined,
+                            pixelStyle: undefined,
+                            colorOrder: undefined,
+                        };
+                    }
+                }
+                if (!modelItem) {
+                    modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName) || null;
+                }
                 if (modelItem) {
                     setSelectedModelFromDropdown(modelItem);
                 }
             }
         }
-    }, [selectedModelNames, selectedModelFromDropdown]);
+    }, [selectedModelNames, selectedModelFromDropdown, modelData]);
 
     // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
@@ -225,8 +241,25 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         hoveredId: prev.hoveredId,
                     };
                 });
-                // Update dropdown selection
-                const modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName);
+                // Update dropdown selection - try modelData first, then sample models
+                let modelItem: ModelItem | null = null;
+                const modelList = Array.isArray(modelData?.metadata?.models)
+                    ? (modelData!.metadata!.models as ModelItem[])
+                    : [];
+                if (modelList.length > 0) {
+                    const modelInfo = modelList.find((m: ModelItem) => m.name === modelName);
+                    if (modelInfo) {
+                        modelItem = {
+                            name: modelInfo.name,
+                            pixelSize: undefined,
+                            pixelStyle: undefined,
+                            colorOrder: undefined,
+                        };
+                    }
+                }
+                if (!modelItem) {
+                    modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName) || null;
+                }
                 if (modelItem) {
                     setSelectedModelFromDropdown(modelItem);
                 }
@@ -897,6 +930,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             selectedModelName={selectedModelFromDropdown?.name}
                             onModelSelect={handleModelSelect}
                             searchable={true}
+                            modelData={modelData}
                         />
                     </Paper>
                 )}
