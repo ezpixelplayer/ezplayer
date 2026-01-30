@@ -22,9 +22,8 @@ import ColorLensIcon from '@mui/icons-material/ColorLens';
 import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList, ModelItem } from './ModelList';
-import { loadModelFromJson, createDefaultModel, convertXmlCoordinatesToModel3D, getModelDataSource } from '../../services/model3dLoader';
+import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, PointColorData, SelectionState } from '../../types/model3d';
-import sampleModels from './sample-model.json';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -84,78 +83,48 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
     const [colorOffset, setColorOffset] = useState<number>(colorStartOffset);
 
-    // Load model from XML coordinates (priority) or URL, or fallback to default
+    // Load model from XML coordinates if available (Electron environment)
     useEffect(() => {
-        // First, try to load from XML coordinates if available (Electron environment)
+        // If initialModelData is provided, use it
+        if (initialModelData) {
+            setModelData(initialModelData);
+            setLoading(false);
+            return;
+        }
+
+        // Try to load from XML coordinates if available (Electron environment)
         const loadFromXml = async () => {
-            console.log('[3D Preview Frontend] Starting to load model data...');
+            setLoading(true);
+            setError(null);
 
             try {
                 // Check if we're in Electron environment and API is available
                 const electronAPI = (window as any).electronAPI;
-                console.log('[3D Preview Frontend] electronAPI available:', !!electronAPI);
-                console.log('[3D Preview Frontend] getModelCoordinates method available:', !!(electronAPI && electronAPI.getModelCoordinates));
 
                 if (electronAPI && electronAPI.getModelCoordinates) {
-                    console.log('[3D Preview Frontend] Calling electronAPI.getModelCoordinates()...');
                     const xmlCoords = await electronAPI.getModelCoordinates();
-                    console.log('[3D Preview Frontend] Received response from getModelCoordinates');
-                    console.log('[3D Preview Frontend] Response type:', typeof xmlCoords);
-                    console.log('[3D Preview Frontend] Response keys:', xmlCoords ? Object.keys(xmlCoords) : 'null/undefined');
-                    console.log('[3D Preview Frontend] Response length:', xmlCoords ? Object.keys(xmlCoords).length : 0);
-                    console.log('[3D Preview Frontend] Full response:', xmlCoords);
 
                     if (xmlCoords && Object.keys(xmlCoords).length > 0) {
-                        console.log('[3D Preview Frontend] Converting XML coordinates to Model3DData...');
                         const convertedData = convertXmlCoordinatesToModel3D(xmlCoords);
-                        console.log('[3D Preview Frontend] Converted data points count:', convertedData.points.length);
-                        console.log('[3D Preview Frontend] Converted data metadata:', convertedData.metadata);
 
                         if (convertedData.points.length > 0) {
-                            console.log('✅ Loaded model data from XML file:', convertedData.metadata?.dataSource);
                             setModelData(convertedData);
                             setLoading(false);
                             return;
-                        } else {
-                            console.warn('[3D Preview Frontend] ⚠️ Converted data has no points');
                         }
-                    } else {
-                        console.warn('[3D Preview Frontend] ⚠️ No XML coordinates received or empty object');
                     }
-                } else {
-                    console.warn('[3D Preview Frontend] ⚠️ Electron API or getModelCoordinates not available (not in Electron environment?)');
                 }
             } catch (err) {
-                console.error('[3D Preview Frontend] ❌ Error loading XML coordinates:', err);
-                console.error('[3D Preview Frontend] Error stack:', (err as Error).stack);
+                // Silently handle errors - empty state will be shown
             }
 
-            // Fallback to URL or default
-            if (modelUrl && !initialModelData) {
-                setLoading(true);
-                setError(null);
-                loadModelFromJson(modelUrl)
-                    .then((data) => {
-                        console.log('✅ Loaded model data from URL:', modelUrl);
-                        setModelData(data);
-                        setLoading(false);
-                    })
-                    .catch((err) => {
-                        setError(err instanceof Error ? err.message : 'Failed to load model');
-                        setLoading(false);
-                        const defaultData = createDefaultModel();
-                        console.log('✅ Loaded default/sample model data:', defaultData.metadata?.dataSource);
-                        setModelData(defaultData);
-                    });
-            } else if (!initialModelData && !modelUrl) {
-                const defaultData = createDefaultModel();
-                console.log('✅ Loaded default/sample model data:', defaultData.metadata?.dataSource);
-                setModelData(defaultData);
-            }
+            // No XML data available
+            setModelData(null);
+            setLoading(false);
         };
 
         loadFromXml();
-    }, [modelUrl, initialModelData]);
+    }, [initialModelData]);
 
     // Sync external color data
     useEffect(() => {
@@ -178,7 +147,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         } else if (selectedModelNames.size === 1) {
             const modelName = Array.from(selectedModelNames)[0];
             if (selectedModelFromDropdown?.name !== modelName) {
-                // Try to find model from modelData first, then fallback to sample models
+                // Try to find model from modelData
                 let modelItem: ModelItem | null = null;
                 const models = modelData?.metadata?.models as ModelItem[] | undefined;
                 if (Array.isArray(models)) {
@@ -191,9 +160,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             colorOrder: undefined,
                         };
                     }
-                }
-                if (!modelItem) {
-                    modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName) || null;
                 }
                 if (modelItem) {
                     setSelectedModelFromDropdown(modelItem);
@@ -241,7 +207,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         hoveredId: prev.hoveredId,
                     };
                 });
-                // Update dropdown selection - try modelData first, then sample models
+                // Update dropdown selection from modelData
                 let modelItem: ModelItem | null = null;
                 const modelList = Array.isArray(modelData?.metadata?.models)
                     ? (modelData!.metadata!.models as ModelItem[])
@@ -256,9 +222,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             colorOrder: undefined,
                         };
                     }
-                }
-                if (!modelItem) {
-                    modelItem = (sampleModels as { models: ModelItem[] }).models.find((m) => m.name === modelName) || null;
                 }
                 if (modelItem) {
                     setSelectedModelFromDropdown(modelItem);
@@ -507,7 +470,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         );
     }
 
-    if (!modelData) {
+    if (!modelData || !modelData.points || modelData.points.length === 0) {
         return (
             <Box
                 className={className}
@@ -517,9 +480,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     alignItems: 'center',
                     height: '100%',
                     minHeight: 600,
+                    flexDirection: 'column',
+                    gap: 2,
+                    p: 3,
                 }}
             >
-                No model data available
+                <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
+                    No layout in the selected show folder.
+                </Typography>
             </Box>
         );
     }
@@ -550,40 +518,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         position: 'relative',
                     }}
                 >
-                    {/* Data Source Indicator */}
-                    {(() => {
-                        const dataSourceInfo = getModelDataSource(modelData);
-                        if (dataSourceInfo.source === 'unknown') return null;
-
-                        return (
-                            <Tooltip title={`Data source: ${dataSourceInfo.dataSource}`}>
-                                <Box
-                                    sx={{
-                                        px: 1,
-                                        py: 0.5,
-                                        borderRadius: 1,
-                                        backgroundColor:
-                                            dataSourceInfo.isXml
-                                                ? theme.palette.success.main
-                                                : dataSourceInfo.isSample
-                                                    ? theme.palette.info.main
-                                                    : theme.palette.grey[600],
-                                        color: 'white',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 500,
-                                        cursor: 'help',
-                                    }}
-                                >
-                                    {dataSourceInfo.isXml
-                                        ? '📄 XML Data'
-                                        : dataSourceInfo.isSample
-                                            ? '📦 Sample Data'
-                                            : '🔷 Default'}
-                                </Box>
-                            </Tooltip>
-                        );
-                    })()}
-
                     {/* View Mode Controls */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>

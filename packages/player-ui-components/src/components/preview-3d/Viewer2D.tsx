@@ -643,6 +643,32 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
 
+    // Show empty state if no points
+    if (!points || points.length === 0) {
+        return (
+            <Box
+                className={className}
+                sx={{
+                    width: '100%',
+                    height: '100%',
+                    minHeight: 600,
+                    position: 'relative',
+                    backgroundColor: '#000',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    flexDirection: 'column',
+                    gap: 2,
+                    p: 3,
+                }}
+            >
+                <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)' }}>
+                    No layout in the selected show folder.
+                </Typography>
+            </Box>
+        );
+    }
+
     return (
         <Box
             className={className}

@@ -30,8 +30,7 @@ export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
 export { ModelList } from './components/preview-3d/ModelList';
 export type { ModelListProps, ModelItem } from './components/preview-3d/ModelList';
 export type { Model3DData, Point3D, Shape3D, PointColorData, SelectionState } from './types/model3d';
-    export { loadModelFromJson, parseModelData, createDefaultModel, convertSampleModelToModel3D, convertAllSampleModelsToModel3D } from './services/model3dLoader';
-export type { SampleModelData } from './services/model3dLoader';
+export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
 export type {

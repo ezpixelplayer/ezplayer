@@ -17,7 +17,6 @@ import {
 import { Box } from '../box/Box';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
-import sampleModels from './sample-model.json';
 
 export interface ModelItem {
     name: string;
@@ -54,7 +53,7 @@ export const ModelList: React.FC<ModelListProps> = ({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const selectedItemRef = useRef<HTMLLIElement>(null);
 
-    // Extract models from modelData if available, otherwise fallback to sample models
+    // Extract models from modelData
     const allModels = useMemo(() => {
         if (modelData?.metadata?.models && modelData.metadata.models.length > 0) {
             // Use models from XML/modelData
@@ -86,8 +85,8 @@ export const ModelList: React.FC<ModelListProps> = ({
                 nodes: undefined,
             })) as ModelItem[];
         } else {
-            // Fallback to sample models
-            return (sampleModels as { models: ModelItem[] }).models;
+            // No models available
+            return [];
         }
     }, [modelData]);
 
@@ -116,16 +115,6 @@ export const ModelList: React.FC<ModelListProps> = ({
         // If we have modelData with points, count points for this model
         if (modelData?.points) {
             return modelData.points.filter((p) => p.metadata?.modelName === model.name).length;
-        }
-
-        // Fallback to sample model structure
-        if (model.nodes && Array.isArray(model.nodes)) {
-            return model.nodes.reduce((total, node) => {
-                if (node.coords && Array.isArray(node.coords)) {
-                    return total + node.coords.length;
-                }
-                return total;
-            }, 0);
         }
 
         return 0;
