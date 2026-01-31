@@ -35,7 +35,6 @@ export interface Model3DData {
 export interface PointColorData {
     pointId: string;
     color: string;
-    timestamp?: number;
 }
 
 export interface SelectionState {

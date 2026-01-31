@@ -250,10 +250,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             newColorData[existingIndex] = {
                                 ...newColorData[existingIndex],
                                 color,
-                                timestamp: Date.now(),
                             };
                         } else {
-                            newColorData.push({ pointId: point.id, color, timestamp: Date.now() });
+                            newColorData.push({ pointId: point.id, color });
                         }
                         return { ...point, color };
                     }
@@ -379,7 +378,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 return {
                     pointId: point.id,
                     color: `hsl(${hue}, 100%, 50%)`,
-                    timestamp: Date.now(),
                 };
             });
 
