@@ -2,6 +2,34 @@
  * Types for 3D model data structure
  */
 
+export interface ModelPointMetadata {
+    modelName ?: string;
+    modelIndex ?: number,
+    nodeIndex ?: number,
+    coordIndex ?: number,
+    key ?: string,
+    itemIndex ?: number,
+}
+
+export interface ModelShapeMetadata {
+}
+
+export interface ModelMetadata {
+    name: string,
+    pointCount: number,
+    pixelSize?: number;
+    pixelStyle?: string;
+    colorOrder?: string;
+}
+
+export interface ModelSetMetadata {
+    source?: string,
+    dataSource?: string,
+    totalModels: number,
+    models: ModelMetadata[],
+    description: string,
+ }
+
 export interface Point3D {
     id: string;
     x: number;
@@ -9,7 +37,7 @@ export interface Point3D {
     z: number;
     color?: string;
     label?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: ModelPointMetadata;
 }
 
 export interface Shape3D {
@@ -20,7 +48,7 @@ export interface Shape3D {
     scale?: { x: number; y: number; z: number };
     color?: string;
     label?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: ModelShapeMetadata;
     points?: Point3D[];
 }
 
@@ -29,7 +57,7 @@ export interface Model3DData {
     name?: string;
     points: Point3D[];
     shapes?: Shape3D[];
-    metadata?: Record<string, unknown>;
+    metadata?: ModelSetMetadata;
 }
 
 export interface PointColorData {

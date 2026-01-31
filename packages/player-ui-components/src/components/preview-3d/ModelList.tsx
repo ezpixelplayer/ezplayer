@@ -24,7 +24,6 @@ export interface ModelItem {
     pixelStyle?: string;
     colorOrder?: string;
     nodes?: any[];
-    [key: string]: unknown;
 }
 
 export interface ModelListProps {
