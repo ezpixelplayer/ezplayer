@@ -104,7 +104,7 @@ function Optimized2DPointCloud({
             selectedPoints: selected,
             nonSelectedPoints: nonSelected,
             selectedOriginalIndices: selectedIndices,
-            nonSelectedOriginalIndices: nonSelectedIndices
+            nonSelectedOriginalIndices: nonSelectedIndices,
         };
     }, [points, selectedIds, selectedModelNames]);
 
@@ -166,7 +166,16 @@ function Optimized2DPointCloud({
         });
 
         return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, colorStartOffset, selectedOriginalIndices, points.length]);
+    }, [
+        selectedPoints,
+        selectedIds,
+        hoveredId,
+        viewPlane,
+        selectedModelNames,
+        colorStartOffset,
+        selectedOriginalIndices,
+        points.length,
+    ]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {
@@ -219,7 +228,7 @@ function Optimized2DPointCloud({
         (
             geometryRef: React.MutableRefObject<THREE.BufferGeometry | null>,
             positions: Float32Array,
-            colors: Uint8Array
+            colors: Uint8Array,
         ): THREE.BufferGeometry => {
             const pointCount = positions.length / 3;
             const existing = geometryRef.current;
@@ -259,7 +268,7 @@ function Optimized2DPointCloud({
             geometryRef.current = geometry;
             return geometry;
         },
-        []
+        [],
     );
 
     const selectedBufferGeometry = useMemo(() => {
@@ -267,7 +276,7 @@ function Optimized2DPointCloud({
         return createOrUpdateBufferGeometry(
             selectedBufferGeometryRef,
             selectedGeometry.positions,
-            selectedGeometry.colors
+            selectedGeometry.colors,
         );
     }, [selectedGeometry, createOrUpdateBufferGeometry]);
 
@@ -276,7 +285,7 @@ function Optimized2DPointCloud({
         return createOrUpdateBufferGeometry(
             nonSelectedBufferGeometryRef,
             nonSelectedGeometry.positions,
-            nonSelectedGeometry.colors
+            nonSelectedGeometry.colors,
         );
     }, [nonSelectedGeometry, createOrUpdateBufferGeometry]);
 
@@ -363,7 +372,7 @@ function Shape2DMesh({ shape, isSelected, isHovered, viewPlane, onClick, onHover
             e.stopPropagation();
             onClick(shape.id);
         },
-        [onClick, shape.id]
+        [onClick, shape.id],
     );
 
     const handlePointerOver = useCallback(
@@ -371,7 +380,7 @@ function Shape2DMesh({ shape, isSelected, isHovered, viewPlane, onClick, onHover
             e.stopPropagation();
             onHover(shape.id);
         },
-        [onHover, shape.id]
+        [onHover, shape.id],
     );
 
     const handlePointerOut = useCallback(
@@ -379,11 +388,16 @@ function Shape2DMesh({ shape, isSelected, isHovered, viewPlane, onClick, onHover
             e.stopPropagation();
             onHover(null);
         },
-        [onHover]
+        [onHover],
     );
 
     return (
-        <mesh position={position} onClick={handleClick} onPointerOver={handlePointerOver} onPointerOut={handlePointerOut}>
+        <mesh
+            position={position}
+            onClick={handleClick}
+            onPointerOver={handlePointerOver}
+            onPointerOut={handlePointerOut}
+        >
             <circleGeometry args={[0.5, 32]} />
             <meshStandardMaterial color={color} wireframe={isSelected || isHovered} />
         </mesh>
@@ -435,17 +449,17 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                        const firstPoint = points[0];
-                        switch (viewPlane) {
-                            case 'xy':
-                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                            case 'xz':
-                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                            case 'yz':
-                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                        }
-                    })()
-                    : new THREE.Vector3(0, 0, 0)
+                          const firstPoint = points[0];
+                          switch (viewPlane) {
+                              case 'xy':
+                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                              case 'xz':
+                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                              case 'yz':
+                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                          }
+                      })()
+                    : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
 
@@ -606,8 +620,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
+                    onClick={onPointClick || (() => {})}
+                    onHover={onPointHover || (() => {})}
                 />
             ))}
 
@@ -662,7 +676,11 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                     p: 3,
                 }}
             >
-                <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)' }}>
+                <Typography
+                    variant="h6"
+                    color="text.secondary"
+                    sx={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)' }}
+                >
                     No layout in the selected show folder.
                 </Typography>
             </Box>
@@ -701,16 +719,28 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                         WebkitUserSelect: 'none',
                     }}
                 >
-                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                    <Typography
+                        variant="caption"
+                        sx={{ fontWeight: 600, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                    >
                         Controls:
                     </Typography>
-                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                    <Typography
+                        variant="caption"
+                        sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                    >
                         🖱️ Left drag: Pan
                     </Typography>
-                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                    <Typography
+                        variant="caption"
+                        sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                    >
                         🖱️ Right drag: Pan
                     </Typography>
-                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                    <Typography
+                        variant="caption"
+                        sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                    >
                         🖱️ Scroll: Zoom
                     </Typography>
                 </Box>
@@ -771,10 +801,16 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             mouseButtons={{
                                 LEFT: THREE.MOUSE.PAN,
                                 MIDDLE: THREE.MOUSE.DOLLY,
-                                RIGHT: THREE.MOUSE.PAN
+                                RIGHT: THREE.MOUSE.PAN,
                             }}
                         />
-                        {showGrid && <Grid args={[200, 200]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
+                        {showGrid && (
+                            <Grid
+                                args={[200, 200]}
+                                cellColor={theme.palette.divider}
+                                sectionColor={theme.palette.text.secondary}
+                            />
+                        )}
                         <Scene2DContent
                             points={points}
                             shapes={shapes}
@@ -794,4 +830,3 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
         </Box>
     );
 };
-

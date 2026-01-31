@@ -151,7 +151,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 let modelItem: ModelItem | null = null;
                 const models = modelData?.metadata?.models as ModelItem[] | undefined;
                 if (Array.isArray(models)) {
-                    const modelInfo = models.find((m) => m && typeof m === 'object' && 'name' in m && (m as any).name === modelName);
+                    const modelInfo = models.find(
+                        (m) => m && typeof m === 'object' && 'name' in m && (m as any).name === modelName,
+                    );
                     if (modelInfo) {
                         modelItem = {
                             name: modelInfo.name,
@@ -228,7 +230,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 }
             }
         },
-        [modelData, selectedModelNames]
+        [modelData, selectedModelNames],
     );
 
     // Handle item hover
@@ -245,7 +247,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     if (selectionState.selectedIds.has(point.id)) {
                         const existingIndex = newColorData.findIndex((cd) => cd.pointId === point.id);
                         if (existingIndex >= 0) {
-                            newColorData[existingIndex] = { ...newColorData[existingIndex], color, timestamp: Date.now() };
+                            newColorData[existingIndex] = {
+                                ...newColorData[existingIndex],
+                                color,
+                                timestamp: Date.now(),
+                            };
                         } else {
                             newColorData.push({ pointId: point.id, color, timestamp: Date.now() });
                         }
@@ -260,22 +266,25 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 }
             }
         },
-        [selectionState.selectedIds, colorData, modelData, onColorDataUpdate]
+        [selectionState.selectedIds, colorData, modelData, onColorDataUpdate],
     );
 
     // Open color picker
-    const handleOpenColorPicker = useCallback((event: React.MouseEvent<HTMLElement>) => {
-        if (selectionState.selectedIds.size > 0) {
-            setColorPickerAnchor(event.currentTarget);
-            // Get current color of first selected point
-            const firstSelectedId = Array.from(selectionState.selectedIds)[0];
-            const pointColor = colorData.find((cd) => cd.pointId === firstSelectedId);
-            const modelPoint = modelData?.points.find((p) => p.id === firstSelectedId);
-            const currentColor = pointColor?.color || modelPoint?.color || '#ffffff';
-            setSelectedColor(currentColor);
-            setOriginalColor(currentColor);
-        }
-    }, [selectionState.selectedIds, colorData, modelData]);
+    const handleOpenColorPicker = useCallback(
+        (event: React.MouseEvent<HTMLElement>) => {
+            if (selectionState.selectedIds.size > 0) {
+                setColorPickerAnchor(event.currentTarget);
+                // Get current color of first selected point
+                const firstSelectedId = Array.from(selectionState.selectedIds)[0];
+                const pointColor = colorData.find((cd) => cd.pointId === firstSelectedId);
+                const modelPoint = modelData?.points.find((p) => p.id === firstSelectedId);
+                const currentColor = pointColor?.color || modelPoint?.color || '#ffffff';
+                setSelectedColor(currentColor);
+                setOriginalColor(currentColor);
+            }
+        },
+        [selectionState.selectedIds, colorData, modelData],
+    );
 
     // Close color picker (Cancel button will restore original color)
     const handleCloseColorPicker = useCallback(() => {
@@ -296,65 +305,67 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, []);
 
-
     // Handle model selection from dropdown
-    const handleModelSelect = useCallback((model: ModelItem | null) => {
-        if (!model) {
-            // Clear selection
-            setSelectedModelNames(new Set<string>());
-            setSelectedModelFromDropdown(null);
-            setSelectionState({
-                selectedIds: new Set<string>(),
-                hoveredId: null,
-            });
-            return;
-        }
-
-        // Check if this model is currently selected
-        const isCurrentlySelected = selectedModelNames.has(model.name);
-
-        if (isCurrentlySelected) {
-            // Deselect model
-            setSelectedModelNames((prev) => {
-                const newSelected = new Set(prev);
-                newSelected.delete(model.name);
-                return newSelected;
-            });
-            setSelectedModelFromDropdown(null);
-
-            // Deselect all points of this model
-            if (modelData) {
-                const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
-                const pointIds = new Set(modelPoints.map((p) => p.id));
-
-                setSelectionState((prev) => {
-                    const newSelectedIds = new Set(prev.selectedIds);
-                    pointIds.forEach((id) => newSelectedIds.delete(id));
-                    return {
-                        selectedIds: newSelectedIds,
-                        hoveredId: prev.hoveredId,
-                    };
+    const handleModelSelect = useCallback(
+        (model: ModelItem | null) => {
+            if (!model) {
+                // Clear selection
+                setSelectedModelNames(new Set<string>());
+                setSelectedModelFromDropdown(null);
+                setSelectionState({
+                    selectedIds: new Set<string>(),
+                    hoveredId: null,
                 });
+                return;
             }
-        } else {
-            // Select model (clear other selections first)
-            setSelectedModelNames(new Set([model.name]));
-            setSelectedModelFromDropdown(model);
 
-            // Select all points of this model
-            if (modelData) {
-                const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
-                const pointIds = new Set(modelPoints.map((p) => p.id));
+            // Check if this model is currently selected
+            const isCurrentlySelected = selectedModelNames.has(model.name);
 
-                setSelectionState((prev) => {
-                    return {
-                        selectedIds: new Set([...Array.from(pointIds)]),
-                        hoveredId: prev.hoveredId,
-                    };
+            if (isCurrentlySelected) {
+                // Deselect model
+                setSelectedModelNames((prev) => {
+                    const newSelected = new Set(prev);
+                    newSelected.delete(model.name);
+                    return newSelected;
                 });
+                setSelectedModelFromDropdown(null);
+
+                // Deselect all points of this model
+                if (modelData) {
+                    const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
+                    const pointIds = new Set(modelPoints.map((p) => p.id));
+
+                    setSelectionState((prev) => {
+                        const newSelectedIds = new Set(prev.selectedIds);
+                        pointIds.forEach((id) => newSelectedIds.delete(id));
+                        return {
+                            selectedIds: newSelectedIds,
+                            hoveredId: prev.hoveredId,
+                        };
+                    });
+                }
+            } else {
+                // Select model (clear other selections first)
+                setSelectedModelNames(new Set([model.name]));
+                setSelectedModelFromDropdown(model);
+
+                // Select all points of this model
+                if (modelData) {
+                    const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
+                    const pointIds = new Set(modelPoints.map((p) => p.id));
+
+                    setSelectionState((prev) => {
+                        return {
+                            selectedIds: new Set([...Array.from(pointIds)]),
+                            hoveredId: prev.hoveredId,
+                        };
+                    });
+                }
             }
-        }
-    }, [modelData, selectedModelNames]);
+        },
+        [modelData, selectedModelNames],
+    );
 
     // Animate colors (simulate incoming data) - only if enabled
     useEffect(() => {
@@ -388,7 +399,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     useEffect(() => {
         try {
             const canvas = document.createElement('canvas');
-            const gl = canvas.getContext('webgl') || canvas.getContext('webgl2') || canvas.getContext('experimental-webgl');
+            const gl =
+                canvas.getContext('webgl') || canvas.getContext('webgl2') || canvas.getContext('experimental-webgl');
             if (gl) {
                 setWebglSupported(true);
             } else {
@@ -438,7 +450,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         WebGL Not Supported
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        {webglError || 'WebGL is required to display 3D content but is not available in this environment.'}
+                        {webglError ||
+                            'WebGL is required to display 3D content but is not available in this environment.'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                         In Electron, ensure WebGL is enabled in webPreferences.
@@ -512,7 +525,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         alignItems: 'center',
                         gap: 2,
                         borderBottom: `1px solid ${theme.palette.divider}`,
-                        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
+                        backgroundColor:
+                            theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
                         zIndex: 100,
                         flexShrink: 0,
                         position: 'relative',
@@ -637,7 +651,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     {/* Color Offset Control */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 200 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                        <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}
+                        >
                             Color Offset:
                         </Typography>
                         <Slider
@@ -719,12 +737,21 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                             horizontal: 'left',
                                         }}
                                     >
-                                        <Box sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 300 }}>
+                                        <Box
+                                            sx={{
+                                                p: 2.5,
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 2,
+                                                minWidth: 300,
+                                            }}
+                                        >
                                             <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
                                                 Change Point Color
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                {selectionState.selectedIds.size} point{selectionState.selectedIds.size !== 1 ? 's' : ''} selected
+                                                {selectionState.selectedIds.size} point
+                                                {selectionState.selectedIds.size !== 1 ? 's' : ''} selected
                                             </Typography>
                                             <TextField
                                                 type="color"
@@ -753,7 +780,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                                 helperText="Enter hex color code (e.g., #ff0000 for red)"
                                             />
                                             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                                                <Button variant="outlined" onClick={handleCloseColorPicker} sx={{ flex: 1 }}>
+                                                <Button
+                                                    variant="outlined"
+                                                    onClick={handleCloseColorPicker}
+                                                    sx={{ flex: 1 }}
+                                                >
                                                     Cancel
                                                 </Button>
                                                 <Button
@@ -838,7 +869,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             display: 'flex',
                             flexDirection: 'column',
                             borderLeft: `1px solid ${theme.palette.divider}`,
-                            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
+                            backgroundColor:
+                                theme.palette.mode === 'dark'
+                                    ? theme.palette.grey[900]
+                                    : theme.palette.background.paper,
                             overflow: 'hidden',
                         }}
                     >
@@ -849,7 +883,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 borderBottom: `1px solid ${theme.palette.divider}`,
-                                backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[50],
+                                backgroundColor:
+                                    theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[50],
                                 flexShrink: 0,
                             }}
                         >
@@ -872,4 +907,3 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         </Box>
     );
 };
-

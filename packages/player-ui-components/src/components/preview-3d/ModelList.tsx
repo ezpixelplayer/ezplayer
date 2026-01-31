@@ -97,9 +97,7 @@ export const ModelList: React.FC<ModelListProps> = ({
         }
 
         const query = searchQuery.toLowerCase();
-        return allModels.filter((model) =>
-            model.name.toLowerCase().includes(query)
-        );
+        return allModels.filter((model) => model.name.toLowerCase().includes(query));
     }, [allModels, searchQuery]);
 
     // Calculate point count for a model
@@ -149,7 +147,7 @@ export const ModelList: React.FC<ModelListProps> = ({
             const itemHeight = item.clientHeight;
 
             // Calculate the desired scroll position to center the item
-            const targetScrollTop = itemOffsetTop - (containerHeight / 2) + (itemHeight / 2);
+            const targetScrollTop = itemOffsetTop - containerHeight / 2 + itemHeight / 2;
 
             // Smooth scroll to the selected item
             container.scrollTo({
@@ -160,7 +158,10 @@ export const ModelList: React.FC<ModelListProps> = ({
     }, [selectedModelName, filteredModels]);
 
     return (
-        <Box className={className} sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <Box
+            className={className}
+            sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
+        >
             {/* Fixed Header Section */}
             <Box
                 sx={{
@@ -175,7 +176,7 @@ export const ModelList: React.FC<ModelListProps> = ({
                     <ViewInArIcon
                         sx={{
                             fontSize: 20,
-                            color: theme.palette.primary.main
+                            color: theme.palette.primary.main,
                         }}
                     />
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
@@ -235,13 +236,16 @@ export const ModelList: React.FC<ModelListProps> = ({
                         width: 8,
                     },
                     '&::-webkit-scrollbar-track': {
-                        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[200],
+                        backgroundColor:
+                            theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[200],
                     },
                     '&::-webkit-scrollbar-thumb': {
-                        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[600] : theme.palette.grey[400],
+                        backgroundColor:
+                            theme.palette.mode === 'dark' ? theme.palette.grey[600] : theme.palette.grey[400],
                         borderRadius: 4,
                         '&:hover': {
-                            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[500] : theme.palette.grey[500],
+                            backgroundColor:
+                                theme.palette.mode === 'dark' ? theme.palette.grey[500] : theme.palette.grey[500],
                         },
                     },
                 }}
@@ -251,7 +255,11 @@ export const ModelList: React.FC<ModelListProps> = ({
                         <ListItem>
                             <ListItemText
                                 primary={
-                                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        sx={{ textAlign: 'center', py: 2 }}
+                                    >
                                         No models found
                                     </Typography>
                                 }
@@ -274,13 +282,13 @@ export const ModelList: React.FC<ModelListProps> = ({
                                             backgroundColor: isSelected
                                                 ? theme.palette.primary.main + '15'
                                                 : isHovered
-                                                    ? alpha(theme.palette.primary.light, 0.2)
-                                                    : 'transparent',
+                                                  ? alpha(theme.palette.primary.light, 0.2)
+                                                  : 'transparent',
                                             borderLeft: isSelected
                                                 ? `4px solid ${theme.palette.primary.main}`
                                                 : isHovered
-                                                    ? `4px solid ${theme.palette.divider}`
-                                                    : '4px solid transparent',
+                                                  ? `4px solid ${theme.palette.divider}`
+                                                  : '4px solid transparent',
                                             transition: 'all 0.2s ease',
                                         }}
                                     >
@@ -322,8 +330,22 @@ export const ModelList: React.FC<ModelListProps> = ({
                                                     </Typography>
                                                 }
                                                 secondary={
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.5 }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                                    <Box
+                                                        sx={{
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: 0.5,
+                                                            mt: 0.5,
+                                                        }}
+                                                    >
+                                                        <Box
+                                                            sx={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 1,
+                                                                flexWrap: 'wrap',
+                                                            }}
+                                                        >
                                                             <Typography
                                                                 variant="caption"
                                                                 color="text.secondary"
@@ -333,8 +355,16 @@ export const ModelList: React.FC<ModelListProps> = ({
                                                             </Typography>
                                                             {model.pixelSize && (
                                                                 <>
-                                                                    <Typography variant="caption" color="text.secondary">•</Typography>
-                                                                    <Typography variant="caption" color="text.secondary">
+                                                                    <Typography
+                                                                        variant="caption"
+                                                                        color="text.secondary"
+                                                                    >
+                                                                        •
+                                                                    </Typography>
+                                                                    <Typography
+                                                                        variant="caption"
+                                                                        color="text.secondary"
+                                                                    >
                                                                         Size: {model.pixelSize}
                                                                     </Typography>
                                                                 </>
@@ -348,9 +378,10 @@ export const ModelList: React.FC<ModelListProps> = ({
                                                                     height: 18,
                                                                     fontSize: '0.65rem',
                                                                     alignSelf: 'flex-start',
-                                                                    backgroundColor: theme.palette.mode === 'dark'
-                                                                        ? theme.palette.grey[700]
-                                                                        : theme.palette.grey[200],
+                                                                    backgroundColor:
+                                                                        theme.palette.mode === 'dark'
+                                                                            ? theme.palette.grey[700]
+                                                                            : theme.palette.grey[200],
                                                                     color: theme.palette.text.secondary,
                                                                 }}
                                                             />
@@ -407,4 +438,3 @@ export const ModelList: React.FC<ModelListProps> = ({
         </Box>
     );
 };
-

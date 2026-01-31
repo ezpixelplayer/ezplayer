@@ -74,4 +74,3 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
         </Box>
     );
 };
-

@@ -7,9 +7,7 @@ import {
     // Tooltip,
     useTheme,
 } from '@mui/material';
-import {
-    Box
-} from '../box/Box'
+import { Box } from '../box/Box';
 // import MenuTwoToneIcon from '@mui/icons-material/MenuTwoTone';
 // import { SidebarContext } from '@ezplayer/shared-ui-components';
 // import CloseTwoToneIcon from '@mui/icons-material/CloseTwoTone';

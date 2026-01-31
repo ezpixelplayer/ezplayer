@@ -8,9 +8,7 @@ import type { Model3DData, Point3D } from '../types/model3d';
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
  * This function handles the structure returned by xllayoutcalcs getModelCoordinates
  */
-export function convertXmlCoordinatesToModel3D(
-    xmlCoordinates: Record<string, unknown>,
-): Model3DData {
+export function convertXmlCoordinatesToModel3D(xmlCoordinates: Record<string, unknown>): Model3DData {
     const allPoints: Point3D[] = [];
     const modelMetadata: Array<{ name: string; pointCount: number; startIndex: number; endIndex: number }> = [];
 
@@ -146,7 +144,6 @@ export function convertXmlCoordinatesToModel3D(
         },
     };
 }
-
 
 /**
  * Helper function to check the data source of a Model3DData object

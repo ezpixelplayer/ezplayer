@@ -9,7 +9,7 @@ import { getHeapStatistics } from 'node:v8';
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
 
-const samplesPerAudioChunk = 256*1024; // A bit over 5 seconds
+const samplesPerAudioChunk = 256 * 1024; // A bit over 5 seconds
 
 class ListPool {
     private list: ArrayBuffer[] = [];
@@ -22,7 +22,7 @@ class ListPool {
     }
 
     give(item: ArrayBuffer) {
-        if (item.detached) throw new TypeError("Should not be returning a detached buffer");
+        if (item.detached) throw new TypeError('Should not be returning a detached buffer');
         this.list.push(item);
     }
 
@@ -44,7 +44,7 @@ function getAudioReserveDur() {
 
 function getOrAllocate() {
     const e = pool.take();
-    if (e?.detached) throw new TypeError("Buffer should not have been detached while on freelist");
+    if (e?.detached) throw new TypeError('Buffer should not have been detached while on freelist');
     if (e) return e;
     return new ArrayBuffer(samplesPerAudioChunk * 4);
 }
@@ -55,16 +55,19 @@ function reservationTooSmall() {
 function makeAllocation(durationSec: number): Float32Array<ArrayBuffer>[] {
     const nChunks = Math.ceil(durationSec / 5) || 1;
     const res: Float32Array<ArrayBuffer>[] = [];
-    for (let i=0; i<nChunks; ++i) {
+    for (let i = 0; i < nChunks; ++i) {
         res.push(new Float32Array(getOrAllocate()));
     }
     return res;
 }
 
-function trimAllocation(inbufs: Float32Array<ArrayBuffer>[], wcChunk: number, wcSamp: number): Float32Array<ArrayBuffer>[]
-{
+function trimAllocation(
+    inbufs: Float32Array<ArrayBuffer>[],
+    wcChunk: number,
+    wcSamp: number,
+): Float32Array<ArrayBuffer>[] {
     const nKeep = wcSamp === 0 ? wcChunk : wcChunk + 1;
-    for (let i=nKeep; i<inbufs.length; ++i) pool.give(inbufs[i].buffer);
+    for (let i = nKeep; i < inbufs.length; ++i) pool.give(inbufs[i].buffer);
     return inbufs.slice(0, nKeep);
 }
 
@@ -182,10 +185,7 @@ parentPort.on('message', async (msg: DecodeReq) => {
                 const sendl = trimAllocation(lsamp, res.endAt.chunkIndex, res.endAt.chunkOffset);
                 const sendr = trimAllocation(rsamp, res.endAt.chunkIndex, res.endAt.chunkOffset);
                 const mrv = {
-                    channelData: [
-                        sendl,
-                        sendr,
-                    ],
+                    channelData: [sendl, sendr],
                     sampleRate: res.sampleRate,
                     nSamples: res.samplesDecoded,
                 };
@@ -199,7 +199,7 @@ parentPort.on('message', async (msg: DecodeReq) => {
                         decodeTime,
                         kind: 'decoded',
                     },
-                    [...sendl.map((b)=>b.buffer), ...sendr.map((b)=>b.buffer)],
+                    [...sendl.map((b) => b.buffer), ...sendr.map((b) => b.buffer)],
                 );
                 return;
             }

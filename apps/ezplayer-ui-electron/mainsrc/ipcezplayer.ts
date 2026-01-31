@@ -348,7 +348,7 @@ export async function registerContentHandlers(
         if (!playWorker || !rpcc) {
             return {};
         }
-        
+
         try {
             const coords = await rpcc.call('getModelCoordinates', {});
             return coords;

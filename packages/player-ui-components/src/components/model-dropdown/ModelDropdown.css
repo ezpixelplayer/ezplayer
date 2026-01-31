@@ -1,185 +1,184 @@
 .model-dropdown {
-  position: relative;
-  width: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+    position: relative;
+    width: 100%;
+    font-family:
+        -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans',
+        'Droid Sans', 'Helvetica Neue', sans-serif;
 }
 
 .model-dropdown--disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .model-dropdown__trigger {
-  width: 100%;
-  padding: 12px 16px;
-  background-color: #ffffff;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #333333;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  transition: all 0.2s ease;
-  outline: none;
+    width: 100%;
+    padding: 12px 16px;
+    background-color: #ffffff;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #333333;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+    outline: none;
 }
 
 .model-dropdown__trigger:hover:not(:disabled) {
-  border-color: #4a90e2;
-  background-color: #f8fbff;
+    border-color: #4a90e2;
+    background-color: #f8fbff;
 }
 
 .model-dropdown__trigger:focus:not(:disabled) {
-  border-color: #4a90e2;
-  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
 }
 
 .model-dropdown__trigger--open {
-  border-color: #4a90e2;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+    border-color: #4a90e2;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
 }
 
 .model-dropdown__trigger:disabled {
-  cursor: not-allowed;
-  background-color: #f5f5f5;
+    cursor: not-allowed;
+    background-color: #f5f5f5;
 }
 
 .model-dropdown__trigger-text {
-  flex: 1;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: inherit;
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: inherit;
 }
 
 .model-dropdown__trigger:disabled .model-dropdown__trigger-text {
-  color: #999999;
+    color: #999999;
 }
 
 .model-dropdown__arrow {
-  margin-left: 12px;
-  flex-shrink: 0;
-  transition: transform 0.2s ease;
-  color: #666666;
+    margin-left: 12px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+    color: #666666;
 }
 
 .model-dropdown__arrow--open {
-  transform: rotate(180deg);
+    transform: rotate(180deg);
 }
 
 .model-dropdown__list-container {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background-color: #ffffff;
-  border: 2px solid #4a90e2;
-  border-top: none;
-  border-bottom-left-radius: 8px;
-  border-bottom-right-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  overflow-y: auto;
-  overflow-x: hidden;
-  animation: slideDown 0.2s ease;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: #ffffff;
+    border: 2px solid #4a90e2;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    overflow-y: auto;
+    overflow-x: hidden;
+    animation: slideDown 0.2s ease;
 }
 
 @keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Custom scrollbar styles */
 .model-dropdown__list-container::-webkit-scrollbar {
-  width: 8px;
+    width: 8px;
 }
 
 .model-dropdown__list-container::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-bottom-right-radius: 8px;
+    background: #f1f1f1;
+    border-bottom-right-radius: 8px;
 }
 
 .model-dropdown__list-container::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
+    background: #c1c1c1;
+    border-radius: 4px;
 }
 
 .model-dropdown__list-container::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+    background: #a1a1a1;
 }
 
 /* Firefox scrollbar */
 .model-dropdown__list-container {
-  scrollbar-width: thin;
-  scrollbar-color: #c1c1c1 #f1f1f1;
+    scrollbar-width: thin;
+    scrollbar-color: #c1c1c1 #f1f1f1;
 }
 
 .model-dropdown__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
 
 .model-dropdown__item {
-  padding: 12px 16px;
-  font-size: 14px;
-  color: #333333;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  outline: none;
-  border-bottom: 1px solid #f0f0f0;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: #333333;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    outline: none;
+    border-bottom: 1px solid #f0f0f0;
 }
 
 .model-dropdown__item:last-child {
-  border-bottom: none;
+    border-bottom: none;
 }
 
 .model-dropdown__item:hover {
-  background-color: #f0f7ff;
+    background-color: #f0f7ff;
 }
 
 .model-dropdown__item:focus {
-  background-color: #e6f2ff;
-  box-shadow: inset 0 0 0 2px #4a90e2;
+    background-color: #e6f2ff;
+    box-shadow: inset 0 0 0 2px #4a90e2;
 }
 
 .model-dropdown__item--selected {
-  background-color: #4a90e2;
-  color: #ffffff;
-  font-weight: 600;
+    background-color: #4a90e2;
+    color: #ffffff;
+    font-weight: 600;
 }
 
 .model-dropdown__item--selected:hover {
-  background-color: #3a7bc8;
+    background-color: #3a7bc8;
 }
 
 .model-dropdown__item--selected:focus {
-  background-color: #3a7bc8;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3);
+    background-color: #3a7bc8;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3);
 }
 
 /* Responsive styles */
 @media (max-width: 768px) {
-  .model-dropdown__trigger {
-    padding: 10px 14px;
-    font-size: 13px;
-  }
+    .model-dropdown__trigger {
+        padding: 10px 14px;
+        font-size: 13px;
+    }
 
-  .model-dropdown__item {
-    padding: 10px 14px;
-    font-size: 13px;
-  }
+    .model-dropdown__item {
+        padding: 10px 14px;
+        font-size: 13px;
+    }
 }
-

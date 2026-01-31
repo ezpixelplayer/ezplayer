@@ -90,7 +90,7 @@ function ShapeMesh({ shape, isSelected, isHovered, onClick, onHover }: ShapeMesh
             e.stopPropagation();
             onClick(shape.id);
         },
-        [onClick, shape.id]
+        [onClick, shape.id],
     );
 
     const handlePointerOver = useCallback(
@@ -98,7 +98,7 @@ function ShapeMesh({ shape, isSelected, isHovered, onClick, onHover }: ShapeMesh
             e.stopPropagation();
             onHover(shape.id);
         },
-        [onHover, shape.id]
+        [onHover, shape.id],
     );
 
     const handlePointerOut = useCallback(
@@ -106,7 +106,7 @@ function ShapeMesh({ shape, isSelected, isHovered, onClick, onHover }: ShapeMesh
             e.stopPropagation();
             onHover(null);
         },
-        [onHover]
+        [onHover],
     );
 
     return (
@@ -192,7 +192,7 @@ function OptimizedPointCloud({
             selectedPoints: selected,
             nonSelectedPoints: nonSelected,
             selectedOriginalIndices: selectedIndices,
-            nonSelectedOriginalIndices: nonSelectedIndices
+            nonSelectedOriginalIndices: nonSelectedIndices,
         };
     }, [points, selectedIds, selectedModelNames]);
 
@@ -250,7 +250,15 @@ function OptimizedPointCloud({
         });
 
         return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, selectedModelNames, colorStartOffset, selectedOriginalIndices, points.length]);
+    }, [
+        selectedPoints,
+        selectedIds,
+        hoveredId,
+        selectedModelNames,
+        colorStartOffset,
+        selectedOriginalIndices,
+        points.length,
+    ]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {
@@ -288,7 +296,7 @@ function OptimizedPointCloud({
         (
             geometryRef: React.MutableRefObject<THREE.BufferGeometry | null>,
             positions: Float32Array,
-            colors: Uint8Array
+            colors: Uint8Array,
         ): THREE.BufferGeometry => {
             const pointCount = positions.length / 3;
             const existing = geometryRef.current;
@@ -331,7 +339,7 @@ function OptimizedPointCloud({
             geometryRef.current = geometry;
             return geometry;
         },
-        []
+        [],
     );
 
     // Keep BufferGeometry instances stable and update their attributes in-place when data changes.
@@ -340,7 +348,7 @@ function OptimizedPointCloud({
         return createOrUpdateBufferGeometry(
             selectedBufferGeometryRef,
             selectedGeometry.positions,
-            selectedGeometry.colors
+            selectedGeometry.colors,
         );
     }, [selectedGeometry, createOrUpdateBufferGeometry]);
 
@@ -349,7 +357,7 @@ function OptimizedPointCloud({
         return createOrUpdateBufferGeometry(
             nonSelectedBufferGeometryRef,
             nonSelectedGeometry.positions,
-            nonSelectedGeometry.colors
+            nonSelectedGeometry.colors,
         );
     }, [nonSelectedGeometry, createOrUpdateBufferGeometry]);
 
@@ -593,7 +601,7 @@ function ClickHandler({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? new THREE.Vector3(points[0].x, points[0].y, points[0].z)
-                    : new THREE.Vector3(0, 0, 0)
+                    : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
 
@@ -693,8 +701,8 @@ function SceneContent({
                     shape={shape}
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
+                    onClick={onPointClick || (() => {})}
+                    onHover={onPointHover || (() => {})}
                 />
             ))}
 
@@ -749,7 +757,11 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     p: 3,
                 }}
             >
-                <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)' }}>
+                <Typography
+                    variant="h6"
+                    color="text.secondary"
+                    sx={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)' }}
+                >
                     No layout in the selected show folder.
                 </Typography>
             </Box>
@@ -787,16 +799,28 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     WebkitUserSelect: 'none',
                 }}
             >
-                <Typography variant="caption" sx={{ fontWeight: 600, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                <Typography
+                    variant="caption"
+                    sx={{ fontWeight: 600, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
                     Controls:
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                <Typography
+                    variant="caption"
+                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
                     🖱️ Left drag: Rotate
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                <Typography
+                    variant="caption"
+                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
                     🖱️ Right drag: Pan
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                <Typography
+                    variant="caption"
+                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
                     🖱️ Scroll: Zoom
                 </Typography>
             </Box>
@@ -861,14 +885,20 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             mouseButtons={{
                                 LEFT: THREE.MOUSE.ROTATE,
                                 MIDDLE: THREE.MOUSE.DOLLY,
-                                RIGHT: THREE.MOUSE.PAN
+                                RIGHT: THREE.MOUSE.PAN,
                             }}
                             touches={{
                                 ONE: THREE.TOUCH.ROTATE,
-                                TWO: THREE.TOUCH.DOLLY_PAN
+                                TWO: THREE.TOUCH.DOLLY_PAN,
                             }}
                         />
-                        {showGrid && <Grid args={[200, 200]} cellColor={theme.palette.divider} sectionColor={theme.palette.text.secondary} />}
+                        {showGrid && (
+                            <Grid
+                                args={[200, 200]}
+                                cellColor={theme.palette.divider}
+                                sectionColor={theme.palette.text.secondary}
+                            />
+                        )}
                         <SceneContent
                             points={points}
                             shapes={shapes}
@@ -888,4 +918,3 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
         </Box>
     );
 };
-

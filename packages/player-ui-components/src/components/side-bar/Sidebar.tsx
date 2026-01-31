@@ -2,7 +2,7 @@ import { ReactNode, useContext } from 'react';
 import { Scrollbar } from '@ezplayer/shared-ui-components';
 import { SidebarContext } from '@ezplayer/shared-ui-components';
 import { Drawer, Divider, useTheme, useMediaQuery, Stack } from '@mui/material';
-import { Box } from '../box/Box'
+import { Box } from '../box/Box';
 
 import { SidebarMenu } from './sidebar-menu/SidebarMenu';
 

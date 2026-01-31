@@ -12,7 +12,7 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ### Who Should Use EZPlayer?
 
-We anticipate that EZPlayer will be usable in mid-2026 for 4th of July shows.  In addition to the handful of shows that successfully ran the pre-alpha versions of EZPlayer in October-December 2025, there is a lab setup where ongoing work is being tested.  We welcome additional early testers!
+We anticipate that EZPlayer will be usable in mid-2026 for 4th of July shows. In addition to the handful of shows that successfully ran the pre-alpha versions of EZPlayer in October-December 2025, there is a lab setup where ongoing work is being tested. We welcome additional early testers!
 
 Currently, EZPlayer supports a subset of what xSchedule supports:
 
@@ -28,6 +28,7 @@ Currently, EZPlayer supports a subset of what xSchedule supports:
 - Volume control automation
 
 We are currently enhancing:
+
 - Live view
 - Control panel
 - Controller status ping
@@ -117,7 +118,7 @@ Despite that broad scope, we want to avoid the complexity that currently plagues
 
 ### What Is The Relationship To EZRGB?
 
-EZPlayer is developed in part by [EZRGB](https://ezrgb.com/).  EZRGB feels that the community should have a PC-based player that is easy to use, and will host cloud-based playback functionality for future EZPlayer releases.
+EZPlayer is developed in part by [EZRGB](https://ezrgb.com/). EZRGB feels that the community should have a PC-based player that is easy to use, and will host cloud-based playback functionality for future EZPlayer releases.
 
 ---
 

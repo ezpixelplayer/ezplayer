@@ -25,11 +25,11 @@ const ERROR_PAGE = import('../modules/ErrorPage/ErrorPage');
 
 const Loader =
     <P extends object>(Component: ComponentType<P>) =>
-        (props: P) => (
-            <Suspense fallback={<SuspenseLoader />}>
-                <Component {...props} />
-            </Suspense>
-        );
+    (props: P) => (
+        <Suspense fallback={<SuspenseLoader />}>
+            <Component {...props} />
+        </Suspense>
+    );
 
 // Pages
 const ErrorPage = Loader(lazy(() => ERROR_PAGE));

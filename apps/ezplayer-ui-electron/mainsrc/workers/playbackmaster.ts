@@ -42,9 +42,7 @@ import {
     loadXmlFile,
 } from '@ezplayer/epp';
 
-import {
-    getModelCoordinates,
-} from 'xllayoutcalcs';
+import { getModelCoordinates } from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -453,7 +451,7 @@ parentPort.on('message', (command: PlayerCommand) => {
             if (command.showFolder && command.showFolder !== '<no show folder yet>') {
                 const oldShowFolder = showFolder;
                 showFolder = command.showFolder;
-                
+
                 // Load XML coordinates immediately when show folder is set
                 if (showFolder !== oldShowFolder) {
                     loadXmlCoordinates().catch((err) => {
@@ -686,7 +684,7 @@ async function loadXmlCoordinates() {
     }
 
     const xmlPath = path.join(showFolder, `xlights_rgbeffects.xml`);
-    
+
     let xrgb;
     try {
         xrgb = await loadXmlFile(xmlPath);
@@ -696,17 +694,17 @@ async function loadXmlCoordinates() {
     }
 
     modelCoordinates = new Map<string, unknown>();
-    
+
     if (xrgb) {
         if (xrgb.documentElement.tagName !== 'xrgb') {
             emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
         } else {
             try {
                 const xmodels = getElementByTag(xrgb.documentElement, 'models');
-                
+
                 let activeModelCount = 0;
                 let processedModelCount = 0;
-                
+
                 for (let im = 0; im < xmodels.childNodes.length; ++im) {
                     const n = xmodels.childNodes[im];
                     if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
@@ -715,13 +713,13 @@ async function loadXmlCoordinates() {
 
                     const name = getAttrDef(model, 'name', '');
                     const active = getBoolAttrDef(model, 'Active', true);
-                    
+
                     processedModelCount++;
-                    
+
                     if (!active) {
                         continue;
                     }
-                    
+
                     activeModelCount++;
                     try {
                         const nr3d = getModelCoordinates(model, false);
@@ -732,7 +730,7 @@ async function loadXmlCoordinates() {
                         emitError(`[loadXmlCoordinates] Error extracting coordinates for "${name}": ${coordErr}`);
                     }
                 }
-                
+
                 emitInfo(`[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with coordinates`);
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
@@ -748,7 +746,7 @@ async function processQueue() {
     if (!showFolder && pendingSchedule?.type === 'schedupdate') {
         showFolder = pendingSchedule.showFolder;
     }
-    
+
     if (!showFolder) {
         emitError(`[processQueue] showFolder is not set! Cannot proceed.`);
         return;
@@ -1197,7 +1195,7 @@ async function processQueue() {
                                 sampleOffset,
                                 nSamples: nSamplesToSend,
                                 volumeSF,
-                            })
+                            });
 
                             const playAtRealTime = Math.floor(
                                 audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0),
