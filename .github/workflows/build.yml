@@ -23,7 +23,6 @@ jobs:
 
             # Use Python 3.11 only on macOS to satisfy node-gyp/gyp's distutils import
             - name: Set up Python (macOS)
-              if: matrix.os == 'macos-latest'
               uses: actions/setup-python@v5
               with:
                   python-version: '3.11'
