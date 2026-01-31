@@ -12,9 +12,7 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ### Who Should Use EZPlayer?
 
-Nobody ☺️. At the time of the latest update of this README, it is already mid-November and the quality of EZPlayer is pre-alpha. If you already have a working player ([FPP](https://github.com/FalconChristmas/fpp) or [xSchedule](https://xlights.org/)) you should keep using what works. (This player is only known to have been used in two live shows so far, and has only been tested up to 1M channels at 100FPS.)
-
-That said, if you are up for an adventure and would like to help improve EZPlayer so that it is ready for use in future years, you are welcome to experiment with it.
+We anticipate that EZPlayer will be usable in mid-2026 for 4th of July shows.  In addition to the handful of shows that successfully ran the pre-alpha versions of EZPlayer in October-December 2025, there is a lab setup where ongoing work is being tested.  We welcome additional early testers!
 
 Currently, EZPlayer supports a subset of what xSchedule supports:
 
@@ -25,18 +23,21 @@ Currently, EZPlayer supports a subset of what xSchedule supports:
 - A jukebox view of songs to choose from
 - A variety of status screens
 - Remote Falcon
+- Local Web UI
+- Background sequence
+- Volume control automation
+
+We are currently enhancing:
+- Live view
+- Control panel
+- Controller status ping
+- [Background blending and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
 
 It doesn't support (and won't soon support):
 
 - USB controllers
 - Master/Remote show designs
 - HDMI video playback
-
-We do hope to have support for the following at some point in the 2025 season, as these are in active development:
-
-- Local Web UI
-- Background sequence
-- Volume control automation
 
 ### Download Prebuilt Releases
 
@@ -70,7 +71,6 @@ Return to the "Player" screen, which will give you a summary of what is going an
 ### Known Issues
 
 Sometimes you have to restart the player to get it to do what it is supposed to.
-For smooth playback, start EZPlayer before the show, so it can preload all the audio in the schedule.
 EZPlayer does not do well with missing files. Don't remove anything.
 
 ### Connecting With Us
@@ -114,6 +114,10 @@ Despite that broad scope, we want to avoid the complexity that currently plagues
 - Cape support (this is a player, not a controller firmware)
 - All the complexity and limitations of anything like FPP connect
 - A complex plugin architecture
+
+### What Is The Relationship To EZRGB?
+
+EZPlayer is developed in part by [EZRGB](https://ezrgb.com/).  EZRGB feels that the community should have a PC-based player that is easy to use, and will host cloud-based playback functionality for future EZPlayer releases.
 
 ---
 

@@ -16,7 +16,7 @@ import {
     updatePlaylistsHandler,
     updateScheduleHandler,
 } from './ipcezplayer.js';
-import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
 import Router from '@koa/router';
 import { send } from '@koa/send';
 import serve from 'koa-static';
@@ -208,7 +208,7 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
             }
             const showFolder = getCurrentShowFolder();
             if (showFolder) {
-                applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+                applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings as PlaybackSettings);
             }
             if (playWorker) {
                 playWorker.postMessage({
@@ -217,7 +217,7 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
                 });
             }
             mainWindow?.webContents?.send('update:playbacksettings', settings);
-            wsBroadcaster.set('playbackSettings', settings);
+            wsBroadcaster.set('playbackSettings', settings as PlaybackSettings);
 
             ctx.body = { success: true };
         } catch (error) {
