@@ -3,16 +3,15 @@
  */
 
 export interface ModelPointMetadata {
-    modelName ?: string;
-    modelIndex ?: number;
-    nodeIndex ?: number;
-    coordIndex ?: number;
-    key ?: string;
-    itemIndex ?: number;
+    modelName?: string;
+    modelIndex?: number;
+    nodeIndex?: number;
+    coordIndex?: number;
+    key?: string;
+    itemIndex?: number;
 }
 
-export interface ModelShapeMetadata {
-}
+export interface ModelShapeMetadata {}
 
 export interface ModelMetadata {
     name: string;
@@ -25,12 +24,12 @@ export interface ModelMetadata {
 }
 
 export interface ModelSetMetadata {
-    source?: string;
+    source?: 'xml' | 'default' | 'unknown';
     dataSource?: string;
     totalModels: number;
     models: ModelMetadata[];
     description: string;
- }
+}
 
 export interface Point3D {
     id: string;

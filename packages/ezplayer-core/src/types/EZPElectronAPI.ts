@@ -46,7 +46,7 @@ export interface FileSelectOptions {
 export interface NodeCoord {
     // For default / logical render buffer
     //  This ought to be a separate concern really...
-    //  Other things can be determined by ordinal number or 
+    //  Other things can be determined by ordinal number or
     bufX: number;
     bufY: number;
     bufZ: number;

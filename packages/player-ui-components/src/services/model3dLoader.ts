@@ -70,34 +70,3 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
         },
     };
 }
-
-/**
- * Helper function to check the data source of a Model3DData object
- * @param modelData - The Model3DData object to check
- * @returns Object with source information
- */
-export function getModelDataSource(modelData: Model3DData | null | undefined): {
-    source: 'xml' | 'default' | 'unknown';
-    dataSource: string;
-    isXml: boolean;
-    isDefault: boolean;
-} {
-    if (!modelData || !modelData.metadata) {
-        return {
-            source: 'unknown',
-            dataSource: 'unknown',
-            isXml: false,
-            isDefault: false,
-        };
-    }
-
-    const source = (modelData.metadata.source as string) || 'unknown';
-    const dataSource = (modelData.metadata.dataSource as string) || 'unknown';
-
-    return {
-        source: source as 'xml' | 'default' | 'unknown',
-        dataSource,
-        isXml: source === 'xml',
-        isDefault: source === 'default',
-    };
-}
