@@ -74,7 +74,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         hoveredId: null,
     });
     const [colorData, setColorData] = useState<PointColorData[]>(externalColorData || []);
-    const [colorPickerAnchor, setColorPickerAnchor] = useState<HTMLElement | null>(null);
     const [selectedColor, setSelectedColor] = useState<string>('#ffffff');
     const [originalColor, setOriginalColor] = useState<string>('#ffffff');
     const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelMetadata | null>(null);
@@ -229,65 +228,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const handleItemHover = useCallback((itemId: string | null) => {
         setSelectionState((prev) => ({ ...prev, hoveredId: itemId }));
     }, []);
-
-    // Apply color to selected points (only called when Apply button is clicked)
-    const handleApplyColor = useCallback(
-        (color: string) => {
-            if (selectionState.selectedIds.size > 0 && modelData) {
-                const newColorData: PointColorData[] = [...colorData];
-                const updatedPoints = modelData.points.map((point) => {
-                    if (selectionState.selectedIds.has(point.id)) {
-                        const existingIndex = newColorData.findIndex((cd) => cd.pointId === point.id);
-                        if (existingIndex >= 0) {
-                            newColorData[existingIndex] = {
-                                ...newColorData[existingIndex],
-                                color,
-                            };
-                        } else {
-                            newColorData.push({ pointId: point.id, color });
-                        }
-                        return { ...point, color };
-                    }
-                    return point;
-                });
-                setModelData({ ...modelData, points: updatedPoints });
-                setColorData(newColorData);
-                if (onColorDataUpdate) {
-                    onColorDataUpdate(newColorData);
-                }
-            }
-        },
-        [selectionState.selectedIds, colorData, modelData, onColorDataUpdate],
-    );
-
-    // Open color picker
-    const handleOpenColorPicker = useCallback(
-        (event: React.MouseEvent<HTMLElement>) => {
-            if (selectionState.selectedIds.size > 0) {
-                setColorPickerAnchor(event.currentTarget);
-                // Get current color of first selected point
-                const firstSelectedId = Array.from(selectionState.selectedIds)[0];
-                const pointColor = colorData.find((cd) => cd.pointId === firstSelectedId);
-                const modelPoint = modelData?.points.find((p) => p.id === firstSelectedId);
-                const currentColor = pointColor?.color || modelPoint?.color || '#ffffff';
-                setSelectedColor(currentColor);
-                setOriginalColor(currentColor);
-            }
-        },
-        [selectionState.selectedIds, colorData, modelData],
-    );
-
-    // Close color picker (Cancel button will restore original color)
-    const handleCloseColorPicker = useCallback(() => {
-        setColorPickerAnchor(null);
-        setSelectedColor(originalColor);
-    }, [originalColor]);
-
-    // Apply color and close picker
-    const handleApplyAndClose = useCallback(() => {
-        handleApplyColor(selectedColor);
-        setColorPickerAnchor(null);
-    }, [handleApplyColor, selectedColor]);
 
     // Handle view mode change
     const handleViewModeChange = useCallback((_event: React.MouseEvent<HTMLElement>, newMode: ViewMode | null) => {
@@ -673,98 +613,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
                                 {selectionState.selectedIds.size} selected
                             </Typography>
-                            {enableColorPicker && (
-                                <>
-                                    <Tooltip title="Change color of selected points">
-                                        <IconButton
-                                            size="small"
-                                            onClick={handleOpenColorPicker}
-                                            color="primary"
-                                            sx={{
-                                                backgroundColor: theme.palette.primary.main + '15',
-                                                '&:hover': {
-                                                    backgroundColor: theme.palette.primary.main + '25',
-                                                },
-                                            }}
-                                        >
-                                            <ColorLensIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Popover
-                                        open={Boolean(colorPickerAnchor)}
-                                        anchorEl={colorPickerAnchor}
-                                        onClose={handleCloseColorPicker}
-                                        anchorOrigin={{
-                                            vertical: 'bottom',
-                                            horizontal: 'left',
-                                        }}
-                                        transformOrigin={{
-                                            vertical: 'top',
-                                            horizontal: 'left',
-                                        }}
-                                    >
-                                        <Box
-                                            sx={{
-                                                p: 2.5,
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: 2,
-                                                minWidth: 300,
-                                            }}
-                                        >
-                                            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
-                                                Change Point Color
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                {selectionState.selectedIds.size} point
-                                                {selectionState.selectedIds.size !== 1 ? 's' : ''} selected
-                                            </Typography>
-                                            <TextField
-                                                type="color"
-                                                label="Color Picker"
-                                                value={selectedColor}
-                                                onChange={(e) => setSelectedColor(e.target.value)}
-                                                fullWidth
-                                                InputLabelProps={{
-                                                    shrink: true,
-                                                }}
-                                                sx={{
-                                                    '& input[type="color"]': {
-                                                        height: 60,
-                                                        cursor: 'pointer',
-                                                        borderRadius: 1,
-                                                    },
-                                                }}
-                                            />
-                                            <TextField
-                                                label="Hex Color Code"
-                                                value={selectedColor}
-                                                onChange={(e) => setSelectedColor(e.target.value)}
-                                                fullWidth
-                                                size="small"
-                                                placeholder="#ffffff"
-                                                helperText="Enter hex color code (e.g., #ff0000 for red)"
-                                            />
-                                            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                                                <Button
-                                                    variant="outlined"
-                                                    onClick={handleCloseColorPicker}
-                                                    sx={{ flex: 1 }}
-                                                >
-                                                    Cancel
-                                                </Button>
-                                                <Button
-                                                    variant="contained"
-                                                    onClick={handleApplyAndClose}
-                                                    sx={{ flex: 1 }}
-                                                >
-                                                    Apply
-                                                </Button>
-                                            </Box>
-                                        </Box>
-                                    </Popover>
-                                </>
-                            )}
                         </Box>
                     )}
 

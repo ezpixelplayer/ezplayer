@@ -58,7 +58,7 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
     });
 
     return {
-        name: 'XML Models',
+        name: 'Models',
         points: allPoints,
         shapes: [],
         metadata: {
