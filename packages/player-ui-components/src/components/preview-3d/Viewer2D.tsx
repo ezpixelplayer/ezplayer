@@ -1,8 +1,8 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Grid, MapControls } from '@react-three/drei';
+import { OrthographicCamera, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { useTheme, Typography } from '@mui/material';
+import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 
@@ -630,7 +630,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     pointSize = 3.0,
     selectedModelNames,
 }) => {
-    const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
 
     // Show empty state if no points

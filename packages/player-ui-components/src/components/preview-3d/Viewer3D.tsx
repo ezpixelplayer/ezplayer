@@ -18,31 +18,8 @@ export interface Viewer3DProps {
     selectedModelNames?: Set<string>;
 }
 
-function generateProceduralColorBuffer(pointCount: number, period: number, startOffset: number): Uint8Array {
-    const colors = new Uint8Array(pointCount * 3);
-    const safePeriod = Math.max(1, Math.floor(period));
-    const half = safePeriod / 2;
-
-    const triangle = (t: number) => {
-        // Linear ramp 0 -> 255 -> 0 over one period.
-        const tt = ((t % safePeriod) + safePeriod) % safePeriod;
-        const v = tt <= half ? (tt / half) * 255 : ((safePeriod - tt) / half) * 255;
-        const clamped = Math.min(255, Math.max(0, v));
-        return Math.round(clamped);
-    };
-
-    const offset = Math.floor(startOffset);
-    const phaseG = Math.floor(safePeriod / 3);
-    const phaseB = Math.floor((safePeriod * 2) / 3);
-
-    for (let i = 0; i < pointCount; i++) {
-        const p = i + offset;
-        colors[i * 3] = triangle(p);
-        colors[i * 3 + 1] = triangle(p + phaseG);
-        colors[i * 3 + 2] = triangle(p + phaseB);
-    }
-
-    return colors;
+function generateProceduralColorBuffer(pointCount: number): Uint8Array {
+    return new Uint8Array(pointCount * 3);
 }
 
 // Optimized point cloud rendering using THREE.Points
@@ -124,7 +101,7 @@ function OptimizedPointCloud({
 
         const positions = new Float32Array(selectedPoints.length * 3);
         // Generate color buffer for all points to get correct colors, then we'll override selected ones
-        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
+        const allColors = generateProceduralColorBuffer(points.length);
         const colors = new Uint8Array(selectedPoints.length * 3);
 
         selectedPoints.forEach((point, i) => {
@@ -175,7 +152,7 @@ function OptimizedPointCloud({
 
         const positions = new Float32Array(nonSelectedPoints.length * 3);
         // Generate color buffer for all points to get correct colors
-        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
+        const allColors = generateProceduralColorBuffer(points.length);
         const colors = new Uint8Array(nonSelectedPoints.length * 3);
 
         nonSelectedPoints.forEach((point, i) => {
