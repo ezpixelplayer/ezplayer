@@ -4,30 +4,32 @@
 
 export interface ModelPointMetadata {
     modelName ?: string;
-    modelIndex ?: number,
-    nodeIndex ?: number,
-    coordIndex ?: number,
-    key ?: string,
-    itemIndex ?: number,
+    modelIndex ?: number;
+    nodeIndex ?: number;
+    coordIndex ?: number;
+    key ?: string;
+    itemIndex ?: number;
 }
 
 export interface ModelShapeMetadata {
 }
 
 export interface ModelMetadata {
-    name: string,
-    pointCount: number,
+    name: string;
+    pointCount: number;
+    startIndex: number;
+    endIndex: number;
     pixelSize?: number;
     pixelStyle?: string;
     colorOrder?: string;
 }
 
 export interface ModelSetMetadata {
-    source?: string,
-    dataSource?: string,
-    totalModels: number,
-    models: ModelMetadata[],
-    description: string,
+    source?: string;
+    dataSource?: string;
+    totalModels: number;
+    models: ModelMetadata[];
+    description: string;
  }
 
 export interface Point3D {
