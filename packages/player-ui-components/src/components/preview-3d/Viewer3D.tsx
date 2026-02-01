@@ -19,11 +19,6 @@ export interface Viewer3DProps {
     showStats?: boolean;
     pointSize?: number;
     selectedModelNames?: Set<string>;
-    /**
-     * Phase shift (in pixels/points, not bytes) for the procedural color pattern.
-     * Changing this value updates point colors in real time.
-     */
-    colorStartOffset?: number;
 }
 
 // PointMesh component removed - using optimized point cloud rendering instead
@@ -133,7 +128,6 @@ function OptimizedPointCloud({
     colorData: _colorData,
     pointSize,
     selectedModelNames,
-    colorStartOffset = 0,
 }: {
     points: Point3D[];
     selectedIds?: Set<string>;
@@ -142,7 +136,6 @@ function OptimizedPointCloud({
     pointSize?: number;
     selectedModelNames?: Set<string>;
     onPointClick?: (pointId: string) => void;
-    colorStartOffset?: number;
 }) {
     const selectedPointsRef = useRef<THREE.Points>(null);
     const nonSelectedPointsRef = useRef<THREE.Points>(null);
@@ -150,7 +143,6 @@ function OptimizedPointCloud({
     const selectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const animationTimeRef = useRef(0);
-    const colorOffsetRef = useRef(colorStartOffset);
     const selectedColorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
     const nonSelectedColorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
     const selectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
@@ -160,11 +152,6 @@ function OptimizedPointCloud({
     useEffect(() => {
         animationTimeRef.current = 0;
     }, [selectedModelNames]);
-
-    // Update color offset ref when prop changes
-    useEffect(() => {
-        colorOffsetRef.current = colorStartOffset;
-    }, [colorStartOffset]);
 
     // Separate points into selected and non-selected for animation
     // Track original indices to preserve correct procedural colors
@@ -214,7 +201,7 @@ function OptimizedPointCloud({
 
         const positions = new Float32Array(selectedPoints.length * 3);
         // Generate color buffer for all points to get correct colors, then we'll override selected ones
-        const allColors = generateProceduralColorBuffer(points.length, 300, colorStartOffset);
+        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
         const colors = new Uint8Array(selectedPoints.length * 3);
 
         selectedPoints.forEach((point, i) => {
@@ -255,7 +242,6 @@ function OptimizedPointCloud({
         selectedIds,
         hoveredId,
         selectedModelNames,
-        colorStartOffset,
         selectedOriginalIndices,
         points.length,
     ]);
@@ -266,7 +252,7 @@ function OptimizedPointCloud({
 
         const positions = new Float32Array(nonSelectedPoints.length * 3);
         // Generate color buffer for all points to get correct colors
-        const allColors = generateProceduralColorBuffer(points.length, 300, colorStartOffset);
+        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
         const colors = new Uint8Array(nonSelectedPoints.length * 3);
 
         nonSelectedPoints.forEach((point, i) => {
@@ -290,7 +276,7 @@ function OptimizedPointCloud({
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, colorStartOffset, nonSelectedOriginalIndices, points.length]);
+    }, [nonSelectedPoints, hoveredId, nonSelectedOriginalIndices, points.length]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (
@@ -404,7 +390,6 @@ function OptimizedPointCloud({
     useFrame((_state, delta) => {
         animationTimeRef.current += delta;
         const t = animationTimeRef.current;
-        const offset = colorOffsetRef.current;
 
         // Update point size animation
         if (materialRef.current && selectedModelNames && selectedModelNames.size > 0) {
@@ -443,7 +428,7 @@ function OptimizedPointCloud({
                     if (hoveredId === point.id) return;
 
                     // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
-                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + offset;
+                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + 150;
 
                     // RGB with phase offsets
                     const rPhase = phase;
@@ -490,7 +475,7 @@ function OptimizedPointCloud({
                     if (isModelSelected || isPointSelected || hoveredId === point.id) return;
 
                     // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
-                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + offset;
+                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + 150;
 
                     // RGB with phase offsets
                     const rPhase = phase;
@@ -713,7 +698,6 @@ function SceneContent({
                 colorData={colorData}
                 pointSize={pointSize}
                 selectedModelNames={selectedModelNames}
-                colorStartOffset={colorStartOffset}
                 onPointClick={onPointClick}
             />
         </>
@@ -733,7 +717,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     showStats = false,
     pointSize = 1.2,
     selectedModelNames,
-    colorStartOffset = 150,
 }) => {
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
@@ -909,7 +892,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             onPointHover={onPointHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
-                            colorStartOffset={colorStartOffset}
                         />
                         {showStats && <Stats />}
                     </Canvas>

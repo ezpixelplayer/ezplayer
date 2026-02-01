@@ -19,11 +19,6 @@ export interface Viewer2DProps {
     showGrid?: boolean;
     pointSize?: number;
     selectedModelNames?: Set<string>;
-    /**
-     * Phase shift (in pixels/points, not bytes) for the procedural color pattern.
-     * Changing this value updates point colors in real time.
-     */
-    colorStartOffset?: number;
 }
 
 // Optimized 2D point cloud rendering using THREE.Points
@@ -62,7 +57,6 @@ function Optimized2DPointCloud({
     pointSize,
     viewPlane,
     selectedModelNames,
-    colorStartOffset = 150,
 }: {
     points: Point3D[];
     selectedIds?: Set<string>;
@@ -71,7 +65,6 @@ function Optimized2DPointCloud({
     pointSize?: number;
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
-    colorStartOffset?: number;
 }) {
     const selectedPointsRef = useRef<THREE.Points>(null);
     const nonSelectedPointsRef = useRef<THREE.Points>(null);
@@ -114,7 +107,7 @@ function Optimized2DPointCloud({
 
         const positions = new Float32Array(selectedPoints.length * 3);
         // Generate color buffer for all points to get correct colors, then we'll override selected ones
-        const allColors = generateProceduralColorBuffer(points.length, 300, colorStartOffset);
+        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
         const colors = new Uint8Array(selectedPoints.length * 3);
 
         selectedPoints.forEach((point, i) => {
@@ -172,7 +165,6 @@ function Optimized2DPointCloud({
         hoveredId,
         viewPlane,
         selectedModelNames,
-        colorStartOffset,
         selectedOriginalIndices,
         points.length,
     ]);
@@ -183,7 +175,7 @@ function Optimized2DPointCloud({
 
         const positions = new Float32Array(nonSelectedPoints.length * 3);
         // Generate color buffer for all points to get correct colors
-        const allColors = generateProceduralColorBuffer(points.length, 300, colorStartOffset);
+        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
         const colors = new Uint8Array(nonSelectedPoints.length * 3);
 
         nonSelectedPoints.forEach((point, i) => {
@@ -222,7 +214,7 @@ function Optimized2DPointCloud({
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, viewPlane, colorStartOffset, nonSelectedOriginalIndices, points.length]);
+    }, [nonSelectedPoints, hoveredId, viewPlane, nonSelectedOriginalIndices, points.length]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (
@@ -501,7 +493,6 @@ function Scene2DContent({
     viewPlane,
     pointSize,
     selectedModelNames,
-    colorStartOffset,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -513,7 +504,6 @@ function Scene2DContent({
     viewPlane: 'xy' | 'xz' | 'yz';
     pointSize?: number;
     selectedModelNames?: Set<string>;
-    colorStartOffset?: number;
 }) {
     const { camera, controls } = useThree();
 
@@ -633,7 +623,6 @@ function Scene2DContent({
                 pointSize={pointSize}
                 viewPlane={viewPlane}
                 selectedModelNames={selectedModelNames}
-                colorStartOffset={colorStartOffset}
             />
         </>
     );
@@ -652,7 +641,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     showGrid = true,
     pointSize = 3.0,
     selectedModelNames,
-    colorStartOffset = 0,
 }) => {
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
@@ -822,7 +810,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             viewPlane={viewPlane}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
-                            colorStartOffset={colorStartOffset}
                         />
                     </Canvas>
                 </Box>
