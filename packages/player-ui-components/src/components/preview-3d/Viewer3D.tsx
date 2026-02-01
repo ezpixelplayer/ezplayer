@@ -1,8 +1,8 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Grid, Stats } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
 import * as THREE from 'three';
-import { useTheme, Typography } from '@mui/material';
+import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 
@@ -13,13 +13,10 @@ export interface Viewer3DProps {
     hoveredId?: string | null;
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
-    showGrid?: boolean;
     showStats?: boolean;
     pointSize?: number;
     selectedModelNames?: Set<string>;
 }
-
-// PointMesh component removed - using optimized point cloud rendering instead
 
 function generateProceduralColorBuffer(pointCount: number, period: number, startOffset: number): Uint8Array {
     const colors = new Uint8Array(pointCount * 3);
@@ -46,76 +43,6 @@ function generateProceduralColorBuffer(pointCount: number, period: number, start
     }
 
     return colors;
-}
-
-interface ShapeMeshProps {
-    shape: Shape3D;
-    isSelected: boolean;
-    isHovered: boolean;
-    onClick: (shapeId: string) => void;
-    onHover: (shapeId: string | null) => void;
-}
-
-function ShapeMesh({ shape, isSelected, isHovered, onClick, onHover }: ShapeMeshProps) {
-    const meshRef = useRef<THREE.Mesh>(null);
-
-    const geometry = useMemo(() => {
-        switch (shape.type) {
-            case 'box':
-                return <boxGeometry args={[1, 1, 1]} />;
-            case 'sphere':
-                return <sphereGeometry args={[0.5, 16, 16]} />;
-            case 'cylinder':
-                return <cylinderGeometry args={[0.5, 0.5, 1, 32]} />;
-            case 'plane':
-                return <planeGeometry args={[1, 1]} />;
-            default:
-                return <boxGeometry args={[1, 1, 1]} />;
-        }
-    }, [shape.type]);
-
-    const scale = shape.scale || { x: 1, y: 1, z: 1 };
-    const rotation = shape.rotation || { x: 0, y: 0, z: 0 };
-    const color = isSelected ? '#ffff00' : isHovered ? '#00ffff' : shape.color || '#ffffff';
-
-    const handleClick = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onClick(shape.id);
-        },
-        [onClick, shape.id],
-    );
-
-    const handlePointerOver = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onHover(shape.id);
-        },
-        [onHover, shape.id],
-    );
-
-    const handlePointerOut = useCallback(
-        (e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            onHover(null);
-        },
-        [onHover],
-    );
-
-    return (
-        <mesh
-            ref={meshRef}
-            position={[shape.position.x, shape.position.y, shape.position.z]}
-            rotation={[rotation.x, rotation.y, rotation.z]}
-            scale={[scale.x, scale.y, scale.z]}
-            onClick={handleClick}
-            onPointerOver={handlePointerOver}
-            onPointerOut={handlePointerOut}
-        >
-            {geometry}
-            <meshStandardMaterial color={color} wireframe={isSelected || isHovered} />
-        </mesh>
-    );
 }
 
 // Optimized point cloud rendering using THREE.Points
@@ -206,7 +133,7 @@ function OptimizedPointCloud({
             positions[i * 3 + 2] = point.z;
 
             const originalIndex = selectedOriginalIndices[i];
-            const modelName = point.metadata?.modelName as string | undefined;
+            const modelName = point.metadata?.modelName;
             const isModelSelected = modelName && selectedModelNames?.has(modelName);
             const isPointSelected = selectedIds?.has(point.id);
 
@@ -258,8 +185,7 @@ function OptimizedPointCloud({
 
             // Use original index to get the correct procedural color for this point
             // This ensures colors don't change when other models are selected/deselected
-            const originalIndex = nonSelectedOriginalIndices[i];
-            const baseColorIndex = originalIndex * 3;
+            const baseColorIndex = nonSelectedOriginalIndices[i] * 3;
             colors[i * 3] = allColors[baseColorIndex];
             colors[i * 3 + 1] = allColors[baseColorIndex + 1];
             colors[i * 3 + 2] = allColors[baseColorIndex + 2];
@@ -295,7 +221,6 @@ function OptimizedPointCloud({
                 (posAttr.array as Float32Array).set(positions);
 
                 // Copy color values element-by-element to handle normalized Uint8Array correctly
-                // This ensures color updates are properly applied when colorStartOffset changes
                 const colorArray = colAttr.array as Uint8Array;
                 for (let i = 0; i < colors.length; i++) {
                     colorArray[i] = colors[i];
@@ -419,6 +344,7 @@ function OptimizedPointCloud({
             if (colorAttr) {
                 const colorArray = colorAttr.array as Uint8Array;
 
+                // TODO: Get correct data
                 nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
                     // Skip if hovered (will be handled by geometry update)
                     if (hoveredId === point.id) return;
@@ -431,14 +357,10 @@ function OptimizedPointCloud({
                     const gPhase = phase + 341;
                     const bPhase = phase + 682;
 
-                    // Calculate pulse effect (boost brightness for points near moving center)
-                    const distanceToCenter = Math.abs(phase - pulseCenter);
-                    const pulseBoost = distanceToCenter < HALF ? (1 - distanceToCenter / HALF) * 220 : 0;
-
                     // Generate RGB values
-                    let r = tri(rPhase) + pulseBoost;
-                    let g = tri(gPhase) + pulseBoost;
-                    let b = tri(bPhase) + pulseBoost;
+                    let r = tri(rPhase);
+                    let g = tri(gPhase);
+                    let b = tri(bPhase);
 
                     // Clamp to valid range
                     r = Math.min(255, Math.max(0, Math.round(r)));
@@ -522,7 +444,7 @@ function OptimizedPointCloud({
             {selectedBufferGeometry && selectedPoints.length > 0 && (
                 <points key={selectedKey} ref={selectedPointsRef} geometry={selectedBufferGeometry}>
                     <pointsMaterial
-                        ref={materialRef}
+                        ref={materialRef} // Exists to make selected points grow
                         size={baseSize}
                         vertexColors
                         sizeAttenuation={false}
@@ -672,17 +594,6 @@ function SceneContent({
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
 
-            {shapes?.map((shape) => (
-                <ShapeMesh
-                    key={shape.id}
-                    shape={shape}
-                    isSelected={selectedIds?.has(shape.id) ?? false}
-                    isHovered={hoveredId === shape.id}
-                    onClick={onPointClick || (() => {})}
-                    onHover={onPointHover || (() => {})}
-                />
-            ))}
-
             <OptimizedPointCloud
                 points={points}
                 selectedIds={selectedIds}
@@ -702,12 +613,10 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     hoveredId,
     onPointClick,
     onPointHover,
-    showGrid = true,
     showStats = false,
     pointSize = 1.2,
     selectedModelNames,
 }) => {
-    const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
 
     // Show empty state if no points
@@ -862,13 +771,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                                 TWO: THREE.TOUCH.DOLLY_PAN,
                             }}
                         />
-                        {showGrid && (
-                            <Grid
-                                args={[200, 200]}
-                                cellColor={theme.palette.divider}
-                                sectionColor={theme.palette.text.secondary}
-                            />
-                        )}
                         <SceneContent
                             points={points}
                             shapes={shapes}

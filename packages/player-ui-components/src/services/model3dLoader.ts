@@ -30,7 +30,6 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                                 x: coord.wX ?? 0,
                                 y: coord.wY ?? 0,
                                 z: coord.wZ ?? 0,
-                                color: '#00ff00',
                                 label: `${modelName} - Point ${pointIndex + 1}`,
                                 metadata: {
                                     modelName,

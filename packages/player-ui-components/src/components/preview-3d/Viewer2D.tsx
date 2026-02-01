@@ -14,7 +14,6 @@ export interface Viewer2DProps {
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     viewPlane?: 'xy' | 'xz' | 'yz';
-    showGrid?: boolean;
     pointSize?: number;
     selectedModelNames?: Set<string>;
 }
@@ -128,8 +127,7 @@ function Optimized2DPointCloud({
 
             // Use original index to get the correct procedural color for this point
             // This ensures colors don't change when models are selected/deselected
-            const originalIndex = selectedOriginalIndices[i];
-            const baseColorIndex = originalIndex * 3;
+            const baseColorIndex = selectedOriginalIndices[i] * 3;
             colors[i * 3] = allColors[baseColorIndex];
             colors[i * 3 + 1] = allColors[baseColorIndex + 1];
             colors[i * 3 + 2] = allColors[baseColorIndex + 2];
@@ -629,7 +627,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     onPointClick,
     onPointHover,
     viewPlane = 'xy',
-    showGrid = true,
     pointSize = 3.0,
     selectedModelNames,
 }) => {
@@ -781,13 +778,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                                 RIGHT: THREE.MOUSE.PAN,
                             }}
                         />
-                        {showGrid && (
-                            <Grid
-                                args={[200, 200]}
-                                cellColor={theme.palette.divider}
-                                sectionColor={theme.palette.text.secondary}
-                            />
-                        )}
                         <Scene2DContent
                             points={points}
                             shapes={shapes}

@@ -36,7 +36,6 @@ export interface Point3D {
     x: number;
     y: number;
     z: number;
-    color?: string;
     label?: string;
     metadata?: ModelPointMetadata;
 }
