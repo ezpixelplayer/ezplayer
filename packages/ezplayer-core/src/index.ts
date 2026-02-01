@@ -65,3 +65,9 @@ export {
     getActiveVolumeSchedule,
     getActiveViewerControlSchedule,
 } from './util/SettingsScheduleUtils';
+
+export {
+    type FrameBackingBuffer,
+    type FrameBufferReadResult,
+    LatestFrameRingBuffer
+} from './util/FrameRingBuffer';
