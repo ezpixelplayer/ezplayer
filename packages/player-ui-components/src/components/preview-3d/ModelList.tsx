@@ -17,18 +17,11 @@ import {
 import { Box } from '../box/Box';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
-
-export interface ModelItem {
-    name: string;
-    pixelSize?: number;
-    pixelStyle?: string;
-    colorOrder?: string;
-    nodes?: any[];
-}
+import { ModelMetadata } from '../../types/model3d';
 
 export interface ModelListProps {
     selectedModelName?: string | null;
-    onModelSelect: (model: ModelItem | null) => void;
+    onModelSelect: (model: ModelMetadata | null) => void;
     className?: string;
     searchable?: boolean;
     modelData?: {
@@ -56,36 +49,10 @@ export const ModelList: React.FC<ModelListProps> = ({
     const allModels = useMemo(() => {
         if (modelData?.metadata?.models && modelData.metadata.models.length > 0) {
             // Use models from XML/modelData
-            return modelData.metadata.models.map((m) => ({
-                name: m.name,
-                pixelSize: undefined,
-                pixelStyle: undefined,
-                colorOrder: undefined,
-                nodes: undefined,
-            })) as ModelItem[];
-        } else if (modelData?.points && modelData.points.length > 0) {
-            // Extract unique model names from points metadata
-            const modelNames = new Set<string>();
-            const modelPointCounts = new Map<string, number>();
-
-            modelData.points.forEach((point) => {
-                const modelName = point.metadata?.modelName;
-                if (modelName) {
-                    modelNames.add(modelName);
-                    modelPointCounts.set(modelName, (modelPointCounts.get(modelName) || 0) + 1);
-                }
-            });
-
-            return Array.from(modelNames).map((name) => ({
-                name,
-                pixelSize: undefined,
-                pixelStyle: undefined,
-                colorOrder: undefined,
-                nodes: undefined,
-            })) as ModelItem[];
+            return modelData.metadata.models as ModelMetadata[];
         } else {
             // No models available
-            return [];
+            return [] as ModelMetadata[];
         }
     }, [modelData]);
 
@@ -100,7 +67,7 @@ export const ModelList: React.FC<ModelListProps> = ({
     }, [allModels, searchQuery]);
 
     // Calculate point count for a model
-    const getModelPointCount = (model: ModelItem): number => {
+    const getModelPointCount = (model: ModelMetadata): number => {
         // If we have modelData with metadata, use that
         if (modelData?.metadata?.models) {
             const modelInfo = modelData.metadata.models.find((m) => m.name === model.name);
@@ -117,7 +84,7 @@ export const ModelList: React.FC<ModelListProps> = ({
         return 0;
     };
 
-    const handleModelClick = (model: ModelItem) => {
+    const handleModelClick = (model: ModelMetadata) => {
         // Toggle selection: if the clicked model is already selected, deselect it
         if (selectedModelName === model.name) {
             onModelSelect(null);

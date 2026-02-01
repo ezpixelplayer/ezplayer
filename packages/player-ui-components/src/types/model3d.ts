@@ -16,8 +16,8 @@ export interface ModelShapeMetadata {}
 export interface ModelMetadata {
     name: string;
     pointCount: number;
-    startIndex: number;
-    endIndex: number;
+    startIndex?: number;
+    endIndex?: number;
     pixelSize?: number;
     pixelStyle?: string;
     colorOrder?: string;

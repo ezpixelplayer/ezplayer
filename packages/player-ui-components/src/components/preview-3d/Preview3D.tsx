@@ -21,9 +21,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
-import { ModelList, ModelItem } from './ModelList';
+import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type { Model3DData, PointColorData, SelectionState } from '../../types/model3d';
+import type { Model3DData, ModelMetadata, PointColorData, SelectionState } from '../../types/model3d';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -79,7 +79,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [colorPickerAnchor, setColorPickerAnchor] = useState<HTMLElement | null>(null);
     const [selectedColor, setSelectedColor] = useState<string>('#ffffff');
     const [originalColor, setOriginalColor] = useState<string>('#ffffff');
-    const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelItem | null>(null);
+    const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelMetadata | null>(null);
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
     const [colorOffset, setColorOffset] = useState<number>(colorStartOffset);
 
@@ -148,18 +148,15 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             const modelName = Array.from(selectedModelNames)[0];
             if (selectedModelFromDropdown?.name !== modelName) {
                 // Try to find model from modelData
-                let modelItem: ModelItem | null = null;
-                const models = modelData?.metadata?.models as ModelItem[] | undefined;
+                let modelItem: ModelMetadata | null = null;
+                const models = modelData?.metadata?.models;
                 if (Array.isArray(models)) {
                     const modelInfo = models.find(
                         (m) => m && typeof m === 'object' && 'name' in m && (m as any).name === modelName,
                     );
                     if (modelInfo) {
                         modelItem = {
-                            name: modelInfo.name,
-                            pixelSize: undefined,
-                            pixelStyle: undefined,
-                            colorOrder: undefined,
+                            ...modelInfo
                         };
                     }
                 }
@@ -210,18 +207,15 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     };
                 });
                 // Update dropdown selection from modelData
-                let modelItem: ModelItem | null = null;
+                let modelItem: ModelMetadata | null = null;
                 const modelList = Array.isArray(modelData?.metadata?.models)
-                    ? (modelData!.metadata!.models as ModelItem[])
+                    ? (modelData!.metadata!.models)
                     : [];
                 if (modelList.length > 0) {
-                    const modelInfo = modelList.find((m: ModelItem) => m.name === modelName);
+                    const modelInfo = modelList.find((m) => m.name === modelName);
                     if (modelInfo) {
                         modelItem = {
-                            name: modelInfo.name,
-                            pixelSize: undefined,
-                            pixelStyle: undefined,
-                            colorOrder: undefined,
+                            ...modelInfo,
                         };
                     }
                 }
@@ -306,7 +300,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Handle model selection from dropdown
     const handleModelSelect = useCallback(
-        (model: ModelItem | null) => {
+        (model: ModelMetadata | null) => {
             if (!model) {
                 // Clear selection
                 setSelectedModelNames(new Set<string>());
