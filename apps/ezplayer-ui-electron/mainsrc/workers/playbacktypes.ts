@@ -1,3 +1,4 @@
+import { GetNodeResult } from 'xllayoutcalcs';
 import type { RPCRequest, RPCResponse } from './rpctypes';
 import type {
     AudioChunk,
@@ -33,7 +34,7 @@ export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
     stopPlayback: (args: {}) => Promise<boolean> | boolean;
-    getModelCoordinates: (args: {}) => Promise<Record<string, unknown>>;
+    getModelCoordinates: (args: {}) => Promise<Record<string, GetNodeResult>>;
 };
 
 export type MainRPCAPI = {

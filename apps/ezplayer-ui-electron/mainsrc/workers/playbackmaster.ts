@@ -42,7 +42,7 @@ import {
     loadXmlFile,
 } from '@ezplayer/epp';
 
-import { getModelCoordinates } from 'xllayoutcalcs';
+import { getModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -186,7 +186,7 @@ const handlers: PlayWorkerRPCAPI = {
         return true;
     },
     getModelCoordinates: async (_args: {}) => {
-        const coords: Record<string, unknown> = {};
+        const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates) {
             for (const [name, coord] of modelCoordinates.entries()) {
                 coords[name] = coord;
@@ -653,7 +653,7 @@ let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
 let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
-let modelCoordinates: Map<string, unknown> | undefined = undefined;
+let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -693,7 +693,7 @@ async function loadXmlCoordinates() {
         xrgb = null;
     }
 
-    modelCoordinates = new Map<string, unknown>();
+    modelCoordinates = new Map<string, GetNodeResult>();
 
     if (xrgb) {
         if (xrgb.documentElement.tagName !== 'xrgb') {

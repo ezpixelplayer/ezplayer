@@ -43,6 +43,53 @@ export interface FileSelectOptions {
     multi?: boolean;
 }
 
+export interface NodeCoord {
+    // For default / logical render buffer
+    //  This ought to be a separate concern really...
+    //  Other things can be determined by ordinal number or 
+    bufX: number;
+    bufY: number;
+    bufZ: number;
+
+    // In 3D space, prop relative not world
+    modelX: number;
+    modelY: number;
+    modelZ: number;
+
+    // World
+    wX: number;
+    wY: number;
+    wZ: number;
+}
+
+export interface NodeLoc {
+    physicalNum: number; // Number 1-n, based on wiring
+    physicalStrand: number; // Strand number, for models that do this, ignoreable but affects some render styles.  0-based?
+    physicalNumOnStrand: number; // Physical pixel num on strand, 0-sl
+
+    logicalNum: number; // Number logical to a model type, regardless of how it is wired, for example top to bottom left to right
+    logicalX: number; // Commonly, the column in a grid
+    logicalY: number; // Commonly, the row in a grid
+    logicalZ: number; // Commonly, the grid sheet
+
+    coords: NodeCoord[];
+}
+
+/**
+ * The return of getNodeCoords.
+ * We are making a different abstraction than xLights.
+ *   Coordinates in nodes[] is normalized / logical
+ * Thus the attachment of some of the physical transformation
+ *   A good bit more of that was already done by xLights
+ */
+export interface GetNodeResult {
+    nodes: NodeLoc[];
+
+    logicalBufferWidth: number;
+    logicalBufferHeight: number;
+    logicalBufferDepth: number;
+}
+
 export interface EZPElectronAPI {
     // FS Utilities
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
@@ -86,7 +133,7 @@ export interface EZPElectronAPI {
         status: 'listening' | 'stopped' | 'error';
     } | null>;
 
-    getModelCoordinates: () => Promise<Record<string, unknown>>;
+    getModelCoordinates: () => Promise<Record<string, GetNodeResult>>;
 
     // Data change callbacks:
     onShowFolderUpdated: (callback: (data: string) => void) => void;
