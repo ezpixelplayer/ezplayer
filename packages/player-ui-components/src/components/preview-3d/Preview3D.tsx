@@ -20,6 +20,7 @@ import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
+import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -45,10 +46,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // This is the selection state of the 2D/3D view
     const [selectionState, setSelectionState] = useState<SelectionState>({
         selectedIds: new Set<string>(),
         hoveredId: null,
     });
+    // This is the selection state of the model list
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
     // Load model from XML coordinates if available (Electron environment)
@@ -60,14 +63,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             return;
         }
 
-        // Try to load from XML coordinates if available (Electron environment)
+        // Try to load from API
         const loadFromXml = async () => {
             setLoading(true);
             setError(null);
 
             try {
                 // Check if we're in Electron environment and API is available
-                const electronAPI = (window as any).electronAPI;
+                const electronAPI = (window as any).electronAPI as EZPElectronAPI;
 
                 if (electronAPI && electronAPI.getModelCoordinates) {
                     const xmlCoords = await electronAPI.getModelCoordinates();
@@ -133,19 +136,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         hoveredId: prev.hoveredId,
                     };
                 });
-                // Update dropdown selection from modelData
-                let modelItem: ModelMetadata | null = null;
-                const modelList = Array.isArray(modelData?.metadata?.models)
-                    ? (modelData!.metadata!.models)
-                    : [];
-                if (modelList.length > 0) {
-                    const modelInfo = modelList.find((m) => m.name === modelName);
-                    if (modelInfo) {
-                        modelItem = {
-                            ...modelInfo,
-                        };
-                    }
-                }
             }
         },
         [modelData, selectedModelNames],
@@ -163,7 +153,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, []);
 
-    // Handle model selection from dropdown
+    // Handle model selection from model list
     const handleModelSelect = useCallback(
         (model: ModelMetadata | null) => {
             if (!model) {

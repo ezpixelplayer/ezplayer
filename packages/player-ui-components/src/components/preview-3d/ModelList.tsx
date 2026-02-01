@@ -17,25 +17,18 @@ import {
 import { Box } from '../box/Box';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
-import { ModelMetadata } from '../../types/model3d';
+import { Model3DData, ModelMetadata } from '../../types/model3d';
 
 export interface ModelListProps {
     selectedModelNames?: Set<string> | null;
     onModelSelect: (model: ModelMetadata | null) => void;
-    className?: string;
     searchable?: boolean;
-    modelData?: {
-        points: Array<{ metadata?: { modelName?: string } }>;
-        metadata?: {
-            models?: Array<{ name: string; pointCount: number }>;
-        };
-    } | null;
+    modelData?: Model3DData | null;
 }
 
 export const ModelList: React.FC<ModelListProps> = ({
     selectedModelNames = null,
     onModelSelect,
-    className,
     searchable = true,
     modelData = null,
 }) => {
@@ -47,13 +40,7 @@ export const ModelList: React.FC<ModelListProps> = ({
 
     // Extract models from modelData
     const allModels = useMemo(() => {
-        if (modelData?.metadata?.models && modelData.metadata.models.length > 0) {
-            // Use models from XML/modelData
-            return modelData.metadata.models as ModelMetadata[];
-        } else {
-            // No models available
-            return [] as ModelMetadata[];
-        }
+        return modelData?.metadata?.models ?? [];
     }, [modelData]);
 
     // Filter models based on search query
@@ -68,20 +55,7 @@ export const ModelList: React.FC<ModelListProps> = ({
 
     // Calculate point count for a model
     const getModelPointCount = (model: ModelMetadata): number => {
-        // If we have modelData with metadata, use that
-        if (modelData?.metadata?.models) {
-            const modelInfo = modelData.metadata.models.find((m) => m.name === model.name);
-            if (modelInfo) {
-                return modelInfo.pointCount;
-            }
-        }
-
-        // If we have modelData with points, count points for this model
-        if (modelData?.points) {
-            return modelData.points.filter((p) => p.metadata?.modelName === model.name).length;
-        }
-
-        return 0;
+        return model?.pointCount ?? 0;
     };
 
     const handleModelClick = (model: ModelMetadata) => {
@@ -125,7 +99,6 @@ export const ModelList: React.FC<ModelListProps> = ({
 
     return (
         <Box
-            className={className}
             sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
         >
             {/* Fixed Header Section */}
@@ -146,7 +119,7 @@ export const ModelList: React.FC<ModelListProps> = ({
                         }}
                     />
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                        3D Models
+                        Models
                     </Typography>
                     <Chip
                         label={allModels.length}
