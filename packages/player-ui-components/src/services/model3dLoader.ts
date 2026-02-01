@@ -2,7 +2,7 @@
  * Service for loading and parsing 3D model data from XML coordinates
  */
 
-import type { Model3DData, Point3D } from '../types/model3d';
+import type { Model3DData, ModelMetadata, Point3D } from '../types/model3d';
 
 /**
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
@@ -10,7 +10,7 @@ import type { Model3DData, Point3D } from '../types/model3d';
  */
 export function convertXmlCoordinatesToModel3D(xmlCoordinates: Record<string, unknown>): Model3DData {
     const allPoints: Point3D[] = [];
-    const modelMetadata: Array<{ name: string; pointCount: number; startIndex: number; endIndex: number }> = [];
+    const modelMetadata: ModelMetadata[] = [];
 
     // Iterate through each model's coordinates
     Object.entries(xmlCoordinates).forEach(([modelName, modelData], modelIndex) => {
