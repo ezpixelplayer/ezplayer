@@ -8,14 +8,12 @@ export interface Preview3DPageProps {
     title: string;
     statusArea: React.ReactNode[];
     modelUrl?: string;
-    enableAutoColorAnimation?: boolean;
 }
 
 export const Preview3DPage: React.FC<Preview3DPageProps> = ({
     title,
     statusArea,
     modelUrl,
-    enableAutoColorAnimation = false,
 }) => {
     const theme = useTheme<ExtendedTheme>();
 
@@ -66,7 +64,6 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
                         modelUrl={modelUrl}
                         showList={true}
                         showControls={true}
-                        enableAutoColorAnimation={enableAutoColorAnimation}
                         enableColorPicker={true}
                     />
                 </Box>

@@ -39,7 +39,6 @@ export interface Preview3DProps {
     defaultViewMode?: ViewMode;
     defaultViewPlane?: ViewPlane;
     pointSize?: number;
-    enableAutoColorAnimation?: boolean;
     enableColorPicker?: boolean;
     /**
      * Phase shift (in pixels/points, not bytes) for the procedural color pattern.
@@ -59,7 +58,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     defaultViewMode = '3d',
     defaultViewPlane: _defaultViewPlane = 'xy', // Always use 'xy' plane, kept for backward compatibility
     pointSize = 3.0,
-    enableAutoColorAnimation = false,
     enableColorPicker = false,
     colorStartOffset = 300,
 }) => {
@@ -359,30 +357,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         },
         [modelData, selectedModelNames],
     );
-
-    // Animate colors (simulate incoming data) - only if enabled
-    useEffect(() => {
-        if (!enableAutoColorAnimation || !modelData || modelData.points.length === 0) return;
-
-        const interval = setInterval(() => {
-            // Generate random color updates for demonstration
-            // In production, this would come from actual data sources
-            const newColorData: PointColorData[] = modelData.points.map((point) => {
-                const hue = Math.random() * 360;
-                return {
-                    pointId: point.id,
-                    color: `hsl(${hue}, 100%, 50%)`,
-                };
-            });
-
-            setColorData(newColorData);
-            if (onColorDataUpdate) {
-                onColorDataUpdate(newColorData);
-            }
-        }, 1000); // Update every second
-
-        return () => clearInterval(interval);
-    }, [enableAutoColorAnimation, modelData, onColorDataUpdate]);
 
     // Check WebGL support
     const [webglSupported, setWebglSupported] = useState<boolean | null>(null);
