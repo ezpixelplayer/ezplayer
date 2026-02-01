@@ -4,17 +4,15 @@ import { OrthographicCamera, Grid, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useTheme, Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D, PointColorData } from '../../types/model3d';
+import type { Point3D, Shape3D } from '../../types/model3d';
 
 export interface Viewer2DProps {
     points: Point3D[];
     shapes?: Shape3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
-    colorData?: PointColorData[];
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
-    className?: string;
     viewPlane?: 'xy' | 'xz' | 'yz';
     showGrid?: boolean;
     pointSize?: number;
@@ -53,7 +51,6 @@ function Optimized2DPointCloud({
     points,
     selectedIds,
     hoveredId,
-    colorData: _colorData,
     pointSize,
     viewPlane,
     selectedModelNames,
@@ -61,7 +58,6 @@ function Optimized2DPointCloud({
     points: Point3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
-    colorData?: PointColorData[];
     pointSize?: number;
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
@@ -487,7 +483,6 @@ function Scene2DContent({
     shapes,
     selectedIds,
     hoveredId,
-    colorData,
     onPointClick,
     onPointHover,
     viewPlane,
@@ -498,7 +493,6 @@ function Scene2DContent({
     shapes?: Shape3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
-    colorData?: PointColorData[];
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     viewPlane: 'xy' | 'xz' | 'yz';
@@ -619,7 +613,6 @@ function Scene2DContent({
                 points={points}
                 selectedIds={selectedIds}
                 hoveredId={hoveredId}
-                colorData={colorData}
                 pointSize={pointSize}
                 viewPlane={viewPlane}
                 selectedModelNames={selectedModelNames}
@@ -633,10 +626,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     shapes,
     selectedIds,
     hoveredId,
-    colorData,
     onPointClick,
     onPointHover,
-    className,
     viewPlane = 'xy',
     showGrid = true,
     pointSize = 3.0,
@@ -649,7 +640,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     if (!points || points.length === 0) {
         return (
             <Box
-                className={className}
                 sx={{
                     width: '100%',
                     height: '100%',
@@ -677,7 +667,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
 
     return (
         <Box
-            className={className}
             sx={{
                 width: '100%',
                 height: '100%',
@@ -804,7 +793,6 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             shapes={shapes}
                             selectedIds={selectedIds}
                             hoveredId={hoveredId}
-                            colorData={colorData}
                             onPointClick={onPointClick}
                             onPointHover={onPointHover}
                             viewPlane={viewPlane}

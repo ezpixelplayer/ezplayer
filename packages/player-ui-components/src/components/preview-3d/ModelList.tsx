@@ -20,7 +20,7 @@ import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import { ModelMetadata } from '../../types/model3d';
 
 export interface ModelListProps {
-    selectedModelName?: string | null;
+    selectedModelNames?: Set<string> | null;
     onModelSelect: (model: ModelMetadata | null) => void;
     className?: string;
     searchable?: boolean;
@@ -33,7 +33,7 @@ export interface ModelListProps {
 }
 
 export const ModelList: React.FC<ModelListProps> = ({
-    selectedModelName = null,
+    selectedModelNames = null,
     onModelSelect,
     className,
     searchable = true,
@@ -86,7 +86,7 @@ export const ModelList: React.FC<ModelListProps> = ({
 
     const handleModelClick = (model: ModelMetadata) => {
         // Toggle selection: if the clicked model is already selected, deselect it
-        if (selectedModelName === model.name) {
+        if (selectedModelNames?.has(model.name)) {
             onModelSelect(null);
         } else {
             onModelSelect(model);
@@ -103,7 +103,7 @@ export const ModelList: React.FC<ModelListProps> = ({
 
     // Auto-scroll to selected model
     useEffect(() => {
-        if (selectedModelName && selectedItemRef.current && scrollContainerRef.current) {
+        if (selectedModelNames?.size && selectedItemRef.current && scrollContainerRef.current) {
             const container = scrollContainerRef.current;
             const item = selectedItemRef.current;
 
@@ -121,7 +121,7 @@ export const ModelList: React.FC<ModelListProps> = ({
                 behavior: 'smooth',
             });
         }
-    }, [selectedModelName, filteredModels]);
+    }, [selectedModelNames, filteredModels]);
 
     return (
         <Box
@@ -233,7 +233,7 @@ export const ModelList: React.FC<ModelListProps> = ({
                         </ListItem>
                     ) : (
                         filteredModels.map((model, index) => {
-                            const isSelected = selectedModelName === model.name;
+                            const isSelected = selectedModelNames?.has(model.name);
                             const isHovered = hoveredModelName === model.name;
                             const pointCount = getModelPointCount(model);
 
@@ -391,11 +391,11 @@ export const ModelList: React.FC<ModelListProps> = ({
                             {allModels.length}
                         </>
                     )}
-                    {selectedModelName && (
+                    {selectedModelNames && (
                         <>
                             {' • '}
                             <MuiBox component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
-                                1 active
+                                {selectedModelNames?.size} active
                             </MuiBox>
                         </>
                     )}

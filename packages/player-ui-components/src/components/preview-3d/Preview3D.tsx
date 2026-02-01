@@ -19,38 +19,28 @@ import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type { Model3DData, ModelMetadata, PointColorData, SelectionState } from '../../types/model3d';
+import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
 
 export interface Preview3DProps {
     modelData?: Model3DData;
-    colorData?: PointColorData[];
-    onColorDataUpdate?: (colorData: PointColorData[]) => void;
-    className?: string;
     showList?: boolean;
     showControls?: boolean;
     defaultViewMode?: ViewMode;
-    defaultViewPlane?: ViewPlane;
-    pointSize?: number;
-    enableColorPicker?: boolean;
+    pointSize?: number; // TODO This will come from models individually
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
     modelData: initialModelData,
-    colorData: externalColorData,
-    className,
     showList = true,
     showControls = true,
     defaultViewMode = '3d',
-    defaultViewPlane: _defaultViewPlane = 'xy', // Always use 'xy' plane, kept for backward compatibility
     pointSize = 3.0,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
-    // Always use 'xy' plane for 2D view
-    const viewPlane: ViewPlane = 'xy';
     const [showItemList, setShowItemList] = useState(showList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [loading, setLoading] = useState(false);
@@ -59,8 +49,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         selectedIds: new Set<string>(),
         hoveredId: null,
     });
-    const [colorData, setColorData] = useState<PointColorData[]>(externalColorData || []);
-    const [selectedModelFromDropdown, setSelectedModelFromDropdown] = useState<ModelMetadata | null>(null);
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
     // Load model from XML coordinates if available (Electron environment)
@@ -105,42 +93,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         loadFromXml();
     }, [initialModelData]);
-
-    // Sync external color data
-    useEffect(() => {
-        if (externalColorData) {
-            setColorData(externalColorData);
-        }
-    }, [externalColorData]);
-
-    // Sync selectedModelNames with selectedModelFromDropdown
-    useEffect(() => {
-        if (selectedModelNames.size === 0) {
-            if (selectedModelFromDropdown) {
-                setSelectedModelFromDropdown(null);
-            }
-        } else if (selectedModelNames.size === 1) {
-            const modelName = Array.from(selectedModelNames)[0];
-            if (selectedModelFromDropdown?.name !== modelName) {
-                // Try to find model from modelData
-                let modelItem: ModelMetadata | null = null;
-                const models = modelData?.metadata?.models;
-                if (Array.isArray(models)) {
-                    const modelInfo = models.find(
-                        (m) => m && typeof m === 'object' && 'name' in m && (m as any).name === modelName,
-                    );
-                    if (modelInfo) {
-                        modelItem = {
-                            ...modelInfo
-                        };
-                    }
-                }
-                if (modelItem) {
-                    setSelectedModelFromDropdown(modelItem);
-                }
-            }
-        }
-    }, [selectedModelNames, selectedModelFromDropdown, modelData]);
 
     // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
@@ -194,9 +146,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         };
                     }
                 }
-                if (modelItem) {
-                    setSelectedModelFromDropdown(modelItem);
-                }
             }
         },
         [modelData, selectedModelNames],
@@ -220,7 +169,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             if (!model) {
                 // Clear selection
                 setSelectedModelNames(new Set<string>());
-                setSelectedModelFromDropdown(null);
                 setSelectionState({
                     selectedIds: new Set<string>(),
                     hoveredId: null,
@@ -238,7 +186,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     newSelected.delete(model.name);
                     return newSelected;
                 });
-                setSelectedModelFromDropdown(null);
 
                 // Deselect all points of this model
                 if (modelData) {
@@ -257,7 +204,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             } else {
                 // Select model (clear other selections first)
                 setSelectedModelNames(new Set([model.name]));
-                setSelectedModelFromDropdown(model);
 
                 // Select all points of this model
                 if (modelData) {
@@ -300,7 +246,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     if (loading) {
         return (
             <Box
-                className={className}
                 sx={{
                     display: 'flex',
                     justifyContent: 'center',
@@ -317,7 +262,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     if (webglSupported === false) {
         return (
             <Box
-                className={className}
                 sx={{
                     display: 'flex',
                     justifyContent: 'center',
@@ -348,7 +292,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     if (error && !modelData) {
         return (
             <Box
-                className={className}
                 sx={{
                     display: 'flex',
                     justifyContent: 'center',
@@ -370,7 +313,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     if (!modelData || !modelData.points || modelData.points.length === 0) {
         return (
             <Box
-                className={className}
                 sx={{
                     display: 'flex',
                     justifyContent: 'center',
@@ -391,7 +333,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     return (
         <Box
-            className={className}
             sx={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -574,7 +515,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             shapes={modelData.shapes}
                             selectedIds={selectionState.selectedIds}
                             hoveredId={selectionState.hoveredId}
-                            colorData={colorData}
                             onPointClick={handleItemClick}
                             onPointHover={handleItemHover}
                             pointSize={pointSize}
@@ -586,10 +526,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             shapes={modelData.shapes}
                             selectedIds={selectionState.selectedIds}
                             hoveredId={selectionState.hoveredId}
-                            colorData={colorData}
                             onPointClick={handleItemClick}
                             onPointHover={handleItemHover}
-                            viewPlane={viewPlane}
+                            viewPlane={'xy'}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
                         />
@@ -634,7 +573,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             </IconButton>
                         </Box>
                         <ModelList
-                            selectedModelName={selectedModelFromDropdown?.name}
+                            selectedModelNames={selectedModelNames}
                             onModelSelect={handleModelSelect}
                             searchable={true}
                             modelData={modelData}

@@ -61,11 +61,6 @@ export interface Model3DData {
     metadata?: ModelSetMetadata;
 }
 
-export interface PointColorData {
-    pointId: string;
-    color: string;
-}
-
 export interface SelectionState {
     selectedIds: Set<string>;
     hoveredId: string | null;

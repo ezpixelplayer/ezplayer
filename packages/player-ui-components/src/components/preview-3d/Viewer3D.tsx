@@ -4,17 +4,15 @@ import { OrbitControls, PerspectiveCamera, Grid, Stats } from '@react-three/drei
 import * as THREE from 'three';
 import { useTheme, Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D, PointColorData } from '../../types/model3d';
+import type { Point3D, Shape3D } from '../../types/model3d';
 
 export interface Viewer3DProps {
     points: Point3D[];
     shapes?: Shape3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
-    colorData?: PointColorData[];
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
-    className?: string;
     showGrid?: boolean;
     showStats?: boolean;
     pointSize?: number;
@@ -125,14 +123,12 @@ function OptimizedPointCloud({
     points,
     selectedIds,
     hoveredId,
-    colorData: _colorData,
     pointSize,
     selectedModelNames,
 }: {
     points: Point3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
-    colorData?: PointColorData[];
     pointSize?: number;
     selectedModelNames?: Set<string>;
     onPointClick?: (pointId: string) => void;
@@ -622,23 +618,19 @@ function SceneContent({
     shapes,
     selectedIds,
     hoveredId,
-    colorData,
     onPointClick,
     onPointHover,
     pointSize,
     selectedModelNames,
-    colorStartOffset,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
     selectedIds?: Set<string>;
     hoveredId?: string | null;
-    colorData?: PointColorData[];
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     pointSize?: number;
     selectedModelNames?: Set<string>;
-    colorStartOffset?: number;
 }) {
     const { camera, controls } = useThree();
 
@@ -695,7 +687,6 @@ function SceneContent({
                 points={points}
                 selectedIds={selectedIds}
                 hoveredId={hoveredId}
-                colorData={colorData}
                 pointSize={pointSize}
                 selectedModelNames={selectedModelNames}
                 onPointClick={onPointClick}
@@ -709,10 +700,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     shapes,
     selectedIds,
     hoveredId,
-    colorData,
     onPointClick,
     onPointHover,
-    className,
     showGrid = true,
     showStats = false,
     pointSize = 1.2,
@@ -725,7 +714,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     if (!points || points.length === 0) {
         return (
             <Box
-                className={className}
                 sx={{
                     width: '100%',
                     height: '100%',
@@ -753,7 +741,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
 
     return (
         <Box
-            className={className}
             sx={{
                 width: '100%',
                 height: '100%',
@@ -887,7 +874,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             shapes={shapes}
                             selectedIds={selectedIds}
                             hoveredId={hoveredId}
-                            colorData={colorData}
                             onPointClick={onPointClick}
                             onPointHover={onPointHover}
                             pointSize={pointSize}

@@ -29,7 +29,7 @@ export { Viewer2D } from './components/preview-3d/Viewer2D';
 export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
 export { ModelList } from './components/preview-3d/ModelList';
 export type { ModelListProps } from './components/preview-3d/ModelList';
-export type { Model3DData, ModelMetadata, Point3D, Shape3D, PointColorData, SelectionState } from './types/model3d';
+export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState } from './types/model3d';
 export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
