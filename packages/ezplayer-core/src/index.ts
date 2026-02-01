@@ -43,6 +43,7 @@ export type {
     AudioChunk,
     EZPElectronAPI,
     FileSelectOptions,
+    GetNodeResult,
 } from './types/EZPElectronAPI';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';

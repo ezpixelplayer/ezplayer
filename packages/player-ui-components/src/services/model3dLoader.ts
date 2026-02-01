@@ -3,36 +3,33 @@
  */
 
 import type { Model3DData, ModelMetadata, Point3D } from '../types/model3d';
+import type { GetNodeResult } from '@ezplayer/ezplayer-core';
 
 /**
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
  * This function handles the structure returned by xllayoutcalcs getModelCoordinates
  */
-export function convertXmlCoordinatesToModel3D(xmlCoordinates: Record<string, unknown>): Model3DData {
+export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, GetNodeResult>): Model3DData {
     const allPoints: Point3D[] = [];
     const modelMetadata: ModelMetadata[] = [];
 
     // Iterate through each model's coordinates
-    Object.entries(xmlCoordinates).forEach(([modelName, modelData], modelIndex) => {
+    Object.entries(modelCoordinates).forEach(([modelName, modelData], modelIndex) => {
         const startIndex = allPoints.length;
         let pointIndex = 0;
 
-        // Handle different possible structures from getModelCoordinates
-        // Structure might be: { nodes: [{ coords: [{wX, wY, wZ}] }] } or similar
-        const data = modelData as any;
-
-        // Try to extract points from various possible structures
-        if (data && typeof data === 'object') {
+        // Extract points
+        if (modelData) {
             // Case 1: Structure with nodes array
-            if (Array.isArray(data.nodes)) {
-                data.nodes.forEach((node: any, nodeIndex: number) => {
+            if (Array.isArray(modelData.nodes)) {
+                modelData.nodes.forEach((node, nodeIndex: number) => {
                     if (node.coords && Array.isArray(node.coords)) {
-                        node.coords.forEach((coord: any, coordIndex: number) => {
+                        node.coords.forEach((coord, coordIndex: number) => {
                             allPoints.push({
                                 id: `model${modelIndex}-node${nodeIndex}-${coordIndex}`,
-                                x: coord.wX ?? coord.x ?? 0,
-                                y: coord.wY ?? coord.y ?? 0,
-                                z: coord.wZ ?? coord.z ?? 0,
+                                x: coord.wX ?? 0,
+                                y: coord.wY ?? 0,
+                                z: coord.wZ ?? 0,
                                 color: '#00ff00',
                                 label: `${modelName} - Point ${pointIndex + 1}`,
                                 metadata: {
@@ -46,77 +43,6 @@ export function convertXmlCoordinatesToModel3D(xmlCoordinates: Record<string, un
                         });
                     }
                 });
-            }
-            // Case 2: Direct array of coordinates
-            else if (Array.isArray(data)) {
-                data.forEach((coord: any, coordIndex: number) => {
-                    allPoints.push({
-                        id: `model${modelIndex}-point${coordIndex}`,
-                        x: coord.wX ?? coord.x ?? coord[0] ?? 0,
-                        y: coord.wY ?? coord.y ?? coord[1] ?? 0,
-                        z: coord.wZ ?? coord.z ?? coord[2] ?? 0,
-                        color: '#00ff00',
-                        label: `${modelName} - Point ${pointIndex + 1}`,
-                        metadata: {
-                            modelName,
-                            modelIndex,
-                            coordIndex,
-                        },
-                    });
-                    pointIndex++;
-                });
-            }
-            // Case 3: Object with points array
-            else if (Array.isArray(data.points)) {
-                data.points.forEach((coord: any, coordIndex: number) => {
-                    allPoints.push({
-                        id: `model${modelIndex}-point${coordIndex}`,
-                        x: coord.wX ?? coord.x ?? coord[0] ?? 0,
-                        y: coord.wY ?? coord.y ?? coord[1] ?? 0,
-                        z: coord.wZ ?? coord.z ?? coord[2] ?? 0,
-                        color: '#00ff00',
-                        label: `${modelName} - Point ${pointIndex + 1}`,
-                        metadata: {
-                            modelName,
-                            modelIndex,
-                            coordIndex,
-                        },
-                    });
-                    pointIndex++;
-                });
-            }
-            // Case 4: Try to find any array property that might contain coordinates
-            else {
-                for (const [key, value] of Object.entries(data)) {
-                    if (Array.isArray(value)) {
-                        value.forEach((item: any, itemIndex: number) => {
-                            if (item && typeof item === 'object') {
-                                const x = item.wX ?? item.x ?? item[0] ?? 0;
-                                const y = item.wY ?? item.y ?? item[1] ?? 0;
-                                const z = item.wZ ?? item.z ?? item[2] ?? 0;
-                                // Only add if we found valid coordinates
-                                if (x !== 0 || y !== 0 || z !== 0 || item.wX !== undefined || item.x !== undefined) {
-                                    allPoints.push({
-                                        id: `model${modelIndex}-${key}-${itemIndex}`,
-                                        x,
-                                        y,
-                                        z,
-                                        color: '#00ff00',
-                                        label: `${modelName} - ${key} ${pointIndex + 1}`,
-                                        metadata: {
-                                            modelName,
-                                            modelIndex,
-                                            key,
-                                            itemIndex,
-                                        },
-                                    });
-                                    pointIndex++;
-                                }
-                            }
-                        });
-                        break; // Only process first array found
-                    }
-                }
             }
         }
 
