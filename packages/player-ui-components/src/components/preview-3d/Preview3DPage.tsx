@@ -7,13 +7,11 @@ import { Preview3D } from './Preview3D';
 export interface Preview3DPageProps {
     title: string;
     statusArea: React.ReactNode[];
-    modelUrl?: string;
 }
 
 export const Preview3DPage: React.FC<Preview3DPageProps> = ({
     title,
     statusArea,
-    modelUrl,
 }) => {
     const theme = useTheme<ExtendedTheme>();
 
@@ -61,10 +59,8 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
                     }}
                 >
                     <Preview3D
-                        modelUrl={modelUrl}
                         showList={true}
                         showControls={true}
-                        enableColorPicker={true}
                     />
                 </Box>
             </Box>

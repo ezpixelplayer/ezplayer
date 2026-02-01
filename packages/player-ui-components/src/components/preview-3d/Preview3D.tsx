@@ -29,7 +29,6 @@ export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
 
 export interface Preview3DProps {
-    modelUrl?: string;
     modelData?: Model3DData;
     colorData?: PointColorData[];
     onColorDataUpdate?: (colorData: PointColorData[]) => void;
@@ -48,7 +47,6 @@ export interface Preview3DProps {
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
-    modelUrl,
     modelData: initialModelData,
     colorData: externalColorData,
     onColorDataUpdate,
