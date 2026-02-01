@@ -9,10 +9,7 @@ export interface Preview3DPageProps {
     statusArea: React.ReactNode[];
 }
 
-export const Preview3DPage: React.FC<Preview3DPageProps> = ({
-    title,
-    statusArea,
-}) => {
+export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea }) => {
     const theme = useTheme<ExtendedTheme>();
 
     return (
@@ -58,10 +55,7 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({
                         border: (theme) => `1px solid ${theme.palette.divider}`,
                     }}
                 >
-                    <Preview3D
-                        showList={true}
-                        showControls={true}
-                    />
+                    <Preview3D showList={true} showControls={true} />
                 </Box>
             </Box>
         </Box>

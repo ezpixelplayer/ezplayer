@@ -1,4 +1,4 @@
-/* 
+/*
  * N-slot "latest frame wins" ring buffer.
  *
  * - Single writer publishes complete frames into successive slots.
@@ -41,7 +41,7 @@ export class LatestFrameRingBuffer {
     private readonly headerBytes: number;
     private readonly payloadOffset: number;
 
-    constructor(opts: { buffer: FrameBackingBuffer; frameSize: number; slotCount: number, isWriter: boolean }) {
+    constructor(opts: { buffer: FrameBackingBuffer; frameSize: number; slotCount: number; isWriter: boolean }) {
         const { buffer, frameSize, slotCount } = opts;
 
         // Initial
@@ -75,8 +75,7 @@ export class LatestFrameRingBuffer {
             this._storeHeader(5, 0);
             this._storeHeader(6, 0);
             this._storeHeader(7, 0);
-        }
-        else {
+        } else {
             this.slotCount = this._loadHeader(LatestFrameRingBuffer.SLOT_COUNT_HDRIDX);
             this.frameSize = this._loadHeader(LatestFrameRingBuffer.FRAME_SIZE_HDRIDX);
         }
@@ -84,11 +83,7 @@ export class LatestFrameRingBuffer {
         // Create slot views
         this.slots = new Array<Uint8Array>(slotCount);
         for (let i = 0; i < slotCount; i++) {
-            this.slots[i] = new Uint8Array(
-                buffer,
-                this.payloadOffset + i * this.frameSize,
-                this.frameSize
-            );
+            this.slots[i] = new Uint8Array(buffer, this.payloadOffset + i * this.frameSize, this.frameSize);
         }
     }
 
@@ -168,7 +163,7 @@ export class LatestFrameRingBuffer {
         const cur = this._loadLatestSeq();
         if (cur !== lastSeq) return cur;
 
-        if (typeof Atomics.waitAsync === "function") {
+        if (typeof Atomics.waitAsync === 'function') {
             await Atomics.waitAsync(this.header, idx, lastSeq, timeoutMs).value;
             return this._loadLatestSeq();
         }

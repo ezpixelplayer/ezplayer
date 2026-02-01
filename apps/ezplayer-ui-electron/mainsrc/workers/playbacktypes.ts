@@ -11,6 +11,7 @@ import type {
     PlayerNStatusContent,
     EZPlayerCommand,
     PlaybackSettings,
+    LatestFrameRingBuffer,
 } from '@ezplayer/ezplayer-core';
 
 export interface PlaybackWorkerData {
@@ -35,6 +36,7 @@ export type PlayWorkerRPCAPI = {
     fail: (args: { msg: string }) => void;
     stopPlayback: (args: {}) => Promise<boolean> | boolean;
     getModelCoordinates: (args: {}) => Promise<Record<string, GetNodeResult>>;
+    getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
 };
 
 export type MainRPCAPI = {
@@ -58,6 +60,7 @@ export type PlayerCommand =
 export type WorkerToMainMessage =
     | { type: 'ready' }
     | { type: 'audioChunk'; chunk: AudioChunk }
+    | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }
     | { type: 'stats'; stats: PlaybackStatistics }

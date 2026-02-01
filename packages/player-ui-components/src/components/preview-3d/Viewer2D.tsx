@@ -153,15 +153,7 @@ function Optimized2DPointCloud({
         });
 
         return { positions, colors };
-    }, [
-        selectedPoints,
-        selectedIds,
-        hoveredId,
-        viewPlane,
-        selectedModelNames,
-        selectedOriginalIndices,
-        points.length,
-    ]);
+    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, selectedOriginalIndices, points.length]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {

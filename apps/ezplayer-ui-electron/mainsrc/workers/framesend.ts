@@ -10,7 +10,7 @@ import {
     startBatch,
     startFrame,
 } from '@ezplayer/epp';
-import { PlaybackStatistics } from '@ezplayer/ezplayer-core';
+import { LatestFrameRingBuffer, PlaybackStatistics } from '@ezplayer/ezplayer-core';
 import { snapshotAsyncCounts } from './perfmon';
 import { maxUint8 } from '../processing/blend';
 
@@ -80,6 +80,7 @@ export class FrameSender {
     nChannels: number = 0;
     blackFrame: Uint8Array | undefined = undefined;
     mixFrame: Uint8Array | undefined = undefined;
+    exportBuffer: LatestFrameRingBuffer | undefined = undefined;
     emitWarning?: (msg: string) => void;
     emitError?: (err: Error) => void;
 
@@ -161,6 +162,11 @@ export class FrameSender {
                     this.job.dataBuffers = [this.mixFrame];
                 } else {
                     this.job.dataBuffers = [args.frame.frame];
+                }
+
+                // Export frame
+                if (this.exportBuffer) {
+                    this.exportBuffer.publishFrom(this.job.dataBuffers[0].slice(0, this.nChannels));
                 }
 
                 const res = this.state.initialize(args.targetFramePN, this.job);

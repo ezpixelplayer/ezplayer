@@ -133,6 +133,7 @@ export interface EZPElectronAPI {
         status: 'listening' | 'stopped' | 'error';
     } | null>;
 
+    // Preview window
     getModelCoordinates: () => Promise<Record<string, GetNodeResult>>;
 
     // Data change callbacks:

@@ -27,7 +27,12 @@ import type {
     PlaybackSettings,
     EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
-import { getActiveViewerControlSchedule, getActiveVolumeSchedule, PlayerRunState } from '@ezplayer/ezplayer-core';
+import {
+    getActiveViewerControlSchedule,
+    getActiveVolumeSchedule,
+    LatestFrameRingBuffer,
+    PlayerRunState,
+} from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -193,6 +198,9 @@ const handlers: PlayWorkerRPCAPI = {
             }
         }
         return coords;
+    },
+    getFrameExportBuffer: async () => {
+        return frameExportBuffer;
     },
 };
 
@@ -739,6 +747,9 @@ async function loadXmlCoordinates() {
     }
 }
 
+let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
+let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
+
 ////////
 // Actual logic loops
 ////////
@@ -810,6 +821,15 @@ async function processQueue() {
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
         sender.mixFrame = new Uint8Array(nChannels);
+        frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
+        frameExportRing = new LatestFrameRingBuffer({
+            buffer: frameExportBuffer,
+            frameSize: nChannels,
+            slotCount: 4,
+            isWriter: true,
+        });
+        sender.exportBuffer = frameExportRing;
+        send({ type: 'pixelbuffer', buffer: frameExportBuffer });
     } catch (e) {
         const err = e as Error;
         emitError(`[processQueue] ❌ CRITICAL ERROR in processQueue: ${err.message}`);

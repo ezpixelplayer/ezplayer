@@ -5,10 +5,12 @@ import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
+import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 
 export interface Viewer3DProps {
     points: Point3D[];
     shapes?: Shape3D[];
+    liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     onPointClick?: (pointId: string) => void;
@@ -25,12 +27,14 @@ function generateProceduralColorBuffer(pointCount: number): Uint8Array {
 // Optimized point cloud rendering using THREE.Points
 function OptimizedPointCloud({
     points,
+    liveData,
     selectedIds,
     hoveredId,
     pointSize,
     selectedModelNames,
 }: {
     points: Point3D[];
+    liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     pointSize?: number;
@@ -137,14 +141,7 @@ function OptimizedPointCloud({
         });
 
         return { positions, colors };
-    }, [
-        selectedPoints,
-        selectedIds,
-        hoveredId,
-        selectedModelNames,
-        selectedOriginalIndices,
-        points.length,
-    ]);
+    }, [selectedPoints, selectedIds, hoveredId, selectedModelNames, selectedOriginalIndices, points.length]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {
@@ -321,34 +318,47 @@ function OptimizedPointCloud({
             if (colorAttr) {
                 const colorArray = colorAttr.array as Uint8Array;
 
-                // TODO: Get correct data
-                nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
-                    // Skip if hovered (will be handled by geometry update)
-                    if (hoveredId === point.id) return;
+                // TODO: Get correct channel numbers, gamma, color order, brightness, etc
+                const ld = liveData?.tryReadLatest(0)?.bytes;
+                if (ld) {
+                    nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
+                        // Skip if hovered (will be handled by geometry update)
+                        if (hoveredId === point.id) return;
 
-                    // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
-                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + 150;
+                        const colorIndex = i * 3;
+                        colorArray[colorIndex] = ld[colorIndex];
+                        colorArray[colorIndex + 1] = ld[colorIndex + 1];
+                        colorArray[colorIndex + 2] = ld[colorIndex + 2];
+                    });
+                } else {
+                    nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
+                        // Skip if hovered (will be handled by geometry update)
+                        if (hoveredId === point.id) return;
 
-                    // RGB with phase offsets
-                    const rPhase = phase;
-                    const gPhase = phase + 341;
-                    const bPhase = phase + 682;
+                        // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
+                        const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + 150;
 
-                    // Generate RGB values
-                    let r = tri(rPhase);
-                    let g = tri(gPhase);
-                    let b = tri(bPhase);
+                        // RGB with phase offsets
+                        const rPhase = phase;
+                        const gPhase = phase + 341;
+                        const bPhase = phase + 682;
 
-                    // Clamp to valid range
-                    r = Math.min(255, Math.max(0, Math.round(r)));
-                    g = Math.min(255, Math.max(0, Math.round(g)));
-                    b = Math.min(255, Math.max(0, Math.round(b)));
+                        // Generate RGB values
+                        let r = tri(rPhase);
+                        let g = tri(gPhase);
+                        let b = tri(bPhase);
 
-                    const colorIndex = i * 3;
-                    colorArray[colorIndex] = r;
-                    colorArray[colorIndex + 1] = g;
-                    colorArray[colorIndex + 2] = b;
-                });
+                        // Clamp to valid range
+                        r = Math.min(255, Math.max(0, Math.round(r)));
+                        g = Math.min(255, Math.max(0, Math.round(g)));
+                        b = Math.min(255, Math.max(0, Math.round(b)));
+
+                        const colorIndex = i * 3;
+                        colorArray[colorIndex] = r;
+                        colorArray[colorIndex + 1] = g;
+                        colorArray[colorIndex + 2] = b;
+                    });
+                }
 
                 colorAttr.needsUpdate = true;
             }
@@ -515,6 +525,7 @@ function ClickHandler({
 function SceneContent({
     points,
     shapes,
+    liveData,
     selectedIds,
     hoveredId,
     onPointClick,
@@ -524,6 +535,7 @@ function SceneContent({
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
+    liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     onPointClick?: (pointId: string) => void;
@@ -573,6 +585,7 @@ function SceneContent({
 
             <OptimizedPointCloud
                 points={points}
+                liveData={liveData}
                 selectedIds={selectedIds}
                 hoveredId={hoveredId}
                 pointSize={pointSize}
@@ -586,6 +599,7 @@ function SceneContent({
 export const Viewer3D: React.FC<Viewer3DProps> = ({
     points,
     shapes,
+    liveData,
     selectedIds,
     hoveredId,
     onPointClick,
@@ -751,6 +765,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         <SceneContent
                             points={points}
                             shapes={shapes}
+                            liveData={liveData}
                             selectedIds={selectedIds}
                             hoveredId={hoveredId}
                             onPointClick={onPointClick}

@@ -98,9 +98,7 @@ export const ModelList: React.FC<ModelListProps> = ({
     }, [selectedModelNames, filteredModels]);
 
     return (
-        <Box
-            sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
-        >
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             {/* Fixed Header Section */}
             <Box
                 sx={{

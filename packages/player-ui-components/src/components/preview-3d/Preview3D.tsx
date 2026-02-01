@@ -20,7 +20,7 @@ import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
-import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { EZPElectronAPI, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -44,6 +44,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
     const [showItemList, setShowItemList] = useState(showList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
+    const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     // This is the selection state of the 2D/3D view
@@ -74,12 +75,22 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                 if (electronAPI && electronAPI.getModelCoordinates) {
                     const xmlCoords = await electronAPI.getModelCoordinates();
+                    const fbb = undefined;
+                    const fb = !fbb
+                        ? undefined
+                        : new LatestFrameRingBuffer({
+                              buffer: fbb,
+                              frameSize: 0,
+                              slotCount: 0,
+                              isWriter: false,
+                          });
 
                     if (xmlCoords && Object.keys(xmlCoords).length > 0) {
                         const convertedData = convertXmlCoordinatesToModel3D(xmlCoords);
 
                         if (convertedData.points.length > 0) {
                             setModelData(convertedData);
+                            setLivePixels(fb);
                             setLoading(false);
                             return;
                         }
@@ -503,6 +514,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         <Viewer3D
                             points={modelData.points}
                             shapes={modelData.shapes}
+                            liveData={livePixels}
                             selectedIds={selectionState.selectedIds}
                             hoveredId={selectionState.hoveredId}
                             onPointClick={handleItemClick}

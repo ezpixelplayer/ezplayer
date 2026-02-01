@@ -60,6 +60,7 @@ export let curStatus: CombinedPlayerStatus = {};
 export let curErrors: string[] = [];
 export let curShow: EndUserShowSettings | undefined = undefined;
 export let curUser: EndUser | undefined = undefined;
+export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
 export function getSequenceThumbnail(id: string) {
@@ -368,6 +369,10 @@ export async function registerContentHandlers(
             case 'audioChunk': {
                 //mainWindow?.webContents.send('audio:chunk', msg.chunk);
                 audioWindow?.webContents.send('audio:chunk', msg.chunk, [msg.chunk.buffer]);
+                break;
+            }
+            case 'pixelbuffer': {
+                curFrameBuffer = msg.buffer;
                 break;
             }
             case 'stats': {
