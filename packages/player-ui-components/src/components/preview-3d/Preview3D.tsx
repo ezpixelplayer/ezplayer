@@ -98,13 +98,20 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     }, [frameServerUrl]);
 
     // Frame buffer for live pixel data from server
-    const { buffer: livePixelBuffer, isConnected, frameSize, lastSeq } = useFrameBuffer({
+    const {
+        buffer: livePixelBuffer,
+        isConnected,
+        frameSize,
+        lastSeq,
+    } = useFrameBuffer({
         baseUrl: effectiveFrameServerUrl,
         enabled: !!effectiveFrameServerUrl,
     });
 
     // Debug: trace buffer flow
-    console.log(`[Preview3D] effectiveUrl=${effectiveFrameServerUrl}, connected=${isConnected}, frameSize=${frameSize}, lastSeq=${lastSeq}, hasBuffer=${!!livePixelBuffer}`);
+    console.log(
+        `[Preview3D] effectiveUrl=${effectiveFrameServerUrl}, connected=${isConnected}, frameSize=${frameSize}, lastSeq=${lastSeq}, hasBuffer=${!!livePixelBuffer}`,
+    );
 
     // Update livePixels when the frame buffer changes
     useEffect(() => {

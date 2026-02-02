@@ -329,7 +329,7 @@ function OptimizedPointCloud({
                 // Use ref to get current liveData (avoids stale closure in useFrame)
                 const currentLiveData = liveDataRef.current;
                 const ld = currentLiveData?.tryReadLatest(0)?.bytes;
-                console.log(`Has feed: ${currentLiveData ? "yes" : "no"}; has frame: ${ld ? "yes" : "no"}`);
+                console.log(`Has feed: ${currentLiveData ? 'yes' : 'no'}; has frame: ${ld ? 'yes' : 'no'}`);
                 if (ld) {
                     nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
                         // Skip if hovered (will be handled by geometry update)

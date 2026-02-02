@@ -262,7 +262,7 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
         }
 
         if (!result.bytes) {
-            console.error("WFT HAPPENED TO THE ADTA BYTES");
+            console.error('WFT HAPPENED TO THE ADTA BYTES');
             ctx.status = 500;
             return;
         }
