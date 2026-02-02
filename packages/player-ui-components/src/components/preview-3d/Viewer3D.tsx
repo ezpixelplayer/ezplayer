@@ -751,12 +751,13 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
                         <OrbitControls
                             enableDamping
-                            dampingFactor={0.05}
+                            dampingFactor={0.35}
                             minDistance={10}
                             maxDistance={10000}
                             enablePan={true}
                             enableRotate={true}
                             enableZoom={true}
+                            zoomToCursor={true}
                             panSpeed={1.0}
                             rotateSpeed={1.0}
                             zoomSpeed={1.0}
