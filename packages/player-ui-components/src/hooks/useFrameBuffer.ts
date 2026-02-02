@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 
 export interface UseFrameBufferOptions {
@@ -9,108 +9,87 @@ export interface UseFrameBufferOptions {
 
 export interface UseFrameBufferResult {
     buffer: LatestFrameRingBuffer | undefined;
-    isConnected: boolean;
-    frameSize: number;
-    lastSeq: number;
-    error: string | null;
 }
 
-const DEFAULT_POLL_INTERVAL = 33; // ~30fps
+const DEFAULT_POLL_INTERVAL = 16; // Target ~60fps, actual rate limited by network
 const DEFAULT_SLOT_COUNT = 4;
 
 export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferResult {
     const { baseUrl, pollIntervalMs = DEFAULT_POLL_INTERVAL, enabled = true } = options;
 
-    const [isConnected, setIsConnected] = useState(false);
-    const [frameSize, setFrameSize] = useState(0);
-    const [lastSeq, setLastSeq] = useState(0);
-    const [error, setError] = useState<string | null>(null);
+    // Buffer reference - only set once when created
+    const [buffer, setBuffer] = useState<LatestFrameRingBuffer | undefined>();
 
     // Refs for mutable state in polling loop
     const bufferRef = useRef<ArrayBuffer | undefined>();
     const ringRef = useRef<LatestFrameRingBuffer | undefined>();
-    const abortRef = useRef<AbortController | undefined>();
     const frameSizeRef = useRef(0);
-
-    // Stable reference for the result buffer
-    const [buffer, setBuffer] = useState<LatestFrameRingBuffer | undefined>();
-
-    const poll = useCallback(async () => {
-        if (!baseUrl || !enabled) return;
-
-        try {
-            abortRef.current = new AbortController();
-            const response = await fetch(`${baseUrl}/api/frames`, {
-                signal: abortRef.current.signal,
-            });
-
-            if (response.status === 204) {
-                // No data available
-                setIsConnected(true);
-                return;
-            }
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const data = await response.arrayBuffer();
-            if (data.byteLength < 8) {
-                throw new Error('Response too small');
-            }
-
-            // Parse header
-            const view = new DataView(data);
-            const newFrameSize = view.getUint32(0, true);
-            const seq = view.getUint32(4, true);
-
-            // Allocate/reallocate buffer if frame size changed
-            if (newFrameSize !== frameSizeRef.current || !bufferRef.current) {
-                const needed = LatestFrameRingBuffer.requiredBytes(newFrameSize, DEFAULT_SLOT_COUNT);
-                bufferRef.current = new ArrayBuffer(needed);
-                ringRef.current = new LatestFrameRingBuffer({
-                    buffer: bufferRef.current,
-                    frameSize: newFrameSize,
-                    slotCount: DEFAULT_SLOT_COUNT,
-                    isWriter: true,
-                });
-                frameSizeRef.current = newFrameSize;
-                setFrameSize(newFrameSize);
-                setBuffer(ringRef.current);
-            }
-
-            // Write frame data to local buffer
-            const frameData = new Uint8Array(data, 8);
-            ringRef.current?.publishFrom(frameData);
-            console.log(`Published: ${seq}`);
-
-            setLastSeq(seq);
-            setIsConnected(true);
-            setError(null);
-        } catch (err) {
-            if (err instanceof Error && err.name === 'AbortError') return;
-            const errMsg = err instanceof Error ? err.message : 'Unknown error';
-            console.error(`[useFrameBuffer] Fetch error: ${errMsg}`, err);
-            setError(errMsg);
-            setIsConnected(false);
-        }
-    }, [baseUrl, enabled]);
+    const shouldStopRef = useRef(false);
 
     useEffect(() => {
         if (!baseUrl || !enabled) {
-            setIsConnected(false);
+            shouldStopRef.current = true;
             return;
         }
 
-        // Start polling
-        const intervalId = setInterval(poll, pollIntervalMs);
-        poll(); // Initial fetch
+        shouldStopRef.current = false;
+
+        // Poll loop - waits for previous request to complete before starting next
+        const runPollLoop = async () => {
+            while (!shouldStopRef.current) {
+                try {
+                    const response = await fetch(`${baseUrl}/api/frames`);
+
+                    if (shouldStopRef.current) return;
+
+                    if (response.status === 204 || !response.ok) {
+                        // No data or error - just continue polling
+                        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                        continue;
+                    }
+
+                    const data = await response.arrayBuffer();
+                    if (data.byteLength < 8) {
+                        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                        continue;
+                    }
+
+                    // Parse header
+                    const view = new DataView(data);
+                    const newFrameSize = view.getUint32(0, true);
+
+                    // Allocate buffer if needed (only triggers React state once)
+                    if (newFrameSize !== frameSizeRef.current || !bufferRef.current) {
+                        const needed = LatestFrameRingBuffer.requiredBytes(newFrameSize, DEFAULT_SLOT_COUNT);
+                        bufferRef.current = new ArrayBuffer(needed);
+                        ringRef.current = new LatestFrameRingBuffer({
+                            buffer: bufferRef.current,
+                            frameSize: newFrameSize,
+                            slotCount: DEFAULT_SLOT_COUNT,
+                            isWriter: true,
+                        });
+                        frameSizeRef.current = newFrameSize;
+                        setBuffer(ringRef.current); // Only React state update - happens once
+                    }
+
+                    // Write frame data to ring buffer - Viewer3D reads from here
+                    const frameData = new Uint8Array(data, 8);
+                    ringRef.current?.publishFrom(frameData);
+
+                } catch {
+                    // Silently continue on errors
+                }
+
+                await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+            }
+        };
+
+        runPollLoop();
 
         return () => {
-            clearInterval(intervalId);
-            abortRef.current?.abort();
+            shouldStopRef.current = true;
         };
-    }, [baseUrl, enabled, pollIntervalMs, poll]);
+    }, [baseUrl, enabled, pollIntervalMs]);
 
-    return { buffer, isConnected, frameSize, lastSeq, error };
+    return { buffer };
 }
