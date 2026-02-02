@@ -236,6 +236,10 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
     const frameBufferPool = new BufferPool();
 
     router.get('/api/frames', async (ctx) => {
+        // CORS headers for Electron renderer (file:// origin)
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
         // No buffer available yet
         if (!curFrameBuffer) {
             ctx.status = 204;

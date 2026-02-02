@@ -52,6 +52,13 @@ function OptimizedPointCloud({
     const selectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
     const nonSelectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
 
+    // Keep liveData in a ref so useFrame callback always has current value
+    const liveDataRef = useRef<LatestFrameRingBuffer | undefined>(liveData);
+    useEffect(() => {
+        console.log(`[Viewer3D] useEffect updating liveDataRef, hasLiveData=${!!liveData}`);
+        liveDataRef.current = liveData;
+    }, [liveData]);
+
     // Reset animation time when selected models change
     useEffect(() => {
         animationTimeRef.current = 0;
@@ -319,7 +326,10 @@ function OptimizedPointCloud({
                 const colorArray = colorAttr.array as Uint8Array;
 
                 // TODO: Get correct channel numbers, gamma, color order, brightness, etc
-                const ld = liveData?.tryReadLatest(0)?.bytes;
+                // Use ref to get current liveData (avoids stale closure in useFrame)
+                const currentLiveData = liveDataRef.current;
+                const ld = currentLiveData?.tryReadLatest(0)?.bytes;
+                console.log(`Has feed: ${currentLiveData ? "yes" : "no"}; has frame: ${ld ? "yes" : "no"}`);
                 if (ld) {
                     nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
                         // Skip if hovered (will be handled by geometry update)

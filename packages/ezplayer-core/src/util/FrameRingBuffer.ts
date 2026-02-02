@@ -47,7 +47,8 @@ export class LatestFrameRingBuffer {
         // Initial
         this.frameSize = frameSize;
         this.slotCount = slotCount;
-        this.isShared = buffer instanceof SharedArrayBuffer;
+        // Safe check for SharedArrayBuffer (not available in all contexts without COOP/COEP headers)
+        this.isShared = typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer;
 
         // Fixed 32-byte header (8 Int32s).
         this.headerBytes = 32;

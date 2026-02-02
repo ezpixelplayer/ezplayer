@@ -21,6 +21,7 @@ import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
 import { EZPElectronAPI, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -31,6 +32,7 @@ export interface Preview3DProps {
     showControls?: boolean;
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
+    frameServerUrl?: string; // URL for frame data server, e.g., "http://localhost:3000"
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -39,6 +41,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     showControls = true,
     defaultViewMode = '3d',
     pointSize = 3.0,
+    frameServerUrl,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
@@ -54,6 +57,60 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     });
     // This is the selection state of the model list
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
+
+    // Auto-detect frame server URL if not provided
+    const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
+
+    useEffect(() => {
+        // If prop is provided, use it
+        if (frameServerUrl) {
+            setEffectiveFrameServerUrl(frameServerUrl);
+            return;
+        }
+
+        // Auto-detect based on environment
+        const detectUrl = async () => {
+            const electronAPI = (window as any).electronAPI as EZPElectronAPI;
+
+            // In Electron, query the server status for the port
+            if (electronAPI?.getServerStatus) {
+                try {
+                    const status = await electronAPI.getServerStatus();
+                    if (status?.port && status.status === 'listening') {
+                        setEffectiveFrameServerUrl(`http://localhost:${status.port}`);
+                        return;
+                    }
+                } catch (err) {
+                    console.error('[Preview3D] Failed to get server status:', err);
+                }
+            }
+
+            // In web app, use current origin (we're served from the same server)
+            if (typeof window !== 'undefined' && window.location?.origin) {
+                // Only use if it looks like a valid HTTP origin (not file://)
+                if (window.location.origin.startsWith('http')) {
+                    setEffectiveFrameServerUrl(window.location.origin);
+                }
+            }
+        };
+
+        detectUrl();
+    }, [frameServerUrl]);
+
+    // Frame buffer for live pixel data from server
+    const { buffer: livePixelBuffer, isConnected, frameSize, lastSeq } = useFrameBuffer({
+        baseUrl: effectiveFrameServerUrl,
+        enabled: !!effectiveFrameServerUrl,
+    });
+
+    // Debug: trace buffer flow
+    console.log(`[Preview3D] effectiveUrl=${effectiveFrameServerUrl}, connected=${isConnected}, frameSize=${frameSize}, lastSeq=${lastSeq}, hasBuffer=${!!livePixelBuffer}`);
+
+    // Update livePixels when the frame buffer changes
+    useEffect(() => {
+        console.log(`[Preview3D] Setting livePixels, hasBuffer=${!!livePixelBuffer}`);
+        setLivePixels(livePixelBuffer);
+    }, [livePixelBuffer]);
 
     // Load model from XML coordinates if available (Electron environment)
     useEffect(() => {
@@ -75,22 +132,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                 if (electronAPI && electronAPI.getModelCoordinates) {
                     const xmlCoords = await electronAPI.getModelCoordinates();
-                    const fbb = undefined;
-                    const fb = !fbb
-                        ? undefined
-                        : new LatestFrameRingBuffer({
-                              buffer: fbb,
-                              frameSize: 0,
-                              slotCount: 0,
-                              isWriter: false,
-                          });
 
                     if (xmlCoords && Object.keys(xmlCoords).length > 0) {
                         const convertedData = convertXmlCoordinatesToModel3D(xmlCoords);
 
                         if (convertedData.points.length > 0) {
                             setModelData(convertedData);
-                            setLivePixels(fb);
                             setLoading(false);
                             return;
                         }
