@@ -81,8 +81,8 @@ export class LatestFrameRingBuffer {
         }
 
         // Create slot views
-        this.slots = new Array<Uint8Array>(slotCount);
-        for (let i = 0; i < slotCount; i++) {
+        this.slots = new Array<Uint8Array>(this.slotCount);
+        for (let i = 0; i < this.slotCount; i++) {
             this.slots[i] = new Uint8Array(buffer, this.payloadOffset + i * this.frameSize, this.frameSize);
         }
     }
