@@ -5,6 +5,12 @@ import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
+import {
+    getPointColor,
+    isPointSelected,
+    isModelSelected,
+    generateInitialColors,
+} from './viewerUtils';
 
 export interface Viewer2DProps {
     points: Point3D[];
@@ -16,34 +22,6 @@ export interface Viewer2DProps {
     viewPlane?: 'xy' | 'xz' | 'yz';
     pointSize?: number;
     selectedModelNames?: Set<string>;
-}
-
-// Optimized 2D point cloud rendering using THREE.Points
-function generateProceduralColorBuffer(pointCount: number, period: number, startOffset: number): Uint8Array {
-    const colors = new Uint8Array(pointCount * 3);
-    const safePeriod = Math.max(1, Math.floor(period));
-    const half = safePeriod / 2;
-
-    const triangle = (t: number) => {
-        // Linear ramp 0 -> 255 -> 0 over one period.
-        const tt = ((t % safePeriod) + safePeriod) % safePeriod;
-        const v = tt <= half ? (tt / half) * 255 : ((safePeriod - tt) / half) * 255;
-        const clamped = Math.min(255, Math.max(0, v));
-        return Math.round(clamped);
-    };
-
-    const offset = Math.floor(startOffset);
-    const phaseG = Math.floor(safePeriod / 3);
-    const phaseB = Math.floor((safePeriod * 2) / 3);
-
-    for (let i = 0; i < pointCount; i++) {
-        const p = i + offset;
-        colors[i * 3] = triangle(p);
-        colors[i * 3 + 1] = triangle(p + phaseG);
-        colors[i * 3 + 2] = triangle(p + phaseB);
-    }
-
-    return colors;
 }
 
 function Optimized2DPointCloud({
@@ -75,11 +53,10 @@ function Optimized2DPointCloud({
         const nonSelectedIndices: number[] = [];
 
         points.forEach((point, originalIndex) => {
-            const modelName = point.metadata?.modelName as string | undefined;
-            const isModelSelected = modelName && selectedModelNames?.has(modelName);
-            const isPointSelected = selectedIds?.has(point.id);
+            const isModelSelectedValue = isModelSelected(point, selectedModelNames);
+            const isPointSelectedValue = isPointSelected(point, selectedIds, selectedModelNames);
 
-            if (isModelSelected || isPointSelected) {
+            if (isModelSelectedValue || isPointSelectedValue) {
                 selected.push(point);
                 selectedIndices.push(originalIndex);
             } else {
@@ -101,9 +78,14 @@ function Optimized2DPointCloud({
         if (selectedPoints.length === 0) return null;
 
         const positions = new Float32Array(selectedPoints.length * 3);
-        // Generate color buffer for all points to get correct colors, then we'll override selected ones
-        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
-        const colors = new Uint8Array(selectedPoints.length * 3);
+        const colors = generateInitialColors(
+            selectedPoints,
+            selectedOriginalIndices,
+            points.length,
+            selectedIds,
+            hoveredId,
+            selectedModelNames,
+        );
 
         selectedPoints.forEach((point, i) => {
             // Flatten based on view plane
@@ -124,32 +106,6 @@ function Optimized2DPointCloud({
                     positions[i * 3 + 2] = point.z;
                     break;
             }
-
-            // Use original index to get the correct procedural color for this point
-            // This ensures colors don't change when models are selected/deselected
-            const baseColorIndex = selectedOriginalIndices[i] * 3;
-            colors[i * 3] = allColors[baseColorIndex];
-            colors[i * 3 + 1] = allColors[baseColorIndex + 1];
-            colors[i * 3 + 2] = allColors[baseColorIndex + 2];
-
-            // Highlight selected models in yellow
-            const modelName = point.metadata?.modelName as string | undefined;
-            const isModelSelected = modelName && selectedModelNames?.has(modelName);
-            const isPointSelected = selectedIds?.has(point.id);
-
-            // Only color points that are actually selected (by model or individually)
-            // This prevents color bleeding to non-selected models
-            if (isModelSelected || isPointSelected) {
-                colors[i * 3] = 255;
-                colors[i * 3 + 1] = 255;
-                colors[i * 3 + 2] = 0;
-            } else if (hoveredId === point.id) {
-                // Hovered points get cyan color
-                colors[i * 3] = 0;
-                colors[i * 3 + 1] = 255;
-                colors[i * 3 + 2] = 255;
-            }
-            // If point is neither selected nor hovered, it keeps the procedural color from original index
         });
 
         return { positions, colors };
@@ -160,9 +116,14 @@ function Optimized2DPointCloud({
         if (nonSelectedPoints.length === 0) return null;
 
         const positions = new Float32Array(nonSelectedPoints.length * 3);
-        // Generate color buffer for all points to get correct colors
-        const allColors = generateProceduralColorBuffer(points.length, 300, 150);
-        const colors = new Uint8Array(nonSelectedPoints.length * 3);
+        const colors = generateInitialColors(
+            nonSelectedPoints,
+            nonSelectedOriginalIndices,
+            points.length,
+            selectedIds,
+            hoveredId,
+            selectedModelNames,
+        );
 
         nonSelectedPoints.forEach((point, i) => {
             // Flatten based on view plane
@@ -183,24 +144,10 @@ function Optimized2DPointCloud({
                     positions[i * 3 + 2] = point.z;
                     break;
             }
-
-            // Use original index to get the correct procedural color for this point
-            // This ensures colors don't change when other models are selected/deselected
-            const originalIndex = nonSelectedOriginalIndices[i];
-            const baseColorIndex = originalIndex * 3;
-            colors[i * 3] = allColors[baseColorIndex];
-            colors[i * 3 + 1] = allColors[baseColorIndex + 1];
-            colors[i * 3 + 2] = allColors[baseColorIndex + 2];
-
-            if (hoveredId === point.id) {
-                colors[i * 3] = 0;
-                colors[i * 3 + 1] = 255;
-                colors[i * 3 + 2] = 255;
-            }
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, viewPlane, nonSelectedOriginalIndices, points.length]);
+    }, [nonSelectedPoints, hoveredId, viewPlane, nonSelectedOriginalIndices, points.length, selectedIds, selectedModelNames]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (

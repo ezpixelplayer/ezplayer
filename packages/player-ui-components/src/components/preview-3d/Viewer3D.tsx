@@ -6,6 +6,7 @@ import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { getPointColor, calculateProceduralColor } from './viewerUtils';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -20,37 +21,41 @@ export interface Viewer3DProps {
     selectedModelNames?: Set<string>;
 }
 
-function generateProceduralColorBuffer(pointCount: number): Uint8Array {
-    return new Uint8Array(pointCount * 3);
+// Interface for model data grouped by model name
+interface ModelData {
+    modelName: string;
+    points: Point3D[];
+    originalIndices: number[]; // Original indices in the full points array
+    startIndex: number; // Start index in the full points array for live data mapping
 }
 
-// Optimized point cloud rendering using THREE.Points
-function OptimizedPointCloud({
-    points,
+// Individual model point cloud component
+function ModelPointCloud({
+    modelData,
+    allPointsCount,
     liveData,
     selectedIds,
     hoveredId,
     pointSize,
+    isModelSelected,
+    animationTime,
     selectedModelNames,
 }: {
-    points: Point3D[];
+    modelData: ModelData;
+    allPointsCount: number;
     liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     pointSize?: number;
+    isModelSelected: boolean;
+    animationTime: React.MutableRefObject<number>;
     selectedModelNames?: Set<string>;
-    onPointClick?: (pointId: string) => void;
 }) {
-    const selectedPointsRef = useRef<THREE.Points>(null);
-    const nonSelectedPointsRef = useRef<THREE.Points>(null);
+    const pointsRef = useRef<THREE.Points>(null);
     const materialRef = useRef<THREE.PointsMaterial>(null);
-    const selectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
-    const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
-    const animationTimeRef = useRef(0);
-    const selectedColorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
-    const nonSelectedColorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
-    const selectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
-    const nonSelectedPointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
+    const bufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
+    const colorAttributeRef = useRef<THREE.BufferAttribute | null>(null);
+    const pointsDataRef = useRef<{ point: Point3D; originalIndex: number }[]>([]);
 
     // Keep liveData in a ref so useFrame callback always has current value
     const liveDataRef = useRef<LatestFrameRingBuffer | undefined>(liveData);
@@ -58,127 +63,44 @@ function OptimizedPointCloud({
         liveDataRef.current = liveData;
     }, [liveData]);
 
-    // Reset animation time when selected models change
-    useEffect(() => {
-        animationTimeRef.current = 0;
-    }, [selectedModelNames]);
-
-    // Separate points into selected and non-selected for animation
-    // Track original indices to preserve correct procedural colors
-    const { selectedPoints, nonSelectedPoints, selectedOriginalIndices, nonSelectedOriginalIndices } = useMemo(() => {
-        const selected: Point3D[] = [];
-        const nonSelected: Point3D[] = [];
-        const selectedIndices: number[] = [];
-        const nonSelectedIndices: number[] = [];
-
-        points.forEach((point, originalIndex) => {
-            const modelName = point.metadata?.modelName as string | undefined;
-            const isModelSelected = modelName && selectedModelNames?.has(modelName);
-            const isPointSelected = selectedIds?.has(point.id);
-
-            if (isModelSelected || isPointSelected) {
-                selected.push(point);
-                selectedIndices.push(originalIndex);
-            } else {
-                nonSelected.push(point);
-                nonSelectedIndices.push(originalIndex);
-            }
-        });
-
-        return {
-            selectedPoints: selected,
-            nonSelectedPoints: nonSelected,
-            selectedOriginalIndices: selectedIndices,
-            nonSelectedOriginalIndices: nonSelectedIndices,
-        };
-    }, [points, selectedIds, selectedModelNames]);
-
     // Store point data for per-frame color updates
     useEffect(() => {
-        selectedPointsDataRef.current = selectedPoints.map((point, i) => ({
+        pointsDataRef.current = modelData.points.map((point, i) => ({
             point,
-            originalIndex: selectedOriginalIndices[i],
+            originalIndex: modelData.originalIndices[i],
         }));
-        nonSelectedPointsDataRef.current = nonSelectedPoints.map((point, i) => ({
-            point,
-            originalIndex: nonSelectedOriginalIndices[i],
-        }));
-    }, [selectedPoints, nonSelectedPoints, selectedOriginalIndices, nonSelectedOriginalIndices]);
+    }, [modelData]);
 
-    // Memoize geometry for selected points (with animation)
-    const selectedGeometry = useMemo(() => {
-        if (selectedPoints.length === 0) return null;
 
-        const positions = new Float32Array(selectedPoints.length * 3);
-        // Generate color buffer for all points to get correct colors, then we'll override selected ones
-        const allColors = generateProceduralColorBuffer(points.length);
-        const colors = new Uint8Array(selectedPoints.length * 3);
+    // Memoize geometry for this model's points
+    const geometry = useMemo(() => {
+        if (modelData.points.length === 0) return null;
 
-        selectedPoints.forEach((point, i) => {
-            positions[i * 3] = point.x;
-            positions[i * 3 + 1] = point.y;
-            positions[i * 3 + 2] = point.z;
+        const positions = new Float32Array(modelData.points.length * 3);
+        const colors = new Uint8Array(modelData.points.length * 3);
 
-            const originalIndex = selectedOriginalIndices[i];
-            const modelName = point.metadata?.modelName;
-            const isModelSelected = modelName && selectedModelNames?.has(modelName);
-            const isPointSelected = selectedIds?.has(point.id);
-
-            // Use original index to get the correct procedural color for this point
-            // This ensures colors don't change when models are selected/deselected
-            const baseColorIndex = originalIndex * 3;
-            colors[i * 3] = allColors[baseColorIndex];
-            colors[i * 3 + 1] = allColors[baseColorIndex + 1];
-            colors[i * 3 + 2] = allColors[baseColorIndex + 2];
-
-            // Only color points that are actually selected (by model or individually)
-            // This prevents color bleeding to non-selected models
-            if (isModelSelected || isPointSelected) {
-                colors[i * 3] = 255;
-                colors[i * 3 + 1] = 255;
-                colors[i * 3 + 2] = 0;
-            } else if (hoveredId === point.id) {
-                // Hovered points get cyan color
-                colors[i * 3] = 0;
-                colors[i * 3 + 1] = 255;
-                colors[i * 3 + 2] = 255;
-            }
-            // If point is neither selected nor hovered, it keeps the procedural color from original index
-        });
-
-        return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, selectedModelNames, selectedOriginalIndices, points.length]);
-
-    // Memoize geometry for non-selected points
-    const nonSelectedGeometry = useMemo(() => {
-        if (nonSelectedPoints.length === 0) return null;
-
-        const positions = new Float32Array(nonSelectedPoints.length * 3);
-        // Generate color buffer for all points to get correct colors
-        const allColors = generateProceduralColorBuffer(points.length);
-        const colors = new Uint8Array(nonSelectedPoints.length * 3);
-
-        nonSelectedPoints.forEach((point, i) => {
+        modelData.points.forEach((point, i) => {
             positions[i * 3] = point.x;
             positions[i * 3 + 1] = point.y;
             positions[i * 3 + 2] = point.z;
 
             // Use original index to get the correct procedural color for this point
-            // This ensures colors don't change when other models are selected/deselected
-            const baseColorIndex = nonSelectedOriginalIndices[i] * 3;
-            colors[i * 3] = allColors[baseColorIndex];
-            colors[i * 3 + 1] = allColors[baseColorIndex + 1];
-            colors[i * 3 + 2] = allColors[baseColorIndex + 2];
+            const originalIndex = modelData.originalIndices[i];
 
-            if (hoveredId === point.id) {
-                colors[i * 3] = 0;
-                colors[i * 3 + 1] = 255;
-                colors[i * 3 + 2] = 255;
-            }
+            // Use shared color calculation logic
+            const [r, g, b] = getPointColor(point, originalIndex, {
+                selectedIds,
+                hoveredId,
+                selectedModelNames,
+                allPointsCount,
+            });
+            colors[i * 3] = r;
+            colors[i * 3 + 1] = g;
+            colors[i * 3 + 2] = b;
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, nonSelectedOriginalIndices, points.length]);
+    }, [modelData, selectedIds, hoveredId, isModelSelected, allPointsCount]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (
@@ -213,98 +135,62 @@ function OptimizedPointCloud({
 
             if (existing) existing.dispose();
 
-            const geometry = new THREE.BufferGeometry();
+            const newGeometry = new THREE.BufferGeometry();
             const posAttr = new THREE.BufferAttribute(positions, 3);
             const colAttr = new THREE.BufferAttribute(colors, 3, true);
 
-            // Hint Three.js that these attributes may be updated frequently (future real-time updates).
+            // Hint Three.js that these attributes may be updated frequently
             posAttr.setUsage(THREE.DynamicDrawUsage);
             colAttr.setUsage(THREE.DynamicDrawUsage);
 
-            geometry.setAttribute('position', posAttr);
-            geometry.setAttribute('color', colAttr);
-            geometryRef.current = geometry;
-            return geometry;
+            newGeometry.setAttribute('position', posAttr);
+            newGeometry.setAttribute('color', colAttr);
+            geometryRef.current = newGeometry;
+            return newGeometry;
         },
         [],
     );
 
-    // Keep BufferGeometry instances stable and update their attributes in-place when data changes.
-    const selectedBufferGeometry = useMemo(() => {
-        if (!selectedGeometry) return null;
-        return createOrUpdateBufferGeometry(
-            selectedBufferGeometryRef,
-            selectedGeometry.positions,
-            selectedGeometry.colors,
-        );
-    }, [selectedGeometry, createOrUpdateBufferGeometry]);
+    // Keep BufferGeometry instance stable and update its attributes in-place when data changes
+    const bufferGeometry = useMemo(() => {
+        if (!geometry) return null;
+        return createOrUpdateBufferGeometry(bufferGeometryRef, geometry.positions, geometry.colors);
+    }, [geometry, createOrUpdateBufferGeometry]);
 
-    const nonSelectedBufferGeometry = useMemo(() => {
-        if (!nonSelectedGeometry) return null;
-        return createOrUpdateBufferGeometry(
-            nonSelectedBufferGeometryRef,
-            nonSelectedGeometry.positions,
-            nonSelectedGeometry.colors,
-        );
-    }, [nonSelectedGeometry, createOrUpdateBufferGeometry]);
-
-    // Store color attribute references for per-frame updates
+    // Store color attribute reference for per-frame updates
     useEffect(() => {
-        // Use a small delay to ensure geometry is fully created
         const timer = setTimeout(() => {
-            if (selectedBufferGeometryRef.current) {
-                const attr = selectedBufferGeometryRef.current.getAttribute('color') as THREE.BufferAttribute | null;
+            if (bufferGeometryRef.current) {
+                const attr = bufferGeometryRef.current.getAttribute('color') as THREE.BufferAttribute | null;
                 if (attr) {
-                    selectedColorAttributeRef.current = attr;
-                }
-            }
-            if (nonSelectedBufferGeometryRef.current) {
-                const attr = nonSelectedBufferGeometryRef.current.getAttribute('color') as THREE.BufferAttribute | null;
-                if (attr) {
-                    nonSelectedColorAttributeRef.current = attr;
+                    colorAttributeRef.current = attr;
                 }
             }
         }, 0);
         return () => clearTimeout(timer);
-    }, [selectedBufferGeometry, nonSelectedBufferGeometry]);
+    }, [bufferGeometry]);
 
-    // Dispose geometries on unmount.
+    // Dispose geometry on unmount
     useEffect(() => {
         return () => {
-            selectedBufferGeometryRef.current?.dispose();
-            nonSelectedBufferGeometryRef.current?.dispose();
-            selectedBufferGeometryRef.current = null;
-            nonSelectedBufferGeometryRef.current = null;
+            bufferGeometryRef.current?.dispose();
+            bufferGeometryRef.current = null;
         };
-    }, []);
-
-    // Triangle wave function for color generation
-    const tri = useCallback((t: number) => {
-        const HALF = 128;
-        const period = HALF * 2;
-        const tt = ((t % period) + period) % period;
-        const v = tt <= HALF ? (tt / HALF) * 255 : ((period - tt) / HALF) * 255;
-        return Math.min(255, Math.max(0, Math.round(v)));
     }, []);
 
     // Animate selected model points with pulsing effect and update colors per frame
     useFrame((_state, delta) => {
-        animationTimeRef.current += delta;
-        const t = animationTimeRef.current;
+        const t = animationTime.current;
 
-        // Update point size animation
-        if (materialRef.current && selectedModelNames && selectedModelNames.size > 0) {
+        // Update point size animation for selected models
+        if (materialRef.current && isModelSelected) {
             const baseSize = pointSize || 3.0;
-
-            // Create a pulsing animation for selected models
             const pulseSpeed = 2.0;
             const pulseAmount = 0.3;
-            const pulse = 1.0 + Math.sin(animationTimeRef.current * pulseSpeed) * pulseAmount;
-
-            // Apply animation to selected points
+            const pulse = 1.0 + Math.sin(t * pulseSpeed) * pulseAmount;
             materialRef.current.size = baseSize * pulse;
         } else if (materialRef.current) {
-            // Smoothly return to base size when no model is selected
+            // Smoothly return to base size when not selected
             const baseSize = pointSize || 3.0;
             if (Math.abs(materialRef.current.size - baseSize) > 0.01) {
                 materialRef.current.size = THREE.MathUtils.lerp(materialRef.current.size, baseSize, 0.1);
@@ -313,53 +199,42 @@ function OptimizedPointCloud({
             }
         }
 
-        // Update colors per frame for ALL points using position-based phase calculations
-        const HALF = 128;
-        const pulseCenter = ((t * 10) % (HALF * 2)) - HALF;
-
-        // Update non-selected points - get color attribute directly from geometry
-        const nonSelectedGeometry = nonSelectedBufferGeometryRef.current;
-        if (nonSelectedGeometry && nonSelectedPointsDataRef.current.length > 0) {
-            const colorAttr = nonSelectedGeometry.getAttribute('color') as THREE.BufferAttribute | null;
+        // Update colors per frame
+        if (bufferGeometryRef.current && pointsDataRef.current.length > 0) {
+            const colorAttr = bufferGeometryRef.current.getAttribute('color') as THREE.BufferAttribute | null;
             if (colorAttr) {
                 const colorArray = colorAttr.array as Uint8Array;
-
-                // TODO: Get correct channel numbers, gamma, color order, brightness, etc
-                // Use ref to get current liveData (avoids stale closure in useFrame)
                 const currentLiveData = liveDataRef.current;
                 const ld = currentLiveData?.tryReadLatest(0)?.bytes;
-                if (ld) {
-                    nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
-                        // Skip if hovered (will be handled by geometry update)
-                        if (hoveredId === point.id) return;
 
-                        const colorIndex = i * 3;
-                        colorArray[colorIndex] = ld[colorIndex];
-                        colorArray[colorIndex + 1] = ld[colorIndex + 1];
-                        colorArray[colorIndex + 2] = ld[colorIndex + 2];
+                if (ld) {
+                    // Use live data - map from all points array to this model's points
+                    pointsDataRef.current.forEach(({ point, originalIndex }, i) => {
+                        // Skip if hovered or selected (will be handled by geometry update)
+                        if (hoveredId === point.id || selectedIds?.has(point.id) || isModelSelected) return;
+
+                        // Use shared color calculation with live data
+                        const [r, g, b] = getPointColor(point, originalIndex, {
+                            selectedIds,
+                            hoveredId,
+                            selectedModelNames,
+                            liveData: currentLiveData,
+                            allPointsCount,
+                        });
+
+                        const modelColorIndex = i * 3;
+                        colorArray[modelColorIndex] = r;
+                        colorArray[modelColorIndex + 1] = g;
+                        colorArray[modelColorIndex + 2] = b;
                     });
                 } else {
-                    nonSelectedPointsDataRef.current.forEach(({ point }, i) => {
-                        // Skip if hovered (will be handled by geometry update)
-                        if (hoveredId === point.id) return;
+                    // Use procedural colors with shared calculation logic
+                    pointsDataRef.current.forEach(({ point, originalIndex }, i) => {
+                        // Skip if hovered or selected (will be handled by geometry update)
+                        if (hoveredId === point.id || selectedIds?.has(point.id) || isModelSelected) return;
 
-                        // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
-                        const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + 150;
-
-                        // RGB with phase offsets
-                        const rPhase = phase;
-                        const gPhase = phase + 341;
-                        const bPhase = phase + 682;
-
-                        // Generate RGB values
-                        let r = tri(rPhase);
-                        let g = tri(gPhase);
-                        let b = tri(bPhase);
-
-                        // Clamp to valid range
-                        r = Math.min(255, Math.max(0, Math.round(r)));
-                        g = Math.min(255, Math.max(0, Math.round(g)));
-                        b = Math.min(255, Math.max(0, Math.round(b)));
+                        // Use shared color calculation
+                        const [r, g, b] = calculateProceduralColor(point, t, isModelSelected);
 
                         const colorIndex = i * 3;
                         colorArray[colorIndex] = r;
@@ -371,96 +246,99 @@ function OptimizedPointCloud({
                 colorAttr.needsUpdate = true;
             }
         }
-
-        // Update selected points (only non-selected/non-hovered points get animated colors)
-        const selectedGeometry = selectedBufferGeometryRef.current;
-        if (selectedGeometry && selectedPointsDataRef.current.length > 0) {
-            const colorAttr = selectedGeometry.getAttribute('color') as THREE.BufferAttribute | null;
-            if (colorAttr) {
-                const colorArray = colorAttr.array as Uint8Array;
-
-                selectedPointsDataRef.current.forEach(({ point }, i) => {
-                    const modelName = point.metadata?.modelName as string | undefined;
-                    const isModelSelected = modelName && selectedModelNames?.has(modelName);
-                    const isPointSelected = selectedIds?.has(point.id);
-
-                    // Skip if selected or hovered (these keep their special colors from geometry update)
-                    if (isModelSelected || isPointSelected || hoveredId === point.id) return;
-
-                    // Calculate phase: x*13 + y*17 + z*19 + t*90 + offset
-                    const phase = point.x * 13 + point.y * 17 + point.z * 19 + t * 90 + 150;
-
-                    // RGB with phase offsets
-                    const rPhase = phase;
-                    const gPhase = phase + 341;
-                    const bPhase = phase + 682;
-
-                    // Calculate pulse effect (boost brightness for points near moving center)
-                    const distanceToCenter = Math.abs(phase - pulseCenter);
-                    const pulseBoost = distanceToCenter < HALF ? (1 - distanceToCenter / HALF) * 220 : 0;
-
-                    // Generate RGB values
-                    let r = tri(rPhase) + pulseBoost;
-                    let g = tri(gPhase) + pulseBoost;
-                    let b = tri(bPhase) + pulseBoost;
-
-                    // Clamp to valid range
-                    r = Math.min(255, Math.max(0, Math.round(r)));
-                    g = Math.min(255, Math.max(0, Math.round(g)));
-                    b = Math.min(255, Math.max(0, Math.round(b)));
-
-                    const colorIndex = i * 3;
-                    colorArray[colorIndex] = r;
-                    colorArray[colorIndex + 1] = g;
-                    colorArray[colorIndex + 2] = b;
-                });
-
-                colorAttr.needsUpdate = true;
-            }
-        }
     });
 
     const baseSize = pointSize || 3.0;
 
-    // Create a unique key that includes model names to force recreation when switching models
-    const selectedKey = useMemo(() => {
-        const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
-        return `selected-${selectedPoints.length}-${modelNames}`;
-    }, [selectedPoints.length, selectedModelNames]);
+    if (!bufferGeometry || modelData.points.length === 0) return null;
 
-    const nonSelectedKey = useMemo(() => {
-        const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
-        return `nonselected-${nonSelectedPoints.length}-${modelNames}`;
-    }, [nonSelectedPoints.length, selectedModelNames]);
+    return (
+        <points ref={pointsRef} geometry={bufferGeometry}>
+            <pointsMaterial
+                ref={materialRef}
+                size={baseSize}
+                vertexColors
+                sizeAttenuation={false}
+                transparent={false}
+                depthWrite={true}
+            />
+        </points>
+    );
+}
+
+// Optimized point cloud rendering using per-model point clouds
+function OptimizedPointCloud({
+    points,
+    liveData,
+    selectedIds,
+    hoveredId,
+    pointSize,
+    selectedModelNames,
+}: {
+    points: Point3D[];
+    liveData?: LatestFrameRingBuffer;
+    selectedIds?: Set<string>;
+    hoveredId?: string | null;
+    pointSize?: number;
+    selectedModelNames?: Set<string>;
+    onPointClick?: (pointId: string) => void;
+}) {
+    const animationTimeRef = useRef(0);
+
+    // Reset animation time when selected models change
+    useEffect(() => {
+        animationTimeRef.current = 0;
+    }, [selectedModelNames]);
+
+    // Group points by model name
+    const modelsData = useMemo(() => {
+        const modelMap = new Map<string, ModelData>();
+
+        points.forEach((point, originalIndex) => {
+            const modelName = point.metadata?.modelName as string | undefined;
+            const key = modelName || 'unknown';
+
+            if (!modelMap.has(key)) {
+                modelMap.set(key, {
+                    modelName: key,
+                    points: [],
+                    originalIndices: [],
+                    startIndex: originalIndex,
+                });
+            }
+
+            const modelData = modelMap.get(key)!;
+            modelData.points.push(point);
+            modelData.originalIndices.push(originalIndex);
+        });
+
+        return Array.from(modelMap.values());
+    }, [points]);
+
+    // Update animation time in useFrame
+    useFrame((_state, delta) => {
+        animationTimeRef.current += delta;
+    });
 
     return (
         <>
-            {/* Selected points with animation */}
-            {selectedBufferGeometry && selectedPoints.length > 0 && (
-                <points key={selectedKey} ref={selectedPointsRef} geometry={selectedBufferGeometry}>
-                    <pointsMaterial
-                        ref={materialRef} // Exists to make selected points grow
-                        size={baseSize}
-                        vertexColors
-                        sizeAttenuation={false}
-                        transparent={false}
-                        depthWrite={true}
+            {modelsData.map((modelData) => {
+                const isModelSelected = selectedModelNames?.has(modelData.modelName) || false;
+                return (
+                    <ModelPointCloud
+                        key={modelData.modelName}
+                        modelData={modelData}
+                        allPointsCount={points.length}
+                        liveData={liveData}
+                        selectedIds={selectedIds}
+                        hoveredId={hoveredId}
+                        pointSize={pointSize}
+                        isModelSelected={isModelSelected}
+                        animationTime={animationTimeRef}
+                        selectedModelNames={selectedModelNames}
                     />
-                </points>
-            )}
-
-            {/* Non-selected points - static */}
-            {nonSelectedBufferGeometry && nonSelectedPoints.length > 0 && (
-                <points key={nonSelectedKey} ref={nonSelectedPointsRef} geometry={nonSelectedBufferGeometry}>
-                    <pointsMaterial
-                        size={baseSize}
-                        vertexColors
-                        sizeAttenuation={false}
-                        transparent={false}
-                        depthWrite={true}
-                    />
-                </points>
-            )}
+                );
+            })}
         </>
     );
 }
