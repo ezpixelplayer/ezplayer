@@ -155,8 +155,8 @@ importers:
         specifier: ^8.19.0
         version: 8.19.0
       xllayoutcalcs:
-        specifier: ../../libs/xllayoutcalcs-0.0.4.tgz
-        version: file:libs/xllayoutcalcs-0.0.4.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.0.5.tgz
+        version: file:libs/xllayoutcalcs-0.0.5.tgz
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
@@ -5901,6 +5901,10 @@ packages:
     resolution: {integrity: sha512-A+voxUSvcNVU1flDGzHqbIg++ZIPj94f+F+JwF+2atQHbkTuRbTgWikus7KwKtUH+7DgMUYmiINfLlWrUeMDJw==, tarball: file:libs/xllayoutcalcs-0.0.4.tgz}
     version: 0.0.4
 
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.5.tgz:
+    resolution: {integrity: sha512-ceU1PVq1awt7KVlFpqiIWDntXpe4DF0dM8wqELGjP/up3VqbPd74k3Mjph+fqRFD09X09uUyJm0tXvXtNRdEoQ==, tarball: file:libs/xllayoutcalcs-0.0.5.tgz}
+    version: 0.0.5
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -11483,6 +11487,10 @@ snapshots:
   ws@8.19.0: {}
 
   xllayoutcalcs@file:libs/xllayoutcalcs-0.0.4.tgz:
+    dependencies:
+      gl-matrix: 3.4.4
+
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.5.tgz:
     dependencies:
       gl-matrix: 3.4.4
 

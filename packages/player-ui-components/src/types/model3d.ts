@@ -38,6 +38,7 @@ export interface Point3D {
     z: number;
     label?: string;
     metadata?: ModelPointMetadata;
+    channel?: number;
 }
 
 export interface Shape3D {

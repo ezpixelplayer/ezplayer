@@ -47,7 +47,7 @@ import {
     loadXmlFile,
 } from '@ezplayer/epp';
 
-import { getModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
+import { getAllModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -702,19 +702,26 @@ async function loadXmlCoordinates() {
     }
 
     const xmlPath = path.join(showFolder, `xlights_rgbeffects.xml`);
+    const netPath = path.join(showFolder, `xlights_networks.xml`);
 
     let xrgb;
+    let xnet;
     try {
         xrgb = await loadXmlFile(xmlPath);
+        xnet = await loadXmlFile(netPath);
     } catch (err) {
         emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
         xrgb = null;
+        xnet = null;
     }
 
     modelCoordinates = new Map<string, GetNodeResult>();
     modelCoordinates2D = new Map<string, GetNodeResult>();
 
-    if (xrgb) {
+    if (xrgb && xnet) {
+        const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
+        const gmc3d = getAllModelCoordinates(xrgb, xnet, false);
+
         if (xrgb.documentElement.tagName !== 'xrgb') {
             emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
         } else {
@@ -742,13 +749,13 @@ async function loadXmlCoordinates() {
                     activeModelCount++;
                     try {
                         // Get 3D coordinates (for 3D viewer)
-                        const nr3d = getModelCoordinates(model, false);
+                        const nr3d = gmc3d.models.get(name)?.nodeResult;
                         if (nr3d) {
                             modelCoordinates.set(name, nr3d);
                         }
 
                         // Get 2D coordinates (for 2D viewer with perspective projection)
-                        const nr2d = getModelCoordinates(model, true);
+                        const nr2d = gmc2d.models.get(name)?.nodeResult;
                         if (nr2d) {
                             modelCoordinates2D.set(name, nr2d);
                         }

@@ -21,7 +21,7 @@ import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
-import { EZPElectronAPI, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import type { RootState } from '../../store/Store';
 
@@ -131,7 +131,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 // Check if we're in Electron environment and API is available
                 const electronAPI = (window as any).electronAPI as EZPElectronAPI;
 
-                let xmlCoords: Record<string, any> | null = null;
+                let xmlCoords: Record<string, GetNodeResult> | null = null;
 
                 if (electronAPI && electronAPI.getModelCoordinates) {
                     // Use Electron IPC API

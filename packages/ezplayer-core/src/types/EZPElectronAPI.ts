@@ -66,6 +66,7 @@ export interface NodeLoc {
     physicalNum: number; // Number 1-n, based on wiring
     physicalStrand: number; // Strand number, for models that do this, ignoreable but affects some render styles.  0-based?
     physicalNumOnStrand: number; // Physical pixel num on strand, 0-sl
+    channel?: number;
 
     logicalNum: number; // Number logical to a model type, regardless of how it is wired, for example top to bottom left to right
     logicalX: number; // Commonly, the column in a grid

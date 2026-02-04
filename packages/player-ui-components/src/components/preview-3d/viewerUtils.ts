@@ -144,7 +144,7 @@ export function getPointColor(
     if (liveData) {
         const latestFrame = liveData.tryReadLatest(0);
         if (latestFrame?.bytes) {
-            const colorIndex = originalIndex * 3;
+            const colorIndex = point?.channel ?? originalIndex * 3;
             return [
                 latestFrame.bytes[colorIndex],
                 latestFrame.bytes[colorIndex + 1],

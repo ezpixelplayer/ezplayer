@@ -31,6 +31,7 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                                 y: coord.wY ?? 0,
                                 z: coord.wZ ?? 0,
                                 label: `${modelName} - Point ${pointIndex + 1}`,
+                                channel: node.channel,
                                 metadata: {
                                     modelName,
                                     modelIndex,
