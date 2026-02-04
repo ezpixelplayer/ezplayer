@@ -215,6 +215,23 @@ const handlers: MainRPCAPI = {
     },
 };
 
+// Shared function to get model coordinates (used by both IPC and HTTP API)
+// is2D: if true, returns 2D coordinates with perspective projection; if false, returns 3D coordinates
+export async function getModelCoordinatesForAPI(is2D: boolean = false) {
+    if (!playWorker || !rpcc) {
+        return {};
+    }
+
+    try {
+        const rpcMethod = is2D ? 'getModelCoordinates2D' : 'getModelCoordinates';
+        const coords = await rpcc.call(rpcMethod, {});
+        return coords;
+    } catch (err) {
+        console.error(`[${is2D ? '2D' : '3D'} Preview] Failed to get model coordinates: ${err}`);
+        return {};
+    }
+}
+
 export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
     audioWindow: BrowserWindow | null,
@@ -345,18 +362,8 @@ export async function registerContentHandlers(
         return getServerStatus();
     });
 
-    ipcMain.handle('ipcGetModelCoordinates', async (_event) => {
-        if (!playWorker || !rpcc) {
-            return {};
-        }
-
-        try {
-            const coords = await rpcc.call('getModelCoordinates', {});
-            return coords;
-        } catch (err) {
-            console.error(`[3D Preview IPC] Failed to get model coordinates: ${err}`);
-            return {};
-        }
+    ipcMain.handle('ipcGetModelCoordinates', async (_event, is2D?: boolean) => {
+        return await getModelCoordinatesForAPI(is2D ?? false);
     });
 
     /// Connection from player worker thread

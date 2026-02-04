@@ -36,6 +36,7 @@ export type PlayWorkerRPCAPI = {
     fail: (args: { msg: string }) => void;
     stopPlayback: (args: {}) => Promise<boolean> | boolean;
     getModelCoordinates: (args: {}) => Promise<Record<string, GetNodeResult>>;
+    getModelCoordinates2D: (args: {}) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
 };
 

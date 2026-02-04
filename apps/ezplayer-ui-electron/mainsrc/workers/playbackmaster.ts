@@ -199,6 +199,15 @@ const handlers: PlayWorkerRPCAPI = {
         }
         return coords;
     },
+    getModelCoordinates2D: async (_args: {}) => {
+        const coords: Record<string, GetNodeResult> = {};
+        if (modelCoordinates2D) {
+            for (const [name, coord] of modelCoordinates2D.entries()) {
+                coords[name] = coord;
+            }
+        }
+        return coords;
+    },
     getFrameExportBuffer: async () => {
         return frameExportBuffer;
     },
@@ -662,6 +671,7 @@ let curSchedule: ScheduledPlaylist[] | undefined = undefined;
 let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
+let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -702,6 +712,7 @@ async function loadXmlCoordinates() {
     }
 
     modelCoordinates = new Map<string, GetNodeResult>();
+    modelCoordinates2D = new Map<string, GetNodeResult>();
 
     if (xrgb) {
         if (xrgb.documentElement.tagName !== 'xrgb') {
@@ -730,16 +741,23 @@ async function loadXmlCoordinates() {
 
                     activeModelCount++;
                     try {
+                        // Get 3D coordinates (for 3D viewer)
                         const nr3d = getModelCoordinates(model, false);
                         if (nr3d) {
                             modelCoordinates.set(name, nr3d);
+                        }
+
+                        // Get 2D coordinates (for 2D viewer with perspective projection)
+                        const nr2d = getModelCoordinates(model, true);
+                        if (nr2d) {
+                            modelCoordinates2D.set(name, nr2d);
                         }
                     } catch (coordErr) {
                         emitError(`[loadXmlCoordinates] Error extracting coordinates for "${name}": ${coordErr}`);
                     }
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with coordinates`);
+                emitInfo(`[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`);
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }

@@ -16,6 +16,7 @@ import {
     getSequenceThumbnail,
     updatePlaylistsHandler,
     updateScheduleHandler,
+    getModelCoordinatesForAPI,
 } from './ipcezplayer.js';
 import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
@@ -227,6 +228,34 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
             console.error('Error processing playback settings update:', error);
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/model-coordinates - get model coordinates for 3D preview
+    // ----------------------------------------------
+    router.get('/api/model-coordinates', async (ctx) => {
+        try {
+            const coords = await getModelCoordinatesForAPI(false);
+            ctx.body = coords;
+        } catch (error) {
+            console.error('Error getting model coordinates:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Failed to get model coordinates' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/model-coordinates-2d - get 2D model coordinates for 2D preview
+    // ----------------------------------------------
+    router.get('/api/model-coordinates-2d', async (ctx) => {
+        try {
+            const coords = await getModelCoordinatesForAPI(true);
+            ctx.body = coords;
+        } catch (error) {
+            console.error('Error getting 2D model coordinates:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Failed to get 2D model coordinates' };
         }
     });
 

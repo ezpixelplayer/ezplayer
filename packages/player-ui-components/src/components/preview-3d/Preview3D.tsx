@@ -10,6 +10,7 @@ import {
     Divider,
     Typography,
 } from '@mui/material';
+import { useSelector } from 'react-redux';
 import { Box } from '../box/Box';
 import View3DIcon from '@mui/icons-material/ViewInAr';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
@@ -22,6 +23,7 @@ import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
 import { EZPElectronAPI, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
+import type { RootState } from '../../store/Store';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -57,6 +59,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     });
     // This is the selection state of the model list
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
+
+    // Get show directory from Redux store to detect changes
+    const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
 
     // Auto-detect frame server URL if not provided
     const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
@@ -108,7 +113,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         setLivePixels(livePixelBuffer);
     }, [livePixelBuffer]);
 
-    // Load model from XML coordinates if available (Electron environment)
+    // Load model from XML coordinates if available (Electron environment or HTTP API)
     useEffect(() => {
         // If initialModelData is provided, use it
         if (initialModelData) {
@@ -126,20 +131,34 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 // Check if we're in Electron environment and API is available
                 const electronAPI = (window as any).electronAPI as EZPElectronAPI;
 
+                let xmlCoords: Record<string, any> | null = null;
+
                 if (electronAPI && electronAPI.getModelCoordinates) {
-                    const xmlCoords = await electronAPI.getModelCoordinates();
-
-                    if (xmlCoords && Object.keys(xmlCoords).length > 0) {
-                        const convertedData = convertXmlCoordinatesToModel3D(xmlCoords);
-
-                        if (convertedData.points.length > 0) {
-                            setModelData(convertedData);
-                            setLoading(false);
-                            return;
+                    // Use Electron IPC API
+                    xmlCoords = await electronAPI.getModelCoordinates();
+                } else if (effectiveFrameServerUrl) {
+                    // Use HTTP API for browser UI
+                    try {
+                        const response = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates`);
+                        if (response.ok) {
+                            xmlCoords = await response.json();
                         }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch model coordinates via HTTP:', fetchErr);
+                    }
+                }
+
+                if (xmlCoords && Object.keys(xmlCoords).length > 0) {
+                    const convertedData = convertXmlCoordinatesToModel3D(xmlCoords);
+
+                    if (convertedData.points.length > 0) {
+                        setModelData(convertedData);
+                        setLoading(false);
+                        return;
                     }
                 }
             } catch (err) {
+                console.error('[Preview3D] Error loading model coordinates:', err);
                 // Silently handle errors - empty state will be shown
             }
 
@@ -149,7 +168,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         };
 
         loadFromXml();
-    }, [initialModelData]);
+    }, [initialModelData, showDirectory, effectiveFrameServerUrl]);
 
     // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
