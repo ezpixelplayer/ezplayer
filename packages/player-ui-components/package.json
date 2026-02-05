@@ -73,7 +73,7 @@
         "uuid": "^11.0.5",
         "vis-data": "^8.0.1",
         "vis-timeline": "^8.2.1",
-        "xllayoutcalcs": "../../libs/xllayoutcalcs-0.0.4.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.6.tgz"
     },
     "peerDependencies": {
         "@ezplayer/ezplayer-core": "*",

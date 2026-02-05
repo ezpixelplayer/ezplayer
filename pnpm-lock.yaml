@@ -155,8 +155,8 @@ importers:
         specifier: ^8.19.0
         version: 8.19.0
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.0.5.tgz
-        version: file:libs/xllayoutcalcs-0.0.5.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.0.6.tgz
+        version: file:libs/xllayoutcalcs-0.0.6.tgz
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
@@ -474,8 +474,8 @@ importers:
         specifier: ^8.2.1
         version: 8.5.0(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)(keycharm@0.4.0)(moment@2.30.1)(propagating-hammerjs@3.0.0(@egjs/hammerjs@2.0.17))(uuid@11.1.0)(vis-data@8.0.3(uuid@11.1.0)(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)))(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1))(xss@1.0.15)
       xllayoutcalcs:
-        specifier: ../../libs/xllayoutcalcs-0.0.4.tgz
-        version: file:libs/xllayoutcalcs-0.0.4.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.0.6.tgz
+        version: file:libs/xllayoutcalcs-0.0.6.tgz
     devDependencies:
       '@eslint/js':
         specifier: ^9.19.0
@@ -5897,13 +5897,9 @@ packages:
       utf-8-validate:
         optional: true
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.4.tgz:
-    resolution: {integrity: sha512-A+voxUSvcNVU1flDGzHqbIg++ZIPj94f+F+JwF+2atQHbkTuRbTgWikus7KwKtUH+7DgMUYmiINfLlWrUeMDJw==, tarball: file:libs/xllayoutcalcs-0.0.4.tgz}
-    version: 0.0.4
-
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.5.tgz:
-    resolution: {integrity: sha512-ceU1PVq1awt7KVlFpqiIWDntXpe4DF0dM8wqELGjP/up3VqbPd74k3Mjph+fqRFD09X09uUyJm0tXvXtNRdEoQ==, tarball: file:libs/xllayoutcalcs-0.0.5.tgz}
-    version: 0.0.5
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.6.tgz:
+    resolution: {integrity: sha512-JsxeUeTNK5KyBuEO7tpBvs0CiZ3541NtRXUMDb9wErqE7WYWNmlq64w168QPH94K84w0cWfR33jXbmiPSIZPYQ==, tarball: file:libs/xllayoutcalcs-0.0.6.tgz}
+    version: 0.0.6
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -11486,11 +11482,7 @@ snapshots:
 
   ws@8.19.0: {}
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.4.tgz:
-    dependencies:
-      gl-matrix: 3.4.4
-
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.5.tgz:
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.6.tgz:
     dependencies:
       gl-matrix: 3.4.4
 

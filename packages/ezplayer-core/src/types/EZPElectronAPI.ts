@@ -77,6 +77,38 @@ export interface NodeLoc {
 }
 
 /**
+ * A contiguous run of nodes mapped to channels.
+ * Most models have a single run; Advanced mode models may have multiple.
+ *
+ * All channel numbers are 0-based (matching xLights model export).
+ */
+export interface ChannelRun {
+    nodeStart: number;       // First node index in this run (0-based)
+    nodeCount: number;       // Number of nodes in this run
+    channelStart: number;    // First channel (0-based)
+    channelsPerNode: number; // 3=RGB, 4=RGBW, 1=single color, etc.
+    stringIndex: number;     // Which string/strand this run belongs to (0-based)
+}
+
+/**
+ * Complete channel mapping for a model.
+ * Maps from node index space to channel space.
+ *
+ * All channel numbers are 0-based (matching xLights model export).
+ */
+export interface ModelChannelMapping {
+    nodeChannelMap: ChannelRun[];  // Usually just 1, but multiple for Advanced mode
+    totalNodes: number;            // Total nodes in model
+    totalChannels: number;         // Sum of nodeCount * channelsPerNode across runs
+    channelsPerNode: number;       // Default/common value from StringType
+    numStrings: number;            // Number of strings in the model
+
+    // Convenience: overall channel bounds (0-based)
+    firstChannel: number;          // Min channel used
+    lastChannel: number;           // Max channel used
+}
+
+/**
  * The return of getNodeCoords.
  * We are making a different abstraction than xLights.
  *   Coordinates in nodes[] is normalized / logical
@@ -89,6 +121,16 @@ export interface GetNodeResult {
     logicalBufferWidth: number;
     logicalBufferHeight: number;
     logicalBufferDepth: number;
+
+    /** Metadata */
+    pixelSize?: number;
+    pixelStyle?: string;
+    modelType?: string;
+    pixelType?: string;
+    stringType?: string;
+
+    /** Channel mapping (populated after channel resolution) */
+    channelMapping?: ModelChannelMapping;
 }
 
 export interface EZPElectronAPI {
