@@ -6,7 +6,6 @@ import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 import {
-    getPointColor,
     isPointSelected,
     isModelSelected,
     generateInitialColors,
@@ -41,24 +40,45 @@ function Optimized2DPointCloud({
 }) {
     const selectedPointsRef = useRef<THREE.Points>(null);
     const nonSelectedPointsRef = useRef<THREE.Points>(null);
+    const hoveredPointsRef = useRef<THREE.Points>(null);
     const selectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
+    const hoveredBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
+    const hoveredMaterialRef = useRef<THREE.PointsMaterial>(null);
 
-    // Separate points into selected and non-selected for better visual feedback
+    // Separate points into selected, hovered (by model), and non-selected for better visual feedback
     // Track original indices to preserve correct procedural colors
-    const { selectedPoints, nonSelectedPoints, selectedOriginalIndices, nonSelectedOriginalIndices } = useMemo(() => {
+    const { selectedPoints, hoveredPoints, nonSelectedPoints, selectedOriginalIndices, hoveredOriginalIndices, nonSelectedOriginalIndices } = useMemo(() => {
         const selected: Point3D[] = [];
+        const hovered: Point3D[] = [];
         const nonSelected: Point3D[] = [];
         const selectedIndices: number[] = [];
+        const hoveredIndices: number[] = [];
         const nonSelectedIndices: number[] = [];
+
+        // Pre-compute hovered model name once (performance optimization)
+        let hoveredModelName: string | null = null;
+        if (hoveredId) {
+            const hoveredPoint = points.find((p) => p.id === hoveredId);
+            if (hoveredPoint) {
+                hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
+            }
+        }
 
         points.forEach((point, originalIndex) => {
             const isModelSelectedValue = isModelSelected(point, selectedModelNames);
             const isPointSelectedValue = isPointSelected(point, selectedIds, selectedModelNames);
+            // Check if point belongs to hovered model (entire model gets highlighted)
+            const pointModelName = point.metadata?.modelName as string | undefined;
+            const isHoveredModelValue = hoveredModelName !== null && pointModelName === hoveredModelName;
 
             if (isModelSelectedValue || isPointSelectedValue) {
                 selected.push(point);
                 selectedIndices.push(originalIndex);
+            } else if (isHoveredModelValue) {
+                // Include all points from the hovered model
+                hovered.push(point);
+                hoveredIndices.push(originalIndex);
             } else {
                 nonSelected.push(point);
                 nonSelectedIndices.push(originalIndex);
@@ -67,11 +87,13 @@ function Optimized2DPointCloud({
 
         return {
             selectedPoints: selected,
+            hoveredPoints: hovered,
             nonSelectedPoints: nonSelected,
             selectedOriginalIndices: selectedIndices,
+            hoveredOriginalIndices: hoveredIndices,
             nonSelectedOriginalIndices: nonSelectedIndices,
         };
-    }, [points, selectedIds, selectedModelNames]);
+    }, [points, selectedIds, selectedModelNames, hoveredId]);
 
     // Memoize geometry for selected points
     const selectedGeometry = useMemo(() => {
@@ -85,6 +107,7 @@ function Optimized2DPointCloud({
             selectedIds,
             hoveredId,
             selectedModelNames,
+            points, // Pass all points for model-based hover detection
         );
 
         selectedPoints.forEach((point, i) => {
@@ -109,7 +132,46 @@ function Optimized2DPointCloud({
         });
 
         return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, selectedOriginalIndices, points.length]);
+    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, selectedOriginalIndices, points]);
+
+    // Memoize geometry for hovered points
+    const hoveredGeometry = useMemo(() => {
+        if (hoveredPoints.length === 0) return null;
+
+        const positions = new Float32Array(hoveredPoints.length * 3);
+        const colors = generateInitialColors(
+            hoveredPoints,
+            hoveredOriginalIndices,
+            points.length,
+            selectedIds,
+            hoveredId,
+            selectedModelNames,
+            points, // Pass all points for model-based hover detection
+        );
+
+        hoveredPoints.forEach((point, i) => {
+            // Flatten based on view plane
+            switch (viewPlane) {
+                case 'xy':
+                    positions[i * 3] = point.x;
+                    positions[i * 3 + 1] = point.y;
+                    positions[i * 3 + 2] = 0;
+                    break;
+                case 'xz':
+                    positions[i * 3] = point.x;
+                    positions[i * 3 + 1] = 0;
+                    positions[i * 3 + 2] = point.z;
+                    break;
+                case 'yz':
+                    positions[i * 3] = 0;
+                    positions[i * 3 + 1] = point.y;
+                    positions[i * 3 + 2] = point.z;
+                    break;
+            }
+        });
+
+        return { positions, colors };
+    }, [hoveredPoints, hoveredId, viewPlane, hoveredOriginalIndices, points, selectedIds, selectedModelNames]);
 
     // Memoize geometry for non-selected points
     const nonSelectedGeometry = useMemo(() => {
@@ -123,6 +185,7 @@ function Optimized2DPointCloud({
             selectedIds,
             hoveredId,
             selectedModelNames,
+            points, // Pass all points for model-based hover detection
         );
 
         nonSelectedPoints.forEach((point, i) => {
@@ -147,7 +210,7 @@ function Optimized2DPointCloud({
         });
 
         return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, viewPlane, nonSelectedOriginalIndices, points.length, selectedIds, selectedModelNames]);
+    }, [nonSelectedPoints, hoveredId, viewPlane, nonSelectedOriginalIndices, points, selectedIds, selectedModelNames]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (
@@ -205,6 +268,15 @@ function Optimized2DPointCloud({
         );
     }, [selectedGeometry, createOrUpdateBufferGeometry]);
 
+    const hoveredBufferGeometry = useMemo(() => {
+        if (!hoveredGeometry) return null;
+        return createOrUpdateBufferGeometry(
+            hoveredBufferGeometryRef,
+            hoveredGeometry.positions,
+            hoveredGeometry.colors,
+        );
+    }, [hoveredGeometry, createOrUpdateBufferGeometry]);
+
     const nonSelectedBufferGeometry = useMemo(() => {
         if (!nonSelectedGeometry) return null;
         return createOrUpdateBufferGeometry(
@@ -218,18 +290,25 @@ function Optimized2DPointCloud({
         return () => {
             selectedBufferGeometryRef.current?.dispose();
             nonSelectedBufferGeometryRef.current?.dispose();
+            hoveredBufferGeometryRef.current?.dispose();
             selectedBufferGeometryRef.current = null;
             nonSelectedBufferGeometryRef.current = null;
+            hoveredBufferGeometryRef.current = null;
         };
     }, []);
 
     const baseSize = pointSize || 3.0;
+    const hoveredSize = baseSize * 1.5; // Make hovered points 50% larger
 
     // Create unique keys for proper re-rendering
     const selectedKey = useMemo(() => {
         const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
         return `selected-2d-${selectedPoints.length}-${modelNames}`;
     }, [selectedPoints.length, selectedModelNames]);
+
+    const hoveredKey = useMemo(() => {
+        return `hovered-2d-${hoveredPoints.length}-${hoveredId || 'none'}`;
+    }, [hoveredPoints.length, hoveredId]);
 
     const nonSelectedKey = useMemo(() => {
         const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
@@ -243,6 +322,20 @@ function Optimized2DPointCloud({
                 <points key={selectedKey} ref={selectedPointsRef} geometry={selectedBufferGeometry}>
                     <pointsMaterial
                         size={baseSize}
+                        vertexColors
+                        sizeAttenuation={false}
+                        transparent={false}
+                        depthWrite={true}
+                    />
+                </points>
+            )}
+
+            {/* Hovered points - rendered with larger size */}
+            {hoveredBufferGeometry && hoveredPoints.length > 0 && (
+                <points key={hoveredKey} ref={hoveredPointsRef} geometry={hoveredBufferGeometry}>
+                    <pointsMaterial
+                        ref={hoveredMaterialRef}
+                        size={hoveredSize}
                         vertexColors
                         sizeAttenuation={false}
                         transparent={false}
@@ -415,6 +508,102 @@ function ClickHandler2D({
     return null;
 }
 
+// Component to handle hover events with raycasting (adapted for 2D view planes)
+function HoverHandler2D({
+    points,
+    onPointHover,
+    pointSize,
+    viewPlane,
+}: {
+    points: Point3D[];
+    onPointHover?: (pointId: string | null) => void;
+    pointSize?: number;
+    viewPlane: 'xy' | 'xz' | 'yz';
+}) {
+    const { camera, raycaster, gl } = useThree();
+
+    useEffect(() => {
+        if (!onPointHover) return;
+
+        const handleMouseMove = (event: MouseEvent) => {
+            // Get mouse position in normalized device coordinates
+            const rect = gl.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            // Update raycaster with camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+
+            // Get all points as 2D positions based on view plane
+            const pointPositions = points.map((p) => {
+                switch (viewPlane) {
+                    case 'xy':
+                        return new THREE.Vector3(p.x, p.y, 0);
+                    case 'xz':
+                        return new THREE.Vector3(p.x, 0, p.z);
+                    case 'yz':
+                        return new THREE.Vector3(0, p.y, p.z);
+                }
+            });
+            const pointSizeValue = pointSize || 3.0;
+
+            // Calculate threshold based on point size and camera distance
+            // Use a more generous threshold for hover detection (increased for better visibility)
+            const cameraDistance = camera.position.distanceTo(
+                points.length > 0
+                    ? (() => {
+                        const firstPoint = points[0];
+                        switch (viewPlane) {
+                            case 'xy':
+                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                            case 'xz':
+                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                            case 'yz':
+                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                        }
+                    })()
+                    : new THREE.Vector3(0, 0, 0),
+            );
+            const threshold = Math.max(pointSizeValue * 0.15, cameraDistance * 0.02);
+
+            // Find the closest point to the ray
+            let closestIndex = -1;
+            let minDistance = Infinity;
+
+            pointPositions.forEach((position, index) => {
+                const distance = raycaster.ray.distanceToPoint(position);
+                if (distance < threshold && distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            // If a point was found, trigger hover handler
+            if (closestIndex >= 0 && closestIndex < points.length) {
+                onPointHover(points[closestIndex].id);
+            } else {
+                // No point found, clear hover
+                onPointHover(null);
+            }
+        };
+
+        const handleMouseLeave = () => {
+            // Clear hover when mouse leaves the canvas
+            onPointHover(null);
+        };
+
+        gl.domElement.addEventListener('mousemove', handleMouseMove);
+        gl.domElement.addEventListener('mouseleave', handleMouseLeave);
+        return () => {
+            gl.domElement.removeEventListener('mousemove', handleMouseMove);
+            gl.domElement.removeEventListener('mouseleave', handleMouseLeave);
+        };
+    }, [onPointHover, points, raycaster, camera, gl, pointSize, viewPlane]);
+
+    return null;
+}
+
 function Scene2DContent({
     points,
     shapes,
@@ -531,6 +720,7 @@ function Scene2DContent({
     return (
         <>
             <ClickHandler2D points={points} onPointClick={onPointClick} pointSize={pointSize} viewPlane={viewPlane} />
+            <HoverHandler2D points={points} onPointHover={onPointHover} pointSize={pointSize} viewPlane={viewPlane} />
             <ambientLight intensity={0.7} />
             <directionalLight position={[10, 10, 5]} intensity={0.5} />
 

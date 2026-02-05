@@ -111,6 +111,8 @@ export function isModelSelected(point: Point3D, selectedModelNames?: Set<string>
 /**
  * Get the color for a point considering selection, hover, and live data
  * Returns RGB values as [r, g, b] in range 0-255
+ * 
+ * Optimized version: pre-compute hoveredModelName to avoid repeated find() operations
  */
 export function getPointColor(
     point: Point3D,
@@ -118,26 +120,32 @@ export function getPointColor(
     options: {
         selectedIds?: Set<string>;
         hoveredId?: string | null;
+        hoveredModelName?: string | null; // Pre-computed hovered model name for performance
         selectedModelNames?: Set<string>;
         liveData?: LatestFrameRingBuffer;
         time?: number;
         allPointsCount: number;
     },
 ): [number, number, number] {
-    const { selectedIds, hoveredId, selectedModelNames, liveData, time, allPointsCount } = options;
+    const { selectedIds, hoveredId, hoveredModelName, selectedModelNames, liveData, time } = options;
 
-    // Check selection state
-    const isPointSelectedValue = isPointSelected(point, selectedIds, selectedModelNames);
-    const isModelSelectedValue = isModelSelected(point, selectedModelNames);
+    // Get point's model name once (cached for reuse)
+    const pointModelName = point.metadata?.modelName as string | undefined;
 
-    // Selected points (by model or individually) get yellow
-    if (isModelSelectedValue || isPointSelectedValue) {
-        return [255, 255, 0];
+    // Check selection state (optimized: check model first as it's faster)
+    if (pointModelName && selectedModelNames?.has(pointModelName)) {
+        return [255, 255, 0]; // Yellow for selected model
+    }
+    if (selectedIds?.has(point.id)) {
+        return [255, 255, 0]; // Yellow for selected point
     }
 
-    // Hovered points get cyan
+    // Check hover state (optimized: use pre-computed hoveredModelName)
+    if (hoveredModelName && pointModelName === hoveredModelName) {
+        return [255, 255, 255]; // White for hovered model
+    }
     if (hoveredId === point.id) {
-        return [0, 255, 255];
+        return [255, 255, 255]; // White for hovered point (fallback)
     }
 
     // Use live data if available
@@ -155,18 +163,17 @@ export function getPointColor(
 
     // Use procedural color if time is provided
     if (time !== undefined) {
-        return calculateProceduralColor(point, time, isModelSelectedValue);
+        return calculateProceduralColor(point, time, false);
     }
 
     // Fallback: generate static procedural color (for initial geometry setup)
-    // This is used for 2D view which doesn't have per-frame updates
-    // Uses time=0 to match 3D view's initial state
     return calculateStaticProceduralColor(point);
 }
 
 /**
  * Generate initial colors for geometry setup
  * This is used when creating the initial buffer geometry before per-frame updates
+ * Optimized: pre-computes hoveredModelName once instead of finding it for each point
  */
 export function generateInitialColors(
     points: Point3D[],
@@ -175,16 +182,27 @@ export function generateInitialColors(
     selectedIds?: Set<string>,
     hoveredId?: string | null,
     selectedModelNames?: Set<string>,
+    allPoints?: Point3D[], // Required for model-based hover detection
 ): Uint8Array {
     const colors = new Uint8Array(points.length * 3);
+
+    // Pre-compute hovered model name once (performance optimization)
+    let hoveredModelName: string | null = null;
+    if (hoveredId && allPoints) {
+        const hoveredPoint = allPoints.find((p) => p.id === hoveredId);
+        if (hoveredPoint) {
+            hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
+        }
+    }
 
     points.forEach((point, i) => {
         const originalIndex = originalIndices[i];
 
-        // Get color using shared logic
+        // Get color using optimized shared logic
         const [r, g, b] = getPointColor(point, originalIndex, {
             selectedIds,
             hoveredId,
+            hoveredModelName,
             selectedModelNames,
             allPointsCount,
         });

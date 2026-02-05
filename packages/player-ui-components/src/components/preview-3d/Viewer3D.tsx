@@ -6,7 +6,7 @@ import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import { getPointColor, calculateProceduralColor } from './viewerUtils';
+import { getPointColor } from './viewerUtils';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -33,6 +33,7 @@ interface ModelData {
 function ModelPointCloud({
     modelData,
     allPointsCount,
+    allPoints,
     liveData,
     selectedIds,
     hoveredId,
@@ -43,6 +44,7 @@ function ModelPointCloud({
 }: {
     modelData: ModelData;
     allPointsCount: number;
+    allPoints: Point3D[];
     liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
@@ -79,6 +81,15 @@ function ModelPointCloud({
         const positions = new Float32Array(modelData.points.length * 3);
         const colors = new Uint8Array(modelData.points.length * 3);
 
+        // Pre-compute hovered model name once (performance optimization)
+        let hoveredModelName: string | null = null;
+        if (hoveredId && allPoints) {
+            const hoveredPoint = allPoints.find((p) => p.id === hoveredId);
+            if (hoveredPoint) {
+                hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
+            }
+        }
+
         modelData.points.forEach((point, i) => {
             positions[i * 3] = point.x;
             positions[i * 3 + 1] = point.y;
@@ -87,10 +98,11 @@ function ModelPointCloud({
             // Use original index to get the correct procedural color for this point
             const originalIndex = modelData.originalIndices[i];
 
-            // Use shared color calculation logic
+            // Use optimized color calculation logic
             const [r, g, b] = getPointColor(point, originalIndex, {
                 selectedIds,
                 hoveredId,
+                hoveredModelName,
                 selectedModelNames,
                 allPointsCount,
             });
@@ -100,7 +112,7 @@ function ModelPointCloud({
         });
 
         return { positions, colors };
-    }, [modelData, selectedIds, hoveredId, isModelSelected, allPointsCount]);
+    }, [modelData, selectedIds, hoveredId, allPointsCount, allPoints, selectedModelNames]);
 
     const createOrUpdateBufferGeometry = useCallback(
         (
@@ -179,8 +191,21 @@ function ModelPointCloud({
     }, []);
 
     // Animate selected model points with pulsing effect and update colors per frame
-    useFrame((_state, delta) => {
+    useFrame((_state) => {
         const t = animationTime.current;
+
+        // Check if this model is hovered (any point in the model belongs to hovered model)
+        // Pre-compute hovered model name once for performance
+        let hoveredModelName: string | null = null;
+        if (hoveredId && allPoints) {
+            const hoveredPoint = allPoints.find((p) => p.id === hoveredId);
+            if (hoveredPoint) {
+                hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
+            }
+        }
+        const hasHoveredPoint = hoveredModelName && modelData.points.length > 0
+            ? modelData.points[0].metadata?.modelName === hoveredModelName
+            : false;
 
         // Update point size animation for selected models
         if (materialRef.current && isModelSelected) {
@@ -189,8 +214,12 @@ function ModelPointCloud({
             const pulseAmount = 0.3;
             const pulse = 1.0 + Math.sin(t * pulseSpeed) * pulseAmount;
             materialRef.current.size = baseSize * pulse;
+        } else if (materialRef.current && hasHoveredPoint) {
+            // Increase size for hovered points
+            const baseSize = pointSize || 3.0;
+            materialRef.current.size = baseSize * 1.5;
         } else if (materialRef.current) {
-            // Smoothly return to base size when not selected
+            // Smoothly return to base size when not selected or hovered
             const baseSize = pointSize || 3.0;
             if (Math.abs(materialRef.current.size - baseSize) > 0.01) {
                 materialRef.current.size = THREE.MathUtils.lerp(materialRef.current.size, baseSize, 0.1);
@@ -207,16 +236,26 @@ function ModelPointCloud({
                 const currentLiveData = liveDataRef.current;
                 const ld = currentLiveData?.tryReadLatest(0)?.bytes;
 
+                // Pre-compute hovered model name once (performance optimization)
+                let hoveredModelName: string | null = null;
+                if (hoveredId && allPoints) {
+                    const hoveredPoint = allPoints.find((p) => p.id === hoveredId);
+                    if (hoveredPoint) {
+                        hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
+                    }
+                }
+
                 if (ld) {
                     // Use live data - map from all points array to this model's points
                     pointsDataRef.current.forEach(({ point, originalIndex }, i) => {
-                        // Skip if hovered or selected (will be handled by geometry update)
-                        if (hoveredId === point.id || selectedIds?.has(point.id) || isModelSelected) return;
+                        // Skip if selected (hovered colors are updated here, not skipped)
+                        if (selectedIds?.has(point.id) || isModelSelected) return;
 
-                        // Use shared color calculation with live data
+                        // Use optimized color calculation with pre-computed hoveredModelName
                         const [r, g, b] = getPointColor(point, originalIndex, {
                             selectedIds,
                             hoveredId,
+                            hoveredModelName,
                             selectedModelNames,
                             liveData: currentLiveData,
                             allPointsCount,
@@ -230,11 +269,18 @@ function ModelPointCloud({
                 } else {
                     // Use procedural colors with shared calculation logic
                     pointsDataRef.current.forEach(({ point, originalIndex }, i) => {
-                        // Skip if hovered or selected (will be handled by geometry update)
-                        if (hoveredId === point.id || selectedIds?.has(point.id) || isModelSelected) return;
+                        // Skip if selected (hovered colors are updated here, not skipped)
+                        if (selectedIds?.has(point.id) || isModelSelected) return;
 
-                        // Use shared color calculation
-                        const [r, g, b] = calculateProceduralColor(point, t, isModelSelected);
+                        // Use optimized color calculation with pre-computed hoveredModelName
+                        const [r, g, b] = getPointColor(point, originalIndex, {
+                            selectedIds,
+                            hoveredId,
+                            hoveredModelName,
+                            selectedModelNames,
+                            time: t,
+                            allPointsCount,
+                        });
 
                         const colorIndex = i * 3;
                         colorArray[colorIndex] = r;
@@ -329,6 +375,7 @@ function OptimizedPointCloud({
                         key={modelData.modelName}
                         modelData={modelData}
                         allPointsCount={points.length}
+                        allPoints={points}
                         liveData={liveData}
                         selectedIds={selectedIds}
                         hoveredId={hoveredId}
@@ -408,6 +455,81 @@ function ClickHandler({
     return null;
 }
 
+// Component to handle hover events with raycasting
+function HoverHandler({
+    points,
+    onPointHover,
+    pointSize,
+}: {
+    points: Point3D[];
+    onPointHover?: (pointId: string | null) => void;
+    pointSize?: number;
+}) {
+    const { camera, raycaster, gl } = useThree();
+
+    useEffect(() => {
+        if (!onPointHover) return;
+
+        const handleMouseMove = (event: MouseEvent) => {
+            // Get mouse position in normalized device coordinates
+            const rect = gl.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            // Update raycaster with camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+
+            // Get all points as 3D positions
+            const pointPositions = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+            const pointSizeValue = pointSize || 3.0;
+
+            // Calculate threshold based on point size and camera distance
+            // Use a more generous threshold for hover detection (increased for better visibility)
+            const cameraDistance = camera.position.distanceTo(
+                points.length > 0
+                    ? new THREE.Vector3(points[0].x, points[0].y, points[0].z)
+                    : new THREE.Vector3(0, 0, 0),
+            );
+            const threshold = Math.max(pointSizeValue * 0.15, cameraDistance * 0.02);
+
+            // Find the closest point to the ray
+            let closestIndex = -1;
+            let minDistance = Infinity;
+
+            pointPositions.forEach((position, index) => {
+                const distance = raycaster.ray.distanceToPoint(position);
+                if (distance < threshold && distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            // If a point was found, trigger hover handler
+            if (closestIndex >= 0 && closestIndex < points.length) {
+                onPointHover(points[closestIndex].id);
+            } else {
+                // No point found, clear hover
+                onPointHover(null);
+            }
+        };
+
+        const handleMouseLeave = () => {
+            // Clear hover when mouse leaves the canvas
+            onPointHover(null);
+        };
+
+        gl.domElement.addEventListener('mousemove', handleMouseMove);
+        gl.domElement.addEventListener('mouseleave', handleMouseLeave);
+        return () => {
+            gl.domElement.removeEventListener('mousemove', handleMouseMove);
+            gl.domElement.removeEventListener('mouseleave', handleMouseLeave);
+        };
+    }, [onPointHover, points, raycaster, camera, gl, pointSize]);
+
+    return null;
+}
+
 function SceneContent({
     points,
     shapes,
@@ -465,6 +587,7 @@ function SceneContent({
     return (
         <>
             <ClickHandler points={points} onPointClick={onPointClick} pointSize={pointSize} />
+            <HoverHandler points={points} onPointHover={onPointHover} pointSize={pointSize} />
             <ambientLight intensity={0.5} />
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
