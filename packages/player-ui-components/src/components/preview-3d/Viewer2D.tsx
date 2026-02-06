@@ -1,15 +1,11 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
-import {
-    isPointSelected,
-    isModelSelected,
-    generateInitialColors,
-} from './viewerUtils';
+import { GeometryManager } from './geometryManager';
 
 export interface Viewer2DProps {
     points: Point3D[];
@@ -38,326 +34,71 @@ function Optimized2DPointCloud({
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
 }) {
-    const selectedPointsRef = useRef<THREE.Points>(null);
-    const nonSelectedPointsRef = useRef<THREE.Points>(null);
-    const hoveredPointsRef = useRef<THREE.Points>(null);
-    const selectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
-    const nonSelectedBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
-    const hoveredBufferGeometryRef = useRef<THREE.BufferGeometry | null>(null);
-    const hoveredMaterialRef = useRef<THREE.PointsMaterial>(null);
+    const geometryManagerRef = useRef<GeometryManager | null>(null);
+    const groupRef = useRef<THREE.Group | null>(null);
+    const animationTimeRef = useRef(0);
 
-    // Separate points into selected, hovered (by model), and non-selected for better visual feedback
-    // Track original indices to preserve correct procedural colors
-    const { selectedPoints, hoveredPoints, nonSelectedPoints, selectedOriginalIndices, hoveredOriginalIndices, nonSelectedOriginalIndices } = useMemo(() => {
-        const selected: Point3D[] = [];
-        const hovered: Point3D[] = [];
-        const nonSelected: Point3D[] = [];
-        const selectedIndices: number[] = [];
-        const hoveredIndices: number[] = [];
-        const nonSelectedIndices: number[] = [];
-
-        // Pre-compute hovered model name once (performance optimization)
-        let hoveredModelName: string | null = null;
-        if (hoveredId) {
-            const hoveredPoint = points.find((p) => p.id === hoveredId);
-            if (hoveredPoint) {
-                hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
-            }
-        }
-
-        points.forEach((point, originalIndex) => {
-            const isModelSelectedValue = isModelSelected(point, selectedModelNames);
-            const isPointSelectedValue = isPointSelected(point, selectedIds, selectedModelNames);
-            // Check if point belongs to hovered model (entire model gets highlighted)
-            const pointModelName = point.metadata?.modelName as string | undefined;
-            const isHoveredModelValue = hoveredModelName !== null && pointModelName === hoveredModelName;
-
-            if (isModelSelectedValue || isPointSelectedValue) {
-                selected.push(point);
-                selectedIndices.push(originalIndex);
-            } else if (isHoveredModelValue) {
-                // Include all points from the hovered model
-                hovered.push(point);
-                hoveredIndices.push(originalIndex);
-            } else {
-                nonSelected.push(point);
-                nonSelectedIndices.push(originalIndex);
-            }
-        });
-
-        return {
-            selectedPoints: selected,
-            hoveredPoints: hovered,
-            nonSelectedPoints: nonSelected,
-            selectedOriginalIndices: selectedIndices,
-            hoveredOriginalIndices: hoveredIndices,
-            nonSelectedOriginalIndices: nonSelectedIndices,
-        };
-    }, [points, selectedIds, selectedModelNames, hoveredId]);
-
-    // Memoize geometry for selected points
-    const selectedGeometry = useMemo(() => {
-        if (selectedPoints.length === 0) return null;
-
-        const positions = new Float32Array(selectedPoints.length * 3);
-        const colors = generateInitialColors(
-            selectedPoints,
-            selectedOriginalIndices,
-            points.length,
-            selectedIds,
-            hoveredId,
-            selectedModelNames,
-            points, // Pass all points for model-based hover detection
-        );
-
-        selectedPoints.forEach((point, i) => {
-            // Flatten based on view plane
-            switch (viewPlane) {
-                case 'xy':
-                    positions[i * 3] = point.x;
-                    positions[i * 3 + 1] = point.y;
-                    positions[i * 3 + 2] = 0;
-                    break;
-                case 'xz':
-                    positions[i * 3] = point.x;
-                    positions[i * 3 + 1] = 0;
-                    positions[i * 3 + 2] = point.z;
-                    break;
-                case 'yz':
-                    positions[i * 3] = 0;
-                    positions[i * 3 + 1] = point.y;
-                    positions[i * 3 + 2] = point.z;
-                    break;
-            }
-        });
-
-        return { positions, colors };
-    }, [selectedPoints, selectedIds, hoveredId, viewPlane, selectedModelNames, selectedOriginalIndices, points]);
-
-    // Memoize geometry for hovered points
-    const hoveredGeometry = useMemo(() => {
-        if (hoveredPoints.length === 0) return null;
-
-        const positions = new Float32Array(hoveredPoints.length * 3);
-        const colors = generateInitialColors(
-            hoveredPoints,
-            hoveredOriginalIndices,
-            points.length,
-            selectedIds,
-            hoveredId,
-            selectedModelNames,
-            points, // Pass all points for model-based hover detection
-        );
-
-        hoveredPoints.forEach((point, i) => {
-            // Flatten based on view plane
-            switch (viewPlane) {
-                case 'xy':
-                    positions[i * 3] = point.x;
-                    positions[i * 3 + 1] = point.y;
-                    positions[i * 3 + 2] = 0;
-                    break;
-                case 'xz':
-                    positions[i * 3] = point.x;
-                    positions[i * 3 + 1] = 0;
-                    positions[i * 3 + 2] = point.z;
-                    break;
-                case 'yz':
-                    positions[i * 3] = 0;
-                    positions[i * 3 + 1] = point.y;
-                    positions[i * 3 + 2] = point.z;
-                    break;
-            }
-        });
-
-        return { positions, colors };
-    }, [hoveredPoints, hoveredId, viewPlane, hoveredOriginalIndices, points, selectedIds, selectedModelNames]);
-
-    // Memoize geometry for non-selected points
-    const nonSelectedGeometry = useMemo(() => {
-        if (nonSelectedPoints.length === 0) return null;
-
-        const positions = new Float32Array(nonSelectedPoints.length * 3);
-        const colors = generateInitialColors(
-            nonSelectedPoints,
-            nonSelectedOriginalIndices,
-            points.length,
-            selectedIds,
-            hoveredId,
-            selectedModelNames,
-            points, // Pass all points for model-based hover detection
-        );
-
-        nonSelectedPoints.forEach((point, i) => {
-            // Flatten based on view plane
-            switch (viewPlane) {
-                case 'xy':
-                    positions[i * 3] = point.x;
-                    positions[i * 3 + 1] = point.y;
-                    positions[i * 3 + 2] = 0;
-                    break;
-                case 'xz':
-                    positions[i * 3] = point.x;
-                    positions[i * 3 + 1] = 0;
-                    positions[i * 3 + 2] = point.z;
-                    break;
-                case 'yz':
-                    positions[i * 3] = 0;
-                    positions[i * 3 + 1] = point.y;
-                    positions[i * 3 + 2] = point.z;
-                    break;
-            }
-        });
-
-        return { positions, colors };
-    }, [nonSelectedPoints, hoveredId, viewPlane, nonSelectedOriginalIndices, points, selectedIds, selectedModelNames]);
-
-    const createOrUpdateBufferGeometry = useCallback(
-        (
-            geometryRef: React.MutableRefObject<THREE.BufferGeometry | null>,
-            positions: Float32Array,
-            colors: Uint8Array,
-        ): THREE.BufferGeometry => {
-            const pointCount = positions.length / 3;
-            const existing = geometryRef.current;
-
-            if (
-                existing &&
-                (existing.getAttribute('position') as THREE.BufferAttribute | undefined)?.count === pointCount &&
-                (existing.getAttribute('color') as THREE.BufferAttribute | undefined)?.count === pointCount
-            ) {
-                const posAttr = existing.getAttribute('position') as THREE.BufferAttribute;
-                const colAttr = existing.getAttribute('color') as THREE.BufferAttribute;
-
-                (posAttr.array as Float32Array).set(positions);
-
-                // Copy color values element-by-element to handle normalized Uint8Array correctly
-                const colorArray = colAttr.array as Uint8Array;
-                for (let i = 0; i < colors.length; i++) {
-                    colorArray[i] = colors[i];
-                }
-
-                posAttr.needsUpdate = true;
-                colAttr.needsUpdate = true;
-                return existing;
-            }
-
-            if (existing) existing.dispose();
-
-            const geometry = new THREE.BufferGeometry();
-            const posAttr = new THREE.BufferAttribute(positions, 3);
-            const colAttr = new THREE.BufferAttribute(colors, 3, true);
-
-            posAttr.setUsage(THREE.DynamicDrawUsage);
-            colAttr.setUsage(THREE.DynamicDrawUsage);
-
-            geometry.setAttribute('position', posAttr);
-            geometry.setAttribute('color', colAttr);
-            geometryRef.current = geometry;
-            return geometry;
-        },
-        [],
-    );
-
-    const selectedBufferGeometry = useMemo(() => {
-        if (!selectedGeometry) return null;
-        return createOrUpdateBufferGeometry(
-            selectedBufferGeometryRef,
-            selectedGeometry.positions,
-            selectedGeometry.colors,
-        );
-    }, [selectedGeometry, createOrUpdateBufferGeometry]);
-
-    const hoveredBufferGeometry = useMemo(() => {
-        if (!hoveredGeometry) return null;
-        return createOrUpdateBufferGeometry(
-            hoveredBufferGeometryRef,
-            hoveredGeometry.positions,
-            hoveredGeometry.colors,
-        );
-    }, [hoveredGeometry, createOrUpdateBufferGeometry]);
-
-    const nonSelectedBufferGeometry = useMemo(() => {
-        if (!nonSelectedGeometry) return null;
-        return createOrUpdateBufferGeometry(
-            nonSelectedBufferGeometryRef,
-            nonSelectedGeometry.positions,
-            nonSelectedGeometry.colors,
-        );
-    }, [nonSelectedGeometry, createOrUpdateBufferGeometry]);
-
+    // Initialize geometry manager
     useEffect(() => {
-        return () => {
-            selectedBufferGeometryRef.current?.dispose();
-            nonSelectedBufferGeometryRef.current?.dispose();
-            hoveredBufferGeometryRef.current?.dispose();
-            selectedBufferGeometryRef.current = null;
-            nonSelectedBufferGeometryRef.current = null;
-            hoveredBufferGeometryRef.current = null;
+        if (!points || points.length === 0) return;
+
+        const uniforms = {
+            time: 0,
+            brightness: 1.0,
+            gamma: 2.2,
+            selectedColor: new THREE.Vector3(1.0, 1.0, 0.0), // Yellow
+            hoveredColor: new THREE.Vector3(1.0, 1.0, 1.0), // White
+            useLiveData: 0.0,
+            totalPointCount: points.length,
         };
-    }, []);
 
-    const baseSize = pointSize || 3.0;
-    const hoveredSize = baseSize * 1.5; // Make hovered points 50% larger
+        const manager = new GeometryManager(points, uniforms, { pointSize, viewPlane });
+        manager.initializeGroups();
+        geometryManagerRef.current = manager;
 
-    // Create unique keys for proper re-rendering
-    const selectedKey = useMemo(() => {
-        const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
-        return `selected-2d-${selectedPoints.length}-${modelNames}`;
-    }, [selectedPoints.length, selectedModelNames]);
+        // Create group to hold all point objects
+        const group = new THREE.Group();
+        manager.getPointObjects().forEach((pointsObj) => {
+            group.add(pointsObj);
+        });
+        groupRef.current = group;
 
-    const hoveredKey = useMemo(() => {
-        return `hovered-2d-${hoveredPoints.length}-${hoveredId || 'none'}`;
-    }, [hoveredPoints.length, hoveredId]);
+        return () => {
+            manager.dispose();
+            geometryManagerRef.current = null;
+            groupRef.current = null;
+        };
+    }, [points, pointSize, viewPlane]);
 
-    const nonSelectedKey = useMemo(() => {
-        const modelNames = selectedModelNames ? Array.from(selectedModelNames).sort().join('-') : 'none';
-        return `nonselected-2d-${nonSelectedPoints.length}-${modelNames}`;
-    }, [nonSelectedPoints.length, selectedModelNames]);
+    // Reset animation time when selected models change
+    useEffect(() => {
+        animationTimeRef.current = 0;
+    }, [selectedModelNames]);
 
-    return (
-        <>
-            {/* Selected points */}
-            {selectedBufferGeometry && selectedPoints.length > 0 && (
-                <points key={selectedKey} ref={selectedPointsRef} geometry={selectedBufferGeometry}>
-                    <pointsMaterial
-                        size={baseSize}
-                        vertexColors
-                        sizeAttenuation={false}
-                        transparent={false}
-                        depthWrite={true}
-                    />
-                </points>
-            )}
+    // Update states when selection/hover changes
+    useEffect(() => {
+        if (!geometryManagerRef.current) return;
+        geometryManagerRef.current.updateStates(selectedIds, hoveredId, selectedModelNames);
+    }, [selectedIds, hoveredId, selectedModelNames]);
 
-            {/* Hovered points - rendered with larger size */}
-            {hoveredBufferGeometry && hoveredPoints.length > 0 && (
-                <points key={hoveredKey} ref={hoveredPointsRef} geometry={hoveredBufferGeometry}>
-                    <pointsMaterial
-                        ref={hoveredMaterialRef}
-                        size={hoveredSize}
-                        vertexColors
-                        sizeAttenuation={false}
-                        transparent={false}
-                        depthWrite={true}
-                    />
-                </points>
-            )}
+    // Update animation time and point sizes
+    useFrame((_state, delta) => {
+        if (!geometryManagerRef.current) return;
 
-            {/* Non-selected points */}
-            {nonSelectedBufferGeometry && nonSelectedPoints.length > 0 && (
-                <points key={nonSelectedKey} ref={nonSelectedPointsRef} geometry={nonSelectedBufferGeometry}>
-                    <pointsMaterial
-                        size={baseSize}
-                        vertexColors
-                        sizeAttenuation={false}
-                        transparent={false}
-                        depthWrite={true}
-                    />
-                </points>
-            )}
-        </>
-    );
+        animationTimeRef.current += delta;
+
+        // Update time for procedural colors
+        geometryManagerRef.current.updateTime(animationTimeRef.current);
+
+        const baseSize = pointSize || 3.0;
+
+        // Update point sizes for hover effects
+        geometryManagerRef.current.updatePointSizes(baseSize, selectedModelNames, hoveredId);
+    });
+
+    if (!groupRef.current) return null;
+
+    return <primitive object={groupRef.current} />;
 }
 
 interface Shape2DMeshProps {
