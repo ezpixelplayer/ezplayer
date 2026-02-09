@@ -262,11 +262,60 @@ function HoverHandler2D({
     viewPlane: 'xy' | 'xz' | 'yz';
 }) {
     const { camera, raycaster, gl } = useThree();
+    
+    // Memoize 2D point positions to avoid recreating them on every mousemove
+    const pointPositionsRef = useRef<THREE.Vector3[]>([]);
+    const centerPointRef = useRef<THREE.Vector3 | null>(null);
+    const currentHoveredIdRef = useRef<string | null>(null);
+    const lastUpdateTimeRef = useRef<number>(0);
+    const throttleDelay = 16; // ~60fps max update rate
+
+    // Pre-compute point positions when points or viewPlane changes
+    useEffect(() => {
+        if (points.length === 0) {
+            pointPositionsRef.current = [];
+            centerPointRef.current = null;
+            return;
+        }
+
+        // Pre-compute all 2D positions once
+        pointPositionsRef.current = points.map((p) => {
+            switch (viewPlane) {
+                case 'xy':
+                    return new THREE.Vector3(p.x, p.y, 0);
+                case 'xz':
+                    return new THREE.Vector3(p.x, 0, p.z);
+                case 'yz':
+                    return new THREE.Vector3(0, p.y, p.z);
+            }
+        });
+
+        // Pre-compute center point for camera distance calculation
+        const firstPoint = points[0];
+        switch (viewPlane) {
+            case 'xy':
+                centerPointRef.current = new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                break;
+            case 'xz':
+                centerPointRef.current = new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                break;
+            case 'yz':
+                centerPointRef.current = new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                break;
+        }
+    }, [points, viewPlane]);
 
     useEffect(() => {
         if (!onPointHover) return;
 
         const handleMouseMove = (event: MouseEvent) => {
+            // Throttle updates to ~60fps
+            const now = performance.now();
+            if (now - lastUpdateTimeRef.current < throttleDelay) {
+                return;
+            }
+            lastUpdateTimeRef.current = now;
+
             // Get mouse position in normalized device coordinates
             const rect = gl.domElement.getBoundingClientRect();
             const mouse = new THREE.Vector2();
@@ -276,62 +325,56 @@ function HoverHandler2D({
             // Update raycaster with camera and mouse position
             raycaster.setFromCamera(mouse, camera);
 
-            // Get all points as 2D positions based on view plane
-            const pointPositions = points.map((p) => {
-                switch (viewPlane) {
-                    case 'xy':
-                        return new THREE.Vector3(p.x, p.y, 0);
-                    case 'xz':
-                        return new THREE.Vector3(p.x, 0, p.z);
-                    case 'yz':
-                        return new THREE.Vector3(0, p.y, p.z);
+            // Use pre-computed point positions
+            const pointPositions = pointPositionsRef.current;
+            if (pointPositions.length === 0) {
+                if (currentHoveredIdRef.current !== null) {
+                    currentHoveredIdRef.current = null;
+                    onPointHover(null);
                 }
-            });
+                return;
+            }
+
             const pointSizeValue = pointSize || 3.0;
 
             // Calculate threshold based on point size and camera distance
-            // Use a more generous threshold for hover detection (increased for better visibility)
-            const cameraDistance = camera.position.distanceTo(
-                points.length > 0
-                    ? (() => {
-                        const firstPoint = points[0];
-                        switch (viewPlane) {
-                            case 'xy':
-                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                            case 'xz':
-                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                            case 'yz':
-                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                        }
-                    })()
-                    : new THREE.Vector3(0, 0, 0),
-            );
+            // Cache camera distance calculation (only recalculate if center point exists)
+            const centerPoint = centerPointRef.current;
+            const cameraDistance = centerPoint
+                ? camera.position.distanceTo(centerPoint)
+                : 1000; // fallback distance
             const threshold = Math.max(pointSizeValue * 0.15, cameraDistance * 0.02);
 
             // Find the closest point to the ray
             let closestIndex = -1;
             let minDistance = Infinity;
 
-            pointPositions.forEach((position, index) => {
-                const distance = raycaster.ray.distanceToPoint(position);
+            // Use pre-computed positions instead of creating new ones
+            for (let i = 0; i < pointPositions.length; i++) {
+                const distance = raycaster.ray.distanceToPoint(pointPositions[i]);
                 if (distance < threshold && distance < minDistance) {
                     minDistance = distance;
-                    closestIndex = index;
+                    closestIndex = i;
                 }
-            });
+            }
 
-            // If a point was found, trigger hover handler
-            if (closestIndex >= 0 && closestIndex < points.length) {
-                onPointHover(points[closestIndex].id);
-            } else {
-                // No point found, clear hover
-                onPointHover(null);
+            // Only update state if hovered point actually changed
+            const newHoveredId = closestIndex >= 0 && closestIndex < points.length 
+                ? points[closestIndex].id 
+                : null;
+            
+            if (newHoveredId !== currentHoveredIdRef.current) {
+                currentHoveredIdRef.current = newHoveredId;
+                onPointHover(newHoveredId);
             }
         };
 
         const handleMouseLeave = () => {
             // Clear hover when mouse leaves the canvas
-            onPointHover(null);
+            if (currentHoveredIdRef.current !== null) {
+                currentHoveredIdRef.current = null;
+                onPointHover(null);
+            }
         };
 
         gl.domElement.addEventListener('mousemove', handleMouseMove);

@@ -111,10 +111,38 @@ export class GeometryGroupRenderer {
      * Update base colors from live data
      */
     updateLiveDataColors(liveData?: LatestFrameRingBuffer): void {
-        if (!liveData) return;
+        if (!liveData) {
+            // No live data available - use procedural colors
+            this.material.uniforms.useLiveData.value = 0.0;
+            return;
+        }
 
         const latestFrame = liveData.tryReadLatest(0);
-        if (!latestFrame?.bytes) return;
+        if (!latestFrame?.bytes) {
+            // Live data exists but no frame available - use procedural colors
+            this.material.uniforms.useLiveData.value = 0.0;
+            return;
+        }
+
+        // Invert FSEQ brightness/gamma that were already applied to the RGB values,
+        // so our internal pipeline can apply brightness/gamma consistently.
+        const brightnessUniform = this.material.uniforms.brightness?.value;
+        const gammaUniform = this.material.uniforms.gamma?.value;
+
+        const brightness = typeof brightnessUniform === 'number' ? brightnessUniform : 1.0;
+        const gamma = typeof gammaUniform === 'number' ? gammaUniform : 1.0;
+
+        const invbright = brightness ? 1 / brightness : 1;
+        const invgamma = gamma ? 1 / gamma : 1;
+
+        // Optional optimization: build a small lookup table (0–255) so we don't
+        // recompute Math.pow for every channel value.
+        const correctionLUT = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            // r,g,b are bytes in [0,255]; apply inverse brightness & gamma as requested:
+            // r = Math.pow((r * invbright / 255.0), invgamma);
+            correctionLUT[i] = Math.pow((i * invbright) / 255.0, invgamma);
+        }
 
         const pointCount = this.group.points.length;
         let needsUpdate = false;
@@ -125,9 +153,14 @@ export class GeometryGroupRenderer {
             const colorIndex = point.channel ?? originalIndex * 3;
 
             if (colorIndex + 2 < latestFrame.bytes.length) {
-                const r = latestFrame.bytes[colorIndex] / 255.0;
-                const g = latestFrame.bytes[colorIndex + 1] / 255.0;
-                const b = latestFrame.bytes[colorIndex + 2] / 255.0;
+                const rByte = latestFrame.bytes[colorIndex];
+                const gByte = latestFrame.bytes[colorIndex + 1];
+                const bByte = latestFrame.bytes[colorIndex + 2];
+
+                // Ensure full black stays black (lookup[0] is exactly 0)
+                const r = correctionLUT[rByte];
+                const g = correctionLUT[gByte];
+                const b = correctionLUT[bByte];
 
                 const baseColorIndex = i * 3;
                 if (
@@ -143,20 +176,22 @@ export class GeometryGroupRenderer {
             }
         }
 
+        // Always set useLiveData to 1.0 when live data is available (even if colors didn't change)
+        // This ensures FSEQ colors are used instead of procedural colors
+        this.material.uniforms.useLiveData.value = 1.0;
+
         if (needsUpdate) {
             updateShaderAttributes(this.geometry, this.selectionStates, this.hoverStates, this.baseColors);
-            this.material.uniforms.useLiveData.value = 1.0;
         }
     }
 
     /**
      * Update time uniform for procedural colors
+     * Note: This should NOT reset useLiveData - that's handled by updateLiveDataColors
      */
     updateTime(time: number): void {
         this.material.uniforms.time.value = time;
-        if (this.material.uniforms.useLiveData.value > 0.5) {
-            this.material.uniforms.useLiveData.value = 0.0;
-        }
+        // Removed the code that was resetting useLiveData - that was causing FSEQ colors to be overridden
     }
 
     /**
@@ -191,6 +226,9 @@ export class GeometryManager {
     private uniforms: Partial<PointShaderUniforms>;
     private pointSize: number;
     private viewPlane?: 'xy' | 'xz' | 'yz';
+    private pointIdToModelNameCache: Map<string, string | null> = new Map();
+    private cachedHoveredId: string | null = null;
+    private cachedHoveredModelName: string | null = null;
 
     constructor(
         points: Point3D[],
@@ -210,6 +248,17 @@ export class GeometryManager {
     initializeGroups(): void {
         // Dispose existing renderers
         this.dispose();
+
+        // Build point ID to model name cache for fast lookups
+        this.pointIdToModelNameCache.clear();
+        this.allPoints.forEach((point) => {
+            const modelName = (point.metadata?.modelName as string | undefined) || null;
+            this.pointIdToModelNameCache.set(point.id, modelName);
+        });
+
+        // Reset hover cache
+        this.cachedHoveredId = null;
+        this.cachedHoveredModelName = null;
 
         // Group points by geometry type
         const groups = groupPointsByGeometry(this.allPoints);
@@ -239,13 +288,10 @@ export class GeometryManager {
         hoveredId?: string | null,
         selectedModelNames?: Set<string>,
     ): void {
-        // Pre-compute hovered model name once
+        // Pre-compute hovered model name using cache for O(1) lookup
         let hoveredModelName: string | null = null;
         if (hoveredId) {
-            const hoveredPoint = this.allPoints.find((p) => p.id === hoveredId);
-            if (hoveredPoint) {
-                hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
-            }
+            hoveredModelName = this.pointIdToModelNameCache.get(hoveredId) ?? null;
         }
 
         // Update each renderer
@@ -281,12 +327,24 @@ export class GeometryManager {
         hoveredId?: string | null,
         pulseFactor?: number,
     ): void {
-        // Pre-compute hovered model name
+        // Cache hovered model name to avoid repeated lookups (called every frame)
         let hoveredModelName: string | null = null;
         if (hoveredId) {
-            const hoveredPoint = this.allPoints.find((p) => p.id === hoveredId);
-            if (hoveredPoint) {
-                hoveredModelName = (hoveredPoint.metadata?.modelName as string | undefined) || null;
+            // Only recalculate if hoveredId changed
+            if (hoveredId !== this.cachedHoveredId) {
+                // Use O(1) cache lookup instead of O(n) find
+                hoveredModelName = this.pointIdToModelNameCache.get(hoveredId) ?? null;
+                this.cachedHoveredId = hoveredId;
+                this.cachedHoveredModelName = hoveredModelName;
+            } else {
+                // Use cached value (most common case - called every frame)
+                hoveredModelName = this.cachedHoveredModelName;
+            }
+        } else {
+            // Clear cache when no hover
+            if (this.cachedHoveredId !== null) {
+                this.cachedHoveredId = null;
+                this.cachedHoveredModelName = null;
             }
         }
 
