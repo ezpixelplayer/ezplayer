@@ -76,6 +76,28 @@ export interface NodeLoc {
     coords: NodeCoord[];
 }
 
+/** 
+ * To apply the color curve to a value (in range 0-1):
+ * (value^gamma)*brightness
+ * 
+ * To invert the color curve (say to take an RGB value from FSEQ to screen):
+ *     r = Math.pow((r * invbright / 255.0), invgamma);
+ *   where invbright = 1/brightness and invgamma = 1/gamma
+ */
+export interface NodeColorProfile {
+    // Brightness values are 0-1-? (multiplier, where 1 does nothing)
+    allBrightness ?: number,
+    // Gamma values are exponents, where 1 does nothing
+    allGamma?: number,
+
+    rBrightness?: number,
+    rGamma?: number,
+    gBrightness?: number,
+    gGamma?: number,
+    bBrightness?: number,
+    bGamma?: number,
+}
+
 /**
  * A contiguous run of nodes mapped to channels.
  * Most models have a single run; Advanced mode models may have multiple.
@@ -131,6 +153,9 @@ export interface GetNodeResult {
 
     /** Channel mapping (populated after channel resolution) */
     channelMapping?: ModelChannelMapping;
+
+    /** Color profile */
+    colorProfile?: NodeColorProfile;
 }
 
 export interface EZPElectronAPI {
