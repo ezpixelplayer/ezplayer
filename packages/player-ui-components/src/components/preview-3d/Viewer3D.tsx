@@ -89,18 +89,6 @@ function OptimizedPointCloud({
         // Update time for procedural colors
         geometryManagerRef.current.updateTime(animationTimeRef.current);
 
-        // Update point sizes for selection/hover effects
-        const baseSize = pointSize || 3.0;
-        const pulseSpeed = 2.0;
-        const pulseAmount = 0.3;
-        const pulse = 1.0 + Math.sin(animationTimeRef.current * pulseSpeed) * pulseAmount;
-
-        // Check if any model is selected
-        const hasSelectedModel = selectedModelNames && selectedModelNames.size > 0;
-        const pulseFactor = hasSelectedModel ? pulse : undefined;
-
-        geometryManagerRef.current.updatePointSizes(baseSize, selectedModelNames, hoveredId, pulseFactor);
-
         // Update live data colors
         geometryManagerRef.current.updateLiveDataColors(liveData);
     });

@@ -123,26 +123,10 @@ export class GeometryGroupRenderer {
             this.material.uniforms.useLiveData.value = 0.0;
             return;
         }
-
-        // Invert FSEQ brightness/gamma that were already applied to the RGB values,
-        // so our internal pipeline can apply brightness/gamma consistently.
-        const brightnessUniform = this.material.uniforms.brightness?.value;
-        const gammaUniform = this.material.uniforms.gamma?.value;
-
-        const brightness = typeof brightnessUniform === 'number' ? brightnessUniform : 1.0;
-        const gamma = typeof gammaUniform === 'number' ? gammaUniform : 1.0;
-
-        const invbright = brightness ? 1 / brightness : 1;
-        const invgamma = gamma ? 1 / gamma : 1;
-
-        // Optional optimization: build a small lookup table (0–255) so we don't
-        // recompute Math.pow for every channel value.
-        const correctionLUT = new Float32Array(256);
-        for (let i = 0; i < 256; i++) {
-            // r,g,b are bytes in [0,255]; apply inverse brightness & gamma as requested:
-            // r = Math.pow((r * invbright / 255.0), invgamma);
-            correctionLUT[i] = Math.pow((i * invbright) / 255.0, invgamma);
-        }
+        // NOTE: The exported frame bytes are already the "final" 0–255 channel values that the
+        // player sends to controllers. We should not apply any additional inverse gamma here,
+        // otherwise gamma would effectively be applied twice (once here, and again in the shader).
+        // So we only normalize bytes to 0–1 and let the shader handle display gamma once.
 
         const pointCount = this.group.points.length;
         let needsUpdate = false;
@@ -157,10 +141,9 @@ export class GeometryGroupRenderer {
                 const gByte = latestFrame.bytes[colorIndex + 1];
                 const bByte = latestFrame.bytes[colorIndex + 2];
 
-                // Ensure full black stays black (lookup[0] is exactly 0)
-                const r = correctionLUT[rByte];
-                const g = correctionLUT[gByte];
-                const b = correctionLUT[bByte];
+                const r = rByte / 255.0;
+                const g = gByte / 255.0;
+                const b = bByte / 255.0;
 
                 const baseColorIndex = i * 3;
                 if (
@@ -192,19 +175,6 @@ export class GeometryGroupRenderer {
     updateTime(time: number): void {
         this.material.uniforms.time.value = time;
         // Removed the code that was resetting useLiveData - that was causing FSEQ colors to be overridden
-    }
-
-    /**
-     * Update point size (for hover/selection effects)
-     */
-    updatePointSize(baseSize: number, isSelected: boolean, isHovered: boolean, pulseFactor?: number): void {
-        let size = baseSize;
-        if (isSelected && pulseFactor !== undefined) {
-            size = baseSize * pulseFactor;
-        } else if (isHovered) {
-            size = baseSize * 1.5;
-        }
-        this.material.uniforms.size.value = size;
     }
 
     /**
@@ -315,43 +285,6 @@ export class GeometryManager {
     updateTime(time: number): void {
         this.renderers.forEach((renderer) => {
             renderer.updateTime(time);
-        });
-    }
-
-    /**
-     * Update point sizes for selection/hover effects
-     */
-    updatePointSizes(
-        baseSize: number,
-        selectedModelNames?: Set<string>,
-        hoveredId?: string | null,
-        pulseFactor?: number,
-    ): void {
-        // Cache hovered model name to avoid repeated lookups (called every frame)
-        let hoveredModelName: string | null = null;
-        if (hoveredId) {
-            // Only recalculate if hoveredId changed
-            if (hoveredId !== this.cachedHoveredId) {
-                // Use O(1) cache lookup instead of O(n) find
-                hoveredModelName = this.pointIdToModelNameCache.get(hoveredId) ?? null;
-                this.cachedHoveredId = hoveredId;
-                this.cachedHoveredModelName = hoveredModelName;
-            } else {
-                // Use cached value (most common case - called every frame)
-                hoveredModelName = this.cachedHoveredModelName;
-            }
-        } else {
-            // Clear cache when no hover
-            if (this.cachedHoveredId !== null) {
-                this.cachedHoveredId = null;
-                this.cachedHoveredModelName = null;
-            }
-        }
-
-        this.renderers.forEach((renderer) => {
-            const isSelected = selectedModelNames?.has(renderer.group.type) || false;
-            const isHovered = hoveredModelName === renderer.group.type;
-            renderer.updatePointSize(baseSize, isSelected, isHovered, pulseFactor);
         });
     }
 

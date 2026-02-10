@@ -89,11 +89,6 @@ function Optimized2DPointCloud({
 
         // Update time for procedural colors
         geometryManagerRef.current.updateTime(animationTimeRef.current);
-
-        const baseSize = pointSize || 3.0;
-
-        // Update point sizes for hover effects
-        geometryManagerRef.current.updatePointSizes(baseSize, selectedModelNames, hoveredId);
     });
 
     if (!groupRef.current) return null;
@@ -262,7 +257,7 @@ function HoverHandler2D({
     viewPlane: 'xy' | 'xz' | 'yz';
 }) {
     const { camera, raycaster, gl } = useThree();
-    
+
     // Memoize 2D point positions to avoid recreating them on every mousemove
     const pointPositionsRef = useRef<THREE.Vector3[]>([]);
     const centerPointRef = useRef<THREE.Vector3 | null>(null);
@@ -359,10 +354,10 @@ function HoverHandler2D({
             }
 
             // Only update state if hovered point actually changed
-            const newHoveredId = closestIndex >= 0 && closestIndex < points.length 
-                ? points[closestIndex].id 
+            const newHoveredId = closestIndex >= 0 && closestIndex < points.length
+                ? points[closestIndex].id
                 : null;
-            
+
             if (newHoveredId !== currentHoveredIdRef.current) {
                 currentHoveredIdRef.current = newHoveredId;
                 onPointHover(newHoveredId);
