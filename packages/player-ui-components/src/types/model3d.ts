@@ -9,6 +9,10 @@ export interface ModelPointMetadata {
     coordIndex?: number;
     key?: string;
     itemIndex?: number;
+    // Color channel offsets for handling different color orders (RGB, GRB, etc.)
+    rOffset?: number; // Red channel offset (0, 1, or 2)
+    gOffset?: number; // Green channel offset (0, 1, or 2)
+    bOffset?: number; // Blue channel offset (0, 1, or 2)
 }
 
 export interface ModelShapeMetadata {}

@@ -137,9 +137,16 @@ export class GeometryGroupRenderer {
             const colorIndex = point.channel ?? originalIndex * 3;
 
             if (colorIndex + 2 < latestFrame.bytes.length) {
-                const rByte = latestFrame.bytes[colorIndex];
-                const gByte = latestFrame.bytes[colorIndex + 1];
-                const bByte = latestFrame.bytes[colorIndex + 2];
+                // Get color channel offsets from point metadata (defaults to RGB order: 0,1,2)
+                const rOffset = point.metadata?.rOffset ?? 0;
+                const gOffset = point.metadata?.gOffset ?? 1;
+                const bOffset = point.metadata?.bOffset ?? 2;
+
+                // Read bytes using the correct channel offsets
+                // This handles different color orders (RGB, GRB, RBG, etc.)
+                const rByte = latestFrame.bytes[colorIndex + rOffset];
+                const gByte = latestFrame.bytes[colorIndex + gOffset];
+                const bByte = latestFrame.bytes[colorIndex + bOffset];
 
                 const r = rByte / 255.0;
                 const g = gByte / 255.0;

@@ -6,6 +6,36 @@ import type { Model3DData, ModelMetadata, Point3D } from '../types/model3d';
 import type { GetNodeResult } from '@ezplayer/ezplayer-core';
 
 /**
+ * Parse color channel offsets from StringType (e.g., "RGB Nodes", "GRB Nodes")
+ * Returns [rOffset, gOffset, bOffset] where each is 0, 1, or 2
+ */
+function parseColorOffsets(stringType?: string): [number, number, number] {
+    if (!stringType) {
+        return [0, 1, 2]; // Default RGB
+    }
+
+    // Extract color order from strings like "RGB Nodes", "GRB Nodes", etc.
+    const match = stringType.match(/^([RGB]{3})\s+Nodes/i);
+    if (!match) {
+        return [0, 1, 2]; // Default RGB
+    }
+
+    const colorOrder = match[1].toUpperCase();
+    
+    // Map each color to its position in the string (0-based index)
+    const rOffset = colorOrder.indexOf('R');
+    const gOffset = colorOrder.indexOf('G');
+    const bOffset = colorOrder.indexOf('B');
+
+    // Validate that we found all three colors
+    if (rOffset === -1 || gOffset === -1 || bOffset === -1) {
+        return [0, 1, 2]; // Default RGB
+    }
+
+    return [rOffset, gOffset, bOffset];
+}
+
+/**
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
  * This function handles the structure returned by xllayoutcalcs getModelCoordinates
  */
@@ -17,6 +47,9 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
     Object.entries(modelCoordinates).forEach(([modelName, modelData], modelIndex) => {
         const startIndex = allPoints.length;
         let pointIndex = 0;
+
+        // Parse color order for this model (GRB, RGB, etc.)
+        const [rOffset, gOffset, bOffset] = parseColorOffsets(modelData.stringType);
 
         // Extract points
         if (modelData) {
@@ -37,6 +70,9 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                                     modelIndex,
                                     nodeIndex,
                                     coordIndex,
+                                    rOffset,
+                                    gOffset,
+                                    bOffset,
                                 },
                             });
                             pointIndex++;
