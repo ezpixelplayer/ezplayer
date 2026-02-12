@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog } from 'electron';
+import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -11,6 +11,21 @@ import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServer } from './mainsrc/server.js';
 import type { Event as ElectronEvent } from 'electron';
+
+
+import os from 'os';
+
+const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
+
+app.setPath('crashDumps', dumpDir);
+
+crashReporter.start({
+  uploadToServer: false,
+  compress: false,
+  submitURL: 'https://invalid.local', // required but unused
+});
+
+console.log('Crash dumps directory:', dumpDir);
 
 //import { begin as hirezBegin } from './mainsrc/win-hirez-timer/winhirestimer.js';
 //hirezBegin();
@@ -36,6 +51,14 @@ process.on('unhandledRejection', (reason: any) => {
 const mainCrashLogFile = path.join(app.getPath('logs'), 'main-crash.log');
 // optional: also force console logging
 app.commandLine.appendSwitch('enable-logging', 'js-flags');
+
+app.on('render-process-gone', (_event, _webContents, details) => {
+  console.error('app render-process-gone', details);
+});
+
+app.on('child-process-gone', (_event, details) => {
+  console.error('app child-process-gone', details);
+});
 
 let mainWindow: BrowserWindow | null = null;
 export function getMainWindow() {
@@ -117,6 +140,13 @@ const createWindow = (showFolder: string) => {
         },
     });
 
+    mainWindow.webContents.on('render-process-gone', (_event, details) => {
+        console.error('wc render-process-gone', details);
+    });
+    mainWindow.webContents.on('did-fail-load', (_event, code, desc, url) => {
+        console.error('did-fail-load', { code, desc, url });
+    });
+
     const url = !app.isPackaged
         ? 'http://localhost:5173' // Vite dev server
         : `file://${path.join(__dirname, '../dist/index.html')}`;
@@ -124,7 +154,7 @@ const createWindow = (showFolder: string) => {
     console.log('Loading URL:', url);
     mainWindow.loadURL(url);
 
-    if (/*true || */ !app.isPackaged || process.env.EZP_OPEN_DEVTOOLS) {
+    if (/*true ||*/ !app.isPackaged || process.env.EZP_OPEN_DEVTOOLS) {
         mainWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
     }
 
