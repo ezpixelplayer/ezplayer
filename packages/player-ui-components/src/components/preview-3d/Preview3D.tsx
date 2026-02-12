@@ -588,6 +588,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         <Viewer2D
                             points={modelData.points}
                             shapes={modelData.shapes}
+                            liveData={livePixels}
                             selectedIds={selectionState.selectedIds}
                             hoveredId={selectionState.hoveredId}
                             onPointClick={handleItemClick}

@@ -5,11 +5,13 @@ import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
+import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 
 export interface Viewer2DProps {
     points: Point3D[];
     shapes?: Shape3D[];
+    liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     onPointClick?: (pointId: string) => void;
@@ -21,6 +23,7 @@ export interface Viewer2DProps {
 
 function Optimized2DPointCloud({
     points,
+    liveData,
     selectedIds,
     hoveredId,
     pointSize,
@@ -28,6 +31,7 @@ function Optimized2DPointCloud({
     selectedModelNames,
 }: {
     points: Point3D[];
+    liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     pointSize?: number;
@@ -89,6 +93,9 @@ function Optimized2DPointCloud({
 
         // Update time for procedural colors
         geometryManagerRef.current.updateTime(animationTimeRef.current);
+
+        // Update live data colors
+        geometryManagerRef.current.updateLiveDataColors(liveData);
     });
 
     if (!groupRef.current) return null;
@@ -386,6 +393,7 @@ function HoverHandler2D({
 function Scene2DContent({
     points,
     shapes,
+    liveData,
     selectedIds,
     hoveredId,
     onPointClick,
@@ -396,6 +404,7 @@ function Scene2DContent({
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
+    liveData?: LatestFrameRingBuffer;
     selectedIds?: Set<string>;
     hoveredId?: string | null;
     onPointClick?: (pointId: string) => void;
@@ -517,6 +526,7 @@ function Scene2DContent({
 
             <Optimized2DPointCloud
                 points={points}
+                liveData={liveData}
                 selectedIds={selectedIds}
                 hoveredId={hoveredId}
                 pointSize={pointSize}
@@ -530,6 +540,7 @@ function Scene2DContent({
 export const Viewer2D: React.FC<Viewer2DProps> = ({
     points,
     shapes,
+    liveData,
     selectedIds,
     hoveredId,
     onPointClick,
@@ -549,7 +560,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                     height: '100%',
                     minHeight: 600,
                     position: 'relative',
-                    backgroundColor: '#000',
+                    backgroundColor: '#111111',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -576,7 +587,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                 height: '100%',
                 minHeight: 600,
                 position: 'relative',
-                backgroundColor: '#000',
+                backgroundColor: '#111111',
             }}
         >
             {/* Control hints overlay */}
@@ -689,6 +700,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                         <Scene2DContent
                             points={points}
                             shapes={shapes}
+                            liveData={liveData}
                             selectedIds={selectedIds}
                             hoveredId={hoveredId}
                             onPointClick={onPointClick}

@@ -379,7 +379,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     height: '100%',
                     minHeight: 600,
                     position: 'relative',
-                    backgroundColor: '#000',
+                    backgroundColor: '#111111',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -406,7 +406,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 height: '100%',
                 minHeight: 600,
                 position: 'relative',
-                backgroundColor: '#000',
+                backgroundColor: '#111111',
             }}
         >
             {/* Control hints overlay */}

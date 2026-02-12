@@ -153,6 +153,22 @@ export function getPointColor(
         const latestFrame = liveData.tryReadLatest(0);
         if (latestFrame?.bytes) {
             const colorIndex = point?.channel ?? originalIndex * 3;
+            const rOffset = point.metadata?.rOffset ?? 0;
+            const gOffset = point.metadata?.gOffset ?? 1;
+            const bOffset = point.metadata?.bOffset ?? 2;
+
+            const rIndex = colorIndex + rOffset;
+            const gIndex = colorIndex + gOffset;
+            const bIndex = colorIndex + bOffset;
+
+            if (
+                rIndex < latestFrame.bytes.length &&
+                gIndex < latestFrame.bytes.length &&
+                bIndex < latestFrame.bytes.length
+            ) {
+                return [latestFrame.bytes[rIndex], latestFrame.bytes[gIndex], latestFrame.bytes[bIndex]];
+            }
+
             return [
                 latestFrame.bytes[colorIndex],
                 latestFrame.bytes[colorIndex + 1],
