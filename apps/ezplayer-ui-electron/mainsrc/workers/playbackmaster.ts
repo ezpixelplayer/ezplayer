@@ -857,7 +857,7 @@ async function processQueue() {
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
     } catch (e) {
         const err = e as Error;
-        emitError(`[processQueue] ❌ CRITICAL ERROR in processQueue: ${err.message}`);
+        emitError(`[processQueue] CRITICAL ERROR in processQueue: ${err.message}`);
         emitError(`[processQueue] Error name: ${err.name}`);
         emitError(`[processQueue] Error stack: ${err.stack}`);
         console.error(`[processQueue] Full error object:`, e);

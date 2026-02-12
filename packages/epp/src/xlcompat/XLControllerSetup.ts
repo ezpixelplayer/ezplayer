@@ -122,7 +122,17 @@ export async function openControllersForDataSend(ctrls: ControllerState[]) {
             esender.startUniverse = xc.universeNumbers?.[0] ?? 1;
             esender.channelsPerPacket = xc.universeSizes?.[0] ?? 510;
             esender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;
-            await esender.connect();
+            try {
+                await esender.connect();
+            } catch (e) {
+                const err = e as Error;
+                c.report = {
+                    name: xc.name,
+                    status: 'error',
+                    error: `Error opening ${xc.name}: ${err.message}`,
+                };
+                continue;
+            }
             const jobSender = new SenderJob();
             jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh - 1, bufLen: c.setup.nCh });
             jobSender.sender = esender;
