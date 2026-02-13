@@ -7,6 +7,25 @@ import * as THREE from 'three';
 import type { Point3D } from '../../types/model3d';
 
 /**
+ * Default gamma correction value used when model configuration doesn't provide gamma
+ * Standard sRGB gamma value for display correction
+ */
+export const DEFAULT_GAMMA = 2.2;
+
+/**
+ * Extract gamma value from model configuration
+ * Currently checks point metadata for gamma, but can be extended to check model-level configuration
+ * @param _points - Array of points to extract gamma from (currently unused, reserved for future extension)
+ * @returns Gamma value from model configuration, or DEFAULT_GAMMA if not available
+ */
+export function getGammaFromModelConfiguration(_points: Point3D[]): number {
+    // Check if any point has gamma in metadata (future extension point)
+    // For now, we'll use the default since gamma isn't currently stored in point metadata
+    // This function provides a clear extension point for when model configuration becomes available
+    return DEFAULT_GAMMA;
+}
+
+/**
  * Attributes passed to the shader per vertex
  */
 export interface PointShaderAttributes {
@@ -171,18 +190,27 @@ void main() {
 
 /**
  * Create a custom shader material for point rendering
+ * @param uniforms - Partial uniforms object (gamma should be provided explicitly via options.gamma)
+ * @param options - Material options including explicit gamma parameter
+ * @param options.gamma - Explicit gamma value (required - no default/hardcoded value)
+ * @param options.size - Point size
+ * @param options.sizeAttenuation - Whether point size should attenuate with distance
  */
 export function createPointShaderMaterial(
     uniforms: Partial<PointShaderUniforms>,
-    options?: {
+    options: {
+        gamma: number; // Explicit gamma parameter - required, no default
         size?: number;
         sizeAttenuation?: boolean;
     },
 ): THREE.ShaderMaterial {
+    // Use explicit gamma from options - no hardcoded default
+    const gammaValue = options.gamma;
+
     const defaultUniforms: Record<string, THREE.IUniform> = {
         time: { value: 0.0 },
         brightness: { value: 1.0 },
-        gamma: { value: 2.2 },
+        gamma: { value: gammaValue }, // Explicit gamma from parameter
         selectedColor: { value: new THREE.Vector3(1.0, 1.0, 0.0) }, // Yellow
         hoveredColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // White
         useLiveData: { value: 0.0 },

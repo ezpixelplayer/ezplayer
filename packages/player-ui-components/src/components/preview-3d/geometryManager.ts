@@ -11,6 +11,8 @@ import {
     createPointShaderMaterial,
     updateShaderAttributes,
     type PointShaderUniforms,
+    DEFAULT_GAMMA,
+    getGammaFromModelConfiguration,
 } from './pointShaders';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 
@@ -32,7 +34,7 @@ export class GeometryGroupRenderer {
         group: GeometryGroup,
         allPointsCount: number,
         uniforms: Partial<PointShaderUniforms>,
-        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz' },
+        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz'; gamma?: number },
     ) {
         this.group = group;
         this.allPointsCount = allPointsCount;
@@ -53,13 +55,20 @@ export class GeometryGroupRenderer {
             allPointsCount,
         );
 
+        // Extract gamma explicitly: from options > from uniforms > from model configuration > default
+        const gammaValue =
+            options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(group.points) ?? DEFAULT_GAMMA;
+
         // Create shader material
         const materialUniforms = { ...uniforms };
         if (options?.viewPlane) {
             const viewPlaneMap = { xy: 1, xz: 2, yz: 3 };
             materialUniforms.viewPlane = viewPlaneMap[options.viewPlane];
         }
+        // Ensure gamma is set in uniforms (for shader uniform)
+        materialUniforms.gamma = gammaValue;
         this.material = createPointShaderMaterial(materialUniforms, {
+            gamma: gammaValue, // Explicit gamma parameter
             size: options?.pointSize || 3.0,
         });
 
@@ -202,6 +211,7 @@ export class GeometryManager {
     private uniforms: Partial<PointShaderUniforms>;
     private pointSize: number;
     private viewPlane?: 'xy' | 'xz' | 'yz';
+    private gamma: number;
     private pointIdToModelNameCache: Map<string, string | null> = new Map();
     private cachedHoveredId: string | null = null;
     private cachedHoveredModelName: string | null = null;
@@ -209,13 +219,19 @@ export class GeometryManager {
     constructor(
         points: Point3D[],
         uniforms: Partial<PointShaderUniforms>,
-        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz' },
+        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz'; gamma?: number },
     ) {
         this.allPoints = points;
         this.allPointsCount = points.length;
         this.uniforms = uniforms;
         this.pointSize = options?.pointSize || 3.0;
         this.viewPlane = options?.viewPlane;
+        // Extract gamma explicitly: from options > from uniforms > from model configuration > default
+        this.gamma =
+            options?.gamma ??
+            uniforms.gamma ??
+            getGammaFromModelConfiguration(points) ??
+            DEFAULT_GAMMA;
     }
 
     /**
@@ -244,6 +260,7 @@ export class GeometryManager {
             const renderer = new GeometryGroupRenderer(group, this.allPointsCount, this.uniforms, {
                 pointSize: this.pointSize,
                 viewPlane: this.viewPlane,
+                gamma: this.gamma, // Pass gamma explicitly
             });
             this.renderers.set(group.id, renderer);
         });

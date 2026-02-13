@@ -7,6 +7,7 @@ import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
+import { getGammaFromModelConfiguration } from './pointShaders';
 
 export interface Viewer2DProps {
     points: Point3D[];
@@ -46,17 +47,20 @@ function Optimized2DPointCloud({
     useEffect(() => {
         if (!points || points.length === 0) return;
 
+        // Extract gamma explicitly from model configuration (or use default)
+        const gamma = getGammaFromModelConfiguration(points);
+
         const uniforms = {
             time: 0,
             brightness: 1.0,
-            gamma: 2.2,
+            // Note: gamma is passed explicitly via options, not hardcoded here
             selectedColor: new THREE.Vector3(1.0, 1.0, 0.0), // Yellow
             hoveredColor: new THREE.Vector3(1.0, 1.0, 1.0), // White
             useLiveData: 0.0,
             totalPointCount: points.length,
         };
 
-        const manager = new GeometryManager(points, uniforms, { pointSize, viewPlane });
+        const manager = new GeometryManager(points, uniforms, { pointSize, viewPlane, gamma });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
 
@@ -210,16 +214,16 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                          const firstPoint = points[0];
-                          switch (viewPlane) {
-                              case 'xy':
-                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                              case 'xz':
-                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                              case 'yz':
-                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                          }
-                      })()
+                        const firstPoint = points[0];
+                        switch (viewPlane) {
+                            case 'xy':
+                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                            case 'xz':
+                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                            case 'yz':
+                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                        }
+                    })()
                     : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
@@ -515,8 +519,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => {})}
-                    onHover={onPointHover || (() => {})}
+                    onClick={onPointClick || (() => { })}
+                    onHover={onPointHover || (() => { })}
                 />
             ))}
 
@@ -556,7 +560,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                     height: '100%',
                     minHeight: 600,
                     position: 'relative',
-                    backgroundColor: '#111111',
+                    backgroundColor: '#191919',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -583,7 +587,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                 height: '100%',
                 minHeight: 600,
                 position: 'relative',
-                backgroundColor: '#111111',
+                backgroundColor: '#191919',
             }}
         >
             {/* Control hints overlay */}
@@ -657,6 +661,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                 >
                     <Canvas
                         onCreated={({ gl }) => {
+                            gl.setClearColor('#191919', 1);
                             // Check if WebGL context was created successfully
                             if (!gl.getContext()) {
                                 setError('Failed to create WebGL context');

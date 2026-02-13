@@ -7,6 +7,7 @@ import { Box } from '../box/Box';
 import type { Point3D, Shape3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
+import { getGammaFromModelConfiguration } from './pointShaders';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -46,17 +47,20 @@ function OptimizedPointCloud({
     useEffect(() => {
         if (!points || points.length === 0) return;
 
+        // Extract gamma explicitly from model configuration (or use default)
+        const gamma = getGammaFromModelConfiguration(points);
+
         const uniforms = {
             time: 0,
             brightness: 1.0,
-            gamma: 2.2,
+            // Note: gamma is passed explicitly via options, not hardcoded here
             selectedColor: new THREE.Vector3(1.0, 1.0, 0.0), // Yellow
             hoveredColor: new THREE.Vector3(1.0, 1.0, 1.0), // White
             useLiveData: 0.0,
             totalPointCount: points.length,
         };
 
-        const manager = new GeometryManager(points, uniforms, { pointSize });
+        const manager = new GeometryManager(points, uniforms, { pointSize, gamma });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
 
@@ -375,7 +379,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     height: '100%',
                     minHeight: 600,
                     position: 'relative',
-                    backgroundColor: '#111111',
+                    backgroundColor: '#191919',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -402,7 +406,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 height: '100%',
                 minHeight: 600,
                 position: 'relative',
-                backgroundColor: '#111111',
+                backgroundColor: '#191919',
             }}
         >
             {/* Control hints overlay */}
@@ -479,6 +483,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 >
                     <Canvas
                         onCreated={({ gl }) => {
+                            gl.setClearColor('#191919', 1);
                             if (!gl.getContext()) {
                                 setError('Failed to create WebGL context');
                             }
