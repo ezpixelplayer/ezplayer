@@ -44,13 +44,13 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
 
                     if (response.status === 204 || !response.ok) {
                         // No data or error - just continue polling
-                        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
                         continue;
                     }
 
                     const data = await response.arrayBuffer();
                     if (data.byteLength < 8) {
-                        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
                         continue;
                     }
 
@@ -75,12 +75,11 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
                     // Write frame data to ring buffer - Viewer3D reads from here
                     const frameData = new Uint8Array(data, 8);
                     ringRef.current?.publishFrom(frameData);
-
                 } catch {
                     // Silently continue on errors
                 }
 
-                await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
             }
         };
 

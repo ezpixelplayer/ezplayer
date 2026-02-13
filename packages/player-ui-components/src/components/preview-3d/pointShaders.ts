@@ -313,4 +313,3 @@ export function updateShaderAttributes(
         }
     }
 }
-

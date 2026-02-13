@@ -764,7 +764,9 @@ async function loadXmlCoordinates() {
                     }
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`);
+                emitInfo(
+                    `[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`,
+                );
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }

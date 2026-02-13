@@ -93,8 +93,7 @@ export class GeometryGroupRenderer {
             }
 
             // Update hover state
-            const isHovered =
-                hoveredId === point.id || (hoveredModelName && pointModelName === hoveredModelName);
+            const isHovered = hoveredId === point.id || (hoveredModelName && pointModelName === hoveredModelName);
             const newHoverState = isHovered ? 1.0 : 0.0;
             if (this.hoverStates[i] !== newHoverState) {
                 this.hoverStates[i] = newHoverState;
@@ -260,11 +259,7 @@ export class GeometryManager {
     /**
      * Update selection and hover states across all geometries
      */
-    updateStates(
-        selectedIds?: Set<string>,
-        hoveredId?: string | null,
-        selectedModelNames?: Set<string>,
-    ): void {
+    updateStates(selectedIds?: Set<string>, hoveredId?: string | null, selectedModelNames?: Set<string>): void {
         // Pre-compute hovered model name using cache for O(1) lookup
         let hoveredModelName: string | null = null;
         if (hoveredId) {
@@ -303,4 +298,3 @@ export class GeometryManager {
         this.renderers.clear();
     }
 }
-

@@ -40,14 +40,16 @@ export function groupPointsByGeometry(
 ): GeometryGroup[] {
     const groupMap = new Map<GeometryType, GeometryGroup>();
 
-    const groupByFn = options?.groupBy || ((point: Point3D) => {
-        const modelName = point.metadata?.modelName as string | undefined;
-        return modelName || 'unknown';
-    });
+    const groupByFn =
+        options?.groupBy ||
+        ((point: Point3D) => {
+            const modelName = point.metadata?.modelName as string | undefined;
+            return modelName || 'unknown';
+        });
 
     points.forEach((point, originalIndex) => {
         const type = groupByFn(point, originalIndex);
-        
+
         if (!groupMap.has(type)) {
             groupMap.set(type, {
                 id: type,
@@ -65,5 +67,3 @@ export function groupPointsByGeometry(
 
     return Array.from(groupMap.values());
 }
-
-

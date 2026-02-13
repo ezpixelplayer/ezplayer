@@ -21,7 +21,7 @@ function parseColorOffsets(stringType?: string): [number, number, number] {
     }
 
     const colorOrder = match[1].toUpperCase();
-    
+
     // Map each color to its position in the string (0-based index)
     const rOffset = colorOrder.indexOf('R');
     const gOffset = colorOrder.indexOf('G');

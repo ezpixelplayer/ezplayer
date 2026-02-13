@@ -233,9 +233,7 @@ function HoverHandler({
             // Calculate threshold based on point size and camera distance
             // Cache camera distance calculation (only recalculate if center point exists)
             const centerPoint = centerPointRef.current;
-            const cameraDistance = centerPoint
-                ? camera.position.distanceTo(centerPoint)
-                : 1000; // fallback distance
+            const cameraDistance = centerPoint ? camera.position.distanceTo(centerPoint) : 1000; // fallback distance
             const threshold = Math.max(pointSizeValue * 0.15, cameraDistance * 0.02);
 
             // Find the closest point to the ray
@@ -252,9 +250,7 @@ function HoverHandler({
             }
 
             // Only update state if hovered point actually changed
-            const newHoveredId = closestIndex >= 0 && closestIndex < points.length
-                ? points[closestIndex].id
-                : null;
+            const newHoveredId = closestIndex >= 0 && closestIndex < points.length ? points[closestIndex].id : null;
 
             if (newHoveredId !== currentHoveredIdRef.current) {
                 currentHoveredIdRef.current = newHoveredId;

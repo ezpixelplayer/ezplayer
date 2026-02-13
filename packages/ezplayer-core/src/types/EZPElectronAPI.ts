@@ -76,26 +76,26 @@ export interface NodeLoc {
     coords: NodeCoord[];
 }
 
-/** 
+/**
  * To apply the color curve to a value (in range 0-1):
  * (value^gamma)*brightness
- * 
+ *
  * To invert the color curve (say to take an RGB value from FSEQ to screen):
  *     r = Math.pow((r * invbright / 255.0), invgamma);
  *   where invbright = 1/brightness and invgamma = 1/gamma
  */
 export interface NodeColorProfile {
     // Brightness values are 0-1-? (multiplier, where 1 does nothing)
-    allBrightness ?: number,
+    allBrightness?: number;
     // Gamma values are exponents, where 1 does nothing
-    allGamma?: number,
+    allGamma?: number;
 
-    rBrightness?: number,
-    rGamma?: number,
-    gBrightness?: number,
-    gGamma?: number,
-    bBrightness?: number,
-    bGamma?: number,
+    rBrightness?: number;
+    rGamma?: number;
+    gBrightness?: number;
+    gGamma?: number;
+    bBrightness?: number;
+    bGamma?: number;
 }
 
 /**
@@ -105,11 +105,11 @@ export interface NodeColorProfile {
  * All channel numbers are 0-based (matching xLights model export).
  */
 export interface ChannelRun {
-    nodeStart: number;       // First node index in this run (0-based)
-    nodeCount: number;       // Number of nodes in this run
-    channelStart: number;    // First channel (0-based)
+    nodeStart: number; // First node index in this run (0-based)
+    nodeCount: number; // Number of nodes in this run
+    channelStart: number; // First channel (0-based)
     channelsPerNode: number; // 3=RGB, 4=RGBW, 1=single color, etc.
-    stringIndex: number;     // Which string/strand this run belongs to (0-based)
+    stringIndex: number; // Which string/strand this run belongs to (0-based)
 }
 
 /**
@@ -119,15 +119,15 @@ export interface ChannelRun {
  * All channel numbers are 0-based (matching xLights model export).
  */
 export interface ModelChannelMapping {
-    nodeChannelMap: ChannelRun[];  // Usually just 1, but multiple for Advanced mode
-    totalNodes: number;            // Total nodes in model
-    totalChannels: number;         // Sum of nodeCount * channelsPerNode across runs
-    channelsPerNode: number;       // Default/common value from StringType
-    numStrings: number;            // Number of strings in the model
+    nodeChannelMap: ChannelRun[]; // Usually just 1, but multiple for Advanced mode
+    totalNodes: number; // Total nodes in model
+    totalChannels: number; // Sum of nodeCount * channelsPerNode across runs
+    channelsPerNode: number; // Default/common value from StringType
+    numStrings: number; // Number of strings in the model
 
     // Convenience: overall channel bounds (0-based)
-    firstChannel: number;          // Min channel used
-    lastChannel: number;           // Max channel used
+    firstChannel: number; // Min channel used
+    lastChannel: number; // Max channel used
 }
 
 /**

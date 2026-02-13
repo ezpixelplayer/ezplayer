@@ -210,16 +210,16 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                        const firstPoint = points[0];
-                        switch (viewPlane) {
-                            case 'xy':
-                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                            case 'xz':
-                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                            case 'yz':
-                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                        }
-                    })()
+                          const firstPoint = points[0];
+                          switch (viewPlane) {
+                              case 'xy':
+                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                              case 'xz':
+                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                              case 'yz':
+                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                          }
+                      })()
                     : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
@@ -342,9 +342,7 @@ function HoverHandler2D({
             // Calculate threshold based on point size and camera distance
             // Cache camera distance calculation (only recalculate if center point exists)
             const centerPoint = centerPointRef.current;
-            const cameraDistance = centerPoint
-                ? camera.position.distanceTo(centerPoint)
-                : 1000; // fallback distance
+            const cameraDistance = centerPoint ? camera.position.distanceTo(centerPoint) : 1000; // fallback distance
             const threshold = Math.max(pointSizeValue * 0.15, cameraDistance * 0.02);
 
             // Find the closest point to the ray
@@ -361,9 +359,7 @@ function HoverHandler2D({
             }
 
             // Only update state if hovered point actually changed
-            const newHoveredId = closestIndex >= 0 && closestIndex < points.length
-                ? points[closestIndex].id
-                : null;
+            const newHoveredId = closestIndex >= 0 && closestIndex < points.length ? points[closestIndex].id : null;
 
             if (newHoveredId !== currentHoveredIdRef.current) {
                 currentHoveredIdRef.current = newHoveredId;
@@ -519,8 +515,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
+                    onClick={onPointClick || (() => {})}
+                    onHover={onPointHover || (() => {})}
                 />
             ))}
 

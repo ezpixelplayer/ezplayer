@@ -88,11 +88,7 @@ export function calculateProceduralColor(
 /**
  * Check if a point is selected (either individually or as part of a selected model)
  */
-export function isPointSelected(
-    point: Point3D,
-    selectedIds?: Set<string>,
-    selectedModelNames?: Set<string>,
-): boolean {
+export function isPointSelected(point: Point3D, selectedIds?: Set<string>, selectedModelNames?: Set<string>): boolean {
     if (selectedIds?.has(point.id)) {
         return true;
     }
@@ -111,7 +107,7 @@ export function isModelSelected(point: Point3D, selectedModelNames?: Set<string>
 /**
  * Get the color for a point considering selection, hover, and live data
  * Returns RGB values as [r, g, b] in range 0-255
- * 
+ *
  * Optimized version: pre-compute hoveredModelName to avoid repeated find() operations
  */
 export function getPointColor(
@@ -230,4 +226,3 @@ export function generateInitialColors(
 
     return colors;
 }
-
