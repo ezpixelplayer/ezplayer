@@ -20,7 +20,9 @@ export { ControllerRec, ModelRec, readControllersAndModels } from './xlcompat/XL
 
 export { ControllerState, readControllersFromXlights, openControllersForDataSend } from './xlcompat/XLControllerSetup';
 
-export { ArrayBufferPool, BufferPool } from '../src/util/BufferRecycler';
+export { ArrayBufferPool, BufferPool } from './util/BufferRecycler';
+
+export { XMLConstants, getAttrDef, getBoolAttrDef, getIntAttrDef, getNumAttrDef, getElementByTag, newDocument } from './util/XMLUtil';
 
 export {
     AwaitRequest,

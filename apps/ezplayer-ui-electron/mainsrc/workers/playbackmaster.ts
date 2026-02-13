@@ -64,7 +64,7 @@ import { setPingConfig, getLatestPingStats } from './pingparent';
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import { randomUUID } from 'node:crypto';
-import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '../xmlutil';
+import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
