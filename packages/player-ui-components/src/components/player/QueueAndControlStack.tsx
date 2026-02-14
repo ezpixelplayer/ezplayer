@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Box, CircularProgress, Grid, Stack } from '@mui/material';
+import { CircularProgress, Grid, Stack } from '@mui/material';
+import { Box } from '../box/Box';
 import { useSelector, useDispatch } from 'react-redux';
 
 import { QueueCard } from '../status/QueueCard';

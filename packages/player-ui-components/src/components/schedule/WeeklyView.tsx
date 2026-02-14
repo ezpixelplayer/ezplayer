@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { startOfWeek, addDays, format, isSameDay } from 'date-fns';
-import { Box, Typography, styled } from '@mui/material';
+import { Typography, styled } from '@mui/material';
+import { Box } from '../box/Box';
 import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 
 interface WeeklyViewProps {

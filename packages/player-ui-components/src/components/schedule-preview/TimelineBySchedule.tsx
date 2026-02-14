@@ -7,7 +7,6 @@ import { RootState } from '../../store/Store';
 import { type PlaybackLogDetail } from '@ezplayer/ezplayer-core';
 import { formatDateStandard } from '../../util/dateUtils';
 import {
-    Box,
     Card,
     CardContent,
     Typography,
@@ -19,6 +18,7 @@ import {
     useTheme,
     Theme,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import { ZoomIn, ZoomOut, FitScreen, Refresh } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { priorityToNumber } from '@ezplayer/ezplayer-core';

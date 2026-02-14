@@ -4,7 +4,8 @@ import { Button } from '@ezplayer/shared-ui-components';
 import { ListItem, ListItemText, useTheme } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ArrowForward } from '@mui/icons-material';
-import { Box, Chip } from '@mui/material';
+import { Chip, Box as MuiBox } from '@mui/material';
+import { Box } from '../box/Box';
 
 interface SortableItemProps {
     id: string;
@@ -112,7 +113,7 @@ export function SortableItem({
                         {songName}
                     </ListItemText>
                     {duration && (
-                        <Box
+                        <MuiBox
                             component="span"
                             sx={{
                                 ml: 1,
@@ -125,7 +126,7 @@ export function SortableItem({
                             }}
                         >
                             {duration}
-                        </Box>
+                        </MuiBox>
                     )}
                 </Box>
                 {tags && tags.length > 0 && (

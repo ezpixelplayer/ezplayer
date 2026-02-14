@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import { Autocomplete, Box, Divider, Grid } from '@mui/material';
+import { Autocomplete, Divider, Grid } from '@mui/material';
+import { Box } from '../box/Box';
 
 import { Button, FileButton, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
 

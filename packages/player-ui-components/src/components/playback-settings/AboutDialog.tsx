@@ -1,6 +1,7 @@
 import { EZPElectronAPI, EZPlayerVersions } from '@ezplayer/ezplayer-core';
 import { SimpleDialog, isElectron } from '@ezplayer/shared-ui-components';
-import { Box, Button, Divider, Link, Typography } from '@mui/material';
+import { Button, Divider, Link, Typography } from '@mui/material';
+import { Box } from '../box/Box';
 import React from 'react';
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Button, Typography, Divider, List, ListItem, ListItemText, Collapse } from '@mui/material';
+import { Button, Typography, Divider, List, ListItem, ListItemText, Collapse } from '@mui/material';
+import { Box } from '../box/Box';
 import { SimpleDialog } from '@ezplayer/shared-ui-components';
 
 export interface LicenseEntry {

@@ -11,6 +11,7 @@ import {
     Schedule,
     CreateEditPlaylist,
     PlaybackSettingsDrawer,
+    Preview3DPage,
 } from '@ezplayer/player-ui-components';
 import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
@@ -75,6 +76,10 @@ const routes: RouteObject[] = [
             {
                 path: ROUTES.PLAYBACKSETTINGS,
                 element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
+            },
+            {
+                path: ROUTES.PREVIEW_3D,
+                element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
             },
         ],
     },

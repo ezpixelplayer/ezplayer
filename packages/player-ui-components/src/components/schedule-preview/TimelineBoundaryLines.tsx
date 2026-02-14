@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useRef } from 'react';
-import { Box, useTheme } from '@mui/material';
+import { useTheme } from '@mui/material';
+import { Box } from '../box/Box';
 import { type PlaybackLogDetail } from '@ezplayer/ezplayer-core';
 
 interface TimelineBoundaryLinesProps {

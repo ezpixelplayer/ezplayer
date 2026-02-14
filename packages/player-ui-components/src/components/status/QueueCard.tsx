@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Card, CardContent, Box, Typography, IconButton, Stack } from '@mui/material';
+import { Card, CardContent, Typography, IconButton, Stack } from '@mui/material';
+import { Box } from '../box/Box';
 import CloseIcon from '@mui/icons-material/Close';
 import { PlayingItem } from '@ezplayer/ezplayer-core';
 

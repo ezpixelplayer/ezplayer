@@ -12,7 +12,6 @@ import { ezpVersions } from './versions.js';
 import { setUpServer } from './mainsrc/server.js';
 import type { Event as ElectronEvent } from 'electron';
 
-
 import os from 'os';
 
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
@@ -20,9 +19,9 @@ const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
 app.setPath('crashDumps', dumpDir);
 
 crashReporter.start({
-  uploadToServer: false,
-  compress: false,
-  submitURL: 'https://invalid.local', // required but unused
+    uploadToServer: false,
+    compress: false,
+    submitURL: 'https://invalid.local', // required but unused
 });
 
 console.log('Crash dumps directory:', dumpDir);
@@ -53,11 +52,11 @@ const mainCrashLogFile = path.join(app.getPath('logs'), 'main-crash.log');
 app.commandLine.appendSwitch('enable-logging', 'js-flags');
 
 app.on('render-process-gone', (_event, _webContents, details) => {
-  console.error('app render-process-gone', details);
+    console.error('app render-process-gone', details);
 });
 
 app.on('child-process-gone', (_event, details) => {
-  console.error('app child-process-gone', details);
+    console.error('app child-process-gone', details);
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -135,6 +134,8 @@ const createWindow = (showFolder: string) => {
             contextIsolation: true,
             webSecurity: false,
             additionalArguments: [`--show-folder=${showFolder}`].filter(Boolean),
+            // enableWebGL: true,
+            offscreen: false,
         },
     });
 

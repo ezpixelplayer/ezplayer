@@ -4,13 +4,13 @@ import {
     DialogContent,
     DialogTitle,
     IconButton,
-    Box,
     Card,
     CardContent,
     Grid,
     Typography,
     useTheme,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import CloseIcon from '@mui/icons-material/Close';
 import { useThemeContext } from '../../theme/ThemeBase';
 

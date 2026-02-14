@@ -1,5 +1,6 @@
 import { FC, useMemo } from 'react';
-import { Box, Typography, Button, Card, useTheme, useMediaQuery } from '@mui/material';
+import { Typography, Button, Card, useTheme, useMediaQuery } from '@mui/material';
+import { Box } from '../box/Box';
 import { MusicNote } from '@mui/icons-material';
 import { getImageUrl } from '../../util/imageUtils';
 

@@ -12,7 +12,6 @@ export { DatePicker } from './shared/components/datepicker/DatePicker';
 export { FileButton } from './shared/components/file-button/FileButton';
 export { FormControl } from './shared/components/form-control/FormControl';
 export { FormLabel } from './shared/components/form-label/FormLabel';
-export { GPlaces } from './shared/components/gplaces/GPlaces';
 export { InfiniteScrollList } from './shared/components/listing/InfiniteScrollList';
 export { SimpleDialog } from './shared/components/modals/SimpleDialog';
 export { PageHeader } from './shared/components/page-header/PageHeader';

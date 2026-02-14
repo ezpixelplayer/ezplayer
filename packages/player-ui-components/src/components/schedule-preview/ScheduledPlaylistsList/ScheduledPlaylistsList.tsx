@@ -6,7 +6,6 @@ import {
     Accordion,
     AccordionDetails,
     AccordionSummary,
-    Box,
     Card,
     CardContent,
     Checkbox,
@@ -19,6 +18,7 @@ import {
     Typography,
     useTheme,
 } from '@mui/material';
+import { Box } from '../../box/Box';
 import { alpha } from '@mui/material/styles';
 import { format } from 'date-fns';
 import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';

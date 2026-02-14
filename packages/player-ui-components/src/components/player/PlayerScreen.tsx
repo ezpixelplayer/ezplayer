@@ -1,5 +1,6 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
-import { Alert, Box, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
+import { Alert, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
+import { Box } from '../box/Box';
 import { endOfDay, startOfDay } from 'date-fns';
 import React, { useMemo } from 'react';
 import { useSelector } from 'react-redux';

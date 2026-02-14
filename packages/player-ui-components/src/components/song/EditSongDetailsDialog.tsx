@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Autocomplete, Box, Divider, Grid } from '@mui/material';
+import { Autocomplete, Divider, Grid } from '@mui/material';
+import { Box } from '../box/Box';
 
 import { Button, isElectron, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
 

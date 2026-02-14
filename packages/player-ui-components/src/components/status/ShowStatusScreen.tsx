@@ -1,5 +1,6 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
-import { Box, Button, Card, CardContent, Chip, CircularProgress, Grid, Typography, useTheme } from '@mui/material';
+import { Button, Card, CardContent, Chip, CircularProgress, Grid, Typography, useTheme } from '@mui/material';
+import { Box } from '../box/Box';
 import { format } from 'date-fns';
 import React, { useState, useEffect } from 'react';
 import type { SxProps, Theme } from '@mui/material';

@@ -8,7 +8,6 @@ import { RootState } from '../..';
 
 import {
     Autocomplete,
-    Box,
     alpha,
     useTheme,
     Table,
@@ -20,6 +19,7 @@ import {
     Paper,
     TableSortLabel,
 } from '@mui/material';
+import { Box } from '../box/Box';
 
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
