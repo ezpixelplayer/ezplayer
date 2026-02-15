@@ -1,6 +1,6 @@
 import { EZPElectronAPI, EZPlayerVersions } from '@ezplayer/ezplayer-core';
-import { SimpleDialog, isElectron } from '@ezplayer/shared-ui-components';
-import { Button, Divider, Link, Typography } from '@mui/material';
+import { isElectron } from '@ezplayer/shared-ui-components';
+import { Button, Dialog, DialogContent, DialogTitle, Divider, Link, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import React from 'react';
 
@@ -41,15 +41,13 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
     }, [playerVersion]);
 
     return (
-        <SimpleDialog
-            open={open}
-            onClose={handleClose}
-            model_title={
+        <Dialog open={open} onClose={handleClose}>
+            <DialogTitle>
                 <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
                     About EZPlayer
                 </Typography>
-            }
-            model_content={
+            </DialogTitle>
+            <DialogContent>
                 <Box
                     sx={{
                         display: 'flex',
@@ -248,7 +246,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                         </Button>
                     </Box>
                 </Box>
-            }
-        />
+            </DialogContent>
+        </Dialog>
     );
 };

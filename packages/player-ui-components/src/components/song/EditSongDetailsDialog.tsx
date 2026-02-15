@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Autocomplete, Divider, Grid } from '@mui/material';
+import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 
-import { Button, isElectron, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
+import { isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '../..';
@@ -47,7 +47,7 @@ const FileSelectButton = ({
         }
     };
 
-    return <Button btnText="Select another file" variant="outlined" size="small" onClick={handleFileSelect} />;
+    return <Button variant="outlined" size="small" onClick={handleFileSelect}>Select another file</Button>;
 };
 
 export interface EditSongDetailsProps {
@@ -469,32 +469,29 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         marginTop: 3,
                     }}
                 >
-                    <Button btnText={'Save'} onClick={handleSubmit} type="button" variant="contained" color="primary" />
+                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary">Save</Button>
                     <Button
-                        btnText={'Cancel'}
                         type="button"
                         variant="outlined"
                         color="secondary"
                         onClick={handleCancel}
-                    />
+                    >
+                        Cancel
+                    </Button>
                 </Box>
             </>
         </Box>
     );
 
     return (
-        <SimpleDialog
-            open={open}
-            onClose={handleDialogClose}
-            model_title={
-                <>
-                    <Typography variant="h3" fontWeight="bold">
-                        {title}
-                    </Typography>
-                    <Divider />
-                </>
-            }
-            model_content={<> {editDialogContent}</>}
-        />
+        <Dialog open={open} onClose={handleDialogClose}>
+            <DialogTitle>
+                <Typography variant="h3" fontWeight="bold">
+                    {title}
+                </Typography>
+                <Divider />
+            </DialogTitle>
+            <DialogContent>{editDialogContent}</DialogContent>
+        </Dialog>
     );
 }

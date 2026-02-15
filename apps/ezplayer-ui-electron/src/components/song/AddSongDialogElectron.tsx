@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 
-import { Autocomplete, Box, Divider, Grid } from '@mui/material';
+import { Autocomplete, Box, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
 
-import { Button, SimpleDialog, TextField, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
+import { TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '@ezplayer/player-ui-components';
 
@@ -340,14 +340,17 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         }}
                     >
                         <Button
-                            btnText="Save"
                             type="submit"
                             variant="contained"
                             color="primary"
                             onClick={handleNewSongSubmit}
                             disabled={!fseqFile || !newSongData.title || !newSongData.artist}
-                        />
-                        <Button btnText="Cancel" type="button" variant="outlined" color="secondary" onClick={onClose} />
+                        >
+                            Save
+                        </Button>
+                        <Button type="button" variant="outlined" color="secondary" onClick={onClose}>
+                            Cancel
+                        </Button>
                     </Box>
                 </form>
             </>
@@ -355,18 +358,14 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     );
 
     return (
-        <SimpleDialog
-            open={open}
-            onClose={onClose}
-            model_title={
-                <>
-                    <Typography variant="h3" fontWeight="bold">
-                        {title}
-                    </Typography>
-                    <Divider />
-                </>
-            }
-            model_content={<> {addDialogContent}</>}
-        />
+        <Dialog open={open} onClose={onClose}>
+            <DialogTitle>
+                <Typography variant="h3" fontWeight="bold">
+                    {title}
+                </Typography>
+                <Divider />
+            </DialogTitle>
+            <DialogContent>{addDialogContent}</DialogContent>
+        </Dialog>
     );
 }

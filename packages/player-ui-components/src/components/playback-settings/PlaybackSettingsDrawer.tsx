@@ -1,10 +1,13 @@
-import { isElectron, PageHeader, Select, SimpleDialog, ToastMsgs } from '@ezplayer/shared-ui-components';
+import { isElectron, PageHeader, Select, ToastMsgs } from '@ezplayer/shared-ui-components';
 import { Add, Delete, Info } from '@mui/icons-material';
 import PaletteIcon from '@mui/icons-material/Palette';
 import {
     Button,
     Card,
     Chip,
+    Dialog,
+    DialogContent,
+    DialogTitle,
     Divider,
     FormControl,
     IconButton,
@@ -1336,22 +1339,20 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
             </Box>
 
             {/* Unified Dialog for both Schedule Entry and Volume Override */}
-            <SimpleDialog
-                open={unifiedDialogOpen}
-                onClose={handleCloseUnifiedDialog}
-                model_title={
+            <Dialog open={unifiedDialogOpen} onClose={handleCloseUnifiedDialog}>
+                <DialogTitle>
                     <Typography variant="h5">
                         {dialogType === 'schedule' ? 'Add Schedule Entry' : 'Add Volume Override'}
                     </Typography>
-                }
-                model_content={<UnifiedDialogContent />}
-            />
+                </DialogTitle>
+                <DialogContent>
+                    <UnifiedDialogContent />
+                </DialogContent>
+            </Dialog>
 
             {/* Unified Delete Confirmation Dialog */}
-            <SimpleDialog
-                open={deleteDialogOpen}
-                onClose={handleCloseDeleteDialog}
-                model_title={
+            <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
+                <DialogTitle>
                     <Typography variant="h5">
                         Delete{' '}
                         {itemToDelete?.type === 'schedule'
@@ -1360,9 +1361,11 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                               ? 'Volume Override'
                               : 'Item'}
                     </Typography>
-                }
-                model_content={<DeleteDialogContent />}
-            />
+                </DialogTitle>
+                <DialogContent>
+                    <DeleteDialogContent />
+                </DialogContent>
+            </Dialog>
 
             {/* About Dialog */}
             <AboutDialog

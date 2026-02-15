@@ -1,9 +1,9 @@
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Divider } from '@mui/material';
+import { Button, Dialog, DialogContent, DialogTitle, Divider, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 
-import { Button, SimpleDialog, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
+import { ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import { AppDispatch, postPlaylistData, postSequenceData, RootState } from '../..';
 
@@ -113,29 +113,28 @@ export function DeleteSongDialog({ onClose, open, title, songIdToDelete }: Delet
                 }}
             >
                 <Button
-                    btnText={'Delete'}
                     onClick={handleConfirmDelete}
                     type="submit"
                     variant="contained"
                     color="error"
                     sx={{ marginRight: 2 }}
-                />
-                <Button btnText={'Cancel'} type="button" variant="outlined" color="secondary" onClick={onClose} />
+                >
+                    Delete
+                </Button>
+                <Button type="button" variant="outlined" color="secondary" onClick={onClose}>
+                    Cancel
+                </Button>
             </Box>
         </Box>
     );
 
     return (
-        <SimpleDialog
-            open={open}
-            onClose={onClose}
-            model_title={
-                <>
-                    <Typography variant="h5">{title}</Typography>
-                    <Divider />
-                </>
-            }
-            model_content={<>{deleteDialogContent}</>}
-        />
+        <Dialog open={open} onClose={onClose}>
+            <DialogTitle>
+                <Typography variant="h5">{title}</Typography>
+                <Divider />
+            </DialogTitle>
+            <DialogContent>{deleteDialogContent}</DialogContent>
+        </Dialog>
     );
 }
