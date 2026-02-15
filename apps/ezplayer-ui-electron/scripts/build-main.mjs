@@ -42,7 +42,6 @@ const nodeExternals = [
     'proper-lockfile',
     'url',
     'follow-redirects',
-    'ping',
     'proxy-from-env',
     'mpg123-decoder',
     'mpg123-decoder-ezp',
