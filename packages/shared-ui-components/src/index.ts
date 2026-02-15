@@ -1,17 +1,11 @@
-export { Autocomplete } from './shared/components/autocomplete/Autocomplete';
-export { Button } from './shared/components/button/Button';
-export { Card } from './shared/components/card/Card';
 export { FileButton } from './shared/components/file-button/FileButton';
-export { SimpleDialog } from './shared/components/modals/SimpleDialog';
 export { PageHeader } from './shared/components/page-header/PageHeader';
 export { Scrollbar } from './shared/components/scrollbar/Scrollbar';
 export { Select } from './shared/components/select/Select';
 export { SidebarMenus } from './shared/components/sidebar-menu-structure/SidebarMenus';
 export { SuspenseLoader } from './shared/components/suspenseloader/SuspenseLoader';
-export { Tables } from './shared/components/table/Tables';
 export { TextField } from './shared/components/text-field/TextField';
 export { ToastMsgs } from './shared/components/toaster/Toast';
-export { Typography } from './shared/components/typography/Typography';
 
 export { SidebarContext, SidebarProvider } from './shared/providers/SidebarContext';
 

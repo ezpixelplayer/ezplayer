@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Button, Typography, Divider, List, ListItem, ListItemText, Collapse } from '@mui/material';
+import { Button, Dialog, DialogContent, DialogTitle, Typography, Divider, List, ListItem, ListItemText, Collapse } from '@mui/material';
 import { Box } from '../box/Box';
-import { SimpleDialog } from '@ezplayer/shared-ui-components';
 
 export interface LicenseEntry {
     packages: string[];
@@ -25,15 +24,13 @@ export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, lic
     };
 
     return (
-        <SimpleDialog
-            open={open}
-            onClose={onClose}
-            model_title={
+        <Dialog open={open} onClose={onClose}>
+            <DialogTitle>
                 <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
                     Open-source Licenses
                 </Typography>
-            }
-            model_content={
+            </DialogTitle>
+            <DialogContent>
                 <Box sx={{ minWidth: 350, maxWidth: 600 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                         This project uses the following open-source licenses:
@@ -100,7 +97,7 @@ export const LicenseDialog: React.FC<LicenseDialogProps> = ({ open, onClose, lic
                         </Button>
                     </Box>
                 </Box>
-            }
-        />
+            </DialogContent>
+        </Dialog>
     );
 };

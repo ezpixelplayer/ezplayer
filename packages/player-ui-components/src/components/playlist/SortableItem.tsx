@@ -1,7 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Button } from '@ezplayer/shared-ui-components';
-import { ListItem, ListItemText, useTheme } from '@mui/material';
+import { Button, ListItem, ListItemText, useTheme } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ArrowForward } from '@mui/icons-material';
 import { Chip, Box as MuiBox } from '@mui/material';
@@ -85,7 +84,8 @@ export function SortableItem({
                             e.stopPropagation();
                             onRemoveSong(id);
                         }}
-                        icon={<CloseIcon />}
+                        startIcon={<CloseIcon />}
+                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                 </div>
             )}
@@ -153,7 +153,8 @@ export function SortableItem({
                             e.stopPropagation();
                             onAddSong(id);
                         }}
-                        icon={<ArrowForward />}
+                        startIcon={<ArrowForward />}
+                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                 )}
             </div>
