@@ -132,7 +132,6 @@
         "node-addon-api": "^7.1.1",
         "nprogress": "^0.2.0",
         "path": "^0.12.7",
-        "ping": "^1.0.0",
         "proper-lockfile": "^4.1.2",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
@@ -144,6 +143,7 @@
         "react-toastify": "^10.0.6",
         "uuid": "^11.1.0",
         "ws": "^8.19.0",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.7.tgz",
         "zstddec": "^0.1.0"
     }
 }

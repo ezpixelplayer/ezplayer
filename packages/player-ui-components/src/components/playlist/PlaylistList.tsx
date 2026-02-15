@@ -13,7 +13,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import Divider from '@mui/material/Divider';
-import { Box } from '@mui/system';
+import { Box } from '../box/Box';
 import {
     alpha,
     useTheme,

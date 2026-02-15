@@ -27,7 +27,12 @@ import type {
     PlaybackSettings,
     EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
-import { getActiveViewerControlSchedule, getActiveVolumeSchedule, PlayerRunState } from '@ezplayer/ezplayer-core';
+import {
+    getActiveViewerControlSchedule,
+    getActiveVolumeSchedule,
+    LatestFrameRingBuffer,
+    PlayerRunState,
+} from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -39,7 +44,11 @@ import {
     ControllerState,
     FrameReference,
     CacheStats,
+    loadXmlFile,
 } from '@ezplayer/epp';
+
+import { getAllModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
+
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
@@ -55,6 +64,7 @@ import { setPingConfig, getLatestPingStats } from './pingparent';
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import { randomUUID } from 'node:crypto';
+import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -179,6 +189,27 @@ const handlers: PlayWorkerRPCAPI = {
         isStopped = true;
         await sleepms(60);
         return true;
+    },
+    getModelCoordinates: async (_args: {}) => {
+        const coords: Record<string, GetNodeResult> = {};
+        if (modelCoordinates) {
+            for (const [name, coord] of modelCoordinates.entries()) {
+                coords[name] = coord;
+            }
+        }
+        return coords;
+    },
+    getModelCoordinates2D: async (_args: {}) => {
+        const coords: Record<string, GetNodeResult> = {};
+        if (modelCoordinates2D) {
+            for (const [name, coord] of modelCoordinates2D.entries()) {
+                coords[name] = coord;
+            }
+        }
+        return coords;
+    },
+    getFrameExportBuffer: async () => {
+        return frameExportBuffer;
     },
 };
 
@@ -433,12 +464,20 @@ function processCommand(cmd: EZPlayerCommand) {
 parentPort.on('message', (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
-            emitInfo(
-                `Given a new schedule... ${command.seqs.length} seqs, ${command.pls.length} pls, ${command.sched.length} scheds`,
-            );
             pendingSchedule = command;
+            if (command.showFolder && command.showFolder !== '<no show folder yet>') {
+                const oldShowFolder = showFolder;
+                showFolder = command.showFolder;
+
+                // Load XML coordinates immediately when show folder is set
+                if (showFolder !== oldShowFolder) {
+                    loadXmlCoordinates().catch((err) => {
+                        emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
+                    });
+                }
+            }
             if (!running) {
-                running = processQueue(); // kick off first song
+                running = processQueue();
             }
             break;
         }
@@ -631,6 +670,8 @@ let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
 let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
+let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
+let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -652,12 +693,101 @@ let fseqCache: FSeqPrefetchCache | undefined = undefined;
 let lastPRSSchedUpdate: number = 0;
 
 ////////
+// Load XML coordinates independently (can be called before processQueue)
+////////
+async function loadXmlCoordinates() {
+    if (!showFolder) {
+        emitWarning(`[loadXmlCoordinates] showFolder not set, skipping XML load`);
+        return;
+    }
+
+    const xmlPath = path.join(showFolder, `xlights_rgbeffects.xml`);
+    const netPath = path.join(showFolder, `xlights_networks.xml`);
+
+    let xrgb;
+    let xnet;
+    try {
+        xrgb = await loadXmlFile(xmlPath);
+        xnet = await loadXmlFile(netPath);
+    } catch (err) {
+        emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
+        xrgb = null;
+        xnet = null;
+    }
+
+    modelCoordinates = new Map<string, GetNodeResult>();
+    modelCoordinates2D = new Map<string, GetNodeResult>();
+
+    if (xrgb && xnet) {
+        const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
+        const gmc3d = getAllModelCoordinates(xrgb, xnet, false);
+
+        if (xrgb.documentElement.tagName !== 'xrgb') {
+            emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
+        } else {
+            try {
+                const xmodels = getElementByTag(xrgb.documentElement, 'models');
+
+                let activeModelCount = 0;
+                let processedModelCount = 0;
+
+                for (let im = 0; im < xmodels.childNodes.length; ++im) {
+                    const n = xmodels.childNodes[im];
+                    if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                    const model = n as Element;
+                    if (model.tagName !== 'model') continue;
+
+                    const name = getAttrDef(model, 'name', '');
+                    const active = getBoolAttrDef(model, 'Active', true);
+
+                    processedModelCount++;
+
+                    if (!active) {
+                        continue;
+                    }
+
+                    activeModelCount++;
+                    try {
+                        // Get 3D coordinates (for 3D viewer)
+                        const nr3d = gmc3d.models.get(name)?.nodeResult;
+                        if (nr3d) {
+                            modelCoordinates.set(name, nr3d);
+                        }
+
+                        // Get 2D coordinates (for 2D viewer with perspective projection)
+                        const nr2d = gmc2d.models.get(name)?.nodeResult;
+                        if (nr2d) {
+                            modelCoordinates2D.set(name, nr2d);
+                        }
+                    } catch (coordErr) {
+                        emitError(`[loadXmlCoordinates] Error extracting coordinates for "${name}": ${coordErr}`);
+                    }
+                }
+
+                emitInfo(
+                    `[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`,
+                );
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
+            }
+        }
+    }
+}
+
+let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
+let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
+
+////////
 // Actual logic loops
 ////////
 async function processQueue() {
-    // TODO SHOWFOLDER
     if (!showFolder && pendingSchedule?.type === 'schedupdate') {
         showFolder = pendingSchedule.showFolder;
+    }
+
+    if (!showFolder) {
+        emitError(`[processQueue] showFolder is not set! Cannot proceed.`);
+        return;
     }
 
     if (!mp3Cache) {
@@ -685,12 +815,18 @@ async function processQueue() {
 
     try {
         const { controllers, models } = await readControllersFromXlights(showFolder!);
+
+        // Load XML coordinates if not already loaded
+        if (!modelCoordinates || modelCoordinates.size === 0) {
+            await loadXmlCoordinates();
+        }
+
         const sendJob = await openControllersForDataSend(controllers);
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             concurrency: 10,
             maxSamples: 10,
-            intervalS: 60,
+            intervalS: 5,
         });
         sender.job = sendJob;
         modelRecs = models;
@@ -712,8 +848,21 @@ async function processQueue() {
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
         sender.mixFrame = new Uint8Array(nChannels);
+        frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
+        frameExportRing = new LatestFrameRingBuffer({
+            buffer: frameExportBuffer,
+            frameSize: nChannels,
+            slotCount: 4,
+            isWriter: true,
+        });
+        sender.exportBuffer = frameExportRing;
+        send({ type: 'pixelbuffer', buffer: frameExportBuffer });
     } catch (e) {
         const err = e as Error;
+        emitError(`[processQueue] CRITICAL ERROR in processQueue: ${err.message}`);
+        emitError(`[processQueue] Error name: ${err.name}`);
+        emitError(`[processQueue] Error stack: ${err.stack}`);
+        console.error(`[processQueue] Full error object:`, e);
         playbackStats.lastError = err.message;
     }
 
@@ -1093,7 +1242,7 @@ async function processQueue() {
                                 sampleOffset,
                                 nSamples: nSamplesToSend,
                                 volumeSF,
-                            })
+                            });
 
                             const playAtRealTime = Math.floor(
                                 audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0),

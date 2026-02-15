@@ -1,6 +1,7 @@
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Box, Divider } from '@mui/material';
+import { Divider } from '@mui/material';
+import { Box } from '../box/Box';
 
 import { Button, SimpleDialog, ToastMsgs, Typography } from '@ezplayer/shared-ui-components';
 

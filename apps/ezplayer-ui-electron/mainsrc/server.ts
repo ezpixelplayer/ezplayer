@@ -11,12 +11,16 @@ import { fileURLToPath } from 'url';
 import { wsBroadcaster } from './websocket-broadcaster.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import {
+    curFrameBuffer,
     getCurrentShowData,
     getSequenceThumbnail,
     updatePlaylistsHandler,
     updateScheduleHandler,
+    getModelCoordinatesForAPI,
 } from './ipcezplayer.js';
 import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
+import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { BufferPool } from '@ezplayer/epp';
 import Router from '@koa/router';
 import { send } from '@koa/send';
 import serve from 'koa-static';
@@ -225,6 +229,93 @@ export async function setUpServer(config: ServerConfig): Promise<Server> {
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/model-coordinates - get model coordinates for 3D preview
+    // ----------------------------------------------
+    router.get('/api/model-coordinates', async (ctx) => {
+        try {
+            const coords = await getModelCoordinatesForAPI(false);
+            ctx.body = coords;
+        } catch (error) {
+            console.error('Error getting model coordinates:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Failed to get model coordinates' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/model-coordinates-2d - get 2D model coordinates for 2D preview
+    // ----------------------------------------------
+    router.get('/api/model-coordinates-2d', async (ctx) => {
+        try {
+            const coords = await getModelCoordinatesForAPI(true);
+            ctx.body = coords;
+        } catch (error) {
+            console.error('Error getting 2D model coordinates:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Failed to get 2D model coordinates' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/frames - binary frame data for 3D viewer
+    // ----------------------------------------------
+    const frameBufferPool = new BufferPool();
+
+    router.get('/api/frames', async (ctx) => {
+        // CORS headers for Electron renderer (file:// origin)
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+        // No buffer available yet
+        if (!curFrameBuffer) {
+            ctx.status = 204;
+            return;
+        }
+
+        // Recreate reader, for now
+        const frameReader = new LatestFrameRingBuffer({
+            buffer: curFrameBuffer,
+            frameSize: 0, // Will be read from header
+            slotCount: 0, // Will be read from header
+            isWriter: false,
+        });
+
+        // Read latest frame
+        const result = frameReader?.tryReadLatest();
+        if (!result) {
+            ctx.status = 204;
+            return;
+        }
+
+        if (!result.bytes) {
+            console.error('WFT HAPPENED TO THE ADTA BYTES');
+            ctx.status = 500;
+            return;
+        }
+
+        // Get a recycled buffer for header + frame data
+        const totalSize = 8 + result.frameSizeBytes;
+        const responseBuffer = frameBufferPool.get(totalSize);
+
+        // Write header: frameSize (uint32 LE) + seq (uint32 LE)
+        responseBuffer.writeUInt32LE(result.frameSizeBytes, 0);
+        responseBuffer.writeUInt32LE(result.seq, 4);
+
+        // Copy frame data from SharedArrayBuffer into response buffer
+        responseBuffer.set(result.bytes, 8);
+
+        // Release buffer back to pool when response finishes
+        ctx.res.on('finish', () => {
+            frameBufferPool.release(responseBuffer);
+        });
+
+        ctx.set('Cache-Control', 'no-store');
+        ctx.type = 'application/octet-stream';
+        // Use subarray to return only the used portion (pool may give larger buffer)
+        ctx.body = responseBuffer.subarray(0, totalSize);
     });
 
     webApp.use(router.routes());

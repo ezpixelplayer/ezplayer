@@ -1,14 +1,5 @@
-import ping from 'ping';
+import { ping } from '../icmp-ping/icmpping';
 import { parentPort } from 'node:worker_threads';
-import path from 'path';
-
-// I do not like this whole wrapper design, but for now ... we use the CLI utility
-if (process.platform === 'win32' && !process.env.SystemRoot) {
-    const execRoot = path.parse(process.execPath).root;
-    const driveRoot = /^[A-Za-z]:\\/.test(execRoot) ? execRoot : 'C:\\';
-    process.env.SystemRoot =
-        process.env.SystemRoot || process.env.WINDIR || process.env.windir || path.join(driveRoot, 'Windows');
-}
 
 if (!parentPort) {
     throw new Error('ping-worker must be run as a worker thread');
@@ -113,7 +104,7 @@ const windows = new Map<string, RollingSuccessWindow>();
 
 let cfg: PingConfig = {
     hosts: [],
-    intervalS: 60,
+    intervalS: 5,
     maxSamples: 10,
     concurrency: 10,
 };
@@ -163,32 +154,9 @@ parentPort.on('message', (msg: ParentMessage) => {
 
 async function pingHost(host: string): Promise<PingStat> {
     const window = ensureWindow(host);
-
-    try {
-        const res = await ping.promise.probe(host, {
-            timeout: 1,
-            min_reply: 1,
-        });
-
-        const alive = res.alive ? res.time : undefined;
-        window.add(alive);
-
-        //console.log(`${host}: ${JSON.stringify(res)}`);
-
-        let timeMs: number | null = null;
-        if (typeof res.time === 'number') {
-            timeMs = res.time;
-        } else if (typeof res.time === 'string') {
-            const parsed = parseFloat(res.time);
-            timeMs = Number.isFinite(parsed) ? parsed : null;
-        }
-
-        return window.getReport(host);
-    } catch (err) {
-        console.error(err);
-        window.add(undefined);
-        return window.getReport(host);
-    }
+    const res = await ping(host, 1000);
+    window.add(res.alive ? res.elapsed : undefined);
+    return window.getReport(host);
 }
 
 async function pingRoundOnce(): Promise<{ [address: string]: PingStat }> {

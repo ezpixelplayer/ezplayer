@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Box, Button, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
+import { Button, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
+import { Box } from '../box/Box';
 import { MusicNote, Lightbulb } from '@mui/icons-material';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';

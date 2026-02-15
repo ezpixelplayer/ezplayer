@@ -19,6 +19,18 @@ export { StatsDialog } from './components/status/StatsDialog';
 export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackSettingsDrawer';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
+export { Preview3D } from './components/preview-3d/Preview3D';
+export type { Preview3DProps, ViewMode, ViewPlane } from './components/preview-3d/Preview3D';
+export { Preview3DPage } from './components/preview-3d/Preview3DPage';
+export type { Preview3DPageProps } from './components/preview-3d/Preview3DPage';
+export { Viewer3D } from './components/preview-3d/Viewer3D';
+export type { Viewer3DProps } from './components/preview-3d/Viewer3D';
+export { Viewer2D } from './components/preview-3d/Viewer2D';
+export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
+export { ModelList } from './components/preview-3d/ModelList';
+export type { ModelListProps } from './components/preview-3d/ModelList';
+export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState } from './types/model3d';
+export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
 
 export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
 export type {
@@ -83,3 +95,6 @@ export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper 
 export { initI18N } from './i18n/i18n';
 
 export { getImageUrl } from './util/imageUtils';
+
+export { useFrameBuffer } from './hooks/useFrameBuffer';
+export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';

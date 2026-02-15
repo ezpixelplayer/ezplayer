@@ -43,6 +43,7 @@ export type {
     AudioChunk,
     EZPElectronAPI,
     FileSelectOptions,
+    GetNodeResult,
 } from './types/EZPElectronAPI';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
@@ -64,3 +65,9 @@ export {
     getActiveVolumeSchedule,
     getActiveViewerControlSchedule,
 } from './util/SettingsScheduleUtils';
+
+export {
+    type FrameBackingBuffer,
+    type FrameBufferReadResult,
+    LatestFrameRingBuffer
+} from './util/FrameRingBuffer';

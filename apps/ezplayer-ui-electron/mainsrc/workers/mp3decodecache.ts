@@ -29,13 +29,13 @@ export function buildInterleavedAudioChunkFromSegments(opts: {
 
     if (nSamples === 0) return new Float32Array(0);
 
-    if (channels === 0) throw new Error("channelData must have at least 1 channel");
+    if (channels === 0) throw new Error('channelData must have at least 1 channel');
 
     // Infer segmentSize if not provided
     const inferredSegSize = channelData[0]?.[0]?.length ?? 0;
 
     if (inferredSegSize <= 0) {
-        throw new Error("segmentSize could not be inferred (channelData[0][0] missing/empty)");
+        throw new Error('segmentSize could not be inferred (channelData[0][0] missing/empty)');
     }
 
     // Validate shape

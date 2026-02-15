@@ -60,6 +60,7 @@ export let curStatus: CombinedPlayerStatus = {};
 export let curErrors: string[] = [];
 export let curShow: EndUserShowSettings | undefined = undefined;
 export let curUser: EndUser | undefined = undefined;
+export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
 export function getSequenceThumbnail(id: string) {
@@ -214,6 +215,23 @@ const handlers: MainRPCAPI = {
     },
 };
 
+// Shared function to get model coordinates (used by both IPC and HTTP API)
+// is2D: if true, returns 2D coordinates with perspective projection; if false, returns 3D coordinates
+export async function getModelCoordinatesForAPI(is2D: boolean = false) {
+    if (!playWorker || !rpcc) {
+        return {};
+    }
+
+    try {
+        const rpcMethod = is2D ? 'getModelCoordinates2D' : 'getModelCoordinates';
+        const coords = await rpcc.call(rpcMethod, {});
+        return coords;
+    } catch (err) {
+        console.error(`[${is2D ? '2D' : '3D'} Preview] Failed to get model coordinates: ${err}`);
+        return {};
+    }
+}
+
 export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
     audioWindow: BrowserWindow | null,
@@ -344,6 +362,10 @@ export async function registerContentHandlers(
         return getServerStatus();
     });
 
+    ipcMain.handle('ipcGetModelCoordinates', async (_event, is2D?: boolean) => {
+        return await getModelCoordinatesForAPI(is2D ?? false);
+    });
+
     /// Connection from player worker thread
 
     const rpcs = new RPCServer<MainRPCAPI>(playWorker, handlers);
@@ -354,6 +376,10 @@ export async function registerContentHandlers(
             case 'audioChunk': {
                 //mainWindow?.webContents.send('audio:chunk', msg.chunk);
                 audioWindow?.webContents.send('audio:chunk', msg.chunk, [msg.chunk.buffer]);
+                break;
+            }
+            case 'pixelbuffer': {
+                curFrameBuffer = msg.buffer;
                 break;
             }
             case 'stats': {

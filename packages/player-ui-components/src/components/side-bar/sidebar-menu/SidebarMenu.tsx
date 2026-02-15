@@ -7,6 +7,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BrushIcon from '@mui/icons-material/Brush';
 import PreviewIcon from '@mui/icons-material/Preview';
+import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import { SidebarMenus } from '@ezplayer/shared-ui-components';
 import { Routes as ROUTES } from '../../..';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
@@ -94,6 +95,12 @@ export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hi
                                   subpathname: '',
                                   icon: <InfoRounded />,
                                   submenuname: 'Show Status',
+                              },
+                              {
+                                  pathname: ROUTES.PREVIEW_3D,
+                                  subpathname: '',
+                                  icon: <ViewInArIcon />,
+                                  submenuname: '3D Preview',
                               },
                           ]),
 

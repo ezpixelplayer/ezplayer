@@ -3,7 +3,7 @@
     "version": "0.0.22",
     "description": "EZPlayer EPP Core (pixel / controller data layer)",
     "main": "./dist/index.js",
-    "module": ".dist/index.mjs",
+    "module": "./dist/index.mjs",
     "types": "./dist/index.d.ts",
     "exports": {
         ".": {

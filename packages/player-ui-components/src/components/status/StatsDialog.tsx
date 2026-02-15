@@ -9,9 +9,9 @@ import {
     Grid,
     Card,
     CardContent,
-    Box,
     useTheme,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import { useDispatch } from 'react-redux';
 
 import { PlaybackStatistics } from '@ezplayer/ezplayer-core';
