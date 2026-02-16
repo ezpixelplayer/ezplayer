@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
-import { Button, Card, PageHeader, TextField, Typography } from '@ezplayer/shared-ui-components';
+import { PageHeader, TextField } from '@ezplayer/shared-ui-components';
 
 import type { SequenceSettings } from '@ezplayer/ezplayer-core';
 import { RootState } from '../..';
@@ -9,6 +9,9 @@ import { RootState } from '../..';
 import {
     Autocomplete,
     alpha,
+    Button,
+    Card,
+    Typography,
     useTheme,
     Table,
     TableBody,
@@ -436,20 +439,20 @@ export function SongList({
                               {canShowEdit && (
                                   <Button
                                       aria-label="edit"
-                                      icon={<EditIcon />}
+                                      startIcon={<EditIcon />}
                                       size="small"
                                       onClick={() => handleSongSetupClick(params.row)}
-                                      sx={{ minWidth: 'auto' }}
+                                      sx={{ minWidth: 'auto', padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                                   />
                               )}
                               {canShowDelete && (
                                   <Button
                                       aria-label="delete"
-                                      icon={<DeleteIcon />}
+                                      startIcon={<DeleteIcon />}
                                       size="small"
                                       color="error"
                                       onClick={() => handleDeleteClick(params.row.id)}
-                                      sx={{ minWidth: 'auto' }}
+                                      sx={{ minWidth: 'auto', padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                                   />
                               )}
                           </Box>
@@ -522,9 +525,10 @@ export function SongList({
                             className="letter-spacing"
                             variant={'contained'}
                             onClick={handleAddClick}
-                            btnText="Add Song"
-                            icon={<AddIcon />}
-                        />
+                            startIcon={<AddIcon />}
+                        >
+                            Add Song
+                        </Button>
                     )}
                 </Box>
 

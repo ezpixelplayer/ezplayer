@@ -11,8 +11,8 @@ export const Scrollbar: FC<ScrollbarProps> = ({ className, children, ...rest }) 
     return (
         <Scrollbars
             autoHide
-            renderThumbVertical={() => {
-                return <Box className="Scrollbar" />;
+            renderThumbVertical={(props) => {
+                return <Box className="Scrollbar" {...props} />;
             }}
             {...rest}
         >
