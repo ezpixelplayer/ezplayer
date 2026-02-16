@@ -4,7 +4,7 @@ import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D } from '../../types/model3d';
+import type { Point3D, Shape3D, ModelMetadata } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
@@ -20,6 +20,7 @@ export interface Viewer3DProps {
     showStats?: boolean;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    modelMetadata?: ModelMetadata[];
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -30,6 +31,7 @@ function OptimizedPointCloud({
     hoveredId,
     pointSize,
     selectedModelNames,
+    modelMetadata,
 }: {
     points: Point3D[];
     liveData?: LatestFrameRingBuffer;
@@ -37,6 +39,7 @@ function OptimizedPointCloud({
     hoveredId?: string | null;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    modelMetadata?: ModelMetadata[];
     onPointClick?: (pointId: string) => void;
 }) {
     const animationTimeRef = useRef(0);
@@ -50,6 +53,16 @@ function OptimizedPointCloud({
         // Extract gamma explicitly from model configuration (or use default)
         const gamma = getGammaFromModelConfiguration(points);
 
+        // Create map of modelName -> pixelSize from model metadata
+        const modelPixelSizeMap = new Map<string, number>();
+        if (modelMetadata) {
+            modelMetadata.forEach((model) => {
+                if (model.pixelSize !== undefined) {
+                    modelPixelSizeMap.set(model.name, model.pixelSize);
+                }
+            });
+        }
+
         const uniforms = {
             time: 0,
             brightness: 1.0,
@@ -60,7 +73,11 @@ function OptimizedPointCloud({
             totalPointCount: points.length,
         };
 
-        const manager = new GeometryManager(points, uniforms, { pointSize, gamma });
+        const manager = new GeometryManager(points, uniforms, {
+            pointSize,
+            gamma,
+            modelPixelSizeMap,
+        });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
 
@@ -76,7 +93,7 @@ function OptimizedPointCloud({
             geometryManagerRef.current = null;
             groupRef.current = null;
         };
-    }, [points, pointSize]);
+    }, [points, pointSize, modelMetadata]);
 
     // Update states when selection/hover changes
     useEffect(() => {
@@ -291,6 +308,7 @@ function SceneContent({
     onPointHover,
     pointSize,
     selectedModelNames,
+    modelMetadata,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -301,6 +319,7 @@ function SceneContent({
     onPointHover?: (pointId: string | null) => void;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    modelMetadata?: ModelMetadata[];
 }) {
     const { camera, controls } = useThree();
 
@@ -350,6 +369,7 @@ function SceneContent({
                 hoveredId={hoveredId}
                 pointSize={pointSize}
                 selectedModelNames={selectedModelNames}
+                modelMetadata={modelMetadata}
                 onPointClick={onPointClick}
             />
         </>
@@ -367,6 +387,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     showStats = false,
     pointSize = 1.2,
     selectedModelNames,
+    modelMetadata,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -534,6 +555,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             onPointHover={onPointHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            modelMetadata={modelMetadata}
                         />
                         {showStats && <Stats />}
                     </Canvas>

@@ -51,6 +51,10 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
         // Parse color order for this model (GRB, RGB, etc.)
         const [rOffset, gOffset, bOffset] = parseColorOffsets(modelData.stringType);
 
+        // Extract brightness and gamma from colorProfile
+        const brightness = modelData.colorProfile?.allBrightness ?? 1.0;
+        const gamma = modelData.colorProfile?.allGamma ?? 2.2;
+
         // Extract points
         if (modelData) {
             // Case 1: Structure with nodes array
@@ -73,6 +77,8 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                                     rOffset,
                                     gOffset,
                                     bOffset,
+                                    brightness,
+                                    gamma,
                                 },
                             });
                             pointIndex++;
@@ -89,6 +95,12 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                 pointCount: pointIndex,
                 startIndex,
                 endIndex,
+                // Extract pixelSize and pixelStyle from XML
+                pixelSize: modelData.pixelSize,
+                pixelStyle: modelData.pixelStyle,
+                // Extract brightness and gamma from colorProfile
+                brightness,
+                gamma,
             });
         }
     });

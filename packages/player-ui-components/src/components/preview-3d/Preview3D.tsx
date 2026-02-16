@@ -583,6 +583,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             onPointHover={handleItemHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            modelMetadata={modelData.metadata?.models}
                         />
                     ) : (
                         <Viewer2D
@@ -596,6 +597,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             viewPlane={'xy'}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            modelMetadata={modelData.metadata?.models}
                         />
                     )}
                 </Box>

@@ -34,7 +34,12 @@ export class GeometryGroupRenderer {
         group: GeometryGroup,
         allPointsCount: number,
         uniforms: Partial<PointShaderUniforms>,
-        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz'; gamma?: number },
+        options?: {
+            pointSize?: number;
+            viewPlane?: 'xy' | 'xz' | 'yz';
+            gamma?: number;
+            brightness?: number;
+        },
     ) {
         this.group = group;
         this.allPointsCount = allPointsCount;
@@ -59,14 +64,18 @@ export class GeometryGroupRenderer {
         const gammaValue =
             options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(group.points) ?? DEFAULT_GAMMA;
 
+        // Extract brightness: from options > from uniforms > default (1.0)
+        const brightnessValue = options?.brightness ?? uniforms.brightness ?? 1.0;
+
         // Create shader material
         const materialUniforms = { ...uniforms };
         if (options?.viewPlane) {
             const viewPlaneMap = { xy: 1, xz: 2, yz: 3 };
             materialUniforms.viewPlane = viewPlaneMap[options.viewPlane];
         }
-        // Ensure gamma is set in uniforms (for shader uniform)
+        // Ensure gamma and brightness are set in uniforms (for shader uniform)
         materialUniforms.gamma = gammaValue;
+        materialUniforms.brightness = brightnessValue;
         this.material = createPointShaderMaterial(materialUniforms, {
             gamma: gammaValue, // Explicit gamma parameter
             size: options?.pointSize || 3.0,
@@ -215,11 +224,17 @@ export class GeometryManager {
     private pointIdToModelNameCache: Map<string, string | null> = new Map();
     private cachedHoveredId: string | null = null;
     private cachedHoveredModelName: string | null = null;
+    private modelPixelSizeMap: Map<string, number> = new Map();
 
     constructor(
         points: Point3D[],
         uniforms: Partial<PointShaderUniforms>,
-        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz'; gamma?: number },
+        options?: {
+            pointSize?: number;
+            viewPlane?: 'xy' | 'xz' | 'yz';
+            gamma?: number;
+            modelPixelSizeMap?: Map<string, number>;
+        },
     ) {
         this.allPoints = points;
         this.allPointsCount = points.length;
@@ -232,6 +247,8 @@ export class GeometryManager {
             uniforms.gamma ??
             getGammaFromModelConfiguration(points) ??
             DEFAULT_GAMMA;
+        // Store model pixel size map for per-model point size lookup
+        this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
     }
 
     /**
@@ -257,10 +274,30 @@ export class GeometryManager {
 
         // Create renderer for each group
         groups.forEach((group) => {
-            const renderer = new GeometryGroupRenderer(group, this.allPointsCount, this.uniforms, {
-                pointSize: this.pointSize,
+            // Extract modelName, brightness, and gamma from group
+            // Since points are grouped by modelName + brightness + gamma, all points in a group have the same values
+            const firstPoint = group.points[0];
+            const modelName = firstPoint.metadata?.modelName as string | undefined;
+            const groupBrightness = firstPoint.metadata?.brightness ?? 1.0;
+            const groupGamma = firstPoint.metadata?.gamma ?? this.gamma;
+
+            // Look up pixelSize for this model
+            // Use model's pixelSize from XML if available, otherwise fall back to default pointSize
+            const modelPixelSize = modelName ? this.modelPixelSizeMap.get(modelName) : undefined;
+            const effectivePointSize = modelPixelSize !== undefined ? modelPixelSize : this.pointSize;
+
+            // Create uniforms with per-group brightness and gamma
+            const groupUniforms = {
+                ...this.uniforms,
+                brightness: groupBrightness,
+                gamma: groupGamma,
+            };
+
+            const renderer = new GeometryGroupRenderer(group, this.allPointsCount, groupUniforms, {
+                pointSize: effectivePointSize,
                 viewPlane: this.viewPlane,
-                gamma: this.gamma, // Pass gamma explicitly
+                gamma: groupGamma, // Pass group-specific gamma
+                brightness: groupBrightness, // Pass group-specific brightness
             });
             this.renderers.set(group.id, renderer);
         });
