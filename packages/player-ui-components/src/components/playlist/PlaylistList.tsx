@@ -473,12 +473,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                 >
                     Delete
                 </Button>
-                <Button
-                    type="button"
-                    variant="outlined"
-                    color="secondary"
-                    onClick={handleClose}
-                >
+                <Button type="button" variant="outlined" color="secondary" onClick={handleClose}>
                     Cancel
                 </Button>
             </Box>

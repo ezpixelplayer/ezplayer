@@ -47,7 +47,11 @@ const FileSelectButton = ({
         }
     };
 
-    return <Button variant="outlined" size="small" onClick={handleFileSelect}>Select another file</Button>;
+    return (
+        <Button variant="outlined" size="small" onClick={handleFileSelect}>
+            Select another file
+        </Button>
+    );
 };
 
 export interface EditSongDetailsProps {
@@ -469,13 +473,10 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         marginTop: 3,
                     }}
                 >
-                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary">Save</Button>
-                    <Button
-                        type="button"
-                        variant="outlined"
-                        color="secondary"
-                        onClick={handleCancel}
-                    >
+                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary">
+                        Save
+                    </Button>
+                    <Button type="button" variant="outlined" color="secondary" onClick={handleCancel}>
                         Cancel
                     </Button>
                 </Box>

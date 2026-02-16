@@ -1702,13 +1702,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 <DialogActions>
                     <Button onClick={handleClose}>Cancel</Button>
                     {selectedSchedule && (
-                        <Button onClick={handleDelete} color="error" startIcon={<DeleteIcon />}>Delete</Button>
+                        <Button onClick={handleDelete} color="error" startIcon={<DeleteIcon />}>
+                            Delete
+                        </Button>
                     )}
-                    <Button
-                        onClick={handleSubmit}
-                        variant="contained"
-                        disabled={!isFormValid()}
-                    >{selectedSchedule ? 'Update' : 'Schedule'}</Button>
+                    <Button onClick={handleSubmit} variant="contained" disabled={!isFormValid()}>
+                        {selectedSchedule ? 'Update' : 'Schedule'}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
@@ -1724,15 +1724,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                     <Typography gutterBottom>Would you like to update this event or all related events?</Typography>
                     <Box sx={{ mt: 2, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
                         <Button onClick={() => setEditConfirmDialogState({ open: false })}>Cancel</Button>
-                        <Button
-                            onClick={() => submitScheduleUpdate('single')}
-                            variant="outlined"
-                        >This Event</Button>
-                        <Button
-                            onClick={() => submitScheduleUpdate('all')}
-                            variant="contained"
-                            color="primary"
-                        >All Events</Button>
+                        <Button onClick={() => submitScheduleUpdate('single')} variant="outlined">
+                            This Event
+                        </Button>
+                        <Button onClick={() => submitScheduleUpdate('all')} variant="contained" color="primary">
+                            All Events
+                        </Button>
                     </Box>
                 </DialogContent>
             </Dialog>
@@ -1755,17 +1752,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                                 <Button onClick={() => setDeleteDialogState({ open: false })}>Cancel</Button>
 
-                                <Button
-                                    onClick={() => handleConfirmDelete('single')}
-                                    variant="outlined"
-                                    color="error"
-                                >This Event</Button>
+                                <Button onClick={() => handleConfirmDelete('single')} variant="outlined" color="error">
+                                    This Event
+                                </Button>
 
-                                <Button
-                                    onClick={() => handleConfirmDelete('all')}
-                                    variant="contained"
-                                    color="error"
-                                >All Events</Button>
+                                <Button onClick={() => handleConfirmDelete('all')} variant="contained" color="error">
+                                    All Events
+                                </Button>
                             </Box>
                         </>
                     ) : (
@@ -1773,11 +1766,9 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             <Typography>Are you sure you want to delete this schedule?</Typography>
                             <DialogActions>
                                 <Button onClick={() => setDeleteDialogState({ open: false })}>Cancel</Button>
-                                <Button
-                                    onClick={() => handleConfirmDelete('single')}
-                                    color="error"
-                                    variant="contained"
-                                >Delete</Button>
+                                <Button onClick={() => handleConfirmDelete('single')} color="error" variant="contained">
+                                    Delete
+                                </Button>
                             </DialogActions>
                         </>
                     )}

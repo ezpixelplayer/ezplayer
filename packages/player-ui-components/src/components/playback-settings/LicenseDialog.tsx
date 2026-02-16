@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { Button, Dialog, DialogContent, DialogTitle, Typography, Divider, List, ListItem, ListItemText, Collapse } from '@mui/material';
+import {
+    Button,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    Typography,
+    Divider,
+    List,
+    ListItem,
+    ListItemText,
+    Collapse,
+} from '@mui/material';
 import { Box } from '../box/Box';
 
 export interface LicenseEntry {

@@ -227,11 +227,7 @@ export class GeometryManager {
         this.pointSize = options?.pointSize || 3.0;
         this.viewPlane = options?.viewPlane;
         // Extract gamma explicitly: from options > from uniforms > from model configuration > default
-        this.gamma =
-            options?.gamma ??
-            uniforms.gamma ??
-            getGammaFromModelConfiguration(points) ??
-            DEFAULT_GAMMA;
+        this.gamma = options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(points) ?? DEFAULT_GAMMA;
     }
 
     /**

@@ -214,16 +214,16 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                        const firstPoint = points[0];
-                        switch (viewPlane) {
-                            case 'xy':
-                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                            case 'xz':
-                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                            case 'yz':
-                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                        }
-                    })()
+                          const firstPoint = points[0];
+                          switch (viewPlane) {
+                              case 'xy':
+                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                              case 'xz':
+                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                              case 'yz':
+                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                          }
+                      })()
                     : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
@@ -519,8 +519,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
+                    onClick={onPointClick || (() => {})}
+                    onHover={onPointHover || (() => {})}
                 />
             ))}
 
