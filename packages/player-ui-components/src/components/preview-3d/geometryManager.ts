@@ -39,6 +39,7 @@ export class GeometryGroupRenderer {
             viewPlane?: 'xy' | 'xz' | 'yz';
             gamma?: number;
             brightness?: number;
+            pixelStyle?: number; // 0 = square, 1 = circle/round (default)
         },
     ) {
         this.group = group;
@@ -79,10 +80,60 @@ export class GeometryGroupRenderer {
         this.material = createPointShaderMaterial(materialUniforms, {
             gamma: gammaValue, // Explicit gamma parameter
             size: options?.pointSize || 3.0,
+            // Enable size attenuation by default so zoom/dolly scales pixels naturally.
+            // This can be disabled by passing sizeAttenuation: false in the future if needed.
+            sizeAttenuation: true,
+            pixelStyle: options?.pixelStyle ?? 1, // 0 = square, 1 = circle/round (default)
         });
 
         // Create points object
         this.points = new THREE.Points(this.geometry, this.material);
+
+        // Keep point sizing in sync with the active camera + renderer.
+        // This is critical for correct behavior when zooming (orthographic) or dollying (perspective),
+        // especially for large pixel sizes.
+        this.points.onBeforeRender = (renderer, _scene, camera) => {
+            const material = this.material;
+            if (!material?.uniforms) return;
+
+            const pixelRatio = typeof (renderer as any).getPixelRatio === 'function' ? (renderer as any).getPixelRatio() : 1;
+            const sizeVec = new THREE.Vector2();
+            renderer.getSize(sizeVec);
+            // Use CSS pixel height here; we convert to device pixels in the shader via `pixelRatio`.
+            const heightCssPx = Math.max(1, sizeVec.y);
+
+            // Compute scale factor to convert world units to pixels for point sizing.
+            // Perspective: pixels = worldSize * (H / (2*tan(fov/2))) / distance
+            // Ortho: pixels = worldSize * (H / frustumHeight) * zoom
+            let scale = 1.0;
+            const anyCam = camera as any;
+            if (anyCam?.isPerspectiveCamera) {
+                const cam = camera as THREE.PerspectiveCamera;
+                const fovRad = (cam.fov * Math.PI) / 180;
+                scale = heightCssPx / (2 * Math.tan(fovRad / 2));
+            } else if (anyCam?.isOrthographicCamera) {
+                const cam = camera as THREE.OrthographicCamera;
+                const frustumHeight = Math.max(0.0001, cam.top - cam.bottom);
+                scale = (heightCssPx / frustumHeight) * (cam.zoom ?? 1.0);
+            }
+
+            // Max supported point size (GPU dependent); query once per material/context.
+            if (material.uniforms.maxPointSize?.value === 2048.0) {
+                try {
+                    const gl = renderer.getContext();
+                    const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE) as Float32Array | number[];
+                    const maxPointSize = Array.isArray(range) ? range[1] : (range as Float32Array)[1];
+                    if (typeof maxPointSize === 'number' && Number.isFinite(maxPointSize) && maxPointSize > 0) {
+                        material.uniforms.maxPointSize.value = maxPointSize;
+                    }
+                } catch {
+                    // ignore; keep default
+                }
+            }
+
+            material.uniforms.pixelRatio.value = pixelRatio;
+            material.uniforms.scale.value = scale;
+        };
     }
 
     /**
@@ -225,6 +276,7 @@ export class GeometryManager {
     private cachedHoveredId: string | null = null;
     private cachedHoveredModelName: string | null = null;
     private modelPixelSizeMap: Map<string, number> = new Map();
+    private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
 
     constructor(
         points: Point3D[],
@@ -234,6 +286,7 @@ export class GeometryManager {
             viewPlane?: 'xy' | 'xz' | 'yz';
             gamma?: number;
             modelPixelSizeMap?: Map<string, number>;
+            modelPixelStyleMap?: Map<string, string>; // pixelStyle as string from XML
         },
     ) {
         this.allPoints = points;
@@ -249,6 +302,8 @@ export class GeometryManager {
             DEFAULT_GAMMA;
         // Store model pixel size map for per-model point size lookup
         this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
+        // Store model pixel style map for per-model pixel shape lookup
+        this.modelPixelStyleMap = options?.modelPixelStyleMap || new Map();
     }
 
     /**
@@ -286,6 +341,18 @@ export class GeometryManager {
             const modelPixelSize = modelName ? this.modelPixelSizeMap.get(modelName) : undefined;
             const effectivePointSize = modelPixelSize !== undefined ? modelPixelSize : this.pointSize;
 
+            // Look up pixelStyle for this model
+            // Convert pixelStyle string to number: "Circle" or "Round" -> 1, "Square" -> 0
+            // Default to circle (1) if not specified in XML
+            const modelPixelStyleStr = modelName ? this.modelPixelStyleMap.get(modelName) : undefined;
+            let effectivePixelStyle = 1; // Default to circle
+            if (modelPixelStyleStr !== undefined) {
+                // Convert string to number: "Circle" or "Round" (case-insensitive) -> 1, "Square" -> 0
+                const styleLower = modelPixelStyleStr.toLowerCase();
+                effectivePixelStyle = (styleLower === 'circle' || styleLower === 'round') ? 1 : 
+                                     (styleLower === 'square') ? 0 : 1; // Default to circle for unknown values
+            }
+
             // Create uniforms with per-group brightness and gamma
             const groupUniforms = {
                 ...this.uniforms,
@@ -298,6 +365,7 @@ export class GeometryManager {
                 viewPlane: this.viewPlane,
                 gamma: groupGamma, // Pass group-specific gamma
                 brightness: groupBrightness, // Pass group-specific brightness
+                pixelStyle: effectivePixelStyle, // Pass model-specific pixel style
             });
             this.renderers.set(group.id, renderer);
         });

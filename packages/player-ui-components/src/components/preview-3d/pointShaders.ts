@@ -59,6 +59,28 @@ export interface PointShaderUniforms {
     totalPointCount: number;
     /** View plane: 0 = 3D, 1 = xy, 2 = xz, 3 = yz */
     viewPlane?: number;
+    /** Pixel style: 0 = square, 1 = circle/round (default)*/
+    pixelStyle?: number;
+    /**
+     * Renderer device pixel ratio. Used to keep point size consistent across HiDPI displays.
+     * This is set at render time.
+     */
+    pixelRatio?: number;
+    /**
+     * Camera/viewport-derived scale factor to convert world units to pixels for point sizing.
+     * This is set at render time.
+     */
+    scale?: number;
+    /**
+     * Whether point size should attenuate with camera (perspective distance / orthographic zoom).
+     * 1.0 = enabled, 0.0 = disabled.
+     */
+    sizeAttenuation?: number;
+    /**
+     * GPU-dependent maximum supported point size. Used to clamp huge pixel sizes.
+     * This is set at render time.
+     */
+    maxPointSize?: number;
 }
 
 /**
@@ -81,6 +103,10 @@ uniform vec3 hoveredColor;
 uniform float useLiveData;
 uniform float totalPointCount;
 uniform float size;
+uniform float pixelRatio;
+uniform float scale;
+uniform float sizeAttenuation;
+uniform float maxPointSize;
 uniform int viewPlane; // 0 = 3D, 1 = xy, 2 = xz, 3 = yz
 
 varying vec3 vColor;
@@ -95,6 +121,12 @@ float triangleWave(float t) {
     float period = HALF * 2.0;
     float tt = mod(mod(t, period) + period, period);
     return tt <= HALF ? (tt / HALF) * 255.0 : ((period - tt) / HALF) * 255.0;
+}
+
+// Detect whether the projection matrix is perspective or orthographic
+// Matches Three.js shader chunk behavior.
+bool isPerspectiveMatrix(mat4 m) {
+    return m[2][3] == -1.0;
 }
 
 // Procedural color calculation (matches JavaScript logic)
@@ -133,7 +165,27 @@ void main() {
     
     vec4 mvPosition = modelViewMatrix * vec4(projectedPosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = size;
+
+    // Point sizing:
+    // - Treat size as a world-unit diameter (matching xLights model coordinates).
+    // - Convert world units to pixels based on camera + viewport.
+    // - Attenuate in perspective with distance; in orthographic scale with zoom.
+    float pointSizePx = size;
+    if (sizeAttenuation > 0.5) {
+        if (isPerspectiveMatrix(projectionMatrix)) {
+            // Perspective: shrink/grow with distance in view space (mvPosition.z is negative in front of camera).
+            pointSizePx *= (scale / max(0.0001, -mvPosition.z));
+        } else {
+            // Orthographic: scale already accounts for camera zoom & viewport.
+            pointSizePx *= scale;
+        }
+    }
+
+    // Convert CSS-like pixels to device pixels for HiDPI displays.
+    pointSizePx *= max(pixelRatio, 1.0);
+
+    // Clamp to the GPU maximum supported point size for stability at very large sizes.
+    gl_PointSize = min(pointSizePx, maxPointSize);
     
     // Calculate color (use original 3D position for procedural color calculation)
     vec3 color = baseColor;
@@ -157,18 +209,31 @@ void main() {
 
 /**
  * Fragment shader for point rendering
- * Handles color selection, hover highlighting, and gamma correction
+ * Handles color selection, hover highlighting, gamma correction, and pixel shape
  */
 export const pointFragmentShader = `
 uniform float gamma;
 uniform vec3 selectedColor;
 uniform vec3 hoveredColor;
+uniform int pixelStyle; // 0 = square, 1 = circle/round (default)
 
 varying vec3 vColor;
 varying float vSelectionState;
 varying float vHoverState;
 
 void main() {
+    // Handle pixel shape based on pixelStyle
+    // gl_PointCoord gives us the coordinate within the point (0.0 to 1.0)
+    if (pixelStyle == 1) {
+        // Circle/Round: discard fragments outside the circle
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        if (dist > 0.5) {
+            discard;
+        }
+    }
+    // pixelStyle == 0 (square): render as square (no discard)
+    
     vec3 color = vColor;
     
     // Apply selection color (yellow)
@@ -195,6 +260,7 @@ void main() {
  * @param options.gamma - Explicit gamma value (required - no default/hardcoded value)
  * @param options.size - Point size
  * @param options.sizeAttenuation - Whether point size should attenuate with distance
+ * @param options.pixelStyle - Pixel style: 0 = square, 1 = circle/round (default)
  */
 export function createPointShaderMaterial(
     uniforms: Partial<PointShaderUniforms>,
@@ -202,6 +268,7 @@ export function createPointShaderMaterial(
         gamma: number; // Explicit gamma parameter - required, no default
         size?: number;
         sizeAttenuation?: boolean;
+        pixelStyle?: number; // 0 = square, 1 = circle/round (default)
     },
 ): THREE.ShaderMaterial {
     // Use explicit gamma from options - no hardcoded default
@@ -217,6 +284,12 @@ export function createPointShaderMaterial(
         totalPointCount: { value: 0.0 },
         size: { value: options?.size || 3.0 },
         viewPlane: { value: 0 }, // 0 = 3D, 1 = xy, 2 = xz, 3 = yz (int uniform)
+        pixelStyle: { value: options?.pixelStyle ?? 1 }, // 0 = square, 1 = circle/round (default) (int uniform)
+        // Set at render time (GeometryGroupRenderer.onBeforeRender) but must exist up-front.
+        pixelRatio: { value: 1.0 },
+        scale: { value: 1.0 },
+        sizeAttenuation: { value: options?.sizeAttenuation === false ? 0.0 : 1.0 },
+        maxPointSize: { value: 2048.0 }, // Safe default; actual value is set at render time.
     };
 
     // Merge provided uniforms
@@ -224,14 +297,14 @@ export function createPointShaderMaterial(
         if (defaultUniforms[key]) {
             if (defaultUniforms[key].value instanceof THREE.Vector3 && value instanceof THREE.Vector3) {
                 defaultUniforms[key].value.copy(value);
-            } else if (key === 'viewPlane' && typeof value === 'number') {
-                // Ensure viewPlane is an integer
+            } else if ((key === 'viewPlane' || key === 'pixelStyle') && typeof value === 'number') {
+                // Ensure viewPlane and pixelStyle are integers
                 defaultUniforms[key].value = Math.floor(value);
             } else {
                 defaultUniforms[key].value = value;
             }
         } else {
-            if (key === 'viewPlane' && typeof value === 'number') {
+            if ((key === 'viewPlane' || key === 'pixelStyle') && typeof value === 'number') {
                 defaultUniforms[key] = { value: Math.floor(value) };
             } else {
                 defaultUniforms[key] = { value };
@@ -239,12 +312,13 @@ export function createPointShaderMaterial(
         }
     });
 
+    const pixelStyleValue = options?.pixelStyle ?? 1;
     return new THREE.ShaderMaterial({
         uniforms: defaultUniforms,
         vertexShader: pointVertexShader,
         fragmentShader: pointFragmentShader,
         vertexColors: false, // We're using custom attributes
-        transparent: false,
+        transparent: pixelStyleValue === 1, // Enable transparency for circles to allow smooth edges
         depthWrite: true,
     });
 }

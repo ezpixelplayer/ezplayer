@@ -55,10 +55,15 @@ function OptimizedPointCloud({
 
         // Create map of modelName -> pixelSize from model metadata
         const modelPixelSizeMap = new Map<string, number>();
+        // Create map of modelName -> pixelStyle from model metadata
+        const modelPixelStyleMap = new Map<string, string>();
         if (modelMetadata) {
             modelMetadata.forEach((model) => {
                 if (model.pixelSize !== undefined) {
                     modelPixelSizeMap.set(model.name, model.pixelSize);
+                }
+                if (model.pixelStyle !== undefined) {
+                    modelPixelStyleMap.set(model.name, model.pixelStyle);
                 }
             });
         }
@@ -77,6 +82,7 @@ function OptimizedPointCloud({
             pointSize,
             gamma,
             modelPixelSizeMap,
+            modelPixelStyleMap,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
