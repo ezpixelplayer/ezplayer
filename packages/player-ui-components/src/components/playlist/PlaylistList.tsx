@@ -1,21 +1,19 @@
 import { getPlaylistDurationMS, PlaylistRecord } from '@ezplayer/ezplayer-core';
-import {
-    Autocomplete,
-    Button,
-    Card,
-    PageHeader,
-    SimpleDialog,
-    TextField,
-    ToastMsgs,
-    Typography,
-} from '@ezplayer/shared-ui-components';
+import { PageHeader, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import Divider from '@mui/material/Divider';
 import { Box } from '../box/Box';
 import {
     alpha,
+    Autocomplete,
+    Button,
+    Card,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    Divider,
+    Typography,
     useTheme,
     Table,
     TableBody,
@@ -367,23 +365,26 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
                     <Button
                         aria-label="edit"
-                        icon={<EditIcon />}
+                        startIcon={<EditIcon />}
                         onClick={() => handleEditPlaylistClick(params.row.id)}
                         size="small"
+                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
                         aria-label="clone"
-                        icon={<ContentCopyIcon />}
+                        startIcon={<ContentCopyIcon />}
                         onClick={() => clonePlaylist(params.row.id)}
                         size="small"
                         color="primary"
+                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
                         aria-label="delete"
-                        icon={<DeleteIcon />}
+                        startIcon={<DeleteIcon />}
                         color="error"
                         onClick={() => handleDeleteClick(params.row.id)}
                         size="small"
+                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                 </Box>
             ),
@@ -464,20 +465,17 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                 }}
             >
                 <Button
-                    btnText={'Delete'}
                     onClick={handleConfirmDelete}
                     type="submit"
                     variant="contained"
                     color="error"
                     sx={{ marginRight: 2 }}
-                ></Button>
-                <Button
-                    btnText={'Cancel'}
-                    type="button"
-                    variant="outlined"
-                    color="secondary"
-                    onClick={handleClose}
-                ></Button>
+                >
+                    Delete
+                </Button>
+                <Button type="button" variant="outlined" color="secondary" onClick={handleClose}>
+                    Cancel
+                </Button>
             </Box>
         </Box>
     );
@@ -547,8 +545,9 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                         className="letter-spacing"
                         variant={'contained'}
                         onClick={handleCreatePlaylistClick}
-                        btnText="Create Playlist"
-                    />
+                    >
+                        Create Playlist
+                    </Button>
                 </Box>
 
                 <Box
@@ -561,17 +560,13 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                     <PlaylistTable rows={rows} columns={columns} getRowId={(row: PlaylistRow) => row.id} />
                 </Box>
             </Card>
-            <SimpleDialog
-                open={openDialog}
-                onClose={handleClose}
-                model_title={
-                    <>
-                        <Typography variant="h5">Confirm Delete Playlist </Typography>
-                        <Divider />
-                    </>
-                }
-                model_content={<> {dialogContent}</>}
-            />
+            <Dialog open={openDialog} onClose={handleClose}>
+                <DialogTitle>
+                    <Typography variant="h5">Confirm Delete Playlist </Typography>
+                    <Divider />
+                </DialogTitle>
+                <DialogContent>{dialogContent}</DialogContent>
+            </Dialog>
         </Box>
     );
 }

@@ -1,9 +1,10 @@
 import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
-import { Button, ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
+import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { Box } from '../box/Box';
 import {
+    Button,
     Checkbox,
     CircularProgress,
     Dialog,
@@ -1699,16 +1700,15 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                     </Box>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={handleClose} btnText="Cancel" />
+                    <Button onClick={handleClose}>Cancel</Button>
                     {selectedSchedule && (
-                        <Button onClick={handleDelete} color="error" icon={<DeleteIcon />} btnText="Delete" />
+                        <Button onClick={handleDelete} color="error" startIcon={<DeleteIcon />}>
+                            Delete
+                        </Button>
                     )}
-                    <Button
-                        onClick={handleSubmit}
-                        variant="contained"
-                        disabled={!isFormValid()}
-                        btnText={selectedSchedule ? 'Update' : 'Schedule'}
-                    />
+                    <Button onClick={handleSubmit} variant="contained" disabled={!isFormValid()}>
+                        {selectedSchedule ? 'Update' : 'Schedule'}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
@@ -1723,18 +1723,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 <DialogContent>
                     <Typography gutterBottom>Would you like to update this event or all related events?</Typography>
                     <Box sx={{ mt: 2, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-                        <Button onClick={() => setEditConfirmDialogState({ open: false })} btnText="Cancel" />
-                        <Button
-                            onClick={() => submitScheduleUpdate('single')}
-                            variant="outlined"
-                            btnText="This Event"
-                        />
-                        <Button
-                            onClick={() => submitScheduleUpdate('all')}
-                            variant="contained"
-                            color="primary"
-                            btnText="All Events"
-                        />
+                        <Button onClick={() => setEditConfirmDialogState({ open: false })}>Cancel</Button>
+                        <Button onClick={() => submitScheduleUpdate('single')} variant="outlined">
+                            This Event
+                        </Button>
+                        <Button onClick={() => submitScheduleUpdate('all')} variant="contained" color="primary">
+                            All Events
+                        </Button>
                     </Box>
                 </DialogContent>
             </Dialog>
@@ -1755,34 +1750,25 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 Would you like to delete this event or all related events?
                             </Typography>
                             <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                                <Button onClick={() => setDeleteDialogState({ open: false })} btnText="Cancel" />
+                                <Button onClick={() => setDeleteDialogState({ open: false })}>Cancel</Button>
 
-                                <Button
-                                    onClick={() => handleConfirmDelete('single')}
-                                    variant="outlined"
-                                    color="error"
-                                    btnText="This Event"
-                                />
+                                <Button onClick={() => handleConfirmDelete('single')} variant="outlined" color="error">
+                                    This Event
+                                </Button>
 
-                                <Button
-                                    onClick={() => handleConfirmDelete('all')}
-                                    variant="contained"
-                                    color="error"
-                                    btnText="All Events"
-                                />
+                                <Button onClick={() => handleConfirmDelete('all')} variant="contained" color="error">
+                                    All Events
+                                </Button>
                             </Box>
                         </>
                     ) : (
                         <>
                             <Typography>Are you sure you want to delete this schedule?</Typography>
                             <DialogActions>
-                                <Button onClick={() => setDeleteDialogState({ open: false })} btnText="Cancel" />
-                                <Button
-                                    onClick={() => handleConfirmDelete('single')}
-                                    color="error"
-                                    variant="contained"
-                                    btnText="Delete"
-                                />
+                                <Button onClick={() => setDeleteDialogState({ open: false })}>Cancel</Button>
+                                <Button onClick={() => handleConfirmDelete('single')} color="error" variant="contained">
+                                    Delete
+                                </Button>
                             </DialogActions>
                         </>
                     )}
