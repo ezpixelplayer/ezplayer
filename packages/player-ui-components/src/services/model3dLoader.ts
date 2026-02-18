@@ -55,6 +55,10 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
         const brightness = modelData.colorProfile?.allBrightness ?? 1.0;
         const gamma = modelData.colorProfile?.allGamma ?? 2.2;
 
+        // Extract transparency (0–100 percentage from xLights XML Transparency attribute)
+        // 0 = fully opaque (default), 100 = fully transparent
+        const transparency = modelData.transparency;
+
         // Extract points
         if (modelData) {
             // Case 1: Structure with nodes array
@@ -90,7 +94,7 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
 
         const endIndex = allPoints.length - 1;
         if (pointIndex > 0) {
-            modelMetadata.push({
+            const metadata = {
                 name: modelName,
                 pointCount: pointIndex,
                 startIndex,
@@ -98,10 +102,13 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                 // Extract pixelSize and pixelStyle from XML
                 pixelSize: modelData.pixelSize,
                 pixelStyle: modelData.pixelStyle,
+                // Extract transparency from XML (0–100 integer, 0 = opaque, 100 = transparent)
+                transparency,
                 // Extract brightness and gamma from colorProfile
                 brightness,
                 gamma,
-            });
+            };
+            modelMetadata.push(metadata);
         }
     });
 

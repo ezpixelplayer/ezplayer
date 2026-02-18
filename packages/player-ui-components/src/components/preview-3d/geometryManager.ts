@@ -39,7 +39,8 @@ export class GeometryGroupRenderer {
             viewPlane?: 'xy' | 'xz' | 'yz';
             gamma?: number;
             brightness?: number;
-            pixelStyle?: number; // 0 = square, 1 = circle/round (default)
+            pixelStyle?: number; // 0 = square, 1 = circle/round (default), 2 = blended circle
+            opacity?: number; // 0.0 = fully transparent, 1.0 = fully opaque (derived from xLights Transparency)
         },
     ) {
         this.group = group;
@@ -83,7 +84,8 @@ export class GeometryGroupRenderer {
             // Enable size attenuation by default so zoom/dolly scales pixels naturally.
             // This can be disabled by passing sizeAttenuation: false in the future if needed.
             sizeAttenuation: true,
-            pixelStyle: options?.pixelStyle ?? 1, // 0 = square, 1 = circle/round (default)
+            pixelStyle: options?.pixelStyle ?? 1, // 0 = square, 1 = circle/round (default), 2 = blended circle
+            opacity: options?.opacity ?? 1.0, // 1.0 = fully opaque, 0.0 = fully transparent (from xLights Transparency)
         });
 
         // Create points object
@@ -277,6 +279,7 @@ export class GeometryManager {
     private cachedHoveredModelName: string | null = null;
     private modelPixelSizeMap: Map<string, number> = new Map();
     private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
+    private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
 
     constructor(
         points: Point3D[],
@@ -287,6 +290,7 @@ export class GeometryManager {
             gamma?: number;
             modelPixelSizeMap?: Map<string, number>;
             modelPixelStyleMap?: Map<string, string>; // pixelStyle as string from XML
+            modelTransparencyMap?: Map<string, number>; // transparency (0–100) from xLights XML
         },
     ) {
         this.allPoints = points;
@@ -304,6 +308,8 @@ export class GeometryManager {
         this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
         // Store model pixel style map for per-model pixel shape lookup
         this.modelPixelStyleMap = options?.modelPixelStyleMap || new Map();
+        // Store model transparency map for per-model opacity lookup
+        this.modelTransparencyMap = options?.modelTransparencyMap || new Map();
     }
 
     /**
@@ -342,15 +348,26 @@ export class GeometryManager {
             const effectivePointSize = modelPixelSize !== undefined ? modelPixelSize : this.pointSize;
 
             // Look up pixelStyle for this model
-            // Convert pixelStyle string to number: "Circle" or "Round" -> 1, "Square" -> 0
+            // Convert pixelStyle string to number:
+            //   "Circle" or "Round" -> 1
+            //   "Blended Circle" -> 2
+            //   "Square" -> 0
             // Default to circle (1) if not specified in XML
             const modelPixelStyleStr = modelName ? this.modelPixelStyleMap.get(modelName) : undefined;
             let effectivePixelStyle = 1; // Default to circle
             if (modelPixelStyleStr !== undefined) {
-                // Convert string to number: "Circle" or "Round" (case-insensitive) -> 1, "Square" -> 0
+                // Convert string to number (case-insensitive)
                 const styleLower = modelPixelStyleStr.toLowerCase();
-                effectivePixelStyle = (styleLower === 'circle' || styleLower === 'round') ? 1 : 
-                                     (styleLower === 'square') ? 0 : 1; // Default to circle for unknown values
+                if (styleLower === 'blended circle') {
+                    effectivePixelStyle = 2; // Blended circle with smooth alpha falloff
+                } else if (styleLower === 'circle' || styleLower === 'round') {
+                    effectivePixelStyle = 1; // Hard-edged circle
+                } else if (styleLower === 'square') {
+                    effectivePixelStyle = 0; // Square
+                } else {
+                    // Default to circle for unknown values
+                    effectivePixelStyle = 1;
+                }
             }
 
             // Create uniforms with per-group brightness and gamma
@@ -360,12 +377,21 @@ export class GeometryManager {
                 gamma: groupGamma,
             };
 
+            // Look up transparency for this model (xLights Transparency: 0–100, 0 = opaque, 100 = transparent)
+            // Convert to shader opacity (0.0–1.0, 1.0 = opaque, 0.0 = transparent)
+            const modelTransparencyPercent = modelName ? this.modelTransparencyMap.get(modelName) : undefined;
+            const effectiveOpacity =
+                modelTransparencyPercent !== undefined
+                    ? 1.0 - Math.max(0, Math.min(100, modelTransparencyPercent)) / 100.0
+                    : 1.0;
+
             const renderer = new GeometryGroupRenderer(group, this.allPointsCount, groupUniforms, {
                 pointSize: effectivePointSize,
                 viewPlane: this.viewPlane,
                 gamma: groupGamma, // Pass group-specific gamma
                 brightness: groupBrightness, // Pass group-specific brightness
                 pixelStyle: effectivePixelStyle, // Pass model-specific pixel style
+                opacity: effectiveOpacity, // Pass model-specific opacity (derived from xLights Transparency)
             });
             this.renderers.set(group.id, renderer);
         });

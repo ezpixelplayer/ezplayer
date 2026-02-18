@@ -30,6 +30,11 @@ export interface ModelMetadata {
     colorOrder?: string;
     brightness?: number; // Brightness multiplier from colorProfile (default: 1.0)
     gamma?: number; // Gamma correction value from colorProfile (default: 2.2)
+    /**
+     * Transparency from xLights XML (integer 0–100).
+     * 0 = fully opaque, 100 = fully transparent.
+     */
+    transparency?: number;
 }
 
 export interface ModelSetMetadata {

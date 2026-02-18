@@ -57,6 +57,8 @@ function OptimizedPointCloud({
         const modelPixelSizeMap = new Map<string, number>();
         // Create map of modelName -> pixelStyle from model metadata
         const modelPixelStyleMap = new Map<string, string>();
+        // Create map of modelName -> transparency (0–100) from model metadata
+        const modelTransparencyMap = new Map<string, number>();
         if (modelMetadata) {
             modelMetadata.forEach((model) => {
                 if (model.pixelSize !== undefined) {
@@ -64,6 +66,9 @@ function OptimizedPointCloud({
                 }
                 if (model.pixelStyle !== undefined) {
                     modelPixelStyleMap.set(model.name, model.pixelStyle);
+                }
+                if (model.transparency !== undefined) {
+                    modelTransparencyMap.set(model.name, model.transparency);
                 }
             });
         }
@@ -83,6 +88,7 @@ function OptimizedPointCloud({
             gamma,
             modelPixelSizeMap,
             modelPixelStyleMap,
+            modelTransparencyMap,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;

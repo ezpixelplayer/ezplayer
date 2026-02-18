@@ -150,6 +150,13 @@ export interface GetNodeResult {
     modelType?: string;
     pixelType?: string;
     stringType?: string;
+    /**
+     * Transparency from xLights XML (integer 0–100).
+     * 0 = fully opaque, 100 = fully transparent.
+     * This field is injected from the XML 'Transparency' attribute
+     * (xllayoutcalcs does not expose it in GetNodeResult natively).
+     */
+    transparency?: number;
 
     /** Channel mapping (populated after channel resolution) */
     channelMapping?: ModelChannelMapping;

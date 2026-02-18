@@ -59,7 +59,7 @@ export interface PointShaderUniforms {
     totalPointCount: number;
     /** View plane: 0 = 3D, 1 = xy, 2 = xz, 3 = yz */
     viewPlane?: number;
-    /** Pixel style: 0 = square, 1 = circle/round (default)*/
+    /** Pixel style: 0 = square, 1 = circle/round (default), 2 = blended circle */
     pixelStyle?: number;
     /**
      * Renderer device pixel ratio. Used to keep point size consistent across HiDPI displays.
@@ -81,6 +81,11 @@ export interface PointShaderUniforms {
      * This is set at render time.
      */
     maxPointSize?: number;
+    /**
+     * Opacity multiplier derived from xLights Transparency (0–100 → 1.0–0.0).
+     * 1.0 = fully opaque (default), 0.0 = fully transparent.
+     */
+    opacity?: number;
 }
 
 /**
@@ -215,7 +220,8 @@ export const pointFragmentShader = `
 uniform float gamma;
 uniform vec3 selectedColor;
 uniform vec3 hoveredColor;
-uniform int pixelStyle; // 0 = square, 1 = circle/round (default)
+uniform int pixelStyle; // 0 = square, 1 = circle/round, 2 = blended circle
+uniform float opacity; // 1.0 = fully opaque (default), 0.0 = fully transparent (from xLights Transparency)
 
 varying vec3 vColor;
 varying float vSelectionState;
@@ -224,15 +230,38 @@ varying float vHoverState;
 void main() {
     // Handle pixel shape based on pixelStyle
     // gl_PointCoord gives us the coordinate within the point (0.0 to 1.0)
+    float alpha = 1.0;
+    
     if (pixelStyle == 1) {
-        // Circle/Round: discard fragments outside the circle
+        // Circle/Round: discard fragments outside the circle (hard edge)
         vec2 coord = gl_PointCoord - vec2(0.5);
         float dist = length(coord);
         if (dist > 0.5) {
             discard;
         }
+    } else if (pixelStyle == 2) {
+        // Blended Circle: smooth alpha falloff for anti-aliased edges
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        
+        // Create smooth falloff from center (0.0) to edge (0.5)
+        // Use smoothstep for smooth transition: 0.0 at center, 1.0 at edge
+        // We want alpha to fade from 1.0 at dist=0.0 to 0.0 at dist=0.5
+        // More aggressive falloff range for highly visible blending effect
+        // Start fading at 30% of radius so outer 70% has smooth alpha gradient
+        float edgeStart = 0.15; // Start fading at 30% of radius (very visible soft edge)
+        float edgeEnd = 0.5;    // Fully transparent at edge
+        alpha = 1.0 - smoothstep(edgeStart, edgeEnd, dist);
+        
+        // Ensure alpha is clamped to valid range
+        alpha = clamp(alpha, 0.0, 1.0);
+        
+        // Discard if completely transparent to avoid rendering overhead
+        if (alpha <= 0.0) {
+            discard;
+        }
     }
-    // pixelStyle == 0 (square): render as square (no discard)
+    // pixelStyle == 0 (square): render as square (no discard, alpha = 1.0)
     
     vec3 color = vColor;
     
@@ -248,8 +277,12 @@ void main() {
     // Apply gamma correction
     color = pow(color, vec3(1.0 / gamma));
     
-    // Output final color
-    gl_FragColor = vec4(color, 1.0);
+    // Apply model transparency (opacity = 1 - transparency/100, passed as uniform)
+    // Multiply the fragment alpha by opacity: 1.0 = fully opaque, 0.0 = fully transparent
+    float finalAlpha = alpha * clamp(opacity, 0.0, 1.0);
+    
+    // Output final color with combined alpha
+    gl_FragColor = vec4(color, finalAlpha);
 }
 `;
 
@@ -260,7 +293,7 @@ void main() {
  * @param options.gamma - Explicit gamma value (required - no default/hardcoded value)
  * @param options.size - Point size
  * @param options.sizeAttenuation - Whether point size should attenuate with distance
- * @param options.pixelStyle - Pixel style: 0 = square, 1 = circle/round (default)
+ * @param options.pixelStyle - Pixel style: 0 = square, 1 = circle/round (default), 2 = blended circle
  */
 export function createPointShaderMaterial(
     uniforms: Partial<PointShaderUniforms>,
@@ -268,7 +301,8 @@ export function createPointShaderMaterial(
         gamma: number; // Explicit gamma parameter - required, no default
         size?: number;
         sizeAttenuation?: boolean;
-        pixelStyle?: number; // 0 = square, 1 = circle/round (default)
+        pixelStyle?: number; // 0 = square, 1 = circle/round (default), 2 = blended circle
+        opacity?: number; // 1.0 = fully opaque (default), 0.0 = fully transparent
     },
 ): THREE.ShaderMaterial {
     // Use explicit gamma from options - no hardcoded default
@@ -284,12 +318,14 @@ export function createPointShaderMaterial(
         totalPointCount: { value: 0.0 },
         size: { value: options?.size || 3.0 },
         viewPlane: { value: 0 }, // 0 = 3D, 1 = xy, 2 = xz, 3 = yz (int uniform)
-        pixelStyle: { value: options?.pixelStyle ?? 1 }, // 0 = square, 1 = circle/round (default) (int uniform)
+        pixelStyle: { value: options?.pixelStyle ?? 1 }, // 0 = square, 1 = circle/round (default), 2 = blended circle (int uniform)
         // Set at render time (GeometryGroupRenderer.onBeforeRender) but must exist up-front.
         pixelRatio: { value: 1.0 },
         scale: { value: 1.0 },
         sizeAttenuation: { value: options?.sizeAttenuation === false ? 0.0 : 1.0 },
         maxPointSize: { value: 2048.0 }, // Safe default; actual value is set at render time.
+        // Opacity derived from xLights Transparency (0–100 → 1.0–0.0); 1.0 = fully opaque
+        opacity: { value: options?.opacity ?? 1.0 },
     };
 
     // Merge provided uniforms
@@ -313,14 +349,23 @@ export function createPointShaderMaterial(
     });
 
     const pixelStyleValue = options?.pixelStyle ?? 1;
-    return new THREE.ShaderMaterial({
+    const opacityValue = options?.opacity ?? 1.0;
+    // Enable Three.js transparent rendering when: circle/blended pixel styles use alpha discard,
+    // or when the model has non-full opacity from xLights Transparency attribute
+    const isTransparent = pixelStyleValue === 1 || pixelStyleValue === 2 || opacityValue < 1.0;
+    
+    const material = new THREE.ShaderMaterial({
         uniforms: defaultUniforms,
         vertexShader: pointVertexShader,
         fragmentShader: pointFragmentShader,
         vertexColors: false, // We're using custom attributes
-        transparent: pixelStyleValue === 1, // Enable transparency for circles to allow smooth edges
-        depthWrite: true,
+        transparent: isTransparent, // Enable transparency for circles and blended circles
+        depthWrite: !isTransparent, // Disable depth write for transparent materials to avoid z-fighting
+        blending: isTransparent ? THREE.NormalBlending : undefined, // Use normal blending for transparency (default for opaque)
+        premultipliedAlpha: false, // Standard alpha blending
     });
+    
+    return material;
 }
 
 /**
