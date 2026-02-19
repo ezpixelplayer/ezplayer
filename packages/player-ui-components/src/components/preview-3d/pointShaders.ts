@@ -409,10 +409,12 @@ export function createPointBufferGeometry(
     }
     geometry.setAttribute('originalIndex', new THREE.BufferAttribute(originalIndices, 1));
 
-    // Set usage hints for performance
+    // Set usage hints for performance.
+    // Position data is written once at init and never changed → StaticDrawUsage
+    // lets the GPU driver place it in the fastest read-only memory tier.
     const posAttr = geometry.attributes.position as THREE.BufferAttribute;
     if (posAttr) {
-        posAttr.setUsage(THREE.DynamicDrawUsage);
+        posAttr.setUsage(THREE.StaticDrawUsage);
     }
     const baseColorAttr = geometry.attributes.baseColor as THREE.BufferAttribute;
     if (baseColorAttr) {

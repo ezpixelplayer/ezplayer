@@ -30,6 +30,13 @@ export class GeometryGroupRenderer {
     private hoverStates: Float32Array;
     private baseColors: Float32Array;
 
+    // Reused across every onBeforeRender call to avoid per-frame heap allocations.
+    private _sizeVec = new THREE.Vector2();
+    // Tracks the last frame sequence number consumed from the ring buffer.
+    // Passed to tryReadLatest() so it returns null (and we skip the O(n) scan)
+    // when no new frame has been published since the last render.
+    private _lastFrameSeq = 0;
+
     constructor(
         group: GeometryGroup,
         allPointsCount: number,
@@ -99,10 +106,10 @@ export class GeometryGroupRenderer {
             if (!material?.uniforms) return;
 
             const pixelRatio = typeof (renderer as any).getPixelRatio === 'function' ? (renderer as any).getPixelRatio() : 1;
-            const sizeVec = new THREE.Vector2();
-            renderer.getSize(sizeVec);
+            // Reuse pre-allocated Vector2 — avoids a heap allocation on every frame per group.
+            renderer.getSize(this._sizeVec);
             // Use CSS pixel height here; we convert to device pixels in the shader via `pixelRatio`.
-            const heightCssPx = Math.max(1, sizeVec.y);
+            const heightCssPx = Math.max(1, this._sizeVec.y);
 
             // Compute scale factor to convert world units to pixels for point sizing.
             // Perspective: pixels = worldSize * (H / (2*tan(fov/2))) / distance
@@ -187,10 +194,13 @@ export class GeometryGroupRenderer {
             return;
         }
 
-        const latestFrame = liveData.tryReadLatest(0);
+        // Pass the last seen seq so tryReadLatest returns null when nothing new
+        // has been published — this skips the entire O(n) point scan for frames
+        // that have already been processed, which is the common case at 60 fps.
+        const latestFrame = liveData.tryReadLatest(this._lastFrameSeq);
         if (!latestFrame?.bytes) {
-            // Live data exists but no frame available - use procedural colors
-            this.material.uniforms.useLiveData.value = 0.0;
+            // No new frame since last render — keep current colors as-is.
+            // Do NOT reset useLiveData here; the existing color data is still valid.
             return;
         }
         // NOTE: The exported frame bytes are already the "final" 0–255 channel values that the
@@ -235,6 +245,10 @@ export class GeometryGroupRenderer {
                 }
             }
         }
+
+        // Mark this sequence as consumed so the next call skips the O(n) scan
+        // if no new frame has been written to the ring buffer in the meantime.
+        this._lastFrameSeq = latestFrame.seq;
 
         // Always set useLiveData to 1.0 when live data is available (even if colors didn't change)
         // This ensures FSEQ colors are used instead of procedural colors
