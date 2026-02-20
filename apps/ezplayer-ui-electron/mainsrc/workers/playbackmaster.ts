@@ -521,8 +521,8 @@ const playbackParams = {
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
-    foregroundFseqPrefetchTime: 2 * 1000,
-    backgroundFseqPrefetchTime: 2 * 1000,
+    foregroundFseqPrefetchTime: 5 * 1000, // Increased from 2s to 5s for better prefetching
+    backgroundFseqPrefetchTime: 5 * 1000, // Increased from 2s to 5s for better prefetching
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
@@ -1120,20 +1120,36 @@ async function processQueue() {
                             fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: actStart });
                         }
 
-                        // Be less aggressive about fetching the frames
-                        if (actStart >= targetFrameRTC + playbackParams.foregroundFseqPrefetchTime) continue;
-                        let ourDur = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime - actStart;
-                        if (action.durationMS !== undefined) ourDur = Math.min(ourDur, action.durationMS);
-                        if (action.seqId) {
+                        // Prefetch frames for actions that start within the prefetch window
+                        // Only skip if action is too far in the future (beyond prefetch window)
+                        if (actStart > targetFrameRTC + playbackParams.foregroundFseqPrefetchTime) continue;
+                        // Calculate how much to prefetch: from action start, prefetch up to prefetch window or action end
+                        const prefetchWindowEnd = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime;
+                        let ourDur: number;
+                        let prefetchStartTime: number;
+                        if (actStart < targetFrameRTC) {
+                            // Action already started, prefetch from current position until prefetch window end or action end
+                            const actionEnd = actStart + (action.durationMS ?? playbackParams.foregroundFseqPrefetchTime);
+                            const elapsed = targetFrameRTC - actStart;
+                            // Current offset into the sequence = original offset + elapsed time
+                            prefetchStartTime = (action.offsetMS ?? 0) + elapsed;
+                            ourDur = Math.max(0, Math.min(prefetchWindowEnd, actionEnd) - targetFrameRTC);
+                        } else {
+                            // Action starts in future, prefetch from action start
+                            prefetchStartTime = action.offsetMS ?? 0;
+                            const actionEnd = actStart + (action.durationMS ?? playbackParams.foregroundFseqPrefetchTime);
+                            ourDur = Math.min(prefetchWindowEnd - actStart, action.durationMS ?? playbackParams.foregroundFseqPrefetchTime);
+                        }
+                        if (action.seqId && ourDur > 0) {
                             emitFrameDebug(`Do fseq prefetch of ${action.seqId}`);
                             if (fsf) {
                                 emitFrameDebug(
-                                    `Prefetch FSEQ ${fsf} @${action.offsetMS}:${ourDur}ms (${actStart} vs ${targetFrameRTC})`,
+                                    `Prefetch FSEQ ${fsf} @${prefetchStartTime}:${ourDur}ms (${actStart} vs ${targetFrameRTC})`,
                                 );
                                 fseqCache!.prefetchSeqTimes({
                                     fseqfile: fsf,
-                                    needByTime: actStart,
-                                    startTime: action.offsetMS ?? 0,
+                                    needByTime: Math.max(actStart, targetFrameRTC),
+                                    startTime: prefetchStartTime,
                                     durationms: ourDur,
                                 });
                             }
@@ -1223,16 +1239,21 @@ async function processQueue() {
                     if (saf) {
                         audioref = mp3Cache.getMp3(saf);
                         if (!audioref) {
-                            emitError(`Audio ${saf} not ready.`);
-                            break;
-                        } else {
-                            if (audioref.err) {
-                                emitError(`Audio error for ${saf}: ${audioref.err.message}.`);
-                                break;
-                            } else if (!audioref.ref) {
-                                emitError(`Audio unknown condition ${saf}.`);
+                            emitWarning(`Audio ${saf} not ready, waiting briefly...`);
+                            // Wait briefly for prefetch to complete
+                            await sleepms(10);
+                            audioref = mp3Cache.getMp3(saf);
+                            if (!audioref) {
+                                emitError(`Audio ${saf} still not ready after wait.`);
                                 break;
                             }
+                        }
+                        if (audioref.err) {
+                            emitError(`Audio error for ${saf}: ${audioref.err.message}.`);
+                            break;
+                        } else if (!audioref.ref) {
+                            emitError(`Audio unknown condition ${saf}.`);
+                            break;
                         }
 
                         const audio = audioref?.ref?.v?.decompAudio;
@@ -1357,13 +1378,21 @@ async function processQueue() {
             }
 
             const frameTimeOffset = foregroundAction.offsetMS ?? 0;
-            const header = fseqCache.getHeaderInfo({ fseqfile: fsf });
+            let header = fseqCache.getHeaderInfo({ fseqfile: fsf });
             if (!header?.ref) {
-                emitError(`Sequence header for ${fsf} was not ready.`);
+                emitWarning(`Sequence header for ${fsf} was not ready, waiting briefly...`);
                 ++playbackStats.missedHeadersCumulative;
-                targetFrameRTC += playbackParams.idleSleepInterval;
-                await sleepUntil(targetFrameRTC - 50);
-                continue;
+                // Wait a short time for prefetch to complete instead of immediately skipping
+                // This reduces pauses when prefetch is slightly behind
+                await sleepms(10);
+                // Try once more before giving up
+                header = fseqCache.getHeaderInfo({ fseqfile: fsf });
+                if (!header?.ref) {
+                    emitError(`Sequence header for ${fsf} still not ready after wait.`);
+                    targetFrameRTC += playbackParams.idleSleepInterval;
+                    await sleepUntil(targetFrameRTC - 50);
+                    continue;
+                }
             }
 
             const frameInterval = header.ref.header.msperframe;
@@ -1400,7 +1429,13 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
-            const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            let frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            // If frame not ready, wait briefly for prefetch to complete
+            if (!frameRef?.ref?.frame) {
+                emitWarning(`Frame ${targetFrameNum} for ${fsf} not ready, waiting briefly...`);
+                await sleepms(5);
+                frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            }
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
                 bframe: bframeRef,
