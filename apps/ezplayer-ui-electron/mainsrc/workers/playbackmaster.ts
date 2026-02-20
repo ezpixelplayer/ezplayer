@@ -64,7 +64,7 @@ import { setPingConfig, getLatestPingStats } from './pingparent';
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import { randomUUID } from 'node:crypto';
-import { getAttrDef, getBoolAttrDef, getIntAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
+import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -748,25 +748,15 @@ async function loadXmlCoordinates() {
 
                     activeModelCount++;
                     try {
-                        // Read Transparency attribute from XML element (integer 0–100, 0 = opaque, 100 = transparent)
-                        // xllayoutcalcs reads this internally but does not expose it in GetNodeResult,
-                        // so we extract it here and inject it into the nodeResult manually.
-                        const transparency = getIntAttrDef(model, 'Transparency', 0);
-                        const validTransparency = Math.max(0, Math.min(100, transparency));
-
                         // Get 3D coordinates (for 3D viewer)
                         const nr3d = gmc3d.models.get(name)?.nodeResult;
                         if (nr3d) {
-                            // Inject transparency into nodeResult (not exposed by xllayoutcalcs)
-                            (nr3d as GetNodeResult & { transparency?: number }).transparency = validTransparency;
                             modelCoordinates.set(name, nr3d);
                         }
 
                         // Get 2D coordinates (for 2D viewer with perspective projection)
                         const nr2d = gmc2d.models.get(name)?.nodeResult;
                         if (nr2d) {
-                            // Inject transparency into nodeResult (not exposed by xllayoutcalcs)
-                            (nr2d as GetNodeResult & { transparency?: number }).transparency = validTransparency;
                             modelCoordinates2D.set(name, nr2d);
                         }
                     } catch (coordErr) {
