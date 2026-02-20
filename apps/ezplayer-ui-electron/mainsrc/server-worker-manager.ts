@@ -155,8 +155,10 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                 handleRPCRequest(msg.id, msg.method, msg.args);
                 break;
             case 'broadcast':
-                // Handle broadcast messages (can be forwarded to WebSocket broadcaster if needed)
-                console.log(`[server-worker-manager] Broadcast: ${msg.key}`);
+                // Worker thread sent a broadcast message back to main thread
+                // This shouldn't happen in normal operation since main thread initiates broadcasts
+                // But we keep this handler in case we need it in the future
+                // (removed logging to reduce noise)
                 break;
             case 'error':
                 console.error(`[server-worker-manager] Server worker error: ${msg.error}`);
@@ -303,6 +305,21 @@ export function updateFrameBuffer(buffer: SharedArrayBuffer) {
     // SharedArrayBuffer can be transferred, but TypeScript doesn't recognize it as Transferable
     // Cast to any[] to work around this limitation
     serverWorker.postMessage(message, [buffer as any]);
+}
+
+/**
+ * Forward WebSocket broadcast to server worker
+ * This allows the main process to broadcast updates to WebSocket clients in the worker thread
+ */
+export function broadcastToWebSocket(key: string, value: unknown) {
+    if (!serverWorker) return;
+
+    const message: MainToServerWorkerMessage = {
+        type: 'broadcast',
+        key,
+        value,
+    };
+    serverWorker.postMessage(message);
 }
 
 /**

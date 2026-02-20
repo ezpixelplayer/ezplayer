@@ -96,8 +96,11 @@ class MainThreadRPC {
 const rpc = new MainThreadRPC();
 
 // WebSocket broadcaster (simplified version for worker)
+// Note: This is a simplified version that matches the expected message format
+// but doesn't include all features like heartbeat, backpressure management, etc.
 class WorkerWebSocketBroadcaster {
     private state: Record<string, unknown> = {};
+    private versions: Record<string, number> = {};
     private conns = new Set<WebSocket>();
 
     attach(wss: WebSocketServer) {
@@ -106,16 +109,38 @@ class WorkerWebSocketBroadcaster {
             ws.on('close', () => this.conns.delete(ws));
             ws.on('error', () => this.conns.delete(ws));
             
-            // Send initial state snapshot
+            // Send initial state snapshot with proper format
             if (Object.keys(this.state).length > 0) {
-                ws.send(JSON.stringify({ type: 'snapshot', data: this.state }));
+                const snapshot = {
+                    type: 'snapshot',
+                    v: { ...this.versions },
+                    data: { ...this.state },
+                };
+                try {
+                    ws.send(JSON.stringify(snapshot));
+                } catch (err) {
+                    console.error(`[server-worker] Error sending initial snapshot:`, err);
+                }
             }
         });
     }
 
     set(key: string, value: unknown) {
         this.state[key] = value;
-        const message = JSON.stringify({ type: 'update', key, value });
+        // Increment version for this key
+        if (!Object.hasOwnProperty.call(this.versions, key)) {
+            this.versions[key] = 0;
+        }
+        this.versions[key] = (this.versions[key] || 0) + 1;
+
+        // Send snapshot message with proper format (matching expected client format)
+        const snapshot = {
+            type: 'snapshot',
+            v: { [key]: this.versions[key] },
+            data: { [key]: value },
+        };
+        const message = JSON.stringify(snapshot);
+        
         for (const ws of this.conns) {
             if (ws.readyState === WebSocket.OPEN) {
                 try {
@@ -125,8 +150,8 @@ class WorkerWebSocketBroadcaster {
                 }
             }
         }
-        // Also notify main thread for potential forwarding
-        parentPort!.postMessage({ type: 'broadcast', key, value } satisfies ServerWorkerToMainMessage);
+        // Note: We don't send a message back to main thread here because
+        // the main thread is the one that initiated this broadcast via the 'broadcast' message
     }
 }
 
@@ -146,6 +171,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         rpc.handleResponse(msg.id, msg.result, msg.error);
     } else if (msg.type === 'updateFrameBuffer') {
         curFrameBuffer = msg.buffer;
+    } else if (msg.type === 'broadcast') {
+        // Forward broadcast from main thread to WebSocket clients
+        wsBroadcaster.set(msg.key, msg.value);
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }

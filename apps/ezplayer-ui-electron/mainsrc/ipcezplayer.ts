@@ -45,9 +45,8 @@ import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
-import { wsBroadcaster } from './websocket-broadcaster.js';
 import { getServerStatus } from './server-worker-manager.js';
-import { updateFrameBuffer } from './server-worker-manager.js';
+import { updateFrameBuffer, broadcastToWebSocket } from './server-worker-manager.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -112,7 +111,7 @@ export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<Pl
     curPlaylists = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
     updateWindow?.webContents?.send('update:playlist', filtered);
-    wsBroadcaster.set('playlists', filtered);
+    broadcastToWebSocket('playlists', filtered);
     scheduleUpdated();
     return filtered;
 }
@@ -129,7 +128,7 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
     curSchedule = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
     updateWindow?.webContents?.send('update:schedule', filtered);
-    wsBroadcaster.set('schedule', filtered);
+    broadcastToWebSocket('schedule', filtered);
     scheduleUpdated();
     return filtered;
 }
@@ -180,24 +179,24 @@ export async function loadShowFolder() {
     updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
     // Broadcast via WebSocket (for React web app)
-    wsBroadcaster.set('showFolder', showFolder);
-    wsBroadcaster.set(
+    broadcastToWebSocket('showFolder', showFolder);
+    broadcastToWebSocket(
         'sequences',
         curSequences.filter((s) => !s.deleted),
     );
-    wsBroadcaster.set(
+    broadcastToWebSocket(
         'playlists',
         curPlaylists.filter((s) => !s.deleted),
     );
-    wsBroadcaster.set(
+    broadcastToWebSocket(
         'schedule',
         curSchedule.filter((s) => !s.deleted),
     );
-    if (curUser) wsBroadcaster.set('user', curUser);
-    if (curShow) wsBroadcaster.set('show', curShow);
-    wsBroadcaster.set('cStatus', curStatus.content);
-    wsBroadcaster.set('nStatus', curStatus.controller);
-    wsBroadcaster.set('pStatus', curStatus.player);
+    if (curUser) broadcastToWebSocket('user', curUser);
+    if (curShow) broadcastToWebSocket('show', curShow);
+    broadcastToWebSocket('cStatus', curStatus.content);
+    broadcastToWebSocket('nStatus', curStatus.controller);
+    broadcastToWebSocket('pStatus', curStatus.player);
 
     const settings = getSettingsCache();
     if (settings) {
@@ -282,7 +281,7 @@ export async function registerContentHandlers(
         curSequences = updList;
         const filtered = updList.filter((r) => r.deleted !== true);
         updateWindow?.webContents?.send('update:sequences', filtered);
-        wsBroadcaster.set('sequences', filtered);
+        broadcastToWebSocket('sequences', filtered);
         scheduleUpdated();
         return filtered;
     });
@@ -316,7 +315,7 @@ export async function registerContentHandlers(
             if (showFolder) await saveShowProfileAPI(showFolder, data);
             curShow = data;
             updateWindow?.webContents?.send('update:show', curShow);
-            wsBroadcaster.set('show', curShow);
+            broadcastToWebSocket('show', curShow);
             return Promise.resolve(curShow!);
         },
     );
@@ -329,7 +328,7 @@ export async function registerContentHandlers(
         if (showFolder) await saveUserProfileAPI(showFolder, ndata);
         curUser = ndata;
         updateWindow?.webContents?.send('update:user', curUser);
-        wsBroadcaster.set('user', curUser);
+        broadcastToWebSocket('user', curUser);
         return ndata;
     });
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
@@ -355,7 +354,7 @@ export async function registerContentHandlers(
         } as PlayerCommand);
         // Broadcast to all clients (Electron renderer and web app)
         updateWindow?.webContents?.send('update:playbacksettings', settings);
-        wsBroadcaster.set('playbackSettings', settings);
+        broadcastToWebSocket('playbackSettings', settings);
         return true;
     });
 
@@ -389,7 +388,7 @@ export async function registerContentHandlers(
             }
             case 'stats': {
                 mainWindow?.webContents.send('playback:stats', msg.stats);
-                wsBroadcaster.set('playbackStatistics', msg.stats);
+                broadcastToWebSocket('playbackStatistics', msg.stats);
                 break;
             }
             case 'cstatus': {
@@ -400,7 +399,7 @@ export async function registerContentHandlers(
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:cstatus', msg.status);
-                wsBroadcaster.set('cStatus', msg.status);
+                broadcastToWebSocket('cStatus', msg.status);
                 break;
             }
             case 'nstatus': {
@@ -411,7 +410,7 @@ export async function registerContentHandlers(
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:nstatus', msg.status);
-                wsBroadcaster.set('nStatus', msg.status);
+                broadcastToWebSocket('nStatus', msg.status);
                 break;
             }
             case 'pstatus': {
@@ -422,7 +421,7 @@ export async function registerContentHandlers(
                 };
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:pstatus', msg.status);
-                wsBroadcaster.set('pStatus', msg.status);
+                broadcastToWebSocket('pStatus', msg.status);
                 break;
             }
             case 'rpc': {
