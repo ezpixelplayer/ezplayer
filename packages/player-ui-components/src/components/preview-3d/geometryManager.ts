@@ -289,8 +289,6 @@ export class GeometryManager {
     private viewPlane?: 'xy' | 'xz' | 'yz';
     private gamma: number;
     private pointIdToModelNameCache: Map<string, string | null> = new Map();
-    private cachedHoveredId: string | null = null;
-    private cachedHoveredModelName: string | null = null;
     private modelPixelSizeMap: Map<string, number> = new Map();
     private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
     private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
@@ -339,10 +337,6 @@ export class GeometryManager {
             const modelName = (point.metadata?.modelName as string | undefined) || null;
             this.pointIdToModelNameCache.set(point.id, modelName);
         });
-
-        // Reset hover cache
-        this.cachedHoveredId = null;
-        this.cachedHoveredModelName = null;
 
         // Group points by geometry type
         const groups = groupPointsByGeometry(this.allPoints);
