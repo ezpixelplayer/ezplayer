@@ -4,7 +4,7 @@ import { OrthographicCamera, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D } from '../../types/model3d';
+import type { Point3D, Shape3D, ModelMetadata } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
@@ -20,6 +20,7 @@ export interface Viewer2DProps {
     viewPlane?: 'xy' | 'xz' | 'yz';
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    modelMetadata?: ModelMetadata[];
 }
 
 function Optimized2DPointCloud({
@@ -30,6 +31,7 @@ function Optimized2DPointCloud({
     pointSize,
     viewPlane,
     selectedModelNames,
+    modelMetadata,
 }: {
     points: Point3D[];
     liveData?: LatestFrameRingBuffer;
@@ -38,6 +40,7 @@ function Optimized2DPointCloud({
     pointSize?: number;
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
+    modelMetadata?: ModelMetadata[];
 }) {
     const geometryManagerRef = useRef<GeometryManager | null>(null);
     const groupRef = useRef<THREE.Group | null>(null);
@@ -50,6 +53,26 @@ function Optimized2DPointCloud({
         // Extract gamma explicitly from model configuration (or use default)
         const gamma = getGammaFromModelConfiguration(points);
 
+        // Create map of modelName -> pixelSize from model metadata
+        const modelPixelSizeMap = new Map<string, number>();
+        // Create map of modelName -> pixelStyle from model metadata
+        const modelPixelStyleMap = new Map<string, string>();
+        // Create map of modelName -> transparency (0–100) from model metadata
+        const modelTransparencyMap = new Map<string, number>();
+        if (modelMetadata) {
+            modelMetadata.forEach((model) => {
+                if (model.pixelSize !== undefined) {
+                    modelPixelSizeMap.set(model.name, model.pixelSize);
+                }
+                if (model.pixelStyle !== undefined) {
+                    modelPixelStyleMap.set(model.name, model.pixelStyle);
+                }
+                if (model.transparency !== undefined) {
+                    modelTransparencyMap.set(model.name, model.transparency);
+                }
+            });
+        }
+
         const uniforms = {
             time: 0,
             brightness: 1.0,
@@ -60,7 +83,14 @@ function Optimized2DPointCloud({
             totalPointCount: points.length,
         };
 
-        const manager = new GeometryManager(points, uniforms, { pointSize, viewPlane, gamma });
+        const manager = new GeometryManager(points, uniforms, {
+            pointSize,
+            viewPlane,
+            gamma,
+            modelPixelSizeMap,
+            modelPixelStyleMap,
+            modelTransparencyMap,
+        });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
 
@@ -76,7 +106,7 @@ function Optimized2DPointCloud({
             geometryManagerRef.current = null;
             groupRef.current = null;
         };
-    }, [points, pointSize, viewPlane]);
+    }, [points, pointSize, viewPlane, modelMetadata]);
 
     // Reset animation time when selected models change
     useEffect(() => {
@@ -401,6 +431,7 @@ function Scene2DContent({
     viewPlane,
     pointSize,
     selectedModelNames,
+    modelMetadata,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -412,6 +443,7 @@ function Scene2DContent({
     viewPlane: 'xy' | 'xz' | 'yz';
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    modelMetadata?: ModelMetadata[];
 }) {
     const { camera, controls } = useThree();
 
@@ -532,6 +564,7 @@ function Scene2DContent({
                 pointSize={pointSize}
                 viewPlane={viewPlane}
                 selectedModelNames={selectedModelNames}
+                modelMetadata={modelMetadata}
             />
         </>
     );
@@ -548,6 +581,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     viewPlane = 'xy',
     pointSize = 3.0,
     selectedModelNames,
+    modelMetadata,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -709,6 +743,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             viewPlane={viewPlane}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            modelMetadata={modelMetadata}
                         />
                     </Canvas>
                 </Box>

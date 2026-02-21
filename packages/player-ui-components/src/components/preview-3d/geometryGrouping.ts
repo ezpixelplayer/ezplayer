@@ -29,12 +29,12 @@ export interface GeometryGroup {
 
 /**
  * Group points into geometries based on their type/behavior
- * Currently groups by modelName, but designed to support other categorizations
+ * Groups by modelName + brightness + gamma to batch geometries with same rendering properties
  */
 export function groupPointsByGeometry(
     points: Point3D[],
     options?: {
-        /** Custom grouping function - if provided, overrides default modelName grouping */
+        /** Custom grouping function - if provided, overrides default grouping */
         groupBy?: (point: Point3D, index: number) => GeometryType;
     },
 ): GeometryGroup[] {
@@ -44,7 +44,12 @@ export function groupPointsByGeometry(
         options?.groupBy ||
         ((point: Point3D) => {
             const modelName = point.metadata?.modelName as string | undefined;
-            return modelName || 'unknown';
+            // Get brightness and gamma from point metadata (with defaults)
+            const brightness = point.metadata?.brightness ?? 1.0;
+            const gamma = point.metadata?.gamma ?? 2.2;
+            // Create unique group key: modelName + brightness + gamma
+            // This ensures geometries with same rendering properties are batched together
+            return `${modelName || 'unknown'}|b${brightness}|g${gamma}`;
         });
 
     points.forEach((point, originalIndex) => {
