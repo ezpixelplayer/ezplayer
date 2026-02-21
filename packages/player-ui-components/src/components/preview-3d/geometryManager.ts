@@ -30,11 +30,25 @@ export class GeometryGroupRenderer {
     private hoverStates: Float32Array;
     private baseColors: Float32Array;
 
+    // Reused across every onBeforeRender call to avoid per-frame heap allocations.
+    private _sizeVec = new THREE.Vector2();
+    // Tracks the last frame sequence number consumed from the ring buffer.
+    // Passed to tryReadLatest() so it returns null (and we skip the O(n) scan)
+    // when no new frame has been published since the last render.
+    private _lastFrameSeq = 0;
+
     constructor(
         group: GeometryGroup,
         allPointsCount: number,
         uniforms: Partial<PointShaderUniforms>,
-        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz'; gamma?: number },
+        options?: {
+            pointSize?: number;
+            viewPlane?: 'xy' | 'xz' | 'yz';
+            gamma?: number;
+            brightness?: number;
+            pixelStyle?: number; // 0 = square, 1 = circle/round (default), 2 = blended circle
+            opacity?: number; // 0.0 = fully transparent, 1.0 = fully opaque (derived from xLights Transparency)
+        },
     ) {
         this.group = group;
         this.allPointsCount = allPointsCount;
@@ -59,21 +73,76 @@ export class GeometryGroupRenderer {
         const gammaValue =
             options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(group.points) ?? DEFAULT_GAMMA;
 
+        // Extract brightness: from options > from uniforms > default (1.0)
+        const brightnessValue = options?.brightness ?? uniforms.brightness ?? 1.0;
+
         // Create shader material
         const materialUniforms = { ...uniforms };
         if (options?.viewPlane) {
             const viewPlaneMap = { xy: 1, xz: 2, yz: 3 };
             materialUniforms.viewPlane = viewPlaneMap[options.viewPlane];
         }
-        // Ensure gamma is set in uniforms (for shader uniform)
+        // Ensure gamma and brightness are set in uniforms (for shader uniform)
         materialUniforms.gamma = gammaValue;
+        materialUniforms.brightness = brightnessValue;
         this.material = createPointShaderMaterial(materialUniforms, {
             gamma: gammaValue, // Explicit gamma parameter
             size: options?.pointSize || 3.0,
+            // Enable size attenuation by default so zoom/dolly scales pixels naturally.
+            // This can be disabled by passing sizeAttenuation: false in the future if needed.
+            sizeAttenuation: true,
+            pixelStyle: options?.pixelStyle ?? 1, // 0 = square, 1 = circle/round (default), 2 = blended circle
+            opacity: options?.opacity ?? 1.0, // 1.0 = fully opaque, 0.0 = fully transparent (from xLights Transparency)
         });
 
         // Create points object
         this.points = new THREE.Points(this.geometry, this.material);
+
+        // Keep point sizing in sync with the active camera + renderer.
+        // This is critical for correct behavior when zooming (orthographic) or dollying (perspective),
+        // especially for large pixel sizes.
+        this.points.onBeforeRender = (renderer, _scene, camera) => {
+            const material = this.material;
+            if (!material?.uniforms) return;
+
+            const pixelRatio = typeof (renderer as any).getPixelRatio === 'function' ? (renderer as any).getPixelRatio() : 1;
+            // Reuse pre-allocated Vector2 — avoids a heap allocation on every frame per group.
+            renderer.getSize(this._sizeVec);
+            // Use CSS pixel height here; we convert to device pixels in the shader via `pixelRatio`.
+            const heightCssPx = Math.max(1, this._sizeVec.y);
+
+            // Compute scale factor to convert world units to pixels for point sizing.
+            // Perspective: pixels = worldSize * (H / (2*tan(fov/2))) / distance
+            // Ortho: pixels = worldSize * (H / frustumHeight) * zoom
+            let scale = 1.0;
+            const anyCam = camera as any;
+            if (anyCam?.isPerspectiveCamera) {
+                const cam = camera as THREE.PerspectiveCamera;
+                const fovRad = (cam.fov * Math.PI) / 180;
+                scale = heightCssPx / (2 * Math.tan(fovRad / 2));
+            } else if (anyCam?.isOrthographicCamera) {
+                const cam = camera as THREE.OrthographicCamera;
+                const frustumHeight = Math.max(0.0001, cam.top - cam.bottom);
+                scale = (heightCssPx / frustumHeight) * (cam.zoom ?? 1.0);
+            }
+
+            // Max supported point size (GPU dependent); query once per material/context.
+            if (material.uniforms.maxPointSize?.value === 2048.0) {
+                try {
+                    const gl = renderer.getContext();
+                    const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE) as Float32Array | number[];
+                    const maxPointSize = Array.isArray(range) ? range[1] : (range as Float32Array)[1];
+                    if (typeof maxPointSize === 'number' && Number.isFinite(maxPointSize) && maxPointSize > 0) {
+                        material.uniforms.maxPointSize.value = maxPointSize;
+                    }
+                } catch {
+                    // ignore; keep default
+                }
+            }
+
+            material.uniforms.pixelRatio.value = pixelRatio;
+            material.uniforms.scale.value = scale;
+        };
     }
 
     /**
@@ -125,10 +194,13 @@ export class GeometryGroupRenderer {
             return;
         }
 
-        const latestFrame = liveData.tryReadLatest(0);
+        // Pass the last seen seq so tryReadLatest returns null when nothing new
+        // has been published — this skips the entire O(n) point scan for frames
+        // that have already been processed, which is the common case at 60 fps.
+        const latestFrame = liveData.tryReadLatest(this._lastFrameSeq);
         if (!latestFrame?.bytes) {
-            // Live data exists but no frame available - use procedural colors
-            this.material.uniforms.useLiveData.value = 0.0;
+            // No new frame since last render — keep current colors as-is.
+            // Do NOT reset useLiveData here; the existing color data is still valid.
             return;
         }
         // NOTE: The exported frame bytes are already the "final" 0–255 channel values that the
@@ -174,6 +246,10 @@ export class GeometryGroupRenderer {
             }
         }
 
+        // Mark this sequence as consumed so the next call skips the O(n) scan
+        // if no new frame has been written to the ring buffer in the meantime.
+        this._lastFrameSeq = latestFrame.seq;
+
         // Always set useLiveData to 1.0 when live data is available (even if colors didn't change)
         // This ensures FSEQ colors are used instead of procedural colors
         this.material.uniforms.useLiveData.value = 1.0;
@@ -213,13 +289,21 @@ export class GeometryManager {
     private viewPlane?: 'xy' | 'xz' | 'yz';
     private gamma: number;
     private pointIdToModelNameCache: Map<string, string | null> = new Map();
-    private cachedHoveredId: string | null = null;
-    private cachedHoveredModelName: string | null = null;
+    private modelPixelSizeMap: Map<string, number> = new Map();
+    private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
+    private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
 
     constructor(
         points: Point3D[],
         uniforms: Partial<PointShaderUniforms>,
-        options?: { pointSize?: number; viewPlane?: 'xy' | 'xz' | 'yz'; gamma?: number },
+        options?: {
+            pointSize?: number;
+            viewPlane?: 'xy' | 'xz' | 'yz';
+            gamma?: number;
+            modelPixelSizeMap?: Map<string, number>;
+            modelPixelStyleMap?: Map<string, string>; // pixelStyle as string from XML
+            modelTransparencyMap?: Map<string, number>; // transparency (0–100) from xLights XML
+        },
     ) {
         this.allPoints = points;
         this.allPointsCount = points.length;
@@ -227,7 +311,17 @@ export class GeometryManager {
         this.pointSize = options?.pointSize || 3.0;
         this.viewPlane = options?.viewPlane;
         // Extract gamma explicitly: from options > from uniforms > from model configuration > default
-        this.gamma = options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(points) ?? DEFAULT_GAMMA;
+        this.gamma =
+            options?.gamma ??
+            uniforms.gamma ??
+            getGammaFromModelConfiguration(points) ??
+            DEFAULT_GAMMA;
+        // Store model pixel size map for per-model point size lookup
+        this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
+        // Store model pixel style map for per-model pixel shape lookup
+        this.modelPixelStyleMap = options?.modelPixelStyleMap || new Map();
+        // Store model transparency map for per-model opacity lookup
+        this.modelTransparencyMap = options?.modelTransparencyMap || new Map();
     }
 
     /**
@@ -244,19 +338,68 @@ export class GeometryManager {
             this.pointIdToModelNameCache.set(point.id, modelName);
         });
 
-        // Reset hover cache
-        this.cachedHoveredId = null;
-        this.cachedHoveredModelName = null;
-
         // Group points by geometry type
         const groups = groupPointsByGeometry(this.allPoints);
 
         // Create renderer for each group
         groups.forEach((group) => {
-            const renderer = new GeometryGroupRenderer(group, this.allPointsCount, this.uniforms, {
-                pointSize: this.pointSize,
+            // Extract modelName, brightness, and gamma from group
+            // Since points are grouped by modelName + brightness + gamma, all points in a group have the same values
+            const firstPoint = group.points[0];
+            const modelName = firstPoint.metadata?.modelName as string | undefined;
+            const groupBrightness = firstPoint.metadata?.brightness ?? 1.0;
+            const groupGamma = firstPoint.metadata?.gamma ?? this.gamma;
+
+            // Look up pixelSize for this model
+            // Use model's pixelSize from XML if available, otherwise fall back to default pointSize
+            const modelPixelSize = modelName ? this.modelPixelSizeMap.get(modelName) : undefined;
+            const effectivePointSize = modelPixelSize !== undefined ? modelPixelSize : this.pointSize;
+
+            // Look up pixelStyle for this model
+            // Convert pixelStyle string to number:
+            //   "Circle" or "Round" -> 1
+            //   "Blended Circle" -> 2
+            //   "Square" -> 0
+            // Default to circle (1) if not specified in XML
+            const modelPixelStyleStr = modelName ? this.modelPixelStyleMap.get(modelName) : undefined;
+            let effectivePixelStyle = 1; // Default to circle
+            if (modelPixelStyleStr !== undefined) {
+                // Convert string to number (case-insensitive)
+                const styleLower = modelPixelStyleStr.toLowerCase();
+                if (styleLower === 'blended circle') {
+                    effectivePixelStyle = 2; // Blended circle with smooth alpha falloff
+                } else if (styleLower === 'circle' || styleLower === 'round') {
+                    effectivePixelStyle = 1; // Hard-edged circle
+                } else if (styleLower === 'square') {
+                    effectivePixelStyle = 0; // Square
+                } else {
+                    // Default to circle for unknown values
+                    effectivePixelStyle = 1;
+                }
+            }
+
+            // Create uniforms with per-group brightness and gamma
+            const groupUniforms = {
+                ...this.uniforms,
+                brightness: groupBrightness,
+                gamma: groupGamma,
+            };
+
+            // Look up transparency for this model (xLights Transparency: 0–100, 0 = opaque, 100 = transparent)
+            // Convert to shader opacity (0.0–1.0, 1.0 = opaque, 0.0 = transparent)
+            const modelTransparencyPercent = modelName ? this.modelTransparencyMap.get(modelName) : undefined;
+            const effectiveOpacity =
+                modelTransparencyPercent !== undefined
+                    ? 1.0 - Math.max(0, Math.min(100, modelTransparencyPercent)) / 100.0
+                    : 1.0;
+
+            const renderer = new GeometryGroupRenderer(group, this.allPointsCount, groupUniforms, {
+                pointSize: effectivePointSize,
                 viewPlane: this.viewPlane,
-                gamma: this.gamma, // Pass gamma explicitly
+                gamma: groupGamma, // Pass group-specific gamma
+                brightness: groupBrightness, // Pass group-specific brightness
+                pixelStyle: effectivePixelStyle, // Pass model-specific pixel style
+                opacity: effectiveOpacity, // Pass model-specific opacity (derived from xLights Transparency)
             });
             this.renderers.set(group.id, renderer);
         });

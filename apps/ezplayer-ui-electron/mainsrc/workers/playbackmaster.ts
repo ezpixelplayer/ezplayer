@@ -59,7 +59,7 @@ import process from 'node:process';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
-import { setPingConfig, getLatestPingStats } from './pingparent';
+import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
@@ -187,7 +187,7 @@ const handlers: PlayWorkerRPCAPI = {
     stopPlayback: async (_args: {}) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
-        await sleepms(60);
+        await stopPing(); // Cleanly shut down native pinger before exit
         return true;
     },
     getModelCoordinates: async (_args: {}) => {

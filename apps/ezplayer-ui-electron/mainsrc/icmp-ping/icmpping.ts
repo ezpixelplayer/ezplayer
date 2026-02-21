@@ -13,3 +13,11 @@ export interface PingResult {
 export function ping(host: string, timeoutMs: number): Promise<PingResult> {
     return addon.ping(host, timeoutMs);
 }
+
+/**
+ * Stop accepting new pings, abort the TSFN so in-flight pings
+ * will not call back into JS.  Safe to call multiple times.
+ */
+export function shutdown(): void {
+    addon.shutdown();
+}

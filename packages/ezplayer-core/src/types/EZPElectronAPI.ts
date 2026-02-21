@@ -145,10 +145,12 @@ export interface GetNodeResult {
     logicalBufferDepth: number;
 
     /** Metadata */
+    modelType?: string;
     pixelSize?: number;
     pixelStyle?: string;
-    modelType?: string;
     pixelType?: string;
+    pixelSpacing?: string;
+    transparency?: number;
     stringType?: string;
 
     /** Channel mapping (populated after channel resolution) */

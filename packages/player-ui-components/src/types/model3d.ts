@@ -13,6 +13,9 @@ export interface ModelPointMetadata {
     rOffset?: number; // Red channel offset (0, 1, or 2)
     gOffset?: number; // Green channel offset (0, 1, or 2)
     bOffset?: number; // Blue channel offset (0, 1, or 2)
+    // Brightness and gamma for grouping geometries with same rendering properties
+    brightness?: number; // Brightness multiplier (default: 1.0)
+    gamma?: number; // Gamma correction value (default: 2.2)
 }
 
 export interface ModelShapeMetadata {}
@@ -25,6 +28,13 @@ export interface ModelMetadata {
     pixelSize?: number;
     pixelStyle?: string;
     colorOrder?: string;
+    brightness?: number; // Brightness multiplier from colorProfile (default: 1.0)
+    gamma?: number; // Gamma correction value from colorProfile (default: 2.2)
+    /**
+     * Transparency from xLights XML (integer 0–100).
+     * 0 = fully opaque, 100 = fully transparent.
+     */
+    transparency?: number;
 }
 
 export interface ModelSetMetadata {
