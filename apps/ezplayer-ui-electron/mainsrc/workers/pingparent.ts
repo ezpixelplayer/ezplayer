@@ -12,11 +12,11 @@ const worker = new Worker(workerPath);
 
 let latestStats: { [address: string]: PingStat } | undefined = undefined;
 let latestUpdate: number | undefined = undefined;
+let workerExited = false;
 
 worker.on('message', (msg: { type?: string }) => {
     if (msg.type === 'roundResult') {
         const { finishedAt, stats } = msg as RoundResultMessage;
-        //console.log(`Ping result: ${JSON.stringify(stats)}`);
         latestStats = stats;
         latestUpdate = finishedAt;
     } else if (msg.type === 'stopped') {
@@ -33,10 +33,12 @@ worker.on('error', (err) => {
 });
 
 worker.on('exit', (code) => {
+    workerExited = true;
     console.log('Worker exited with code', code);
 });
 
 export function setPingConfig(cfg: PingConfig) {
+    if (workerExited) return;
     worker.postMessage({
         type: 'config',
         config: cfg,
@@ -45,4 +47,33 @@ export function setPingConfig(cfg: PingConfig) {
 
 export function getLatestPingStats() {
     return { stats: latestStats, latestUpdate };
+}
+
+/**
+ * Gracefully stop the ping worker:
+ *  1. Send 'stop' → worker calls native shutdown() (aborts TSFN)
+ *  2. Wait for 'stopped' ack (with 2 s safety timeout)
+ *  3. Terminate the worker thread
+ */
+export async function stopPing(): Promise<void> {
+    if (workerExited) return;
+
+    const waitForStop = new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2000);
+        const handler = (msg: { type?: string }) => {
+            if (msg.type === 'stopped') {
+                clearTimeout(timer);
+                worker.off('message', handler);
+                resolve();
+            }
+        };
+        worker.on('message', handler);
+    });
+
+    worker.postMessage({ type: 'stop' } satisfies ParentMessage);
+    await waitForStop;
+
+    if (!workerExited) {
+        await worker.terminate();
+    }
 }

@@ -1,4 +1,4 @@
-import { ping } from '../icmp-ping/icmpping';
+import { ping, shutdown } from '../icmp-ping/icmpping';
 import { parentPort } from 'node:worker_threads';
 
 if (!parentPort) {
@@ -132,6 +132,7 @@ function pruneWindowsForCurrentHosts() {
 parentPort.on('message', (msg: ParentMessage) => {
     if (msg.type === 'stop') {
         running = false;
+        shutdown(); // Abort native TSFN — prevents callbacks from in-flight pings
         const stopped: StoppedMessage = { type: 'stopped' };
         parentPort!.postMessage(stopped);
         return;
