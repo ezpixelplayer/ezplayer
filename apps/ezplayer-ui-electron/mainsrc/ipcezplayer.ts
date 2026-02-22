@@ -204,6 +204,7 @@ export async function loadShowFolder() {
             type: 'settings',
             settings,
         } as PlayerCommand);
+        broadcastToWebSocket('playbackSettings', settings);
     }
     scheduleUpdated();
 }

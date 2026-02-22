@@ -302,9 +302,9 @@ export function updateFrameBuffer(buffer: SharedArrayBuffer) {
         type: 'updateFrameBuffer',
         buffer,
     };
-    // SharedArrayBuffer can be transferred, but TypeScript doesn't recognize it as Transferable
-    // Cast to any[] to work around this limitation
-    serverWorker.postMessage(message, [buffer as any]);
+    // SharedArrayBuffer must NOT be in the transferList — it is automatically
+    // shared (not transferred) via structured clone when referenced in the message.
+    serverWorker.postMessage(message);
 }
 
 /**
