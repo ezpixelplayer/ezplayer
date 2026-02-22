@@ -14,15 +14,11 @@ import type {
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
 import {
-    getCurrentShowData,
-    getSequenceThumbnail,
     updatePlaylistsHandler,
     updateScheduleHandler,
-    getModelCoordinatesForAPI,
     curFrameBuffer,
 } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
-import { getCurrentShowFolder } from '../showfolder.js';
 import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
 
 // Polyfill for `__dirname` in ES Modules
@@ -53,28 +49,16 @@ export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
 }
 
-// RPC handlers for server worker requests
+// RPC handlers for server worker requests (write operations only — reads use pushed cache)
 const rpcHandlers: ServerWorkerRPCAPI = {
-    getCurrentShowData: () => {
-        return getCurrentShowData();
-    },
-    getSequenceThumbnail: (sequenceId: string) => {
-        return getSequenceThumbnail(sequenceId);
-    },
     updatePlaylistsHandler: async (playlists: unknown[]) => {
         return await updatePlaylistsHandler(playlists as any[]);
     },
     updateScheduleHandler: async (schedules: unknown[]) => {
         return await updateScheduleHandler(schedules as any[]);
     },
-    getModelCoordinatesForAPI: async (is2D: boolean) => {
-        return await getModelCoordinatesForAPI(is2D);
-    },
     applySettingsFromRenderer: (settingsPath: string, settings: unknown) => {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
-    },
-    getCurrentShowFolder: () => {
-        return getCurrentShowFolder() ?? undefined;
     },
     sendPlayerCommand: (command: unknown) => {
         if (playWorkerRef) {
@@ -97,9 +81,6 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendToMainWindow: (channel: string, ...args: unknown[]) => {
         const mainWindow = getMainWindowRef?.();
         mainWindow?.webContents?.send(channel, ...args);
-    },
-    getFrameBuffer: () => {
-        return curFrameBuffer;
     },
 };
 
@@ -318,6 +299,20 @@ export function broadcastToWebSocket(key: string, value: unknown) {
         type: 'broadcast',
         key,
         value,
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
+ * Push model coordinates to server worker cache
+ */
+export function pushModelCoordinates(coords3D: unknown, coords2D: unknown) {
+    if (!serverWorker) return;
+
+    const message: MainToServerWorkerMessage = {
+        type: 'pushModelCoordinates',
+        coords3D,
+        coords2D,
     };
     serverWorker.postMessage(message);
 }

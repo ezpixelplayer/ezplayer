@@ -46,7 +46,7 @@ import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMess
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
-import { updateFrameBuffer, broadcastToWebSocket } from './server-worker-manager.js';
+import { updateFrameBuffer, broadcastToWebSocket, pushModelCoordinates } from './server-worker-manager.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -423,6 +423,10 @@ export async function registerContentHandlers(
                 curStatus = nstatus;
                 mainWindow?.webContents.send('playback:pstatus', msg.status);
                 broadcastToWebSocket('pStatus', msg.status);
+                break;
+            }
+            case 'modelCoordinates': {
+                pushModelCoordinates(msg.coords3D, msg.coords2D);
                 break;
             }
             case 'rpc': {

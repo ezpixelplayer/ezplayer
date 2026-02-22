@@ -14,10 +14,11 @@ import Router from '@koa/router';
 import { send } from '@koa/send';
 import serve from 'koa-static';
 import { fileURLToPath } from 'url';
-import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
+import type { EZPlayerCommand, FullPlayerState, PlaybackSettings, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { BufferPool } from '@ezplayer/epp';
 import type { ServerWorkerData, ServerWorkerToMainMessage, MainToServerWorkerMessage, ServerWorkerRPCAPI } from './serverworkertypes.js';
+import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -46,6 +47,23 @@ async function exists(path: string): Promise<boolean> {
     }
 }
 
+/** Resolve thumbnail path from cached sequences (replicates ipcezplayer logic locally) */
+function getSequenceThumbnailLocal(sequenceId: string): string | undefined {
+    const sequences = wsBroadcaster.get('sequences') as SequenceRecord[] | undefined;
+    const seq = sequences?.find((s) => s.id === sequenceId);
+    if (seq?.files?.thumb) {
+        if (path.isAbsolute(seq.files.thumb)) {
+            return seq.files.thumb;
+        }
+        const sf = wsBroadcaster.get('showFolder');
+        if (sf) {
+            return path.join(sf, seq.files.thumb);
+        }
+        return seq.files.thumb;
+    }
+    return undefined;
+}
+
 // RPC client for calling main thread functions
 class MainThreadRPC {
     private pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -54,9 +72,9 @@ class MainThreadRPC {
         return new Promise((resolve, reject) => {
             const id = `${Date.now()}-${Math.random()}`;
             // Store resolve with proper type casting
-            this.pendingRequests.set(id, { 
-                resolve: resolve as (value: unknown) => void, 
-                reject 
+            this.pendingRequests.set(id, {
+                resolve: resolve as (value: unknown) => void,
+                reject
             });
 
             const message: ServerWorkerToMainMessage = {
@@ -95,67 +113,11 @@ class MainThreadRPC {
 
 const rpc = new MainThreadRPC();
 
-// WebSocket broadcaster (simplified version for worker)
-// Note: This is a simplified version that matches the expected message format
-// but doesn't include all features like heartbeat, backpressure management, etc.
-class WorkerWebSocketBroadcaster {
-    private state: Record<string, unknown> = {};
-    private versions: Record<string, number> = {};
-    private conns = new Set<WebSocket>();
+const wsBroadcaster = new WebSocketBroadcaster();
 
-    attach(wss: WebSocketServer) {
-        wss.on('connection', (ws) => {
-            this.conns.add(ws);
-            ws.on('close', () => this.conns.delete(ws));
-            ws.on('error', () => this.conns.delete(ws));
-            
-            // Send initial state snapshot with proper format
-            if (Object.keys(this.state).length > 0) {
-                const snapshot = {
-                    type: 'snapshot',
-                    v: { ...this.versions },
-                    data: { ...this.state },
-                };
-                try {
-                    ws.send(JSON.stringify(snapshot));
-                } catch (err) {
-                    console.error(`[server-worker] Error sending initial snapshot:`, err);
-                }
-            }
-        });
-    }
-
-    set(key: string, value: unknown) {
-        this.state[key] = value;
-        // Increment version for this key
-        if (!Object.hasOwnProperty.call(this.versions, key)) {
-            this.versions[key] = 0;
-        }
-        this.versions[key] = (this.versions[key] || 0) + 1;
-
-        // Send snapshot message with proper format (matching expected client format)
-        const snapshot = {
-            type: 'snapshot',
-            v: { [key]: this.versions[key] },
-            data: { [key]: value },
-        };
-        const message = JSON.stringify(snapshot);
-        
-        for (const ws of this.conns) {
-            if (ws.readyState === WebSocket.OPEN) {
-                try {
-                    ws.send(message);
-                } catch (err) {
-                    console.error(`[server-worker] Error broadcasting to WebSocket:`, err);
-                }
-            }
-        }
-        // Note: We don't send a message back to main thread here because
-        // the main thread is the one that initiated this broadcast via the 'broadcast' message
-    }
-}
-
-const wsBroadcaster = new WorkerWebSocketBroadcaster();
+// Side cache for model coordinates (pushed from main thread on show folder load)
+let cachedModelCoordinates3D: unknown = {};
+let cachedModelCoordinates2D: unknown = {};
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let serverStarted = false;
@@ -173,7 +135,10 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         curFrameBuffer = msg.buffer;
     } else if (msg.type === 'broadcast') {
         // Forward broadcast from main thread to WebSocket clients
-        wsBroadcaster.set(msg.key, msg.value);
+        wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
+    } else if (msg.type === 'pushModelCoordinates') {
+        cachedModelCoordinates3D = msg.coords3D;
+        cachedModelCoordinates2D = msg.coords2D;
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
@@ -182,7 +147,7 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
 async function startServer(config: ServerWorkerData) {
     const { port, portSource } = config;
 
-    console.log(`[server-worker] 🌐 Starting Koa web server on port ${port} (source: ${portSource})`);
+    console.log(`[server-worker] Starting Koa web server on port ${port} (source: ${portSource})`);
     const router = new Router();
     const webApp = new Koa();
 
@@ -190,7 +155,7 @@ async function startServer(config: ServerWorkerData) {
     webApp.use(bodyParser());
 
     // ----------------------------------------------
-    // ⭐ API: GET /api/getimage/:sequenceId - serves images by sequence ID
+    // API: GET /api/getimage/:sequenceId - serves images by sequence ID
     // ----------------------------------------------
     router.get('/api/getimage/:sequenceId', async (ctx) => {
         const sequenceId = ctx.params.sequenceId;
@@ -210,7 +175,7 @@ async function startServer(config: ServerWorkerData) {
         }
 
         try {
-            const seqfile = await rpc.call('getSequenceThumbnail', sequenceId);
+            const seqfile = getSequenceThumbnailLocal(sequenceId);
 
             if (!seqfile) {
                 ctx.status = 404;
@@ -219,8 +184,8 @@ async function startServer(config: ServerWorkerData) {
             }
 
             // Set appropriate MIME type
-            ctx.type = inferMimeType(seqfile as string);
-            await send(ctx, path.basename(seqfile as string), { root: path.dirname(seqfile as string) });
+            ctx.type = inferMimeType(seqfile);
+            await send(ctx, path.basename(seqfile), { root: path.dirname(seqfile) });
         } catch (error) {
             console.error('[server-worker] Error getting sequence thumbnail:', error);
             ctx.status = 500;
@@ -236,17 +201,20 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/current-show
+    // API: GET /api/current-show (local cache read)
     // ----------------------------------------------
     router.get('/api/current-show', async (ctx) => {
-        try {
-            const data = await rpc.call('getCurrentShowData');
-            ctx.body = data;
-        } catch (error) {
-            console.error('[server-worker] Error getting current show data:', error);
-            ctx.status = 500;
-            ctx.body = { error: 'Internal server error' };
-        }
+        ctx.body = {
+            showFolder: wsBroadcaster.get('showFolder'),
+            sequences: wsBroadcaster.get('sequences') ?? [],
+            playlists: wsBroadcaster.get('playlists') ?? [],
+            schedule: wsBroadcaster.get('schedule') ?? [],
+            user: wsBroadcaster.get('user'),
+            show: wsBroadcaster.get('show'),
+            pStatus: wsBroadcaster.get('pStatus'),
+            cStatus: wsBroadcaster.get('cStatus'),
+            nStatus: wsBroadcaster.get('nStatus'),
+        };
     });
 
     // ----------------------------------------------
@@ -320,9 +288,9 @@ async function startServer(config: ServerWorkerData) {
                 ctx.body = { error: 'Invalid playback settings format. Expected object.' };
                 return;
             }
-            const showFolder = await rpc.call('getCurrentShowFolder');
+            const showFolder = wsBroadcaster.get('showFolder');
             if (showFolder) {
-                const settingsPath = path.join(showFolder as string, 'playbackSettings.json');
+                const settingsPath = path.join(showFolder, 'playbackSettings.json');
                 await rpc.call('applySettingsFromRenderer', settingsPath, settings);
             }
             await rpc.call('sendPlaybackSettings', settings);
@@ -337,31 +305,17 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/model-coordinates - get model coordinates for 3D preview
+    // API: GET /api/model-coordinates - get model coordinates for 3D preview (local cache)
     // ----------------------------------------------
     router.get('/api/model-coordinates', async (ctx) => {
-        try {
-            const coords = await rpc.call('getModelCoordinatesForAPI', false);
-            ctx.body = coords;
-        } catch (error) {
-            console.error('[server-worker] Error getting model coordinates:', error);
-            ctx.status = 500;
-            ctx.body = { error: 'Failed to get model coordinates' };
-        }
+        ctx.body = cachedModelCoordinates3D;
     });
 
     // ----------------------------------------------
-    // API: GET /api/model-coordinates-2d - get 2D model coordinates for 2D preview
+    // API: GET /api/model-coordinates-2d - get 2D model coordinates for 2D preview (local cache)
     // ----------------------------------------------
     router.get('/api/model-coordinates-2d', async (ctx) => {
-        try {
-            const coords = await rpc.call('getModelCoordinatesForAPI', true);
-            ctx.body = coords;
-        } catch (error) {
-            console.error('[server-worker] Error getting 2D model coordinates:', error);
-            ctx.status = 500;
-            ctx.body = { error: 'Failed to get 2D model coordinates' };
-        }
+        ctx.body = cachedModelCoordinates2D;
     });
 
     // ----------------------------------------------
@@ -430,7 +384,7 @@ async function startServer(config: ServerWorkerData) {
     // Local mode uses /assets and optional frontend dev-server proxy
     // ----------------------------
     if (process.env.APP_MODE === 'local') {
-        console.log('[server-worker] 🧩 Local mode enabled. Serving /assets from local assets folder.');
+        console.log('[server-worker] Local mode enabled. Serving /assets from local assets folder.');
         webApp.use(async (ctx, next) => {
             ctx.set('Access-Control-Allow-Origin', '*');
             ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -465,7 +419,7 @@ async function startServer(config: ServerWorkerData) {
         }
 
         if (!staticPath) {
-            console.warn(`[server-worker] ⚠️ React build not found! Please run: pnpm --filter @ezplayer/ui-embedded build:web`);
+            console.warn(`[server-worker] React build not found! Please run: pnpm --filter @ezplayer/ui-embedded build:web`);
             staticPath = possiblePaths[0];
         }
     }
@@ -507,8 +461,8 @@ async function startServer(config: ServerWorkerData) {
 
     // Start the server
     httpServer.listen(port, () => {
-        console.log(`[server-worker] 🌐 Koa server running at http://localhost:${port}`);
-        console.log(`[server-worker] 🔌 WebSocket server available at ws://localhost:${port}/ws`);
+        console.log(`[server-worker] Koa server running at http://localhost:${port}`);
+        console.log(`[server-worker] WebSocket server available at ws://localhost:${port}/ws`);
         parentPort!.postMessage({
             type: 'status',
             status: 'listening',
@@ -544,10 +498,7 @@ async function startServer(config: ServerWorkerData) {
 
     // Initialize WebSocket broadcaster with the WebSocket server
     wsBroadcaster.attach(wss);
-
-    // Server is now fully started - no need to send ready again as it was already sent at module level
 }
 
 // Signal that we're ready to receive init message (sent immediately when worker starts)
 parentPort.postMessage({ type: 'ready' } satisfies ServerWorkerToMainMessage);
-

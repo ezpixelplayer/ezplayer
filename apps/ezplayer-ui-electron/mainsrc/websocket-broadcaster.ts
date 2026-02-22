@@ -88,6 +88,16 @@ export class WebSocketBroadcaster {
         setInterval(() => this.heartbeatSweep(), this.HEARTBEAT_MS).unref?.();
     }
 
+    /** Read a single cached value */
+    get<K extends keyof FullPlayerState>(k: K): FullPlayerState[K] | undefined {
+        return this.state[k];
+    }
+
+    /** Return a shallow copy of the full cached state */
+    getState(): Partial<FullPlayerState> {
+        return { ...this.state };
+    }
+
     /** Set the state */
     set<K extends keyof FullPlayerState>(k: K, value: FullPlayerState[K]) {
         this.state[k] = value;
@@ -252,5 +262,3 @@ export class WebSocketBroadcaster {
     }
 }
 
-// Singleton instance
-export const wsBroadcaster = new WebSocketBroadcaster();

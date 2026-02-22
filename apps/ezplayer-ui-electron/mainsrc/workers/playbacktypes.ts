@@ -68,5 +68,6 @@ export type WorkerToMainMessage =
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
     | { type: 'pstatus'; status: PlayerPStatusContent }
+    | { type: 'modelCoordinates'; coords3D: Record<string, GetNodeResult>; coords2D: Record<string, GetNodeResult> }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };

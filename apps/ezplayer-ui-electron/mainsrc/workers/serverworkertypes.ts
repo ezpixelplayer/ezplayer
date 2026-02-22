@@ -21,22 +21,18 @@ export type MainToServerWorkerMessage =
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
     | { type: 'broadcast'; key: string; value: unknown }
+    | { type: 'pushModelCoordinates'; coords3D: unknown; coords2D: unknown }
     | { type: 'shutdown' };
 
 /**
  * RPC methods that the server worker can call on the main thread
  */
 export interface ServerWorkerRPCAPI {
-    getCurrentShowData(): unknown;
-    getSequenceThumbnail(sequenceId: string): string | undefined;
     updatePlaylistsHandler(playlists: unknown[]): Promise<unknown[]>;
     updateScheduleHandler(schedules: unknown[]): Promise<unknown[]>;
-    getModelCoordinatesForAPI(is2D: boolean): Promise<unknown>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
-    getCurrentShowFolder(): string | undefined;
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
-    getFrameBuffer(): SharedArrayBuffer | undefined;
 }
 
