@@ -122,4 +122,5 @@ await run('mainsrc/workers/mp3decodeworker.ts', 'dist/workers/mp3decodeworker.js
 await run('mainsrc/workers/zstdworker.ts', 'dist/workers/zstdworker.js');
 await run('mainsrc/workers/pingworker.ts', 'dist/workers/pingworker.js');
 await run('mainsrc/workers/rfsync.ts', 'dist/workers/rfsync.js');
+await run('mainsrc/workers/server-worker.ts', 'dist/workers/server-worker.js');
 //await uirun('src/audio-window.ts', 'dist/assets/audio-window.js');
