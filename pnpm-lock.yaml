@@ -154,6 +154,9 @@ importers:
       xllayoutcalcs:
         specifier: file:..\..\libs\xllayoutcalcs-0.0.8.tgz
         version: file:libs/xllayoutcalcs-0.0.8.tgz
+      zstd-codec:
+        specifier: ^0.1.5
+        version: 0.1.5
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
@@ -5891,6 +5894,9 @@ packages:
     resolution: {integrity: sha512-9qv4rlDiopXg4E69k+vMHjNN63YFMe9sZMrdlvKnCjlCRWeCBswPPMPUfx+ipsAWq1LXHe70RcbaHdJJpS6hyQ==}
     engines: {node: '>= 10'}
 
+  zstd-codec@0.1.5:
+    resolution: {integrity: sha512-v3fyjpK8S/dpY/X5WxqTK3IoCnp/ZOLxn144GZVlNUjtwAchzrVo03h+oMATFhCIiJ5KTr4V3vDQQYz4RU684g==}
+
   zstddec@0.1.0:
     resolution: {integrity: sha512-w2NTI8+3l3eeltKAdK8QpiLo/flRAr2p8AGeakfMZOXBxOg9HIu4LVDxBi81sYgVhFhdJjv1OrB5ssI8uFPoLg==}
 
@@ -11432,6 +11438,8 @@ snapshots:
       archiver-utils: 3.0.4
       compress-commons: 4.1.2
       readable-stream: 3.6.2
+
+  zstd-codec@0.1.5: {}
 
   zstddec@0.1.0: {}
 

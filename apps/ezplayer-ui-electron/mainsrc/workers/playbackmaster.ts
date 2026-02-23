@@ -772,6 +772,17 @@ async function loadXmlCoordinates() {
             }
         }
     }
+
+    // Push loaded coordinates to main thread so server worker cache stays current
+    const coords3D: Record<string, GetNodeResult> = {};
+    for (const [name, coord] of modelCoordinates.entries()) {
+        coords3D[name] = coord;
+    }
+    const coords2D: Record<string, GetNodeResult> = {};
+    for (const [name, coord] of modelCoordinates2D.entries()) {
+        coords2D[name] = coord;
+    }
+    send({ type: 'modelCoordinates', coords3D, coords2D });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;

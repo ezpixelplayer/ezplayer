@@ -35,6 +35,7 @@ export interface Preview3DProps {
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
     frameServerUrl?: string; // URL for frame data server, e.g., "http://localhost:3000"
+    compressed?: boolean; // Use ZSTD-compressed frame endpoint for lower bandwidth
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -44,6 +45,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     defaultViewMode = '3d',
     pointSize = 3.0,
     frameServerUrl,
+    compressed = false,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
@@ -106,6 +108,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const { buffer: livePixelBuffer } = useFrameBuffer({
         baseUrl: effectiveFrameServerUrl,
         enabled: !!effectiveFrameServerUrl,
+        compressed,
     });
 
     // Update livePixels when the frame buffer changes
@@ -128,16 +131,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setError(null);
 
             try {
-                // Check if we're in Electron environment and API is available
-                const electronAPI = (window as any).electronAPI as EZPElectronAPI;
-
                 let xmlCoords: Record<string, GetNodeResult> | null = null;
 
-                if (electronAPI && electronAPI.getModelCoordinates) {
-                    // Use Electron IPC API
-                    xmlCoords = await electronAPI.getModelCoordinates();
-                } else if (effectiveFrameServerUrl) {
-                    // Use HTTP API for browser UI
+                if (effectiveFrameServerUrl) {
+                    // Use HTTP API (works in both Electron and browser — avoids IPC/RPC round-trip to playback worker)
                     try {
                         const response = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates`);
                         if (response.ok) {

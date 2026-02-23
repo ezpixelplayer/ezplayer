@@ -353,7 +353,7 @@ export function createPointShaderMaterial(
     // Enable Three.js transparent rendering when: circle/blended pixel styles use alpha discard,
     // or when the model has non-full opacity from xLights Transparency attribute
     const isTransparent = pixelStyleValue === 1 || pixelStyleValue === 2 || opacityValue < 1.0;
-    
+
     const material = new THREE.ShaderMaterial({
         uniforms: defaultUniforms,
         vertexShader: pointVertexShader,
@@ -364,7 +364,7 @@ export function createPointShaderMaterial(
         blending: isTransparent ? THREE.NormalBlending : undefined, // Use normal blending for transparency (default for opaque)
         premultipliedAlpha: false, // Standard alpha blending
     });
-    
+
     return material;
 }
 

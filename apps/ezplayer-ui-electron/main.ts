@@ -9,7 +9,7 @@ import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
-import { setUpServer } from './mainsrc/server.js';
+import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
 import type { Event as ElectronEvent } from 'electron';
 
 import os from 'os';
@@ -251,13 +251,15 @@ app.whenReady().then(async () => {
 
     await registerContentHandlers(mainWindow, audioWindow, playWorker);
 
-    // Start web server / WebSocket
+    // Start web server / WebSocket in worker thread
     try {
-        await setUpServer({
+        await setUpServerWorker({
             port,
             portSource,
             playWorker,
             mainWindow,
+            getMainWindow,
+            distDir: __dirname, // Pass __dirname from main.ts to ensure correct path resolution
         });
     } catch (e) {
         console.error(e);
@@ -265,6 +267,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', async () => {
+    await shutdownServerWorker();
     await closeShowFolder();
 });
 

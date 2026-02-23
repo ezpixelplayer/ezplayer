@@ -79,7 +79,7 @@ const routes: RouteObject[] = [
             },
             {
                 path: ROUTES.PREVIEW_3D,
-                element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
+                element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} compressed />,
             },
         ],
     },

@@ -203,9 +203,6 @@ export interface EZPElectronAPI {
         status: 'listening' | 'stopped' | 'error';
     } | null>;
 
-    // Preview window
-    getModelCoordinates: () => Promise<Record<string, GetNodeResult>>;
-
     // Data change callbacks:
     onShowFolderUpdated: (callback: (data: string) => void) => void;
     onSequencesUpdated: (callback: (data: SequenceRecord[]) => void) => void;
