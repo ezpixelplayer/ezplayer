@@ -7,9 +7,10 @@ import { Preview3D } from './Preview3D';
 export interface Preview3DPageProps {
     title: string;
     statusArea: React.ReactNode[];
+    compressed?: boolean;
 }
 
-export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea }) => {
+export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea, compressed }) => {
     const theme = useTheme<ExtendedTheme>();
 
     return (
@@ -55,7 +56,7 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea 
                         border: (theme) => `1px solid ${theme.palette.divider}`,
                     }}
                 >
-                    <Preview3D showList={true} showControls={true} />
+                    <Preview3D showList={true} showControls={true} compressed={compressed} />
                 </Box>
             </Box>
         </Box>

@@ -62,6 +62,7 @@ const nodeExternals = [
     'statuses',
     'toidentifier',
     'express',
+    'zstd-codec',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];

@@ -35,6 +35,7 @@ export interface Preview3DProps {
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
     frameServerUrl?: string; // URL for frame data server, e.g., "http://localhost:3000"
+    compressed?: boolean; // Use ZSTD-compressed frame endpoint for lower bandwidth
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -44,6 +45,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     defaultViewMode = '3d',
     pointSize = 3.0,
     frameServerUrl,
+    compressed = false,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
@@ -106,6 +108,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const { buffer: livePixelBuffer } = useFrameBuffer({
         baseUrl: effectiveFrameServerUrl,
         enabled: !!effectiveFrameServerUrl,
+        compressed,
     });
 
     // Update livePixels when the frame buffer changes

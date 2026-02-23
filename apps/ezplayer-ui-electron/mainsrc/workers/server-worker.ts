@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import type { EZPlayerCommand, FullPlayerState, PlaybackSettings, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { BufferPool } from '@ezplayer/epp';
+import { ZstdCodec, ZstdSimple } from 'zstd-codec';
 import type {
     ServerWorkerData,
     ServerWorkerToMainMessage,
@@ -130,6 +131,9 @@ let cachedModelCoordinates2D: unknown = {};
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let serverStarted = false;
 
+// ZSTD codec handle for frame compression (initialized in startServer)
+let zstdSimple: ZstdSimple | undefined = undefined;
+
 // Handle messages from main thread
 parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     if (msg.type === 'init') {
@@ -154,6 +158,16 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
 
 async function startServer(config: ServerWorkerData) {
     const { port, portSource } = config;
+
+    // Initialize ZSTD codec for frame compression (non-blocking, best-effort)
+    try {
+        ZstdCodec.run((zstd) => {
+            zstdSimple = new zstd.Simple();
+            console.log('[server-worker] ZSTD codec initialized');
+        });
+    } catch (err) {
+        console.warn('[server-worker] ZSTD codec failed to initialize, /api/frames-zstd will be unavailable:', err);
+    }
 
     console.log(`[server-worker] Starting Koa web server on port ${port} (source: ${portSource})`);
     const router = new Router();
@@ -382,6 +396,67 @@ async function startServer(config: ServerWorkerData) {
         ctx.set('Cache-Control', 'no-store');
         ctx.type = 'application/octet-stream';
         // Use subarray to return only the used portion (pool may give larger buffer)
+        ctx.body = responseBuffer.subarray(0, totalSize);
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/frames-zstd - ZSTD-compressed binary frame data for 3D viewer
+    // Wire format: [frameSize u32 LE][seq u32 LE][zstd-compressed frame bytes]
+    // ----------------------------------------------
+    router.get('/api/frames-zstd', async (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+        if (!curFrameBuffer) {
+            ctx.status = 204;
+            return;
+        }
+
+        // Fall back to uncompressed if codec not yet initialized
+        if (!zstdSimple) {
+            ctx.status = 503;
+            ctx.body = 'ZSTD codec not yet initialized';
+            return;
+        }
+
+        const frameReader = new LatestFrameRingBuffer({
+            buffer: curFrameBuffer,
+            frameSize: 0,
+            slotCount: 0,
+            isWriter: false,
+        });
+
+        const result = frameReader?.tryReadLatest();
+        if (!result) {
+            ctx.status = 204;
+            return;
+        }
+
+        if (!result.bytes) {
+            ctx.status = 500;
+            return;
+        }
+
+        // Compress frame data at level 1 (fastest)
+        const compressed = zstdSimple.compress(result.bytes, 1) as Uint8Array;
+
+        // Build response: 8-byte header (uncompressed frameSize + seq) + compressed payload
+        const totalSize = 8 + compressed.byteLength;
+        const responseBuffer = frameBufferPool.get(totalSize);
+
+        // Write header: frameSize (uint32 LE) = uncompressed size, seq (uint32 LE)
+        responseBuffer.writeUInt32LE(result.frameSizeBytes, 0);
+        responseBuffer.writeUInt32LE(result.seq, 4);
+
+        // Copy compressed data after header
+        responseBuffer.set(compressed, 8);
+
+        ctx.res.on('finish', () => {
+            frameBufferPool.release(responseBuffer);
+        });
+
+        ctx.set('Cache-Control', 'no-store');
+        ctx.type = 'application/octet-stream';
         ctx.body = responseBuffer.subarray(0, totalSize);
     });
 
