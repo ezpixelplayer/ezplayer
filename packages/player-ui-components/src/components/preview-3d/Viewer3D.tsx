@@ -4,10 +4,11 @@ import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D, ModelMetadata } from '../../types/model3d';
+import type { Point3D, Shape3D, ModelMetadata, ViewObject } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
+import { HouseMesh } from './HouseMesh';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -21,6 +22,8 @@ export interface Viewer3DProps {
     pointSize?: number;
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    viewObjects?: ViewObject[];
+    frameServerUrl?: string;
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -321,6 +324,8 @@ function SceneContent({
     pointSize,
     selectedModelNames,
     modelMetadata,
+    viewObjects,
+    frameServerUrl,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -332,6 +337,8 @@ function SceneContent({
     pointSize?: number;
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    viewObjects?: ViewObject[];
+    frameServerUrl?: string;
 }) {
     const { camera, controls } = useThree();
 
@@ -384,6 +391,20 @@ function SceneContent({
                 modelMetadata={modelMetadata}
                 onPointClick={onPointClick}
             />
+
+            {/* Render house meshes from view objects */}
+            {viewObjects?.map((viewObj) => {
+                if (viewObj.displayAs === 'Mesh' && viewObj.objFile && viewObj.active !== false) {
+                    return (
+                        <HouseMesh
+                            key={viewObj.name}
+                            viewObject={viewObj}
+                            frameServerUrl={frameServerUrl}
+                        />
+                    );
+                }
+                return null;
+            })}
         </>
     );
 }
@@ -400,6 +421,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     pointSize = 1.2,
     selectedModelNames,
     modelMetadata,
+    viewObjects,
+    frameServerUrl,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -568,6 +591,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
                             modelMetadata={modelMetadata}
+                            viewObjects={viewObjects}
+                            frameServerUrl={frameServerUrl}
                         />
                         {showStats && <Stats />}
                     </Canvas>

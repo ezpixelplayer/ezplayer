@@ -68,6 +68,26 @@ export type WorkerToMainMessage =
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
     | { type: 'pstatus'; status: PlayerPStatusContent }
-    | { type: 'modelCoordinates'; coords3D: Record<string, GetNodeResult>; coords2D: Record<string, GetNodeResult> }
+    | {
+          type: 'modelCoordinates';
+          coords3D: Record<string, GetNodeResult>;
+          coords2D: Record<string, GetNodeResult>;
+          viewObjects?: Array<{
+              name: string;
+              displayAs: string;
+              objFile?: string;
+              worldPosX: number;
+              worldPosY: number;
+              worldPosZ: number;
+              scaleX: number;
+              scaleY: number;
+              scaleZ: number;
+              rotateX: number;
+              rotateY: number;
+              rotateZ: number;
+              brightness?: number;
+              active?: boolean;
+          }>;
+      }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };

@@ -21,7 +21,27 @@ export type MainToServerWorkerMessage =
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
     | { type: 'broadcast'; key: string; value: unknown }
-    | { type: 'pushModelCoordinates'; coords3D: unknown; coords2D: unknown }
+    | {
+          type: 'pushModelCoordinates';
+          coords3D: unknown;
+          coords2D: unknown;
+          viewObjects?: Array<{
+              name: string;
+              displayAs: string;
+              objFile?: string;
+              worldPosX: number;
+              worldPosY: number;
+              worldPosZ: number;
+              scaleX: number;
+              scaleY: number;
+              scaleZ: number;
+              rotateX: number;
+              rotateY: number;
+              rotateZ: number;
+              brightness?: number;
+              active?: boolean;
+          }>;
+      }
     | { type: 'shutdown' };
 
 /**

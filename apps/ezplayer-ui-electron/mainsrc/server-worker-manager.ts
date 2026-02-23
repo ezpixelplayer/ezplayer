@@ -302,13 +302,33 @@ export function broadcastToWebSocket(key: string, value: unknown) {
 /**
  * Push model coordinates to server worker cache
  */
-export function pushModelCoordinates(coords3D: unknown, coords2D: unknown) {
+export function pushModelCoordinates(
+    coords3D: unknown,
+    coords2D: unknown,
+    viewObjects?: Array<{
+        name: string;
+        displayAs: string;
+        objFile?: string;
+        worldPosX: number;
+        worldPosY: number;
+        worldPosZ: number;
+        scaleX: number;
+        scaleY: number;
+        scaleZ: number;
+        rotateX: number;
+        rotateY: number;
+        rotateZ: number;
+        brightness?: number;
+        active?: boolean;
+    }>,
+) {
     if (!serverWorker) return;
 
     const message: MainToServerWorkerMessage = {
         type: 'pushModelCoordinates',
         coords3D,
         coords2D,
+        viewObjects,
     };
     serverWorker.postMessage(message);
 }

@@ -127,6 +127,22 @@ const wsBroadcaster = new WebSocketBroadcaster();
 // Side cache for model coordinates (pushed from main thread on show folder load)
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
+let cachedViewObjects: Array<{
+    name: string;
+    displayAs: string;
+    objFile?: string;
+    worldPosX: number;
+    worldPosY: number;
+    worldPosZ: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    rotateX: number;
+    rotateY: number;
+    rotateZ: number;
+    brightness?: number;
+    active?: boolean;
+}> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let serverStarted = false;
@@ -151,6 +167,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
         cachedModelCoordinates2D = msg.coords2D;
+        if (msg.viewObjects) {
+            cachedViewObjects = msg.viewObjects;
+        }
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
@@ -338,6 +357,109 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     router.get('/api/model-coordinates-2d', async (ctx) => {
         ctx.body = cachedModelCoordinates2D;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/view-objects - get view objects (meshes) from XML (local cache)
+    // ----------------------------------------------
+    router.get('/api/view-objects', async (ctx) => {
+        ctx.body = cachedViewObjects;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/show-file - serve files from show folder (for OBJ/MTL/textures)
+    // ----------------------------------------------
+    router.get('/api/show-file', async (ctx) => {
+        const filePath = ctx.query.path as string;
+        const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+
+        if (!filePath) {
+            ctx.status = 400;
+            ctx.body = { error: 'File path is required' };
+            return;
+        }
+
+        if (!showFolder) {
+            ctx.status = 404;
+            ctx.body = { error: 'Show folder not set' };
+            return;
+        }
+
+        try {
+            // Normalize paths for comparison (handle Windows case-insensitivity)
+            const normalizedShowFolder = path.resolve(showFolder).toLowerCase();
+            const normalizedFilePath = path.resolve(filePath).toLowerCase();
+
+            // Resolve file path - handle both absolute and relative paths
+            let resolvedPath: string;
+            if (path.isAbsolute(filePath)) {
+                // If absolute, check if it's within show folder (case-insensitive on Windows)
+                const normalizedAbsolutePath = path.resolve(filePath).toLowerCase();
+                if (normalizedAbsolutePath.startsWith(normalizedShowFolder)) {
+                    resolvedPath = filePath;
+                } else {
+                    // Try to make it relative to show folder
+                    const relativePath = path.relative(showFolder, filePath);
+                    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+                        ctx.status = 403;
+                        ctx.body = { error: 'File path outside show folder' };
+                        return;
+                    }
+                    resolvedPath = path.join(showFolder, relativePath);
+                }
+            } else {
+                // Relative path - resolve from show folder
+                resolvedPath = path.join(showFolder, filePath);
+            }
+
+            // Normalize path to prevent directory traversal
+            resolvedPath = path.resolve(resolvedPath);
+            const normalizedResolvedPath = resolvedPath.toLowerCase();
+            const normalizedShowFolderResolved = path.resolve(showFolder).toLowerCase();
+            
+            // Final security check - ensure resolved path is within show folder
+            // Use path.sep to handle Windows/Unix path separators correctly
+            const showFolderWithSep = normalizedShowFolder.endsWith(path.sep) 
+                ? normalizedShowFolder 
+                : normalizedShowFolder + path.sep;
+            
+            if (!normalizedResolvedPath.startsWith(showFolderWithSep) && 
+                normalizedResolvedPath !== normalizedShowFolder) {
+                console.error('[server-worker] File path security check failed:', {
+                    requested: filePath,
+                    resolved: resolvedPath,
+                    normalizedResolved: normalizedResolvedPath,
+                    showFolder: showFolder,
+                    normalizedShowFolder: normalizedShowFolder,
+                    showFolderWithSep: showFolderWithSep
+                });
+                ctx.status = 403;
+                ctx.body = { 
+                    error: 'File path outside show folder',
+                    details: {
+                        requested: filePath,
+                        resolved: resolvedPath,
+                        showFolder: showFolder
+                    }
+                };
+                return;
+            }
+
+            // Check if file exists
+            if (!(await exists(resolvedPath))) {
+                ctx.status = 404;
+                ctx.body = { error: 'File not found' };
+                return;
+            }
+
+            // Set appropriate MIME type
+            ctx.type = inferMimeType(resolvedPath);
+            await send(ctx, path.basename(resolvedPath), { root: path.dirname(resolvedPath) });
+        } catch (error) {
+            console.error('[server-worker] Error serving show file:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
     });
 
     // ----------------------------------------------

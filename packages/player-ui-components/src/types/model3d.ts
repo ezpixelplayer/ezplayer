@@ -67,6 +67,23 @@ export interface Shape3D {
     points?: Point3D[];
 }
 
+export interface ViewObject {
+    name: string;
+    displayAs: string;
+    objFile?: string;
+    worldPosX: number;
+    worldPosY: number;
+    worldPosZ: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    rotateX: number;
+    rotateY: number;
+    rotateZ: number;
+    brightness?: number;
+    active?: boolean;
+}
+
 export interface Model3DData {
     version?: string;
     name?: string;

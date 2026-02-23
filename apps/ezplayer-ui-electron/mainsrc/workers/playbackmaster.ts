@@ -673,6 +673,26 @@ let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
+// View objects (meshes like house models) from XML
+export interface ViewObject {
+    name: string;
+    displayAs: string;
+    objFile?: string; // Path to OBJ file
+    worldPosX: number;
+    worldPosY: number;
+    worldPosZ: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    rotateX: number;
+    rotateY: number;
+    rotateZ: number;
+    brightness?: number;
+    active?: boolean;
+}
+
+let viewObjects: ViewObject[] = [];
+
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 
@@ -770,6 +790,87 @@ async function loadXmlCoordinates() {
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }
+
+            // Parse view_objects (meshes like house models)
+            try {
+                const xviewObjects = getElementByTag(xrgb.documentElement, 'view_objects');
+                viewObjects = [];
+
+                if (xviewObjects) {
+                    for (let iv = 0; iv < xviewObjects.childNodes.length; ++iv) {
+                        const n = xviewObjects.childNodes[iv];
+                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                        const viewObj = n as Element;
+                        if (viewObj.tagName !== 'view_object') continue;
+
+                        const name = getAttrDef(viewObj, 'name', '');
+                        const displayAs = getAttrDef(viewObj, 'DisplayAs', '');
+                        const objFile = getAttrDef(viewObj, 'ObjFile', '');
+                        const active = getBoolAttrDef(viewObj, 'Active', true);
+
+                        // Only process Mesh objects with OBJ files
+                        if (displayAs === 'Mesh' && objFile && active) {
+                            // Parse transform attributes
+                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
+                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
+                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
+                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
+                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
+                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
+                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
+                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
+                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
+                            const brightness = parseFloat(getAttrDef(viewObj, 'Brightness', '100'));
+
+                            // Resolve OBJ file path relative to show folder
+                            // Store the path as-is (absolute or relative) - the API endpoint will handle resolution
+                            let resolvedObjFile = objFile;
+                            if (path.isAbsolute(objFile) && showFolder) {
+                                // If absolute path, check if it's within show folder
+                                const normalizedShowFolder = path.resolve(showFolder).toLowerCase();
+                                const normalizedObjFile = path.resolve(objFile).toLowerCase();
+                                if (normalizedObjFile.startsWith(normalizedShowFolder)) {
+                                    // Path is within show folder, use as-is
+                                    resolvedObjFile = objFile;
+                                } else {
+                                    // Try to make it relative to show folder
+                                    const relativePath = path.relative(showFolder, objFile);
+                                    if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+                                        resolvedObjFile = relativePath;
+                                    } else {
+                                        // Path is outside show folder, use absolute path (will be rejected by API)
+                                        resolvedObjFile = objFile;
+                                    }
+                                }
+                            } else if (!path.isAbsolute(objFile) && showFolder) {
+                                // Already relative, use as-is
+                                resolvedObjFile = objFile;
+                            }
+
+                            viewObjects.push({
+                                name,
+                                displayAs,
+                                objFile: resolvedObjFile,
+                                worldPosX,
+                                worldPosY,
+                                worldPosZ,
+                                scaleX,
+                                scaleY,
+                                scaleZ,
+                                rotateX,
+                                rotateY,
+                                rotateZ,
+                                brightness,
+                                active,
+                            });
+                        }
+                    }
+                }
+
+                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes)`);
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
+            }
         }
     }
 
@@ -782,7 +883,7 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
