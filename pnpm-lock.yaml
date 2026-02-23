@@ -476,9 +476,6 @@ importers:
       xllayoutcalcs:
         specifier: file:..\..\libs\xllayoutcalcs-0.0.8.tgz
         version: file:libs/xllayoutcalcs-0.0.8.tgz
-      zstd-codec:
-        specifier: ^0.1.5
-        version: 0.1.5
     devDependencies:
       '@eslint/js':
         specifier: ^9.19.0

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import { ZstdCodec, ZstdSimple } from 'zstd-codec';
+import { ZSTDDecoder } from '../util/zstd-decoder';
 
 export interface UseFrameBufferOptions {
     baseUrl: string | undefined;
@@ -28,9 +28,11 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
     const frameSizeRef = useRef(0);
     const shouldStopRef = useRef(false);
 
-    // ZSTD decoder ref - initialized once on first use
-    const zstdSimpleRef = useRef<ZstdSimple | undefined>(undefined);
-    const zstdInitStartedRef = useRef(false);
+    // ZSTD decoder ref - initialized once, reused for zero-alloc decode
+    const zstdDecoderRef = useRef<ZSTDDecoder | undefined>(undefined);
+    const zstdReadyRef = useRef(false);
+    // Reusable decode output buffer - grows as needed, avoids per-frame allocation
+    const decodeBufferRef = useRef<Uint8Array | undefined>(undefined);
 
     useEffect(() => {
         if (!baseUrl || !enabled) {
@@ -41,10 +43,11 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
         shouldStopRef.current = false;
 
         // Initialize ZSTD decoder if compressed mode requested
-        if (compressed && !zstdSimpleRef.current && !zstdInitStartedRef.current) {
-            zstdInitStartedRef.current = true;
-            ZstdCodec.run((zstd) => {
-                zstdSimpleRef.current = new zstd.Simple();
+        if (compressed && !zstdDecoderRef.current) {
+            const decoder = new ZSTDDecoder();
+            zstdDecoderRef.current = decoder;
+            decoder.init().then(() => {
+                zstdReadyRef.current = true;
             });
         }
 
@@ -90,9 +93,14 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
 
                     // Get frame data - decompress if using compressed endpoint
                     let frameData: Uint8Array;
-                    if (compressed && zstdSimpleRef.current) {
+                    if (compressed && zstdReadyRef.current && zstdDecoderRef.current) {
                         const compressedData = new Uint8Array(data, 8);
-                        frameData = zstdSimpleRef.current.decompress(compressedData) as Uint8Array;
+                        // Reuse decode buffer - grow if frame size changed
+                        if (!decodeBufferRef.current || decodeBufferRef.current.byteLength < newFrameSize) {
+                            decodeBufferRef.current = new Uint8Array(newFrameSize);
+                        }
+                        zstdDecoderRef.current.decode(compressedData, decodeBufferRef.current, newFrameSize);
+                        frameData = decodeBufferRef.current;
                     } else {
                         frameData = new Uint8Array(data, 8);
                     }
