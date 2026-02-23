@@ -35,4 +35,3 @@ export interface ServerWorkerRPCAPI {
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
 }
-

@@ -105,7 +105,8 @@ export class GeometryGroupRenderer {
             const material = this.material;
             if (!material?.uniforms) return;
 
-            const pixelRatio = typeof (renderer as any).getPixelRatio === 'function' ? (renderer as any).getPixelRatio() : 1;
+            const pixelRatio =
+                typeof (renderer as any).getPixelRatio === 'function' ? (renderer as any).getPixelRatio() : 1;
             // Reuse pre-allocated Vector2 — avoids a heap allocation on every frame per group.
             renderer.getSize(this._sizeVec);
             // Use CSS pixel height here; we convert to device pixels in the shader via `pixelRatio`.
@@ -311,11 +312,7 @@ export class GeometryManager {
         this.pointSize = options?.pointSize || 3.0;
         this.viewPlane = options?.viewPlane;
         // Extract gamma explicitly: from options > from uniforms > from model configuration > default
-        this.gamma =
-            options?.gamma ??
-            uniforms.gamma ??
-            getGammaFromModelConfiguration(points) ??
-            DEFAULT_GAMMA;
+        this.gamma = options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(points) ?? DEFAULT_GAMMA;
         // Store model pixel size map for per-model point size lookup
         this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
         // Store model pixel style map for per-model pixel shape lookup

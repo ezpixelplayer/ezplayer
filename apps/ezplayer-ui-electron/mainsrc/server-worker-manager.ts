@@ -13,11 +13,7 @@ import type {
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
-import {
-    updatePlaylistsHandler,
-    updateScheduleHandler,
-    curFrameBuffer,
-} from './ipcezplayer.js';
+import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
 
@@ -101,14 +97,14 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     const workerPath = path.join(baseDir, 'workers', 'server-worker.js');
     console.log(`[server-worker-manager] Worker path: ${workerPath}`);
     console.log(`[server-worker-manager] Base dir: ${baseDir}`);
-    
+
     // Check if file exists for better error messages
     if (!fs.existsSync(workerPath)) {
         console.error(`[server-worker-manager] ERROR: Worker file not found at ${workerPath}`);
         console.error(`[server-worker-manager] Please ensure server-worker.ts is compiled. Run: pnpm build:main`);
         throw new Error(`Server worker file not found: ${workerPath}`);
     }
-    
+
     serverWorker = new Worker(workerPath);
 
     // Handle messages from server worker
@@ -351,4 +347,3 @@ export async function shutdownServerWorker(): Promise<void> {
     serverWorker = null;
     currentServerStatus = null;
 }
-

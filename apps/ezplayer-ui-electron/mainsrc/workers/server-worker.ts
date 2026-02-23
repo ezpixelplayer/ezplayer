@@ -17,7 +17,12 @@ import { fileURLToPath } from 'url';
 import type { EZPlayerCommand, FullPlayerState, PlaybackSettings, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { BufferPool } from '@ezplayer/epp';
-import type { ServerWorkerData, ServerWorkerToMainMessage, MainToServerWorkerMessage, ServerWorkerRPCAPI } from './serverworkertypes.js';
+import type {
+    ServerWorkerData,
+    ServerWorkerToMainMessage,
+    MainToServerWorkerMessage,
+    ServerWorkerRPCAPI,
+} from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -68,13 +73,16 @@ function getSequenceThumbnailLocal(sequenceId: string): string | undefined {
 class MainThreadRPC {
     private pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 
-    call<K extends keyof ServerWorkerRPCAPI>(method: K, ...args: Parameters<ServerWorkerRPCAPI[K]>): Promise<ReturnType<ServerWorkerRPCAPI[K]>> {
+    call<K extends keyof ServerWorkerRPCAPI>(
+        method: K,
+        ...args: Parameters<ServerWorkerRPCAPI[K]>
+    ): Promise<ReturnType<ServerWorkerRPCAPI[K]>> {
         return new Promise((resolve, reject) => {
             const id = `${Date.now()}-${Math.random()}`;
             // Store resolve with proper type casting
             this.pendingRequests.set(id, {
                 resolve: resolve as (value: unknown) => void,
-                reject
+                reject,
             });
 
             const message: ServerWorkerToMainMessage = {
@@ -419,7 +427,9 @@ async function startServer(config: ServerWorkerData) {
         }
 
         if (!staticPath) {
-            console.warn(`[server-worker] React build not found! Please run: pnpm --filter @ezplayer/ui-embedded build:web`);
+            console.warn(
+                `[server-worker] React build not found! Please run: pnpm --filter @ezplayer/ui-embedded build:web`,
+            );
             staticPath = possiblePaths[0];
         }
     }
