@@ -128,16 +128,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setError(null);
 
             try {
-                // Check if we're in Electron environment and API is available
-                const electronAPI = (window as any).electronAPI as EZPElectronAPI;
-
                 let xmlCoords: Record<string, GetNodeResult> | null = null;
 
-                if (electronAPI && electronAPI.getModelCoordinates) {
-                    // Use Electron IPC API
-                    xmlCoords = await electronAPI.getModelCoordinates();
-                } else if (effectiveFrameServerUrl) {
-                    // Use HTTP API for browser UI
+                if (effectiveFrameServerUrl) {
+                    // Use HTTP API (works in both Electron and browser — avoids IPC/RPC round-trip to playback worker)
                     try {
                         const response = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates`);
                         if (response.ok) {
