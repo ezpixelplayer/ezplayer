@@ -259,6 +259,31 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: GET /api/debug-show-folder - diagnostic endpoint
+    // ----------------------------------------------
+    router.get('/api/debug-show-folder', async (ctx) => {
+        const showFolder = wsBroadcaster.get('showFolder');
+        const state = wsBroadcaster.getState();
+        ctx.body = {
+            showFolder,
+            hasShowFolder: !!showFolder,
+            allStateKeys: Object.keys(state),
+            state: state
+        };
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/test-show-file - test if new code is running
+    // ----------------------------------------------
+    router.get('/api/test-show-file', async (ctx) => {
+        ctx.body = {
+            version: 'v2-fixed',
+            message: 'New server-worker code is running! Absolute paths for .obj files are allowed.',
+            timestamp: Date.now()
+        };
+    });
+
+    // ----------------------------------------------
     // API: POST /api/player-command
     // ----------------------------------------------
     router.post('/api/player-command', async (ctx) => {
@@ -367,11 +392,15 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/show-file - serve files from show folder (for OBJ/MTL/textures)
+    // API: GET /api/show-file - serve files for OBJ/MTL/textures used by 3D viewer
     // ----------------------------------------------
     router.get('/api/show-file', async (ctx) => {
+        // Koa automatically decodes query parameters.
         const filePath = ctx.query.path as string;
         const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+
+        // Version marker to verify new code is running
+        console.log('[server-worker] /api/show-file handler v2 - absolute paths allowed for 3D files');
 
         if (!filePath) {
             ctx.status = 400;
@@ -379,78 +408,133 @@ async function startServer(config: ServerWorkerData) {
             return;
         }
 
-        if (!showFolder) {
-            ctx.status = 404;
-            ctx.body = { error: 'Show folder not set' };
-            return;
-        }
+        // Security: only serve a limited set of file types used by the 3D viewer.
+        // This endpoint is used locally by the Electron renderer to load OBJ/MTL (+ textures).
+        const allowedExt = new Set([
+            '.obj',
+            '.mtl',
+            '.png',
+            '.jpg',
+            '.jpeg',
+            '.gif',
+            '.webp',
+            '.bmp',
+            '.tga',
+            '.dds',
+        ]);
 
         try {
-            // Normalize paths for comparison (handle Windows case-insensitivity)
-            const normalizedShowFolder = path.resolve(showFolder).toLowerCase();
-            const normalizedFilePath = path.resolve(filePath).toLowerCase();
+            // Resolve file path
+            // `path.isAbsolute()` should work on Windows, but we also guard for common drive-letter formats
+            // in case the value is slightly malformed by upstream encoding/decoding.
+            const looksLikeWindowsAbsolute = /^[a-zA-Z]:[\\/]/.test(filePath);
+            const isAbsolute = path.isAbsolute(filePath) || looksLikeWindowsAbsolute;
+            let resolvedPath = isAbsolute
+                ? path.resolve(filePath)
+                : showFolder
+                  ? path.resolve(showFolder, filePath)
+                  : '';
 
-            // Resolve file path - handle both absolute and relative paths
-            let resolvedPath: string;
-            if (path.isAbsolute(filePath)) {
-                // If absolute, check if it's within show folder (case-insensitive on Windows)
-                const normalizedAbsolutePath = path.resolve(filePath).toLowerCase();
-                if (normalizedAbsolutePath.startsWith(normalizedShowFolder)) {
-                    resolvedPath = filePath;
-                } else {
-                    // Try to make it relative to show folder
-                    const relativePath = path.relative(showFolder, filePath);
-                    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-                        ctx.status = 403;
-                        ctx.body = { error: 'File path outside show folder' };
-                        return;
-                    }
-                    resolvedPath = path.join(showFolder, relativePath);
-                }
-            } else {
-                // Relative path - resolve from show folder
-                resolvedPath = path.join(showFolder, filePath);
+            if (!resolvedPath) {
+                ctx.status = 404;
+                ctx.body = { error: 'Show folder not set (required for relative paths)' };
+                return;
             }
 
-            // Normalize path to prevent directory traversal
-            resolvedPath = path.resolve(resolvedPath);
-            const normalizedResolvedPath = resolvedPath.toLowerCase();
-            const normalizedShowFolderResolved = path.resolve(showFolder).toLowerCase();
-            
-            // Final security check - ensure resolved path is within show folder
-            // Use path.sep to handle Windows/Unix path separators correctly
-            const showFolderWithSep = normalizedShowFolder.endsWith(path.sep) 
-                ? normalizedShowFolder 
-                : normalizedShowFolder + path.sep;
-            
-            if (!normalizedResolvedPath.startsWith(showFolderWithSep) && 
-                normalizedResolvedPath !== normalizedShowFolder) {
-                console.error('[server-worker] File path security check failed:', {
-                    requested: filePath,
-                    resolved: resolvedPath,
-                    normalizedResolved: normalizedResolvedPath,
-                    showFolder: showFolder,
-                    normalizedShowFolder: normalizedShowFolder,
-                    showFolderWithSep: showFolderWithSep
-                });
+            const ext = path.extname(resolvedPath).toLowerCase();
+            if (!allowedExt.has(ext)) {
                 ctx.status = 403;
-                ctx.body = { 
-                    error: 'File path outside show folder',
-                    details: {
-                        requested: filePath,
-                        resolved: resolvedPath,
-                        showFolder: showFolder
-                    }
-                };
+                ctx.body = { error: `File type not allowed: ${ext || '<none>'}` };
                 return;
+            }
+
+            // If the request is relative, enforce it stays within the show folder.
+            if (!isAbsolute && showFolder) {
+                const cleanShowFolder = path.resolve(showFolder);
+                const resolvedShowFolder = cleanShowFolder.replace(/[/\\]+$/, '');
+
+                const normalizeForComparison = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
+                const normalizedShowFolder = normalizeForComparison(resolvedShowFolder);
+                const normalizedResolvedPath = normalizeForComparison(resolvedPath);
+                const showFolderWithSep = normalizedShowFolder.endsWith('/') ? normalizedShowFolder : normalizedShowFolder + '/';
+
+                const isWithin = normalizedResolvedPath.startsWith(showFolderWithSep) || normalizedResolvedPath === normalizedShowFolder;
+                if (!isWithin) {
+                    ctx.status = 403;
+                    ctx.body = { error: 'File path outside show folder' };
+                    return;
+                }
             }
 
             // Check if file exists
-            if (!(await exists(resolvedPath))) {
+            let fileExists = await exists(resolvedPath);
+            const triedPaths: string[] = [resolvedPath];
+            
+            console.log('[server-worker] /api/show-file - Initial check:', {
+                filePath,
+                isAbsolute,
+                resolvedPath,
+                fileExists,
+                showFolder
+            });
+            
+            // If absolute path doesn't exist and we have a show folder, try as relative path
+            // This handles cases where XML has wrong absolute paths but file is actually in show folder
+            if (!fileExists && isAbsolute && showFolder) {
+                const fileName = path.basename(filePath);
+                const dirName = path.dirname(filePath);
+                const lastDirName = path.basename(dirName); // e.g., "HouseModel" from "C:\Work\...\HouseModel"
+                
+                console.log('[server-worker] /api/show-file - Trying fallback paths:', {
+                    fileName,
+                    lastDirName,
+                    showFolder
+                });
+                
+                // Try 1: Just the filename in show folder root
+                let tryPath = path.join(showFolder, fileName);
+                triedPaths.push(tryPath);
+                const exists1 = await exists(tryPath);
+                console.log('[server-worker] /api/show-file - Fallback 1:', { tryPath, exists: exists1 });
+                
+                if (exists1) {
+                    resolvedPath = tryPath;
+                    fileExists = true;
+                } else {
+                    // Try 2: Last directory + filename (e.g., HouseModel/KR.obj)
+                    tryPath = path.join(showFolder, lastDirName, fileName);
+                    triedPaths.push(tryPath);
+                    const exists2 = await exists(tryPath);
+                    console.log('[server-worker] /api/show-file - Fallback 2:', { tryPath, exists: exists2 });
+                    
+                    if (exists2) {
+                        resolvedPath = tryPath;
+                        fileExists = true;
+                    }
+                }
+            }
+            
+            if (!fileExists) {
+                console.error('[server-worker] /api/show-file - File not found after all attempts:', {
+                    originalPath: filePath,
+                    triedPaths,
+                    showFolder,
+                    isAbsolute
+                });
                 ctx.status = 404;
-                ctx.body = { error: 'File not found' };
+                ctx.body = { 
+                    error: 'File not found',
+                    tried: triedPaths,
+                    showFolder: showFolder,
+                    originalPath: filePath
+                };
                 return;
             }
+            
+            console.log('[server-worker] /api/show-file - File found!', {
+                resolvedPath,
+                originalPath: filePath
+            });
 
             // Set appropriate MIME type
             ctx.type = inferMimeType(resolvedPath);
@@ -460,6 +544,64 @@ async function startServer(config: ServerWorkerData) {
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/:filename - fallback for texture requests (e.g., /api/texture_1001.png)
+    // This handles cases where MTLLoader constructs URLs like /api/texture.png
+    // ----------------------------------------------
+    router.get('/api/:filename', async (ctx) => {
+        const filename = ctx.params.filename as string;
+        const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+        
+        // Only handle image/texture files
+        const imageExt = /\.(png|jpg|jpeg|gif|webp|bmp|tga|dds)$/i;
+        if (!imageExt.test(filename)) {
+            ctx.status = 404;
+            return;
+        }
+        
+        if (!showFolder) {
+            ctx.status = 404;
+            ctx.body = { error: 'Show folder not set' };
+            return;
+        }
+        
+        // Try to find the texture file in common locations
+        const possiblePaths = [
+            path.join(showFolder, 'HouseModel', filename),
+            path.join(showFolder, filename),
+            // Also try in any subdirectory
+        ];
+        
+        // Search in show folder and common subdirectories
+        let foundPath: string | null = null;
+        for (const tryPath of possiblePaths) {
+            if (await exists(tryPath)) {
+                foundPath = tryPath;
+                break;
+            }
+        }
+        
+        // If not found in common locations, search recursively (limited depth)
+        if (!foundPath) {
+            const searchDir = path.join(showFolder, 'HouseModel');
+            if (await exists(searchDir)) {
+                const searchPath = path.join(searchDir, filename);
+                if (await exists(searchPath)) {
+                    foundPath = searchPath;
+                }
+            }
+        }
+        
+        if (!foundPath) {
+            ctx.status = 404;
+            ctx.body = { error: 'Texture not found', filename, showFolder };
+            return;
+        }
+        
+        ctx.type = inferMimeType(foundPath);
+        await send(ctx, path.basename(foundPath), { root: path.dirname(foundPath) });
     });
 
     // ----------------------------------------------

@@ -342,24 +342,66 @@ function SceneContent({
 }) {
     const { camera, controls } = useThree();
 
-    // Auto-fit camera to scene
+    // Auto-fit camera to scene (including house meshes)
     useEffect(() => {
-        if (points.length === 0) return;
+        if (points.length === 0 && (!viewObjects || viewObjects.length === 0)) return;
 
         const box = new THREE.Box3();
+
+        // Include points
         points.forEach((point) => {
             box.expandByPoint(new THREE.Vector3(point.x, point.y, point.z));
         });
 
+        // Include shapes
         if (shapes) {
             shapes.forEach((shape) => {
                 box.expandByPoint(new THREE.Vector3(shape.position.x, shape.position.y, shape.position.z));
             });
         }
 
+        // Include house meshes (viewObjects) in bounding box calculation
+        if (viewObjects) {
+            viewObjects.forEach((viewObj) => {
+                if (viewObj.displayAs === 'Mesh' && viewObj.active !== false) {
+                    // Add the house position to the bounding box
+                    // Account for scale - estimate size based on typical house dimensions
+                    // Scale values are multipliers, so estimate house is ~10-20 units in OBJ file
+                    const baseHouseSize = 15; // Estimated base size of house in OBJ file units
+                    const maxScale = Math.max(viewObj.scaleX, viewObj.scaleY, viewObj.scaleZ);
+                    const estimatedSize = baseHouseSize * maxScale;
+                    const halfSize = estimatedSize / 2;
+
+                    // Add corners of the bounding box for the house
+                    box.expandByPoint(new THREE.Vector3(
+                        viewObj.worldPosX - halfSize,
+                        viewObj.worldPosY - halfSize,
+                        viewObj.worldPosZ - halfSize
+                    ));
+                    box.expandByPoint(new THREE.Vector3(
+                        viewObj.worldPosX + halfSize,
+                        viewObj.worldPosY + halfSize,
+                        viewObj.worldPosZ + halfSize
+                    ));
+
+                    // Also add the center point
+                    box.expandByPoint(new THREE.Vector3(
+                        viewObj.worldPosX,
+                        viewObj.worldPosY,
+                        viewObj.worldPosZ
+                    ));
+                }
+            });
+        }
+
+        // If box is empty, set a default
+        if (box.isEmpty()) {
+            box.setFromCenterAndSize(new THREE.Vector3(0, 0, 0), new THREE.Vector3(100, 100, 100));
+        }
+
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
+        const maxDim = Math.max(size.x, size.y, size.z) || 100;
         const distance = maxDim * 2.5;
 
         camera.position.set(center.x + distance, center.y + distance, center.z + distance);
@@ -371,7 +413,7 @@ function SceneContent({
             orbitControls.target.copy(center);
             orbitControls.update();
         }
-    }, [points, shapes, camera, controls]);
+    }, [points, shapes, viewObjects, camera, controls]);
 
     return (
         <>
@@ -400,6 +442,8 @@ function SceneContent({
                             key={viewObj.name}
                             viewObject={viewObj}
                             frameServerUrl={frameServerUrl}
+                            liveData={liveData}
+                            points={points}
                         />
                     );
                 }
