@@ -390,18 +390,18 @@ function processCommand(cmd: EZPlayerCommand) {
                     emitError(`Unable to identify sequence ${cmd.songId}`);
                     return false;
                 }
+                const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
                 foregroundPlayerRunState.addInteractiveCommand({
                     immediate: cmd.immediate,
                     requestId: cmd.requestId,
-                    startTime: foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay,
+                    startTime,
                     seqId: cmd.songId,
                 });
-                audioPlayerRunState.addInteractiveCommand({
-                    immediate: cmd.immediate,
-                    requestId: cmd.requestId,
-                    startTime: foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay,
-                    seqId: cmd.songId,
-                });
+
+                if (cmd.immediate) {
+                    audioPlayerRunTime = Math.min(audioPlayerRunTime, startTime); // Possibly overlap audio
+                }
+
                 emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
                 sendPlayerStateUpdate();
                 if (!running) {
@@ -412,12 +412,10 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'deleterequest': {
             emitInfo(`Delete ${cmd.requestId}`);
             foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
-            audioPlayerRunState.removeInteractiveCommand(cmd.requestId);
             break;
         }
         case 'clearrequests': {
             foregroundPlayerRunState.removeInteractiveCommands();
-            audioPlayerRunState.removeInteractiveCommands();
             break;
         }
         case 'setvolume': {
@@ -675,11 +673,11 @@ let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
+// Separate time (within foregroundPlayerRunState)... we will front-run the audio a bit.
+//  Audio up to this time has already been sent out.
+//  If you send this back in time (say to pick up the start of an immediate play) audio will overlap.  C'est la vie.
+let audioPlayerRunTime: number = foregroundPlayerRunState.currentTime;
 
-// Kept separate, as we will run it in advance
-//  Say, we run it 100ms in advance, we're giving it audio for 100-200ms out.
-// We will use its current time as the target and try to keep it out in front
-let audioPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let volumeSF = 1.0; // Most representations are 0-100, not this one
 
 // Thread-safe stop flag to prevent further frame sending after stop
@@ -979,20 +977,12 @@ async function processQueue() {
             if (installNewSchedule()) {
                 emitInfo(`New schedule installed`);
                 const initializeTime = rtcConverter.computeTime(curPN); // MoC - Review
-                const preserveAudioTime = audioPlayerRunState?.currentTime || initializeTime;
                 const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || initializeTime;
                 const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
                 foregroundPlayerRunState = new PlayerRunState(initializeTime);
-                audioPlayerRunState = new PlayerRunState(initializeTime);
                 backgroundPlayerRunState = new PlayerRunState(initializeTime);
                 const errs: string[] = [];
                 foregroundPlayerRunState.setUpSequences(
-                    curSequences ?? [],
-                    curPlaylists ?? [],
-                    (curSchedule ?? []).filter((s) => s.scheduleType === 'main'),
-                    errs,
-                );
-                audioPlayerRunState.setUpSequences(
                     curSequences ?? [],
                     curPlaylists ?? [],
                     (curSchedule ?? []).filter((s) => s.scheduleType === 'main'),
@@ -1005,10 +995,6 @@ async function processQueue() {
                     errs,
                 );
                 foregroundPlayerRunState.addTimeRangeToSchedule(
-                    initializeTime,
-                    initializeTime + playbackParams.scheduleLoadTime,
-                );
-                audioPlayerRunState.addTimeRangeToSchedule(
                     initializeTime,
                     initializeTime + playbackParams.scheduleLoadTime,
                 );
@@ -1025,7 +1011,6 @@ async function processQueue() {
                 // Make these caught up to the correct times from the last trip through...
                 foregroundPlayerRunState.runUntil(preserveFGFseqTime);
                 backgroundPlayerRunState.runUntil(preserveBGFseqTime);
-                audioPlayerRunState.runUntil(preserveAudioTime);
 
                 sendPlayerStateUpdate();
             }
@@ -1033,10 +1018,6 @@ async function processQueue() {
             // Make sure we see a day in advance
             if (lastPRSSchedUpdate < targetFrameRTC + (playbackParams.scheduleLoadTime * 24) / 25) {
                 foregroundPlayerRunState.addTimeRangeToSchedule(
-                    lastPRSSchedUpdate,
-                    targetFrameRTC + playbackParams.scheduleLoadTime,
-                );
-                audioPlayerRunState.addTimeRangeToSchedule(
                     lastPRSSchedUpdate,
                     targetFrameRTC + playbackParams.scheduleLoadTime,
                 );
@@ -1062,7 +1043,7 @@ async function processQueue() {
 
                         if (action.seqId) {
                             emitAudioDebug(`Do prefetch of ${action.seqId}`);
-                            const seq = audioPlayerRunState.sequencesById.get(action.seqId);
+                            const seq = foregroundPlayerRunState.sequencesById.get(action.seqId);
                             let saf = seq?.files?.audio;
                             if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                             if (saf) {
@@ -1078,6 +1059,7 @@ async function processQueue() {
                     }
                 }
 
+                // TODO AUDIO This is the issue...
                 const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
                     playbackParams.audioPrefetchTime,
                     playbackParams.scheduleLoadTime,
@@ -1184,32 +1166,33 @@ async function processQueue() {
 
             // Send out audio in advance (at lease sendAudioInAdvanceMs at all times)
             emitAudioDebug(
-                `Send audio time: ${audioPlayerRunState.currentTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
+                `Send audio time: ${audioPlayerRunTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
             );
             let aiter = 0;
-            while (audioPlayerRunState.currentTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs) {
+            while (audioPlayerRunTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs) {
                 ++aiter;
                 if (aiter > 100) {
                     emitError(`Way too many audio iterations!`);
                     break;
                 }
 
-                let startTime = Math.floor(audioPlayerRunState.currentTime + playbackParams.audioTimeAdjMs);
+                let startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
 
+                // TODO AUDIO this is the issue
                 const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
                 let audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
-                    sendSilence(startTime, audioAction.atTime - audioPlayerRunState.currentTime);
-                    audioPlayerRunState.runUntil(audioAction.atTime);
+                    sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
+                    audioPlayerRunTime = audioAction.atTime;
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    const etime = Math.max(audioPlayerRunState.currentTime, targetFrameRTC);
-                    audioPlayerRunState.runUntil(etime);
-                    sendSilence(startTime, etime - audioPlayerRunState.currentTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
+                    const etime = Math.max(audioPlayerRunTime, targetFrameRTC);
+                    sendSilence(startTime, etime - audioPlayerRunTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
+                    audioPlayerRunTime = etime;
                     break;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
@@ -1218,7 +1201,7 @@ async function processQueue() {
 
                 let audioref: ReturnType<MP3PrefetchCache['getMp3']> | undefined = undefined;
                 try {
-                    const curAudioSeq = audioPlayerRunState.sequencesById.get(audioAction.seqId);
+                    const curAudioSeq = foregroundPlayerRunState.sequencesById.get(audioAction.seqId);
                     let saf = curAudioSeq?.files?.audio;
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
@@ -1256,10 +1239,10 @@ async function processQueue() {
                             });
 
                             const playAtRealTime = Math.floor(
-                                audioPlayerRunState.currentTime + (playbackParams?.audioTimeAdjMs ?? 0),
+                                audioPlayerRunTime + (playbackParams?.audioTimeAdjMs ?? 0),
                             );
 
-                            if (audioPlayerRunState.currentTime >= targetFrameRTC) {
+                            if (audioPlayerRunTime >= targetFrameRTC) {
                                 send(
                                     {
                                         type: 'audioChunk',
@@ -1277,14 +1260,14 @@ async function processQueue() {
                                 ++playbackStats.skippedAudioChunksCumulative;
                             }
 
-                            audioPlayerRunState.runUntil(audioPlayerRunState.currentTime + msToSend);
+                            audioPlayerRunTime += msToSend;
                         }
                     } else {
                         const msToSend = Math.min(
                             audioAction.durationMS ?? playbackParams.sendAudioInAdvanceMs,
                             playbackParams.sendAudioInAdvanceMs,
                         );
-                        audioPlayerRunState.runUntil(audioPlayerRunState.currentTime + msToSend);
+                        audioPlayerRunTime += msToSend;
                     }
                 } finally {
                     audioref?.ref?.release();
