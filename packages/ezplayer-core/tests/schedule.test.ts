@@ -1289,6 +1289,98 @@ describe('calcschedule', () => {
         expect(logs[logs.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 30_000);
         expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
     });
+
+    it('snapshot should produce same results as original when run from the same point', () => {
+        const errs: string[] = [];
+        const bdate = new Date(parts3straight.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const endTime = bt + 24 * 3600 * 1000;
+
+        // Run original to a midpoint
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences(all9, playlists_3_9, [parts3straight], errs);
+        expect(errs.length).toBe(0);
+        plr.readOutScheduleUntil(bt + 18 * 60 * 60 * 1000 + 30 * 1000, 100);
+
+        // Snapshot
+        const snap = plr.snapshot();
+
+        // Run both to the end
+        const logsOriginal = plr.readOutScheduleUntil(endTime, 100);
+        const logsSnapshot = snap.readOutScheduleUntil(endTime, 100);
+
+        expect(logsSnapshot.length).toBe(logsOriginal.length);
+        for (let i = 0; i < logsOriginal.length; i++) {
+            expect(logsSnapshot[i].eventType).toBe(logsOriginal[i].eventType);
+            expect(logsSnapshot[i].eventTime).toBe(logsOriginal[i].eventTime);
+            expect(logsSnapshot[i].scheduleId).toBe(logsOriginal[i].scheduleId);
+            expect(logsSnapshot[i].sequenceId).toBe(logsOriginal[i].sequenceId);
+        }
+    });
+
+    it('snapshot should not affect original when advanced', () => {
+        const errs: string[] = [];
+        const bdate = new Date(parts3straight.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences(all9, playlists_3_9, [parts3straight], errs);
+        expect(errs.length).toBe(0);
+        plr.readOutScheduleUntil(bt + 18 * 60 * 60 * 1000 + 30 * 1000, 100);
+
+        // Capture original state before snapshot
+        const originalTime = plr.currentTime;
+        const originalStackDepth = plr.depth;
+        const originalSnapshot = plr.getStatusSnapshot();
+
+        // Snapshot and run it to the end
+        const snap = plr.snapshot();
+        snap.readOutScheduleUntil(bt + 24 * 3600 * 1000, 100);
+
+        // Original should be unchanged
+        expect(plr.currentTime).toBe(originalTime);
+        expect(plr.depth).toBe(originalStackDepth);
+        const afterSnapshot = plr.getStatusSnapshot();
+        expect(afterSnapshot.length).toBe(originalSnapshot.length);
+        for (let i = 0; i < originalSnapshot.length; i++) {
+            expect(afterSnapshot[i].seqIdx).toBe(originalSnapshot[i].seqIdx);
+            expect(afterSnapshot[i].offsetInto).toBe(originalSnapshot[i].offsetInto);
+            expect(afterSnapshot[i].atTime).toBe(originalSnapshot[i].atTime);
+        }
+    });
+
+    it('snapshot with preemption should produce same results', () => {
+        const errs: string[] = [];
+        const bdate = new Date(parts3straight.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const endTime = bt + 19 * 60 * 60 * 1000;
+
+        // Set up a schedule with preemption
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([...all9, rec1], [...playlists_3_9, pl1], [parts3loopLow, parts1Med], errs);
+        expect(errs.length).toBe(0);
+
+        // Run to just before the preemption point (1 minute in)
+        plr.readOutScheduleUntil(bt + 18 * 60 * 60 * 1000 + 50 * 1000, 100);
+
+        // Snapshot
+        const snap = plr.snapshot();
+
+        // Run both to the end
+        const logsOriginal = plr.readOutScheduleUntil(endTime, 100);
+        const logsSnapshot = snap.readOutScheduleUntil(endTime, 100);
+
+        expect(logsSnapshot.length).toBe(logsOriginal.length);
+        for (let i = 0; i < logsOriginal.length; i++) {
+            expect(logsSnapshot[i].eventType).toBe(logsOriginal[i].eventType);
+            expect(logsSnapshot[i].eventTime).toBe(logsOriginal[i].eventTime);
+            expect(logsSnapshot[i].scheduleId).toBe(logsOriginal[i].scheduleId);
+            expect(logsSnapshot[i].sequenceId).toBe(logsOriginal[i].sequenceId);
+        }
+    });
 });
 
 const krs1: SequenceRecord = {

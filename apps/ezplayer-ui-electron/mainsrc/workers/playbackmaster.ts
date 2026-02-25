@@ -1060,7 +1060,7 @@ async function processQueue() {
                 }
 
                 // TODO AUDIO This is the issue...
-                const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
+                const upcomingAudio = foregroundPlayerRunState?.snapshot()?.getUpcomingItems(
                     playbackParams.audioPrefetchTime,
                     playbackParams.scheduleLoadTime,
                     playbackParams.maxAudioPrefetchItems,
@@ -1179,7 +1179,7 @@ async function processQueue() {
                 let startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
 
                 // TODO AUDIO this is the issue
-                const upcomingAudio = audioPlayerRunState?.getUpcomingItems(
+                const upcomingAudio = foregroundPlayerRunState?.snapshot()?.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );

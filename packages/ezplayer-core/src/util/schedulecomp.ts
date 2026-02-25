@@ -198,6 +198,12 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
         this.bubbleDown(0); // Restore heap order
     }
 
+    clone(): SchedulerMinHeap<T> {
+        const copy = new SchedulerMinHeap<T>();
+        copy.heap = [...this.heap];
+        return copy;
+    }
+
     deleteTop(): T | undefined {
         if (this.heap.length === 0) return undefined;
         const top = this.heap[0];
@@ -1315,6 +1321,40 @@ export class PlayerRunState {
 
     constructor(currentTime: number) {
         this.currentTime = currentTime;
+    }
+
+    /** Shallow snapshot: clones mutable run state (stack, heap, upcoming, queues)
+     *  but shares reference data (sequences, playlists, schedules) which are not
+     *  altered during readahead. The returned copy can be advanced independently. */
+    snapshot(): PlayerRunState {
+        const copy = new PlayerRunState(this.currentTime);
+
+        // Clone stack entries (each tracks cursor position into read-only PlaybackItems)
+        copy.stack = this.stack.map((e) => e.clone());
+        copy.stackById = new Map();
+        for (const e of copy.stack) copy.stackById.set(e.itemId, e);
+
+        // Clone heap (items get popped/inserted during runUntil)
+        copy.heap = this.heap.clone();
+        copy.heapById = new Map(this.heapById);
+
+        // Clone upcoming list (items move to heap as time passes)
+        copy.upcomingOccurrences = [...this.upcomingOccurrences];
+        copy.upcomingById = new Map(this.upcomingById);
+
+        // Clone interactive queue (items consumed during runUntil)
+        copy.interactiveQueue = [...this.interactiveQueue];
+        copy.immediateItem = this.immediateItem;
+
+        // Share reference data (not mutated during readahead)
+        copy.sequences = this.sequences;
+        copy.sequencesById = this.sequencesById;
+        copy.playlists = this.playlists;
+        copy.playlistsById = this.playlistsById;
+        copy.schedules = this.schedules;
+        copy.schedulesById = this.schedulesById;
+
+        return copy;
     }
 
     setUpSequences(
