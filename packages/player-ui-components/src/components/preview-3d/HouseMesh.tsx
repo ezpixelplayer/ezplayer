@@ -1,10 +1,26 @@
-import React, { useMemo, Suspense, ErrorInfo, useRef, useEffect } from 'react';
-import { useLoader, useFrame } from '@react-three/fiber';
+import React, { useMemo, useState, Suspense, ErrorInfo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as THREE from 'three';
 import type { ViewObject, Point3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum texture dimension (width or height) allowed.
+ * Textures larger than this are down-scaled on the CPU before upload to
+ * the GPU, which prevents WebGL "Context Lost" errors caused by running
+ * out of GPU memory (6 × 4 K textures ≈ 600 MB VRAM with mipmaps).
+ */
+const MAX_TEXTURE_SIZE = 2048;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 interface HouseMeshProps {
     viewObject: ViewObject;
@@ -13,7 +29,240 @@ interface HouseMeshProps {
     points?: Point3D[]; // Points to look up channel information
 }
 
-// Error boundary component for HouseMesh
+/**
+ * Reliable mesh type check.
+ *
+ * `child instanceof THREE.Mesh` can return `false` when the bundler
+ * produces two copies of the `three` package (one for our code and one
+ * pulled in by `three/examples/jsm/loaders/*`).  Three.js sets a
+ * permanent boolean flag `.isMesh = true` on every Mesh – this flag is
+ * safe regardless of module deduplication.
+ */
+function isMesh(child: THREE.Object3D): child is THREE.Mesh {
+    return (child as THREE.Mesh).isMesh === true;
+}
+
+/**
+ * Down-scale a single THREE.Texture so that neither dimension exceeds
+ * `maxDim`.  The image is redrawn onto an off-screen <canvas> and the
+ * texture is marked dirty so Three.js re-uploads it.
+ */
+function downscaleTexture(texture: THREE.Texture, maxDim: number): void {
+    const img = texture.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined;
+    if (!img || !('width' in img) || !('height' in img)) return;
+    if (img.width <= maxDim && img.height <= maxDim) return;
+
+    const scale = maxDim / Math.max(img.width, img.height);
+    const newW = Math.floor(img.width * scale);
+    const newH = Math.floor(img.height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = newW;
+    canvas.height = newH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(img as CanvasImageSource, 0, 0, newW, newH);
+
+    console.log(`[HouseMesh] Down-scaled texture "${texture.name || '(unnamed)'}" from ${img.width}×${img.height} → ${newW}×${newH}`);
+
+    texture.image = canvas;
+    texture.needsUpdate = true;
+}
+
+/** Texture property names commonly set by MTLLoader. */
+const TEXTURE_SLOTS = ['map', 'normalMap', 'specularMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'aoMap'] as const;
+
+/**
+ * Iterate every texture in `materials` and:
+ *  1. Disable mip-map generation (saves ~33 % GPU memory per texture).
+ *  2. If the image is already decoded, down-scale it to MAX_TEXTURE_SIZE.
+ *  3. If the image hasn't decoded yet, attach a one-shot listener that
+ *     will down-scale it once it arrives.
+ */
+function optimizeMaterialTextures(materials: Record<string, THREE.Material>): void {
+    const seen = new Set<number>(); // texture.id – avoid processing the same texture twice
+
+    for (const mat of Object.values(materials)) {
+        for (const prop of TEXTURE_SLOTS) {
+            const tex = (mat as unknown as Record<string, unknown>)[prop] as THREE.Texture | undefined;
+            if (!tex || !(tex as THREE.Texture).isTexture) continue;
+            if (seen.has(tex.id)) continue;
+            seen.add(tex.id);
+
+            // Disable mip-maps – big memory win, negligible visual loss
+            tex.generateMipmaps = false;
+            tex.minFilter = THREE.LinearFilter;
+
+            const img = tex.image as HTMLImageElement | undefined;
+            if (!img) continue;
+
+            if (img instanceof HTMLImageElement && !img.complete) {
+                // Image still loading – resize when it arrives
+                img.addEventListener('load', () => {
+                    downscaleTexture(tex, MAX_TEXTURE_SIZE);
+                }, { once: true });
+            } else {
+                // Already decoded
+                downscaleTexture(tex, MAX_TEXTURE_SIZE);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Line → Mesh conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert LineSegments children inside `group` to proper Mesh objects so
+ * that MTL textures can be applied.
+ *
+ * Some xLights OBJ exports only emit `l` (line) directives instead of
+ * `f` (face) directives. Three.js creates `LineSegments` for these –
+ * but `LineSegments` cannot display textured materials.
+ *
+ * Strategy:
+ *  – For each LineSegments child, extract the position buffer.
+ *  – If the line segments actually describe closed triangle edges
+ *    (pairs of consecutive vertices forming a loop), attempt to build a
+ *    triangle mesh via Delaunay-like fan reconstruction.
+ *  – As a robust fallback, generate a thin "tube" quad strip along each
+ *    line pair so there's actual surface area for textures to appear on.
+ *  – In the worst case, just create a Mesh from the existing position
+ *    buffer treated as indexed triangles (every 3 consecutive verts =
+ *    1 triangle).
+ */
+function convertLineSegmentsToMeshes(
+    group: THREE.Group,
+    materialCreator: MTLLoader.MaterialCreator | null,
+): THREE.Group {
+    const newGroup = new THREE.Group();
+    newGroup.name = group.name;
+    newGroup.position.copy(group.position);
+    newGroup.rotation.copy(group.rotation);
+    newGroup.scale.copy(group.scale);
+
+    group.traverse((child: THREE.Object3D) => {
+        if (child.type !== 'LineSegments') return;
+
+        const lineSegs = child as THREE.LineSegments;
+        const geo = lineSegs.geometry;
+        const posAttr = geo.getAttribute('position');
+        if (!posAttr || posAttr.count === 0) return;
+
+        const positions = posAttr as THREE.BufferAttribute;
+        const vertCount = positions.count;
+
+        console.log(`[HouseMesh] Converting LineSegments "${child.name}" (${vertCount} verts) to Mesh`);
+
+        // Attempt 1: treat every 3 consecutive verts as a triangle face.
+        // This works if the OBJ really describes triangles via `l` pairs
+        // in a consistent winding (v0-v1, v1-v2, v2-v0 pattern repeated).
+        // We'll detect this by checking if every group of 6 verts (3 line
+        // segments = 6 verts) forms a closed triangle (v0→v1, v1→v2, v2→v0).
+        const meshGeo = new THREE.BufferGeometry();
+
+        if (vertCount >= 6 && vertCount % 6 === 0) {
+            // Likely triangle-edge pairs: (A→B, B→C, C→A) per triangle
+            const triCount = vertCount / 6;
+            const triPositions = new Float32Array(triCount * 9);
+            const triUVs = new Float32Array(triCount * 6);
+            const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute | undefined;
+
+            for (let t = 0; t < triCount; t++) {
+                const base = t * 6;
+                // Each triangle is encoded as 3 line segments: AB, BC, CA
+                // We take vertex 0 of each segment: positions at base+0, base+2, base+4
+                for (let v = 0; v < 3; v++) {
+                    const srcIdx = base + v * 2; // 0, 2, 4
+                    const dstIdx = t * 9 + v * 3;
+                    triPositions[dstIdx] = positions.getX(srcIdx);
+                    triPositions[dstIdx + 1] = positions.getY(srcIdx);
+                    triPositions[dstIdx + 2] = positions.getZ(srcIdx);
+
+                    if (uvAttr) {
+                        triUVs[t * 6 + v * 2] = uvAttr.getX(srcIdx);
+                        triUVs[t * 6 + v * 2 + 1] = uvAttr.getY(srcIdx);
+                    }
+                }
+            }
+
+            meshGeo.setAttribute('position', new THREE.BufferAttribute(triPositions, 3));
+            if (uvAttr) {
+                meshGeo.setAttribute('uv', new THREE.BufferAttribute(triUVs, 2));
+            }
+
+            console.log(`[HouseMesh] Converted ${triCount} triangle-edge groups to ${triCount} triangles`);
+
+        } else if (vertCount >= 3) {
+            // Fallback: treat every 3 consecutive vertices as a triangle.
+            // This loses some verts if not divisible by 3, but gives us geometry.
+            const usable = Math.floor(vertCount / 3) * 3;
+            const fallbackPositions = new Float32Array(usable * 3);
+            const fallbackUVs = new Float32Array(usable * 2);
+            const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute | undefined;
+
+            for (let i = 0; i < usable; i++) {
+                fallbackPositions[i * 3] = positions.getX(i);
+                fallbackPositions[i * 3 + 1] = positions.getY(i);
+                fallbackPositions[i * 3 + 2] = positions.getZ(i);
+
+                if (uvAttr) {
+                    fallbackUVs[i * 2] = uvAttr.getX(i);
+                    fallbackUVs[i * 2 + 1] = uvAttr.getY(i);
+                }
+            }
+
+            meshGeo.setAttribute('position', new THREE.BufferAttribute(fallbackPositions, 3));
+            if (uvAttr) {
+                meshGeo.setAttribute('uv', new THREE.BufferAttribute(fallbackUVs, 2));
+            }
+
+            console.log(`[HouseMesh] Fallback: treated ${usable} verts as ${usable / 3} triangles`);
+        }
+
+        meshGeo.computeVertexNormals();
+
+        // Choose material: prefer the MTL material, fall back to a grey default
+        let meshMaterial: THREE.Material;
+        const lineMat = lineSegs.material as THREE.Material;
+
+        if (materialCreator && Object.keys(materialCreator.materials).length > 0) {
+            // Use the first MTL material as default for this group
+            const matKeys = Object.keys(materialCreator.materials);
+            meshMaterial = materialCreator.materials[matKeys[0]];
+            // Ensure it renders double-sided so we see both faces
+            meshMaterial.side = THREE.DoubleSide;
+            console.log(`[HouseMesh] Applied MTL material "${matKeys[0]}" to converted mesh`);
+        } else {
+            meshMaterial = new THREE.MeshStandardMaterial({
+                color: lineMat && 'color' in lineMat ? (lineMat as THREE.LineBasicMaterial).color : 0xcccccc,
+                side: THREE.DoubleSide,
+                roughness: 0.7,
+                metalness: 0.1,
+            });
+        }
+
+        const mesh = new THREE.Mesh(meshGeo, meshMaterial);
+        mesh.name = child.name || 'converted-line-mesh';
+        newGroup.add(mesh);
+    });
+
+    // If no LineSegments were converted (shouldn't happen), return original
+    if (newGroup.children.length === 0) {
+        console.warn('[HouseMesh] No LineSegments converted – returning original group');
+        return group;
+    }
+
+    console.log(`[HouseMesh] Converted ${newGroup.children.length} LineSegments → Mesh children`);
+    return newGroup;
+}
+
+// ---------------------------------------------------------------------------
+// Error Boundary
+// ---------------------------------------------------------------------------
+
 class HouseMeshErrorBoundary extends React.Component<
     { children: React.ReactNode; viewObjectName?: string },
     { hasError: boolean; error: Error | null }
@@ -33,42 +282,96 @@ class HouseMeshErrorBoundary extends React.Component<
             errorMessage: error?.message,
             errorStack: error?.stack,
             componentStack: errorInfo.componentStack,
-            // Try to extract more details from the error
-            errorDetails: (error as any)?.response || (error as any)?.details
+            errorDetails: (error as unknown as Record<string, unknown>)?.response || (error as unknown as Record<string, unknown>)?.details,
         });
 
-        // If it's a 403 error, log additional debugging info
         if (error?.message?.includes('403') || error?.message?.includes('Forbidden')) {
-            console.error('[HouseMesh] 403 Forbidden - This usually means:');
-            console.error('  1. Show folder is not set on the server');
-            console.error('  2. File path is outside the show folder');
-            console.error('  3. Check the Electron main process console for [server-worker] logs');
+            console.error('[HouseMesh] 403 Forbidden – check server-worker logs.');
         }
     }
 
     render() {
-        if (this.state.hasError) {
-            // Silently fail - don't render anything if mesh fails to load
-            // This prevents the entire 3D viewer from crashing
-            return null;
-        }
-
+        if (this.state.hasError) return null;
         return this.props.children;
     }
 }
 
+// ---------------------------------------------------------------------------
+// Loading Manager factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a THREE.LoadingManager whose `resolveURL` redirects texture
+ * requests through our `/api/show-file` endpoint so the Koa server
+ * can serve them from the show folder on disk.
+ */
+function createShowFileLoadingManager(
+    frameServerUrl: string,
+    objDir: string,
+): THREE.LoadingManager {
+    const loadingManager = new THREE.LoadingManager();
+
+    loadingManager.resolveURL = (url: string) => {
+        // data: URIs – pass through unchanged
+        if (url.startsWith('data:')) return url;
+
+        // HTTP(S) URLs – may be a texture URL synthesised by
+        // MTLLoader's internal extractUrlBase (e.g.
+        // http://localhost:PORT/api/texture_1001.png)
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            try {
+                const parsed = new URL(url);
+                const serverParsed = new URL(frameServerUrl);
+
+                if (
+                    parsed.origin === serverParsed.origin &&
+                    parsed.pathname.startsWith('/api/') &&
+                    !parsed.pathname.includes('show-file')
+                ) {
+                    const filename = parsed.pathname.replace(/^\/api\//, '');
+                    if (filename) {
+                        const texturePath = objDir + filename;
+                        const textureUrl = new URL('/api/show-file', frameServerUrl);
+                        textureUrl.searchParams.set('path', texturePath);
+                        console.log('[HouseMesh] Resolved texture URL:', {
+                            original: url,
+                            texturePath,
+                            resolved: textureUrl.toString(),
+                        });
+                        return textureUrl.toString();
+                    }
+                }
+            } catch {
+                /* URL parse error – fall through */
+            }
+            return url;
+        }
+
+        // Relative / plain filenames (e.g. "texture_1001.png")
+        const texturePath = objDir + url;
+        const textureUrl = new URL('/api/show-file', frameServerUrl);
+        textureUrl.searchParams.set('path', texturePath);
+        console.log('[HouseMesh] Resolved relative texture URL:', {
+            original: url,
+            texturePath,
+            resolved: textureUrl.toString(),
+        });
+        return textureUrl.toString();
+    };
+
+    return loadingManager;
+}
+
+// ---------------------------------------------------------------------------
+// HouseMeshContent – the actual R3F component
+// ---------------------------------------------------------------------------
+
 function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: HouseMeshProps) {
     const {
         objFile,
-        worldPosX,
-        worldPosY,
-        worldPosZ,
-        scaleX,
-        scaleY,
-        scaleZ,
-        rotateX,
-        rotateY,
-        rotateZ,
+        worldPosX, worldPosY, worldPosZ,
+        scaleX, scaleY, scaleZ,
+        rotateX, rotateY, rotateZ,
         brightness,
         startChannel: viewObjectStartChannel,
         channelsPerNode: viewObjectChannelsPerNode = 3,
@@ -79,12 +382,14 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
         bOffset: viewObjectBOffset = 2,
     } = viewObject;
 
+    // The loaded THREE.Group – null until MTL + OBJ are ready
+    const [obj, setObj] = useState<THREE.Group | null>(null);
+
     // Track last frame sequence to avoid reprocessing
     const lastFrameSeqRef = useRef<number | null>(null);
 
-    // Auto-detect channel information from points if not provided
+    // ----- Channel info (auto-detect from points if needed) -----
     const channelInfo = useMemo(() => {
-        // If channel info is explicitly provided, use it
         if (viewObjectStartChannel !== undefined) {
             return {
                 startChannel: viewObjectStartChannel,
@@ -96,49 +401,32 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
             };
         }
 
-        // Try to find channel info from points by matching model name
-        if (!points || points.length === 0) {
-            return null;
-        }
+        if (!points || points.length === 0) return null;
 
-        // Try to match by modelName first, then by viewObject name
         const searchName = viewObjectModelName || viewObject.name;
         const matchingPoints = points.filter(p => p.metadata?.modelName === searchName);
+        if (matchingPoints.length === 0) return null;
 
-        if (matchingPoints.length === 0) {
-            return null;
-        }
-
-        // Get channels from matching points
         const channels = matchingPoints
             .map(p => p.channel)
             .filter((ch): ch is number => ch !== undefined)
             .sort((a, b) => a - b);
+        if (channels.length === 0) return null;
 
-        if (channels.length === 0) {
-            return null;
-        }
-
-        // Use the first channel as startChannel
-        const detectedStartChannel = channels[0];
-        const detectedChannelsPerNode = 3; // Assume RGB
-        const detectedNodeCount = Math.ceil((channels[channels.length - 1] - channels[0] + 3) / 3);
-
-        // Get color offsets from first point's metadata
         const firstPoint = matchingPoints[0];
-        const detectedROffset = firstPoint.metadata?.rOffset ?? 0;
-        const detectedGOffset = firstPoint.metadata?.gOffset ?? 1;
-        const detectedBOffset = firstPoint.metadata?.bOffset ?? 2;
-
         return {
-            startChannel: detectedStartChannel,
-            channelsPerNode: detectedChannelsPerNode,
-            nodeCount: detectedNodeCount,
-            rOffset: detectedROffset,
-            gOffset: detectedGOffset,
-            bOffset: detectedBOffset,
+            startChannel: channels[0],
+            channelsPerNode: 3,
+            nodeCount: Math.ceil((channels[channels.length - 1] - channels[0] + 3) / 3),
+            rOffset: firstPoint.metadata?.rOffset ?? 0,
+            gOffset: firstPoint.metadata?.gOffset ?? 1,
+            bOffset: firstPoint.metadata?.bOffset ?? 2,
         };
-    }, [viewObjectStartChannel, viewObjectChannelsPerNode, viewObjectNodeCount, viewObjectROffset, viewObjectGOffset, viewObjectBOffset, viewObjectModelName, viewObject.name, points]);
+    }, [
+        viewObjectStartChannel, viewObjectChannelsPerNode, viewObjectNodeCount,
+        viewObjectROffset, viewObjectGOffset, viewObjectBOffset,
+        viewObjectModelName, viewObject.name, points,
+    ]);
 
     const startChannel = channelInfo?.startChannel;
     const channelsPerNode = channelInfo?.channelsPerNode ?? 3;
@@ -147,7 +435,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
     const gOffset = channelInfo?.gOffset ?? 1;
     const bOffset = channelInfo?.bOffset ?? 2;
 
-    // Construct URL for OBJ file - use frameServerUrl to serve files from show folder
+    // ----- URL construction -----
     const objUrl = useMemo(() => {
         if (!objFile || !frameServerUrl) return null;
 
@@ -176,247 +464,291 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
         }
     }, [objFile, frameServerUrl]);
 
-    if (!objUrl) {
-        return null;
-    }
+    // -----------------------------------------------------------------
+    // Combined MTL → OBJ loader
+    //   1. Load .mtl  → MaterialCreator  (+ optimise textures)
+    //   2. Fetch .obj text & analyse its content
+    //   3. OBJLoader.parse(text) with materials set
+    //   4. If OBJ only has line geometry, convert to mesh triangles
+    // -----------------------------------------------------------------
+    React.useEffect(() => {
+        if (!objUrl || !frameServerUrl || !objFile) return;
 
-    // Load OBJ file - useLoader will suspend if loading
-    // Errors will be caught by ErrorBoundary
-    const obj = useLoader(OBJLoader, objUrl);
+        let aborted = false;
 
-    // Apply transforms
+        const loadModel = async () => {
+            try {
+                const objDir =
+                    objFile.substring(0, objFile.lastIndexOf('\\') + 1) ||
+                    objFile.substring(0, objFile.lastIndexOf('/') + 1) || '';
+
+                console.log('[HouseMesh] Loading model:', { objFile, objDir, objUrl, mtlUrl, frameServerUrl });
+
+                const loadingManager = createShowFileLoadingManager(frameServerUrl, objDir);
+
+                // ---- Step 1: Load MTL (best-effort) ----
+                let materialCreator: MTLLoader.MaterialCreator | null = null;
+
+                if (mtlUrl) {
+                    try {
+                        const mtlLoader = new MTLLoader(loadingManager);
+                        materialCreator = await mtlLoader.loadAsync(mtlUrl);
+                        if (aborted) return;
+
+                        materialCreator.preload();
+
+                        const matNames = Object.keys(materialCreator.materials);
+                        console.log('[HouseMesh] MTL loaded, available materials:', matNames);
+
+                        // Optimise textures: disable mipmaps + cap size to prevent
+                        // "THREE.WebGLRenderer: Context Lost" from GPU OOM.
+                        optimizeMaterialTextures(materialCreator.materials);
+                    } catch (mtlErr) {
+                        console.warn('[HouseMesh] MTL not available (using default materials):', mtlErr);
+                    }
+                }
+
+                if (aborted) return;
+
+                // ---- Step 2: Fetch OBJ text for analysis + parsing ----
+                const objResponse = await fetch(objUrl);
+                if (!objResponse.ok) {
+                    throw new Error(`Failed to fetch OBJ: ${objResponse.status} ${objResponse.statusText}`);
+                }
+                let objText = await objResponse.text();
+                if (aborted) return;
+
+                // ---- Step 2a: Analyse OBJ content ----
+                const vertexCount = (objText.match(/^v\s/gm) || []).length;
+                const normalCount = (objText.match(/^vn\s/gm) || []).length;
+                const texCoordCount = (objText.match(/^vt\s/gm) || []).length;
+                const faceCount = (objText.match(/^f\s/gm) || []).length;
+                const lineCount = (objText.match(/^l\s/gm) || []).length;
+                const pointCount = (objText.match(/^p\s/gm) || []).length;
+                const mtllibCount = (objText.match(/^mtllib\s/gm) || []).length;
+                const usemtlCount = (objText.match(/^usemtl\s/gm) || []).length;
+
+                // Also check for upper-case variants some exporters produce
+                const faceCountUpper = (objText.match(/^F\s/gm) || []).length;
+                const lineCountUpper = (objText.match(/^L\s/gm) || []).length;
+
+                const first20Lines = objText.split('\n').slice(0, 20).join('\n');
+
+                console.log('[HouseMesh] OBJ file analysis:', {
+                    sizeBytes: objText.length,
+                    totalLines: objText.split('\n').length,
+                    vertexCount, normalCount, texCoordCount,
+                    faceCount, lineCount, pointCount,
+                    faceCountUpper, lineCountUpper,
+                    mtllibCount, usemtlCount,
+                    first20Lines,
+                });
+
+                // ---- Step 2b: Fix known format issues ----
+                // Some exporters (e.g. xLights) emit upper-case directives
+                // (F, L, VN, VT) that Three.js OBJLoader doesn't recognise.
+                // Normalise them to lower-case.
+                if (faceCount === 0 && faceCountUpper > 0) {
+                    console.warn(`[HouseMesh] OBJ has ${faceCountUpper} upper-case F directives – normalising to lower-case`);
+                    objText = objText.replace(/^F\s/gm, 'f ');
+                }
+                if (lineCount === 0 && lineCountUpper > 0) {
+                    objText = objText.replace(/^L\s/gm, 'l ');
+                }
+                // Also normalise VT / VN / VP if needed
+                if (texCoordCount === 0 && (objText.match(/^VT\s/gm) || []).length > 0) {
+                    objText = objText.replace(/^VT\s/gm, 'vt ');
+                }
+                if (normalCount === 0 && (objText.match(/^VN\s/gm) || []).length > 0) {
+                    objText = objText.replace(/^VN\s/gm, 'vn ');
+                }
+
+                // ---- Step 3: Parse OBJ ----
+                const objLoader = new OBJLoader(loadingManager);
+                if (materialCreator) {
+                    objLoader.setMaterials(materialCreator);
+                }
+
+                let loadedObj = objLoader.parse(objText);
+                if (aborted) return;
+
+                // ---- Step 4: Diagnostics & fallback ----
+                let meshCount = 0;
+                let lineSegCount = 0;
+                const materialNames: string[] = [];
+                const childTypes: string[] = [];
+
+                loadedObj.traverse((child: THREE.Object3D) => {
+                    childTypes.push(child.type);
+                    if (isMesh(child)) {
+                        meshCount++;
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach(m => { if (m.name) materialNames.push(m.name); });
+                    }
+                    if (child.type === 'LineSegments') {
+                        lineSegCount++;
+                    }
+                });
+
+                console.log(`[HouseMesh] OBJ parsed for "${viewObject.name}":`, {
+                    meshCount,
+                    lineSegCount,
+                    materialNames,
+                    hadMTL: !!materialCreator,
+                    childTypes,
+                    directChildren: loadedObj.children.length,
+                });
+
+                // ---- Step 5: If OBJ only produced LineSegments, convert to Mesh ----
+                // xLights sometimes exports house models as line-only OBJ.
+                // We convert each LineSegments to a Mesh so textures can be applied.
+                if (meshCount === 0 && lineSegCount > 0) {
+                    console.warn('[HouseMesh] OBJ has no Mesh children (only LineSegments). Converting line geometry to mesh triangles…');
+                    loadedObj = convertLineSegmentsToMeshes(loadedObj, materialCreator);
+                }
+
+                setObj(loadedObj);
+            } catch (error) {
+                if (!aborted) {
+                    console.error('[HouseMesh] Failed to load model:', error);
+                }
+            }
+        };
+
+        loadModel();
+        return () => { aborted = true; };
+    }, [objUrl, mtlUrl, frameServerUrl, objFile, viewObject.name]);
+
+    // ----- Transforms -----
     const position = useMemo(
         () => new THREE.Vector3(worldPosX, worldPosY, worldPosZ),
         [worldPosX, worldPosY, worldPosZ],
     );
-    const scale = useMemo(() => new THREE.Vector3(scaleX, scaleY, scaleZ), [scaleX, scaleY, scaleZ]);
+    const scale = useMemo(
+        () => new THREE.Vector3(scaleX, scaleY, scaleZ),
+        [scaleX, scaleY, scaleZ],
+    );
     const rotation = useMemo(
-        () => new THREE.Euler((rotateX * Math.PI) / 180, (rotateY * Math.PI) / 180, (rotateZ * Math.PI) / 180),
+        () => new THREE.Euler(
+            (rotateX * Math.PI) / 180,
+            (rotateY * Math.PI) / 180,
+            (rotateZ * Math.PI) / 180,
+        ),
         [rotateX, rotateY, rotateZ],
     );
 
-    // Apply brightness if specified (only when NOT using live data)
-    // When live data is available, brightness is applied in the useFrame hook
+    // ----- Brightness (static, when not using live data) -----
     React.useEffect(() => {
-        if (obj && brightness !== undefined && (!liveData || startChannel === undefined)) {
-            obj.traverse((child: THREE.Object3D) => {
-                if (child instanceof THREE.Mesh && child.material) {
-                    const material = Array.isArray(child.material) ? child.material[0] : child.material;
-                    if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhongMaterial) {
-                        // Adjust emissive or multiply color by brightness
-                        const brightnessFactor = brightness / 100;
-                        if (material.color) {
-                            material.color.multiplyScalar(brightnessFactor);
-                        }
-                    }
-                }
-            });
-        }
+        if (!obj || brightness === undefined || (liveData && startChannel !== undefined)) return;
+
+        obj.traverse((child: THREE.Object3D) => {
+            if (!isMesh(child) || !child.material) return;
+            const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+            if ('color' in mat && (mat as THREE.MeshStandardMaterial).color) {
+                (mat as THREE.MeshStandardMaterial).color.multiplyScalar(brightness / 100);
+            }
+        });
     }, [obj, brightness, liveData, startChannel]);
 
-    // Apply materials to OBJ if available
-    React.useEffect(() => {
-        if (obj && mtlUrl && frameServerUrl && objFile) {
-            // Try to load materials asynchronously and apply them
-            const loadMaterials = async () => {
-                try {
-                    // Extract the directory path from the OBJ file path for texture resolution
-                    const objDir = objFile.substring(0, objFile.lastIndexOf('\\') + 1) ||
-                        objFile.substring(0, objFile.lastIndexOf('/') + 1) || '';
-
-                    // Create a custom LoadingManager that intercepts texture URLs
-                    const loadingManager = new THREE.LoadingManager();
-                    const originalResolveURL = loadingManager.resolveURL.bind(loadingManager);
-
-                    loadingManager.resolveURL = (url: string) => {
-                        // If it's already a full URL (http/https/data), use as-is
-                        if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-                            return originalResolveURL(url);
-                        }
-
-                        // If it's a relative texture path, route it through our API
-                        // MTL files reference textures like "texture_1001.png" relative to MTL location
-                        const texturePath = objDir + url;
-                        const textureUrl = new URL('/api/show-file', frameServerUrl);
-                        textureUrl.searchParams.set('path', texturePath);
-                        return textureUrl.toString();
-                    };
-
-                    const loader = new MTLLoader(loadingManager);
-
-                    // Set the base path for texture resolution
-                    // Extract directory from MTL URL path
-                    const mtlPathWithoutExt = objFile.replace(/\.obj$/i, '');
-                    const mtlDir = mtlPathWithoutExt.substring(0, mtlPathWithoutExt.lastIndexOf('\\') + 1) ||
-                        mtlPathWithoutExt.substring(0, mtlPathWithoutExt.lastIndexOf('/') + 1) || '';
-
-                    // Set path so MTLLoader knows where to look for textures
-                    // But we'll intercept via LoadingManager anyway
-                    loader.setPath(mtlDir);
-
-                    // Load MTL file
-                    const materials = await loader.loadAsync(mtlUrl);
-                    materials.preload();
-
-                    // Apply materials to meshes
-                    obj.traverse((child: THREE.Object3D) => {
-                        if (child instanceof THREE.Mesh && child.material) {
-                            const materialName = typeof child.material.name === 'string' ? child.material.name : '';
-                            if (materials.materials[materialName]) {
-                                child.material = materials.materials[materialName];
-                            }
-                        }
-                    });
-                } catch (error) {
-                    // MTL file might not exist, that's okay - OBJ can render without materials
-                    console.warn('[HouseMesh] Failed to load MTL file asynchronously:', error);
-                }
-            };
-            loadMaterials();
-        }
-    }, [obj, mtlUrl, frameServerUrl, objFile]);
-
-    // Extract and apply live colors from frame buffer
+    // ----- Live colour extraction from frame buffer -----
     useFrame(() => {
-        if (!obj || !liveData) {
-            return;
-        }
+        if (!obj || !liveData) return;
 
-        // If no startChannel is defined, we can't extract colors
-        // Log this once for debugging
         if (startChannel === undefined) {
             if (lastFrameSeqRef.current === null) {
-                console.warn(`[HouseMesh] No channel mapping for "${viewObject.name}". Live colors disabled. Set startChannel in view object to enable.`);
+                console.warn(`[HouseMesh] No channel mapping for "${viewObject.name}". Live colours disabled.`);
             }
             return;
         }
 
-        // Get latest frame
         const latestFrame = liveData.tryReadLatest(lastFrameSeqRef.current ?? undefined);
-        if (!latestFrame?.bytes) {
-            return;
-        }
+        if (!latestFrame?.bytes) return;
 
-        // Calculate average color from all nodes in this view object
-        // For simplicity, we'll average all channels for the entire mesh
-        let totalR = 0;
-        let totalG = 0;
-        let totalB = 0;
-        let validNodes = 0;
+        let totalR = 0, totalG = 0, totalB = 0, validNodes = 0;
 
         for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
-            const channelIndex = startChannel + (nodeIndex * channelsPerNode);
-
-            if (channelIndex + 2 < latestFrame.bytes.length) {
-                // Read bytes using the correct channel offsets
-                const rByte = latestFrame.bytes[channelIndex + rOffset];
-                const gByte = latestFrame.bytes[channelIndex + gOffset];
-                const bByte = latestFrame.bytes[channelIndex + bOffset];
-
-                totalR += rByte;
-                totalG += gByte;
-                totalB += bByte;
+            const ch = startChannel + nodeIndex * channelsPerNode;
+            if (ch + 2 < latestFrame.bytes.length) {
+                totalR += latestFrame.bytes[ch + rOffset];
+                totalG += latestFrame.bytes[ch + gOffset];
+                totalB += latestFrame.bytes[ch + bOffset];
                 validNodes++;
             }
         }
 
         if (validNodes === 0) {
-            // Log once if we can't find valid channels
             if (lastFrameSeqRef.current === null) {
-                console.warn(`[HouseMesh] No valid channels found for "${viewObject.name}" at startChannel=${startChannel}, nodeCount=${nodeCount}`);
+                console.warn(`[HouseMesh] No valid channels for "${viewObject.name}" at ch=${startChannel}`);
             }
             return;
         }
 
-        // Calculate average color
-        const avgR = totalR / validNodes / 255.0;
-        const avgG = totalG / validNodes / 255.0;
-        const avgB = totalB / validNodes / 255.0;
+        const bf = brightness !== undefined ? brightness / 100 : 1.0;
+        const finalR = Math.min(1.0, totalR / validNodes / 255.0 * bf);
+        const finalG = Math.min(1.0, totalG / validNodes / 255.0 * bf);
+        const finalB = Math.min(1.0, totalB / validNodes / 255.0 * bf);
 
-        // Apply brightness if specified
-        const brightnessFactor = brightness !== undefined ? brightness / 100 : 1.0;
-        const finalR = Math.min(1.0, avgR * brightnessFactor);
-        const finalG = Math.min(1.0, avgG * brightnessFactor);
-        const finalB = Math.min(1.0, avgB * brightnessFactor);
-
-        // Apply color to all materials in the mesh
         let materialUpdated = false;
-        obj.traverse((child: THREE.Object3D) => {
-            if (child instanceof THREE.Mesh && child.material) {
-                const materials = Array.isArray(child.material) ? child.material : [child.material];
 
-                materials.forEach((material) => {
-                    if (material instanceof THREE.MeshStandardMaterial ||
-                        material instanceof THREE.MeshPhongMaterial ||
-                        material instanceof THREE.MeshLambertMaterial) {
-                        // Set emissive color to create the lighting effect
-                        // This works better than just setting color for dynamic lighting
-                        material.emissive.setRGB(finalR, finalG, finalB);
-                        material.emissiveIntensity = 1.0;
-                        // Also set the base color for better compatibility
-                        material.color.setRGB(finalR, finalG, finalB);
-                        material.needsUpdate = true;
-                        materialUpdated = true;
-                    } else if (material instanceof THREE.MeshBasicMaterial) {
-                        // MeshBasicMaterial doesn't have emissive, just set color
-                        material.color.setRGB(finalR, finalG, finalB);
-                        material.needsUpdate = true;
-                        materialUpdated = true;
-                    }
-                });
-            }
+        obj.traverse((child: THREE.Object3D) => {
+            if (!isMesh(child) || !child.material) return;
+
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((material) => {
+                // Use .type string instead of instanceof – safe across module copies
+                if (
+                    material.type === 'MeshStandardMaterial' ||
+                    material.type === 'MeshPhongMaterial' ||
+                    material.type === 'MeshLambertMaterial'
+                ) {
+                    const m = material as THREE.MeshStandardMaterial;
+                    m.emissive.setRGB(finalR, finalG, finalB);
+                    m.emissiveIntensity = 1.0;
+                    m.color.setRGB(finalR, finalG, finalB);
+                    m.needsUpdate = true;
+                    materialUpdated = true;
+                } else if (material.type === 'MeshBasicMaterial') {
+                    const m = material as THREE.MeshBasicMaterial;
+                    m.color.setRGB(finalR, finalG, finalB);
+                    m.needsUpdate = true;
+                    materialUpdated = true;
+                }
+            });
         });
 
-        // Log first successful color update for debugging
         if (materialUpdated && lastFrameSeqRef.current === null) {
-            console.log(`[HouseMesh] Live colors enabled for "${viewObject.name}": RGB(${Math.round(finalR * 255)}, ${Math.round(finalG * 255)}, ${Math.round(finalB * 255)}) from ${validNodes} nodes`);
+            console.log(`[HouseMesh] Live colours for "${viewObject.name}": RGB(${Math.round(finalR * 255)},${Math.round(finalG * 255)},${Math.round(finalB * 255)}) from ${validNodes} nodes`);
         }
 
-        // Mark this frame as processed
         lastFrameSeqRef.current = latestFrame.seq;
     });
 
-    // Debug: Log mesh info when it loads
+    // ----- Debug: log mesh info once loaded -----
     React.useEffect(() => {
-        if (obj) {
-            const box = new THREE.Box3();
-            box.setFromObject(obj);
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
+        if (!obj) return;
 
-            console.log('[HouseMesh] Mesh loaded:', {
-                name: viewObject.name,
-                position: { x: position.x, y: position.y, z: position.z },
-                scale: { x: scale.x, y: scale.y, z: scale.z },
-                rotation: { x: rotation.x, y: rotation.y, z: rotation.z },
-                meshBounds: {
-                    center: { x: center.x, y: center.y, z: center.z },
-                    size: { x: size.x, y: size.y, z: size.z }
-                },
-                worldBounds: {
-                    min: {
-                        x: position.x + center.x - size.x / 2,
-                        y: position.y + center.y - size.y / 2,
-                        z: position.z + center.z - size.z / 2
-                    },
-                    max: {
-                        x: position.x + center.x + size.x / 2,
-                        y: position.y + center.y + size.y / 2,
-                        z: position.z + center.z + size.z / 2
-                    }
-                },
-                channelInfo: startChannel !== undefined ? {
-                    startChannel,
-                    channelsPerNode,
-                    nodeCount,
-                    colorOrder: `R=${rOffset}, G=${gOffset}, B=${bOffset}`,
-                    source: viewObjectStartChannel !== undefined ? 'explicit' : 'auto-detected from points'
-                } : 'No channel mapping - using static materials',
-                liveDataEnabled: !!liveData && startChannel !== undefined,
-                matchingPoints: points ? points.filter(p => p.metadata?.modelName === (viewObjectModelName || viewObject.name)).length : 0
-            });
-        }
-    }, [obj, position, scale, rotation, viewObject.name, startChannel, channelsPerNode, nodeCount, liveData, viewObjectStartChannel, points, viewObjectModelName]);
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        console.log('[HouseMesh] Mesh loaded:', {
+            name: viewObject.name,
+            position: { x: position.x, y: position.y, z: position.z },
+            scale: { x: scale.x, y: scale.y, z: scale.z },
+            rotation: { x: rotation.x, y: rotation.y, z: rotation.z },
+            meshBounds: {
+                center: { x: center.x, y: center.y, z: center.z },
+                size: { x: size.x, y: size.y, z: size.z },
+            },
+            channelInfo: startChannel !== undefined
+                ? { startChannel, channelsPerNode, nodeCount, colorOrder: `R=${rOffset}, G=${gOffset}, B=${bOffset}` }
+                : 'No channel mapping – using static materials',
+            liveDataEnabled: !!liveData && startChannel !== undefined,
+        });
+    }, [obj, position, scale, rotation, viewObject.name, startChannel, channelsPerNode, nodeCount, rOffset, gOffset, bOffset, liveData]);
+
+    // ----- Render -----
+    if (!obj) return null;
 
     return (
         <primitive

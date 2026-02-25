@@ -37,6 +37,8 @@ const ASSET_MIME_TYPES: Record<string, string> = {
     '.svg': 'image/svg+xml',
     '.ico': 'image/x-icon',
     '.bmp': 'image/bmp',
+    '.obj': 'text/plain',
+    '.mtl': 'text/plain',
 };
 
 function inferMimeType(filePath: string): string {
