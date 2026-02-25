@@ -25,6 +25,7 @@ import type {
     ServerWorkerRPCAPI,
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
+import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -172,6 +173,9 @@ async function startServer(config: ServerWorkerData) {
     console.log(`[server-worker] Starting Koa web server on port ${port} (source: ${portSource})`);
     const router = new Router();
     const webApp = new Koa();
+
+    // Proxy middleware must be before bodyParser so it can stream raw request bodies
+    webApp.use(createProxyMiddleware());
 
     // Add body parser middleware for JSON requests
     webApp.use(bodyParser());
@@ -574,6 +578,9 @@ async function startServer(config: ServerWorkerData) {
             portSource,
         } satisfies ServerWorkerToMainMessage);
     });
+
+    // Attach WebSocket proxy for /proxy/ paths (before main WSS)
+    attachWebSocketProxy(httpServer);
 
     // Create WebSocket server
     const wss = new WebSocketServer({
