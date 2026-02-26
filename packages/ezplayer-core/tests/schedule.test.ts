@@ -1290,6 +1290,201 @@ describe('calcschedule', () => {
         expect(logs[logs.length - 1].scheduleId).toBe(scheduleOf2.id);
     });
 
+    it('queue items should not interrupt but immediate should, then all finish', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000; // 18:00:00
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // Run to middle of s1 (10s song, at 3s in)
+        const logspre = plr.readOutScheduleUntil(h + 3_000, 100);
+        expect(logspre.length).toBe(3);
+        expect(logspre[0].eventType).toBe('Schedule Started');
+        expect(logspre[1].eventType).toBe('Playlist Started');
+        expect(logspre[2].eventType).toBe('Sequence Started');
+        expect(logspre[2].sequenceId).toBe(s1.id);
+
+        // Add two queue items (ready soon, but should NOT hard-cut)
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: h + 4_000,
+            seqId: s4.id,
+            requestId: 'q1',
+        });
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: h + 4_000,
+            seqId: s5.id,
+            requestId: 'q2',
+        });
+
+        // Advance past queue startTimes - queue items should NOT interrupt mid-sequence
+        const logsMid = plr.readOutScheduleUntil(h + 7_000, 100);
+        expect(logsMid.length).toBe(0); // nothing happened, s1 still playing
+
+        // Now add an immediate item - this SHOULD hard-cut
+        plr.addInteractiveCommand({
+            immediate: true,
+            startTime: h + 8_000,
+            seqId: s3.id,
+            requestId: 'imm1',
+        });
+
+        // Run to completion
+        const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 200);
+        //console.log(toTextLog(logs));
+        expect(logs.length).toBe(30);
+
+        // -- Immediate hard-cuts s1 at 18:00:08 --
+        expect(logs[0].eventType).toBe('Sequence Paused');
+        expect(logs[0].eventTime).toBe(h + 8_000);
+        expect(logs[0].sequenceId).toBe(s1.id);
+        expect(logs[1].eventType).toBe('Schedule Suspended');
+        expect(logs[1].eventTime).toBe(h + 8_000);
+        expect(logs[1].scheduleId).toBe(scheduleOf2.id);
+
+        // -- Immediate (s3) plays 18:00:08 - 18:00:18 --
+        expect(logs[2].eventType).toBe('Schedule Started');
+        expect(logs[2].eventTime).toBe(h + 8_000);
+        expect(logs[2].requestId).toBe('imm1');
+        expect(logs[4].eventType).toBe('Sequence Started');
+        expect(logs[4].sequenceId).toBe(s3.id);
+        expect(logs[5].eventType).toBe('Sequence Ended');
+        expect(logs[5].eventTime).toBe(h + 18_000);
+        expect(logs[5].sequenceId).toBe(s3.id);
+        expect(logs[7].eventType).toBe('Schedule Ended');
+        expect(logs[7].eventTime).toBe(h + 18_000);
+        expect(logs[7].requestId).toBe('imm1');
+
+        // -- Schedule resumes, s1 finishes remaining 2s --
+        expect(logs[8].eventType).toBe('Schedule Resumed');
+        expect(logs[8].eventTime).toBe(h + 18_000);
+        expect(logs[8].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[9].eventType).toBe('Sequence Resumed');
+        expect(logs[9].sequenceId).toBe(s1.id);
+        expect(logs[10].eventType).toBe('Sequence Ended');
+        expect(logs[10].eventTime).toBe(h + 20_000);
+        expect(logs[10].sequenceId).toBe(s1.id);
+
+        // -- Queue item q1 (s4) preempts at sequence boundary 18:00:20 --
+        expect(logs[11].eventType).toBe('Schedule Suspended');
+        expect(logs[11].eventTime).toBe(h + 20_000);
+        expect(logs[12].eventType).toBe('Schedule Started');
+        expect(logs[12].eventTime).toBe(h + 20_000);
+        expect(logs[12].requestId).toBe('q1');
+        expect(logs[14].eventType).toBe('Sequence Started');
+        expect(logs[14].sequenceId).toBe(s4.id);
+        expect(logs[15].eventType).toBe('Sequence Ended');
+        expect(logs[15].eventTime).toBe(h + 30_000);
+        expect(logs[15].sequenceId).toBe(s4.id);
+        expect(logs[17].eventType).toBe('Schedule Ended');
+        expect(logs[17].eventTime).toBe(h + 30_000);
+        expect(logs[17].requestId).toBe('q1');
+
+        // -- Queue item q2 (s5) preempts immediately (schedule at boundary) --
+        expect(logs[18].eventType).toBe('Schedule Suspended');
+        expect(logs[18].eventTime).toBe(h + 30_000);
+        expect(logs[19].eventType).toBe('Schedule Started');
+        expect(logs[19].eventTime).toBe(h + 30_000);
+        expect(logs[19].requestId).toBe('q2');
+        expect(logs[21].eventType).toBe('Sequence Started');
+        expect(logs[21].sequenceId).toBe(s5.id);
+        expect(logs[22].eventType).toBe('Sequence Ended');
+        expect(logs[22].eventTime).toBe(h + 40_000);
+        expect(logs[22].sequenceId).toBe(s5.id);
+        expect(logs[24].eventType).toBe('Schedule Ended');
+        expect(logs[24].eventTime).toBe(h + 40_000);
+        expect(logs[24].requestId).toBe('q2');
+
+        // -- Schedule resumes, plays s2, then ends --
+        expect(logs[25].eventType).toBe('Schedule Resumed');
+        expect(logs[25].eventTime).toBe(h + 40_000);
+        expect(logs[25].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[26].eventType).toBe('Sequence Started');
+        expect(logs[26].sequenceId).toBe(s2.id);
+        expect(logs[27].eventType).toBe('Sequence Ended');
+        expect(logs[27].eventTime).toBe(h + 50_000);
+        expect(logs[27].sequenceId).toBe(s2.id);
+        expect(logs[29].eventType).toBe('Schedule Ended');
+        expect(logs[29].eventTime).toBe(h + 50_000);
+        expect(logs[29].scheduleId).toBe(scheduleOf2.id);
+    });
+
+    it('removing a queued item before it plays should skip it', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000; // 18:00:00
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // Run to middle of s1
+        const logspre = plr.readOutScheduleUntil(h + 3_000, 100);
+        expect(logspre.length).toBe(3);
+
+        // Add two queue items
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: h + 4_000,
+            seqId: s4.id,
+            requestId: 'q1',
+        });
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: h + 4_000,
+            seqId: s5.id,
+            requestId: 'q2',
+        });
+
+        // Remove q1 before it activates
+        plr.removeInteractiveCommand('q1');
+
+        // Run to completion - only q2 should play, q1 is gone
+        const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 200);
+        //console.log(toTextLog(logs));
+        expect(logs.length).toBe(13);
+
+        // -- s1 finishes naturally at 18:00:10, then q2 preempts at boundary --
+        expect(logs[0].eventType).toBe('Sequence Ended');
+        expect(logs[0].eventTime).toBe(h + 10_000);
+        expect(logs[0].sequenceId).toBe(s1.id);
+        expect(logs[1].eventType).toBe('Schedule Suspended');
+        expect(logs[1].eventTime).toBe(h + 10_000);
+        expect(logs[1].scheduleId).toBe(scheduleOf2.id);
+
+        // -- q2 (s5) plays 18:00:10 - 18:00:20 --
+        expect(logs[2].eventType).toBe('Schedule Started');
+        expect(logs[2].eventTime).toBe(h + 10_000);
+        expect(logs[2].requestId).toBe('q2');
+        expect(logs[4].eventType).toBe('Sequence Started');
+        expect(logs[4].sequenceId).toBe(s5.id);
+        expect(logs[5].eventType).toBe('Sequence Ended');
+        expect(logs[5].eventTime).toBe(h + 20_000);
+        expect(logs[5].sequenceId).toBe(s5.id);
+        expect(logs[7].eventType).toBe('Schedule Ended');
+        expect(logs[7].eventTime).toBe(h + 20_000);
+        expect(logs[7].requestId).toBe('q2');
+
+        // -- Schedule resumes, plays s2, then ends --
+        expect(logs[8].eventType).toBe('Schedule Resumed');
+        expect(logs[8].eventTime).toBe(h + 20_000);
+        expect(logs[8].scheduleId).toBe(scheduleOf2.id);
+        expect(logs[9].eventType).toBe('Sequence Started');
+        expect(logs[9].sequenceId).toBe(s2.id);
+        expect(logs[10].eventType).toBe('Sequence Ended');
+        expect(logs[10].eventTime).toBe(h + 30_000);
+        expect(logs[10].sequenceId).toBe(s2.id);
+        expect(logs[12].eventType).toBe('Schedule Ended');
+        expect(logs[12].eventTime).toBe(h + 30_000);
+        expect(logs[12].scheduleId).toBe(scheduleOf2.id);
+    });
+
     it('snapshot should produce same results as original when run from the same point', () => {
         const errs: string[] = [];
         const bdate = new Date(parts3straight.date);
