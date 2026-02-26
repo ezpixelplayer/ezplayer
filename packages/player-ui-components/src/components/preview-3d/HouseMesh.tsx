@@ -76,8 +76,9 @@ const TEXTURE_SLOTS = ['map', 'normalMap', 'specularMap', 'emissiveMap', 'alphaM
 /**
  * Iterate every texture in `materials` and:
  *  1. Disable mip-map generation (saves ~33 % GPU memory per texture).
- *  2. If the image is already decoded, down-scale it to MAX_TEXTURE_SIZE.
- *  3. If the image hasn't decoded yet, attach a one-shot listener that
+ *  2. Set correct sRGB color space on diffuse maps.
+ *  3. If the image is already decoded, down-scale it to MAX_TEXTURE_SIZE.
+ *  4. If the image hasn't decoded yet, attach a one-shot listener that
  *     will down-scale it once it arrives.
  */
 function optimizeMaterialTextures(materials: Record<string, THREE.Material>): void {
@@ -93,6 +94,14 @@ function optimizeMaterialTextures(materials: Record<string, THREE.Material>): vo
             // Disable mip-maps – big memory win, negligible visual loss
             tex.generateMipmaps = false;
             tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+
+            // Set correct color space for diffuse/color textures (map, emissiveMap).
+            // Without this, Three.js double-gamma-corrects the colors, making
+            // everything appear much darker than the original photographs.
+            if (prop === 'map' || prop === 'emissiveMap') {
+                tex.colorSpace = THREE.SRGBColorSpace;
+            }
 
             const img = tex.image as HTMLImageElement | undefined;
             if (!img) continue;
@@ -108,6 +117,78 @@ function optimizeMaterialTextures(materials: Record<string, THREE.Material>): vo
             }
         }
     }
+}
+
+/**
+ * Post-process a loaded OBJ+MTL model:
+ *
+ * 1. Convert all MeshPhongMaterial / MeshLambertMaterial to MeshBasicMaterial
+ *    (unlit).  House model textures are photographs with baked lighting –
+ *    applying additional 3D scene lights on top of baked lighting produces
+ *    an incorrectly dark result.  MeshBasicMaterial shows the texture as-is.
+ *
+ * 2. Set THREE.SRGBColorSpace on all diffuse textures so the renderer
+ *    handles gamma correctly.
+ *
+ * 3. Force THREE.DoubleSide to handle any face-winding inconsistencies in
+ *    the exported OBJ.
+ */
+function postProcessMeshMaterials(group: THREE.Group): void {
+    group.traverse((child) => {
+        if (!isMesh(child)) return;
+
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        const processed = materials.map((mat) => {
+            // Extract the diffuse texture map from any material type
+            const diffuseMap: THREE.Texture | null =
+                (mat as THREE.MeshPhongMaterial).map ??
+                (mat as THREE.MeshStandardMaterial).map ??
+                null;
+
+            // Set correct color space on diffuse map
+            if (diffuseMap) {
+                diffuseMap.colorSpace = THREE.SRGBColorSpace;
+                diffuseMap.generateMipmaps = false;
+                diffuseMap.minFilter = THREE.LinearFilter;
+                diffuseMap.magFilter = THREE.LinearFilter;
+                diffuseMap.needsUpdate = true;
+            }
+
+            // Convert lit materials to unlit MeshBasicMaterial.
+            // Photo textures have baked lighting – scene lights would double-light them.
+            if (
+                mat.type === 'MeshPhongMaterial' ||
+                mat.type === 'MeshLambertMaterial' ||
+                mat.type === 'MeshStandardMaterial'
+            ) {
+                const srcMat = mat as THREE.MeshPhongMaterial;
+                const basicMat = new THREE.MeshBasicMaterial({
+                    map: diffuseMap,
+                    side: THREE.DoubleSide,
+                    color: 0xffffff, // Pure white so texture shows 1:1
+                    transparent: srcMat.transparent,
+                    opacity: srcMat.opacity,
+                    alphaTest: srcMat.alphaTest,
+                });
+                basicMat.name = mat.name;
+
+                console.log(
+                    `[HouseMesh] Converted material "${mat.name}" (${mat.type}) → MeshBasicMaterial` +
+                    (diffuseMap ? ` [has diffuse texture]` : ` [no texture]`),
+                );
+
+                // Dispose old material to free GPU memory
+                mat.dispose();
+                return basicMat;
+            }
+
+            // For any other material type, just ensure DoubleSide
+            mat.side = THREE.DoubleSide;
+            return mat;
+        });
+
+        child.material = processed.length === 1 ? processed[0] : processed;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -470,6 +551,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
     //   2. Fetch .obj text & analyse its content
     //   3. OBJLoader.parse(text) with materials set
     //   4. If OBJ only has line geometry, convert to mesh triangles
+    //   5. Post-process materials: convert to unlit, fix colorSpace
     // -----------------------------------------------------------------
     React.useEffect(() => {
         if (!objUrl || !frameServerUrl || !objFile) return;
@@ -482,7 +564,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                     objFile.substring(0, objFile.lastIndexOf('\\') + 1) ||
                     objFile.substring(0, objFile.lastIndexOf('/') + 1) || '';
 
-                console.log('[HouseMesh] Loading model:', { objFile, objDir, objUrl, mtlUrl, frameServerUrl });
+                console.log(`[HouseMesh] Loading model: objFile=${objFile}, objDir=${objDir}`);
 
                 const loadingManager = createShowFileLoadingManager(frameServerUrl, objDir);
 
@@ -498,10 +580,20 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                         materialCreator.preload();
 
                         const matNames = Object.keys(materialCreator.materials);
-                        console.log('[HouseMesh] MTL loaded, available materials:', matNames);
+                        console.log(`[HouseMesh] MTL loaded, materials: [${matNames.join(', ')}]`);
 
-                        // Optimise textures: disable mipmaps + cap size to prevent
-                        // "THREE.WebGLRenderer: Context Lost" from GPU OOM.
+                        // Log each material's texture status
+                        for (const matName of matNames) {
+                            const mat = materialCreator.materials[matName];
+                            const phongMat = mat as THREE.MeshPhongMaterial;
+                            console.log(
+                                `[HouseMesh]   Material "${matName}": type=${mat.type}` +
+                                `, hasMap=${!!phongMat.map}` +
+                                `, side=${mat.side === THREE.DoubleSide ? 'DoubleSide' : mat.side === THREE.FrontSide ? 'FrontSide' : 'BackSide'}`,
+                            );
+                        }
+
+                        // Optimise textures: disable mipmaps, fix colorSpace, cap size
                         optimizeMaterialTextures(materialCreator.materials);
                     } catch (mtlErr) {
                         console.warn('[HouseMesh] MTL not available (using default materials):', mtlErr);
@@ -524,7 +616,6 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 const texCoordCount = (objText.match(/^vt\s/gm) || []).length;
                 const faceCount = (objText.match(/^f\s/gm) || []).length;
                 const lineCount = (objText.match(/^l\s/gm) || []).length;
-                const pointCount = (objText.match(/^p\s/gm) || []).length;
                 const mtllibCount = (objText.match(/^mtllib\s/gm) || []).length;
                 const usemtlCount = (objText.match(/^usemtl\s/gm) || []).length;
 
@@ -532,30 +623,46 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 const faceCountUpper = (objText.match(/^F\s/gm) || []).length;
                 const lineCountUpper = (objText.match(/^L\s/gm) || []).length;
 
-                const first20Lines = objText.split('\n').slice(0, 20).join('\n');
-
-                console.log('[HouseMesh] OBJ file analysis:', {
-                    sizeBytes: objText.length,
-                    totalLines: objText.split('\n').length,
-                    vertexCount, normalCount, texCoordCount,
-                    faceCount, lineCount, pointCount,
-                    faceCountUpper, lineCountUpper,
-                    mtllibCount, usemtlCount,
-                    first20Lines,
-                });
+                console.log(
+                    `[HouseMesh] OBJ analysis: ${objText.length} bytes, ` +
+                    `${vertexCount} verts, ${texCoordCount} UVs, ${normalCount} normals, ` +
+                    `${faceCount} faces, ${lineCount} lines, ` +
+                    `${usemtlCount} usemtl, ${mtllibCount} mtllib` +
+                    (faceCountUpper > 0 ? `, ${faceCountUpper} upper-case F` : '') +
+                    (lineCountUpper > 0 ? `, ${lineCountUpper} upper-case L` : ''),
+                );
 
                 // ---- Step 2b: Fix known format issues ----
+
+                // CRITICAL FIX: THREE.js OBJLoader uses a single `geometry.type`
+                // flag per object.  If the OBJ contains **both** face (`f`) and
+                // line (`l`) directives within the same object, a single `l`
+                // line sets `geometry.type = 'Line'` which causes OBJLoader to
+                // create the *entire* geometry as LineSegments instead of Mesh –
+                // losing all material groups and textures.
+                //
+                // This commonly happens with Blender/xLights exports that add a
+                // stray edge (`l …`) at the end of an otherwise face-based model.
+                //
+                // Fix: when the OBJ has face data, strip all `l` directives so
+                // OBJLoader correctly creates Mesh objects with proper material
+                // groups.
+                const totalFaces = faceCount + faceCountUpper;
+                const totalLines = lineCount + lineCountUpper;
+                if (totalFaces > 0 && totalLines > 0) {
+                    console.warn(
+                        `[HouseMesh] OBJ has ${totalFaces} faces AND ${totalLines} line directives. ` +
+                        `Stripping line directives to prevent OBJLoader from creating LineSegments.`,
+                    );
+                    objText = objText.replace(/^[lL]\s.*$/gm, '');
+                }
+
                 // Some exporters (e.g. xLights) emit upper-case directives
                 // (F, L, VN, VT) that Three.js OBJLoader doesn't recognise.
-                // Normalise them to lower-case.
                 if (faceCount === 0 && faceCountUpper > 0) {
-                    console.warn(`[HouseMesh] OBJ has ${faceCountUpper} upper-case F directives – normalising to lower-case`);
+                    console.warn(`[HouseMesh] Normalising ${faceCountUpper} upper-case F → f`);
                     objText = objText.replace(/^F\s/gm, 'f ');
                 }
-                if (lineCount === 0 && lineCountUpper > 0) {
-                    objText = objText.replace(/^L\s/gm, 'l ');
-                }
-                // Also normalise VT / VN / VP if needed
                 if (texCoordCount === 0 && (objText.match(/^VT\s/gm) || []).length > 0) {
                     objText = objText.replace(/^VT\s/gm, 'vt ');
                 }
@@ -590,24 +697,27 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                     }
                 });
 
-                console.log(`[HouseMesh] OBJ parsed for "${viewObject.name}":`, {
-                    meshCount,
-                    lineSegCount,
-                    materialNames,
-                    hadMTL: !!materialCreator,
-                    childTypes,
-                    directChildren: loadedObj.children.length,
-                });
+                console.log(
+                    `[HouseMesh] OBJ parsed "${viewObject.name}": ` +
+                    `${meshCount} meshes, ${lineSegCount} lineSegs, ` +
+                    `materials=[${materialNames.join(', ')}], ` +
+                    `childTypes=[${childTypes.join(', ')}]`,
+                );
 
                 // ---- Step 5: If OBJ only produced LineSegments, convert to Mesh ----
-                // xLights sometimes exports house models as line-only OBJ.
-                // We convert each LineSegments to a Mesh so textures can be applied.
                 if (meshCount === 0 && lineSegCount > 0) {
-                    console.warn('[HouseMesh] OBJ has no Mesh children (only LineSegments). Converting line geometry to mesh triangles…');
+                    console.warn('[HouseMesh] OBJ has no Mesh children (only LineSegments). Converting to mesh triangles…');
                     loadedObj = convertLineSegmentsToMeshes(loadedObj, materialCreator);
                 }
 
+                // ---- Step 6: Post-process materials ----
+                // Convert lit materials → unlit MeshBasicMaterial so photo
+                // textures display at their original brightness. Also fix
+                // texture colorSpace for correct gamma handling.
+                postProcessMeshMaterials(loadedObj);
+
                 setObj(loadedObj);
+                console.log(`[HouseMesh] Model "${viewObject.name}" ready for rendering.`);
             } catch (error) {
                 if (!aborted) {
                     console.error('[HouseMesh] Failed to load model:', error);
@@ -638,15 +748,22 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
     );
 
     // ----- Brightness (static, when not using live data) -----
+    // For MeshBasicMaterial: material.color multiplies with the texture.
+    // (1,1,1) = full brightness, (0.5,0.5,0.5) = 50% dim.
     React.useEffect(() => {
         if (!obj || brightness === undefined || (liveData && startChannel !== undefined)) return;
 
+        const bf = Math.max(0, Math.min(1, brightness / 100));
+
         obj.traverse((child: THREE.Object3D) => {
             if (!isMesh(child) || !child.material) return;
-            const mat = Array.isArray(child.material) ? child.material[0] : child.material;
-            if ('color' in mat && (mat as THREE.MeshStandardMaterial).color) {
-                (mat as THREE.MeshStandardMaterial).color.multiplyScalar(brightness / 100);
-            }
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat) => {
+                if ('color' in mat) {
+                    (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf);
+                    mat.needsUpdate = true;
+                }
+            });
         });
     }, [obj, brightness, liveData, startChannel]);
 
@@ -731,20 +848,31 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
 
-        console.log('[HouseMesh] Mesh loaded:', {
-            name: viewObject.name,
-            position: { x: position.x, y: position.y, z: position.z },
-            scale: { x: scale.x, y: scale.y, z: scale.z },
-            rotation: { x: rotation.x, y: rotation.y, z: rotation.z },
-            meshBounds: {
-                center: { x: center.x, y: center.y, z: center.z },
-                size: { x: size.x, y: size.y, z: size.z },
-            },
-            channelInfo: startChannel !== undefined
-                ? { startChannel, channelsPerNode, nodeCount, colorOrder: `R=${rOffset}, G=${gOffset}, B=${bOffset}` }
-                : 'No channel mapping – using static materials',
-            liveDataEnabled: !!liveData && startChannel !== undefined,
+        // Count textures and materials for diagnostics
+        let texCount = 0;
+        let matCount = 0;
+        const matTypes: string[] = [];
+        obj.traverse((child) => {
+            if (!isMesh(child)) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((m) => {
+                matCount++;
+                matTypes.push(m.type);
+                if ((m as THREE.MeshBasicMaterial).map) texCount++;
+            });
         });
+
+        console.log(
+            `[HouseMesh] Mesh loaded "${viewObject.name}": ` +
+            `pos=(${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}), ` +
+            `scale=(${scale.x.toFixed(2)}, ${scale.y.toFixed(2)}, ${scale.z.toFixed(2)}), ` +
+            `bounds center=(${center.x.toFixed(1)}, ${center.y.toFixed(1)}, ${center.z.toFixed(1)}), ` +
+            `size=(${size.x.toFixed(1)}, ${size.y.toFixed(1)}, ${size.z.toFixed(1)}), ` +
+            `${matCount} materials (${matTypes.join(', ')}), ${texCount} textured, ` +
+            (startChannel !== undefined
+                ? `channels: start=${startChannel} perNode=${channelsPerNode} nodes=${nodeCount}`
+                : 'No channel mapping – static materials'),
+        );
     }, [obj, position, scale, rotation, viewObject.name, startChannel, channelsPerNode, nodeCount, rOffset, gOffset, bOffset, liveData]);
 
     // ----- Render -----
@@ -756,8 +884,6 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
             position={position}
             scale={scale}
             rotation={rotation}
-            castShadow
-            receiveShadow
         />
     );
 }
