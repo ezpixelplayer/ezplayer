@@ -5,6 +5,7 @@ import { VolumeOff, VolumeUp } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { AppDispatch } from '../../store/Store';
+import { QueueAndControlStack } from './QueueAndControlStack';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
@@ -147,6 +148,9 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                         )}
                     </Box>
                 )}
+
+                {/* Playback Queue Card */}
+                <QueueAndControlStack />
             </CardContent>
         </Card>
     );

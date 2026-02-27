@@ -55,9 +55,9 @@ export const PlaybackControls: React.FC = () => {
                 label={isPlaying ? 'Pause' : isPaused ? 'Resume' : 'Play'}
                 onClick={handlePlayPause}
             />
-            <ControlButton icon={SkipNext} label="Skip Song" onClick={handleSkip} />
-            <ControlButton icon={Stop} label="Stop (Graceful)" onClick={handleStopGraceful} />
-            <ControlButton icon={StopCircle} label="Stop Now" color="error" onClick={handleStopNow} />
+            <ControlButton icon={SkipNext} label="Skip" onClick={handleSkip} />
+            <ControlButton icon={Stop} label="End" onClick={handleStopGraceful} />
+            <ControlButton icon={StopCircle} label="Abort" color="error" onClick={handleStopNow} />
             {/*<ControlButton icon={Delete} label="Clear Queue" color="warning" onClick={handleClearRequests} />*/}
             {/*
             <ControlButton
