@@ -248,7 +248,7 @@ function sendPlayerStateUpdate() {
             if (pla.end) continue;
             if (!playStatus.now_playing) {
                 playStatus.now_playing = actionToPlayingItem(false, pla);
-                playStatus.status = 'Playing';
+                playStatus.status = isPaused ? 'Paused' : 'Playing';
             } else {
                 playStatus.upcoming!.push(actionToPlayingItem(false, pla));
             }
@@ -409,6 +409,13 @@ function processCommand(cmd: EZPlayerCommand) {
                 }
             }
             break;
+        case 'endsong': {
+            emitInfo('Skip command received');
+            foregroundPlayerRunState.skipCurrentSequence(cmd.songId, foregroundPlayerRunState.currentTime);
+            audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+            ++curAudioSyncNum;
+            break;
+        }
         case 'deleterequest': {
             emitInfo(`Delete ${cmd.requestId}`);
             foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
@@ -426,14 +433,29 @@ function processCommand(cmd: EZPlayerCommand) {
                 muted = cmd.mute;
             }
             volumeSF = muted ? 0 : volume / 100;
+            break;
         }
-        // lots of TODOs here...
-        case 'pause':
-            isPaused = true;
+        case 'pause': {
+            if (!isPaused) {
+                isPaused = true;
+                foregroundPlayerRunState.pause(foregroundPlayerRunState.currentTime);
+                ++curAudioSyncNum;
+                sendPlayerStateUpdate();
+                emitInfo('Paused');
+            }
             break;
-        case 'resume':
-            isPaused = false;
+        }
+        case 'resume': {
+            if (isPaused) {
+                isPaused = false;
+                foregroundPlayerRunState.resume(targetFrameRTC);
+                audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                ++curAudioSyncNum;
+                sendPlayerStateUpdate();
+                emitInfo('Resumed');
+            }
             break;
+        }
         case 'resetstats': {
             resetCumulativeCounters();
             break;
@@ -450,10 +472,16 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         case 'stopgraceful': {
             emitInfo('Stop graceful command received');
+            foregroundPlayerRunState.stopGracefully(foregroundPlayerRunState.currentTime);
+            sendPlayerStateUpdate();
             break;
         }
         case 'stopnow': {
             emitInfo('Stop now command received');
+            foregroundPlayerRunState.stopImmediately(foregroundPlayerRunState.currentTime);
+            audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+            ++curAudioSyncNum;
+            sendPlayerStateUpdate();
             break;
         }
     }
@@ -677,6 +705,7 @@ let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 //  Audio up to this time has already been sent out.
 //  If you send this back in time (say to pick up the start of an immediate play) audio will overlap.  C'est la vie.
 let audioPlayerRunTime: number = foregroundPlayerRunState.currentTime;
+let targetFrameRTC: number = foregroundPlayerRunState.currentTime;
 
 let volumeSF = 1.0; // Most representations are 0-100, not this one
 
@@ -885,7 +914,7 @@ async function processQueue() {
     const initialPN = performance.now();
     const initialRTC = rtcConverter.computeTime(initialPN);
 
-    let targetFrameRTC = initialRTC;
+    targetFrameRTC = initialRTC;
 
     let lastStatsUpdatePN = initialPN;
     let lastPStatusUpdatePN = initialPN;
@@ -1163,12 +1192,15 @@ async function processQueue() {
                 );
             }
 
-            // Send out audio in advance (at lease sendAudioInAdvanceMs at all times)
-            emitAudioDebug(
+            // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
+            // Skip audio entirely while paused
+            if (!isPaused) emitAudioDebug(
                 `Send audio time: ${audioPlayerRunTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
             );
+            // Take one snapshot and advance it as audioPlayerRunTime progresses
+            const audioSnapshot = !isPaused ? foregroundPlayerRunState?.snapshot() : undefined;
             let aiter = 0;
-            while (audioPlayerRunTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs) {
+            while (!isPaused && audioSnapshot && audioPlayerRunTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs) {
                 ++aiter;
                 if (aiter > 100) {
                     emitError(`Way too many audio iterations!`);
@@ -1177,7 +1209,8 @@ async function processQueue() {
 
                 let startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
 
-                const upcomingAudio = foregroundPlayerRunState?.snapshot()?.getUpcomingItems(
+                audioSnapshot.runUntil(audioPlayerRunTime);
+                const upcomingAudio = audioSnapshot.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
@@ -1275,29 +1308,32 @@ async function processQueue() {
             // Run to target PN, see if anything happened, then get a readout
             //emitFrameDebug(`${iteration} - get foreground player ready`);
 
-            while (true) {
-                const plog: PlaybackLogDetail[] = [];
-                // Really want to run until time or something interesting
-                foregroundPlayerRunState.runUntil(targetFrameRTC, 1, plog);
-                let foundTime = plog.length === 0;
-                for (const l of plog) {
-                    if (l.eventType === 'Sequence Ended') {
-                        // TODO - Could reset clock base here.
-                    } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
-                        targetFrameRTC = foregroundPlayerRunState.currentTime;
-                        emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
-                        foundTime = true;
-                        break;
+            // Don't advance foreground schedule while paused — it will slip behind real time
+            if (!isPaused) {
+                while (true) {
+                    const plog: PlaybackLogDetail[] = [];
+                    // Really want to run until time or something interesting
+                    foregroundPlayerRunState.runUntil(targetFrameRTC, 1, plog);
+                    let foundTime = plog.length === 0;
+                    for (const l of plog) {
+                        if (l.eventType === 'Sequence Ended') {
+                            // TODO - Could reset clock base here.
+                        } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
+                            targetFrameRTC = foregroundPlayerRunState.currentTime;
+                            emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
+                            foundTime = true;
+                            break;
+                        }
                     }
+                    if (foundTime) break;
                 }
-                if (foundTime) break;
             }
 
             //emitFrameDebug(`${iteration} - runUntil done`);
 
             // Get the background frame
             while (true) {
-                backgroundPlayerRunState.runUntil(foregroundPlayerRunState.currentTime);
+                backgroundPlayerRunState.runUntil(targetFrameRTC);
                 break;
             }
 
@@ -1319,10 +1355,8 @@ async function processQueue() {
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
-                emitFrameDebug(`No foreground action seq`);
-                if (!isPaused) {
-                    await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
-                }
+                emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
+                await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
                 continue;

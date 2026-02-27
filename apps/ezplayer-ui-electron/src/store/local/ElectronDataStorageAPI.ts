@@ -100,7 +100,7 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
             let startTime: number | undefined = undefined;
             // See if this is a fresh song or otherwise no history
             if (incarnation !== this.audioCleanBreakInterval || playAtRealTime !== this.audioPlayAtNextRealTime) {
-                console.log(`Starting new song/audio segment`);
+                //console.log(`Starting new song/audio segment`);
                 this.audioCleanBreakInterval = incarnation;
                 this.audioPlayAtNextRealTime = playAtRealTime;
                 startTime = act + (playAtRealTime - dn);

@@ -1319,6 +1319,10 @@ export class PlayerRunState {
     interactiveQueue: InteractivePlayCommand[] = [];
     immediateItem?: InteractivePlayCommand = undefined;
 
+    /** Schedule IDs that were manually stopped, mapped to their end time.
+     *  Entries are pruned once currentTime passes the end time. */
+    stoppedIds: Map<string, number> = new Map();
+
     constructor(currentTime: number) {
         this.currentTime = currentTime;
     }
@@ -1345,6 +1349,9 @@ export class PlayerRunState {
         // Clone interactive queue (items consumed during runUntil)
         copy.interactiveQueue = [...this.interactiveQueue];
         copy.immediateItem = this.immediateItem;
+
+        // Clone stoppedIds (mutated by stop commands)
+        copy.stoppedIds = new Map(this.stoppedIds);
 
         // Share reference data (not mutated during readahead)
         copy.sequences = this.sequences;
@@ -1539,6 +1546,7 @@ export class PlayerRunState {
     }
 
     isAlreadyLoaded(scheduleId: string) {
+        if (this.stoppedIds.has(scheduleId)) return true; // Manually stopped, not yet expired
         if (this.upcomingById.has(scheduleId)) return true;
         if (this.heapById.has(scheduleId)) return true;
         if (this.stackById.has(scheduleId)) return true;
@@ -1547,6 +1555,11 @@ export class PlayerRunState {
 
     //  Feeding in the whole schedule and a time range to update the relevant part
     addTimeRangeToSchedule(start: number, end: number, preferStartingNew: boolean = true) {
+        // Prune expired stopped entries so future occurrences can start
+        for (const [id, endTime] of this.stoppedIds) {
+            if (endTime <= this.currentTime) this.stoppedIds.delete(id);
+        }
+
         // Filter to time window
         const itemsToAdd: ScheduledPlaylist[] = [];
         for (const s of this.schedules) {
@@ -2061,6 +2074,87 @@ export class PlayerRunState {
         this.immediateItem = undefined;
         this.interactiveQueue = [];
         // TODO clobber the heap and stack items?
+    }
+
+    /** Stop the currently-playing item immediately. Schedules and heap remain intact. */
+    stopImmediately(currentTime: number, log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+
+        const st = this.#stackTop;
+        if (!st) return;
+
+        // Mark this schedule as stopped until its original end time
+        this.stoppedIds.set(st.item.itemId, st.schedEndTime);
+
+        st.stopAtTime(this.depth, currentTime, log);
+        this.#stackPop();
+
+        // Resume suspended item below if one exists
+        const nst = this.#stackTop;
+        if (nst) {
+            nst.advancePausedTime(this.depth, currentTime, log);
+        }
+    }
+
+    /** Graceful stop: finish the current sequence, play the outro (post-section)
+     *  of the current schedule if it has one, then let it end naturally.
+     *  Schedules and heap remain intact. */
+    stopGracefully(currentTime: number, log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+
+        const st = this.#stackTop;
+        if (!st) return;
+
+        // Mark this schedule as stopped until its original end time
+        this.stoppedIds.set(st.item.itemId, st.schedEndTime);
+
+        st.advanceToTime(st, this.depth, currentTime);
+
+        if (st.itemPart >= 2) {
+            // Already in outro or done - let it finish naturally
+            return;
+        }
+
+        // Disable looping so the main section can end
+        st.item.mainSectionLoop = false;
+
+        // Set schedEnd so the main section transitions to outro (post-section)
+        // after the current sequence finishes.
+        if (st.itemPart === 1 && st.offsetInto > 0) {
+            // Mid-sequence in main: finish this sequence, then outro.
+            // The current sequence ends at baseTime + getCurDur().
+            st.item.schedEnd = st.baseTime + st.getCurDur() + st.item.postSectionTotal;
+        } else {
+            // Pre-section or at a sequence boundary in main:
+            // Transition to outro at the next opportunity.
+            st.item.schedEnd = currentTime + st.item.postSectionTotal;
+        }
+    }
+
+    /** Skip the current sequence (song) and advance to the next one.
+     *  If songId is provided, only skips if the currently playing sequence matches. */
+    skipCurrentSequence(songId: string | undefined, currentTime: number, log?: PlaybackLogDetail[]) {
+        const st = this.#stackTop;
+        if (!st) return;
+
+        st.advanceToTime(st, this.depth, currentTime);
+
+        // Nothing to skip if not actively playing a sequence
+        if (st.itemPart < 0 || st.itemPart > 2) return;
+        if (st.itemCursor < 0) return;
+
+        // If a songId was specified, only skip if it matches the current sequence
+        if (songId !== undefined) {
+            const curSeqId = st.seqIds[st.itemPart]?.[st.itemCursor % (st.seqIds[st.itemPart].length || 1)];
+            if (curSeqId !== songId) return;
+        }
+
+        // End the current sequence and start the next from currentTime
+        const loop = st.itemPart === 1 && st.item.mainSectionLoop;
+        st.nextItem(this.depth, st, currentTime, loop, log);
+        st.baseTime = currentTime;
     }
 
     titleForIds(seqId?: string, plId?: string, schedId?: string) {

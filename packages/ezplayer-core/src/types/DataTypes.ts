@@ -332,6 +332,10 @@ export type EZPlayerCommand =
           requestId: string; // To identify, for canceling
       }
     | {
+          command: 'endsong'; // End song (skip to next)
+          songId?: string;
+      }
+    | {
           command: 'playplaylist'; // Play or enqueue a playlist
           playlistId: string;
           immediate: boolean;
