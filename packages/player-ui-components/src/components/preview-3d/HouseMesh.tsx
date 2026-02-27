@@ -64,8 +64,6 @@ function downscaleTexture(texture: THREE.Texture, maxDim: number): void {
 
     ctx.drawImage(img as CanvasImageSource, 0, 0, newW, newH);
 
-    console.log(`[HouseMesh] Down-scaled texture "${texture.name || '(unnamed)'}" from ${img.width}×${img.height} → ${newW}×${newH}`);
-
     texture.image = canvas;
     texture.needsUpdate = true;
 }
@@ -172,11 +170,6 @@ function postProcessMeshMaterials(group: THREE.Group): void {
                 });
                 basicMat.name = mat.name;
 
-                console.log(
-                    `[HouseMesh] Converted material "${mat.name}" (${mat.type}) → MeshBasicMaterial` +
-                    (diffuseMap ? ` [has diffuse texture]` : ` [no texture]`),
-                );
-
                 // Dispose old material to free GPU memory
                 mat.dispose();
                 return basicMat;
@@ -235,8 +228,6 @@ function convertLineSegmentsToMeshes(
         const positions = posAttr as THREE.BufferAttribute;
         const vertCount = positions.count;
 
-        console.log(`[HouseMesh] Converting LineSegments "${child.name}" (${vertCount} verts) to Mesh`);
-
         // Attempt 1: treat every 3 consecutive verts as a triangle face.
         // This works if the OBJ really describes triangles via `l` pairs
         // in a consistent winding (v0-v1, v1-v2, v2-v0 pattern repeated).
@@ -274,8 +265,6 @@ function convertLineSegmentsToMeshes(
                 meshGeo.setAttribute('uv', new THREE.BufferAttribute(triUVs, 2));
             }
 
-            console.log(`[HouseMesh] Converted ${triCount} triangle-edge groups to ${triCount} triangles`);
-
         } else if (vertCount >= 3) {
             // Fallback: treat every 3 consecutive vertices as a triangle.
             // This loses some verts if not divisible by 3, but gives us geometry.
@@ -299,8 +288,6 @@ function convertLineSegmentsToMeshes(
             if (uvAttr) {
                 meshGeo.setAttribute('uv', new THREE.BufferAttribute(fallbackUVs, 2));
             }
-
-            console.log(`[HouseMesh] Fallback: treated ${usable} verts as ${usable / 3} triangles`);
         }
 
         meshGeo.computeVertexNormals();
@@ -315,7 +302,6 @@ function convertLineSegmentsToMeshes(
             meshMaterial = materialCreator.materials[matKeys[0]];
             // Ensure it renders double-sided so we see both faces
             meshMaterial.side = THREE.DoubleSide;
-            console.log(`[HouseMesh] Applied MTL material "${matKeys[0]}" to converted mesh`);
         } else {
             meshMaterial = new THREE.MeshStandardMaterial({
                 color: lineMat && 'color' in lineMat ? (lineMat as THREE.LineBasicMaterial).color : 0xcccccc,
@@ -336,7 +322,6 @@ function convertLineSegmentsToMeshes(
         return group;
     }
 
-    console.log(`[HouseMesh] Converted ${newGroup.children.length} LineSegments → Mesh children`);
     return newGroup;
 }
 
@@ -414,11 +399,6 @@ function createShowFileLoadingManager(
                         const texturePath = objDir + filename;
                         const textureUrl = new URL('/api/show-file', frameServerUrl);
                         textureUrl.searchParams.set('path', texturePath);
-                        console.log('[HouseMesh] Resolved texture URL:', {
-                            original: url,
-                            texturePath,
-                            resolved: textureUrl.toString(),
-                        });
                         return textureUrl.toString();
                     }
                 }
@@ -432,11 +412,6 @@ function createShowFileLoadingManager(
         const texturePath = objDir + url;
         const textureUrl = new URL('/api/show-file', frameServerUrl);
         textureUrl.searchParams.set('path', texturePath);
-        console.log('[HouseMesh] Resolved relative texture URL:', {
-            original: url,
-            texturePath,
-            resolved: textureUrl.toString(),
-        });
         return textureUrl.toString();
     };
 
@@ -564,8 +539,6 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                     objFile.substring(0, objFile.lastIndexOf('\\') + 1) ||
                     objFile.substring(0, objFile.lastIndexOf('/') + 1) || '';
 
-                console.log(`[HouseMesh] Loading model: objFile=${objFile}, objDir=${objDir}`);
-
                 const loadingManager = createShowFileLoadingManager(frameServerUrl, objDir);
 
                 // ---- Step 1: Load MTL (best-effort) ----
@@ -580,18 +553,6 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                         materialCreator.preload();
 
                         const matNames = Object.keys(materialCreator.materials);
-                        console.log(`[HouseMesh] MTL loaded, materials: [${matNames.join(', ')}]`);
-
-                        // Log each material's texture status
-                        for (const matName of matNames) {
-                            const mat = materialCreator.materials[matName];
-                            const phongMat = mat as THREE.MeshPhongMaterial;
-                            console.log(
-                                `[HouseMesh]   Material "${matName}": type=${mat.type}` +
-                                `, hasMap=${!!phongMat.map}` +
-                                `, side=${mat.side === THREE.DoubleSide ? 'DoubleSide' : mat.side === THREE.FrontSide ? 'FrontSide' : 'BackSide'}`,
-                            );
-                        }
 
                         // Optimise textures: disable mipmaps, fix colorSpace, cap size
                         optimizeMaterialTextures(materialCreator.materials);
@@ -622,15 +583,6 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 // Also check for upper-case variants some exporters produce
                 const faceCountUpper = (objText.match(/^F\s/gm) || []).length;
                 const lineCountUpper = (objText.match(/^L\s/gm) || []).length;
-
-                console.log(
-                    `[HouseMesh] OBJ analysis: ${objText.length} bytes, ` +
-                    `${vertexCount} verts, ${texCoordCount} UVs, ${normalCount} normals, ` +
-                    `${faceCount} faces, ${lineCount} lines, ` +
-                    `${usemtlCount} usemtl, ${mtllibCount} mtllib` +
-                    (faceCountUpper > 0 ? `, ${faceCountUpper} upper-case F` : '') +
-                    (lineCountUpper > 0 ? `, ${lineCountUpper} upper-case L` : ''),
-                );
 
                 // ---- Step 2b: Fix known format issues ----
 
@@ -682,27 +634,15 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 // ---- Step 4: Diagnostics & fallback ----
                 let meshCount = 0;
                 let lineSegCount = 0;
-                const materialNames: string[] = [];
-                const childTypes: string[] = [];
 
                 loadedObj.traverse((child: THREE.Object3D) => {
-                    childTypes.push(child.type);
                     if (isMesh(child)) {
                         meshCount++;
-                        const mats = Array.isArray(child.material) ? child.material : [child.material];
-                        mats.forEach(m => { if (m.name) materialNames.push(m.name); });
                     }
                     if (child.type === 'LineSegments') {
                         lineSegCount++;
                     }
                 });
-
-                console.log(
-                    `[HouseMesh] OBJ parsed "${viewObject.name}": ` +
-                    `${meshCount} meshes, ${lineSegCount} lineSegs, ` +
-                    `materials=[${materialNames.join(', ')}], ` +
-                    `childTypes=[${childTypes.join(', ')}]`,
-                );
 
                 // ---- Step 5: If OBJ only produced LineSegments, convert to Mesh ----
                 if (meshCount === 0 && lineSegCount > 0) {
@@ -717,7 +657,6 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 postProcessMeshMaterials(loadedObj);
 
                 setObj(loadedObj);
-                console.log(`[HouseMesh] Model "${viewObject.name}" ready for rendering.`);
             } catch (error) {
                 if (!aborted) {
                     console.error('[HouseMesh] Failed to load model:', error);
@@ -743,6 +682,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
             (rotateX * Math.PI) / 180,
             (rotateY * Math.PI) / 180,
             (rotateZ * Math.PI) / 180,
+            'ZYX', // xLights uses ZYX rotation order (Z first, then Y, then X)
         ),
         [rotateX, rotateY, rotateZ],
     );
@@ -834,46 +774,11 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
         });
 
         if (materialUpdated && lastFrameSeqRef.current === null) {
-            console.log(`[HouseMesh] Live colours for "${viewObject.name}": RGB(${Math.round(finalR * 255)},${Math.round(finalG * 255)},${Math.round(finalB * 255)}) from ${validNodes} nodes`);
+            // First frame with valid data – useful place to hook in any future diagnostics.
         }
 
         lastFrameSeqRef.current = latestFrame.seq;
     });
-
-    // ----- Debug: log mesh info once loaded -----
-    React.useEffect(() => {
-        if (!obj) return;
-
-        const box = new THREE.Box3().setFromObject(obj);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-
-        // Count textures and materials for diagnostics
-        let texCount = 0;
-        let matCount = 0;
-        const matTypes: string[] = [];
-        obj.traverse((child) => {
-            if (!isMesh(child)) return;
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach((m) => {
-                matCount++;
-                matTypes.push(m.type);
-                if ((m as THREE.MeshBasicMaterial).map) texCount++;
-            });
-        });
-
-        console.log(
-            `[HouseMesh] Mesh loaded "${viewObject.name}": ` +
-            `pos=(${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}), ` +
-            `scale=(${scale.x.toFixed(2)}, ${scale.y.toFixed(2)}, ${scale.z.toFixed(2)}), ` +
-            `bounds center=(${center.x.toFixed(1)}, ${center.y.toFixed(1)}, ${center.z.toFixed(1)}), ` +
-            `size=(${size.x.toFixed(1)}, ${size.y.toFixed(1)}, ${size.z.toFixed(1)}), ` +
-            `${matCount} materials (${matTypes.join(', ')}), ${texCount} textured, ` +
-            (startChannel !== undefined
-                ? `channels: start=${startChannel} perNode=${channelsPerNode} nodes=${nodeCount}`
-                : 'No channel mapping – static materials'),
-        );
-    }, [obj, position, scale, rotation, viewObject.name, startChannel, channelsPerNode, nodeCount, rOffset, gOffset, bOffset, liveData]);
 
     // ----- Render -----
     if (!obj) return null;
