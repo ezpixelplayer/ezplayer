@@ -198,6 +198,12 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
         this.bubbleDown(0); // Restore heap order
     }
 
+    clone(): SchedulerMinHeap<T> {
+        const copy = new SchedulerMinHeap<T>();
+        copy.heap = [...this.heap];
+        return copy;
+    }
+
     deleteTop(): T | undefined {
         if (this.heap.length === 0) return undefined;
         const top = this.heap[0];
@@ -1313,8 +1319,49 @@ export class PlayerRunState {
     interactiveQueue: InteractivePlayCommand[] = [];
     immediateItem?: InteractivePlayCommand = undefined;
 
+    /** Schedule IDs that were manually stopped, mapped to their end time.
+     *  Entries are pruned once currentTime passes the end time. */
+    stoppedIds: Map<string, number> = new Map();
+
     constructor(currentTime: number) {
         this.currentTime = currentTime;
+    }
+
+    /** Shallow snapshot: clones mutable run state (stack, heap, upcoming, queues)
+     *  but shares reference data (sequences, playlists, schedules) which are not
+     *  altered during readahead. The returned copy can be advanced independently. */
+    snapshot(): PlayerRunState {
+        const copy = new PlayerRunState(this.currentTime);
+
+        // Clone stack entries (each tracks cursor position into read-only PlaybackItems)
+        copy.stack = this.stack.map((e) => e.clone());
+        copy.stackById = new Map();
+        for (const e of copy.stack) copy.stackById.set(e.itemId, e);
+
+        // Clone heap (items get popped/inserted during runUntil)
+        copy.heap = this.heap.clone();
+        copy.heapById = new Map(this.heapById);
+
+        // Clone upcoming list (items move to heap as time passes)
+        copy.upcomingOccurrences = [...this.upcomingOccurrences];
+        copy.upcomingById = new Map(this.upcomingById);
+
+        // Clone interactive queue (items consumed during runUntil)
+        copy.interactiveQueue = [...this.interactiveQueue];
+        copy.immediateItem = this.immediateItem;
+
+        // Clone stoppedIds (mutated by stop commands)
+        copy.stoppedIds = new Map(this.stoppedIds);
+
+        // Share reference data (not mutated during readahead)
+        copy.sequences = this.sequences;
+        copy.sequencesById = this.sequencesById;
+        copy.playlists = this.playlists;
+        copy.playlistsById = this.playlistsById;
+        copy.schedules = this.schedules;
+        copy.schedulesById = this.schedulesById;
+
+        return copy;
     }
 
     setUpSequences(
@@ -1499,6 +1546,7 @@ export class PlayerRunState {
     }
 
     isAlreadyLoaded(scheduleId: string) {
+        if (this.stoppedIds.has(scheduleId)) return true; // Manually stopped, not yet expired
         if (this.upcomingById.has(scheduleId)) return true;
         if (this.heapById.has(scheduleId)) return true;
         if (this.stackById.has(scheduleId)) return true;
@@ -1507,6 +1555,11 @@ export class PlayerRunState {
 
     //  Feeding in the whole schedule and a time range to update the relevant part
     addTimeRangeToSchedule(start: number, end: number, preferStartingNew: boolean = true) {
+        // Prune expired stopped entries so future occurrences can start
+        for (const [id, endTime] of this.stoppedIds) {
+            if (endTime <= this.currentTime) this.stoppedIds.delete(id);
+        }
+
         // Filter to time window
         const itemsToAdd: ScheduledPlaylist[] = [];
         for (const s of this.schedules) {
@@ -1612,24 +1665,10 @@ export class PlayerRunState {
                 this.immediateItem = undefined;
             }
 
-            // Then see if there are relevant upcoming queue items to add
-            const queueUntil = this.currentTime;
-            let nqi = 0;
-            while (nqi < this.interactiveQueue.length) {
-                logLowIters('Interactive Q has items');
-                const add = this.interactiveQueue[nqi];
-                if (add.startTime > queueUntil) break;
-                if (this.heapById.has(add.requestId)) continue;
-                logLowIters('Taking item');
-                const qi = new PlaybackItem();
-                this.#populatePlaybackInteractiveItem(qi, add, this.currentTime);
-                this.#addToHeap(qi);
-                ++nqi;
-            }
-            if (nqi > 0) this.interactiveQueue = this.interactiveQueue.slice(nqi);
+            // Queue items are handled at decision time below (not promoted to heap)
 
             // We now have everything organized for the current time, that is,
-            //  Heap, stack, (eventually immediate)
+            //  Heap, stack, queue (eventually immediate)
             //  So what, we need a next time.  End->upcoming->heap item/stack item
             // The thought is, run the stack up to current time.
             //   Then see if there is anything to push
@@ -1668,11 +1707,80 @@ export class PlayerRunState {
             // At this point, there either is no stack top, or we have one until a time we just grabbed
             let nextDecisionTime = et;
 
-            // Check for heap / interruptions
-            //   If there is something new in the heap
+            // Check for heap / interruptions / queue candidates
             let heapCutIn: number | undefined = undefined;
             const ht = this.heap.top;
-            if (ht) {
+
+            // Check if interactive queue has a ready item
+            const readyQCmd =
+                this.interactiveQueue.length > 0 && this.interactiveQueue[0].startTime <= this.currentTime
+                    ? this.interactiveQueue[0]
+                    : undefined;
+
+            // Determine if queue item should be preferred over heap top
+            // Queue items always have priorityTier=2, cutOffPrevious=false
+            const useQueueOverHeap =
+                readyQCmd &&
+                (!ht ||
+                    2 < ht.priorityTier ||
+                    (2 === ht.priorityTier &&
+                        readyQCmd.startTime < (ht.cutOffPrevious ? -ht.timeBasedPri : ht.timeBasedPri)));
+
+            if (useQueueOverHeap && readyQCmd) {
+                // Queue item is the best candidate - handle directly from queue
+                logLowIters('Queue item ready');
+                let shouldPush = false;
+                const st = this.#stackTop;
+                if (!st) {
+                    logLowIters('Nothing on stack, activate queue item');
+                    shouldPush = true;
+                } else {
+                    const qCompare: SchedulerHeapItem = {
+                        priorityTier: 2,
+                        timeBasedPri: readyQCmd.startTime,
+                        cutOffPrevious: false,
+                    };
+                    if (SchedulerMinHeap.compare(qCompare, st.item) < 0) {
+                        if (
+                            st.item.preferHardCutIn ||
+                            st.getNextGracefulInterruptionTime(this.depth, this.currentTime) === this.currentTime
+                        ) {
+                            logLowIters('Queue interrupts stack');
+                            shouldPush = true;
+                        } else {
+                            heapCutIn = st.getNextGracefulInterruptionTime(this.depth, this.currentTime);
+                            logLowIters(`Queue getting interruption time as ${heapCutIn}`);
+                        }
+                    }
+                }
+
+                if (shouldPush) {
+                    logLowIters('Queue pushing');
+                    const shouldKeep = st?.item.itemType !== 'Immediate';
+                    if (st) {
+                        if (shouldKeep) {
+                            st.suspendAtTime(this.depth, this.currentTime, log);
+                        } else {
+                            st.stopAtTime(this.depth, this.currentTime, log);
+                        }
+                    }
+
+                    // Materialize and consume from queue only at activation
+                    const qi = new PlaybackItem();
+                    this.#populatePlaybackInteractiveItem(qi, readyQCmd, this.currentTime);
+                    this.interactiveQueue = this.interactiveQueue.slice(1);
+
+                    const nst = new PlaybackStateEntry(qi, qi.itemId);
+                    nst.initializeToTime(this.depth, this.currentTime, this.currentTime);
+
+                    if (!shouldKeep) {
+                        this.#stackPop();
+                    }
+                    this.#stackPush(nst);
+
+                    nst.noteScheduleEvent(this.depth, nst, this.currentTime, 'Schedule Started', log);
+                }
+            } else if (ht) {
                 logLowIters('Heap has items');
                 //     See if heap item is supposed to preempt this
                 //         either in the middle or not
@@ -1764,12 +1872,11 @@ export class PlayerRunState {
                 logLowIters(`Immediate provides decision time ${im.startTime} vs ${this.currentTime}`);
                 nextDecisionTime = im.startTime;
             }
-            /*
             const ic = this.interactiveQueue[0];
-            if (ic && ic.startTime < nextDecisionTime) {
+            if (ic && ic.startTime > this.currentTime && ic.startTime < nextDecisionTime) {
+                logLowIters(`Queue provides decision time ${ic.startTime} vs ${this.currentTime}`);
                 nextDecisionTime = ic.startTime;
             }
-            */
 
             // Run advance
             const nextTime = Math.max(nextDecisionTime, this.currentTime);
@@ -1967,6 +2074,87 @@ export class PlayerRunState {
         this.immediateItem = undefined;
         this.interactiveQueue = [];
         // TODO clobber the heap and stack items?
+    }
+
+    /** Stop the currently-playing item immediately. Schedules and heap remain intact. */
+    stopImmediately(currentTime: number, log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+
+        const st = this.#stackTop;
+        if (!st) return;
+
+        // Mark this schedule as stopped until its original end time
+        this.stoppedIds.set(st.item.itemId, st.schedEndTime);
+
+        st.stopAtTime(this.depth, currentTime, log);
+        this.#stackPop();
+
+        // Resume suspended item below if one exists
+        const nst = this.#stackTop;
+        if (nst) {
+            nst.advancePausedTime(this.depth, currentTime, log);
+        }
+    }
+
+    /** Graceful stop: finish the current sequence, play the outro (post-section)
+     *  of the current schedule if it has one, then let it end naturally.
+     *  Schedules and heap remain intact. */
+    stopGracefully(currentTime: number, log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+
+        const st = this.#stackTop;
+        if (!st) return;
+
+        // Mark this schedule as stopped until its original end time
+        this.stoppedIds.set(st.item.itemId, st.schedEndTime);
+
+        st.advanceToTime(st, this.depth, currentTime);
+
+        if (st.itemPart >= 2) {
+            // Already in outro or done - let it finish naturally
+            return;
+        }
+
+        // Disable looping so the main section can end
+        st.item.mainSectionLoop = false;
+
+        // Set schedEnd so the main section transitions to outro (post-section)
+        // after the current sequence finishes.
+        if (st.itemPart === 1 && st.offsetInto > 0) {
+            // Mid-sequence in main: finish this sequence, then outro.
+            // The current sequence ends at baseTime + getCurDur().
+            st.item.schedEnd = st.baseTime + st.getCurDur() + st.item.postSectionTotal;
+        } else {
+            // Pre-section or at a sequence boundary in main:
+            // Transition to outro at the next opportunity.
+            st.item.schedEnd = currentTime + st.item.postSectionTotal;
+        }
+    }
+
+    /** Skip the current sequence (song) and advance to the next one.
+     *  If songId is provided, only skips if the currently playing sequence matches. */
+    skipCurrentSequence(songId: string | undefined, currentTime: number, log?: PlaybackLogDetail[]) {
+        const st = this.#stackTop;
+        if (!st) return;
+
+        st.advanceToTime(st, this.depth, currentTime);
+
+        // Nothing to skip if not actively playing a sequence
+        if (st.itemPart < 0 || st.itemPart > 2) return;
+        if (st.itemCursor < 0) return;
+
+        // If a songId was specified, only skip if it matches the current sequence
+        if (songId !== undefined) {
+            const curSeqId = st.seqIds[st.itemPart]?.[st.itemCursor % (st.seqIds[st.itemPart].length || 1)];
+            if (curSeqId !== songId) return;
+        }
+
+        // End the current sequence and start the next from currentTime
+        const loop = st.itemPart === 1 && st.item.mainSectionLoop;
+        st.nextItem(this.depth, st, currentTime, loop, log);
+        st.baseTime = currentTime;
     }
 
     titleForIds(seqId?: string, plId?: string, schedId?: string) {

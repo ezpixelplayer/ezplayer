@@ -47,7 +47,7 @@ export class RealTimeChunkPlayer {
 
         // Fresh song/segment?
         if (incarnation !== this.audioCleanBreakInterval || playAtRealTime !== this.audioPlayAtNextRealTime) {
-            console.log(`Starting new song/audio segment`);
+            //console.log(`Starting new song/audio segment`);
             this.audioCleanBreakInterval = incarnation;
             this.audioPlayAtNextRealTime = playAtRealTime;
 
