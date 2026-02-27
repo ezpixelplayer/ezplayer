@@ -10,7 +10,6 @@ import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
 import { getControllerStats } from '../status/ControllerHelpers';
-import { QueueAndControlStack } from './QueueAndControlStack';
 
 interface PlayerScreenProps {
     title: string;
@@ -283,9 +282,6 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
 
             {/* Timeline View */}
             <TimelineView />
-
-            {/* Playback Queue Card */}
-            <QueueAndControlStack />
         </Box>
     );
 };

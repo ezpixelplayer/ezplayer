@@ -5,6 +5,7 @@ import { VolumeOff, VolumeUp } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { AppDispatch } from '../../store/Store';
+import { QueueAndControlStack } from './QueueAndControlStack';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
@@ -30,6 +31,8 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
     }
 
     const isPlaying = player.status === 'Playing';
+    const isPaused = player.status === 'Paused';
+    const isActive = isPlaying || isPaused;
     const hasNowPlaying = !!player.now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
     const volume = player.volume?.level ?? 100;
@@ -48,9 +51,9 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                 {/* Status Indicator */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: compact ? 1 : 1.5 }}>
                     <Chip
-                        label={isPlaying ? '▶ Playing' : '⏸ Stopped'}
+                        label={isPlaying ? 'Playing' : isPaused ? 'Paused' : 'Stopped'}
                         size="small"
-                        color={isPlaying ? 'success' : 'default'}
+                        color={isPlaying ? 'success' : isPaused ? 'warning' : 'default'}
                         sx={{ fontWeight: 'bold' }}
                     />
                     <Typography variant="caption" color="text.secondary">
@@ -146,6 +149,11 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                             </Typography>
                         )}
                     </Box>
+                )}
+
+                {/* Playback controls — only when playing or paused */}
+                {isActive && (
+                    <QueueAndControlStack />
                 )}
             </CardContent>
         </Card>
