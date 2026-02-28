@@ -62,11 +62,6 @@ export interface PointShaderUniforms {
     /** Pixel style: 0 = square, 1 = circle/round (default), 2 = blended circle */
     pixelStyle?: number;
     /**
-     * Renderer device pixel ratio. Used to keep point size consistent across HiDPI displays.
-     * This is set at render time.
-     */
-    pixelRatio?: number;
-    /**
      * Camera/viewport-derived scale factor to convert world units to pixels for point sizing.
      * This is set at render time.
      */
@@ -108,7 +103,6 @@ uniform vec3 hoveredColor;
 uniform float useLiveData;
 uniform float totalPointCount;
 uniform float size;
-uniform float pixelRatio;
 uniform float scale;
 uniform float sizeAttenuation;
 uniform float maxPointSize;
@@ -185,9 +179,6 @@ void main() {
             pointSizePx *= scale;
         }
     }
-
-    // Convert CSS-like pixels to device pixels for HiDPI displays.
-    pointSizePx *= max(pixelRatio, 1.0);
 
     // Clamp to the GPU maximum supported point size for stability at very large sizes.
     gl_PointSize = min(pointSizePx, maxPointSize);
@@ -320,7 +311,6 @@ export function createPointShaderMaterial(
         viewPlane: { value: 0 }, // 0 = 3D, 1 = xy, 2 = xz, 3 = yz (int uniform)
         pixelStyle: { value: options?.pixelStyle ?? 1 }, // 0 = square, 1 = circle/round (default), 2 = blended circle (int uniform)
         // Set at render time (GeometryGroupRenderer.onBeforeRender) but must exist up-front.
-        pixelRatio: { value: 1.0 },
         scale: { value: 1.0 },
         sizeAttenuation: { value: options?.sizeAttenuation === false ? 0.0 : 1.0 },
         maxPointSize: { value: 2048.0 }, // Safe default; actual value is set at render time.

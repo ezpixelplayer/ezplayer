@@ -2,7 +2,7 @@
  * Types for communication between main thread and server worker
  */
 
-import { type ViewObject } from "./playbacktypes";
+import { type ViewObject, type LayoutSettings } from "./playbacktypes";
 
 export interface ServerWorkerData {
     port: number;
@@ -28,6 +28,7 @@ export type MainToServerWorkerMessage =
           coords3D: unknown;
           coords2D: unknown;
           viewObjects?: Array<ViewObject>;
+          layoutSettings?: LayoutSettings;
       }
     | { type: 'shutdown' };
 

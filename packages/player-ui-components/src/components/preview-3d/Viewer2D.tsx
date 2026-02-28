@@ -4,7 +4,7 @@ import { OrthographicCamera, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D, ModelMetadata } from '../../types/model3d';
+import type { Point3D, Shape3D, ModelMetadata, LayoutSettings } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
@@ -21,6 +21,8 @@ export interface Viewer2DProps {
     pointSize?: number;
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    layoutSettings?: LayoutSettings;
+    frameServerUrl?: string;
 }
 
 function Optimized2DPointCloud({
@@ -420,6 +422,79 @@ function HoverHandler2D({
     return null;
 }
 
+// ---------------------------------------------------------------------------
+// Background image plane for the 2D preview (from xLights layout settings)
+// ---------------------------------------------------------------------------
+
+function BackgroundImage2D({
+    layoutSettings,
+    frameServerUrl,
+}: {
+    layoutSettings: LayoutSettings;
+    frameServerUrl: string;
+}) {
+    const [texture, setTexture] = useState<THREE.Texture | null>(null);
+    const { backgroundImage, backgroundBrightness, previewWidth, previewHeight } = layoutSettings;
+
+    useEffect(() => {
+        if (!backgroundImage || !frameServerUrl) return;
+
+        let disposed = false;
+
+        const url = new URL('/api/show-file', frameServerUrl);
+        url.searchParams.set('path', backgroundImage);
+
+        const loader = new THREE.TextureLoader();
+        loader.load(
+            url.toString(),
+            (tex) => {
+                if (disposed) {
+                    tex.dispose();
+                    return;
+                }
+                tex.colorSpace = THREE.SRGBColorSpace;
+                tex.generateMipmaps = false;
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                setTexture(tex);
+            },
+            undefined,
+            (err) => {
+                if (!disposed) {
+                    console.error(`[BackgroundImage2D] Failed to load "${backgroundImage}":`, err);
+                }
+            },
+        );
+
+        return () => {
+            disposed = true;
+            setTexture((prev) => {
+                if (prev) prev.dispose();
+                return null;
+            });
+        };
+    }, [backgroundImage, frameServerUrl]);
+
+    if (!texture || !previewWidth || !previewHeight) return null;
+
+    // Brightness: 0-100 → color multiplier
+    const bf = Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100));
+
+    // Position the plane so it fills (0,0) to (previewWidth, previewHeight),
+    // centered at (previewWidth/2, previewHeight/2), behind points at z=-1.
+    return (
+        <mesh position={[previewWidth / 2, previewHeight / 2, -1]} renderOrder={-1}>
+            <planeGeometry args={[previewWidth, previewHeight]} />
+            <meshBasicMaterial
+                map={texture}
+                depthWrite={true}
+                side={THREE.FrontSide}
+                color={new THREE.Color(bf, bf, bf)}
+            />
+        </mesh>
+    );
+}
+
 function Scene2DContent({
     points,
     shapes,
@@ -432,6 +507,8 @@ function Scene2DContent({
     pointSize,
     selectedModelNames,
     modelMetadata,
+    layoutSettings,
+    frameServerUrl,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -444,6 +521,8 @@ function Scene2DContent({
     pointSize?: number;
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    layoutSettings?: LayoutSettings;
+    frameServerUrl?: string;
 }) {
     const { camera, controls } = useThree();
 
@@ -544,6 +623,11 @@ function Scene2DContent({
             <ambientLight intensity={0.7} />
             <directionalLight position={[10, 10, 5]} intensity={0.5} />
 
+            {/* Background image from layout settings */}
+            {layoutSettings?.backgroundImage && frameServerUrl && (
+                <BackgroundImage2D layoutSettings={layoutSettings} frameServerUrl={frameServerUrl} />
+            )}
+
             {shapes?.map((shape) => (
                 <Shape2DMesh
                     key={shape.id}
@@ -582,6 +666,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     pointSize = 3.0,
     selectedModelNames,
     modelMetadata,
+    layoutSettings,
+    frameServerUrl,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -744,6 +830,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
                             modelMetadata={modelMetadata}
+                            layoutSettings={layoutSettings}
+                            frameServerUrl={frameServerUrl}
                         />
                     </Canvas>
                 </Box>

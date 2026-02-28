@@ -26,7 +26,7 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
-import { ViewObject } from './playbacktypes.js';
+import { ViewObject, LayoutSettings } from './playbacktypes.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -132,6 +132,7 @@ const wsBroadcaster = new WebSocketBroadcaster();
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
 let cachedViewObjects: Array<ViewObject> = [];
+let cachedLayoutSettings: LayoutSettings = {};
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let serverStarted = false;
@@ -158,6 +159,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         cachedModelCoordinates2D = msg.coords2D;
         if (msg.viewObjects) {
             cachedViewObjects = msg.viewObjects;
+        }
+        if (msg.layoutSettings) {
+            cachedLayoutSettings = msg.layoutSettings;
         }
     } else if (msg.type === 'shutdown') {
         process.exit(0);
@@ -370,6 +374,13 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     router.get('/api/view-objects', async (ctx) => {
         ctx.body = cachedViewObjects;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/layout-settings - get layout settings (background image, preview size) from XML
+    // ----------------------------------------------
+    router.get('/api/layout-settings', async (ctx) => {
+        ctx.body = cachedLayoutSettings;
     });
 
     // ----------------------------------------------

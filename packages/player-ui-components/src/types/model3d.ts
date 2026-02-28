@@ -103,6 +103,13 @@ export interface Model3DData {
     metadata?: ModelSetMetadata;
 }
 
+export interface LayoutSettings {
+    backgroundImage?: string;   // Show-folder-relative path to background image
+    backgroundBrightness?: number; // 0-100 brightness for the background image
+    previewWidth?: number;      // Layout preview canvas width in pixels
+    previewHeight?: number;     // Layout preview canvas height in pixels
+}
+
 export interface SelectionState {
     selectedIds: Set<string>;
     hoveredId: string | null;

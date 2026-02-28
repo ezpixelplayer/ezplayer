@@ -586,7 +586,33 @@ GET /api/show-file?path=HouseModel/texture_1001.png
 
 ---
 
-### 14. GET /api/debug-show-folder
+### 14. GET /api/layout-settings
+
+Returns layout-level settings parsed from the xLights `<settings>` element in `xlights_rgbeffects.xml`. Includes background image path, brightness, and preview canvas dimensions.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK
+
+```json
+{
+    "backgroundImage": "PIFar.jpg",
+    "backgroundBrightness": 20,
+    "previewWidth": 1280,
+    "previewHeight": 720
+}
+```
+
+All fields are optional — the object may be empty if no settings are present in the XML. The `backgroundImage` path is show-folder-relative and can be loaded via `/api/show-file?path=PIFar.jpg`.
+
+---
+
+### 15. GET /api/debug-show-folder
 
 Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
 
@@ -610,7 +636,7 @@ Diagnostic endpoint. Returns the current show folder path and a dump of all cach
 
 ---
 
-### 15. /proxy/\<target-url\>
+### 16. /proxy/\<target-url\>
 
 HTTP and WebSocket proxy for multi-NIC bridging. Forwards requests to a target URL extracted from the path. Allows the browser-based UI to reach devices on networks that are only reachable from the server host (e.g., a light controller on a dedicated NIC).
 

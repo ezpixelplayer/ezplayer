@@ -27,6 +27,14 @@ export interface QueueEntry {
     audiopath: string;
 }
 
+// Layout-level settings from the xLights <settings> element
+export interface LayoutSettings {
+    backgroundImage?: string;   // Show-folder-relative path to background image
+    backgroundBrightness?: number; // 0-100 brightness for the background image
+    previewWidth?: number;      // Layout preview canvas width in pixels
+    previewHeight?: number;     // Layout preview canvas height in pixels
+}
+
 // View objects (meshes like house models, images) from XML
 export interface ViewObject {
     name: string;
@@ -93,6 +101,7 @@ export type WorkerToMainMessage =
           coords3D: Record<string, GetNodeResult>;
           coords2D: Record<string, GetNodeResult>;
           viewObjects?: Array<ViewObject>;
+          layoutSettings?: LayoutSettings;
       }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };

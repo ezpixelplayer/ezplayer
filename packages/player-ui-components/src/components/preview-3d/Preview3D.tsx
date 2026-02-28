@@ -20,7 +20,7 @@ import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type { Model3DData, ModelMetadata, SelectionState, ViewObject } from '../../types/model3d';
+import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import type { RootState } from '../../store/Store';
@@ -55,6 +55,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [viewObjects, setViewObjects] = useState<ViewObject[]>([]);
+    const [layoutSettings, setLayoutSettings] = useState<LayoutSettings>({});
     // This is the selection state of the 2D/3D view
     const [selectionState, setSelectionState] = useState<SelectionState>({
         selectedIds: new Set<string>(),
@@ -156,6 +157,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         }
                     } catch (fetchErr) {
                         console.error('[Preview3D] Failed to fetch view objects via HTTP:', fetchErr);
+                    }
+
+                    // Fetch layout settings (background image, preview dimensions)
+                    try {
+                        const settingsResponse = await fetch(`${effectiveFrameServerUrl}/api/layout-settings`);
+                        if (settingsResponse.ok) {
+                            const settings = await settingsResponse.json();
+                            if (settings && typeof settings === 'object') {
+                                setLayoutSettings(settings);
+                            }
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch layout settings via HTTP:', fetchErr);
                     }
                 }
 
@@ -611,6 +625,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
                             modelMetadata={modelData.metadata?.models}
+                            layoutSettings={layoutSettings}
+                            frameServerUrl={effectiveFrameServerUrl}
                         />
                     )}
                 </Box>

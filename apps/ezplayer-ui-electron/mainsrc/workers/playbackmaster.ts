@@ -10,6 +10,7 @@ import type {
     WorkerToMainMessage,
     PlaybackWorkerData,
     ViewObject,
+    LayoutSettings,
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
@@ -703,6 +704,7 @@ let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
+let layoutSettings: LayoutSettings = {};
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -986,6 +988,65 @@ async function loadXmlCoordinates() {
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
             }
+
+            // Parse layout <settings> element (backgroundImage, previewWidth, etc.)
+            try {
+                const xsettings = getElementByTag(xrgb.documentElement, 'settings');
+                layoutSettings = {};
+
+                if (xsettings) {
+                    for (let is = 0; is < xsettings.childNodes.length; ++is) {
+                        const n = xsettings.childNodes[is];
+                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                        const el = n as Element;
+                        const val = getAttrDef(el, 'value', '');
+                        if (!val) continue;
+
+                        switch (el.tagName) {
+                            case 'backgroundImage': {
+                                // Resolve to show-folder-relative path (same as OBJ/image files)
+                                let resolved: string | undefined;
+                                if (!path.isAbsolute(val)) {
+                                    resolved = val.replace(/\\/g, '/');
+                                } else if (showFolder) {
+                                    const resolvedShow = path.resolve(showFolder);
+                                    const resolvedFile = path.resolve(val);
+                                    if (resolvedFile.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
+                                        || resolvedFile.toLowerCase() === resolvedShow.toLowerCase()) {
+                                        resolved = path.relative(resolvedShow, resolvedFile).replace(/\\/g, '/');
+                                    } else {
+                                        const basename = path.basename(val);
+                                        const found = await findFileInShowFolder(path.resolve(showFolder), basename);
+                                        if (found) {
+                                            resolved = found;
+                                            emitInfo(`[loadXmlCoordinates] Resolved backgroundImage "${val}" → "${found}" via search`);
+                                        } else {
+                                            emitWarning(`[loadXmlCoordinates] Could not find backgroundImage "${basename}" in show folder`);
+                                        }
+                                    }
+                                }
+                                if (resolved) layoutSettings.backgroundImage = resolved;
+                                break;
+                            }
+                            case 'backgroundBrightness':
+                                layoutSettings.backgroundBrightness = parseInt(val, 10);
+                                break;
+                            case 'previewWidth':
+                                layoutSettings.previewWidth = parseInt(val, 10);
+                                break;
+                            case 'previewHeight':
+                                layoutSettings.previewHeight = parseInt(val, 10);
+                                break;
+                        }
+                    }
+
+                    if (layoutSettings.backgroundImage) {
+                        emitInfo(`[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`);
+                    }
+                }
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing settings element: ${parseErr}`);
+            }
         }
     }
 
@@ -998,7 +1059,7 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
