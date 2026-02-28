@@ -1,4 +1,5 @@
 import * as path from 'path';
+import fsp from 'fs/promises';
 import { parentPort, workerData } from 'worker_threads';
 import { type Transferable } from 'node:worker_threads';
 
@@ -723,6 +724,43 @@ let fseqCache: FSeqPrefetchCache | undefined = undefined;
 let lastPRSSchedUpdate: number = 0;
 
 ////////
+// Search for a file by name within the show folder tree.
+// Returns the show-folder-relative path (forward slashes) if found, undefined otherwise.
+////////
+async function findFileInShowFolder(
+    folder: string,
+    filename: string,
+    maxDepth = 5,
+): Promise<string | undefined> {
+    const lowerFilename = filename.toLowerCase();
+
+    async function search(dir: string, depth: number): Promise<string | undefined> {
+        if (depth > maxDepth) return undefined;
+        let entries: import('fs').Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            return undefined;
+        }
+        for (const entry of entries) {
+            if (entry.isFile() && entry.name.toLowerCase() === lowerFilename) {
+                const abs = path.join(dir, entry.name);
+                return path.relative(folder, abs).replace(/\\/g, '/');
+            }
+        }
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const found = await search(path.join(dir, entry.name), depth + 1);
+                if (found) return found;
+            }
+        }
+        return undefined;
+    }
+
+    return search(folder, 0);
+}
+
+////////
 // Load XML coordinates independently (can be called before processQueue)
 ////////
 async function loadXmlCoordinates() {
@@ -858,30 +896,32 @@ async function loadXmlCoordinates() {
                                 }
                             }
 
-                            // Resolve OBJ file path relative to show folder
-                            // Store the path as-is (absolute or relative) - the API endpoint will handle resolution
-                            let resolvedObjFile = objFile;
-                            if (path.isAbsolute(objFile) && showFolder) {
-                                // If absolute path, check if it's within show folder
-                                const normalizedShowFolder = path.resolve(showFolder).toLowerCase();
-                                const normalizedObjFile = path.resolve(objFile).toLowerCase();
-                                if (normalizedObjFile.startsWith(normalizedShowFolder)) {
-                                    // Path is within show folder, use as-is
-                                    resolvedObjFile = objFile;
+                            // Resolve OBJ file path to a show-folder-relative path (forward slashes).
+                            let resolvedObjFile: string | undefined;
+                            if (!path.isAbsolute(objFile)) {
+                                // Already relative – normalise slashes
+                                resolvedObjFile = objFile.replace(/\\/g, '/');
+                            } else if (showFolder) {
+                                const resolvedShow = path.resolve(showFolder);
+                                const resolvedObj = path.resolve(objFile);
+                                // Check if the absolute path falls within the show folder
+                                if (resolvedObj.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
+                                    || resolvedObj.toLowerCase() === resolvedShow.toLowerCase()) {
+                                    resolvedObjFile = path.relative(resolvedShow, resolvedObj).replace(/\\/g, '/');
                                 } else {
-                                    // Try to make it relative to show folder
-                                    const relativePath = path.relative(showFolder, objFile);
-                                    if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-                                        resolvedObjFile = relativePath;
+                                    // Absolute path outside show folder (or file moved) – search by basename
+                                    const basename = path.basename(objFile);
+                                    const found = await findFileInShowFolder(resolvedShow, basename);
+                                    if (found) {
+                                        resolvedObjFile = found;
+                                        emitInfo(`[loadXmlCoordinates] Resolved "${objFile}" → "${found}" via search`);
                                     } else {
-                                        // Path is outside show folder, use absolute path (will be rejected by API)
-                                        resolvedObjFile = objFile;
+                                        emitWarning(`[loadXmlCoordinates] Could not find "${basename}" in show folder, skipping view object "${name}"`);
                                     }
                                 }
-                            } else if (!path.isAbsolute(objFile) && showFolder) {
-                                // Already relative, use as-is
-                                resolvedObjFile = objFile;
                             }
+
+                            if (!resolvedObjFile) continue;
 
                             viewObjects.push({
                                 name,

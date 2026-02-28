@@ -535,9 +535,8 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
 
         const loadModel = async () => {
             try {
-                const objDir =
-                    objFile.substring(0, objFile.lastIndexOf('\\') + 1) ||
-                    objFile.substring(0, objFile.lastIndexOf('/') + 1) || '';
+                // Paths are now always forward-slash-normalized relative paths from playbackmaster
+                const objDir = objFile.substring(0, objFile.lastIndexOf('/') + 1);
 
                 const loadingManager = createShowFileLoadingManager(frameServerUrl, objDir);
 
