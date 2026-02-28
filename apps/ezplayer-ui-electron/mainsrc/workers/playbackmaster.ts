@@ -47,6 +47,7 @@ import {
     FrameReference,
     CacheStats,
     loadXmlFile,
+    getNumAttrDef,
 } from '@ezplayer/epp';
 
 import { getAllModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
@@ -870,31 +871,7 @@ async function loadXmlCoordinates() {
                             const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
 
                             // Extract brightness: first try Brightness attribute, then check dimmingCurve child
-                            let brightness = parseFloat(getAttrDef(viewObj, 'Brightness', ''));
-                            if (isNaN(brightness)) {
-                                // Check dimmingCurve child element (like models have)
-                                brightness = 100; // Default
-                                for (let idc = 0; idc < viewObj.childNodes.length; ++idc) {
-                                    const ndc = viewObj.childNodes[idc];
-                                    if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                                    const dc = ndc as Element;
-                                    if (dc.tagName !== 'dimmingCurve') continue;
-
-                                    for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
-                                        const nddc = dc.childNodes[iddc];
-                                        if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                                        const ddc = nddc as Element;
-                                        if (ddc.tagName !== 'all') continue;
-                                        if (ddc.hasAttribute('brightness')) {
-                                            // xLights stores brightness as offset from 100 (e.g., -20 = 80%, +10 = 110%)
-                                            const brightnessOffset = parseFloat(ddc.getAttribute('brightness')!);
-                                            brightness = Math.min(100, Math.max(0, 100 + brightnessOffset));
-                                            break;
-                                        }
-                                    }
-                                    if (!isNaN(brightness) && brightness !== 100) break;
-                                }
-                            }
+                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
 
                             // Resolve OBJ file path to a show-folder-relative path (forward slashes).
                             let resolvedObjFile: string | undefined;
@@ -958,28 +935,7 @@ async function loadXmlCoordinates() {
                             const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
 
                             // Extract brightness (same logic as Mesh)
-                            let brightness = parseFloat(getAttrDef(viewObj, 'Brightness', ''));
-                            if (isNaN(brightness)) {
-                                brightness = 100;
-                                for (let idc = 0; idc < viewObj.childNodes.length; ++idc) {
-                                    const ndc = viewObj.childNodes[idc];
-                                    if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                                    const dc = ndc as Element;
-                                    if (dc.tagName !== 'dimmingCurve') continue;
-                                    for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
-                                        const nddc = dc.childNodes[iddc];
-                                        if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                                        const ddc = nddc as Element;
-                                        if (ddc.tagName !== 'all') continue;
-                                        if (ddc.hasAttribute('brightness')) {
-                                            const brightnessOffset = parseFloat(ddc.getAttribute('brightness')!);
-                                            brightness = Math.min(100, Math.max(0, 100 + brightnessOffset));
-                                            break;
-                                        }
-                                    }
-                                    if (!isNaN(brightness) && brightness !== 100) break;
-                                }
-                            }
+                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
 
                             // Resolve image file path (same logic as OBJ path resolution)
                             let resolvedImageFile: string | undefined;
