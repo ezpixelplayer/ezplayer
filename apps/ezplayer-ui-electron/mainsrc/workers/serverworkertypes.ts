@@ -2,6 +2,8 @@
  * Types for communication between main thread and server worker
  */
 
+import { type ViewObject } from "./playbacktypes";
+
 export interface ServerWorkerData {
     port: number;
     portSource: string;
@@ -21,7 +23,12 @@ export type MainToServerWorkerMessage =
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
     | { type: 'broadcast'; key: string; value: unknown }
-    | { type: 'pushModelCoordinates'; coords3D: unknown; coords2D: unknown }
+    | {
+          type: 'pushModelCoordinates';
+          coords3D: unknown;
+          coords2D: unknown;
+          viewObjects?: Array<ViewObject>;
+      }
     | { type: 'shutdown' };
 
 /**

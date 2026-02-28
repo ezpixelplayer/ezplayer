@@ -20,7 +20,7 @@ import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type { Model3DData, ModelMetadata, SelectionState } from '../../types/model3d';
+import type { Model3DData, ModelMetadata, SelectionState, ViewObject } from '../../types/model3d';
 import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import type { RootState } from '../../store/Store';
@@ -54,6 +54,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [viewObjects, setViewObjects] = useState<ViewObject[]>([]);
     // This is the selection state of the 2D/3D view
     const [selectionState, setSelectionState] = useState<SelectionState>({
         selectedIds: new Set<string>(),
@@ -142,6 +143,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         }
                     } catch (fetchErr) {
                         console.error('[Preview3D] Failed to fetch model coordinates via HTTP:', fetchErr);
+                    }
+
+                    // Also fetch view objects (meshes like house models)
+                    try {
+                        const viewObjectsResponse = await fetch(`${effectiveFrameServerUrl}/api/view-objects`);
+                        if (viewObjectsResponse.ok) {
+                            const viewObjs = await viewObjectsResponse.json();
+                            if (Array.isArray(viewObjs)) {
+                                setViewObjects(viewObjs);
+                            }
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch view objects via HTTP:', fetchErr);
                     }
                 }
 
@@ -581,6 +595,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
                             modelMetadata={modelData.metadata?.models}
+                            viewObjects={viewObjects}
+                            frameServerUrl={effectiveFrameServerUrl}
                         />
                     ) : (
                         <Viewer2D

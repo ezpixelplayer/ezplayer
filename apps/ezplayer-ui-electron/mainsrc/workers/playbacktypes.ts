@@ -27,6 +27,24 @@ export interface QueueEntry {
     audiopath: string;
 }
 
+// View objects (meshes like house models) from XML
+export interface ViewObject {
+    name: string;
+    displayAs: string;
+    objFile?: string; // Path to OBJ file
+    worldPosX: number;
+    worldPosY: number;
+    worldPosZ: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    rotateX: number;
+    rotateY: number;
+    rotateZ: number;
+    brightness?: number;
+    active?: boolean;
+}
+
 // Should something be in the RPC API?
 // Yes, if you want to await it (like fetch a value)
 // Not necessarily, otherwise
@@ -68,6 +86,11 @@ export type WorkerToMainMessage =
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
     | { type: 'pstatus'; status: PlayerPStatusContent }
-    | { type: 'modelCoordinates'; coords3D: Record<string, GetNodeResult>; coords2D: Record<string, GetNodeResult> }
+    | {
+          type: 'modelCoordinates';
+          coords3D: Record<string, GetNodeResult>;
+          coords2D: Record<string, GetNodeResult>;
+          viewObjects?: Array<ViewObject>;
+      }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };

@@ -67,6 +67,32 @@ export interface Shape3D {
     points?: Point3D[];
 }
 
+export interface ViewObject {
+    name: string;
+    displayAs: string;
+    objFile?: string;
+    worldPosX: number;
+    worldPosY: number;
+    worldPosZ: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    rotateX: number;
+    rotateY: number;
+    rotateZ: number;
+    brightness?: number;
+    active?: boolean;
+    // Channel mapping for live color extraction
+    startChannel?: number; // Starting channel index (0-based) for this view object
+    channelsPerNode?: number; // Number of channels per node (3=RGB, 4=RGBW, etc.)
+    nodeCount?: number; // Number of nodes in this view object
+    modelName?: string; // Optional: name of associated model to get channel mapping from
+    // Color channel offsets for handling different color orders (RGB, GRB, etc.)
+    rOffset?: number; // Red channel offset (0, 1, or 2)
+    gOffset?: number; // Green channel offset (0, 1, or 2)
+    bOffset?: number; // Blue channel offset (0, 1, or 2)
+}
+
 export interface Model3DData {
     version?: string;
     name?: string;
