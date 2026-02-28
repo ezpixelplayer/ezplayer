@@ -1,4 +1,5 @@
 import * as path from 'path';
+import fsp from 'fs/promises';
 import { parentPort, workerData } from 'worker_threads';
 import { type Transferable } from 'node:worker_threads';
 
@@ -8,6 +9,7 @@ import type {
     MainRPCAPI,
     WorkerToMainMessage,
     PlaybackWorkerData,
+    ViewObject,
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
@@ -699,6 +701,8 @@ let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
+let viewObjects: ViewObject[] = [];
+
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 // Separate time (within foregroundPlayerRunState)... we will front-run the audio a bit.
@@ -718,6 +722,43 @@ let fseqCache: FSeqPrefetchCache | undefined = undefined;
 /////
 // Update time variables
 let lastPRSSchedUpdate: number = 0;
+
+////////
+// Search for a file by name within the show folder tree.
+// Returns the show-folder-relative path (forward slashes) if found, undefined otherwise.
+////////
+async function findFileInShowFolder(
+    folder: string,
+    filename: string,
+    maxDepth = 5,
+): Promise<string | undefined> {
+    const lowerFilename = filename.toLowerCase();
+
+    async function search(dir: string, depth: number): Promise<string | undefined> {
+        if (depth > maxDepth) return undefined;
+        let entries: import('fs').Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            return undefined;
+        }
+        for (const entry of entries) {
+            if (entry.isFile() && entry.name.toLowerCase() === lowerFilename) {
+                const abs = path.join(dir, entry.name);
+                return path.relative(folder, abs).replace(/\\/g, '/');
+            }
+        }
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const found = await search(path.join(dir, entry.name), depth + 1);
+                if (found) return found;
+            }
+        }
+        return undefined;
+    }
+
+    return search(folder, 0);
+}
 
 ////////
 // Load XML coordinates independently (can be called before processQueue)
@@ -797,6 +838,115 @@ async function loadXmlCoordinates() {
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }
+
+            // Parse view_objects (meshes like house models)
+            try {
+                const xviewObjects = getElementByTag(xrgb.documentElement, 'view_objects');
+                viewObjects = [];
+
+                if (xviewObjects) {
+                    for (let iv = 0; iv < xviewObjects.childNodes.length; ++iv) {
+                        const n = xviewObjects.childNodes[iv];
+                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                        const viewObj = n as Element;
+                        if (viewObj.tagName !== 'view_object') continue;
+
+                        const name = getAttrDef(viewObj, 'name', '');
+                        const displayAs = getAttrDef(viewObj, 'DisplayAs', '');
+                        const objFile = getAttrDef(viewObj, 'ObjFile', '');
+                        const active = getBoolAttrDef(viewObj, 'Active', true);
+
+                        // Only process Mesh objects with OBJ files
+                        if (displayAs === 'Mesh' && objFile && active) {
+                            // Parse transform attributes
+                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
+                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
+                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
+                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
+                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
+                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
+                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
+                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
+                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
+                            
+                            // Extract brightness: first try Brightness attribute, then check dimmingCurve child
+                            let brightness = parseFloat(getAttrDef(viewObj, 'Brightness', ''));
+                            if (isNaN(brightness)) {
+                                // Check dimmingCurve child element (like models have)
+                                brightness = 100; // Default
+                                for (let idc = 0; idc < viewObj.childNodes.length; ++idc) {
+                                    const ndc = viewObj.childNodes[idc];
+                                    if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                                    const dc = ndc as Element;
+                                    if (dc.tagName !== 'dimmingCurve') continue;
+                                    
+                                    for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
+                                        const nddc = dc.childNodes[iddc];
+                                        if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                                        const ddc = nddc as Element;
+                                        if (ddc.tagName !== 'all') continue;
+                                        if (ddc.hasAttribute('brightness')) {
+                                            // xLights stores brightness as offset from 100 (e.g., -20 = 80%, +10 = 110%)
+                                            const brightnessOffset = parseFloat(ddc.getAttribute('brightness')!);
+                                            brightness = Math.min(100, Math.max(0, 100 + brightnessOffset));
+                                            break;
+                                        }
+                                    }
+                                    if (!isNaN(brightness) && brightness !== 100) break;
+                                }
+                            }
+
+                            // Resolve OBJ file path to a show-folder-relative path (forward slashes).
+                            let resolvedObjFile: string | undefined;
+                            if (!path.isAbsolute(objFile)) {
+                                // Already relative – normalise slashes
+                                resolvedObjFile = objFile.replace(/\\/g, '/');
+                            } else if (showFolder) {
+                                const resolvedShow = path.resolve(showFolder);
+                                const resolvedObj = path.resolve(objFile);
+                                // Check if the absolute path falls within the show folder
+                                if (resolvedObj.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
+                                    || resolvedObj.toLowerCase() === resolvedShow.toLowerCase()) {
+                                    resolvedObjFile = path.relative(resolvedShow, resolvedObj).replace(/\\/g, '/');
+                                } else {
+                                    // Absolute path outside show folder (or file moved) – search by basename
+                                    const basename = path.basename(objFile);
+                                    const found = await findFileInShowFolder(resolvedShow, basename);
+                                    if (found) {
+                                        resolvedObjFile = found;
+                                        emitInfo(`[loadXmlCoordinates] Resolved "${objFile}" → "${found}" via search`);
+                                    } else {
+                                        emitWarning(`[loadXmlCoordinates] Could not find "${basename}" in show folder, skipping view object "${name}"`);
+                                    }
+                                }
+                            }
+
+                            if (!resolvedObjFile) continue;
+
+                            viewObjects.push({
+                                name,
+                                displayAs,
+                                objFile: resolvedObjFile,
+                                worldPosX,
+                                worldPosY,
+                                worldPosZ,
+                                scaleX,
+                                scaleY,
+                                scaleZ,
+                                rotateX,
+                                rotateY,
+                                rotateZ,
+                                brightness,
+                                active,
+                            });
+                        }
+                    }
+                }
+
+                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes)`);
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
+            }
         }
     }
 
@@ -809,7 +959,7 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;

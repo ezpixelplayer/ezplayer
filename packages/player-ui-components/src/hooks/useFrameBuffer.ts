@@ -33,6 +33,12 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
     const zstdReadyRef = useRef(false);
     // Reusable decode output buffer - grows as needed, avoids per-frame allocation
     const decodeBufferRef = useRef<Uint8Array | undefined>(undefined);
+    
+    // Track consecutive errors to stop polling on persistent failures
+    const consecutiveErrorsRef = useRef(0);
+    const lastErrorTimeRef = useRef(0);
+    const MAX_CONSECUTIVE_ERRORS = 5; // Stop after 5 consecutive 404s
+    const ERROR_RESET_INTERVAL = 5000; // Reset error count after 5 seconds of success
 
     useEffect(() => {
         if (!baseUrl || !enabled) {
@@ -61,11 +67,48 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
 
                     if (shouldStopRef.current) return;
 
-                    if (response.status === 204 || !response.ok) {
-                        // No data or error - just continue polling
+                    // Handle 404 errors - stop polling if endpoint doesn't exist
+                    if (response.status === 404) {
+                        consecutiveErrorsRef.current++;
+                        if (consecutiveErrorsRef.current === 1) {
+                            // Only log once to avoid spam
+                            console.warn(`[useFrameBuffer] Endpoint not found: ${baseUrl}${endpoint}. This is normal if the server isn't running or frame data isn't available.`);
+                        }
+                        if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+                            console.warn(`[useFrameBuffer] Stopping polling after ${MAX_CONSECUTIVE_ERRORS} consecutive 404 errors. The endpoint ${baseUrl}${endpoint} is not available.`);
+                            shouldStopRef.current = true;
+                            return;
+                        }
+                        // Use longer interval for 404s to reduce spam
+                        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs * 10));
+                        continue;
+                    }
+
+                    if (response.status === 204) {
+                        // No data available - reset error count on successful connection
+                        consecutiveErrorsRef.current = 0;
                         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
                         continue;
                     }
+
+                    if (!response.ok) {
+                        // Other errors - log and continue with backoff
+                        consecutiveErrorsRef.current++;
+                        if (consecutiveErrorsRef.current <= 3) {
+                            console.warn(`[useFrameBuffer] Error fetching frames: ${response.status} ${response.statusText}`);
+                        }
+                        if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+                            console.warn(`[useFrameBuffer] Stopping polling after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`);
+                            shouldStopRef.current = true;
+                            return;
+                        }
+                        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs * 5));
+                        continue;
+                    }
+
+                    // Success - reset error count
+                    consecutiveErrorsRef.current = 0;
+                    lastErrorTimeRef.current = Date.now();
 
                     const data = await response.arrayBuffer();
                     if (data.byteLength < 8) {
@@ -107,8 +150,20 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
 
                     // Write frame data to ring buffer - Viewer3D reads from here
                     ringRef.current?.publishFrom(frameData);
-                } catch {
-                    // Silently continue on errors
+                } catch (error) {
+                    // Network errors or other exceptions
+                    consecutiveErrorsRef.current++;
+                    if (consecutiveErrorsRef.current <= 3) {
+                        console.warn(`[useFrameBuffer] Network error:`, error instanceof Error ? error.message : String(error));
+                    }
+                    if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+                        console.warn(`[useFrameBuffer] Stopping polling after ${MAX_CONSECUTIVE_ERRORS} consecutive network errors.`);
+                        shouldStopRef.current = true;
+                        return;
+                    }
+                    // Use longer interval for network errors
+                    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs * 5));
+                    continue;
                 }
 
                 await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

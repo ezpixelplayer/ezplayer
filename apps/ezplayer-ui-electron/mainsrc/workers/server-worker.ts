@@ -2,11 +2,11 @@
  * Server worker - runs Koa server in a worker thread
  */
 
-import { parentPort, workerData } from 'worker_threads';
+import { parentPort } from 'worker_threads';
 import Koa from 'koa';
 import bodyParser from '@koa/bodyparser';
-import { WebSocketServer, WebSocket } from 'ws';
-import { createServer, Server } from 'http';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import fsp from 'fs/promises';
@@ -26,6 +26,7 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
+import { ViewObject } from './playbacktypes.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -38,6 +39,8 @@ const ASSET_MIME_TYPES: Record<string, string> = {
     '.svg': 'image/svg+xml',
     '.ico': 'image/x-icon',
     '.bmp': 'image/bmp',
+    '.obj': 'text/plain',
+    '.mtl': 'text/plain',
 };
 
 function inferMimeType(filePath: string): string {
@@ -128,6 +131,7 @@ const wsBroadcaster = new WebSocketBroadcaster();
 // Side cache for model coordinates (pushed from main thread on show folder load)
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
+let cachedViewObjects: Array<ViewObject> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let serverStarted = false;
@@ -152,6 +156,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
         cachedModelCoordinates2D = msg.coords2D;
+        if (msg.viewObjects) {
+            cachedViewObjects = msg.viewObjects;
+        }
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
@@ -240,6 +247,20 @@ async function startServer(config: ServerWorkerData) {
             pStatus: wsBroadcaster.get('pStatus'),
             cStatus: wsBroadcaster.get('cStatus'),
             nStatus: wsBroadcaster.get('nStatus'),
+        };
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/debug-show-folder - diagnostic endpoint
+    // ----------------------------------------------
+    router.get('/api/debug-show-folder', async (ctx) => {
+        const showFolder = wsBroadcaster.get('showFolder');
+        const state = wsBroadcaster.getState();
+        ctx.body = {
+            showFolder,
+            hasShowFolder: !!showFolder,
+            allStateKeys: Object.keys(state),
+            state: state
         };
     });
 
@@ -342,6 +363,87 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     router.get('/api/model-coordinates-2d', async (ctx) => {
         ctx.body = cachedModelCoordinates2D;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/view-objects - get view objects (meshes) from XML (local cache)
+    // ----------------------------------------------
+    router.get('/api/view-objects', async (ctx) => {
+        ctx.body = cachedViewObjects;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/show-file - serve files for OBJ/MTL/textures used by 3D viewer
+    // Only accepts show-folder-relative paths (no absolute paths).
+    // ----------------------------------------------
+    router.get('/api/show-file', async (ctx) => {
+        const filePath = ctx.query.path as string;
+        const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+
+        if (!showFolder) {
+            ctx.status = 400;
+            ctx.body = { error: 'Show folder not set' };
+            return;
+        }
+
+        if (!filePath) {
+            ctx.status = 400;
+            ctx.body = { error: 'File path is required' };
+            return;
+        }
+
+        // Reject absolute paths (drive letters or leading slash)
+        if (path.isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath)) {
+            ctx.status = 400;
+            ctx.body = { error: 'Absolute paths are not allowed — use show-folder-relative paths' };
+            return;
+        }
+
+        // Reject path-traversal attempts
+        const segments = filePath.replace(/\\/g, '/').split('/');
+        if (segments.some(s => s === '..')) {
+            ctx.status = 403;
+            ctx.body = { error: 'Path traversal not allowed' };
+            return;
+        }
+
+        // Security: only serve a limited set of file types used by the 3D viewer.
+        const allowedExt = new Set([
+            '.obj', '.mtl',
+            '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds',
+        ]);
+        const ext = path.extname(filePath).toLowerCase();
+        if (!allowedExt.has(ext)) {
+            ctx.status = 403;
+            ctx.body = { error: `File type not allowed: ${ext || '<none>'}` };
+            return;
+        }
+
+        try {
+            const resolvedShowFolder = path.resolve(showFolder);
+            const resolvedPath = path.resolve(resolvedShowFolder, filePath);
+
+            // Defense-in-depth: verify resolved path is still within show folder
+            if (!resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep)
+                && resolvedPath.toLowerCase() !== resolvedShowFolder.toLowerCase()) {
+                ctx.status = 403;
+                ctx.body = { error: 'Resolved path outside show folder' };
+                return;
+            }
+
+            if (!await exists(resolvedPath)) {
+                ctx.status = 404;
+                ctx.body = { error: 'File not found' };
+                return;
+            }
+
+            ctx.type = inferMimeType(resolvedPath);
+            await send(ctx, path.basename(resolvedPath), { root: path.dirname(resolvedPath) });
+        } catch (error) {
+            console.error('[server-worker] Error serving show file:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
     });
 
     // ----------------------------------------------
