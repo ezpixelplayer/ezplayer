@@ -26,12 +26,12 @@ export interface ModelListProps {
     modelData?: Model3DData | null;
 }
 
-export const ModelList: React.FC<ModelListProps> = ({
+export const ModelList = React.memo(function ModelList({
     selectedModelNames = null,
     onModelSelect,
     searchable = true,
     modelData = null,
-}) => {
+}: ModelListProps) {
     const theme = useTheme();
     const [searchQuery, setSearchQuery] = useState('');
     const [hoveredModelName, setHoveredModelName] = useState<string | null>(null);
@@ -374,4 +374,4 @@ export const ModelList: React.FC<ModelListProps> = ({
             </Paper>
         </Box>
     );
-};
+});

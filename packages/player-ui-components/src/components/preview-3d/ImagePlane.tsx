@@ -191,10 +191,10 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
 // Public export with Suspense wrapper
 // ---------------------------------------------------------------------------
 
-export function ImagePlane(props: ImagePlaneProps) {
+export const ImagePlane = React.memo(function ImagePlane(props: ImagePlaneProps) {
     return (
         <Suspense fallback={null}>
             <ImagePlaneContent {...props} />
         </Suspense>
     );
-}
+});

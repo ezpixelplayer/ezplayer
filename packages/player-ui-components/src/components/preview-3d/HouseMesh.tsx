@@ -812,7 +812,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
     );
 }
 
-export function HouseMesh(props: HouseMeshProps) {
+export const HouseMesh = React.memo(function HouseMesh(props: HouseMeshProps) {
     return (
         <HouseMeshErrorBoundary viewObjectName={props.viewObject.name}>
             <Suspense fallback={null}>
@@ -820,5 +820,5 @@ export function HouseMesh(props: HouseMeshProps) {
             </Suspense>
         </HouseMeshErrorBoundary>
     );
-}
+});
 

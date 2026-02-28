@@ -111,15 +111,43 @@ function OptimizedPointCloud({
         };
     }, [points, pointSize, modelMetadata]);
 
-    // Update states when selection/hover changes
-    useEffect(() => {
-        if (!geometryManagerRef.current) return;
-        geometryManagerRef.current.updateStates(selectedIds, hoveredId, selectedModelNames);
-    }, [selectedIds, hoveredId, selectedModelNames]);
+    // Track selection/hover in refs so changes are applied in the render
+    // loop without triggering React re-render cascades.
+    const selectedIdsRef = useRef(selectedIds);
+    const hoveredIdRef = useRef(hoveredId);
+    const selectedModelNamesRef = useRef(selectedModelNames);
+    selectedIdsRef.current = selectedIds;
+    hoveredIdRef.current = hoveredId;
+    selectedModelNamesRef.current = selectedModelNames;
 
-    // Update animation time and point sizes
+    const prevSelectionRef = useRef<{
+        selectedIds?: Set<string>;
+        hoveredId?: string | null;
+        selectedModelNames?: Set<string>;
+    }>({});
+
+    // Single useFrame handles both selection updates and animation
     useFrame((_state, delta) => {
         if (!geometryManagerRef.current) return;
+
+        // Apply selection/hover changes (ref-based, no React effect needed)
+        const prev = prevSelectionRef.current;
+        if (
+            prev.selectedIds !== selectedIdsRef.current ||
+            prev.hoveredId !== hoveredIdRef.current ||
+            prev.selectedModelNames !== selectedModelNamesRef.current
+        ) {
+            geometryManagerRef.current.updateStates(
+                selectedIdsRef.current,
+                hoveredIdRef.current,
+                selectedModelNamesRef.current,
+            );
+            prevSelectionRef.current = {
+                selectedIds: selectedIdsRef.current,
+                hoveredId: hoveredIdRef.current,
+                selectedModelNames: selectedModelNamesRef.current,
+            };
+        }
 
         animationTimeRef.current += delta;
 
@@ -147,6 +175,19 @@ function ClickHandler({
 }) {
     const { camera, raycaster, gl } = useThree();
 
+    // Pre-compute 3D positions once when points change (same pattern as HoverHandler)
+    const pointPositionsRef = useRef<THREE.Vector3[]>([]);
+    const centerPointRef = useRef<THREE.Vector3 | null>(null);
+    useEffect(() => {
+        if (points.length === 0) {
+            pointPositionsRef.current = [];
+            centerPointRef.current = null;
+            return;
+        }
+        pointPositionsRef.current = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        centerPointRef.current = new THREE.Vector3(points[0].x, points[0].y, points[0].z);
+    }, [points]);
+
     useEffect(() => {
         if (!onPointClick) return;
 
@@ -160,30 +201,29 @@ function ClickHandler({
             // Update raycaster with camera and mouse position
             raycaster.setFromCamera(mouse, camera);
 
-            // Get all points as 3D positions
-            const pointPositions = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+            // Use pre-computed positions instead of allocating on every click
+            const pointPositions = pointPositionsRef.current;
+            if (pointPositions.length === 0) return;
+
             const pointSizeValue = pointSize || 3.0;
 
             // Calculate threshold based on point size and camera distance
-            // Use a more generous threshold for point selection
-            const cameraDistance = camera.position.distanceTo(
-                points.length > 0
-                    ? new THREE.Vector3(points[0].x, points[0].y, points[0].z)
-                    : new THREE.Vector3(0, 0, 0),
-            );
+            const cameraDistance = centerPointRef.current
+                ? camera.position.distanceTo(centerPointRef.current)
+                : 1000;
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
 
             // Find the closest point to the ray
             let closestIndex = -1;
             let minDistance = Infinity;
 
-            pointPositions.forEach((position, index) => {
-                const distance = raycaster.ray.distanceToPoint(position);
+            for (let i = 0; i < pointPositions.length; i++) {
+                const distance = raycaster.ray.distanceToPoint(pointPositions[i]);
                 if (distance < threshold && distance < minDistance) {
                     minDistance = distance;
-                    closestIndex = index;
+                    closestIndex = i;
                 }
-            });
+            }
 
             // If a point was found, trigger click handler
             if (closestIndex >= 0 && closestIndex < points.length) {
