@@ -14,6 +14,36 @@ export interface UseAudioStreamResult {
 
 const DEFAULT_POLL_INTERVAL = 50;
 const MAX_CONSECUTIVE_ERRORS = 5;
+const CLOCK_SYNC_SAMPLES = 3;
+
+/**
+ * Estimate the offset between this client's clock and the server's clock.
+ * offset = serverNow - clientNow  (positive means server is ahead).
+ * Trusts the sample with the lowest RTT — it had the least scheduling noise,
+ * so the "halfway" assumption is most accurate. Discards any sample with RTT > 100ms.
+ */
+async function estimateClockOffset(baseUrl: string): Promise<number> {
+    let bestOffset = 0;
+    let bestRtt = Infinity;
+    for (let i = 0; i < CLOCK_SYNC_SAMPLES; i++) {
+        const t0 = Date.now();
+        try {
+            const res = await fetch(`${baseUrl}/api/time`);
+            const t1 = Date.now();
+            if (!res.ok) continue;
+            const { now: serverNow } = await res.json();
+            const rtt = t1 - t0;
+            if (rtt > 100) continue; // too noisy to trust
+            if (rtt < bestRtt) {
+                bestRtt = rtt;
+                bestOffset = serverNow - (t0 + rtt / 2);
+            }
+        } catch {
+            // ignore individual failures
+        }
+    }
+    return bestOffset;
+}
 
 export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamResult {
     const { baseUrl, pollIntervalMs = DEFAULT_POLL_INTERVAL, enabled = false } = options;
@@ -25,6 +55,11 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
     const shouldStopRef = useRef(false);
     const afterSeqRef = useRef(0);
     const consecutiveErrorsRef = useRef(0);
+
+    // Clock offset: add to server timestamps to get local time
+    // (serverTime + clockOffset ≈ localTime ... but we store it as serverNow - clientNow,
+    //  so to convert server→local we subtract: localTime = serverTime - clockOffset)
+    const clockOffsetRef = useRef(0);
 
     // Scheduling state (mirrors RealTimeChunkPlayer logic)
     const incarnationRef = useRef<number | undefined>(undefined);
@@ -69,6 +104,9 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
         shouldStopRef.current = false;
 
         const runPollLoop = async () => {
+            // Estimate clock offset before starting audio polling
+            clockOffsetRef.current = await estimateClockOffset(baseUrl);
+
             while (!shouldStopRef.current) {
                 const ctx = audioCtxRef.current;
                 if (!ctx || ctx.state === 'closed') {
@@ -112,9 +150,10 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
 
                     let offset = 8;
                     let didSchedule = false;
+                    const clockOffset = clockOffsetRef.current;
 
                     for (let i = 0; i < chunkCount; i++) {
-                        const playAtRealTime = view.getFloat64(offset, true); offset += 8;
+                        const playAtServerTime = view.getFloat64(offset, true); offset += 8;
                         const incarnation = view.getUint32(offset, true); offset += 4;
                         const sampleRate = view.getUint32(offset, true); offset += 4;
                         const channels = view.getUint32(offset, true); offset += 4;
@@ -125,6 +164,9 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
 
                         const numSamples = sampleCount / channels;
                         if (numSamples <= 0) continue;
+
+                        // Convert server timestamp to local time
+                        const playAtRealTime = playAtServerTime - clockOffset;
 
                         const audioLenMs = (1000 * numSamples) / sampleRate;
                         const dn = Date.now();

@@ -572,6 +572,17 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: GET /api/time - server Date.now() for client clock-offset estimation
+    // Client measures RTT and computes offset = serverTime - clientTime + RTT/2
+    // ----------------------------------------------
+    router.get('/api/time', async (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        ctx.set('Cache-Control', 'no-store');
+        ctx.body = { now: Date.now() };
+    });
+
+    // ----------------------------------------------
     // API: GET /api/audio?afterSeq=N - binary audio chunk data for web client
     // Wire format: [u32 chunkCount][u32 latestSeq]
     //   per chunk: [f64 playAtRealTime][u32 incarnation][u32 sampleRate]

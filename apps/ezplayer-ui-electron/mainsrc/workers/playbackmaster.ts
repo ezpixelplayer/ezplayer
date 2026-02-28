@@ -969,6 +969,31 @@ let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
 let audioExportBuffer: SharedArrayBuffer | undefined = undefined;
 let audioExportRing: AudioChunkRingBuffer | undefined = undefined;
 
+/** Publish to the ring buffer (for web clients) then send via IPC (for Electron audio window). */
+function sendAudioChunk(
+    samples: Float32Array,
+    playAtRealTime: number,
+    incarnation: number,
+    sampleRate: number,
+    channels: number,
+) {
+    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels);
+    const buf = samples.buffer as ArrayBuffer;
+    send(
+        {
+            type: 'audioChunk',
+            chunk: {
+                sampleRate,
+                channels,
+                buffer: buf,
+                playAtRealTime,
+                incarnation,
+            },
+        },
+        [buf],
+    );
+}
+
 ////////
 // Actual logic loops
 ////////
@@ -1336,20 +1361,7 @@ async function processQueue() {
                 }
                 ms = Math.ceil(ms);
                 const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
-                audioExportRing?.publish(quiet, startTime, curAudioSyncNum, 48000, 1);
-                send(
-                    {
-                        type: 'audioChunk',
-                        chunk: {
-                            sampleRate: 48000,
-                            channels: 1,
-                            buffer: quiet.buffer,
-                            playAtRealTime: startTime,
-                            incarnation: curAudioSyncNum,
-                        },
-                    },
-                    [quiet.buffer],
-                );
+                sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1);
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -1434,20 +1446,7 @@ async function processQueue() {
                             );
 
                             if (audioPlayerRunTime >= targetFrameRTC) {
-                                audioExportRing?.publish(chunk, playAtRealTime, curAudioSyncNum, audio.sampleRate, channels);
-                                send(
-                                    {
-                                        type: 'audioChunk',
-                                        chunk: {
-                                            sampleRate: audio.sampleRate,
-                                            channels,
-                                            buffer: chunk.buffer,
-                                            playAtRealTime,
-                                            incarnation: curAudioSyncNum,
-                                        },
-                                    },
-                                    [chunk.buffer],
-                                );
+                                sendAudioChunk(chunk, playAtRealTime, curAudioSyncNum, audio.sampleRate, channels);
                             } else {
                                 ++playbackStats.skippedAudioChunksCumulative;
                             }
