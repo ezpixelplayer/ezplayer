@@ -160,6 +160,14 @@ export interface GetNodeResult {
     colorProfile?: NodeColorProfile;
 }
 
+export type AutoUpdateStatus =
+    | { state: 'checking' }
+    | { state: 'available'; version: string; releaseDate: string; releaseNotes?: string }
+    | { state: 'not-available'; version: string }
+    | { state: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
+    | { state: 'downloaded'; version: string }
+    | { state: 'error'; message: string };
+
 export interface EZPElectronAPI {
     // FS Utilities
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
@@ -221,4 +229,11 @@ export interface EZPElectronAPI {
     // Audio
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => void;
     onAudioChunk: (callback: (data: AudioChunk) => void) => void;
+
+    // Auto-update
+    checkForUpdates: () => Promise<void>;
+    downloadUpdate: () => Promise<void>;
+    installUpdateNow: () => Promise<void>;
+    installUpdateOnQuit: () => void;
+    onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => void;
 }
