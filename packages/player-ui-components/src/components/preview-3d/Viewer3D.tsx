@@ -314,6 +314,67 @@ function HoverHandler({
     return null;
 }
 
+// Component to handle WASD + Q/E keyboard navigation
+function KeyboardNavigationHandler() {
+    const { camera, controls } = useThree();
+    const keysRef = useRef<Record<string, boolean>>({});
+    const holdTimeRef = useRef(0);
+
+    useEffect(() => {
+        const onDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            keysRef.current[e.key.toLowerCase()] = true;
+        };
+        const onUp = (e: KeyboardEvent) => {
+            keysRef.current[e.key.toLowerCase()] = false;
+        };
+        window.addEventListener('keydown', onDown);
+        window.addEventListener('keyup', onUp);
+        return () => {
+            window.removeEventListener('keydown', onDown);
+            window.removeEventListener('keyup', onUp);
+        };
+    }, []);
+
+    useFrame((_state, delta) => {
+        const keys = keysRef.current;
+        const anyMovement = keys.w || keys.a || keys.s || keys.d || keys.q || keys.e;
+        if (!anyMovement) {
+            holdTimeRef.current = 0;
+            return;
+        }
+
+        holdTimeRef.current += delta;
+
+        const orbitControls = controls as { target: THREE.Vector3; update: () => void } | null;
+        const targetDist = orbitControls?.target
+            ? camera.position.distanceTo(orbitControls.target) : 100;
+        // Accelerate from 1x to 5x over ~2 seconds of holding
+        const accelFactor = Math.min(1 + holdTimeRef.current * 2.0, 5.0);
+        const speed = targetDist * 1.5 * delta * accelFactor;
+
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+        const movement = new THREE.Vector3();
+        if (keys.w) movement.addScaledVector(forward, speed);
+        if (keys.s) movement.addScaledVector(forward, -speed);
+        if (keys.d) movement.addScaledVector(right, speed);
+        if (keys.a) movement.addScaledVector(right, -speed);
+        if (keys.e) movement.addScaledVector(camera.up, speed);
+        if (keys.q) movement.addScaledVector(camera.up, -speed);
+
+        camera.position.add(movement);
+        if (orbitControls?.target) {
+            orbitControls.target.add(movement);
+            orbitControls.update();
+        }
+    });
+
+    return null;
+}
+
 function SceneContent({
     points,
     shapes,
@@ -427,6 +488,7 @@ function SceneContent({
         <>
             <ClickHandler points={points} onPointClick={onPointClick} pointSize={pointSize} />
             <HoverHandler points={points} onPointHover={onPointHover} pointSize={pointSize} />
+            <KeyboardNavigationHandler />
             <ambientLight intensity={0.5} />
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
@@ -574,6 +636,12 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                 >
                     🖱️ Scroll: Zoom
+                </Typography>
+                <Typography
+                    variant="caption"
+                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
+                    ⌨️ WASD: Move &nbsp; Q/E: Down/Up
                 </Typography>
             </Box>
             {error ? (

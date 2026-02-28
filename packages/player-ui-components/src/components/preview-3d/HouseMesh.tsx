@@ -656,8 +656,10 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 postProcessMeshMaterials(loadedObj);
 
                 // Apply brightness immediately during load (don't wait for useEffect)
+                // Use gamma 2.2 to match xLights perceptual brightness curve:
+                // material.color is linear-space, brightness values are perceptual (sRGB)
                 if (brightness !== undefined && brightness !== 100) {
-                    const bf = Math.max(0, Math.min(1, brightness / 100));
+                    const bf = Math.pow(Math.max(0, Math.min(1, brightness / 100)), 2.2);
                     loadedObj.traverse((child: THREE.Object3D) => {
                         if (!isMesh(child) || !child.material) return;
                         const mats = Array.isArray(child.material) ? child.material : [child.material];
@@ -703,10 +705,11 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
     // ----- Brightness (static, when not using live data) -----
     // For MeshBasicMaterial: material.color multiplies with the texture.
     // (1,1,1) = full brightness, (0.5,0.5,0.5) = 50% dim.
+    // Apply gamma 2.2 to convert xLights perceptual brightness to linear-space color.
     React.useEffect(() => {
-        if (!obj || brightness === undefined || (liveData && startChannel !== undefined)) return;
+        if (!obj || brightness === undefined) return;
 
-        const bf = Math.max(0, Math.min(1, brightness / 100));
+        const bf = Math.pow(Math.max(0, Math.min(1, brightness / 100)), 2.2);
 
         obj.traverse((child: THREE.Object3D) => {
             if (!isMesh(child) || !child.material) return;
@@ -718,7 +721,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 }
             });
         });
-    }, [obj, brightness, liveData, startChannel]);
+    }, [obj, brightness]);
 
     // ----- Live colour extraction from frame buffer -----
     useFrame(() => {

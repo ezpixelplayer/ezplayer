@@ -132,18 +132,24 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
     // Transparency: xLights 0=opaque, 100=transparent → THREE.js opacity 1=opaque, 0=transparent
     const opacity = 1 - Math.max(0, Math.min(100, transparency ?? 0)) / 100;
 
+    // When the whole plane is semi-transparent (Transparency > 0), use blending.
+    // Otherwise, rely on alphaTest to discard transparent PNG pixels while
+    // keeping correct depth writes for opaque pixels.
+    const needsTransparency = opacity < 1;
+
     // Brightness as color multiplier (same as HouseMesh)
-    const bf = Math.max(0, Math.min(1, (brightness ?? 100) / 100));
+    // Apply gamma 2.2 to convert xLights perceptual brightness to linear-space color.
+    const bf = Math.pow(Math.max(0, Math.min(1, (brightness ?? 100) / 100)), 2.2);
 
     return (
-        <mesh position={position} rotation={rotation} scale={scale}>
+        <mesh position={position} rotation={rotation} scale={scale} renderOrder={-1}>
             <planeGeometry args={[imgWidth, imgHeight]} />
             <meshBasicMaterial
                 map={texture}
-                transparent={true}
+                transparent={needsTransparency}
                 opacity={opacity}
-                alphaTest={0.01}
-                depthWrite={false}
+                alphaTest={0.5}
+                depthWrite={true}
                 side={THREE.DoubleSide}
                 color={new THREE.Color(bf, bf, bf)}
             />
