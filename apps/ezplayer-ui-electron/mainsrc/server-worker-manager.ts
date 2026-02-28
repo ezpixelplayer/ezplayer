@@ -8,14 +8,14 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { app, BrowserWindow } from 'electron';
 import type {
-    ServerWorkerData,
     ServerWorkerToMainMessage,
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
 import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
-import type { EZPlayerCommand, PlaybackSettings } from '@ezplayer/ezplayer-core';
+import type { PlaybackSettings } from '@ezplayer/ezplayer-core';
+import { ViewObject } from './workers/playbacktypes.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -305,22 +305,7 @@ export function broadcastToWebSocket(key: string, value: unknown) {
 export function pushModelCoordinates(
     coords3D: unknown,
     coords2D: unknown,
-    viewObjects?: Array<{
-        name: string;
-        displayAs: string;
-        objFile?: string;
-        worldPosX: number;
-        worldPosY: number;
-        worldPosZ: number;
-        scaleX: number;
-        scaleY: number;
-        scaleZ: number;
-        rotateX: number;
-        rotateY: number;
-        rotateZ: number;
-        brightness?: number;
-        active?: boolean;
-    }>,
+    viewObjects?: Array<ViewObject>,
 ) {
     if (!serverWorker) return;
 

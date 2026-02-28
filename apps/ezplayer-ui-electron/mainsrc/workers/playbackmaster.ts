@@ -8,6 +8,7 @@ import type {
     MainRPCAPI,
     WorkerToMainMessage,
     PlaybackWorkerData,
+    ViewObject,
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
@@ -698,24 +699,6 @@ let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
-
-// View objects (meshes like house models) from XML
-export interface ViewObject {
-    name: string;
-    displayAs: string;
-    objFile?: string; // Path to OBJ file
-    worldPosX: number;
-    worldPosY: number;
-    worldPosZ: number;
-    scaleX: number;
-    scaleY: number;
-    scaleZ: number;
-    rotateX: number;
-    rotateY: number;
-    rotateZ: number;
-    brightness?: number;
-    active?: boolean;
-}
 
 let viewObjects: ViewObject[] = [];
 

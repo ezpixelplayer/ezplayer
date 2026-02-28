@@ -2,11 +2,11 @@
  * Server worker - runs Koa server in a worker thread
  */
 
-import { parentPort, workerData } from 'worker_threads';
+import { parentPort } from 'worker_threads';
 import Koa from 'koa';
 import bodyParser from '@koa/bodyparser';
-import { WebSocketServer, WebSocket } from 'ws';
-import { createServer, Server } from 'http';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import fsp from 'fs/promises';
@@ -26,6 +26,7 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
+import { ViewObject } from './playbacktypes.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -130,22 +131,7 @@ const wsBroadcaster = new WebSocketBroadcaster();
 // Side cache for model coordinates (pushed from main thread on show folder load)
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
-let cachedViewObjects: Array<{
-    name: string;
-    displayAs: string;
-    objFile?: string;
-    worldPosX: number;
-    worldPosY: number;
-    worldPosZ: number;
-    scaleX: number;
-    scaleY: number;
-    scaleZ: number;
-    rotateX: number;
-    rotateY: number;
-    rotateZ: number;
-    brightness?: number;
-    active?: boolean;
-}> = [];
+let cachedViewObjects: Array<ViewObject> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let serverStarted = false;
