@@ -465,6 +465,186 @@ Get binary frame data for the live 3D viewer. Returns the latest frame of light 
 
 ---
 
+### 11. GET /api/frames-zstd
+
+Get ZSTD-compressed binary frame data for the live 3D viewer. Same semantics as `/api/frames` but the frame payload is compressed with ZSTD at level 1 (fastest). Useful for remote/embedded clients on bandwidth-constrained links.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK - Compressed binary frame data (`application/octet-stream`)
+- Status: 204 No Content - No frame data available yet
+- Status: 503 Service Unavailable - ZSTD codec not yet initialized
+
+**Response Binary Format:**
+
+| Offset | Size    | Type      | Description                         |
+| ------ | ------- | --------- | ----------------------------------- |
+| 0      | 4 bytes | uint32 LE | Uncompressed frame size in bytes    |
+| 4      | 4 bytes | uint32 LE | Sequence number                     |
+| 8      | N bytes | raw       | ZSTD-compressed frame data (level 1)|
+
+The 8-byte header is **not** compressed. Decompress the payload starting at offset 8 to recover the original frame bytes.
+
+**Response Headers:**
+
+- `Cache-Control: no-store`
+- `Content-Type: application/octet-stream`
+- `Access-Control-Allow-Origin: *`
+
+---
+
+### 12. GET /api/view-objects
+
+Get view objects for the 3D preview. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK - Array of ViewObject records (may be empty `[]` when no show is loaded)
+
+**Example Response:**
+
+```json
+[
+    {
+        "name": "House",
+        "displayAs": "Mesh",
+        "objFile": "HouseModel/house.obj",
+        "worldPosX": 0, "worldPosY": 0, "worldPosZ": 0,
+        "scaleX": 1, "scaleY": 1, "scaleZ": 1,
+        "rotateX": 0, "rotateY": 0, "rotateZ": 0,
+        "brightness": 100,
+        "active": true
+    },
+    {
+        "name": "Background",
+        "displayAs": "Image",
+        "imageFile": "images/yard.png",
+        "worldPosX": 0, "worldPosY": 50, "worldPosZ": -100,
+        "scaleX": 1, "scaleY": 1, "scaleZ": 1,
+        "rotateX": 0, "rotateY": 0, "rotateZ": 0,
+        "brightness": 100,
+        "transparency": 0,
+        "active": true
+    }
+]
+```
+
+---
+
+### 13. GET /api/show-file
+
+Serve a file from the current show folder. Used by the 3D viewer to load OBJ models, MTL materials, and texture images. Only accepts show-folder-relative paths and a restricted set of file extensions for security.
+
+**Request:**
+
+- Method: GET
+- Query Parameters:
+    - `path` (string, required) - Show-folder-relative file path (e.g., `HouseModel/house.obj`)
+
+**Security Constraints:**
+
+- Absolute paths are rejected (no drive letters or leading `/`)
+- Path traversal (`..`) segments are rejected
+- Only these file extensions are allowed: `.obj`, `.mtl`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.tga`, `.dds`
+- Resolved path must remain within the show folder
+
+**Response:**
+
+- Status: 200 OK - File contents with inferred MIME type
+- Status: 400 Bad Request - Missing path, absolute path, or show folder not set
+- Status: 403 Forbidden - Path traversal or disallowed file extension
+- Status: 404 Not Found - File does not exist
+- Status: 500 Internal Server Error - Server error
+
+**Example:**
+
+```
+GET /api/show-file?path=HouseModel/house.obj
+GET /api/show-file?path=HouseModel/texture_1001.png
+```
+
+**Error Responses:**
+
+```json
+{ "error": "File path is required" }
+{ "error": "Absolute paths are not allowed — use show-folder-relative paths" }
+{ "error": "Path traversal not allowed" }
+{ "error": "File type not allowed: .exe" }
+{ "error": "Resolved path outside show folder" }
+{ "error": "File not found" }
+```
+
+---
+
+### 14. GET /api/debug-show-folder
+
+Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK
+
+```json
+{
+    "showFolder": "/path/to/show",
+    "hasShowFolder": true,
+    "allStateKeys": ["showFolder", "sequences", "playlists", "..."],
+    "state": { "...full cached state..." }
+}
+```
+
+---
+
+### 15. /proxy/\<target-url\>
+
+HTTP and WebSocket proxy for multi-NIC bridging. Forwards requests to a target URL extracted from the path. Allows the browser-based UI to reach devices on networks that are only reachable from the server host (e.g., a light controller on a dedicated NIC).
+
+**URL Pattern:**
+
+```
+/proxy/<full-target-URL>
+```
+
+The protocol prefix is optional; `http://` is assumed when omitted.
+
+**Examples:**
+
+```
+GET  /proxy/http://192.168.1.50:8080/api/status
+POST /proxy/192.168.1.50/api/config
+WS   /proxy/ws://192.168.1.50:9090/ws
+```
+
+**Behavior:**
+
+- All HTTP methods are forwarded (GET, POST, PUT, DELETE, PATCH, etc.)
+- Request headers are forwarded with hop-by-hop headers stripped
+- Request body is streamed through for POST/PUT/PATCH
+- WebSocket upgrade requests are proxied transparently
+- 30-second request timeout
+
+**Response:**
+
+- Status and headers from the target are returned as-is
+- Status: 400 Bad Request - Invalid or missing target URL in path
+
+---
+
 ## WebSocket API
 
 ### Connection
