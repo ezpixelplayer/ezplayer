@@ -9,6 +9,7 @@ import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
 import { HouseMesh } from './HouseMesh';
+import { ImagePlane } from './ImagePlane';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -360,7 +361,7 @@ function SceneContent({
             });
         }
 
-        // Include house meshes (viewObjects) in bounding box calculation
+        // Include house meshes and image planes (viewObjects) in bounding box calculation
         if (viewObjects) {
             viewObjects.forEach((viewObj) => {
                 if (viewObj.displayAs === 'Mesh' && viewObj.active !== false) {
@@ -385,6 +386,13 @@ function SceneContent({
                     ));
 
                     // Also add the center point
+                    box.expandByPoint(new THREE.Vector3(
+                        viewObj.worldPosX,
+                        viewObj.worldPosY,
+                        viewObj.worldPosZ
+                    ));
+                }
+                if (viewObj.displayAs === 'Image' && viewObj.active !== false) {
                     box.expandByPoint(new THREE.Vector3(
                         viewObj.worldPosX,
                         viewObj.worldPosY,
@@ -444,6 +452,20 @@ function SceneContent({
                             frameServerUrl={frameServerUrl}
                             liveData={liveData}
                             points={points}
+                        />
+                    );
+                }
+                return null;
+            })}
+
+            {/* Render image planes from view objects */}
+            {viewObjects?.map((viewObj) => {
+                if (viewObj.displayAs === 'Image' && viewObj.imageFile && viewObj.active !== false) {
+                    return (
+                        <ImagePlane
+                            key={viewObj.name}
+                            viewObject={viewObj}
+                            frameServerUrl={frameServerUrl}
                         />
                     );
                 }

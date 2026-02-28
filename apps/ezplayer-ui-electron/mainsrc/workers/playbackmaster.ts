@@ -856,7 +856,7 @@ async function loadXmlCoordinates() {
                         const objFile = getAttrDef(viewObj, 'ObjFile', '');
                         const active = getBoolAttrDef(viewObj, 'Active', true);
 
-                        // Only process Mesh objects with OBJ files
+                        // Process Mesh objects with OBJ files
                         if (displayAs === 'Mesh' && objFile && active) {
                             // Parse transform attributes
                             const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
@@ -868,7 +868,7 @@ async function loadXmlCoordinates() {
                             const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
                             const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
                             const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
-                            
+
                             // Extract brightness: first try Brightness attribute, then check dimmingCurve child
                             let brightness = parseFloat(getAttrDef(viewObj, 'Brightness', ''));
                             if (isNaN(brightness)) {
@@ -879,7 +879,7 @@ async function loadXmlCoordinates() {
                                     if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
                                     const dc = ndc as Element;
                                     if (dc.tagName !== 'dimmingCurve') continue;
-                                    
+
                                     for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
                                         const nddc = dc.childNodes[iddc];
                                         if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
@@ -939,11 +939,94 @@ async function loadXmlCoordinates() {
                                 brightness,
                                 active,
                             });
+                        } else if (displayAs === 'Image' && active) {
+                            // Process Image view objects (textured planes)
+                            const imageFile = getAttrDef(viewObj, 'Image', '');
+                            if (!imageFile) continue;
+
+                            const transparency = parseFloat(getAttrDef(viewObj, 'Transparency', '0'));
+
+                            // Parse transform attributes (same as Mesh)
+                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
+                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
+                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
+                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
+                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
+                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
+                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
+                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
+                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
+
+                            // Extract brightness (same logic as Mesh)
+                            let brightness = parseFloat(getAttrDef(viewObj, 'Brightness', ''));
+                            if (isNaN(brightness)) {
+                                brightness = 100;
+                                for (let idc = 0; idc < viewObj.childNodes.length; ++idc) {
+                                    const ndc = viewObj.childNodes[idc];
+                                    if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                                    const dc = ndc as Element;
+                                    if (dc.tagName !== 'dimmingCurve') continue;
+                                    for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
+                                        const nddc = dc.childNodes[iddc];
+                                        if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                                        const ddc = nddc as Element;
+                                        if (ddc.tagName !== 'all') continue;
+                                        if (ddc.hasAttribute('brightness')) {
+                                            const brightnessOffset = parseFloat(ddc.getAttribute('brightness')!);
+                                            brightness = Math.min(100, Math.max(0, 100 + brightnessOffset));
+                                            break;
+                                        }
+                                    }
+                                    if (!isNaN(brightness) && brightness !== 100) break;
+                                }
+                            }
+
+                            // Resolve image file path (same logic as OBJ path resolution)
+                            let resolvedImageFile: string | undefined;
+                            if (!path.isAbsolute(imageFile)) {
+                                resolvedImageFile = imageFile.replace(/\\/g, '/');
+                            } else if (showFolder) {
+                                const resolvedShow = path.resolve(showFolder);
+                                const resolvedImg = path.resolve(imageFile);
+                                if (resolvedImg.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
+                                    || resolvedImg.toLowerCase() === resolvedShow.toLowerCase()) {
+                                    resolvedImageFile = path.relative(resolvedShow, resolvedImg).replace(/\\/g, '/');
+                                } else {
+                                    const basename = path.basename(imageFile);
+                                    const found = await findFileInShowFolder(resolvedShow, basename);
+                                    if (found) {
+                                        resolvedImageFile = found;
+                                        emitInfo(`[loadXmlCoordinates] Resolved image "${imageFile}" → "${found}" via search`);
+                                    } else {
+                                        emitWarning(`[loadXmlCoordinates] Could not find image "${basename}" in show folder, skipping view object "${name}"`);
+                                    }
+                                }
+                            }
+
+                            if (!resolvedImageFile) continue;
+
+                            viewObjects.push({
+                                name,
+                                displayAs,
+                                imageFile: resolvedImageFile,
+                                worldPosX,
+                                worldPosY,
+                                worldPosZ,
+                                scaleX,
+                                scaleY,
+                                scaleZ,
+                                rotateX,
+                                rotateY,
+                                rotateZ,
+                                brightness,
+                                transparency: isNaN(transparency) ? 0 : transparency,
+                                active,
+                            });
                         }
                     }
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes)`);
+                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images)`);
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
             }

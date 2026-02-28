@@ -655,6 +655,20 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 // texture colorSpace for correct gamma handling.
                 postProcessMeshMaterials(loadedObj);
 
+                // Apply brightness immediately during load (don't wait for useEffect)
+                if (brightness !== undefined && brightness !== 100) {
+                    const bf = Math.max(0, Math.min(1, brightness / 100));
+                    loadedObj.traverse((child: THREE.Object3D) => {
+                        if (!isMesh(child) || !child.material) return;
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach((mat) => {
+                            if ('color' in mat) {
+                                (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf);
+                            }
+                        });
+                    });
+                }
+
                 setObj(loadedObj);
             } catch (error) {
                 if (!aborted) {
@@ -712,7 +726,8 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
 
         if (startChannel === undefined) {
             if (lastFrameSeqRef.current === null) {
-                console.warn(`[HouseMesh] No channel mapping for "${viewObject.name}". Live colours disabled.`);
+                console.debug(`[HouseMesh] "${viewObject.name}" has no channel mapping — using static brightness.`);
+                lastFrameSeqRef.current = -1; // Prevent re-logging
             }
             return;
         }

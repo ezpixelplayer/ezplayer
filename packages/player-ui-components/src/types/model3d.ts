@@ -71,6 +71,8 @@ export interface ViewObject {
     name: string;
     displayAs: string;
     objFile?: string;
+    imageFile?: string;      // Path to image file (for DisplayAs="Image")
+    transparency?: number;   // 0-100, where 0=opaque, 100=fully transparent
     worldPosX: number;
     worldPosY: number;
     worldPosZ: number;
