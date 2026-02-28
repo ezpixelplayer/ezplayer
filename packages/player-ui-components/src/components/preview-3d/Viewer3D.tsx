@@ -349,8 +349,8 @@ function KeyboardNavigationHandler() {
         const orbitControls = controls as { target: THREE.Vector3; update: () => void } | null;
         const targetDist = orbitControls?.target
             ? camera.position.distanceTo(orbitControls.target) : 100;
-        // Accelerate from 1x to 5x over ~2 seconds of holding
-        const accelFactor = Math.min(1 + holdTimeRef.current * 2.0, 5.0);
+        // Accelerate from 1x to 8x over ~1 second of holding
+        const accelFactor = Math.min(1 + holdTimeRef.current * 7.0, 8.0);
         const speed = targetDist * 1.5 * delta * accelFactor;
 
         const forward = new THREE.Vector3();

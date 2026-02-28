@@ -44,6 +44,31 @@ function downscaleTextureImage(
     return canvas;
 }
 
+/**
+ * Check whether an image has any non-opaque pixels by sampling the alpha
+ * channel on a small off-screen canvas.  Uses a down-sampled copy (max
+ * 128 px on the long edge) so even large textures are cheap to scan.
+ */
+function imageHasAlpha(img: HTMLImageElement | HTMLCanvasElement): boolean {
+    const maxSample = 128;
+    const scale = Math.min(1, maxSample / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.floor(img.width * scale));
+    const h = Math.max(1, Math.floor(img.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+
+    ctx.drawImage(img as CanvasImageSource, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 3; i < data.length; i += 4) {
+        if (data[i] < 255) return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // ImagePlaneContent – the actual R3F component
 // ---------------------------------------------------------------------------
@@ -61,6 +86,7 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [imgWidth, setImgWidth] = useState(1);
     const [imgHeight, setImgHeight] = useState(1);
+    const [hasAlpha, setHasAlpha] = useState(false);
 
     // Load texture via /api/show-file
     useEffect(() => {
@@ -85,6 +111,10 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
                 if (img && img.width > 0 && img.height > 0) {
                     setImgWidth(img.width);
                     setImgHeight(img.height);
+
+                    // Detect alpha channel from the actual image pixels
+                    setHasAlpha(imageHasAlpha(img));
+
                     // Downscale if needed
                     const scaled = downscaleTextureImage(img, MAX_TEXTURE_SIZE);
                     if (scaled !== img) {
@@ -132,14 +162,14 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
     // Transparency: xLights 0=opaque, 100=transparent → THREE.js opacity 1=opaque, 0=transparent
     const opacity = 1 - Math.max(0, Math.min(100, transparency ?? 0)) / 100;
 
-    // When the whole plane is semi-transparent (Transparency > 0), use blending.
-    // Otherwise, rely on alphaTest to discard transparent PNG pixels while
-    // keeping correct depth writes for opaque pixels.
-    const needsTransparency = opacity < 1;
+    // Enable transparency when the xLights Transparency attribute is set OR
+    // the image itself contains non-opaque pixels (detected from actual pixel data).
+    const needsTransparency = opacity < 1 || hasAlpha;
 
     // Brightness as color multiplier (same as HouseMesh)
-    // Apply gamma 2.2 to convert xLights perceptual brightness to linear-space color.
-    const bf = Math.pow(Math.max(0, Math.min(1, (brightness ?? 100) / 100)), 2.2);
+    // Three.js ColorManagement treats Color values as sRGB, so no explicit
+    // gamma needed — brightness/100 gives the correct perceptual result.
+    const bf = Math.max(0, Math.min(1, (brightness ?? 100) / 100));
 
     return (
         <mesh position={position} rotation={rotation} scale={scale} renderOrder={-1}>
