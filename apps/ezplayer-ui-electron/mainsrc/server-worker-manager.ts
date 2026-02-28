@@ -285,6 +285,19 @@ export function updateFrameBuffer(buffer: SharedArrayBuffer) {
 }
 
 /**
+ * Update audio buffer in server worker
+ */
+export function updateAudioBuffer(buffer: SharedArrayBuffer) {
+    if (!serverWorker) return;
+
+    const message: MainToServerWorkerMessage = {
+        type: 'updateAudioBuffer',
+        buffer,
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
  * Forward WebSocket broadcast to server worker
  * This allows the main process to broadcast updates to WebSocket clients in the worker thread
  */
