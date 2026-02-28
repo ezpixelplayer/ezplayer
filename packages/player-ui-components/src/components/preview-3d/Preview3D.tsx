@@ -31,6 +31,7 @@ export type ViewPlane = 'xy' | 'xz' | 'yz';
 export interface Preview3DProps {
     modelData?: Model3DData;
     showList?: boolean;
+    initialShowList?: boolean;
     showControls?: boolean;
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
@@ -40,7 +41,8 @@ export interface Preview3DProps {
 
 export const Preview3D: React.FC<Preview3DProps> = ({
     modelData: initialModelData,
-    showList = true,
+    showList = false,
+    initialShowList = false,
     showControls = true,
     defaultViewMode = '3d',
     pointSize = 3.0,
@@ -49,8 +51,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
-    const [showItemList, setShowItemList] = useState(showList);
+    const [showItemList, setShowItemList] = useState(showList && initialShowList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
+    const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
     const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -170,6 +173,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         }
                     } catch (fetchErr) {
                         console.error('[Preview3D] Failed to fetch layout settings via HTTP:', fetchErr);
+                    }
+
+                    // Also fetch 2D-projected coordinates for the 2D viewer
+                    try {
+                        const response2D = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates-2d`);
+                        if (response2D.ok) {
+                            const xmlCoords2D = await response2D.json();
+                            if (xmlCoords2D && Object.keys(xmlCoords2D).length > 0) {
+                                setModelData2D(convertXmlCoordinatesToModel3D(xmlCoords2D));
+                            }
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch 2D model coordinates via HTTP:', fetchErr);
                     }
                 }
 
@@ -614,8 +630,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         />
                     ) : (
                         <Viewer2D
-                            points={modelData.points}
-                            shapes={modelData.shapes}
+                            points={(modelData2D ?? modelData).points}
+                            shapes={(modelData2D ?? modelData).shapes}
                             liveData={livePixels}
                             selectedIds={selectionState.selectedIds}
                             hoveredId={selectionState.hoveredId}
@@ -624,7 +640,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             viewPlane={'xy'}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
-                            modelMetadata={modelData.metadata?.models}
+                            modelMetadata={(modelData2D ?? modelData).metadata?.models}
                             layoutSettings={layoutSettings}
                             frameServerUrl={effectiveFrameServerUrl}
                         />

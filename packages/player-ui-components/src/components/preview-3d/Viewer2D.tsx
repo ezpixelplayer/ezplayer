@@ -477,8 +477,8 @@ function BackgroundImage2D({
 
     if (!texture || !previewWidth || !previewHeight) return null;
 
-    // Brightness: 0-100 → color multiplier
-    const bf = Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100));
+    // Brightness: 0-100 → color multiplier with gamma to match xLights.
+    const bf = Math.pow(Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100)), 1);
 
     // Position the plane so it fills (0,0) to (previewWidth, previewHeight),
     // centered at (previewWidth/2, previewHeight/2), behind points at z=-1.
@@ -584,37 +584,44 @@ function Scene2DContent({
         // Increase distance multiplier to ensure all models fit in view
         const distance = maxDim * 2.5;
 
-        // Position camera based on view plane
-        switch (viewPlane) {
-            case 'xy':
-                camera.position.set(center.x, center.y, distance);
-                break;
-            case 'xz':
-                camera.position.set(center.x, distance, center.z);
-                break;
-            case 'yz':
-                camera.position.set(distance, center.y, center.z);
-                break;
-        }
-        camera.lookAt(center);
+        // Position camera directly in front of the scene center — no lookAt needed.
+        // For the XY plane the camera sits on the +Z axis looking toward -Z.
+        // Setting the quaternion to identity (0,0,0,1) guarantees a perfectly
+        // face-on view with no angular drift from lookAt or controls round-trips.
+        camera.up.set(0, 1, 0);
+        camera.position.set(center.x, center.y, distance);
+        camera.quaternion.set(0, 0, 0, 1); // identity = looking along -Z
+        camera.updateMatrixWorld();
 
         // Adjust orthographic camera zoom to fit the scene
         if (camera instanceof THREE.OrthographicCamera && maxDim > 0) {
-            // Calculate appropriate zoom based on scene size
             const targetZoom = 100 / maxDim;
             camera.zoom = Math.max(0.5, Math.min(targetZoom, 50));
             camera.updateProjectionMatrix();
         }
 
-        // Reset controls target to match camera lookAt
+        // Sync controls target so pan/zoom works from the right center point
         if (controls && 'target' in controls) {
             const mapControls = controls as { target: THREE.Vector3; update?: () => void };
             if (mapControls.target) {
-                mapControls.target.copy(center);
+                mapControls.target.set(center.x, center.y, 0);
                 mapControls.update?.();
             }
         }
+
+        // Re-force identity after controls.update() which calls lookAt internally
+        camera.quaternion.set(0, 0, 0, 1);
+        camera.updateMatrixWorld();
     }, [points, shapes, camera, controls, viewPlane]);
+
+    // Enforce face-on orientation every frame.
+    // MapControls.update() (called each frame for damping) internally calls lookAt()
+    // which can introduce sub-degree angular drift through spherical→cartesian round-trips.
+    useFrame(() => {
+        if (viewPlane === 'xy') {
+            camera.quaternion.set(0, 0, 0, 1);
+        }
+    });
 
     return (
         <>
