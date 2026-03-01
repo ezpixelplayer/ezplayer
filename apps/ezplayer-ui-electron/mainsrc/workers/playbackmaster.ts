@@ -491,22 +491,41 @@ function processCommand(cmd: EZPlayerCommand) {
     }
 }
 
-parentPort.on('message', (command: PlayerCommand) => {
+parentPort.on('message', async (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
             pendingSchedule = command;
-            if (command.showFolder && command.showFolder !== '<no show folder yet>') {
-                const oldShowFolder = showFolder;
-                showFolder = command.showFolder;
+            const folderChanged =
+                command.showFolder &&
+                command.showFolder !== '<no show folder yet>' &&
+                command.showFolder !== showFolder;
 
-                // Load XML coordinates immediately when show folder is set
-                if (showFolder !== oldShowFolder) {
-                    loadXmlCoordinates().catch((err) => {
-                        emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
-                    });
+            if (command.showFolder && command.showFolder !== '<no show folder yet>') {
+                showFolder = command.showFolder;
+            }
+
+            if (folderChanged) {
+                // Load XML coordinates eagerly — resolve all file paths,
+                // parse models, and push data to the server worker NOW so
+                // that none of this work happens during playback.
+                try {
+                    await loadXmlCoordinates();
+                } catch (err) {
+                    emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
+                }
+
+                // If processQueue is already running we need to restart it
+                // so it re-reads controllers and reallocates the frame buffer
+                // for the new show.
+                if (running) {
+                    shouldRestart = true;
+                    await running; // wait for loop to exit
+                    running = undefined;
                 }
             }
+
             if (!running) {
+                shouldRestart = false;
                 running = processQueue();
             }
             break;
@@ -718,6 +737,10 @@ let volumeSF = 1.0; // Most representations are 0-100, not this one
 
 // Thread-safe stop flag to prevent further frame sending after stop
 let isStopped = false;
+// Set when the show folder changes while processQueue is running.
+// processQueue detects this, breaks out of its loop, and the handler
+// starts a fresh processQueue that reinitializes controllers & frame buffer.
+let shouldRestart = false;
 
 let mp3Cache: MP3PrefetchCache | undefined = undefined;
 let fseqCache: FSeqPrefetchCache | undefined = undefined;
@@ -1178,6 +1201,13 @@ async function processQueue() {
                 await sleepms(60); // TODO clean shutdown
                 sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 emitInfo('Playback stopped - exiting playback loop');
+                break;
+            }
+
+            // Show folder changed — break so the handler can start a fresh
+            // processQueue with new controllers and frame buffer.
+            if (shouldRestart) {
+                emitInfo('Show folder changed - restarting processQueue');
                 break;
             }
 
