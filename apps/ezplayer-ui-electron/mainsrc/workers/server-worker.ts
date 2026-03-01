@@ -26,7 +26,7 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
-import { ViewObject } from './playbacktypes.js';
+import { ViewObject, LayoutSettings } from './playbacktypes.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -132,6 +132,7 @@ const wsBroadcaster = new WebSocketBroadcaster();
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
 let cachedViewObjects: Array<ViewObject> = [];
+let cachedLayoutSettings: LayoutSettings = {};
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let curAudioBuffer: SharedArrayBuffer | undefined = undefined;
@@ -158,11 +159,21 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'broadcast') {
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
+    } else if (msg.type === 'clearShowData') {
+        // Show folder changed — clear all cached data so stale data is never served
+        cachedModelCoordinates3D = {};
+        cachedModelCoordinates2D = {};
+        cachedViewObjects = [];
+        cachedLayoutSettings = {};
+        curFrameBuffer = undefined;
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
         cachedModelCoordinates2D = msg.coords2D;
         if (msg.viewObjects) {
             cachedViewObjects = msg.viewObjects;
+        }
+        if (msg.layoutSettings) {
+            cachedLayoutSettings = msg.layoutSettings;
         }
     } else if (msg.type === 'shutdown') {
         process.exit(0);
@@ -375,6 +386,13 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     router.get('/api/view-objects', async (ctx) => {
         ctx.body = cachedViewObjects;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/layout-settings - get layout settings (background image, preview size) from XML
+    // ----------------------------------------------
+    router.get('/api/layout-settings', async (ctx) => {
+        ctx.body = cachedLayoutSettings;
     });
 
     // ----------------------------------------------

@@ -22,7 +22,7 @@ import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type { Model3DData, ModelMetadata, SelectionState, ViewObject } from '../../types/model3d';
+import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import { useAudioStream } from '../../hooks/useAudioStream';
@@ -35,6 +35,7 @@ export type ViewPlane = 'xy' | 'xz' | 'yz';
 export interface Preview3DProps {
     modelData?: Model3DData;
     showList?: boolean;
+    initialShowList?: boolean;
     showControls?: boolean;
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
@@ -44,7 +45,8 @@ export interface Preview3DProps {
 
 export const Preview3D: React.FC<Preview3DProps> = ({
     modelData: initialModelData,
-    showList = true,
+    showList = false,
+    initialShowList = false,
     showControls = true,
     defaultViewMode = '3d',
     pointSize = 3.0,
@@ -53,12 +55,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
-    const [showItemList, setShowItemList] = useState(showList);
+    const [showItemList, setShowItemList] = useState(showList && initialShowList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
+    const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
     const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [viewObjects, setViewObjects] = useState<ViewObject[]>([]);
+    const [layoutSettings, setLayoutSettings] = useState<LayoutSettings>({});
     // This is the selection state of the 2D/3D view
     const [selectionState, setSelectionState] = useState<SelectionState>({
         selectedIds: new Set<string>(),
@@ -109,11 +113,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         detectUrl();
     }, [frameServerUrl]);
 
-    // Frame buffer for live pixel data from server
+    // Frame buffer for live pixel data from server.
+    // resetKey forces the poll loop to restart when the show folder changes
+    // (clearing stale buffers and resetting error counters).
     const { buffer: livePixelBuffer } = useFrameBuffer({
         baseUrl: effectiveFrameServerUrl,
         enabled: !!effectiveFrameServerUrl,
         compressed,
+        resetKey: showDirectory,
     });
 
     // Audio stream for web client (not used in Electron — it has its own audio window)
@@ -126,6 +133,22 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         setLivePixels(livePixelBuffer);
     }, [livePixelBuffer]);
 
+    // Clear stale state immediately when show folder changes so old data
+    // is never rendered with new frame buffers (or vice versa).
+    const prevShowDirRef = React.useRef(showDirectory);
+    useEffect(() => {
+        if (prevShowDirRef.current !== showDirectory) {
+            prevShowDirRef.current = showDirectory;
+            setModelData(null);
+            setModelData2D(null);
+            setViewObjects([]);
+            setLayoutSettings({});
+            setLivePixels(undefined);
+            setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
+            setSelectedModelNames(new Set<string>());
+        }
+    }, [showDirectory]);
+
     // Load model from XML coordinates if available (Electron environment or HTTP API)
     useEffect(() => {
         // If initialModelData is provided, use it
@@ -135,10 +158,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             return;
         }
 
-        // Try to load from API
-        const loadFromXml = async () => {
-            setLoading(true);
-            setError(null);
+        let cancelled = false;
+
+        // Try to load from API, with retry when server returns empty data
+        // (the playback worker may still be parsing the new show's XML)
+        const fetchShowData = async (attempt: number): Promise<boolean> => {
+            if (cancelled) return false;
 
             try {
                 let xmlCoords: Record<string, GetNodeResult> | null = null;
@@ -154,6 +179,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         console.error('[Preview3D] Failed to fetch model coordinates via HTTP:', fetchErr);
                     }
 
+                    if (cancelled) return false;
+
                     // Also fetch view objects (meshes like house models)
                     try {
                         const viewObjectsResponse = await fetch(`${effectiveFrameServerUrl}/api/view-objects`);
@@ -166,6 +193,32 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     } catch (fetchErr) {
                         console.error('[Preview3D] Failed to fetch view objects via HTTP:', fetchErr);
                     }
+
+                    // Fetch layout settings (background image, preview dimensions)
+                    try {
+                        const settingsResponse = await fetch(`${effectiveFrameServerUrl}/api/layout-settings`);
+                        if (settingsResponse.ok) {
+                            const settings = await settingsResponse.json();
+                            if (settings && typeof settings === 'object') {
+                                setLayoutSettings(settings);
+                            }
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch layout settings via HTTP:', fetchErr);
+                    }
+
+                    // Also fetch 2D-projected coordinates for the 2D viewer
+                    try {
+                        const response2D = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates-2d`);
+                        if (response2D.ok) {
+                            const xmlCoords2D = await response2D.json();
+                            if (xmlCoords2D && Object.keys(xmlCoords2D).length > 0) {
+                                setModelData2D(convertXmlCoordinatesToModel3D(xmlCoords2D));
+                            }
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch 2D model coordinates via HTTP:', fetchErr);
+                    }
                 }
 
                 if (xmlCoords && Object.keys(xmlCoords).length > 0) {
@@ -174,20 +227,42 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     if (convertedData.points.length > 0) {
                         setModelData(convertedData);
                         setLoading(false);
-                        return;
+                        return true; // success
                     }
                 }
             } catch (err) {
                 console.error('[Preview3D] Error loading model coordinates:', err);
-                // Silently handle errors - empty state will be shown
             }
 
-            // No XML data available
-            setModelData(null);
-            setLoading(false);
+            return false; // no data yet
+        };
+
+        const loadFromXml = async () => {
+            setLoading(true);
+            setError(null);
+
+            // Poll until data arrives.  On a show folder change the server
+            // worker cache is cleared immediately while the playback worker
+            // re-parses the new layout XML, so the first fetches return
+            // empty data.  We keep polling with exponential back-off
+            // (500ms → 1s → 2s → 4s, capped at 4s) until the server has
+            // the new data ready.
+            let delay = 0;
+            for (;;) {
+                if (cancelled) return;
+                if (delay > 0) {
+                    await new Promise((r) => setTimeout(r, delay));
+                    if (cancelled) return;
+                }
+                const success = await fetchShowData(0);
+                if (success || cancelled) return;
+                // Exponential back-off: 500, 1000, 2000, 4000, 4000, …
+                delay = delay === 0 ? 500 : Math.min(delay * 2, 4000);
+            }
         };
 
         loadFromXml();
+        return () => { cancelled = true; };
     }, [initialModelData, showDirectory, effectiveFrameServerUrl]);
 
     // Handle item selection - detect model from point metadata and select entire model
@@ -620,8 +695,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         />
                     ) : (
                         <Viewer2D
-                            points={modelData.points}
-                            shapes={modelData.shapes}
+                            points={(modelData2D ?? modelData).points}
+                            shapes={(modelData2D ?? modelData).shapes}
                             liveData={livePixels}
                             selectedIds={selectionState.selectedIds}
                             hoveredId={selectionState.hoveredId}
@@ -630,7 +705,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             viewPlane={'xy'}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
-                            modelMetadata={modelData.metadata?.models}
+                            modelMetadata={(modelData2D ?? modelData).metadata?.models}
+                            layoutSettings={layoutSettings}
+                            frameServerUrl={effectiveFrameServerUrl}
                         />
                     )}
                 </Box>

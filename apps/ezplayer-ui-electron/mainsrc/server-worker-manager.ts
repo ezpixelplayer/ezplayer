@@ -15,7 +15,7 @@ import type {
 import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings } from '@ezplayer/ezplayer-core';
-import { ViewObject } from './workers/playbacktypes.js';
+import { ViewObject, LayoutSettings } from './workers/playbacktypes.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -313,12 +313,26 @@ export function broadcastToWebSocket(key: string, value: unknown) {
 }
 
 /**
+ * Clear all cached show data in the server worker.
+ * Called when the show folder changes so stale data is never served.
+ */
+export function clearShowData() {
+    if (!serverWorker) return;
+
+    const message: MainToServerWorkerMessage = {
+        type: 'clearShowData',
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
  * Push model coordinates to server worker cache
  */
 export function pushModelCoordinates(
     coords3D: unknown,
     coords2D: unknown,
     viewObjects?: Array<ViewObject>,
+    layoutSettings?: LayoutSettings,
 ) {
     if (!serverWorker) return;
 
@@ -327,6 +341,7 @@ export function pushModelCoordinates(
         coords3D,
         coords2D,
         viewObjects,
+        layoutSettings,
     };
     serverWorker.postMessage(message);
 }

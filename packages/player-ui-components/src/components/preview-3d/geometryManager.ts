@@ -105,11 +105,8 @@ export class GeometryGroupRenderer {
             const material = this.material;
             if (!material?.uniforms) return;
 
-            const pixelRatio =
-                typeof (renderer as any).getPixelRatio === 'function' ? (renderer as any).getPixelRatio() : 1;
             // Reuse pre-allocated Vector2 — avoids a heap allocation on every frame per group.
             renderer.getSize(this._sizeVec);
-            // Use CSS pixel height here; we convert to device pixels in the shader via `pixelRatio`.
             const heightCssPx = Math.max(1, this._sizeVec.y);
 
             // Compute scale factor to convert world units to pixels for point sizing.
@@ -141,7 +138,6 @@ export class GeometryGroupRenderer {
                 }
             }
 
-            material.uniforms.pixelRatio.value = pixelRatio;
             material.uniforms.scale.value = scale;
         };
     }

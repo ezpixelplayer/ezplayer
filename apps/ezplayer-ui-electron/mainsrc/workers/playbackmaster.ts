@@ -10,6 +10,7 @@ import type {
     WorkerToMainMessage,
     PlaybackWorkerData,
     ViewObject,
+    LayoutSettings,
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
@@ -48,6 +49,7 @@ import {
     FrameReference,
     CacheStats,
     loadXmlFile,
+    getNumAttrDef,
 } from '@ezplayer/epp';
 
 import { getAllModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
@@ -490,22 +492,38 @@ function processCommand(cmd: EZPlayerCommand) {
     }
 }
 
-parentPort.on('message', (command: PlayerCommand) => {
+parentPort.on('message', async (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
-            pendingSchedule = command;
-            if (command.showFolder && command.showFolder !== '<no show folder yet>') {
-                const oldShowFolder = showFolder;
-                showFolder = command.showFolder;
+            const folderChanged =
+                command.showFolder &&
+                command.showFolder !== '<no show folder yet>' &&
+                command.showFolder !== showFolder;
 
-                // Load XML coordinates immediately when show folder is set
-                if (showFolder !== oldShowFolder) {
-                    loadXmlCoordinates().catch((err) => {
-                        emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
-                    });
+            if (command.showFolder && command.showFolder !== '<no show folder yet>') {
+                showFolder = command.showFolder;
+            }
+
+            if (folderChanged) {
+                if (running) {
+                    shouldRestart = true;
+                    await running; // wait for loop to exit
+                    running = undefined;
+                }
+
+                // Load XML coordinates eagerly and push to server (disruptive)
+                try {
+                    await loadXmlCoordinates();
+                } catch (err) {
+                    emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
                 }
             }
+
+            // Set pendingSchedule after old loop has exited
+            pendingSchedule = command;
+
             if (!running) {
+                shouldRestart = false;
                 running = processQueue();
             }
             break;
@@ -703,6 +721,7 @@ let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
+let layoutSettings: LayoutSettings = {};
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -716,6 +735,10 @@ let volumeSF = 1.0; // Most representations are 0-100, not this one
 
 // Thread-safe stop flag to prevent further frame sending after stop
 let isStopped = false;
+// Set when the show folder changes while processQueue is running.
+// processQueue detects this, breaks out of its loop, and the handler
+// starts a fresh processQueue that reinitializes controllers & frame buffer.
+let shouldRestart = false;
 
 let mp3Cache: MP3PrefetchCache | undefined = undefined;
 let fseqCache: FSeqPrefetchCache | undefined = undefined;
@@ -725,40 +748,71 @@ let fseqCache: FSeqPrefetchCache | undefined = undefined;
 let lastPRSSchedUpdate: number = 0;
 
 ////////
-// Search for a file by name within the show folder tree.
-// Returns the show-folder-relative path (forward slashes) if found, undefined otherwise.
+// Build a filename index of the show folder tree in a single pass.
+// Returns a Map from lowercase filename to show-folder-relative path (forward slashes).
+// When multiple files share the same name, the shallowest one wins.
 ////////
-async function findFileInShowFolder(
+async function buildShowFolderIndex(
     folder: string,
-    filename: string,
     maxDepth = 5,
-): Promise<string | undefined> {
-    const lowerFilename = filename.toLowerCase();
+): Promise<Map<string, string>> {
+    const index = new Map<string, string>();
 
-    async function search(dir: string, depth: number): Promise<string | undefined> {
-        if (depth > maxDepth) return undefined;
+    async function scan(dir: string, depth: number): Promise<void> {
+        if (depth > maxDepth) return;
         let entries: import('fs').Dirent[];
         try {
             entries = await fsp.readdir(dir, { withFileTypes: true });
         } catch {
-            return undefined;
+            return;
         }
+        const subdirs: string[] = [];
         for (const entry of entries) {
-            if (entry.isFile() && entry.name.toLowerCase() === lowerFilename) {
-                const abs = path.join(dir, entry.name);
-                return path.relative(folder, abs).replace(/\\/g, '/');
+            if (entry.isFile()) {
+                const key = entry.name.toLowerCase();
+                // Shallowest wins — don't overwrite if already found at a higher level
+                if (!index.has(key)) {
+                    const abs = path.join(dir, entry.name);
+                    index.set(key, path.relative(folder, abs).replace(/\\/g, '/'));
+                }
+            } else if (entry.isDirectory()) {
+                subdirs.push(path.join(dir, entry.name));
             }
         }
-        for (const entry of entries) {
-            if (entry.isDirectory()) {
-                const found = await search(path.join(dir, entry.name), depth + 1);
-                if (found) return found;
-            }
+        // Recurse into subdirectories (breadth-first by level)
+        for (const sub of subdirs) {
+            await scan(sub, depth + 1);
         }
-        return undefined;
     }
 
-    return search(folder, 0);
+    await scan(folder, 0);
+    return index;
+}
+
+/**
+ * Resolve a file path from the XML to a show-folder-relative path.
+ * If the path is already relative, normalises slashes and returns it.
+ * If absolute and inside the show folder, strips the prefix.
+ * Otherwise looks up the basename in the pre-built file index.
+ */
+function resolveFilePathFromIndex(
+    filePath: string,
+    resolvedShow: string,
+    fileIndex: Map<string, string>,
+): string | undefined {
+    if (!path.isAbsolute(filePath)) {
+        return filePath.replace(/\\/g, '/');
+    }
+    const resolvedFile = path.resolve(filePath);
+    if (
+        resolvedFile.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase()) ||
+        resolvedFile.toLowerCase() === resolvedShow.toLowerCase()
+    ) {
+        return path.relative(resolvedShow, resolvedFile).replace(/\\/g, '/');
+    }
+    // Fall back to index lookup by basename
+    const basename = path.basename(filePath);
+    return fileIndex.get(basename.toLowerCase());
 }
 
 ////////
@@ -840,6 +894,19 @@ async function loadXmlCoordinates() {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }
 
+            // Build a file index of the show folder tree once, up front.
+            // This replaces N separate recursive directory scans with a single pass.
+            const resolvedShow = showFolder ? path.resolve(showFolder) : '';
+            let fileIndex = new Map<string, string>();
+            if (resolvedShow) {
+                try {
+                    fileIndex = await buildShowFolderIndex(resolvedShow);
+                    emitInfo(`[loadXmlCoordinates] Built file index: ${fileIndex.size} files`);
+                } catch (indexErr) {
+                    emitWarning(`[loadXmlCoordinates] Failed to build file index: ${indexErr}`);
+                }
+            }
+
             // Parse view_objects (meshes like house models)
             try {
                 const xviewObjects = getElementByTag(xrgb.documentElement, 'view_objects');
@@ -857,7 +924,7 @@ async function loadXmlCoordinates() {
                         const objFile = getAttrDef(viewObj, 'ObjFile', '');
                         const active = getBoolAttrDef(viewObj, 'Active', true);
 
-                        // Only process Mesh objects with OBJ files
+                        // Process Mesh objects with OBJ files
                         if (displayAs === 'Mesh' && objFile && active) {
                             // Parse transform attributes
                             const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
@@ -869,60 +936,14 @@ async function loadXmlCoordinates() {
                             const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
                             const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
                             const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
-                            
-                            // Extract brightness: first try Brightness attribute, then check dimmingCurve child
-                            let brightness = parseFloat(getAttrDef(viewObj, 'Brightness', ''));
-                            if (isNaN(brightness)) {
-                                // Check dimmingCurve child element (like models have)
-                                brightness = 100; // Default
-                                for (let idc = 0; idc < viewObj.childNodes.length; ++idc) {
-                                    const ndc = viewObj.childNodes[idc];
-                                    if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                                    const dc = ndc as Element;
-                                    if (dc.tagName !== 'dimmingCurve') continue;
-                                    
-                                    for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
-                                        const nddc = dc.childNodes[iddc];
-                                        if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                                        const ddc = nddc as Element;
-                                        if (ddc.tagName !== 'all') continue;
-                                        if (ddc.hasAttribute('brightness')) {
-                                            // xLights stores brightness as offset from 100 (e.g., -20 = 80%, +10 = 110%)
-                                            const brightnessOffset = parseFloat(ddc.getAttribute('brightness')!);
-                                            brightness = Math.min(100, Math.max(0, 100 + brightnessOffset));
-                                            break;
-                                        }
-                                    }
-                                    if (!isNaN(brightness) && brightness !== 100) break;
-                                }
-                            }
 
-                            // Resolve OBJ file path to a show-folder-relative path (forward slashes).
-                            let resolvedObjFile: string | undefined;
-                            if (!path.isAbsolute(objFile)) {
-                                // Already relative – normalise slashes
-                                resolvedObjFile = objFile.replace(/\\/g, '/');
-                            } else if (showFolder) {
-                                const resolvedShow = path.resolve(showFolder);
-                                const resolvedObj = path.resolve(objFile);
-                                // Check if the absolute path falls within the show folder
-                                if (resolvedObj.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
-                                    || resolvedObj.toLowerCase() === resolvedShow.toLowerCase()) {
-                                    resolvedObjFile = path.relative(resolvedShow, resolvedObj).replace(/\\/g, '/');
-                                } else {
-                                    // Absolute path outside show folder (or file moved) – search by basename
-                                    const basename = path.basename(objFile);
-                                    const found = await findFileInShowFolder(resolvedShow, basename);
-                                    if (found) {
-                                        resolvedObjFile = found;
-                                        emitInfo(`[loadXmlCoordinates] Resolved "${objFile}" → "${found}" via search`);
-                                    } else {
-                                        emitWarning(`[loadXmlCoordinates] Could not find "${basename}" in show folder, skipping view object "${name}"`);
-                                    }
-                                }
-                            }
+                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
 
-                            if (!resolvedObjFile) continue;
+                            const resolvedObjFile = resolveFilePathFromIndex(objFile, resolvedShow, fileIndex);
+                            if (!resolvedObjFile) {
+                                emitWarning(`[loadXmlCoordinates] Could not resolve "${objFile}" for view object "${name}"`);
+                                continue;
+                            }
 
                             viewObjects.push({
                                 name,
@@ -940,13 +961,98 @@ async function loadXmlCoordinates() {
                                 brightness,
                                 active,
                             });
+                        } else if (displayAs === 'Image' && active) {
+                            // Process Image view objects (textured planes)
+                            const imageFile = getAttrDef(viewObj, 'Image', '');
+                            if (!imageFile) continue;
+
+                            const transparency = parseFloat(getAttrDef(viewObj, 'Transparency', '0'));
+
+                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
+                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
+                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
+                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
+                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
+                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
+                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
+                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
+                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
+
+                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
+
+                            const resolvedImageFile = resolveFilePathFromIndex(imageFile, resolvedShow, fileIndex);
+                            if (!resolvedImageFile) {
+                                emitWarning(`[loadXmlCoordinates] Could not resolve image "${imageFile}" for view object "${name}"`);
+                                continue;
+                            }
+
+                            viewObjects.push({
+                                name,
+                                displayAs,
+                                imageFile: resolvedImageFile,
+                                worldPosX,
+                                worldPosY,
+                                worldPosZ,
+                                scaleX,
+                                scaleY,
+                                scaleZ,
+                                rotateX,
+                                rotateY,
+                                rotateZ,
+                                brightness,
+                                transparency: isNaN(transparency) ? 0 : transparency,
+                                active,
+                            });
                         }
                     }
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes)`);
+                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images)`);
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
+            }
+
+            // Parse layout <settings> element (backgroundImage, previewWidth, etc.)
+            try {
+                const xsettings = getElementByTag(xrgb.documentElement, 'settings');
+                layoutSettings = {};
+
+                if (xsettings) {
+                    for (let is = 0; is < xsettings.childNodes.length; ++is) {
+                        const n = xsettings.childNodes[is];
+                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
+                        const el = n as Element;
+                        const val = getAttrDef(el, 'value', '');
+                        if (!val) continue;
+
+                        switch (el.tagName) {
+                            case 'backgroundImage': {
+                                const resolved = resolveFilePathFromIndex(val, resolvedShow, fileIndex);
+                                if (resolved) {
+                                    layoutSettings.backgroundImage = resolved;
+                                } else {
+                                    emitWarning(`[loadXmlCoordinates] Could not resolve backgroundImage "${val}"`);
+                                }
+                                break;
+                            }
+                            case 'backgroundBrightness':
+                                layoutSettings.backgroundBrightness = parseInt(val, 10);
+                                break;
+                            case 'previewWidth':
+                                layoutSettings.previewWidth = parseInt(val, 10);
+                                break;
+                            case 'previewHeight':
+                                layoutSettings.previewHeight = parseInt(val, 10);
+                                break;
+                        }
+                    }
+
+                    if (layoutSettings.backgroundImage) {
+                        emitInfo(`[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`);
+                    }
+                }
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing settings element: ${parseErr}`);
             }
         }
     }
@@ -960,7 +1066,7 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
@@ -1112,6 +1218,13 @@ async function processQueue() {
                 await sleepms(60); // TODO clean shutdown
                 sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 emitInfo('Playback stopped - exiting playback loop');
+                break;
+            }
+
+            // Show folder changed — break so the handler can start a fresh
+            // processQueue with new controllers and frame buffer.
+            if (shouldRestart) {
+                emitInfo('Show folder changed - restarting processQueue');
                 break;
             }
 

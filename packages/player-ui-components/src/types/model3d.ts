@@ -71,6 +71,8 @@ export interface ViewObject {
     name: string;
     displayAs: string;
     objFile?: string;
+    imageFile?: string;      // Path to image file (for DisplayAs="Image")
+    transparency?: number;   // 0-100, where 0=opaque, 100=fully transparent
     worldPosX: number;
     worldPosY: number;
     worldPosZ: number;
@@ -99,6 +101,13 @@ export interface Model3DData {
     points: Point3D[];
     shapes?: Shape3D[];
     metadata?: ModelSetMetadata;
+}
+
+export interface LayoutSettings {
+    backgroundImage?: string;   // Show-folder-relative path to background image
+    backgroundBrightness?: number; // 0-100 brightness for the background image
+    previewWidth?: number;      // Layout preview canvas width in pixels
+    previewHeight?: number;     // Layout preview canvas height in pixels
 }
 
 export interface SelectionState {

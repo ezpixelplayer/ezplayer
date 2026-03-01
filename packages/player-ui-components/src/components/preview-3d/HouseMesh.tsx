@@ -167,6 +167,7 @@ function postProcessMeshMaterials(group: THREE.Group): void {
                     transparent: srcMat.transparent,
                     opacity: srcMat.opacity,
                     alphaTest: srcMat.alphaTest,
+                    toneMapped: false, // Bypass R3F's ACESFilmic tone mapping
                 });
                 basicMat.name = mat.name;
 
@@ -655,6 +656,23 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 // texture colorSpace for correct gamma handling.
                 postProcessMeshMaterials(loadedObj);
 
+                // Apply brightness immediately during load (don't wait for useEffect).
+                // setRGB with SRGBColorSpace converts bf to linear internally.
+                // Combined with the sRGB texture decode and output encode, this
+                // reproduces xLights' raw sRGB multiply: output = texture * bf.
+                if (brightness !== undefined && brightness !== 100) {
+                    const bf = Math.max(0, Math.min(1, brightness / 100));
+                    loadedObj.traverse((child: THREE.Object3D) => {
+                        if (!isMesh(child) || !child.material) return;
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach((mat) => {
+                            if ('color' in mat) {
+                                (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf, THREE.SRGBColorSpace);
+                            }
+                        });
+                    });
+                }
+
                 setObj(loadedObj);
             } catch (error) {
                 if (!aborted) {
@@ -688,9 +706,11 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
 
     // ----- Brightness (static, when not using live data) -----
     // For MeshBasicMaterial: material.color multiplies with the texture.
-    // (1,1,1) = full brightness, (0.5,0.5,0.5) = 50% dim.
+    // setRGB with SRGBColorSpace stores bf^2.2 internally (linear). In the
+    // shader the sRGB texture is also decoded to linear.  The output encode
+    // cancels both, giving output_sRGB = texture_sRGB * bf — matching xLights.
     React.useEffect(() => {
-        if (!obj || brightness === undefined || (liveData && startChannel !== undefined)) return;
+        if (!obj || brightness === undefined) return;
 
         const bf = Math.max(0, Math.min(1, brightness / 100));
 
@@ -699,12 +719,12 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
             const mats = Array.isArray(child.material) ? child.material : [child.material];
             mats.forEach((mat) => {
                 if ('color' in mat) {
-                    (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf);
+                    (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf, THREE.SRGBColorSpace);
                     mat.needsUpdate = true;
                 }
             });
         });
-    }, [obj, brightness, liveData, startChannel]);
+    }, [obj, brightness]);
 
     // ----- Live colour extraction from frame buffer -----
     useFrame(() => {
@@ -712,7 +732,8 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
 
         if (startChannel === undefined) {
             if (lastFrameSeqRef.current === null) {
-                console.warn(`[HouseMesh] No channel mapping for "${viewObject.name}". Live colours disabled.`);
+                console.debug(`[HouseMesh] "${viewObject.name}" has no channel mapping — using static brightness.`);
+                lastFrameSeqRef.current = -1; // Prevent re-logging
             }
             return;
         }
@@ -765,7 +786,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                     materialUpdated = true;
                 } else if (material.type === 'MeshBasicMaterial') {
                     const m = material as THREE.MeshBasicMaterial;
-                    m.color.setRGB(finalR, finalG, finalB);
+                    m.color.setRGB(finalR, finalG, finalB, THREE.SRGBColorSpace);
                     m.needsUpdate = true;
                     materialUpdated = true;
                 }
@@ -792,7 +813,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
     );
 }
 
-export function HouseMesh(props: HouseMeshProps) {
+export const HouseMesh = React.memo(function HouseMesh(props: HouseMeshProps) {
     return (
         <HouseMeshErrorBoundary viewObjectName={props.viewObject.name}>
             <Suspense fallback={null}>
@@ -800,5 +821,5 @@ export function HouseMesh(props: HouseMeshProps) {
             </Suspense>
         </HouseMeshErrorBoundary>
     );
-}
+});
 

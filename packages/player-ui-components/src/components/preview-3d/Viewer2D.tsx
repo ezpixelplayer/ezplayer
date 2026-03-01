@@ -4,7 +4,7 @@ import { OrthographicCamera, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import type { Point3D, Shape3D, ModelMetadata } from '../../types/model3d';
+import type { Point3D, Shape3D, ModelMetadata, LayoutSettings } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
@@ -21,6 +21,8 @@ export interface Viewer2DProps {
     pointSize?: number;
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    layoutSettings?: LayoutSettings;
+    frameServerUrl?: string;
 }
 
 function Optimized2DPointCloud({
@@ -420,6 +422,89 @@ function HoverHandler2D({
     return null;
 }
 
+// ---------------------------------------------------------------------------
+// Background image plane for the 2D preview (from xLights layout settings)
+// ---------------------------------------------------------------------------
+
+function BackgroundImage2D({
+    layoutSettings,
+    frameServerUrl,
+}: {
+    layoutSettings: LayoutSettings;
+    frameServerUrl: string;
+}) {
+    const [texture, setTexture] = useState<THREE.Texture | null>(null);
+    const { backgroundImage, backgroundBrightness, previewWidth, previewHeight } = layoutSettings;
+
+    useEffect(() => {
+        if (!backgroundImage || !frameServerUrl) return;
+
+        let disposed = false;
+
+        const url = new URL('/api/show-file', frameServerUrl);
+        url.searchParams.set('path', backgroundImage);
+
+        const loader = new THREE.TextureLoader();
+        loader.load(
+            url.toString(),
+            (tex) => {
+                if (disposed) {
+                    tex.dispose();
+                    return;
+                }
+                tex.colorSpace = THREE.SRGBColorSpace;
+                tex.generateMipmaps = false;
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                setTexture(tex);
+            },
+            undefined,
+            (err) => {
+                if (!disposed) {
+                    console.error(`[BackgroundImage2D] Failed to load "${backgroundImage}":`, err);
+                }
+            },
+        );
+
+        return () => {
+            disposed = true;
+            setTexture((prev) => {
+                if (prev) prev.dispose();
+                return null;
+            });
+        };
+    }, [backgroundImage, frameServerUrl]);
+
+    if (!texture || !previewWidth || !previewHeight) return null;
+
+    // Brightness: 0-100 → color multiplier matching xLights.
+    // xLights does: output = texture_sRGB * (brightness/100) in the fragment shader
+    // with no color management.  With the texture in SRGBColorSpace, Three.js decodes
+    // both texture and color from sRGB to linear for the shader multiply, then encodes
+    // back to sRGB for output.  The conversions cancel:
+    //   output_sRGB = ((s^2.2) * (bf^2.2))^(1/2.2) = s * bf
+    // This matches xLights exactly.
+    // toneMapped=false bypasses R3F's default ACESFilmic tone mapping which would
+    // otherwise darken/compress the result.
+    const bf = Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100));
+    const brightnessColor = new THREE.Color().setRGB(bf, bf, bf, THREE.SRGBColorSpace);
+
+    // Position the plane so it fills (0,0) to (previewWidth, previewHeight),
+    // centered at (previewWidth/2, previewHeight/2), behind points at z=-1.
+    return (
+        <mesh position={[previewWidth / 2, previewHeight / 2, -1]} renderOrder={-1}>
+            <planeGeometry args={[previewWidth, previewHeight]} />
+            <meshBasicMaterial
+                map={texture}
+                depthWrite={true}
+                side={THREE.FrontSide}
+                color={brightnessColor}
+                toneMapped={false}
+            />
+        </mesh>
+    );
+}
+
 function Scene2DContent({
     points,
     shapes,
@@ -432,6 +517,8 @@ function Scene2DContent({
     pointSize,
     selectedModelNames,
     modelMetadata,
+    layoutSettings,
+    frameServerUrl,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -444,6 +531,8 @@ function Scene2DContent({
     pointSize?: number;
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    layoutSettings?: LayoutSettings;
+    frameServerUrl?: string;
 }) {
     const { camera, controls } = useThree();
 
@@ -505,37 +594,44 @@ function Scene2DContent({
         // Increase distance multiplier to ensure all models fit in view
         const distance = maxDim * 2.5;
 
-        // Position camera based on view plane
-        switch (viewPlane) {
-            case 'xy':
-                camera.position.set(center.x, center.y, distance);
-                break;
-            case 'xz':
-                camera.position.set(center.x, distance, center.z);
-                break;
-            case 'yz':
-                camera.position.set(distance, center.y, center.z);
-                break;
-        }
-        camera.lookAt(center);
+        // Position camera directly in front of the scene center — no lookAt needed.
+        // For the XY plane the camera sits on the +Z axis looking toward -Z.
+        // Setting the quaternion to identity (0,0,0,1) guarantees a perfectly
+        // face-on view with no angular drift from lookAt or controls round-trips.
+        camera.up.set(0, 1, 0);
+        camera.position.set(center.x, center.y, distance);
+        camera.quaternion.set(0, 0, 0, 1); // identity = looking along -Z
+        camera.updateMatrixWorld();
 
         // Adjust orthographic camera zoom to fit the scene
         if (camera instanceof THREE.OrthographicCamera && maxDim > 0) {
-            // Calculate appropriate zoom based on scene size
             const targetZoom = 100 / maxDim;
             camera.zoom = Math.max(0.5, Math.min(targetZoom, 50));
             camera.updateProjectionMatrix();
         }
 
-        // Reset controls target to match camera lookAt
+        // Sync controls target so pan/zoom works from the right center point
         if (controls && 'target' in controls) {
             const mapControls = controls as { target: THREE.Vector3; update?: () => void };
             if (mapControls.target) {
-                mapControls.target.copy(center);
+                mapControls.target.set(center.x, center.y, 0);
                 mapControls.update?.();
             }
         }
+
+        // Re-force identity after controls.update() which calls lookAt internally
+        camera.quaternion.set(0, 0, 0, 1);
+        camera.updateMatrixWorld();
     }, [points, shapes, camera, controls, viewPlane]);
+
+    // Enforce face-on orientation every frame.
+    // MapControls.update() (called each frame for damping) internally calls lookAt()
+    // which can introduce sub-degree angular drift through spherical→cartesian round-trips.
+    useFrame(() => {
+        if (viewPlane === 'xy') {
+            camera.quaternion.set(0, 0, 0, 1);
+        }
+    });
 
     return (
         <>
@@ -543,6 +639,11 @@ function Scene2DContent({
             <HoverHandler2D points={points} onPointHover={onPointHover} pointSize={pointSize} viewPlane={viewPlane} />
             <ambientLight intensity={0.7} />
             <directionalLight position={[10, 10, 5]} intensity={0.5} />
+
+            {/* Background image from layout settings */}
+            {layoutSettings?.backgroundImage && frameServerUrl && (
+                <BackgroundImage2D layoutSettings={layoutSettings} frameServerUrl={frameServerUrl} />
+            )}
 
             {shapes?.map((shape) => (
                 <Shape2DMesh
@@ -582,6 +683,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     pointSize = 3.0,
     selectedModelNames,
     modelMetadata,
+    layoutSettings,
+    frameServerUrl,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -744,6 +847,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
                             modelMetadata={modelMetadata}
+                            layoutSettings={layoutSettings}
+                            frameServerUrl={frameServerUrl}
                         />
                     </Canvas>
                 </Box>

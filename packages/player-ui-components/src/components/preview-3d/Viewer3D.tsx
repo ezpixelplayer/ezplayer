@@ -9,6 +9,7 @@ import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
 import { HouseMesh } from './HouseMesh';
+import { ImagePlane } from './ImagePlane';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -110,15 +111,43 @@ function OptimizedPointCloud({
         };
     }, [points, pointSize, modelMetadata]);
 
-    // Update states when selection/hover changes
-    useEffect(() => {
-        if (!geometryManagerRef.current) return;
-        geometryManagerRef.current.updateStates(selectedIds, hoveredId, selectedModelNames);
-    }, [selectedIds, hoveredId, selectedModelNames]);
+    // Track selection/hover in refs so changes are applied in the render
+    // loop without triggering React re-render cascades.
+    const selectedIdsRef = useRef(selectedIds);
+    const hoveredIdRef = useRef(hoveredId);
+    const selectedModelNamesRef = useRef(selectedModelNames);
+    selectedIdsRef.current = selectedIds;
+    hoveredIdRef.current = hoveredId;
+    selectedModelNamesRef.current = selectedModelNames;
 
-    // Update animation time and point sizes
+    const prevSelectionRef = useRef<{
+        selectedIds?: Set<string>;
+        hoveredId?: string | null;
+        selectedModelNames?: Set<string>;
+    }>({});
+
+    // Single useFrame handles both selection updates and animation
     useFrame((_state, delta) => {
         if (!geometryManagerRef.current) return;
+
+        // Apply selection/hover changes (ref-based, no React effect needed)
+        const prev = prevSelectionRef.current;
+        if (
+            prev.selectedIds !== selectedIdsRef.current ||
+            prev.hoveredId !== hoveredIdRef.current ||
+            prev.selectedModelNames !== selectedModelNamesRef.current
+        ) {
+            geometryManagerRef.current.updateStates(
+                selectedIdsRef.current,
+                hoveredIdRef.current,
+                selectedModelNamesRef.current,
+            );
+            prevSelectionRef.current = {
+                selectedIds: selectedIdsRef.current,
+                hoveredId: hoveredIdRef.current,
+                selectedModelNames: selectedModelNamesRef.current,
+            };
+        }
 
         animationTimeRef.current += delta;
 
@@ -146,6 +175,19 @@ function ClickHandler({
 }) {
     const { camera, raycaster, gl } = useThree();
 
+    // Pre-compute 3D positions once when points change (same pattern as HoverHandler)
+    const pointPositionsRef = useRef<THREE.Vector3[]>([]);
+    const centerPointRef = useRef<THREE.Vector3 | null>(null);
+    useEffect(() => {
+        if (points.length === 0) {
+            pointPositionsRef.current = [];
+            centerPointRef.current = null;
+            return;
+        }
+        pointPositionsRef.current = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        centerPointRef.current = new THREE.Vector3(points[0].x, points[0].y, points[0].z);
+    }, [points]);
+
     useEffect(() => {
         if (!onPointClick) return;
 
@@ -159,30 +201,29 @@ function ClickHandler({
             // Update raycaster with camera and mouse position
             raycaster.setFromCamera(mouse, camera);
 
-            // Get all points as 3D positions
-            const pointPositions = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+            // Use pre-computed positions instead of allocating on every click
+            const pointPositions = pointPositionsRef.current;
+            if (pointPositions.length === 0) return;
+
             const pointSizeValue = pointSize || 3.0;
 
             // Calculate threshold based on point size and camera distance
-            // Use a more generous threshold for point selection
-            const cameraDistance = camera.position.distanceTo(
-                points.length > 0
-                    ? new THREE.Vector3(points[0].x, points[0].y, points[0].z)
-                    : new THREE.Vector3(0, 0, 0),
-            );
+            const cameraDistance = centerPointRef.current
+                ? camera.position.distanceTo(centerPointRef.current)
+                : 1000;
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
 
             // Find the closest point to the ray
             let closestIndex = -1;
             let minDistance = Infinity;
 
-            pointPositions.forEach((position, index) => {
-                const distance = raycaster.ray.distanceToPoint(position);
+            for (let i = 0; i < pointPositions.length; i++) {
+                const distance = raycaster.ray.distanceToPoint(pointPositions[i]);
                 if (distance < threshold && distance < minDistance) {
                     minDistance = distance;
-                    closestIndex = index;
+                    closestIndex = i;
                 }
-            });
+            }
 
             // If a point was found, trigger click handler
             if (closestIndex >= 0 && closestIndex < points.length) {
@@ -313,6 +354,67 @@ function HoverHandler({
     return null;
 }
 
+// Component to handle WASD + Q/E keyboard navigation
+function KeyboardNavigationHandler() {
+    const { camera, controls } = useThree();
+    const keysRef = useRef<Record<string, boolean>>({});
+    const holdTimeRef = useRef(0);
+
+    useEffect(() => {
+        const onDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            keysRef.current[e.key.toLowerCase()] = true;
+        };
+        const onUp = (e: KeyboardEvent) => {
+            keysRef.current[e.key.toLowerCase()] = false;
+        };
+        window.addEventListener('keydown', onDown);
+        window.addEventListener('keyup', onUp);
+        return () => {
+            window.removeEventListener('keydown', onDown);
+            window.removeEventListener('keyup', onUp);
+        };
+    }, []);
+
+    useFrame((_state, delta) => {
+        const keys = keysRef.current;
+        const anyMovement = keys.w || keys.a || keys.s || keys.d || keys.q || keys.e;
+        if (!anyMovement) {
+            holdTimeRef.current = 0;
+            return;
+        }
+
+        holdTimeRef.current += delta;
+
+        const orbitControls = controls as { target: THREE.Vector3; update: () => void } | null;
+        const targetDist = orbitControls?.target
+            ? camera.position.distanceTo(orbitControls.target) : 100;
+        // Accelerate from 1x to 8x over ~1 second of holding
+        const accelFactor = Math.min(1 + holdTimeRef.current * 7.0, 8.0);
+        const speed = targetDist * 1.5 * delta * accelFactor;
+
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+        const movement = new THREE.Vector3();
+        if (keys.w) movement.addScaledVector(forward, speed);
+        if (keys.s) movement.addScaledVector(forward, -speed);
+        if (keys.d) movement.addScaledVector(right, speed);
+        if (keys.a) movement.addScaledVector(right, -speed);
+        if (keys.e) movement.addScaledVector(camera.up, speed);
+        if (keys.q) movement.addScaledVector(camera.up, -speed);
+
+        camera.position.add(movement);
+        if (orbitControls?.target) {
+            orbitControls.target.add(movement);
+            orbitControls.update();
+        }
+    });
+
+    return null;
+}
+
 function SceneContent({
     points,
     shapes,
@@ -360,7 +462,7 @@ function SceneContent({
             });
         }
 
-        // Include house meshes (viewObjects) in bounding box calculation
+        // Include house meshes and image planes (viewObjects) in bounding box calculation
         if (viewObjects) {
             viewObjects.forEach((viewObj) => {
                 if (viewObj.displayAs === 'Mesh' && viewObj.active !== false) {
@@ -385,6 +487,13 @@ function SceneContent({
                     ));
 
                     // Also add the center point
+                    box.expandByPoint(new THREE.Vector3(
+                        viewObj.worldPosX,
+                        viewObj.worldPosY,
+                        viewObj.worldPosZ
+                    ));
+                }
+                if (viewObj.displayAs === 'Image' && viewObj.active !== false) {
                     box.expandByPoint(new THREE.Vector3(
                         viewObj.worldPosX,
                         viewObj.worldPosY,
@@ -419,6 +528,7 @@ function SceneContent({
         <>
             <ClickHandler points={points} onPointClick={onPointClick} pointSize={pointSize} />
             <HoverHandler points={points} onPointHover={onPointHover} pointSize={pointSize} />
+            <KeyboardNavigationHandler />
             <ambientLight intensity={0.5} />
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
@@ -444,6 +554,20 @@ function SceneContent({
                             frameServerUrl={frameServerUrl}
                             liveData={liveData}
                             points={points}
+                        />
+                    );
+                }
+                return null;
+            })}
+
+            {/* Render image planes from view objects */}
+            {viewObjects?.map((viewObj) => {
+                if (viewObj.displayAs === 'Image' && viewObj.imageFile && viewObj.active !== false) {
+                    return (
+                        <ImagePlane
+                            key={viewObj.name}
+                            viewObject={viewObj}
+                            frameServerUrl={frameServerUrl}
                         />
                     );
                 }
@@ -552,6 +676,12 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                 >
                     🖱️ Scroll: Zoom
+                </Typography>
+                <Typography
+                    variant="caption"
+                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
+                    ⌨️ WASD: Move &nbsp; Q/E: Down/Up
                 </Typography>
             </Box>
             {error ? (
