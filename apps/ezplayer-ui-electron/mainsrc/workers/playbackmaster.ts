@@ -494,7 +494,6 @@ function processCommand(cmd: EZPlayerCommand) {
 parentPort.on('message', async (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
-            pendingSchedule = command;
             const folderChanged =
                 command.showFolder &&
                 command.showFolder !== '<no show folder yet>' &&
@@ -505,24 +504,22 @@ parentPort.on('message', async (command: PlayerCommand) => {
             }
 
             if (folderChanged) {
-                // Load XML coordinates eagerly — resolve all file paths,
-                // parse models, and push data to the server worker NOW so
-                // that none of this work happens during playback.
-                try {
-                    await loadXmlCoordinates();
-                } catch (err) {
-                    emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
-                }
-
-                // If processQueue is already running we need to restart it
-                // so it re-reads controllers and reallocates the frame buffer
-                // for the new show.
                 if (running) {
                     shouldRestart = true;
                     await running; // wait for loop to exit
                     running = undefined;
                 }
+
+                // Load XML coordinates eagerly and push to server (disruptive)
+                try {
+                    await loadXmlCoordinates();
+                } catch (err) {
+                    emitError(`[Worker Message] Failed to load XML coordinates: ${err}`);
+                }
             }
+
+            // Set pendingSchedule after old loop has exited
+            pendingSchedule = command;
 
             if (!running) {
                 shouldRestart = false;
