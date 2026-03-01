@@ -92,5 +92,6 @@ export type WorkerToMainMessage =
           coords2D: Record<string, GetNodeResult>;
           viewObjects?: Array<ViewObject>;
       }
+    | { type: 'audiobuffer'; buffer: SharedArrayBuffer }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };
