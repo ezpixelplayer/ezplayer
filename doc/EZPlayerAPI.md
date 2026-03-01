@@ -465,6 +465,110 @@ Get binary frame data for the live 3D viewer. Returns the latest frame of light 
 
 ---
 
+### 11. GET /api/time
+
+Server clock for client clock-offset estimation. Returns the server's current `Date.now()` value. Clients can measure the round-trip time of this request and compute the offset between their local clock and the server's clock, enabling accurate audio scheduling on remote devices.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK
+- Body:
+
+```json
+{
+    "now": 1704067200000
+}
+```
+
+**Response Headers:**
+
+- `Cache-Control: no-store`
+- `Access-Control-Allow-Origin: *`
+
+**Clock Offset Estimation:**
+
+The recommended approach is to take several samples and trust the one with the lowest round-trip time (it had the least scheduling noise, making the "halfway" assumption most accurate). Discard any sample with RTT > 100ms.
+
+```javascript
+const t0 = Date.now();
+const res = await fetch('/api/time');
+const t1 = Date.now();
+const { now: serverNow } = await res.json();
+const rtt = t1 - t0;
+const clockOffset = serverNow - (t0 + rtt / 2);
+// To convert server timestamps to local time: localTime = serverTime - clockOffset
+```
+
+---
+
+### 12. GET /api/audio
+
+Get binary audio chunk data for web client audio streaming. Returns all audio chunks published since a given sequence number. Used by the web UI to stream audio from the player in sync with the live pixel data.
+
+**Request:**
+
+- Method: GET
+- Query Parameters:
+    - `afterSeq` (number, optional) - Return chunks after this sequence number. Defaults to 0. Use the `latestSeq` from the previous response.
+
+**Response:**
+
+- Status: 200 OK - Binary audio data (`application/octet-stream`)
+- Status: 204 No Content - No audio buffer available or no new chunks since `afterSeq`
+
+**Response Binary Format:**
+
+The response is a binary `application/octet-stream` with the following layout:
+
+**Header (8 bytes):**
+
+| Offset | Size    | Type      | Description                          |
+| ------ | ------- | --------- | ------------------------------------ |
+| 0      | 4 bytes | uint32 LE | Chunk count                          |
+| 4      | 4 bytes | uint32 LE | Latest sequence number (use as next `afterSeq`) |
+
+**Per-chunk (repeated `chunkCount` times):**
+
+| Offset | Size             | Type      | Description                                  |
+| ------ | ---------------- | --------- | -------------------------------------------- |
+| 0      | 8 bytes          | float64 LE | `playAtRealTime` - server wall-clock time (ms) when chunk should play |
+| 8      | 4 bytes          | uint32 LE | `incarnation` - increments on song/segment boundaries |
+| 12     | 4 bytes          | uint32 LE | `sampleRate` - e.g. 48000                    |
+| 16     | 4 bytes          | uint32 LE | `channels` - number of audio channels        |
+| 20     | 4 bytes          | uint32 LE | `sampleCount` - total number of Float32 samples (all channels interleaved) |
+| 24     | sampleCount × 4  | Float32 LE | Interleaved audio sample data                |
+
+**Response Headers:**
+
+- `Cache-Control: no-store`
+- `Content-Type: application/octet-stream`
+- `Access-Control-Allow-Origin: *`
+
+**Notes:**
+
+- `playAtRealTime` is a server-side `Date.now()` timestamp. Remote clients should use the `/api/time` endpoint to estimate clock offset and adjust accordingly.
+- `incarnation` changes when a new song or audio segment begins. Clients should reset their audio scheduling state when incarnation changes.
+- Audio samples are interleaved: for stereo, the pattern is `[L0, R0, L1, R1, ...]`. Clients must deinterleave into per-channel buffers for Web Audio API playback.
+- The ring buffer holds approximately 5 seconds of audio. If a client falls behind, the oldest chunks are silently lost. The response will include chunks starting from the oldest still available.
+- Polling at ~50ms intervals is recommended for smooth playback.
+
+**Example (curl):**
+
+```bash
+# First request - get all available chunks
+curl http://localhost:3000/api/audio?afterSeq=0 --output audio.bin
+
+# Subsequent requests - only get new chunks
+curl http://localhost:3000/api/audio?afterSeq=42 --output audio.bin
+```
+
+---
+
 ## WebSocket API
 
 ### Connection

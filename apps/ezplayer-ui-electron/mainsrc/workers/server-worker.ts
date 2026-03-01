@@ -15,7 +15,7 @@ import { send } from '@koa/send';
 import serve from 'koa-static';
 import { fileURLToPath } from 'url';
 import type { EZPlayerCommand, FullPlayerState, PlaybackSettings, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
 import type {
@@ -134,6 +134,8 @@ let cachedModelCoordinates2D: unknown = {};
 let cachedViewObjects: Array<ViewObject> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
+let curAudioBuffer: SharedArrayBuffer | undefined = undefined;
+let curAudioRing: AudioChunkRingBuffer | undefined = undefined;
 let serverStarted = false;
 
 // ZSTD codec handle for frame compression (initialized in startServer)
@@ -150,6 +152,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         rpc.handleResponse(msg.id, msg.result, msg.error);
     } else if (msg.type === 'updateFrameBuffer') {
         curFrameBuffer = msg.buffer;
+    } else if (msg.type === 'updateAudioBuffer') {
+        curAudioBuffer = msg.buffer;
+        curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
     } else if (msg.type === 'broadcast') {
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
@@ -564,6 +569,75 @@ async function startServer(config: ServerWorkerData) {
         ctx.set('Cache-Control', 'no-store');
         ctx.type = 'application/octet-stream';
         ctx.body = responseBuffer.subarray(0, totalSize);
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/time - server Date.now() for client clock-offset estimation
+    // Client measures RTT and computes offset = serverTime - clientTime + RTT/2
+    // ----------------------------------------------
+    router.get('/api/time', async (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        ctx.set('Cache-Control', 'no-store');
+        ctx.body = { now: Date.now() };
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/audio?afterSeq=N - binary audio chunk data for web client
+    // Wire format: [u32 chunkCount][u32 latestSeq]
+    //   per chunk: [f64 playAtRealTime][u32 incarnation][u32 sampleRate]
+    //              [u32 channels][u32 sampleCount][Float32 × sampleCount]
+    // ----------------------------------------------
+    router.get('/api/audio', async (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+        if (!curAudioRing) {
+            ctx.status = 204;
+            return;
+        }
+
+        const afterSeq = parseInt(ctx.query.afterSeq as string) || 0;
+        const chunks = curAudioRing.readAfter(afterSeq);
+
+        if (chunks.length === 0) {
+            ctx.status = 204;
+            return;
+        }
+
+        // Calculate total response size
+        // Header: 4 (chunkCount) + 4 (latestSeq) = 8 bytes
+        // Per chunk: 8 (playAtRealTime f64) + 4 (incarnation) + 4 (sampleRate)
+        //          + 4 (channels) + 4 (sampleCount) + sampleCount*4 (Float32 data)
+        let totalSize = 8;
+        for (const chunk of chunks) {
+            totalSize += 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+        }
+
+        const buf = Buffer.allocUnsafe(totalSize);
+        let offset = 0;
+
+        // Write header
+        buf.writeUInt32LE(chunks.length, offset); offset += 4;
+        buf.writeUInt32LE(chunks[chunks.length - 1].seq, offset); offset += 4;
+
+        // Write each chunk
+        for (const chunk of chunks) {
+            buf.writeDoubleLE(chunk.playAtRealTime, offset); offset += 8;
+            buf.writeUInt32LE(chunk.incarnation, offset); offset += 4;
+            buf.writeUInt32LE(chunk.sampleRate, offset); offset += 4;
+            buf.writeUInt32LE(chunk.channels, offset); offset += 4;
+            buf.writeUInt32LE(chunk.samples.length, offset); offset += 4;
+
+            // Copy Float32 audio data from SAB view into response buffer
+            const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
+            src.copy(buf, offset);
+            offset += chunk.samples.byteLength;
+        }
+
+        ctx.set('Cache-Control', 'no-store');
+        ctx.type = 'application/octet-stream';
+        ctx.body = buf;
     });
 
     webApp.use(router.routes());
