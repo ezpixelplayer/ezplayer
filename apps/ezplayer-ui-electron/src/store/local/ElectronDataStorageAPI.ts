@@ -1,5 +1,6 @@
 import type {
     AudioDevice,
+    AutoUpdateStatus,
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
@@ -155,6 +156,9 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
             if (this.dispatch) {
                 this.dispatch(setPStatus(data));
             }
+        });
+        window.electronAPI!.onAutoUpdateStatus((status: AutoUpdateStatus) => {
+            console.log('[AutoUpdate]', status.state, status);
         });
     }
     // TODO: Pull stuff down, etc.
