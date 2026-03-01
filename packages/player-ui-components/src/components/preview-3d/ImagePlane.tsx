@@ -166,10 +166,14 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
     // the image itself contains non-opaque pixels (detected from actual pixel data).
     const needsTransparency = opacity < 1 || hasAlpha;
 
-    // Brightness as color multiplier (same as HouseMesh)
-    // Three.js ColorManagement treats Color values as sRGB, so no explicit
-    // gamma needed — brightness/100 gives the correct perceptual result.
+    // Brightness as color multiplier matching xLights.
+    // xLights does: output = texture_sRGB * (brightness/100) with no color management.
+    // With texture in SRGBColorSpace, Three.js decodes both texture and color
+    // from sRGB to linear, multiplies, then encodes back.  The conversions cancel:
+    //   output_sRGB = ((s^2.2) * (bf^2.2))^(1/2.2) = s * bf
+    // toneMapped=false bypasses R3F's default ACESFilmic tone mapping.
     const bf = Math.max(0, Math.min(1, (brightness ?? 100) / 100));
+    const brightnessColor = new THREE.Color().setRGB(bf, bf, bf, THREE.SRGBColorSpace);
 
     return (
         <mesh position={position} rotation={rotation} scale={scale} renderOrder={-1}>
@@ -181,7 +185,8 @@ function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
                 alphaTest={0.5}
                 depthWrite={true}
                 side={THREE.DoubleSide}
-                color={new THREE.Color(bf, bf, bf)}
+                color={brightnessColor}
+                toneMapped={false}
             />
         </mesh>
     );

@@ -167,6 +167,7 @@ function postProcessMeshMaterials(group: THREE.Group): void {
                     transparent: srcMat.transparent,
                     opacity: srcMat.opacity,
                     alphaTest: srcMat.alphaTest,
+                    toneMapped: false, // Bypass R3F's ACESFilmic tone mapping
                 });
                 basicMat.name = mat.name;
 
@@ -655,10 +656,10 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                 // texture colorSpace for correct gamma handling.
                 postProcessMeshMaterials(loadedObj);
 
-                // Apply brightness immediately during load (don't wait for useEffect)
-                // Three.js ColorManagement (enabled by default in r152+) treats
-                // setRGB values as sRGB and converts to linear internally, so a
-                // plain brightness/100 gives the correct perceptual result.
+                // Apply brightness immediately during load (don't wait for useEffect).
+                // setRGB with SRGBColorSpace converts bf to linear internally.
+                // Combined with the sRGB texture decode and output encode, this
+                // reproduces xLights' raw sRGB multiply: output = texture * bf.
                 if (brightness !== undefined && brightness !== 100) {
                     const bf = Math.max(0, Math.min(1, brightness / 100));
                     loadedObj.traverse((child: THREE.Object3D) => {
@@ -666,7 +667,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                         const mats = Array.isArray(child.material) ? child.material : [child.material];
                         mats.forEach((mat) => {
                             if ('color' in mat) {
-                                (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf);
+                                (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf, THREE.SRGBColorSpace);
                             }
                         });
                     });
@@ -705,9 +706,9 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
 
     // ----- Brightness (static, when not using live data) -----
     // For MeshBasicMaterial: material.color multiplies with the texture.
-    // (1,1,1) = full brightness, (0.5,0.5,0.5) = 50% dim.
-    // Three.js ColorManagement treats setRGB values as sRGB, so no explicit
-    // gamma needed — brightness/100 gives the correct perceptual result.
+    // setRGB with SRGBColorSpace stores bf^2.2 internally (linear). In the
+    // shader the sRGB texture is also decoded to linear.  The output encode
+    // cancels both, giving output_sRGB = texture_sRGB * bf — matching xLights.
     React.useEffect(() => {
         if (!obj || brightness === undefined) return;
 
@@ -718,7 +719,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
             const mats = Array.isArray(child.material) ? child.material : [child.material];
             mats.forEach((mat) => {
                 if ('color' in mat) {
-                    (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf);
+                    (mat as THREE.MeshBasicMaterial).color.setRGB(bf, bf, bf, THREE.SRGBColorSpace);
                     mat.needsUpdate = true;
                 }
             });
@@ -785,7 +786,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
                     materialUpdated = true;
                 } else if (material.type === 'MeshBasicMaterial') {
                     const m = material as THREE.MeshBasicMaterial;
-                    m.color.setRGB(finalR, finalG, finalB);
+                    m.color.setRGB(finalR, finalG, finalB, THREE.SRGBColorSpace);
                     m.needsUpdate = true;
                     materialUpdated = true;
                 }

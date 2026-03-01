@@ -477,8 +477,17 @@ function BackgroundImage2D({
 
     if (!texture || !previewWidth || !previewHeight) return null;
 
-    // Brightness: 0-100 → color multiplier with gamma to match xLights.
-    const bf = Math.pow(Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100)), 1);
+    // Brightness: 0-100 → color multiplier matching xLights.
+    // xLights does: output = texture_sRGB * (brightness/100) in the fragment shader
+    // with no color management.  With the texture in SRGBColorSpace, Three.js decodes
+    // both texture and color from sRGB to linear for the shader multiply, then encodes
+    // back to sRGB for output.  The conversions cancel:
+    //   output_sRGB = ((s^2.2) * (bf^2.2))^(1/2.2) = s * bf
+    // This matches xLights exactly.
+    // toneMapped=false bypasses R3F's default ACESFilmic tone mapping which would
+    // otherwise darken/compress the result.
+    const bf = Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100));
+    const brightnessColor = new THREE.Color().setRGB(bf, bf, bf, THREE.SRGBColorSpace);
 
     // Position the plane so it fills (0,0) to (previewWidth, previewHeight),
     // centered at (previewWidth/2, previewHeight/2), behind points at z=-1.
@@ -489,7 +498,8 @@ function BackgroundImage2D({
                 map={texture}
                 depthWrite={true}
                 side={THREE.FrontSide}
-                color={new THREE.Color(bf, bf, bf)}
+                color={brightnessColor}
+                toneMapped={false}
             />
         </mesh>
     );
