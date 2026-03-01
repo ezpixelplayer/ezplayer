@@ -750,40 +750,71 @@ let fseqCache: FSeqPrefetchCache | undefined = undefined;
 let lastPRSSchedUpdate: number = 0;
 
 ////////
-// Search for a file by name within the show folder tree.
-// Returns the show-folder-relative path (forward slashes) if found, undefined otherwise.
+// Build a filename index of the show folder tree in a single pass.
+// Returns a Map from lowercase filename to show-folder-relative path (forward slashes).
+// When multiple files share the same name, the shallowest one wins.
 ////////
-async function findFileInShowFolder(
+async function buildShowFolderIndex(
     folder: string,
-    filename: string,
     maxDepth = 5,
-): Promise<string | undefined> {
-    const lowerFilename = filename.toLowerCase();
+): Promise<Map<string, string>> {
+    const index = new Map<string, string>();
 
-    async function search(dir: string, depth: number): Promise<string | undefined> {
-        if (depth > maxDepth) return undefined;
+    async function scan(dir: string, depth: number): Promise<void> {
+        if (depth > maxDepth) return;
         let entries: import('fs').Dirent[];
         try {
             entries = await fsp.readdir(dir, { withFileTypes: true });
         } catch {
-            return undefined;
+            return;
         }
+        const subdirs: string[] = [];
         for (const entry of entries) {
-            if (entry.isFile() && entry.name.toLowerCase() === lowerFilename) {
-                const abs = path.join(dir, entry.name);
-                return path.relative(folder, abs).replace(/\\/g, '/');
+            if (entry.isFile()) {
+                const key = entry.name.toLowerCase();
+                // Shallowest wins — don't overwrite if already found at a higher level
+                if (!index.has(key)) {
+                    const abs = path.join(dir, entry.name);
+                    index.set(key, path.relative(folder, abs).replace(/\\/g, '/'));
+                }
+            } else if (entry.isDirectory()) {
+                subdirs.push(path.join(dir, entry.name));
             }
         }
-        for (const entry of entries) {
-            if (entry.isDirectory()) {
-                const found = await search(path.join(dir, entry.name), depth + 1);
-                if (found) return found;
-            }
+        // Recurse into subdirectories (breadth-first by level)
+        for (const sub of subdirs) {
+            await scan(sub, depth + 1);
         }
-        return undefined;
     }
 
-    return search(folder, 0);
+    await scan(folder, 0);
+    return index;
+}
+
+/**
+ * Resolve a file path from the XML to a show-folder-relative path.
+ * If the path is already relative, normalises slashes and returns it.
+ * If absolute and inside the show folder, strips the prefix.
+ * Otherwise looks up the basename in the pre-built file index.
+ */
+function resolveFilePathFromIndex(
+    filePath: string,
+    resolvedShow: string,
+    fileIndex: Map<string, string>,
+): string | undefined {
+    if (!path.isAbsolute(filePath)) {
+        return filePath.replace(/\\/g, '/');
+    }
+    const resolvedFile = path.resolve(filePath);
+    if (
+        resolvedFile.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase()) ||
+        resolvedFile.toLowerCase() === resolvedShow.toLowerCase()
+    ) {
+        return path.relative(resolvedShow, resolvedFile).replace(/\\/g, '/');
+    }
+    // Fall back to index lookup by basename
+    const basename = path.basename(filePath);
+    return fileIndex.get(basename.toLowerCase());
 }
 
 ////////
@@ -865,6 +896,19 @@ async function loadXmlCoordinates() {
                 emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }
 
+            // Build a file index of the show folder tree once, up front.
+            // This replaces N separate recursive directory scans with a single pass.
+            const resolvedShow = showFolder ? path.resolve(showFolder) : '';
+            let fileIndex = new Map<string, string>();
+            if (resolvedShow) {
+                try {
+                    fileIndex = await buildShowFolderIndex(resolvedShow);
+                    emitInfo(`[loadXmlCoordinates] Built file index: ${fileIndex.size} files`);
+                } catch (indexErr) {
+                    emitWarning(`[loadXmlCoordinates] Failed to build file index: ${indexErr}`);
+                }
+            }
+
             // Parse view_objects (meshes like house models)
             try {
                 const xviewObjects = getElementByTag(xrgb.documentElement, 'view_objects');
@@ -895,35 +939,13 @@ async function loadXmlCoordinates() {
                             const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
                             const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
 
-                            // Extract brightness: first try Brightness attribute, then check dimmingCurve child
                             let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
 
-                            // Resolve OBJ file path to a show-folder-relative path (forward slashes).
-                            let resolvedObjFile: string | undefined;
-                            if (!path.isAbsolute(objFile)) {
-                                // Already relative – normalise slashes
-                                resolvedObjFile = objFile.replace(/\\/g, '/');
-                            } else if (showFolder) {
-                                const resolvedShow = path.resolve(showFolder);
-                                const resolvedObj = path.resolve(objFile);
-                                // Check if the absolute path falls within the show folder
-                                if (resolvedObj.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
-                                    || resolvedObj.toLowerCase() === resolvedShow.toLowerCase()) {
-                                    resolvedObjFile = path.relative(resolvedShow, resolvedObj).replace(/\\/g, '/');
-                                } else {
-                                    // Absolute path outside show folder (or file moved) – search by basename
-                                    const basename = path.basename(objFile);
-                                    const found = await findFileInShowFolder(resolvedShow, basename);
-                                    if (found) {
-                                        resolvedObjFile = found;
-                                        emitInfo(`[loadXmlCoordinates] Resolved "${objFile}" → "${found}" via search`);
-                                    } else {
-                                        emitWarning(`[loadXmlCoordinates] Could not find "${basename}" in show folder, skipping view object "${name}"`);
-                                    }
-                                }
+                            const resolvedObjFile = resolveFilePathFromIndex(objFile, resolvedShow, fileIndex);
+                            if (!resolvedObjFile) {
+                                emitWarning(`[loadXmlCoordinates] Could not resolve "${objFile}" for view object "${name}"`);
+                                continue;
                             }
-
-                            if (!resolvedObjFile) continue;
 
                             viewObjects.push({
                                 name,
@@ -948,7 +970,6 @@ async function loadXmlCoordinates() {
 
                             const transparency = parseFloat(getAttrDef(viewObj, 'Transparency', '0'));
 
-                            // Parse transform attributes (same as Mesh)
                             const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
                             const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
                             const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
@@ -959,32 +980,13 @@ async function loadXmlCoordinates() {
                             const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
                             const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
 
-                            // Extract brightness (same logic as Mesh)
                             let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
 
-                            // Resolve image file path (same logic as OBJ path resolution)
-                            let resolvedImageFile: string | undefined;
-                            if (!path.isAbsolute(imageFile)) {
-                                resolvedImageFile = imageFile.replace(/\\/g, '/');
-                            } else if (showFolder) {
-                                const resolvedShow = path.resolve(showFolder);
-                                const resolvedImg = path.resolve(imageFile);
-                                if (resolvedImg.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
-                                    || resolvedImg.toLowerCase() === resolvedShow.toLowerCase()) {
-                                    resolvedImageFile = path.relative(resolvedShow, resolvedImg).replace(/\\/g, '/');
-                                } else {
-                                    const basename = path.basename(imageFile);
-                                    const found = await findFileInShowFolder(resolvedShow, basename);
-                                    if (found) {
-                                        resolvedImageFile = found;
-                                        emitInfo(`[loadXmlCoordinates] Resolved image "${imageFile}" → "${found}" via search`);
-                                    } else {
-                                        emitWarning(`[loadXmlCoordinates] Could not find image "${basename}" in show folder, skipping view object "${name}"`);
-                                    }
-                                }
+                            const resolvedImageFile = resolveFilePathFromIndex(imageFile, resolvedShow, fileIndex);
+                            if (!resolvedImageFile) {
+                                emitWarning(`[loadXmlCoordinates] Could not resolve image "${imageFile}" for view object "${name}"`);
+                                continue;
                             }
-
-                            if (!resolvedImageFile) continue;
 
                             viewObjects.push({
                                 name,
@@ -1027,28 +1029,12 @@ async function loadXmlCoordinates() {
 
                         switch (el.tagName) {
                             case 'backgroundImage': {
-                                // Resolve to show-folder-relative path (same as OBJ/image files)
-                                let resolved: string | undefined;
-                                if (!path.isAbsolute(val)) {
-                                    resolved = val.replace(/\\/g, '/');
-                                } else if (showFolder) {
-                                    const resolvedShow = path.resolve(showFolder);
-                                    const resolvedFile = path.resolve(val);
-                                    if (resolvedFile.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase())
-                                        || resolvedFile.toLowerCase() === resolvedShow.toLowerCase()) {
-                                        resolved = path.relative(resolvedShow, resolvedFile).replace(/\\/g, '/');
-                                    } else {
-                                        const basename = path.basename(val);
-                                        const found = await findFileInShowFolder(path.resolve(showFolder), basename);
-                                        if (found) {
-                                            resolved = found;
-                                            emitInfo(`[loadXmlCoordinates] Resolved backgroundImage "${val}" → "${found}" via search`);
-                                        } else {
-                                            emitWarning(`[loadXmlCoordinates] Could not find backgroundImage "${basename}" in show folder`);
-                                        }
-                                    }
+                                const resolved = resolveFilePathFromIndex(val, resolvedShow, fileIndex);
+                                if (resolved) {
+                                    layoutSettings.backgroundImage = resolved;
+                                } else {
+                                    emitWarning(`[loadXmlCoordinates] Could not resolve backgroundImage "${val}"`);
                                 }
-                                if (resolved) layoutSettings.backgroundImage = resolved;
                                 break;
                             }
                             case 'backgroundBrightness':
