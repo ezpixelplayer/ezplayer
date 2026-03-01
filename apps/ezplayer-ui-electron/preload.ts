@@ -1,6 +1,7 @@
 import type {
     AudioChunk,
     AudioDevice,
+    AutoUpdateStatus,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -169,6 +170,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onPStatusUpdated: (callback: (data: PlayerPStatusContent) => void) => {
         ipcRenderer.on('playback:pstatus', (_event: any, data: PlayerPStatusContent) => {
             callback(data);
+        });
+    },
+
+    // Auto-update
+    checkForUpdates: () => ipcRenderer.invoke('autoupdate:check'),
+    downloadUpdate: () => ipcRenderer.invoke('autoupdate:download'),
+    installUpdateNow: () => ipcRenderer.invoke('autoupdate:install-now'),
+    installUpdateOnQuit: () => ipcRenderer.invoke('autoupdate:install-on-quit'),
+    onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => {
+        ipcRenderer.on('update:autoupdate-status', (_event: any, status: AutoUpdateStatus) => {
+            callback(status);
         });
     },
 } satisfies EZPElectronAPI);

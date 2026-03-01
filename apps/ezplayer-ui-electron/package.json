@@ -125,6 +125,7 @@
         "crc-32": "^1.2.2",
         "debug": "^4.4.3",
         "electron-store": "^10.1.0",
+        "electron-updater": "^6.3.9",
         "i18next": "^23.16.8",
         "koa": "^3.1.1",
         "koa-static": "^5.0.0",

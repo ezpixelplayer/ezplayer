@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
+import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
 import { getWebPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
@@ -251,6 +252,10 @@ app.whenReady().then(async () => {
 
     await registerContentHandlers(mainWindow, audioWindow, playWorker);
 
+    if (app.isPackaged) {
+        registerAutoUpdateHandlers(mainWindow!);
+    }
+
     // Start web server / WebSocket in worker thread
     try {
         await setUpServerWorker({
@@ -267,6 +272,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', async () => {
+    cleanupAutoUpdate();
     await shutdownServerWorker();
     await closeShowFolder();
 });

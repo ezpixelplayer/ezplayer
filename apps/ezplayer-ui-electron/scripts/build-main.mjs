@@ -39,6 +39,7 @@ const nodeExternals = [
     'form-data',
     'electron',
     'electron-store',
+    'electron-updater',
     'proper-lockfile',
     'url',
     'follow-redirects',
