@@ -7,6 +7,8 @@ export interface UseFrameBufferOptions {
     pollIntervalMs?: number;
     enabled?: boolean;
     compressed?: boolean;
+    /** Change this value to force-restart the poll loop (e.g. on show folder change). */
+    resetKey?: string | number;
 }
 
 export interface UseFrameBufferResult {
@@ -17,7 +19,7 @@ const DEFAULT_POLL_INTERVAL = 16; // Target ~60fps, actual rate limited by netwo
 const DEFAULT_SLOT_COUNT = 4;
 
 export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferResult {
-    const { baseUrl, pollIntervalMs = DEFAULT_POLL_INTERVAL, enabled = true, compressed = false } = options;
+    const { baseUrl, pollIntervalMs = DEFAULT_POLL_INTERVAL, enabled = true, compressed = false, resetKey } = options;
 
     // Buffer reference - only set once when created
     const [buffer, setBuffer] = useState<LatestFrameRingBuffer | undefined>();
@@ -33,12 +35,9 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
     const zstdReadyRef = useRef(false);
     // Reusable decode output buffer - grows as needed, avoids per-frame allocation
     const decodeBufferRef = useRef<Uint8Array | undefined>(undefined);
-    
-    // Track consecutive errors to stop polling on persistent failures
+
+    // Track consecutive errors for backoff scaling and log spam prevention
     const consecutiveErrorsRef = useRef(0);
-    const lastErrorTimeRef = useRef(0);
-    const MAX_CONSECUTIVE_ERRORS = 5; // Stop after 5 consecutive 404s
-    const ERROR_RESET_INTERVAL = 5000; // Reset error count after 5 seconds of success
 
     useEffect(() => {
         if (!baseUrl || !enabled) {
@@ -46,7 +45,15 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
             return;
         }
 
+        // Reset all mutable state so a fresh poll loop starts clean.
+        // This is critical when resetKey changes (e.g. show folder switch) —
+        // the previous loop may have stopped due to errors.
         shouldStopRef.current = false;
+        consecutiveErrorsRef.current = 0;
+        bufferRef.current = undefined;
+        ringRef.current = undefined;
+        frameSizeRef.current = 0;
+        setBuffer(undefined);
 
         // Initialize ZSTD decoder if compressed mode requested
         if (compressed && !zstdDecoderRef.current) {
@@ -67,48 +74,46 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
 
                     if (shouldStopRef.current) return;
 
-                    // Handle 404 errors - stop polling if endpoint doesn't exist
+                    // Handle 404 errors — back off but keep trying
                     if (response.status === 404) {
                         consecutiveErrorsRef.current++;
                         if (consecutiveErrorsRef.current === 1) {
-                            // Only log once to avoid spam
-                            console.warn(`[useFrameBuffer] Endpoint not found: ${baseUrl}${endpoint}. This is normal if the server isn't running or frame data isn't available.`);
+                            console.warn(`[useFrameBuffer] Endpoint not found: ${baseUrl}${endpoint}. Will keep retrying.`);
                         }
-                        if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-                            console.warn(`[useFrameBuffer] Stopping polling after ${MAX_CONSECUTIVE_ERRORS} consecutive 404 errors. The endpoint ${baseUrl}${endpoint} is not available.`);
-                            shouldStopRef.current = true;
-                            return;
-                        }
-                        // Use longer interval for 404s to reduce spam
-                        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs * 10));
+                        // Back off progressively: 160ms, 320ms, … up to ~5s
+                        const backoff = Math.min(pollIntervalMs * 10 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)), 5000);
+                        await new Promise((resolve) => setTimeout(resolve, backoff));
                         continue;
                     }
 
                     if (response.status === 204) {
-                        // No data available - reset error count on successful connection
+                        // No data available — server frame buffer is empty (e.g. show
+                        // folder just changed).  Clear local buffer so viewers stop
+                        // rendering stale data.  A new buffer will be created once
+                        // the server starts returning frames again.
                         consecutiveErrorsRef.current = 0;
+                        if (bufferRef.current) {
+                            bufferRef.current = undefined;
+                            ringRef.current = undefined;
+                            frameSizeRef.current = 0;
+                            setBuffer(undefined);
+                        }
                         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
                         continue;
                     }
 
                     if (!response.ok) {
-                        // Other errors - log and continue with backoff
                         consecutiveErrorsRef.current++;
                         if (consecutiveErrorsRef.current <= 3) {
                             console.warn(`[useFrameBuffer] Error fetching frames: ${response.status} ${response.statusText}`);
                         }
-                        if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-                            console.warn(`[useFrameBuffer] Stopping polling after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`);
-                            shouldStopRef.current = true;
-                            return;
-                        }
-                        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs * 5));
+                        const backoff = Math.min(pollIntervalMs * 5 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)), 5000);
+                        await new Promise((resolve) => setTimeout(resolve, backoff));
                         continue;
                     }
 
                     // Success - reset error count
                     consecutiveErrorsRef.current = 0;
-                    lastErrorTimeRef.current = Date.now();
 
                     const data = await response.arrayBuffer();
                     if (data.byteLength < 8) {
@@ -151,18 +156,12 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
                     // Write frame data to ring buffer - Viewer3D reads from here
                     ringRef.current?.publishFrom(frameData);
                 } catch (error) {
-                    // Network errors or other exceptions
                     consecutiveErrorsRef.current++;
                     if (consecutiveErrorsRef.current <= 3) {
                         console.warn(`[useFrameBuffer] Network error:`, error instanceof Error ? error.message : String(error));
                     }
-                    if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-                        console.warn(`[useFrameBuffer] Stopping polling after ${MAX_CONSECUTIVE_ERRORS} consecutive network errors.`);
-                        shouldStopRef.current = true;
-                        return;
-                    }
-                    // Use longer interval for network errors
-                    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs * 5));
+                    const backoff = Math.min(pollIntervalMs * 5 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)), 5000);
+                    await new Promise((resolve) => setTimeout(resolve, backoff));
                     continue;
                 }
 
@@ -175,7 +174,7 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
         return () => {
             shouldStopRef.current = true;
         };
-    }, [baseUrl, enabled, pollIntervalMs, compressed]);
+    }, [baseUrl, enabled, pollIntervalMs, compressed, resetKey]);
 
     return { buffer };
 }

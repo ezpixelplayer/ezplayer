@@ -154,6 +154,13 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'broadcast') {
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
+    } else if (msg.type === 'clearShowData') {
+        // Show folder changed — clear all cached data so stale data is never served
+        cachedModelCoordinates3D = {};
+        cachedModelCoordinates2D = {};
+        cachedViewObjects = [];
+        cachedLayoutSettings = {};
+        curFrameBuffer = undefined;
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
         cachedModelCoordinates2D = msg.coords2D;

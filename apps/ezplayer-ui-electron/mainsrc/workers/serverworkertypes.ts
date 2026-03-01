@@ -30,6 +30,7 @@ export type MainToServerWorkerMessage =
           viewObjects?: Array<ViewObject>;
           layoutSettings?: LayoutSettings;
       }
+    | { type: 'clearShowData' }
     | { type: 'shutdown' };
 
 /**

@@ -46,7 +46,7 @@ import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMess
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
-import { updateFrameBuffer, broadcastToWebSocket, pushModelCoordinates } from './server-worker-manager.js';
+import { updateFrameBuffer, broadcastToWebSocket, pushModelCoordinates, clearShowData } from './server-worker-manager.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -153,6 +153,12 @@ export async function loadShowFolder() {
     if (!showFolder) {
         return;
     }
+
+    // Immediately clear cached show data in the server worker so stale
+    // model coordinates, view objects, layout settings, and frame buffers
+    // from the previous show folder are never served to the frontend.
+    clearShowData();
+
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);

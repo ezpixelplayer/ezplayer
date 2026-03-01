@@ -109,17 +109,36 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         detectUrl();
     }, [frameServerUrl]);
 
-    // Frame buffer for live pixel data from server
+    // Frame buffer for live pixel data from server.
+    // resetKey forces the poll loop to restart when the show folder changes
+    // (clearing stale buffers and resetting error counters).
     const { buffer: livePixelBuffer } = useFrameBuffer({
         baseUrl: effectiveFrameServerUrl,
         enabled: !!effectiveFrameServerUrl,
         compressed,
+        resetKey: showDirectory,
     });
 
     // Update livePixels when the frame buffer changes
     useEffect(() => {
         setLivePixels(livePixelBuffer);
     }, [livePixelBuffer]);
+
+    // Clear stale state immediately when show folder changes so old data
+    // is never rendered with new frame buffers (or vice versa).
+    const prevShowDirRef = React.useRef(showDirectory);
+    useEffect(() => {
+        if (prevShowDirRef.current !== showDirectory) {
+            prevShowDirRef.current = showDirectory;
+            setModelData(null);
+            setModelData2D(null);
+            setViewObjects([]);
+            setLayoutSettings({});
+            setLivePixels(undefined);
+            setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
+            setSelectedModelNames(new Set<string>());
+        }
+    }, [showDirectory]);
 
     // Load model from XML coordinates if available (Electron environment or HTTP API)
     useEffect(() => {
@@ -130,10 +149,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             return;
         }
 
-        // Try to load from API
-        const loadFromXml = async () => {
-            setLoading(true);
-            setError(null);
+        let cancelled = false;
+
+        // Try to load from API, with retry when server returns empty data
+        // (the playback worker may still be parsing the new show's XML)
+        const fetchShowData = async (attempt: number): Promise<boolean> => {
+            if (cancelled) return false;
 
             try {
                 let xmlCoords: Record<string, GetNodeResult> | null = null;
@@ -148,6 +169,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     } catch (fetchErr) {
                         console.error('[Preview3D] Failed to fetch model coordinates via HTTP:', fetchErr);
                     }
+
+                    if (cancelled) return false;
 
                     // Also fetch view objects (meshes like house models)
                     try {
@@ -195,20 +218,42 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     if (convertedData.points.length > 0) {
                         setModelData(convertedData);
                         setLoading(false);
-                        return;
+                        return true; // success
                     }
                 }
             } catch (err) {
                 console.error('[Preview3D] Error loading model coordinates:', err);
-                // Silently handle errors - empty state will be shown
             }
 
-            // No XML data available
-            setModelData(null);
-            setLoading(false);
+            return false; // no data yet
+        };
+
+        const loadFromXml = async () => {
+            setLoading(true);
+            setError(null);
+
+            // Poll until data arrives.  On a show folder change the server
+            // worker cache is cleared immediately while the playback worker
+            // re-parses the new layout XML, so the first fetches return
+            // empty data.  We keep polling with exponential back-off
+            // (500ms → 1s → 2s → 4s, capped at 4s) until the server has
+            // the new data ready.
+            let delay = 0;
+            for (;;) {
+                if (cancelled) return;
+                if (delay > 0) {
+                    await new Promise((r) => setTimeout(r, delay));
+                    if (cancelled) return;
+                }
+                const success = await fetchShowData(0);
+                if (success || cancelled) return;
+                // Exponential back-off: 500, 1000, 2000, 4000, 4000, …
+                delay = delay === 0 ? 500 : Math.min(delay * 2, 4000);
+            }
         };
 
         loadFromXml();
+        return () => { cancelled = true; };
     }, [initialModelData, showDirectory, effectiveFrameServerUrl]);
 
     // Handle item selection - detect model from point metadata and select entire model

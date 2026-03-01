@@ -300,6 +300,19 @@ export function broadcastToWebSocket(key: string, value: unknown) {
 }
 
 /**
+ * Clear all cached show data in the server worker.
+ * Called when the show folder changes so stale data is never served.
+ */
+export function clearShowData() {
+    if (!serverWorker) return;
+
+    const message: MainToServerWorkerMessage = {
+        type: 'clearShowData',
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
  * Push model coordinates to server worker cache
  */
 export function pushModelCoordinates(
