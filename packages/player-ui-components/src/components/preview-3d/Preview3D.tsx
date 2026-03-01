@@ -16,6 +16,8 @@ import View3DIcon from '@mui/icons-material/ViewInAr';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
 import ListIcon from '@mui/icons-material/List';
 import CloseIcon from '@mui/icons-material/Close';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
@@ -23,6 +25,8 @@ import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
+import { useAudioStream } from '../../hooks/useAudioStream';
+import { isElectron } from '@ezplayer/shared-ui-components';
 import type { RootState } from '../../store/Store';
 
 export type ViewMode = '3d' | '2d';
@@ -117,6 +121,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         enabled: !!effectiveFrameServerUrl,
         compressed,
         resetKey: showDirectory,
+    });
+
+    // Audio stream for web client (not used in Electron — it has its own audio window)
+    const { audioEnabled, toggleAudio } = useAudioStream({
+        baseUrl: effectiveFrameServerUrl,
     });
 
     // Update livePixels when the frame buffer changes
@@ -640,6 +649,17 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontStyle: 'italic' }}>
                                 {modelData.name}
                             </Typography>
+                        )}
+                        {!isElectron() && (
+                            <Tooltip title={audioEnabled ? 'Mute audio' : 'Play audio'}>
+                                <IconButton
+                                    size="small"
+                                    onClick={toggleAudio}
+                                    color={audioEnabled ? 'primary' : 'default'}
+                                >
+                                    {audioEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                                </IconButton>
+                            </Tooltip>
                         )}
                         {showList && (
                             <Tooltip title={showItemList ? 'Hide model library' : 'Show model library'}>

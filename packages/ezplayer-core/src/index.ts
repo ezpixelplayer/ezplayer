@@ -71,3 +71,8 @@ export {
     type FrameBufferReadResult,
     LatestFrameRingBuffer
 } from './util/FrameRingBuffer';
+
+export {
+    type AudioChunkReadResult,
+    AudioChunkRingBuffer
+} from './util/AudioChunkRingBuffer';

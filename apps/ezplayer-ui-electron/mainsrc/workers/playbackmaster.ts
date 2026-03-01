@@ -31,6 +31,7 @@ import type {
     EZPlayerCommand,
 } from '@ezplayer/ezplayer-core';
 import {
+    AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
     getActiveVolumeSchedule,
     LatestFrameRingBuffer,
@@ -1071,6 +1072,34 @@ async function loadXmlCoordinates() {
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
 let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
 
+let audioExportBuffer: SharedArrayBuffer | undefined = undefined;
+let audioExportRing: AudioChunkRingBuffer | undefined = undefined;
+
+/** Publish to the ring buffer (for web clients) then send via IPC (for Electron audio window). */
+function sendAudioChunk(
+    samples: Float32Array,
+    playAtRealTime: number,
+    incarnation: number,
+    sampleRate: number,
+    channels: number,
+) {
+    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels);
+    const buf = samples.buffer as ArrayBuffer;
+    send(
+        {
+            type: 'audioChunk',
+            chunk: {
+                sampleRate,
+                channels,
+                buffer: buf,
+                playAtRealTime,
+                incarnation,
+            },
+        },
+        [buf],
+    );
+}
+
 ////////
 // Actual logic loops
 ////////
@@ -1151,6 +1180,11 @@ async function processQueue() {
         });
         sender.exportBuffer = frameExportRing;
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
+
+        // Allocate audio ring buffer: 50 slots × 12000 max samples ≈ 2.3 MB
+        audioExportBuffer = AudioChunkRingBuffer.allocate(50, 12000);
+        audioExportRing = new AudioChunkRingBuffer(audioExportBuffer, true);
+        send({ type: 'audiobuffer', buffer: audioExportBuffer });
     } catch (e) {
         const err = e as Error;
         emitError(`[processQueue] CRITICAL ERROR in processQueue: ${err.message}`);
@@ -1440,19 +1474,7 @@ async function processQueue() {
                 }
                 ms = Math.ceil(ms);
                 const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
-                send(
-                    {
-                        type: 'audioChunk',
-                        chunk: {
-                            sampleRate: 48000,
-                            channels: 1,
-                            buffer: quiet.buffer,
-                            playAtRealTime: startTime,
-                            incarnation: curAudioSyncNum,
-                        },
-                    },
-                    [quiet.buffer],
-                );
+                sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1);
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -1537,19 +1559,7 @@ async function processQueue() {
                             );
 
                             if (audioPlayerRunTime >= targetFrameRTC) {
-                                send(
-                                    {
-                                        type: 'audioChunk',
-                                        chunk: {
-                                            sampleRate: audio.sampleRate,
-                                            channels,
-                                            buffer: chunk.buffer,
-                                            playAtRealTime,
-                                            incarnation: curAudioSyncNum,
-                                        },
-                                    },
-                                    [chunk.buffer],
-                                );
+                                sendAudioChunk(chunk, playAtRealTime, curAudioSyncNum, audio.sampleRate, channels);
                             } else {
                                 ++playbackStats.skippedAudioChunksCumulative;
                             }

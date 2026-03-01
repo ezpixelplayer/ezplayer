@@ -22,6 +22,7 @@ export type MainToServerWorkerMessage =
     | { type: 'init'; data: ServerWorkerData }
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
+    | { type: 'updateAudioBuffer'; buffer: SharedArrayBuffer }
     | { type: 'broadcast'; key: string; value: unknown }
     | {
           type: 'pushModelCoordinates';

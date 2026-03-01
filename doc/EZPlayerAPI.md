@@ -2,7 +2,7 @@
 
 ## Koa Server REST APIs
 
-### 1. GET /api/hello
+### GET /api/hello
 
 Health check endpoint. Simple endpoint to verify the server is running.
 
@@ -24,7 +24,7 @@ Health check endpoint. Simple endpoint to verify the server is running.
 
 ---
 
-### 2. GET /api/current-show
+### GET /api/current-show
 
 Get current show data. Returns the complete current show state, including sequences, playlists, schedules, user info, and status.
 
@@ -54,7 +54,7 @@ Get current show data. Returns the complete current show state, including sequen
 
 ---
 
-### 3. GET /api/getimage/:sequenceId
+### GET /api/getimage/:sequenceId
 
 Get sequence thumbnail image. Serves thumbnail images for sequences by sequence ID. Supports multiple image formats (PNG, JPG, JPEG, GIF, WEBP, SVG, ICO, BMP).
 
@@ -94,7 +94,7 @@ GET /api/getimage/seq-123-abc
 
 ---
 
-### 4. POST /api/player-command
+### POST /api/player-command
 
 Send player command. Sends a command to control player playback, volume, or request playback of songs/playlists.
 
@@ -202,7 +202,7 @@ Set volume:
 
 ---
 
-### 5. POST /api/playlists
+### POST /api/playlists
 
 Update playlists. Accepts an array of playlist records. Updates `updatedAt` timestamp automatically.
 
@@ -264,7 +264,7 @@ Note: The response includes only non-deleted playlists (`deleted !== true`).
 
 ---
 
-### 6. POST /api/schedules
+### POST /api/schedules
 
 Update schedules. Accepts an array of scheduled playlist records. Updates `updatedAt` timestamp automatically.
 
@@ -325,7 +325,7 @@ Note: The response includes only non-deleted schedules (`deleted !== true`).
 
 ---
 
-### 7. POST /api/playback-settings
+### POST /api/playback-settings
 
 Update playback settings. Updates playback configuration settings including audio sync, background sequence mode, viewer control, and volume control.
 
@@ -387,7 +387,7 @@ Update playback settings. Updates playback configuration settings including audi
 
 ---
 
-### 8. GET /api/model-coordinates
+### GET /api/model-coordinates
 
 Get model coordinates for 3D preview. Returns coordinate data used to render the 3D light layout preview.
 
@@ -411,7 +411,7 @@ Get model coordinates for 3D preview. Returns coordinate data used to render the
 
 ---
 
-### 9. GET /api/model-coordinates-2d
+### GET /api/model-coordinates-2d
 
 Get model coordinates for 2D preview. Returns coordinate data used to render the 2D light layout preview.
 
@@ -435,7 +435,7 @@ Get model coordinates for 2D preview. Returns coordinate data used to render the
 
 ---
 
-### 10. GET /api/frames
+### GET /api/frames
 
 Get binary frame data for the live 3D viewer. Returns the latest frame of light channel data as a binary `application/octet-stream` response.
 
@@ -465,7 +465,7 @@ Get binary frame data for the live 3D viewer. Returns the latest frame of light 
 
 ---
 
-### 11. GET /api/frames-zstd
+### GET /api/frames-zstd
 
 Get ZSTD-compressed binary frame data for the live 3D viewer. Same semantics as `/api/frames` but the frame payload is compressed with ZSTD at level 1 (fastest). Useful for remote/embedded clients on bandwidth-constrained links.
 
@@ -498,7 +498,111 @@ The 8-byte header is **not** compressed. Decompress the payload starting at offs
 
 ---
 
-### 12. GET /api/view-objects
+### GET /api/time
+
+Server clock for client clock-offset estimation. Returns the server's current `Date.now()` value. Clients can measure the round-trip time of this request and compute the offset between their local clock and the server's clock, enabling accurate audio scheduling on remote devices.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK
+- Body:
+
+```json
+{
+    "now": 1704067200000
+}
+```
+
+**Response Headers:**
+
+- `Cache-Control: no-store`
+- `Access-Control-Allow-Origin: *`
+
+**Clock Offset Estimation:**
+
+The recommended approach is to take several samples and trust the one with the lowest round-trip time (it had the least scheduling noise, making the "halfway" assumption most accurate). Discard any sample with RTT > 100ms.
+
+```javascript
+const t0 = Date.now();
+const res = await fetch('/api/time');
+const t1 = Date.now();
+const { now: serverNow } = await res.json();
+const rtt = t1 - t0;
+const clockOffset = serverNow - (t0 + rtt / 2);
+// To convert server timestamps to local time: localTime = serverTime - clockOffset
+```
+
+---
+
+### GET /api/audio
+
+Get binary audio chunk data for web client audio streaming. Returns all audio chunks published since a given sequence number. Used by the web UI to stream audio from the player in sync with the live pixel data.
+
+**Request:**
+
+- Method: GET
+- Query Parameters:
+    - `afterSeq` (number, optional) - Return chunks after this sequence number. Defaults to 0. Use the `latestSeq` from the previous response.
+
+**Response:**
+
+- Status: 200 OK - Binary audio data (`application/octet-stream`)
+- Status: 204 No Content - No audio buffer available or no new chunks since `afterSeq`
+
+**Response Binary Format:**
+
+The response is a binary `application/octet-stream` with the following layout:
+
+**Header (8 bytes):**
+
+| Offset | Size    | Type      | Description                          |
+| ------ | ------- | --------- | ------------------------------------ |
+| 0      | 4 bytes | uint32 LE | Chunk count                          |
+| 4      | 4 bytes | uint32 LE | Latest sequence number (use as next `afterSeq`) |
+
+**Per-chunk (repeated `chunkCount` times):**
+
+| Offset | Size             | Type      | Description                                  |
+| ------ | ---------------- | --------- | -------------------------------------------- |
+| 0      | 8 bytes          | float64 LE | `playAtRealTime` - server wall-clock time (ms) when chunk should play |
+| 8      | 4 bytes          | uint32 LE | `incarnation` - increments on song/segment boundaries |
+| 12     | 4 bytes          | uint32 LE | `sampleRate` - e.g. 48000                    |
+| 16     | 4 bytes          | uint32 LE | `channels` - number of audio channels        |
+| 20     | 4 bytes          | uint32 LE | `sampleCount` - total number of Float32 samples (all channels interleaved) |
+| 24     | sampleCount × 4  | Float32 LE | Interleaved audio sample data                |
+
+**Response Headers:**
+
+- `Cache-Control: no-store`
+- `Content-Type: application/octet-stream`
+- `Access-Control-Allow-Origin: *`
+
+**Notes:**
+
+- `playAtRealTime` is a server-side `Date.now()` timestamp. Remote clients should use the `/api/time` endpoint to estimate clock offset and adjust accordingly.
+- `incarnation` changes when a new song or audio segment begins. Clients should reset their audio scheduling state when incarnation changes.
+- Audio samples are interleaved: for stereo, the pattern is `[L0, R0, L1, R1, ...]`. Clients must deinterleave into per-channel buffers for Web Audio API playback.
+- The ring buffer holds approximately 5 seconds of audio. If a client falls behind, the oldest chunks are silently lost. The response will include chunks starting from the oldest still available.
+- Polling at ~50ms intervals is recommended for smooth playback.
+
+**Example (curl):**
+
+```bash
+# First request - get all available chunks
+curl http://localhost:3000/api/audio?afterSeq=0 --output audio.bin
+
+# Subsequent requests - only get new chunks
+curl http://localhost:3000/api/audio?afterSeq=42 --output audio.bin
+```
+
+---
+
+### GET /api/view-objects
 
 Get view objects for the 3D preview. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
 
@@ -541,7 +645,7 @@ Get view objects for the 3D preview. Returns the list of view objects (meshes an
 
 ---
 
-### 13. GET /api/show-file
+### GET /api/show-file
 
 Serve a file from the current show folder. Used by the 3D viewer to load OBJ models, MTL materials, and texture images. Only accepts show-folder-relative paths and a restricted set of file extensions for security.
 
@@ -586,7 +690,7 @@ GET /api/show-file?path=HouseModel/texture_1001.png
 
 ---
 
-### 14. GET /api/layout-settings
+### GET /api/layout-settings
 
 Returns layout-level settings parsed from the xLights `<settings>` element in `xlights_rgbeffects.xml`. Includes background image path, brightness, and preview canvas dimensions.
 
@@ -612,7 +716,7 @@ All fields are optional — the object may be empty if no settings are present i
 
 ---
 
-### 15. GET /api/debug-show-folder
+### GET /api/debug-show-folder
 
 Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
 
@@ -636,7 +740,7 @@ Diagnostic endpoint. Returns the current show folder path and a dump of all cach
 
 ---
 
-### 16. /proxy/\<target-url\>
+### /proxy/\<target-url\>
 
 HTTP and WebSocket proxy for multi-NIC bridging. Forwards requests to a target URL extracted from the path. Allows the browser-based UI to reach devices on networks that are only reachable from the server host (e.g., a light controller on a dedicated NIC).
 
@@ -670,7 +774,6 @@ WS   /proxy/ws://192.168.1.50:9090/ws
 - Status: 400 Bad Request - Invalid or missing target URL in path
 
 ---
-
 ## WebSocket API
 
 ### Connection
@@ -688,7 +791,7 @@ WS   /proxy/ws://192.168.1.50:9090/ws
 
 ### Server-to-Client Messages
 
-#### 1. snapshot
+#### snapshot
 
 State update broadcast. Broadcasts player state updates. Contains version numbers for each state key and partial state data.
 
@@ -765,7 +868,7 @@ State update broadcast. Broadcasts player state updates. Contains version number
 - Multiple updates to the same key are coalesced (latest wins)
 - Client receives full snapshot on initial connection
 
-#### 2. ping
+#### ping
 
 Heartbeat ping. Server sends ping every 5 seconds to check connection health. Client must respond with pong.
 
@@ -782,7 +885,7 @@ Client must send a `pong` message with the same `now` value within 15 seconds.
 
 Timeout: If no pong received within 15 seconds, server disconnects with a `kick` message.
 
-#### 3. kick
+#### kick
 
 Server-initiated disconnection. Server sends this before disconnecting a client. Reasons include heartbeat timeout or excessive buffering.
 
@@ -807,7 +910,7 @@ After sending kick, the server closes the connection.
 
 ### Client-to-Server Messages
 
-#### 1. pong
+#### pong
 
 Response to server ping. Client must respond to server ping messages to maintain the connection.
 
@@ -826,7 +929,7 @@ Response to server ping. Client must respond to server ping messages to maintain
 - Must use the same `now` value from the ping message
 - Failure to respond results in disconnection
 
-#### 2. subscribe (defined but not yet implemented)
+#### subscribe (defined but not yet implemented)
 
 > **Note:** The `subscribe` message type is defined in the TypeScript types (`PlayerClientWebSocketMessage`) but the server does not currently process it. All clients receive updates for all state keys. This may be implemented in a future release.
 

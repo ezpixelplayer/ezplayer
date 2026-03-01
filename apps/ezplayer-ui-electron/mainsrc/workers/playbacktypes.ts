@@ -103,5 +103,6 @@ export type WorkerToMainMessage =
           viewObjects?: Array<ViewObject>;
           layoutSettings?: LayoutSettings;
       }
+    | { type: 'audiobuffer'; buffer: SharedArrayBuffer }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };
