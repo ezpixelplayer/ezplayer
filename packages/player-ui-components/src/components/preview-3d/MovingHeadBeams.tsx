@@ -15,7 +15,7 @@
  *   - mesh.position = beamOrigin + beamDirection * (coneLength / 2).
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
@@ -34,6 +34,26 @@ const _yAxis = new THREE.Vector3(0, 1, 0);
 const _negDir = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 
+// Beam cone shader — fades alpha from full at the tip (vY = +0.5, near fixture)
+// to zero at the base (vY = -0.5, far end), matching xLights' beam_color_end.alpha=0.
+const BEAM_VERT = `
+    varying float vY;
+    void main() {
+        vY = position.y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+const BEAM_FRAG = `
+    uniform vec3 uColor;
+    uniform float uOpacity;
+    varying float vY;
+    void main() {
+        // vY: +0.5 at tip (head), -0.5 at base (far end).
+        float alpha = clamp((vY + 0.5) * uOpacity, 0.0, uOpacity);
+        gl_FragColor = vec4(uColor, alpha);
+    }
+`;
+
 // ============================================================================
 // Single fixture renderer
 // ============================================================================
@@ -45,11 +65,18 @@ interface MovingHeadFixtureProps {
 
 function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
     const beamMeshRef = useRef<THREE.Mesh>(null);
-    const beamMatRef = useRef<THREE.MeshBasicMaterial>(null);
+    const beamMatRef = useRef<THREE.ShaderMaterial>(null);
     const dirMeshRef = useRef<THREE.Mesh>(null);
     const lastSeqRef = useRef<number>(0);
     const hasLoggedRef = useRef<boolean>(false);
     const hasLoggedLitRef = useRef<boolean>(false);
+
+    // Uniforms are memoized so the same object is mutated imperatively in useFrame
+    // rather than replaced on each render.
+    const beamUniforms = useMemo(() => ({
+        uColor: { value: new THREE.Color(1, 1, 1) },
+        uOpacity: { value: 0.6 },
+    }), []);
 
     const { worldPosX, worldPosY, worldPosZ } = fixture.worldTransform;
 
@@ -58,18 +85,23 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
         const dirMesh = dirMeshRef.current;
         if (!mesh) return;
 
-        // Default: hide beam cone (direction arrow handled below)
-        mesh.visible = false;
-
         if (!liveData) {
+            // No data source — hide everything and stay hidden.
+            mesh.visible = false;
             if (dirMesh) dirMesh.visible = false;
             return;
         }
 
-        // Skip if no new frame has arrived since last check
+        // Skip if no new frame has arrived — leave mesh state from last update as-is.
+        // Resetting visibility here would cause the beam to disappear on every render
+        // frame that doesn't coincide with a new sequence frame (e.g. 60fps render
+        // vs 40fps sequence = beam hidden every other render frame → flicker).
         const latest = liveData.tryReadLatest(lastSeqRef.current);
         if (!latest) return;
         lastSeqRef.current = latest.seq;
+
+        // New frame arrived: reset beam visibility, then restore below if appropriate.
+        mesh.visible = false;
 
         // Extract this fixture's DMX channels from the full frame buffer
         const { channelOffset, numChannels, definition, beamParams, worldTransform } = fixture;
@@ -169,12 +201,12 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
         const mat = beamMatRef.current;
         if (mat) {
             const w = state.w;
-            mat.color.setRGB(
+            mat.uniforms.uColor.value.setRGB(
                 Math.min(255, r + w) / 255,
                 Math.min(255, g + w) / 255,
                 Math.min(255, b + w) / 255,
             );
-            mat.opacity = Math.max(0.15, Math.min(0.85, dimmer * 0.8));
+            mat.uniforms.uOpacity.value = Math.max(0.15, Math.min(0.85, dimmer * 0.8));
         }
 
         mesh.visible = true;
@@ -189,7 +221,7 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
             </mesh>
 
             {/* Direction arrow — small cone showing current beam aim */}
-            <mesh ref={dirMeshRef} visible={false}>
+            <mesh ref={dirMeshRef} visible={false} frustumCulled={false}>
                 <coneGeometry args={[ARROW_RADIUS, ARROW_LENGTH, 8]} />
                 <meshBasicMaterial
                     color="#ffee44"
@@ -197,20 +229,24 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
                     opacity={0.75}
                     side={THREE.DoubleSide}
                     depthWrite={false}
+                    depthTest={false}
                 />
             </mesh>
 
-            {/* Beam cone — unit geometry, sized/positioned/oriented each frame */}
-            <mesh ref={beamMeshRef} visible={false}>
+            {/* Beam cone — unit geometry, sized/positioned/oriented each frame.
+                ShaderMaterial fades alpha from full at the tip to zero at the base. */}
+            <mesh ref={beamMeshRef} visible={false} frustumCulled={false}>
                 <coneGeometry args={[1, 1, 24]} />
-                <meshBasicMaterial
+                <shaderMaterial
                     ref={beamMatRef}
-                    color="white"
+                    uniforms={beamUniforms}
+                    vertexShader={BEAM_VERT}
+                    fragmentShader={BEAM_FRAG}
                     transparent={true}
-                    opacity={0.6}
                     side={THREE.DoubleSide}
                     blending={THREE.AdditiveBlending}
                     depthWrite={false}
+                    depthTest={false}
                 />
             </mesh>
         </group>

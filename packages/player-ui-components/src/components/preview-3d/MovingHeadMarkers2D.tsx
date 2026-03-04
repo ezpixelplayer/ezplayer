@@ -152,7 +152,7 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
             </mesh>
 
             {/* Direction indicator — thin yellow rectangle, always tracks beam aim */}
-            <mesh ref={indicatorRef} visible={false}>
+            <mesh ref={indicatorRef} visible={false} frustumCulled={false}>
                 <planeGeometry args={[INDICATOR_WIDTH, INDICATOR_LENGTH]} />
                 <meshBasicMaterial
                     color="#ffee44"
@@ -160,11 +160,12 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
                     opacity={0.7}
                     side={THREE.DoubleSide}
                     depthWrite={false}
+                    depthTest={false}
                 />
             </mesh>
 
             {/* Beam — wider colored rectangle, length = world beam length projected to plane */}
-            <mesh ref={beamMeshRef} visible={false}>
+            <mesh ref={beamMeshRef} visible={false} frustumCulled={false}>
                 <planeGeometry args={[BEAM_WIDTH, 1]} />
                 <meshBasicMaterial
                     ref={beamMatRef}
@@ -174,6 +175,7 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
                     side={THREE.DoubleSide}
                     blending={THREE.AdditiveBlending}
                     depthWrite={false}
+                    depthTest={false}
                 />
             </mesh>
         </group>
