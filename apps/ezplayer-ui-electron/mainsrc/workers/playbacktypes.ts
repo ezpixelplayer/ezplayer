@@ -1,4 +1,5 @@
-import { GetNodeResult } from 'xllayoutcalcs';
+import { GetNodeResult, type MhFixtureInfo } from 'xllayoutcalcs';
+export type { MhFixtureInfo };
 import type { RPCRequest, RPCResponse } from './rpctypes';
 import type {
     AudioChunk,
@@ -102,6 +103,7 @@ export type WorkerToMainMessage =
           coords2D: Record<string, GetNodeResult>;
           viewObjects?: Array<ViewObject>;
           layoutSettings?: LayoutSettings;
+          movingHeads?: Array<MhFixtureInfo>;
       }
     | { type: 'audiobuffer'; buffer: SharedArrayBuffer }
     | { type: 'rpc'; rpc: RPCRequest }

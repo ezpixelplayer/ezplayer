@@ -23,6 +23,7 @@ import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
+import type { MhFixtureInfo } from 'xllayoutcalcs';
 import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import { useAudioStream } from '../../hooks/useAudioStream';
@@ -63,6 +64,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [viewObjects, setViewObjects] = useState<ViewObject[]>([]);
     const [layoutSettings, setLayoutSettings] = useState<LayoutSettings>({});
+    const [movingHeadFixtures, setMovingHeadFixtures] = useState<MhFixtureInfo[]>([]);
     // This is the selection state of the 2D/3D view
     const [selectionState, setSelectionState] = useState<SelectionState>({
         selectedIds: new Set<string>(),
@@ -143,6 +145,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setModelData2D(null);
             setViewObjects([]);
             setLayoutSettings({});
+            setMovingHeadFixtures([]);
             setLivePixels(undefined);
             setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
             setSelectedModelNames(new Set<string>());
@@ -205,6 +208,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         }
                     } catch (fetchErr) {
                         console.error('[Preview3D] Failed to fetch layout settings via HTTP:', fetchErr);
+                    }
+
+                    // Fetch moving head fixture definitions
+                    try {
+                        const mhResponse = await fetch(`${effectiveFrameServerUrl}/api/moving-heads`);
+                        if (mhResponse.ok) {
+                            const mhFixtures = await mhResponse.json();
+                            if (Array.isArray(mhFixtures)) {
+                                setMovingHeadFixtures(mhFixtures as MhFixtureInfo[]);
+                            }
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Preview3D] Failed to fetch moving heads via HTTP:', fetchErr);
                     }
 
                     // Also fetch 2D-projected coordinates for the 2D viewer
@@ -692,6 +708,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             modelMetadata={modelData.metadata?.models}
                             viewObjects={viewObjects}
                             frameServerUrl={effectiveFrameServerUrl}
+                            movingHeadFixtures={movingHeadFixtures}
                         />
                     ) : (
                         <Viewer2D

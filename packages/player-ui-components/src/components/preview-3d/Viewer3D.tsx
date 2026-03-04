@@ -10,6 +10,8 @@ import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
 import { HouseMesh } from './HouseMesh';
 import { ImagePlane } from './ImagePlane';
+import { MovingHeadBeams } from './MovingHeadBeams';
+import type { MhFixtureInfo } from 'xllayoutcalcs';
 
 export interface Viewer3DProps {
     points: Point3D[];
@@ -25,6 +27,7 @@ export interface Viewer3DProps {
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
+    movingHeadFixtures?: MhFixtureInfo[];
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -428,6 +431,7 @@ function SceneContent({
     modelMetadata,
     viewObjects,
     frameServerUrl,
+    movingHeadFixtures,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -441,6 +445,7 @@ function SceneContent({
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
+    movingHeadFixtures?: MhFixtureInfo[];
 }) {
     const { camera, controls } = useThree();
 
@@ -573,6 +578,11 @@ function SceneContent({
                 }
                 return null;
             })}
+
+            {/* Render DMX moving head fixture bodies and beams */}
+            {movingHeadFixtures && movingHeadFixtures.length > 0 && (
+                <MovingHeadBeams fixtures={movingHeadFixtures} liveData={liveData} />
+            )}
         </>
     );
 }
@@ -591,6 +601,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     modelMetadata,
     viewObjects,
     frameServerUrl,
+    movingHeadFixtures,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -767,6 +778,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             modelMetadata={modelMetadata}
                             viewObjects={viewObjects}
                             frameServerUrl={frameServerUrl}
+                            movingHeadFixtures={movingHeadFixtures}
                         />
                         {showStats && <Stats />}
                     </Canvas>

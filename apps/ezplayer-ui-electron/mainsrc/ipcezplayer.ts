@@ -415,7 +415,7 @@ export async function registerContentHandlers(
                 break;
             }
             case 'modelCoordinates': {
-                pushModelCoordinates(msg.coords3D, msg.coords2D, msg.viewObjects, msg.layoutSettings);
+                pushModelCoordinates(msg.coords3D, msg.coords2D, msg.viewObjects, msg.layoutSettings, msg.movingHeads);
                 break;
             }
             case 'rpc': {

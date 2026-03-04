@@ -52,7 +52,7 @@ import {
     getNumAttrDef,
 } from '@ezplayer/epp';
 
-import { getAllModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
+import { getAllModelCoordinates, getAllMovingHeads, GetNodeResult, type MhFixtureInfo } from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -722,6 +722,7 @@ let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
 let layoutSettings: LayoutSettings = {};
+let movingHeads: MhFixtureInfo[] = [];
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -840,10 +841,19 @@ async function loadXmlCoordinates() {
 
     modelCoordinates = new Map<string, GetNodeResult>();
     modelCoordinates2D = new Map<string, GetNodeResult>();
+    movingHeads = [];
 
     if (xrgb && xnet) {
         const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
         const gmc3d = getAllModelCoordinates(xrgb, xnet, false);
+
+        // Extract moving head fixture definitions
+        try {
+            movingHeads = getAllMovingHeads(xrgb, xnet);
+            emitInfo(`[loadXmlCoordinates] Found ${movingHeads.length} moving head fixture(s)`);
+        } catch (mhErr) {
+            emitWarning(`[loadXmlCoordinates] Error extracting moving heads: ${mhErr}`);
+        }
 
         if (xrgb.documentElement.tagName !== 'xrgb') {
             emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
@@ -1066,7 +1076,7 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
