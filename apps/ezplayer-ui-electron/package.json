@@ -144,7 +144,7 @@
         "react-toastify": "^10.0.6",
         "uuid": "^11.1.0",
         "ws": "^8.19.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.9.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.10.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.1.0"
     }
