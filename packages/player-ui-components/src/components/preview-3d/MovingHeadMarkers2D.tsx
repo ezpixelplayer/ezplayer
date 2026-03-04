@@ -5,8 +5,15 @@
  *   - A small circle at the fixture world position (static body marker).
  *   - A thin yellow rectangle "direction indicator" that always tracks the current
  *     beam aim projected onto the active view plane.
- *   - A wider colored rectangle "beam" visible only when the fixture is live,
- *     scaled to the world-projected beam length (beam.length * aLen).
+ *   - A triangular "beam" visible only when the fixture is live. Width is derived
+ *     from the cone half-angle; alpha fades from full at the tip to zero at the
+ *     far end, matching the 3D beam shader.
+ *
+ * Beam geometry convention (PlaneGeometry 1×1, unit local coords):
+ *   - Local Y = -0.5: fixture head (tip of cone, zero width)
+ *   - Local Y = +0.5: far end of beam (full width, fully transparent)
+ *   - scale.set(baseWidth, projLength, 1) maps local coords to world coords.
+ *   - The shader clips to a triangle (width ∝ t = Y+0.5) and fades alpha (∝ 1-t).
  */
 
 import React, { useRef, useMemo } from 'react';
@@ -16,12 +23,36 @@ import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { mhChannelsToState, computeBeamDescriptor } from 'xllayoutcalcs';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 
+const DEG_TO_RAD = Math.PI / 180;
+
 // Direction indicator — short fixed-length arrow, always visible when fixture is tracked
 const INDICATOR_LENGTH = 40;
 const INDICATOR_WIDTH = 4;
 
-// Beam — wider, length derived from world-scaled beam.length each frame
-const BEAM_WIDTH = 8;
+// Minimum display cone half-angle so very narrow beams remain visible
+const MIN_CONE_HALF_ANGLE = 2;
+
+// Beam shader — triangular cone shape, bright at tip, transparent at far end.
+// Local Y: -0.5 = tip (fixture head), +0.5 = base (far end).
+// t = Y + 0.5 ∈ [0, 1]; triangle clips |X| > t*0.5; alpha = (1-t)*uOpacity.
+const BEAM_VERT = `
+    varying vec2 vLocal;
+    void main() {
+        vLocal = vec2(position.x, position.y);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+const BEAM_FRAG = `
+    uniform vec3 uColor;
+    uniform float uOpacity;
+    varying vec2 vLocal;
+    void main() {
+        float t = vLocal.y + 0.5;          // 0 at tip, 1 at far end
+        if (abs(vLocal.x) > t * 0.5) discard; // triangle clip
+        float alpha = (1.0 - t) * uOpacity;   // fade to transparent at far end
+        gl_FragColor = vec4(uColor, alpha);
+    }
+`;
 
 type ViewPlane = 'xy' | 'xz' | 'yz';
 
@@ -38,7 +69,7 @@ interface MovingHeadMarker2DProps {
 function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2DProps) {
     const indicatorRef = useRef<THREE.Mesh>(null);
     const beamMeshRef = useRef<THREE.Mesh>(null);
-    const beamMatRef = useRef<THREE.MeshBasicMaterial>(null);
+    const beamMatRef = useRef<THREE.ShaderMaterial>(null);
     const lastSeqRef = useRef<number>(0);
 
     const { worldPosX, worldPosY, worldPosZ } = fixture.worldTransform;
@@ -51,6 +82,11 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
             case 'yz': return [worldPosY, worldPosZ, 0.5];
         }
     }, [worldPosX, worldPosY, worldPosZ, viewPlane]);
+
+    const beamUniforms = useMemo(() => ({
+        uColor: { value: new THREE.Color(1, 1, 1) },
+        uOpacity: { value: 0.6 },
+    }), []);
 
     useFrame(() => {
         const indicator = indicatorRef.current;
@@ -110,16 +146,23 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
         indicator.rotation.z = angle;
         indicator.visible = true;
 
-        // --- Beam: world-projected length, only when shutter open and lit ---
+        // --- Beam: triangular cone shape, world-projected length ---
         if (beamMesh) {
             const w = state.w;
             const isActive = beam.shutterOpen && beam.dimmer > 0;
             const totalColor = beam.r + beam.g + beam.b + w;
             if (isActive && totalColor > 0) {
                 // beam.length is the world-scaled 3D beam length.
-                // aLen is cos(angle from view plane), giving correct projected length.
+                // aLen = cos(angle from view plane) gives correct projected 2D length.
                 const projLength = beam.length * aLen;
-                beamMesh.scale.set(1, projLength, 1);
+
+                // Base width from cone half-angle (same min as 3D view)
+                const displayHalfAngle = Math.max(beam.coneHalfAngle, MIN_CONE_HALF_ANGLE);
+                const baseWidth = 2 * projLength * Math.tan(displayHalfAngle * DEG_TO_RAD);
+
+                // scale maps unit plane to (baseWidth × projLength) in world coords.
+                // The shader triangle clip and alpha fade work in local [-0.5, 0.5] space.
+                beamMesh.scale.set(baseWidth, projLength, 1);
                 beamMesh.position.set(
                     originX + anx * projLength * 0.5,
                     originY + any * projLength * 0.5,
@@ -129,12 +172,12 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
 
                 const mat = beamMatRef.current;
                 if (mat) {
-                    mat.color.setRGB(
+                    mat.uniforms.uColor.value.setRGB(
                         Math.min(255, beam.r + w) / 255,
                         Math.min(255, beam.g + w) / 255,
                         Math.min(255, beam.b + w) / 255,
                     );
-                    mat.opacity = Math.max(0.3, Math.min(0.85, beam.dimmer * 0.85));
+                    mat.uniforms.uOpacity.value = Math.max(0.3, Math.min(0.85, beam.dimmer * 0.85));
                 }
                 beamMesh.visible = true;
             } else {
@@ -164,14 +207,15 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
                 />
             </mesh>
 
-            {/* Beam — wider colored rectangle, length = world beam length projected to plane */}
+            {/* Beam — triangular cone, tapers to tip at fixture head, fades at far end */}
             <mesh ref={beamMeshRef} visible={false} frustumCulled={false}>
-                <planeGeometry args={[BEAM_WIDTH, 1]} />
-                <meshBasicMaterial
+                <planeGeometry args={[1, 1]} />
+                <shaderMaterial
                     ref={beamMatRef}
-                    color="white"
+                    uniforms={beamUniforms}
+                    vertexShader={BEAM_VERT}
+                    fragmentShader={BEAM_FRAG}
                     transparent={true}
-                    opacity={0.6}
                     side={THREE.DoubleSide}
                     blending={THREE.AdditiveBlending}
                     depthWrite={false}
