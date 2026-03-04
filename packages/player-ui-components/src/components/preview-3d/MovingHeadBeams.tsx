@@ -2,17 +2,17 @@
  * MovingHeadBeams — renders DMX moving head fixture bodies and light beams
  * in the 3D preview scene.
  *
- * Each fixture is a separate component that reads from the live frame buffer
- * in useFrame (zero React state churn) and imperatively updates Three.js
- * objects: a small sphere for the fixture body and an additive-blended cone
- * for the light beam.
+ * Each fixture renders three meshes updated imperatively in useFrame:
+ *   - A cylinder "body" at the fixture world position (static).
+ *   - A small cone "direction arrow" always showing the current beam aim,
+ *     even when the beam is inactive (shutter closed / dimmer = 0).
+ *   - An additive-blended cone "beam" visible only when the fixture is live.
  *
- * Beam cone geometry:
+ * Cone orientation convention (shared by arrow and beam):
  *   - Unit ConeGeometry(1,1,N): tip at +Y, base at -Y.
- *   - mesh.scale.set(baseRadius, length, baseRadius) sizes it per frame.
  *   - Quaternion aligns +Y with -beamDirection so the tip stays at the
  *     emission origin and the base opens in the beam direction.
- *   - mesh.position = beamOrigin + beamDirection * (length/2).
+ *   - mesh.position = beamOrigin + beamDirection * (coneLength / 2).
  */
 
 import React, { useRef } from 'react';
@@ -24,11 +24,14 @@ import type { MhFixtureInfo } from 'xllayoutcalcs';
 
 const DEG_TO_RAD = Math.PI / 180;
 
-// Pre-allocated scratch objects — shared across all beam update calls within
-// a single frame to avoid per-frame heap allocations.
+// Arrow dimensions (scene units)
+const ARROW_LENGTH = 30;
+const ARROW_RADIUS = 3;
+
+// Pre-allocated scratch objects — shared within a single frame to avoid
+// per-frame heap allocations.
 const _yAxis = new THREE.Vector3(0, 1, 0);
 const _negDir = new THREE.Vector3();
-const _midPt = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 
 // ============================================================================
@@ -43,16 +46,23 @@ interface MovingHeadFixtureProps {
 function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
     const beamMeshRef = useRef<THREE.Mesh>(null);
     const beamMatRef = useRef<THREE.MeshBasicMaterial>(null);
+    const dirMeshRef = useRef<THREE.Mesh>(null);
     const lastSeqRef = useRef<number>(0);
+    const hasLoggedRef = useRef<boolean>(false);
+    const hasLoggedLitRef = useRef<boolean>(false);
 
     const { worldPosX, worldPosY, worldPosZ } = fixture.worldTransform;
 
     useFrame(() => {
         const mesh = beamMeshRef.current;
+        const dirMesh = dirMeshRef.current;
         if (!mesh) return;
 
+        // Default: hide beam cone (direction arrow handled below)
+        mesh.visible = false;
+
         if (!liveData) {
-            mesh.visible = false;
+            if (dirMesh) dirMesh.visible = false;
             return;
         }
 
@@ -71,23 +81,45 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
         // Compute world-space beam descriptor
         const beam = computeBeamDescriptor(state, beamParams, worldTransform);
 
-        if (!beam || !beam.shutterOpen || beam.dimmer <= 0 || beam.length <= 0) {
-            mesh.visible = false;
+        // Debug: log on first frame received
+        if (!hasLoggedRef.current) {
+            const bufLen = latest.bytes.length;
+            const sliceEnd = channelOffset + numChannels;
+            const inRange = sliceEnd <= bufLen;
+            console.log(
+                `[MH ${fixture.name}] seq=${latest.seq}`,
+                `buf=${bufLen} chOffset=${channelOffset} need=${sliceEnd}`,
+                inRange ? 'IN-RANGE' : `OUT-OF-RANGE (buf too short by ${sliceEnd - bufLen})`,
+                'channelData=', Array.from(channelData),
+                'state=', state,
+                'beam=', beam,
+            );
+            hasLoggedRef.current = true;
+        }
+
+        // Debug: log on first frame where the beam has non-zero color
+        if (!hasLoggedLitRef.current && beam) {
+            const w = state.w;
+            if (beam.shutterOpen && beam.dimmer > 0 && (beam.r + beam.g + beam.b + w) > 0) {
+                console.log(
+                    `[MH ${fixture.name}] FIRST LIT FRAME seq=${latest.seq}`,
+                    'beam=', beam, 'state.w=', w,
+                    'length=', beam.length, 'coneHalfAngle=', beam.coneHalfAngle,
+                );
+                hasLoggedLitRef.current = true;
+            }
+        }
+
+        if (!beam) {
+            if (dirMesh) dirMesh.visible = false;
             return;
         }
 
-        // Beam cone dimensions
-        const { origin, direction, length, coneHalfAngle, r, g, b, dimmer } = beam;
-        const baseRadius = length * Math.tan(coneHalfAngle * DEG_TO_RAD);
-        if (baseRadius <= 0) {
-            mesh.visible = false;
-            return;
-        }
-
-        // Validate direction
+        // Validate and normalize direction — shared by arrow and beam cone
+        const { origin, direction } = beam;
         const dirLenSq = direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2;
         if (dirLenSq < 1e-12) {
-            mesh.visible = false;
+            if (dirMesh) dirMesh.visible = false;
             return;
         }
         const dirLen = Math.sqrt(dirLenSq);
@@ -95,35 +127,53 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
         const dy = direction[1] / dirLen;
         const dz = direction[2] / dirLen;
 
-        // Scale cone to beam dimensions
-        mesh.scale.set(baseRadius, length, baseRadius);
-
-        // Position cone center at midpoint between emission origin and beam tip
-        _midPt.set(
-            origin[0] + dx * length * 0.5,
-            origin[1] + dy * length * 0.5,
-            origin[2] + dz * length * 0.5,
-        );
-        mesh.position.copy(_midPt);
-
-        // Orient: align cone +Y axis with -direction so the tip stays at origin
+        // Quaternion aligning cone +Y with -direction (tip at origin, base forward)
         _negDir.set(-dx, -dy, -dz);
         if (Math.abs(_negDir.y - 1) < 1e-6) {
-            // Already aligned with +Y
             _quat.identity();
         } else if (Math.abs(_negDir.y + 1) < 1e-6) {
-            // Exactly anti-parallel to +Y — rotate 180° around X
             _quat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
         } else {
             _quat.setFromUnitVectors(_yAxis, _negDir);
         }
+
+        // --- Direction arrow — always visible, shows current beam aim ---
+        if (dirMesh) {
+            dirMesh.position.set(
+                origin[0] + dx * ARROW_LENGTH * 0.5,
+                origin[1] + dy * ARROW_LENGTH * 0.5,
+                origin[2] + dz * ARROW_LENGTH * 0.5,
+            );
+            dirMesh.quaternion.copy(_quat);
+            dirMesh.visible = true;
+        }
+
+        // --- Beam cone — only when shutter open and dimmer > 0 ---
+        const { length, coneHalfAngle, r, g, b, dimmer } = beam;
+        if (!beam.shutterOpen || dimmer <= 0 || length <= 0) return;
+
+        // Enforce a minimum display half-angle so thin beams remain visible
+        const displayHalfAngle = Math.max(coneHalfAngle, 3);
+        const baseRadius = length * Math.tan(displayHalfAngle * DEG_TO_RAD);
+        if (baseRadius <= 0) return;
+
+        mesh.scale.set(baseRadius, length, baseRadius);
+        mesh.position.set(
+            origin[0] + dx * length * 0.5,
+            origin[1] + dy * length * 0.5,
+            origin[2] + dz * length * 0.5,
+        );
         mesh.quaternion.copy(_quat);
 
-        // Update beam color and opacity
+        // Include white channel (state.w) for RGBW fixtures — additive over RGB
         const mat = beamMatRef.current;
         if (mat) {
-            mat.color.setRGB(r / 255, g / 255, b / 255);
-            // Opacity scales with dimmer; keep a minimum so the beam is visible
+            const w = state.w;
+            mat.color.setRGB(
+                Math.min(255, r + w) / 255,
+                Math.min(255, g + w) / 255,
+                Math.min(255, b + w) / 255,
+            );
             mat.opacity = Math.max(0.15, Math.min(0.85, dimmer * 0.8));
         }
 
@@ -132,10 +182,22 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
 
     return (
         <group>
-            {/* Fixture body marker — small sphere at world position */}
+            {/* Fixture body — short cylinder at world position */}
             <mesh position={[worldPosX, worldPosY, worldPosZ]}>
-                <sphereGeometry args={[8, 12, 8]} />
+                <cylinderGeometry args={[5, 7, 14, 12]} />
                 <meshStandardMaterial color="#aaaaaa" metalness={0.4} roughness={0.6} />
+            </mesh>
+
+            {/* Direction arrow — small cone showing current beam aim */}
+            <mesh ref={dirMeshRef} visible={false}>
+                <coneGeometry args={[ARROW_RADIUS, ARROW_LENGTH, 8]} />
+                <meshBasicMaterial
+                    color="#ffee44"
+                    transparent={true}
+                    opacity={0.75}
+                    side={THREE.DoubleSide}
+                    depthWrite={false}
+                />
             </mesh>
 
             {/* Beam cone — unit geometry, sized/positioned/oriented each frame */}

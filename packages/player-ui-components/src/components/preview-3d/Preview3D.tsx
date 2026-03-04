@@ -725,6 +725,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             modelMetadata={(modelData2D ?? modelData).metadata?.models}
                             layoutSettings={layoutSettings}
                             frameServerUrl={effectiveFrameServerUrl}
+                            movingHeadFixtures={movingHeadFixtures}
                         />
                     )}
                 </Box>

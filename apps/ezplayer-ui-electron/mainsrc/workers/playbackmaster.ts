@@ -1177,7 +1177,32 @@ async function processQueue() {
             emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
             emitInfo('');
         }
-        const nChannels = Math.max(...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
+        // Start with the channel ceiling implied by the configured DMX controllers.
+        let nChannels = Math.max(0, ...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
+
+        // Extend to cover every model's actual channel extent.
+        //   This handles models not yet wired to a controller
+        let modelChannelMax = 0;
+        for (const coord of modelCoordinates?.values() ?? []) {
+            const last = coord.channelMapping?.lastChannel;
+            if (last != null && last >= 0) modelChannelMax = Math.max(modelChannelMax, last + 1);
+        }
+
+        // MH fixtures may not appear in modelCoordinates if DmxMovingHead models
+        // carry no renderable 3D nodes, so include them explicitly.
+        // MOC - TODO REMOVE - what is the point?  Should work in above loop.
+        for (const mh of movingHeads) {
+            modelChannelMax = Math.max(modelChannelMax, mh.channelOffset + mh.numChannels);
+        }
+
+        if (modelChannelMax > nChannels) {
+            emitInfo(
+                `[processQueue] Frame buffer extended: ${nChannels} → ${modelChannelMax} ch` +
+                ` (models use channels beyond controller range)`,
+            );
+            nChannels = modelChannelMax;
+        }
+
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
         sender.mixFrame = new Uint8Array(nChannels);
