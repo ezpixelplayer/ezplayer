@@ -716,6 +716,101 @@ All fields are optional — the object may be empty if no settings are present i
 
 ---
 
+### GET /api/moving-heads
+
+Get DMX moving head fixture definitions. Returns the list of `DmxMovingHead` and `DmxMovingHeadAdv` fixtures parsed from the xLights XML layout. Each entry contains everything needed to compute beam position, direction, and color from live frame data: motor definitions, color channels, beam geometry, and world transform. Returns an empty array when no show is loaded or no moving head fixtures are present.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK - Array of MhFixtureInfo records (may be empty `[]`)
+
+**Example Response:**
+
+```json
+[
+    {
+        "name": "House MH Left",
+        "channelOffset": 115084,
+        "numChannels": 14,
+        "definition": {
+            "panMotor": {
+                "channelCoarse": 1,
+                "channelFine": 2,
+                "rangeOfMotion": 540,
+                "orientZero": 270,
+                "reverse": false
+            },
+            "tiltMotor": {
+                "channelCoarse": 3,
+                "channelFine": 4,
+                "rangeOfMotion": 270,
+                "orientZero": 90,
+                "reverse": false
+            },
+            "color": {
+                "colorType": "RGBW",
+                "redChannel": 5,
+                "greenChannel": 6,
+                "blueChannel": 7,
+                "whiteChannel": 8
+            },
+            "dimmer": { "channel": 9 },
+            "shutter": { "channel": 10, "openThreshold": 128 }
+        },
+        "beamParams": {
+            "dmxBeamWidth": 1.0,
+            "dmxBeamLength": 20.0,
+            "dmxBeamYOffset": 17.0,
+            "dmxBeamLimit": 0,
+            "meshWidth": 50.0,
+            "meshHeight": 100.0,
+            "meshDepth": 50.0
+        },
+        "worldTransform": {
+            "worldPosX": 300,
+            "worldPosY": 600,
+            "worldPosZ": 0,
+            "rotateX": 0,
+            "rotateY": 0,
+            "rotateZ": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "scaleZ": 1
+        }
+    }
+]
+```
+
+**Field Reference:**
+
+| Field | Description |
+| --- | --- |
+| `name` | Model name as defined in xLights |
+| `channelOffset` | 0-based start channel of this fixture in the frame buffer |
+| `numChannels` | Number of DMX channels for this fixture (from `parm1`) |
+| `definition.panMotor` | Pan motor: coarse/fine channels, range of motion (degrees), orient-zero offset, reverse flag |
+| `definition.tiltMotor` | Tilt motor: same fields as panMotor |
+| `definition.color.colorType` | One of `"RGBW"`, `"CMY"`, `"ColorWheel"`, `"None"` |
+| `definition.dimmer.channel` | 1-based dimmer channel (0 = no dimmer, fixture always full) |
+| `definition.shutter.openThreshold` | DMX value at or above which the shutter is considered open |
+| `beamParams.dmxBeamWidth` | Beam cone half-angle in degrees |
+| `beamParams.dmxBeamLength` | Beam length in model-space units (multiply by `sbl` for world length — see below) |
+| `beamParams.dmxBeamYOffset` | Y offset of beam emission point from fixture origin |
+| `beamParams.dmxBeamLimit` | Maximum world beam length cap (0 = no limit) |
+| `beamParams.meshWidth/Height/Depth` | Controlling mesh bounding box dimensions — used to compute world beam length: `sbl = max(meshWidth × \|scaleX\|, meshHeight × \|scaleY\|, meshDepth × \|scaleZ\|)`, then `worldBeamLength = dmxBeamLength × sbl` |
+| `worldTransform` | Position, rotation (degrees), and scale of the fixture in world coordinates |
+
+**Usage:**
+
+To render a live beam, slice `channelOffset … channelOffset + numChannels` bytes from the current frame buffer, then pass that slice along with `definition`, `beamParams`, and `worldTransform` to the `xllayoutcalcs` functions `mhChannelsToState` and `computeBeamDescriptor`. The resulting `MhBeamDescriptor` gives world-space `origin`, `direction`, `length`, `coneHalfAngle`, and colour.
+
+---
+
 ### GET /api/debug-show-folder
 
 Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
