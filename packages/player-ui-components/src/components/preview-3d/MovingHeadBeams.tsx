@@ -68,8 +68,6 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
     const beamMatRef = useRef<THREE.ShaderMaterial>(null);
     const dirMeshRef = useRef<THREE.Mesh>(null);
     const lastSeqRef = useRef<number>(0);
-    const hasLoggedRef = useRef<boolean>(false);
-    const hasLoggedLitRef = useRef<boolean>(false);
 
     // Uniforms are memoized so the same object is mutated imperatively in useFrame
     // rather than replaced on each render.
@@ -112,35 +110,6 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
 
         // Compute world-space beam descriptor
         const beam = computeBeamDescriptor(state, beamParams, worldTransform);
-
-        // Debug: log on first frame received
-        if (!hasLoggedRef.current) {
-            const bufLen = latest.bytes.length;
-            const sliceEnd = channelOffset + numChannels;
-            const inRange = sliceEnd <= bufLen;
-            console.log(
-                `[MH ${fixture.name}] seq=${latest.seq}`,
-                `buf=${bufLen} chOffset=${channelOffset} need=${sliceEnd}`,
-                inRange ? 'IN-RANGE' : `OUT-OF-RANGE (buf too short by ${sliceEnd - bufLen})`,
-                'channelData=', Array.from(channelData),
-                'state=', state,
-                'beam=', beam,
-            );
-            hasLoggedRef.current = true;
-        }
-
-        // Debug: log on first frame where the beam has non-zero color
-        if (!hasLoggedLitRef.current && beam) {
-            const w = state.w;
-            if (beam.shutterOpen && beam.dimmer > 0 && (beam.r + beam.g + beam.b + w) > 0) {
-                console.log(
-                    `[MH ${fixture.name}] FIRST LIT FRAME seq=${latest.seq}`,
-                    'beam=', beam, 'state.w=', w,
-                    'length=', beam.length, 'coneHalfAngle=', beam.coneHalfAngle,
-                );
-                hasLoggedLitRef.current = true;
-            }
-        }
 
         if (!beam) {
             if (dirMesh) dirMesh.visible = false;
