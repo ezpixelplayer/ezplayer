@@ -52,7 +52,7 @@ import {
     getNumAttrDef,
 } from '@ezplayer/epp';
 
-import { getAllModelCoordinates, GetNodeResult } from 'xllayoutcalcs';
+import { getAllModelCoordinates, getAllMovingHeads, GetNodeResult, type MhFixtureInfo } from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -722,6 +722,7 @@ let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
 let layoutSettings: LayoutSettings = {};
+let movingHeads: MhFixtureInfo[] = [];
 
 let backgroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
 let foregroundPlayerRunState: PlayerRunState = new PlayerRunState(Date.now());
@@ -840,10 +841,19 @@ async function loadXmlCoordinates() {
 
     modelCoordinates = new Map<string, GetNodeResult>();
     modelCoordinates2D = new Map<string, GetNodeResult>();
+    movingHeads = [];
 
     if (xrgb && xnet) {
         const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
         const gmc3d = getAllModelCoordinates(xrgb, xnet, false);
+
+        // Extract moving head fixture definitions
+        try {
+            movingHeads = getAllMovingHeads(xrgb, xnet);
+            emitInfo(`[loadXmlCoordinates] Found ${movingHeads.length} moving head fixture(s)`);
+        } catch (mhErr) {
+            emitWarning(`[loadXmlCoordinates] Error extracting moving heads: ${mhErr}`);
+        }
 
         if (xrgb.documentElement.tagName !== 'xrgb') {
             emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
@@ -1066,7 +1076,7 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads });
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
@@ -1167,7 +1177,32 @@ async function processQueue() {
             emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
             emitInfo('');
         }
-        const nChannels = Math.max(...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
+        // Start with the channel ceiling implied by the configured DMX controllers.
+        let nChannels = Math.max(0, ...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
+
+        // Extend to cover every model's actual channel extent.
+        //   This handles models not yet wired to a controller
+        let modelChannelMax = 0;
+        for (const coord of modelCoordinates?.values() ?? []) {
+            const last = coord.channelMapping?.lastChannel;
+            if (last != null && last >= 0) modelChannelMax = Math.max(modelChannelMax, last + 1);
+        }
+
+        // MH fixtures may not appear in modelCoordinates if DmxMovingHead models
+        // carry no renderable 3D nodes, so include them explicitly.
+        // MOC - TODO REMOVE - what is the point?  Should work in above loop.
+        for (const mh of movingHeads) {
+            modelChannelMax = Math.max(modelChannelMax, mh.channelOffset + mh.numChannels);
+        }
+
+        if (modelChannelMax > nChannels) {
+            emitInfo(
+                `[processQueue] Frame buffer extended: ${nChannels} → ${modelChannelMax} ch` +
+                ` (models use channels beyond controller range)`,
+            );
+            nChannels = modelChannelMax;
+        }
+
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
         sender.mixFrame = new Uint8Array(nChannels);

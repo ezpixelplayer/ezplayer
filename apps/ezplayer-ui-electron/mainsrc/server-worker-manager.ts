@@ -15,7 +15,7 @@ import type {
 import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings } from '@ezplayer/ezplayer-core';
-import { ViewObject, LayoutSettings } from './workers/playbacktypes.js';
+import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -333,6 +333,7 @@ export function pushModelCoordinates(
     coords2D: unknown,
     viewObjects?: Array<ViewObject>,
     layoutSettings?: LayoutSettings,
+    movingHeads?: Array<MhFixtureInfo>,
 ) {
     if (!serverWorker) return;
 
@@ -342,6 +343,7 @@ export function pushModelCoordinates(
         coords2D,
         viewObjects,
         layoutSettings,
+        movingHeads,
     };
     serverWorker.postMessage(message);
 }

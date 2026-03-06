@@ -26,7 +26,7 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
-import { ViewObject, LayoutSettings } from './playbacktypes.js';
+import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
@@ -133,6 +133,7 @@ let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
 let cachedViewObjects: Array<ViewObject> = [];
 let cachedLayoutSettings: LayoutSettings = {};
+let cachedMovingHeads: Array<MhFixtureInfo> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let curAudioBuffer: SharedArrayBuffer | undefined = undefined;
@@ -165,6 +166,7 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         cachedModelCoordinates2D = {};
         cachedViewObjects = [];
         cachedLayoutSettings = {};
+        cachedMovingHeads = [];
         curFrameBuffer = undefined;
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
@@ -174,6 +176,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
         if (msg.layoutSettings) {
             cachedLayoutSettings = msg.layoutSettings;
+        }
+        if (msg.movingHeads) {
+            cachedMovingHeads = msg.movingHeads;
         }
     } else if (msg.type === 'shutdown') {
         process.exit(0);
@@ -393,6 +398,13 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     router.get('/api/layout-settings', async (ctx) => {
         ctx.body = cachedLayoutSettings;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/moving-heads - get DMX moving head fixture definitions from XML
+    // ----------------------------------------------
+    router.get('/api/moving-heads', async (ctx) => {
+        ctx.body = cachedMovingHeads;
     });
 
     // ----------------------------------------------

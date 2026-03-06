@@ -8,6 +8,8 @@ import type { Point3D, Shape3D, ModelMetadata, LayoutSettings } from '../../type
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
+import { MovingHeadMarkers2D } from './MovingHeadMarkers2D';
+import type { MhFixtureInfo } from 'xllayoutcalcs';
 
 export interface Viewer2DProps {
     points: Point3D[];
@@ -23,6 +25,7 @@ export interface Viewer2DProps {
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
+    movingHeadFixtures?: MhFixtureInfo[];
 }
 
 function Optimized2DPointCloud({
@@ -519,6 +522,7 @@ function Scene2DContent({
     modelMetadata,
     layoutSettings,
     frameServerUrl,
+    movingHeadFixtures,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -533,6 +537,7 @@ function Scene2DContent({
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
+    movingHeadFixtures?: MhFixtureInfo[];
 }) {
     const { camera, controls } = useThree();
 
@@ -667,6 +672,14 @@ function Scene2DContent({
                 selectedModelNames={selectedModelNames}
                 modelMetadata={modelMetadata}
             />
+
+            {movingHeadFixtures && movingHeadFixtures.length > 0 && (
+                <MovingHeadMarkers2D
+                    fixtures={movingHeadFixtures}
+                    liveData={liveData}
+                    viewPlane={viewPlane}
+                />
+            )}
         </>
     );
 }
@@ -685,6 +698,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     modelMetadata,
     layoutSettings,
     frameServerUrl,
+    movingHeadFixtures,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -849,6 +863,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             modelMetadata={modelMetadata}
                             layoutSettings={layoutSettings}
                             frameServerUrl={frameServerUrl}
+                            movingHeadFixtures={movingHeadFixtures}
                         />
                     </Canvas>
                 </Box>
