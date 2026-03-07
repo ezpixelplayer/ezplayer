@@ -21,18 +21,23 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
 
-            # Use Python 3.11 only on macOS to satisfy node-gyp/gyp's distutils import
-            - name: Set up Python (macOS)
+            # Use Python 3.11 to satisfy node-gyp/gyp's distutils import
+            - name: Set up Python
               uses: actions/setup-python@v5
               with:
                   python-version: '3.11'
 
-            - name: Echo Python and set for node-gyp (macOS)
-              if: matrix.os == 'macos-latest'
+            - name: Set Python for node-gyp (unix)
+              if: matrix.os != 'windows-latest'
               run: |
-                  which python
                   python --version
                   echo "PYTHON=$(which python)" >> $GITHUB_ENV
+
+            - name: Set Python for node-gyp (windows)
+              if: matrix.os == 'windows-latest'
+              run: |
+                  python --version
+                  echo "PYTHON=$(where python | head -1)" >> $GITHUB_ENV
 
             - name: Set up Node.js
               uses: actions/setup-node@v4
