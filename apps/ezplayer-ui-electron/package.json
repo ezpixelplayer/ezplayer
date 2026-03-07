@@ -5,7 +5,7 @@
         "url": "https://github.com/ezpixelplayer/ezplayer.git"
     },
     "private": true,
-    "version": "0.1.24-prealpha",
+    "version": "0.2.0-alpha",
     "main": "dist/main.js",
     "type": "module",
     "build": {

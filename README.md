@@ -21,6 +21,7 @@ Currently, EZPlayer supports a subset of what xSchedule supports:
 - .mp3 and .fseq playback
 - DDP and E1.31 controllers on attached IPv4 networks
 - A jukebox view of songs to choose from
+- Live view
 - A variety of status screens
 - Remote Falcon
 - Local Web UI
@@ -29,10 +30,9 @@ Currently, EZPlayer supports a subset of what xSchedule supports:
 
 We are currently enhancing:
 
-- Live view
-- Control panel
 - Controller status ping
-- [Background blending and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
+- Control panel
+- [Background blending options and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
 
 It doesn't support (and won't soon support):
 
@@ -123,32 +123,7 @@ EZPlayer is developed in part by [EZRGB](https://ezrgb.com/). EZRGB feels that t
 ---
 
 ## 🛠️ Building From Source (Developers)
-
-Because this project is **AGPL**, the full source code is available and the build process is documented.
-
-### Requirements
-
-- Windows (with git bash or WSL) and C++ compiler, MacOS, or Linux with the appropriate dev packages installed
-- Node.js ≥ 22 (get from nvm if needed)
-- pnpm
-- Python 3 + build tools (for native modules)
-- Git
-
-### Clone, Install, and Build
-
-```bash
-git clone https://github.com/ezpixelplayer/ezplayer.git
-cd ezplayer
-pnpm install
-pnpm build          # Build for current platform
-pnpm build:win      # Build for Windows
-pnpm build:mac      # Build for macOS
-pnpm build:linux    # Build for Linux
-```
-
-Then, fix whatever went wrong :-).
-
-Your main build will appear in `apps/ezplayer-ui-electron/release`.
+See [DEVELOPING.md](./DEVELOPING.md).
 
 ---
 
