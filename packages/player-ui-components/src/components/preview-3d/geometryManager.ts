@@ -289,6 +289,7 @@ export class GeometryManager {
     private modelPixelSizeMap: Map<string, number> = new Map();
     private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
     private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
+    private pixelSizeMultiplier: number; // Multiplier for pixel size (from settings)
 
     constructor(
         points: Point3D[],
@@ -300,6 +301,7 @@ export class GeometryManager {
             modelPixelSizeMap?: Map<string, number>;
             modelPixelStyleMap?: Map<string, string>; // pixelStyle as string from XML
             modelTransparencyMap?: Map<string, number>; // transparency (0–100) from xLights XML
+            pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
         },
     ) {
         this.allPoints = points;
@@ -309,6 +311,10 @@ export class GeometryManager {
         this.viewPlane = options?.viewPlane;
         // Extract gamma explicitly: from options > from uniforms > from model configuration > default
         this.gamma = options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(points) ?? DEFAULT_GAMMA;
+        // Store pixel size multiplier (default to 1.0 if not provided)
+        // Ensure multiplier is always positive and within reasonable bounds
+        const rawMultiplier = options?.pixelSizeMultiplier ?? 1.0;
+        this.pixelSizeMultiplier = Math.max(0.1, Math.min(10.0, Number(rawMultiplier) || 1.0));
         // Store model pixel size map for per-model point size lookup
         this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
         // Store model pixel style map for per-model pixel shape lookup
@@ -345,8 +351,16 @@ export class GeometryManager {
 
             // Look up pixelSize for this model
             // Use model's pixelSize from XML if available, otherwise fall back to default pointSize
+            // Apply pixelSizeMultiplier to both model-specific and default sizes
+            // The multiplier is already validated in the constructor, so we can use it directly
+            const multiplier = this.pixelSizeMultiplier;
             const modelPixelSize = modelName ? this.modelPixelSizeMap.get(modelName) : undefined;
-            const effectivePointSize = modelPixelSize !== undefined ? modelPixelSize : this.pointSize;
+            const basePointSize = modelPixelSize !== undefined 
+                ? Math.max(0.1, Number(modelPixelSize) || this.pointSize)
+                : Math.max(0.1, Number(this.pointSize) || 3.0);
+            // Calculate effective point size: base size multiplied by user's pixel size multiplier
+            const effectivePointSize = basePointSize * multiplier;
+            console.log(`[GeometryManager] Group "${group.id}" (model: ${modelName || 'default'}): basePointSize=${basePointSize.toFixed(2)}, multiplier=${multiplier.toFixed(2)}, effectivePointSize=${effectivePointSize.toFixed(2)}`);
 
             // Look up pixelStyle for this model
             // Convert pixelStyle string to number:

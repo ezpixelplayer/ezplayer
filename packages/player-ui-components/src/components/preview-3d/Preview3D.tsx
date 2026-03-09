@@ -21,6 +21,7 @@ import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { Viewer3D } from './Viewer3D';
 import { Viewer2D } from './Viewer2D';
 import { ModelList } from './ModelList';
+import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
@@ -73,8 +74,64 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // This is the selection state of the model list
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
+    // Settings state
+    const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(null);
+    const [previewSettings, setPreviewSettings] = useState<PreviewSettingsData>({
+        pixelSize: 1.0,
+        backgroundBrightness: 100, // Will be updated from layoutSettings when loaded
+    });
+
     // Get show directory from Redux store to detect changes
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
+
+    // Load preview settings from localStorage on mount
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.pixelSize !== undefined && parsed.backgroundBrightness !== undefined) {
+                    setPreviewSettings({
+                        pixelSize: parsed.pixelSize ?? 1.0,
+                        backgroundBrightness: parsed.backgroundBrightness ?? 100,
+                    });
+                }
+                // Restore view mode if saved
+                if (parsed.mode === '2d' || parsed.mode === '3d') {
+                    setViewMode(parsed.mode);
+                }
+            }
+        } catch (err) {
+            console.error('[Preview3D] Failed to load preview settings:', err);
+        }
+    }, []);
+
+    // Update background brightness from layoutSettings when loaded (if not already set from localStorage)
+    useEffect(() => {
+        if (layoutSettings.backgroundBrightness !== undefined) {
+            setPreviewSettings((prev) => {
+                // Check if we have a saved value from localStorage
+                const saved = localStorage.getItem('previewSettings');
+                let hasSavedBrightness = false;
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        hasSavedBrightness = parsed.backgroundBrightness !== undefined;
+                    } catch {
+                        // Ignore parse errors
+                    }
+                }
+                // Only update if we don't have a saved value from localStorage
+                if (!hasSavedBrightness) {
+                    return {
+                        ...prev,
+                        backgroundBrightness: layoutSettings.backgroundBrightness ?? 100,
+                    };
+                }
+                return prev;
+            });
+        }
+    }, [layoutSettings.backgroundBrightness]);
 
     // Auto-detect frame server URL if not provided
     const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
@@ -264,7 +321,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             // (500ms → 1s → 2s → 4s, capped at 4s) until the server has
             // the new data ready.
             let delay = 0;
-            for (;;) {
+            for (; ;) {
                 if (cancelled) return;
                 if (delay > 0) {
                     await new Promise((r) => setTimeout(r, delay));
@@ -336,6 +393,54 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setViewMode(newMode);
         }
     }, []);
+
+    // Handle settings button click
+    const handleSettingsClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
+        setSettingsAnchorEl(event.currentTarget);
+    }, []);
+
+    // Handle settings close
+    const handleSettingsClose = useCallback(() => {
+        setSettingsAnchorEl(null);
+    }, []);
+
+    // Handle settings change
+    const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
+        // Validate and clamp values, but only update if they actually changed
+        const clampedPixelSize = Math.max(0.5, Math.min(3.0, Number(newSettings.pixelSize) || 1.0));
+        const clampedBrightness = Math.max(0, Math.min(100, Number(newSettings.backgroundBrightness) || 100));
+
+        setPreviewSettings((prev) => {
+            // Only update if values actually changed to avoid unnecessary re-renders
+            if (Math.abs(prev.pixelSize - clampedPixelSize) > 0.001 ||
+                Math.abs(prev.backgroundBrightness - clampedBrightness) > 0.5) {
+                console.log(`[Preview3D] Pixel size setting updated: ${prev.pixelSize} → ${clampedPixelSize}`);
+                return {
+                    pixelSize: clampedPixelSize,
+                    backgroundBrightness: clampedBrightness,
+                };
+            }
+            return prev;
+        });
+    }, []);
+
+    // Handle save as default
+    const handleSaveAsDefault = useCallback(() => {
+        try {
+            // Get camera position/rotation from viewers (will be implemented via refs/callbacks)
+            const settingsToSave = {
+                mode: viewMode,
+                pixelSize: previewSettings.pixelSize,
+                backgroundBrightness: previewSettings.backgroundBrightness,
+                // Camera position and rotation will be added when we implement camera tracking
+                cameraPosition: null,
+                cameraRotation: null,
+            };
+            localStorage.setItem('previewSettings', JSON.stringify(settingsToSave));
+        } catch (err) {
+            console.error('[Preview3D] Failed to save preview settings:', err);
+        }
+    }, [viewMode, previewSettings]);
 
     // Handle model selection from model list
     const handleModelSelect = useCallback(
@@ -648,6 +753,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
+                    {/* Settings Button */}
+                    <SettingsButton onClick={handleSettingsClick} />
+
+                    <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
+
                     {/* Selection Info & Color Picker */}
                     {selectionState.selectedIds.size > 0 && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -709,6 +819,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             viewObjects={viewObjects}
                             frameServerUrl={effectiveFrameServerUrl}
                             movingHeadFixtures={movingHeadFixtures}
+                            backgroundBrightness={previewSettings.backgroundBrightness}
+                            pixelSizeMultiplier={previewSettings.pixelSize}
                         />
                     ) : (
                         <Viewer2D
@@ -726,6 +838,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             layoutSettings={layoutSettings}
                             frameServerUrl={effectiveFrameServerUrl}
                             movingHeadFixtures={movingHeadFixtures}
+                            backgroundBrightness={previewSettings.backgroundBrightness}
+                            pixelSizeMultiplier={previewSettings.pixelSize}
                         />
                     )}
                 </Box>
@@ -776,6 +890,16 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     </Paper>
                 )}
             </Box>
+
+            {/* Settings Popover */}
+            <PreviewSettings
+                anchorEl={settingsAnchorEl}
+                open={Boolean(settingsAnchorEl)}
+                onClose={handleSettingsClose}
+                settings={previewSettings}
+                onSettingsChange={handleSettingsChange}
+                onSaveAsDefault={handleSaveAsDefault}
+            />
         </Box>
     );
 };

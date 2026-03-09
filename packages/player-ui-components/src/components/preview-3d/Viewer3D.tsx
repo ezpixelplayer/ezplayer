@@ -22,12 +22,14 @@ export interface Viewer3DProps {
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     showStats?: boolean;
-    pointSize?: number;
+    pointSize?: number; // Base point size (will be multiplied by pixelSizeMultiplier)
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
+    backgroundBrightness?: number; // 0-100, affects background meshes/images only
+    pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -39,6 +41,7 @@ function OptimizedPointCloud({
     pointSize,
     selectedModelNames,
     modelMetadata,
+    pixelSizeMultiplier,
 }: {
     points: Point3D[];
     liveData?: LatestFrameRingBuffer;
@@ -48,6 +51,7 @@ function OptimizedPointCloud({
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
     onPointClick?: (pointId: string) => void;
+    pixelSizeMultiplier?: number;
 }) {
     const animationTimeRef = useRef(0);
     const geometryManagerRef = useRef<GeometryManager | null>(null);
@@ -90,12 +94,16 @@ function OptimizedPointCloud({
             totalPointCount: points.length,
         };
 
+        const multiplier = pixelSizeMultiplier ?? 1.0;
+        console.log(`[Viewer3D] Creating GeometryManager with pixelSizeMultiplier: ${multiplier}, base pointSize: ${pointSize}`);
+
         const manager = new GeometryManager(points, uniforms, {
-            pointSize,
+            pointSize: pointSize,
             gamma,
             modelPixelSizeMap,
             modelPixelStyleMap,
             modelTransparencyMap,
+            pixelSizeMultiplier: multiplier,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
@@ -112,7 +120,7 @@ function OptimizedPointCloud({
             geometryManagerRef.current = null;
             groupRef.current = null;
         };
-    }, [points, pointSize, modelMetadata]);
+    }, [points, pointSize, modelMetadata, pixelSizeMultiplier]);
 
     // Track selection/hover in refs so changes are applied in the render
     // loop without triggering React re-render cascades.
@@ -161,9 +169,13 @@ function OptimizedPointCloud({
         geometryManagerRef.current.updateLiveDataColors(liveData);
     });
 
+    // Use a key based on pixelSizeMultiplier to force React to recreate the primitive
+    // when the multiplier changes, ensuring the new group is properly rendered
+    const groupKey = `point-cloud-${pixelSizeMultiplier ?? 1.0}-${points.length}`;
+
     if (!groupRef.current) return null;
 
-    return <primitive object={groupRef.current} />;
+    return <primitive key={groupKey} object={groupRef.current} />;
 }
 
 // Component to handle click events with raycasting
@@ -432,6 +444,8 @@ function SceneContent({
     viewObjects,
     frameServerUrl,
     movingHeadFixtures,
+    backgroundBrightness,
+    pixelSizeMultiplier,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -446,6 +460,8 @@ function SceneContent({
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
+    backgroundBrightness?: number;
+    pixelSizeMultiplier?: number;
 }) {
     const { camera, controls } = useThree();
 
@@ -547,6 +563,7 @@ function SceneContent({
                 selectedModelNames={selectedModelNames}
                 modelMetadata={modelMetadata}
                 onPointClick={onPointClick}
+                pixelSizeMultiplier={pixelSizeMultiplier}
             />
 
             {/* Render house meshes from view objects */}
@@ -559,6 +576,7 @@ function SceneContent({
                             frameServerUrl={frameServerUrl}
                             liveData={liveData}
                             points={points}
+                            backgroundBrightness={backgroundBrightness}
                         />
                     );
                 }
@@ -573,6 +591,7 @@ function SceneContent({
                             key={viewObj.name}
                             viewObject={viewObj}
                             frameServerUrl={frameServerUrl}
+                            backgroundBrightness={backgroundBrightness}
                         />
                     );
                 }
@@ -602,6 +621,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     viewObjects,
     frameServerUrl,
     movingHeadFixtures,
+    backgroundBrightness = 100,
+    pixelSizeMultiplier = 1.0,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -779,6 +800,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             viewObjects={viewObjects}
                             frameServerUrl={frameServerUrl}
                             movingHeadFixtures={movingHeadFixtures}
+                            backgroundBrightness={backgroundBrightness}
+                            pixelSizeMultiplier={pixelSizeMultiplier}
                         />
                         {showStats && <Stats />}
                     </Canvas>

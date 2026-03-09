@@ -20,12 +20,14 @@ export interface Viewer2DProps {
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     viewPlane?: 'xy' | 'xz' | 'yz';
-    pointSize?: number;
+    pointSize?: number; // Base point size (will be multiplied by pixelSizeMultiplier)
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
+    backgroundBrightness?: number; // 0-100, affects background images only
+    pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
 }
 
 function Optimized2DPointCloud({
@@ -37,6 +39,7 @@ function Optimized2DPointCloud({
     viewPlane,
     selectedModelNames,
     modelMetadata,
+    pixelSizeMultiplier,
 }: {
     points: Point3D[];
     liveData?: LatestFrameRingBuffer;
@@ -46,6 +49,7 @@ function Optimized2DPointCloud({
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    pixelSizeMultiplier?: number;
 }) {
     const geometryManagerRef = useRef<GeometryManager | null>(null);
     const groupRef = useRef<THREE.Group | null>(null);
@@ -88,6 +92,9 @@ function Optimized2DPointCloud({
             totalPointCount: points.length,
         };
 
+        const multiplier = pixelSizeMultiplier ?? 1.0;
+        console.log(`[Viewer2D] Creating GeometryManager with pixelSizeMultiplier: ${multiplier}, base pointSize: ${pointSize}`);
+
         const manager = new GeometryManager(points, uniforms, {
             pointSize,
             viewPlane,
@@ -95,6 +102,7 @@ function Optimized2DPointCloud({
             modelPixelSizeMap,
             modelPixelStyleMap,
             modelTransparencyMap,
+            pixelSizeMultiplier: multiplier,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
@@ -111,7 +119,7 @@ function Optimized2DPointCloud({
             geometryManagerRef.current = null;
             groupRef.current = null;
         };
-    }, [points, pointSize, viewPlane, modelMetadata]);
+    }, [points, pointSize, viewPlane, modelMetadata, pixelSizeMultiplier]);
 
     // Reset animation time when selected models change
     useEffect(() => {
@@ -137,9 +145,13 @@ function Optimized2DPointCloud({
         geometryManagerRef.current.updateLiveDataColors(liveData);
     });
 
+    // Use a key based on pixelSizeMultiplier to force React to recreate the primitive
+    // when the multiplier changes, ensuring the new group is properly rendered
+    const groupKey = `point-cloud-2d-${pixelSizeMultiplier ?? 1.0}-${points.length}`;
+
     if (!groupRef.current) return null;
 
-    return <primitive object={groupRef.current} />;
+    return <primitive key={groupKey} object={groupRef.current} />;
 }
 
 interface Shape2DMeshProps {
@@ -249,16 +261,16 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                          const firstPoint = points[0];
-                          switch (viewPlane) {
-                              case 'xy':
-                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                              case 'xz':
-                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                              case 'yz':
-                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                          }
-                      })()
+                        const firstPoint = points[0];
+                        switch (viewPlane) {
+                            case 'xy':
+                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                            case 'xz':
+                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                            case 'yz':
+                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                        }
+                    })()
                     : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
@@ -432,12 +444,16 @@ function HoverHandler2D({
 function BackgroundImage2D({
     layoutSettings,
     frameServerUrl,
+    backgroundBrightnessOverride,
 }: {
     layoutSettings: LayoutSettings;
     frameServerUrl: string;
+    backgroundBrightnessOverride?: number;
 }) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
-    const { backgroundImage, backgroundBrightness, previewWidth, previewHeight } = layoutSettings;
+    const { backgroundImage, backgroundBrightness: layoutBrightness, previewWidth, previewHeight } = layoutSettings;
+    // Use override if provided, otherwise use layout setting
+    const backgroundBrightness = backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
 
     useEffect(() => {
         if (!backgroundImage || !frameServerUrl) return;
@@ -523,6 +539,8 @@ function Scene2DContent({
     layoutSettings,
     frameServerUrl,
     movingHeadFixtures,
+    backgroundBrightness,
+    pixelSizeMultiplier,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -538,6 +556,8 @@ function Scene2DContent({
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
+    backgroundBrightness?: number;
+    pixelSizeMultiplier?: number;
 }) {
     const { camera, controls } = useThree();
 
@@ -647,7 +667,11 @@ function Scene2DContent({
 
             {/* Background image from layout settings */}
             {layoutSettings?.backgroundImage && frameServerUrl && (
-                <BackgroundImage2D layoutSettings={layoutSettings} frameServerUrl={frameServerUrl} />
+                <BackgroundImage2D
+                    layoutSettings={layoutSettings}
+                    frameServerUrl={frameServerUrl}
+                    backgroundBrightnessOverride={backgroundBrightness}
+                />
             )}
 
             {shapes?.map((shape) => (
@@ -657,8 +681,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => {})}
-                    onHover={onPointHover || (() => {})}
+                    onClick={onPointClick || (() => { })}
+                    onHover={onPointHover || (() => { })}
                 />
             ))}
 
@@ -671,6 +695,7 @@ function Scene2DContent({
                 viewPlane={viewPlane}
                 selectedModelNames={selectedModelNames}
                 modelMetadata={modelMetadata}
+                pixelSizeMultiplier={pixelSizeMultiplier}
             />
 
             {movingHeadFixtures && movingHeadFixtures.length > 0 && (
@@ -699,6 +724,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     layoutSettings,
     frameServerUrl,
     movingHeadFixtures,
+    backgroundBrightness = 100,
+    pixelSizeMultiplier = 1.0,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -864,6 +891,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             layoutSettings={layoutSettings}
                             frameServerUrl={frameServerUrl}
                             movingHeadFixtures={movingHeadFixtures}
+                            backgroundBrightness={backgroundBrightness}
+                            pixelSizeMultiplier={pixelSizeMultiplier}
                         />
                     </Canvas>
                 </Box>
