@@ -359,8 +359,11 @@ export class GeometryManager {
                 ? Math.max(0.1, Number(modelPixelSize) || this.pointSize)
                 : Math.max(0.1, Number(this.pointSize) || 3.0);
             // Calculate effective point size: base size multiplied by user's pixel size multiplier
+            // The UI slider shows "2x" meaning "2 times bigger", so:
+            // - multiplier 1.0 = normal size (basePointSize * 1.0)
+            // - multiplier 2.0 = 2x bigger pixels (basePointSize * 2.0)
+            // - multiplier 0.5 = 0.5x smaller pixels (basePointSize * 0.5)
             const effectivePointSize = basePointSize * multiplier;
-            console.log(`[GeometryManager] Group "${group.id}" (model: ${modelName || 'default'}): basePointSize=${basePointSize.toFixed(2)}, multiplier=${multiplier.toFixed(2)}, effectivePointSize=${effectivePointSize.toFixed(2)}`);
 
             // Look up pixelStyle for this model
             // Convert pixelStyle string to number:
@@ -417,6 +420,17 @@ export class GeometryManager {
      */
     getPointObjects(): THREE.Points[] {
         return Array.from(this.renderers.values()).map((renderer) => renderer.points);
+    }
+
+    /**
+     * Update pixel size multiplier and recreate geometry groups
+     */
+    updatePixelSizeMultiplier(multiplier: number): void {
+        const clampedMultiplier = Math.max(0.1, Math.min(10.0, Number(multiplier) || 1.0));
+        if (Math.abs(this.pixelSizeMultiplier - clampedMultiplier) > 0.001) {
+            this.pixelSizeMultiplier = clampedMultiplier;
+            this.initializeGroups();
+        }
     }
 
     /**

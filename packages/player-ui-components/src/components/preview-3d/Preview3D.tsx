@@ -75,7 +75,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
     // Settings state
-    const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(null);
+    const [settingsAnchorPosition, setSettingsAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [previewSettings, setPreviewSettings] = useState<PreviewSettingsData>({
         pixelSize: 1.0,
         backgroundBrightness: 100, // Will be updated from layoutSettings when loaded
@@ -396,12 +396,16 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Handle settings button click
     const handleSettingsClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
-        setSettingsAnchorEl(event.currentTarget);
+        const rect = event.currentTarget.getBoundingClientRect();
+        setSettingsAnchorPosition({
+            top: Math.round(rect.bottom),
+            left: Math.round(rect.left),
+        });
     }, []);
 
     // Handle settings close
     const handleSettingsClose = useCallback(() => {
-        setSettingsAnchorEl(null);
+        setSettingsAnchorPosition(null);
     }, []);
 
     // Handle settings change
@@ -414,7 +418,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             // Only update if values actually changed to avoid unnecessary re-renders
             if (Math.abs(prev.pixelSize - clampedPixelSize) > 0.001 ||
                 Math.abs(prev.backgroundBrightness - clampedBrightness) > 0.5) {
-                console.log(`[Preview3D] Pixel size setting updated: ${prev.pixelSize} → ${clampedPixelSize}`);
                 return {
                     pixelSize: clampedPixelSize,
                     backgroundBrightness: clampedBrightness,
@@ -893,8 +896,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
             {/* Settings Popover */}
             <PreviewSettings
-                anchorEl={settingsAnchorEl}
-                open={Boolean(settingsAnchorEl)}
+                anchorPosition={settingsAnchorPosition}
+                open={Boolean(settingsAnchorPosition)}
                 onClose={handleSettingsClose}
                 settings={previewSettings}
                 onSettingsChange={handleSettingsChange}

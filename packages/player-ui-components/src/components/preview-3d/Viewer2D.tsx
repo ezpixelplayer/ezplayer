@@ -52,12 +52,23 @@ function Optimized2DPointCloud({
     pixelSizeMultiplier?: number;
 }) {
     const geometryManagerRef = useRef<GeometryManager | null>(null);
-    const groupRef = useRef<THREE.Group | null>(null);
+    const [group, setGroup] = useState<THREE.Group | null>(null);
     const animationTimeRef = useRef(0);
 
     // Initialize geometry manager
     useEffect(() => {
-        if (!points || points.length === 0) return;
+        if (!points || points.length === 0) {
+            setGroup(null);
+            return;
+        }
+
+        // Clean up previous geometry manager and group first
+        const prevManager = geometryManagerRef.current;
+        if (prevManager) {
+            prevManager.dispose();
+            geometryManagerRef.current = null;
+        }
+        setGroup(null); // Clear old group immediately
 
         // Extract gamma explicitly from model configuration (or use default)
         const gamma = getGammaFromModelConfiguration(points);
@@ -93,7 +104,6 @@ function Optimized2DPointCloud({
         };
 
         const multiplier = pixelSizeMultiplier ?? 1.0;
-        console.log(`[Viewer2D] Creating GeometryManager with pixelSizeMultiplier: ${multiplier}, base pointSize: ${pointSize}`);
 
         const manager = new GeometryManager(points, uniforms, {
             pointSize,
@@ -108,16 +118,18 @@ function Optimized2DPointCloud({
         geometryManagerRef.current = manager;
 
         // Create group to hold all point objects
-        const group = new THREE.Group();
+        const nextGroup = new THREE.Group();
         manager.getPointObjects().forEach((pointsObj) => {
-            group.add(pointsObj);
+            nextGroup.add(pointsObj);
         });
-        groupRef.current = group;
+        setGroup(nextGroup);
 
         return () => {
-            manager.dispose();
-            geometryManagerRef.current = null;
-            groupRef.current = null;
+            if (geometryManagerRef.current) {
+                geometryManagerRef.current.dispose();
+                geometryManagerRef.current = null;
+            }
+            setGroup(null);
         };
     }, [points, pointSize, viewPlane, modelMetadata, pixelSizeMultiplier]);
 
@@ -147,11 +159,11 @@ function Optimized2DPointCloud({
 
     // Use a key based on pixelSizeMultiplier to force React to recreate the primitive
     // when the multiplier changes, ensuring the new group is properly rendered
-    const groupKey = `point-cloud-2d-${pixelSizeMultiplier ?? 1.0}-${points.length}`;
+    const primitiveKey = `point-cloud-2d-${pixelSizeMultiplier ?? 1.0}-${points.length}`;
 
-    if (!groupRef.current) return null;
+    if (!group) return null;
 
-    return <primitive key={groupKey} object={groupRef.current} />;
+    return <primitive key={primitiveKey} object={group} />;
 }
 
 interface Shape2DMeshProps {
