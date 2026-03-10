@@ -7,7 +7,7 @@ import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
-import { getWebPort } from './webport.js';
+import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
@@ -231,6 +231,10 @@ app.whenReady().then(async () => {
     const port = portInfo.port;
     const portSource = portInfo.source;
 
+    const kioskPortInfo = getKioskPort();
+    const kioskPort = kioskPortInfo?.port;
+    const kioskPortSource = kioskPortInfo?.source;
+
     playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
         workerData: {
             name: 'main',
@@ -265,6 +269,8 @@ app.whenReady().then(async () => {
             mainWindow,
             getMainWindow,
             distDir: __dirname, // Pass __dirname from main.ts to ensure correct path resolution
+            kioskPort,
+            kioskPortSource,
         });
     } catch (e) {
         console.error(e);

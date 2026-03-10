@@ -11,9 +11,10 @@ type SidebarProps = {
     hidePlayer: boolean;
     hideCloud: boolean;
     hideLocal: boolean;
+    kioskMode?: boolean;
 };
 
-export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer }: SidebarProps) => {
+export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer, kioskMode }: SidebarProps) => {
     const { sidebarToggle, toggleSidebar, closeSidebar } = useContext(SidebarContext);
     const theme = useTheme();
     const isLg = useMediaQuery(theme.breakpoints.up('lg'));
@@ -48,7 +49,7 @@ export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer }: SidebarProps
                             />
                         </>
                     )}
-                    <SidebarMenu hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} />
+                    <SidebarMenu hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} kioskMode={kioskMode} />
                 </Scrollbar>
             </Box>
             <Drawer
@@ -85,7 +86,7 @@ export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer }: SidebarProps
                                 />
                             </>
                         )}
-                        <SidebarMenu hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} />
+                        <SidebarMenu hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} kioskMode={kioskMode} />
                     </Scrollbar>
                 </Box>
             </Drawer>

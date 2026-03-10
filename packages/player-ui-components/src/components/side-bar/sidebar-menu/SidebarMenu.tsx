@@ -15,7 +15,15 @@ import React from 'react';
 //import { useSelector } from 'react-redux';
 //import { RootState } from "../../../../src/store/configure-store";
 
-export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hideLocal: boolean }) => {
+/** Routes hidden in kiosk mode (Songs, Playlists, Schedule, Background Schedule) */
+const KIOSK_HIDDEN_ROUTES = new Set([
+    ROUTES.SONGS,
+    ROUTES.PLAYLIST,
+    ROUTES.SCHEDULE,
+    ROUTES.BACKGROUND_SCHEDULE,
+]);
+
+export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hideLocal: boolean; kioskMode?: boolean }) => {
     //const userData = useSelector((state: RootState) => state.userData);
 
     return (
@@ -102,7 +110,7 @@ export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hi
                                   icon: <ViewInArIcon />,
                                   submenuname: '3D Preview',
                               },
-                          ]),
+                          ].filter(item => !props.kioskMode || !KIOSK_HIDDEN_ROUTES.has(item.pathname))),
 
                     ...(props.hideCloud
                         ? []
@@ -114,7 +122,7 @@ export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hi
                                   submenuname: 'Cloud Settings',
                               },
                           ]),
-                    ...(props.hideLocal
+                    ...(props.hideLocal || props.kioskMode
                         ? []
                         : [
                               {

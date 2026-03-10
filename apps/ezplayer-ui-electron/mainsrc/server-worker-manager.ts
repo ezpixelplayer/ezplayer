@@ -28,6 +28,8 @@ export interface ServerWorkerConfig {
     mainWindow: BrowserWindow | null;
     getMainWindow: () => BrowserWindow | null;
     distDir?: string; // Optional: base directory for workers (defaults to __dirname)
+    kioskPort?: number;
+    kioskPortSource?: string;
 }
 
 export interface ServerStatus {
@@ -40,6 +42,8 @@ let serverWorker: Worker | null = null;
 let currentServerStatus: ServerStatus | null = null;
 let playWorkerRef: Worker | null = null;
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
+let kioskPortRef: number | undefined = undefined;
+let kioskPortSourceRef: string | undefined = undefined;
 
 export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
@@ -85,9 +89,11 @@ const rpcHandlers: ServerWorkerRPCAPI = {
  * @param config Server configuration
  */
 export async function setUpServerWorker(config: ServerWorkerConfig): Promise<void> {
-    const { port, portSource, playWorker, mainWindow, getMainWindow, distDir } = config;
+    const { port, portSource, playWorker, mainWindow, getMainWindow, distDir, kioskPort, kioskPortSource } = config;
     playWorkerRef = playWorker;
     getMainWindowRef = getMainWindow;
+    kioskPortRef = kioskPort;
+    kioskPortSourceRef = kioskPortSource;
 
     console.log(`🌐 Starting Koa server worker on port ${port} (source: ${portSource})`);
 
@@ -229,6 +235,8 @@ function initializeServerWorker(port: number, portSource: string, mainWindow: Br
             portSource,
             staticPath,
             indexPath,
+            kioskPort: kioskPortRef,
+            kioskPortSource: kioskPortSourceRef,
         },
     };
 
