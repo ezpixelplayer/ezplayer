@@ -12,9 +12,9 @@ import type {
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
-import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer } from './ipcezplayer.js';
+import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer, loadShowFolder } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
-import type { PlaybackSettings } from '@ezplayer/ezplayer-core';
+import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
 
 // Polyfill for `__dirname` in ES Modules
@@ -61,6 +61,12 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
     },
     sendPlayerCommand: (command: unknown) => {
+        const cmd = command as EZPlayerCommand;
+        if (cmd.command === 'resetplayback') {
+            // Same path as folder change: reload everything and force worker restart
+            loadShowFolder(true);
+            return;
+        }
         if (playWorkerRef) {
             playWorkerRef.postMessage({
                 type: 'frontendcmd',

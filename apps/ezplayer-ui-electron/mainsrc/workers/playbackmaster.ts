@@ -504,14 +504,16 @@ parentPort.on('message', async (command: PlayerCommand) => {
                 showFolder = command.showFolder;
             }
 
-            if (folderChanged) {
+            const fullRestart = folderChanged || command.forceRestart;
+
+            if (fullRestart) {
                 if (running) {
                     shouldRestart = true;
                     await running; // wait for loop to exit
                     running = undefined;
                 }
 
-                // Load XML coordinates eagerly and push to server (disruptive)
+                // Load XML coordinates eagerly and push to server
                 try {
                     await loadXmlCoordinates();
                 } catch (err) {

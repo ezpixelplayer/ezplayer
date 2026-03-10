@@ -16,9 +16,14 @@ export const PlaybackControls: React.FC = () => {
     const isPaused = player?.status === 'Paused';
     const muted = player?.volume?.muted ?? false;
 
+    const isStopped = !isPlaying && !isPaused;
+
     const handlePlayPause = async () => {
         if (isPlaying) {
             await dispatch(callImmediateCommand({ command: 'pause' })).unwrap();
+        } else if (isStopped) {
+            // Reload schedule so playback re-engages
+            await dispatch(callImmediateCommand({ command: 'resetplayback' })).unwrap();
         } else {
             await dispatch(callImmediateCommand({ command: 'resume' })).unwrap();
         }
