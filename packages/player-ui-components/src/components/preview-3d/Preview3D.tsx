@@ -410,20 +410,13 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Handle settings change
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
-        // Validate and clamp values, but only update if they actually changed
+        // Validate and clamp values
         const clampedPixelSize = Math.max(0.5, Math.min(3.0, Number(newSettings.pixelSize) || 1.0));
         const clampedBrightness = Math.max(0, Math.min(100, Number(newSettings.backgroundBrightness) || 100));
 
-        setPreviewSettings((prev) => {
-            // Only update if values actually changed to avoid unnecessary re-renders
-            if (Math.abs(prev.pixelSize - clampedPixelSize) > 0.001 ||
-                Math.abs(prev.backgroundBrightness - clampedBrightness) > 0.5) {
-                return {
-                    pixelSize: clampedPixelSize,
-                    backgroundBrightness: clampedBrightness,
-                };
-            }
-            return prev;
+        setPreviewSettings({
+            pixelSize: clampedPixelSize,
+            backgroundBrightness: clampedBrightness,
         });
     }, []);
 

@@ -71,19 +71,16 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
         setLocalSettings(settings);
     }, [settings]);
 
-    const handlePixelSizeChange = (_event: Event, value: number | number[]) => {
+    const handlePixelSizeChange = (_event: Event | React.SyntheticEvent, value: number | number[]) => {
         const newValue = typeof value === 'number' ? value : value[0];
         // Ensure value is within valid range and is a valid number
         const clampedValue = Math.max(0.5, Math.min(3.0, Number(newValue) || 1.0));
-        // Only update if value actually changed to avoid unnecessary re-renders
-        if (Math.abs(clampedValue - localSettings.pixelSize) > 0.001) {
-            const updated: PreviewSettingsData = { ...localSettings, pixelSize: clampedValue };
-            setLocalSettings(updated);
-            onSettingsChange(updated);
-        }
+        const updated: PreviewSettingsData = { ...localSettings, pixelSize: clampedValue };
+        setLocalSettings(updated);
+        onSettingsChange(updated);
     };
 
-    const handleBackgroundBrightnessChange = (_event: Event, value: number | number[]) => {
+    const handleBackgroundBrightnessChange = (_event: Event | React.SyntheticEvent, value: number | number[]) => {
         const newValue = typeof value === 'number' ? value : value[0];
         const updated: PreviewSettingsData = { ...localSettings, backgroundBrightness: newValue };
         setLocalSettings(updated);
@@ -119,6 +116,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                     <Slider
                         value={localSettings.pixelSize}
                         onChange={handlePixelSizeChange}
+                        onChangeCommitted={handlePixelSizeChange}
                         min={0.5}
                         max={3.0}
                         step={0.1}
@@ -136,6 +134,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                     <Slider
                         value={localSettings.backgroundBrightness}
                         onChange={handleBackgroundBrightnessChange}
+                        onChangeCommitted={handleBackgroundBrightnessChange}
                         min={0}
                         max={100}
                         step={1}
