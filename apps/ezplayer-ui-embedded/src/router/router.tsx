@@ -53,7 +53,7 @@ const routes: RouteObject[] = [
                         AddSongDialog={AddSongDialogElectron}
                         statusArea={getStatusArea()}
                         showEditAction={false}
-                        showDeleteAction={false}
+                        showDeleteAction={!isKiosk}
                         showAddSongButton={false}
                     />
                 ),
