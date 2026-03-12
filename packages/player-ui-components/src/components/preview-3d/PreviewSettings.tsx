@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
-    Popover,
-    Box,
+    Popper,
+    Paper,
     Slider,
     Typography,
     Button,
     Divider,
     IconButton,
     Tooltip,
+    ClickAwayListener,
 } from '@mui/material';
+import { Box } from '../box/Box';
 import SettingsIcon from '@mui/icons-material/Settings';
+import CloseIcon from '@mui/icons-material/Close';
 
 type SliderMark = {
     value: number;
@@ -43,7 +46,7 @@ const brightnessMarks: SliderMark[] = [
 
 export interface PreviewSettingsData {
     pixelSize: number; // Multiplier: 0.5 to 3.0
-    backgroundBrightness: number; // 0 to 100
+    brightnessMultiplier: number; // 0–100 percentage multiplier applied to XML brightness
 }
 
 interface PreviewSettingsProps {
@@ -64,102 +67,178 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
     onSaveAsDefault,
 }) => {
     const [localSettings, setLocalSettings] = useState<PreviewSettingsData>(settings);
-    const resolvedAnchorPosition = anchorPosition ?? { top: 0, left: 0 };
 
-    // Update local settings when prop changes
-    React.useEffect(() => {
-        setLocalSettings(settings);
-    }, [settings]);
+    // Always-current ref so event handlers never read stale state.
+    const localSettingsRef = useRef<PreviewSettingsData>(localSettings);
+    localSettingsRef.current = localSettings;
 
-    const handlePixelSizeChange = (_event: Event | React.SyntheticEvent, value: number | number[]) => {
-        const newValue = typeof value === 'number' ? value : value[0];
-        // Ensure value is within valid range and is a valid number
-        const clampedValue = Math.max(0.5, Math.min(3.0, Number(newValue) || 1.0));
-        const updated: PreviewSettingsData = { ...localSettings, pixelSize: clampedValue };
-        setLocalSettings(updated);
-        onSettingsChange(updated);
-    };
+    // Snapshot of settings when the popup was opened, used to revert on cancel
+    const openSnapshotRef = useRef<PreviewSettingsData>(settings);
+    const prevOpenRef = useRef(false);
 
-    const handleBackgroundBrightnessChange = (_event: Event | React.SyntheticEvent, value: number | number[]) => {
-        const newValue = typeof value === 'number' ? value : value[0];
-        const updated: PreviewSettingsData = { ...localSettings, backgroundBrightness: newValue };
-        setLocalSettings(updated);
-        onSettingsChange(updated);
-    };
+    // Only sync and capture snapshot on the open transition (closed → open)
+    useEffect(() => {
+        if (open && !prevOpenRef.current) {
+            openSnapshotRef.current = { ...settings };
+            setLocalSettings(settings);
+            localSettingsRef.current = settings;
+        }
+        prevOpenRef.current = open;
+    }, [open, settings]);
+
+    // Virtual anchor element for Popper positioning (from pixel coordinates)
+    const popperAnchorEl = useMemo(() => {
+        if (!anchorPosition) return null;
+        return {
+            getBoundingClientRect: () =>
+                new DOMRect(anchorPosition.left, anchorPosition.top, 0, 0),
+        };
+    }, [anchorPosition]);
+
+    // Cancel / close: revert to snapshot and close
+    const handleCancel = useCallback(() => {
+        const snapshot = openSnapshotRef.current;
+        onClose();
+        requestAnimationFrame(() => {
+            onSettingsChange(snapshot);
+        });
+    }, [onClose, onSettingsChange]);
+
+    // Close on Escape key (Popover/Modal handled this automatically, Popper does not)
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [open, handleCancel]);
+
+    // ── Slider handlers ───────────────────────────────────────────────
+    // Both update local state (slider visual) AND push to parent immediately.
+    // This is safe because the Viewer now applies pixelSizeMultiplier via a
+    // cheap uniform update (< 1 ms) instead of a full geometry rebuild.
+
+    const handlePixelSizeChange = useCallback(
+        (_event: Event | React.SyntheticEvent, value: number | number[]) => {
+            const raw = typeof value === 'number' ? value : value[0];
+            const clamped = Math.max(0.5, Math.min(3.0, raw));
+            const next = { ...localSettingsRef.current, pixelSize: clamped };
+            localSettingsRef.current = next;
+            setLocalSettings(next);
+            onSettingsChange(next);
+        },
+        [onSettingsChange],
+    );
+
+    const handleBrightnessChange = useCallback(
+        (_event: Event | React.SyntheticEvent, value: number | number[]) => {
+            const raw = typeof value === 'number' ? value : value[0];
+            const clamped = Math.max(0, Math.min(100, raw));
+            const next = { ...localSettingsRef.current, brightnessMultiplier: clamped };
+            localSettingsRef.current = next;
+            setLocalSettings(next);
+            onSettingsChange(next);
+        },
+        [onSettingsChange],
+    );
+
+    if (!open) return null;
 
     return (
-        <Popover
+        <Popper
             open={open}
-            anchorReference="anchorPosition"
-            anchorPosition={resolvedAnchorPosition}
-            onClose={onClose}
-            transformOrigin={{
-                vertical: 'top',
-                horizontal: 'left',
-            }}
-            PaperProps={{
-                sx: popoverPaperSx,
-            }}
+            anchorEl={popperAnchorEl}
+            placement="bottom-start"
+            style={{ zIndex: 1300 }}
+            modifiers={[
+                {
+                    name: 'preventOverflow',
+                    enabled: true,
+                    options: { boundary: 'viewport', padding: 8 },
+                },
+            ]}
         >
-            <Box style={contentBoxStyle}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                    Preview Settings
-                </Typography>
+            <ClickAwayListener onClickAway={handleCancel}>
+                <Paper sx={popoverPaperSx} elevation={8}>
+                    <Box style={contentBoxStyle}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                Preview Settings
+                            </Typography>
+                            <IconButton size="small" onClick={handleCancel} aria-label="Close settings">
+                                <CloseIcon fontSize="small" />
+                            </IconButton>
+                        </Box>
 
-                <Divider />
+                        <Divider />
 
-                {/* Pixel Size Slider */}
-                <Box>
-                    <Typography variant="body2" gutterBottom sx={{ mb: 1 }}>
-                        Pixel Size: {localSettings.pixelSize.toFixed(2)}x
-                    </Typography>
-                    <Slider
-                        value={localSettings.pixelSize}
-                        onChange={handlePixelSizeChange}
-                        onChangeCommitted={handlePixelSizeChange}
-                        min={0.5}
-                        max={3.0}
-                        step={0.1}
-                        marks={pixelSizeMarks}
-                        valueLabelDisplay="auto"
-                        valueLabelFormat={(value) => `${value.toFixed(1)}x`}
-                    />
-                </Box>
+                        {/* Pixel Size Slider */}
+                        <Box>
+                            <Typography variant="body2" gutterBottom sx={{ mb: 1 }}>
+                                Pixel Size: {localSettings.pixelSize.toFixed(2)}x
+                            </Typography>
+                            <Slider
+                                value={localSettings.pixelSize}
+                                onChange={handlePixelSizeChange}
+                                min={0.5}
+                                max={3.0}
+                                step={0.1}
+                                marks={pixelSizeMarks}
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value) => `${value.toFixed(1)}x`}
+                            />
+                        </Box>
 
-                {/* Background Brightness Slider */}
-                <Box>
-                    <Typography variant="body2" gutterBottom sx={{ mb: 1 }}>
-                        Background Brightness: {Math.round(localSettings.backgroundBrightness)}%
-                    </Typography>
-                    <Slider
-                        value={localSettings.backgroundBrightness}
-                        onChange={handleBackgroundBrightnessChange}
-                        onChangeCommitted={handleBackgroundBrightnessChange}
-                        min={0}
-                        max={100}
-                        step={1}
-                        marks={brightnessMarks}
-                        valueLabelDisplay="auto"
-                        valueLabelFormat={(value) => `${value}%`}
-                    />
-                </Box>
+                        {/* Brightness Multiplier Slider */}
+                        <Box>
+                            <Typography variant="body2" gutterBottom sx={{ mb: 1 }}>
+                                Brightness: {Math.round(localSettings.brightnessMultiplier)}%
+                            </Typography>
+                            <Slider
+                                value={localSettings.brightnessMultiplier}
+                                onChange={handleBrightnessChange}
+                                min={0}
+                                max={100}
+                                step={1}
+                                marks={brightnessMarks}
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value) => `${value}%`}
+                            />
+                        </Box>
 
-                <Divider />
+                        <Divider />
 
-                {/* Save as Default Button */}
-                <Button
-                    variant="outlined"
-                    fullWidth
-                    onClick={() => {
-                        onSaveAsDefault();
-                        onClose();
-                    }}
-                    sx={{ mt: 1 }}
-                >
-                    Make Current Settings Default
-                </Button>
-            </Box>
-        </Popover>
+                        {/* Action Buttons */}
+                        <Box sx={{ display: 'flex', gap: 1.5, mt: 1, justifyContent: 'flex-end' }}>
+                            <Button
+                                variant="text"
+                                color="inherit"
+                                size="small"
+                                onClick={handleCancel}
+                                sx={{ textTransform: 'none', minWidth: 70 }}
+                            >
+                                Revert
+                            </Button>
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                size="small"
+                                onClick={() => {
+                                    onSaveAsDefault();
+                                    onClose();
+                                }}
+                                sx={{ textTransform: 'none', minWidth: 120 }}
+                            >
+                                Ok
+                            </Button>
+                        </Box>
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
     );
 };
 
@@ -180,4 +259,3 @@ export const SettingsButton: React.FC<{
         </Tooltip>
     );
 };
-

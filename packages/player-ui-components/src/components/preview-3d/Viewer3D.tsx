@@ -105,15 +105,13 @@ function OptimizedPointCloud({
             totalPointCount: points.length,
         };
 
-        const multiplier = pixelSizeMultiplier ?? 1.0;
-
         const manager = new GeometryManager(points, uniforms, {
             pointSize: pointSize,
             gamma,
             modelPixelSizeMap,
             modelPixelStyleMap,
             modelTransparencyMap,
-            pixelSizeMultiplier: multiplier,
+            pixelSizeMultiplier: pixelSizeMultiplier ?? 1.0,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
@@ -132,7 +130,14 @@ function OptimizedPointCloud({
             }
             setGroup(null);
         };
-    }, [points, pointSize, modelMetadata, pixelSizeMultiplier]);
+        // NOTE: pixelSizeMultiplier is intentionally excluded — it is applied
+        // via a cheap uniform update in useFrame, not a full geometry rebuild.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [points, pointSize, modelMetadata]);
+
+    // Keep pixelSizeMultiplier in a ref so useFrame can apply it cheaply.
+    const pixelSizeMultiplierRef = useRef(pixelSizeMultiplier ?? 1.0);
+    pixelSizeMultiplierRef.current = pixelSizeMultiplier ?? 1.0;
 
     // Track selection/hover in refs so changes are applied in the render
     // loop without triggering React re-render cascades.
@@ -149,9 +154,12 @@ function OptimizedPointCloud({
         selectedModelNames?: Set<string>;
     }>({});
 
-    // Single useFrame handles both selection updates and animation
+    // Single useFrame handles selection updates, animation, and multiplier changes
     useFrame((_state, delta) => {
         if (!geometryManagerRef.current) return;
+
+        // Apply pixel-size multiplier changes (cheap uniform update, < 1ms)
+        geometryManagerRef.current.updatePixelSizeMultiplier(pixelSizeMultiplierRef.current);
 
         // Apply selection/hover changes (ref-based, no React effect needed)
         const prev = prevSelectionRef.current;
@@ -181,9 +189,7 @@ function OptimizedPointCloud({
         geometryManagerRef.current.updateLiveDataColors(liveData);
     });
 
-    // Use a key based on pixelSizeMultiplier to force React to recreate the primitive
-    // when the multiplier changes, ensuring the new group is properly rendered
-    const primitiveKey = `point-cloud-${pixelSizeMultiplier ?? 1.0}-${points.length}`;
+    const primitiveKey = `point-cloud-${points.length}`;
 
     if (!group) return null;
 

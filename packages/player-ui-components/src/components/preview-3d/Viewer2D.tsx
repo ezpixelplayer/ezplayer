@@ -103,8 +103,6 @@ function Optimized2DPointCloud({
             totalPointCount: points.length,
         };
 
-        const multiplier = pixelSizeMultiplier ?? 1.0;
-
         const manager = new GeometryManager(points, uniforms, {
             pointSize,
             viewPlane,
@@ -112,7 +110,7 @@ function Optimized2DPointCloud({
             modelPixelSizeMap,
             modelPixelStyleMap,
             modelTransparencyMap,
-            pixelSizeMultiplier: multiplier,
+            pixelSizeMultiplier: pixelSizeMultiplier ?? 1.0,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
@@ -131,7 +129,14 @@ function Optimized2DPointCloud({
             }
             setGroup(null);
         };
-    }, [points, pointSize, viewPlane, modelMetadata, pixelSizeMultiplier]);
+        // NOTE: pixelSizeMultiplier is intentionally excluded — it is applied
+        // via a cheap uniform update in useFrame, not a full geometry rebuild.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [points, pointSize, viewPlane, modelMetadata]);
+
+    // Keep pixelSizeMultiplier in a ref so useFrame can apply it cheaply.
+    const pixelSizeMultiplierRef = useRef(pixelSizeMultiplier ?? 1.0);
+    pixelSizeMultiplierRef.current = pixelSizeMultiplier ?? 1.0;
 
     // Reset animation time when selected models change
     useEffect(() => {
@@ -144,9 +149,12 @@ function Optimized2DPointCloud({
         geometryManagerRef.current.updateStates(selectedIds, hoveredId, selectedModelNames);
     }, [selectedIds, hoveredId, selectedModelNames]);
 
-    // Update animation time and point sizes
+    // Update animation time, point sizes, and multiplier
     useFrame((_state, delta) => {
         if (!geometryManagerRef.current) return;
+
+        // Apply pixel-size multiplier changes (cheap uniform update, < 1ms)
+        geometryManagerRef.current.updatePixelSizeMultiplier(pixelSizeMultiplierRef.current);
 
         animationTimeRef.current += delta;
 
@@ -157,9 +165,7 @@ function Optimized2DPointCloud({
         geometryManagerRef.current.updateLiveDataColors(liveData);
     });
 
-    // Use a key based on pixelSizeMultiplier to force React to recreate the primitive
-    // when the multiplier changes, ensuring the new group is properly rendered
-    const primitiveKey = `point-cloud-2d-${pixelSizeMultiplier ?? 1.0}-${points.length}`;
+    const primitiveKey = `point-cloud-2d-${points.length}`;
 
     if (!group) return null;
 

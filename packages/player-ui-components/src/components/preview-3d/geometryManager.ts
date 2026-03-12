@@ -25,6 +25,8 @@ export class GeometryGroupRenderer {
     public points: THREE.Points;
     public group: GeometryGroup;
     public allPointsCount: number;
+    /** Base point size (before pixel-size multiplier). Set by GeometryManager after construction. */
+    public basePointSize: number = 3.0;
 
     private selectionStates: Float32Array;
     private hoverStates: Float32Array;
@@ -411,6 +413,9 @@ export class GeometryManager {
                 pixelStyle: effectivePixelStyle, // Pass model-specific pixel style
                 opacity: effectiveOpacity, // Pass model-specific opacity (derived from xLights Transparency)
             });
+            // Store the base size (before multiplier) so updatePixelSizeMultiplier
+            // can cheaply recalculate the uniform without a full geometry rebuild.
+            renderer.basePointSize = basePointSize;
             this.renderers.set(group.id, renderer);
         });
     }
@@ -423,14 +428,18 @@ export class GeometryManager {
     }
 
     /**
-     * Update pixel size multiplier and recreate geometry groups
+     * Update pixel size multiplier by patching the `size` uniform on every
+     * renderer. This is an O(groups) operation — no geometry or material is
+     * recreated, so it returns in < 1 ms even for large models.
      */
     updatePixelSizeMultiplier(multiplier: number): void {
         const clampedMultiplier = Math.max(0.1, Math.min(10.0, Number(multiplier) || 1.0));
-        if (Math.abs(this.pixelSizeMultiplier - clampedMultiplier) > 0.001) {
-            this.pixelSizeMultiplier = clampedMultiplier;
-            this.initializeGroups();
-        }
+        if (Math.abs(this.pixelSizeMultiplier - clampedMultiplier) < 0.001) return;
+
+        this.pixelSizeMultiplier = clampedMultiplier;
+        this.renderers.forEach((renderer) => {
+            renderer.material.uniforms.size.value = renderer.basePointSize * clampedMultiplier;
+        });
     }
 
     /**

@@ -78,7 +78,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [settingsAnchorPosition, setSettingsAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [previewSettings, setPreviewSettings] = useState<PreviewSettingsData>({
         pixelSize: 1.0,
-        backgroundBrightness: 100, // Will be updated from layoutSettings when loaded
+        brightnessMultiplier: 100, // Percentage multiplier applied to XML brightness (0–100)
     });
 
     // Get show directory from Redux store to detect changes
@@ -90,10 +90,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             const saved = localStorage.getItem('previewSettings');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                if (parsed.pixelSize !== undefined && parsed.backgroundBrightness !== undefined) {
+                if (parsed.pixelSize !== undefined) {
                     setPreviewSettings({
                         pixelSize: parsed.pixelSize ?? 1.0,
-                        backgroundBrightness: parsed.backgroundBrightness ?? 100,
+                        brightnessMultiplier: parsed.brightnessMultiplier ?? 100,
                     });
                 }
                 // Restore view mode if saved
@@ -105,33 +105,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             console.error('[Preview3D] Failed to load preview settings:', err);
         }
     }, []);
-
-    // Update background brightness from layoutSettings when loaded (if not already set from localStorage)
-    useEffect(() => {
-        if (layoutSettings.backgroundBrightness !== undefined) {
-            setPreviewSettings((prev) => {
-                // Check if we have a saved value from localStorage
-                const saved = localStorage.getItem('previewSettings');
-                let hasSavedBrightness = false;
-                if (saved) {
-                    try {
-                        const parsed = JSON.parse(saved);
-                        hasSavedBrightness = parsed.backgroundBrightness !== undefined;
-                    } catch {
-                        // Ignore parse errors
-                    }
-                }
-                // Only update if we don't have a saved value from localStorage
-                if (!hasSavedBrightness) {
-                    return {
-                        ...prev,
-                        backgroundBrightness: layoutSettings.backgroundBrightness ?? 100,
-                    };
-                }
-                return prev;
-            });
-        }
-    }, [layoutSettings.backgroundBrightness]);
 
     // Auto-detect frame server URL if not provided
     const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
@@ -412,11 +385,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
         // Validate and clamp values
         const clampedPixelSize = Math.max(0.5, Math.min(3.0, Number(newSettings.pixelSize) || 1.0));
-        const clampedBrightness = Math.max(0, Math.min(100, Number(newSettings.backgroundBrightness) || 100));
+        const clampedMultiplier = Math.max(0, Math.min(100, Number(newSettings.brightnessMultiplier) || 100));
 
         setPreviewSettings({
             pixelSize: clampedPixelSize,
-            backgroundBrightness: clampedBrightness,
+            brightnessMultiplier: clampedMultiplier,
         });
     }, []);
 
@@ -427,7 +400,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             const settingsToSave = {
                 mode: viewMode,
                 pixelSize: previewSettings.pixelSize,
-                backgroundBrightness: previewSettings.backgroundBrightness,
+                brightnessMultiplier: previewSettings.brightnessMultiplier,
                 // Camera position and rotation will be added when we implement camera tracking
                 cameraPosition: null,
                 cameraRotation: null,
@@ -800,44 +773,50 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
             <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 <Box sx={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
-                    {viewMode === '3d' ? (
-                        <Viewer3D
-                            points={modelData.points}
-                            shapes={modelData.shapes}
-                            liveData={livePixels}
-                            selectedIds={selectionState.selectedIds}
-                            hoveredId={selectionState.hoveredId}
-                            onPointClick={handleItemClick}
-                            onPointHover={handleItemHover}
-                            pointSize={pointSize}
-                            selectedModelNames={selectedModelNames}
-                            modelMetadata={modelData.metadata?.models}
-                            viewObjects={viewObjects}
-                            frameServerUrl={effectiveFrameServerUrl}
-                            movingHeadFixtures={movingHeadFixtures}
-                            backgroundBrightness={previewSettings.backgroundBrightness}
-                            pixelSizeMultiplier={previewSettings.pixelSize}
-                        />
-                    ) : (
-                        <Viewer2D
-                            points={(modelData2D ?? modelData).points}
-                            shapes={(modelData2D ?? modelData).shapes}
-                            liveData={livePixels}
-                            selectedIds={selectionState.selectedIds}
-                            hoveredId={selectionState.hoveredId}
-                            onPointClick={handleItemClick}
-                            onPointHover={handleItemHover}
-                            viewPlane={'xy'}
-                            pointSize={pointSize}
-                            selectedModelNames={selectedModelNames}
-                            modelMetadata={(modelData2D ?? modelData).metadata?.models}
-                            layoutSettings={layoutSettings}
-                            frameServerUrl={effectiveFrameServerUrl}
-                            movingHeadFixtures={movingHeadFixtures}
-                            backgroundBrightness={previewSettings.backgroundBrightness}
-                            pixelSizeMultiplier={previewSettings.pixelSize}
-                        />
-                    )}
+                    {(() => {
+                        // Compute final brightness: xmlBrightness * (sliderPercent / 100)
+                        const baseBrightness = layoutSettings.backgroundBrightness ?? 100;
+                        const finalBrightness = baseBrightness * (previewSettings.brightnessMultiplier / 100);
+
+                        return viewMode === '3d' ? (
+                            <Viewer3D
+                                points={modelData.points}
+                                shapes={modelData.shapes}
+                                liveData={livePixels}
+                                selectedIds={selectionState.selectedIds}
+                                hoveredId={selectionState.hoveredId}
+                                onPointClick={handleItemClick}
+                                onPointHover={handleItemHover}
+                                pointSize={pointSize}
+                                selectedModelNames={selectedModelNames}
+                                modelMetadata={modelData.metadata?.models}
+                                viewObjects={viewObjects}
+                                frameServerUrl={effectiveFrameServerUrl}
+                                movingHeadFixtures={movingHeadFixtures}
+                                backgroundBrightness={finalBrightness}
+                                pixelSizeMultiplier={previewSettings.pixelSize}
+                            />
+                        ) : (
+                            <Viewer2D
+                                points={(modelData2D ?? modelData).points}
+                                shapes={(modelData2D ?? modelData).shapes}
+                                liveData={livePixels}
+                                selectedIds={selectionState.selectedIds}
+                                hoveredId={selectionState.hoveredId}
+                                onPointClick={handleItemClick}
+                                onPointHover={handleItemHover}
+                                viewPlane={'xy'}
+                                pointSize={pointSize}
+                                selectedModelNames={selectedModelNames}
+                                modelMetadata={(modelData2D ?? modelData).metadata?.models}
+                                layoutSettings={layoutSettings}
+                                frameServerUrl={effectiveFrameServerUrl}
+                                movingHeadFixtures={movingHeadFixtures}
+                                backgroundBrightness={finalBrightness}
+                                pixelSizeMultiplier={previewSettings.pixelSize}
+                            />
+                        );
+                    })()}
                 </Box>
 
                 {showItemList && (
