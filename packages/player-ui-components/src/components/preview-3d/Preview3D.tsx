@@ -18,8 +18,8 @@ import ListIcon from '@mui/icons-material/List';
 import CloseIcon from '@mui/icons-material/Close';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import { Viewer3D } from './Viewer3D';
-import { Viewer2D } from './Viewer2D';
+import { Viewer3D, type CameraState3D } from './Viewer3D';
+import { Viewer2D, type CameraState2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
@@ -81,10 +81,24 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         brightnessMultiplier: 100, // Percentage multiplier applied to XML brightness (0–100)
     });
 
+    // Camera state for 2D and 3D views
+    const [cameraState2D, setCameraState2D] = useState<CameraState2D | null>(null);
+    const [cameraState3D, setCameraState3D] = useState<CameraState3D | null>(null);
+    const [shouldAutoFit, setShouldAutoFit] = useState(false);
+    const [cameraStateLoaded, setCameraStateLoaded] = useState(false);
+
+    // Refs to track latest camera state (always current, even if state hasn't updated yet)
+    const cameraState2DRef = React.useRef<CameraState2D | null>(null);
+    const cameraState3DRef = React.useRef<CameraState3D | null>(null);
+
+    // Refs to store callbacks to get current camera state immediately
+    const getCurrentCameraState2DRef = React.useRef<(() => CameraState2D | null) | null>(null);
+    const getCurrentCameraState3DRef = React.useRef<(() => CameraState3D | null) | null>(null);
+
     // Get show directory from Redux store to detect changes
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
 
-    // Load preview settings from localStorage on mount
+    // Load preview settings and camera state from localStorage on mount
     useEffect(() => {
         try {
             const saved = localStorage.getItem('previewSettings');
@@ -100,9 +114,24 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 if (parsed.mode === '2d' || parsed.mode === '3d') {
                     setViewMode(parsed.mode);
                 }
+                // Restore camera states if saved
+                if (parsed.cameraState2D) {
+                    console.log('[Preview3D] Loading saved cameraState2D:', parsed.cameraState2D);
+                    setCameraState2D(parsed.cameraState2D);
+                    cameraState2DRef.current = parsed.cameraState2D;
+                }
+                if (parsed.cameraState3D) {
+                    console.log('[Preview3D] Loading saved cameraState3D:', parsed.cameraState3D);
+                    setCameraState3D(parsed.cameraState3D);
+                    cameraState3DRef.current = parsed.cameraState3D;
+                }
             }
+            // Mark camera state as loaded (even if null, we've checked localStorage)
+            setCameraStateLoaded(true);
+            console.log('[Preview3D] Camera state loaded from localStorage');
         } catch (err) {
             console.error('[Preview3D] Failed to load preview settings:', err);
+            setCameraStateLoaded(true);
         }
     }, []);
 
@@ -393,19 +422,108 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         });
     }, []);
 
-    // Handle save as default
+    // Handle camera state changes
+    const handleCameraStateChange2D = useCallback((state: CameraState2D) => {
+        setCameraState2D(state);
+        cameraState2DRef.current = state; // Keep ref updated with latest value
+        // Auto-save to localStorage for persistence when switching screens
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            const parsed = saved ? JSON.parse(saved) : {};
+            parsed.cameraState2D = state;
+            localStorage.setItem('previewSettings', JSON.stringify(parsed));
+        } catch (err) {
+            console.error('[Preview3D] Failed to save camera state:', err);
+        }
+    }, []);
+
+    const handleCameraStateChange3D = useCallback((state: CameraState3D) => {
+        setCameraState3D(state);
+        cameraState3DRef.current = state; // Keep ref updated with latest value
+        // Auto-save to localStorage for persistence when switching screens
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            const parsed = saved ? JSON.parse(saved) : {};
+            parsed.cameraState3D = state;
+            localStorage.setItem('previewSettings', JSON.stringify(parsed));
+        } catch (err) {
+            console.error('[Preview3D] Failed to save camera state:', err);
+        }
+    }, []);
+
+    // Handle reset view
+    const handleResetView = useCallback(() => {
+        setShouldAutoFit(true);
+        // Clear saved camera states
+        setCameraState2D(null);
+        setCameraState3D(null);
+        cameraState2DRef.current = null;
+        cameraState3DRef.current = null;
+        // Clear from localStorage
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                delete parsed.cameraState2D;
+                delete parsed.cameraState3D;
+                localStorage.setItem('previewSettings', JSON.stringify(parsed));
+            }
+        } catch (err) {
+            console.error('[Preview3D] Failed to clear camera state:', err);
+        }
+    }, []);
+
+    // Handle auto-fit complete
+    const handleAutoFitComplete = useCallback(() => {
+        setShouldAutoFit(false);
+    }, []);
+
+    // Handle save as default - saves current camera state at the moment of clicking "Ok"
     const handleSaveAsDefault = useCallback(() => {
         try {
-            // Get camera position/rotation from viewers (will be implemented via refs/callbacks)
+            // First try to get current camera state directly from viewers (bypasses throttling)
+            let currentCameraState2D = cameraState2DRef.current;
+            let currentCameraState3D = cameraState3DRef.current;
+
+            // If refs are null, try to get current state directly from viewers
+            if (viewMode === '2d' && getCurrentCameraState2DRef.current) {
+                const directState = getCurrentCameraState2DRef.current();
+                if (directState) {
+                    currentCameraState2D = directState;
+                    cameraState2DRef.current = directState;
+                }
+            } else if (viewMode === '3d' && getCurrentCameraState3DRef.current) {
+                const directState = getCurrentCameraState3DRef.current();
+                if (directState) {
+                    currentCameraState3D = directState;
+                    cameraState3DRef.current = directState;
+                }
+            }
+
+            console.log('[Preview3D] Saving camera state:', {
+                mode: viewMode,
+                cameraState2D: currentCameraState2D,
+                cameraState3D: currentCameraState3D
+            });
+
             const settingsToSave = {
                 mode: viewMode,
                 pixelSize: previewSettings.pixelSize,
                 brightnessMultiplier: previewSettings.brightnessMultiplier,
-                // Camera position and rotation will be added when we implement camera tracking
-                cameraPosition: null,
-                cameraRotation: null,
+                cameraState2D: currentCameraState2D,
+                cameraState3D: currentCameraState3D,
             };
             localStorage.setItem('previewSettings', JSON.stringify(settingsToSave));
+
+            // Also update state to ensure consistency
+            if (currentCameraState2D) {
+                setCameraState2D(currentCameraState2D);
+            }
+            if (currentCameraState3D) {
+                setCameraState3D(currentCameraState3D);
+            }
+
+            console.log('[Preview3D] Camera state saved successfully');
         } catch (err) {
             console.error('[Preview3D] Failed to save preview settings:', err);
         }
@@ -795,6 +913,16 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 movingHeadFixtures={movingHeadFixtures}
                                 backgroundBrightness={finalBrightness}
                                 pixelSizeMultiplier={previewSettings.pixelSize}
+                                cameraState={cameraState3D}
+                                onCameraStateChange={handleCameraStateChange3D}
+                                shouldAutoFit={shouldAutoFit}
+                                onAutoFitComplete={handleAutoFitComplete}
+                                cameraStateLoaded={cameraStateLoaded}
+                                onGetCurrentCameraState={(setFn) => {
+                                    setFn((fn) => {
+                                        getCurrentCameraState3DRef.current = fn;
+                                    });
+                                }}
                             />
                         ) : (
                             <Viewer2D
@@ -814,6 +942,16 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 movingHeadFixtures={movingHeadFixtures}
                                 backgroundBrightness={finalBrightness}
                                 pixelSizeMultiplier={previewSettings.pixelSize}
+                                cameraState={cameraState2D}
+                                onCameraStateChange={handleCameraStateChange2D}
+                                shouldAutoFit={shouldAutoFit}
+                                onAutoFitComplete={handleAutoFitComplete}
+                                cameraStateLoaded={cameraStateLoaded}
+                                onGetCurrentCameraState={(setFn) => {
+                                    setFn((fn) => {
+                                        getCurrentCameraState2DRef.current = fn;
+                                    });
+                                }}
                             />
                         );
                     })()}
@@ -874,6 +1012,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 settings={previewSettings}
                 onSettingsChange={handleSettingsChange}
                 onSaveAsDefault={handleSaveAsDefault}
+                onResetView={handleResetView}
             />
         </Box>
     );

@@ -13,6 +13,7 @@ import {
 import { Box } from '../box/Box';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 
 type SliderMark = {
     value: number;
@@ -56,6 +57,7 @@ interface PreviewSettingsProps {
     settings: PreviewSettingsData;
     onSettingsChange: (settings: PreviewSettingsData) => void;
     onSaveAsDefault: () => void;
+    onResetView?: () => void;
 }
 
 export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
@@ -65,6 +67,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
     settings,
     onSettingsChange,
     onSaveAsDefault,
+    onResetView,
 }) => {
     const [localSettings, setLocalSettings] = useState<PreviewSettingsData>(settings);
 
@@ -208,6 +211,28 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                                 valueLabelFormat={(value) => `${value}%`}
                             />
                         </Box>
+
+                        <Divider />
+
+                        {/* Reset View Button */}
+                        {onResetView && (
+                            <Box>
+                                <Button
+                                    variant="outlined"
+                                    color="secondary"
+                                    size="small"
+                                    startIcon={<RestartAltIcon />}
+                                    onClick={() => {
+                                        onResetView();
+                                        onClose();
+                                    }}
+                                    fullWidth
+                                    sx={{ textTransform: 'none' }}
+                                >
+                                    Reset View
+                                </Button>
+                            </Box>
+                        )}
 
                         <Divider />
 

@@ -13,6 +13,12 @@ import { ImagePlane } from './ImagePlane';
 import { MovingHeadBeams } from './MovingHeadBeams';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 
+export interface CameraState3D {
+    position: [number, number, number];
+    target: [number, number, number];
+    quaternion: [number, number, number, number];
+}
+
 export interface Viewer3DProps {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -30,6 +36,12 @@ export interface Viewer3DProps {
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number; // 0-100, affects background meshes/images only
     pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
+    cameraState?: CameraState3D | null; // Saved camera state to restore
+    onCameraStateChange?: (state: CameraState3D) => void; // Callback when camera state changes
+    shouldAutoFit?: boolean; // Whether to auto-fit camera (for reset view)
+    onAutoFitComplete?: () => void; // Callback when auto-fit completes
+    cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
+    onGetCurrentCameraState?: (callback: (state: CameraState3D | null) => void) => void; // Callback to get current camera state immediately
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -464,6 +476,11 @@ function SceneContent({
     movingHeadFixtures,
     backgroundBrightness,
     pixelSizeMultiplier,
+    cameraState,
+    onCameraStateChange,
+    shouldAutoFit,
+    onAutoFitComplete,
+    cameraStateLoaded,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -480,12 +497,99 @@ function SceneContent({
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number;
     pixelSizeMultiplier?: number;
+    cameraState?: CameraState3D | null;
+    onCameraStateChange?: (state: CameraState3D) => void;
+    shouldAutoFit?: boolean;
+    onAutoFitComplete?: () => void;
+    cameraStateLoaded?: boolean;
 }) {
     const { camera, controls } = useThree();
+    const hasRestoredCameraRef = useRef(false);
+    const lastCameraStateRef = useRef<CameraState3D | null>(null);
+    const lastCameraStatePropRef = useRef<CameraState3D | null | undefined>(cameraState);
+
+    // Reset restore flag when cameraState prop changes
+    useEffect(() => {
+        if (lastCameraStatePropRef.current !== cameraState) {
+            hasRestoredCameraRef.current = false;
+            lastCameraStatePropRef.current = cameraState;
+        }
+    }, [cameraState]);
+
+    // Restore saved camera state
+    useEffect(() => {
+        // Wait for camera state to be loaded before attempting restore
+        if (cameraStateLoaded === false) return;
+
+        if (!cameraState || (points.length === 0 && (!viewObjects || viewObjects.length === 0)) || hasRestoredCameraRef.current) return;
+
+        // Wait for controls to be ready
+        if (!controls) {
+            console.log('[Viewer3D] Waiting for controls to be ready for restore');
+            return;
+        }
+
+        const orbitControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
+        if (!orbitControls || !orbitControls.target) {
+            console.log('[Viewer3D] Controls not ready for restore');
+            return;
+        }
+
+        console.log('[Viewer3D] Restoring camera state:', cameraState);
+
+        // Restore camera position and rotation
+        camera.position.set(...cameraState.position);
+        camera.quaternion.set(...cameraState.quaternion);
+        camera.updateMatrixWorld();
+
+        // Restore controls target
+        orbitControls.target.set(...cameraState.target);
+
+        // Update controls to apply the changes
+        if (orbitControls.update) {
+            orbitControls.update();
+        }
+
+        console.log('[Viewer3D] Camera state restored successfully');
+
+        // Mark as restored after a small delay to ensure it's applied
+        requestAnimationFrame(() => {
+            hasRestoredCameraRef.current = true;
+            console.log('[Viewer3D] Camera restore flag set to true');
+        });
+    }, [cameraState, camera, controls, points.length, viewObjects, cameraStateLoaded]);
+
+    // Reset restore flag when shouldAutoFit becomes true
+    useEffect(() => {
+        if (shouldAutoFit) {
+            hasRestoredCameraRef.current = false;
+        }
+    }, [shouldAutoFit]);
 
     // Auto-fit camera to scene (including house meshes)
     useEffect(() => {
         if (points.length === 0 && (!viewObjects || viewObjects.length === 0)) return;
+
+        // Wait for camera state to be loaded before deciding whether to auto-fit
+        if (cameraStateLoaded === false) {
+            return;
+        }
+
+        // If we have a saved camera state, NEVER auto-fit unless explicitly requested
+        // (restoration will happen in the restore effect)
+        if (cameraState && !shouldAutoFit) {
+            // Only skip if restoration hasn't completed yet - give it one more frame
+            if (!hasRestoredCameraRef.current) {
+                // Defer to next frame to allow restore to complete
+                requestAnimationFrame(() => {
+                    // If still not restored after a frame, restoration might have failed
+                    // but we still won't auto-fit if cameraState exists
+                });
+                return;
+            }
+            // Restoration completed, skip auto-fit
+            return;
+        }
 
         const box = new THREE.Box3();
 
@@ -561,7 +665,96 @@ function SceneContent({
             orbitControls.target.copy(center);
             orbitControls.update();
         }
-    }, [points, shapes, viewObjects, camera, controls]);
+
+        // Reset the restore flag when auto-fitting
+        hasRestoredCameraRef.current = false;
+
+        // Notify that auto-fit completed
+        if (shouldAutoFit && onAutoFitComplete) {
+            requestAnimationFrame(() => {
+                onAutoFitComplete?.();
+            });
+        }
+    }, [points, shapes, viewObjects, camera, controls, cameraState, shouldAutoFit, onAutoFitComplete, cameraStateLoaded]);
+
+    // Track camera state changes and notify parent
+    useEffect(() => {
+        if (!onCameraStateChange || !controls) return;
+
+        const orbitControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
+        if (!orbitControls || !orbitControls.target) return;
+
+        const getCurrentCameraState = (): CameraState3D => {
+            return {
+                position: [camera.position.x, camera.position.y, camera.position.z],
+                target: [orbitControls.target.x, orbitControls.target.y, orbitControls.target.z],
+                quaternion: [
+                    camera.quaternion.x,
+                    camera.quaternion.y,
+                    camera.quaternion.z,
+                    camera.quaternion.w,
+                ],
+            };
+        };
+
+        const updateCameraState = () => {
+            const state = getCurrentCameraState();
+
+            // Only notify if state actually changed
+            const stateStr = JSON.stringify(state);
+            const lastStr = JSON.stringify(lastCameraStateRef.current);
+            if (stateStr !== lastStr) {
+                lastCameraStateRef.current = state;
+                onCameraStateChange(state);
+                console.log('[Viewer3D] Camera state changed:', state);
+            }
+        };
+
+        // Store function to get current camera state immediately (for "Ok" button)
+        // This will be exposed via a ref in Preview3D
+        const getCurrentStateFn = () => {
+            if (controls && orbitControls && orbitControls.target) {
+                const state = getCurrentCameraState();
+                lastCameraStateRef.current = state;
+                return state;
+            }
+            return null;
+        };
+
+        // Expose via callback if provided
+        if (onGetCurrentCameraState) {
+            onGetCurrentCameraState((setFn) => {
+                setFn(getCurrentStateFn);
+            });
+        }
+
+        // Throttle updates to avoid excessive callbacks
+        let timeoutId: NodeJS.Timeout | null = null;
+        const throttledUpdate = () => {
+            if (timeoutId) return;
+            timeoutId = setTimeout(() => {
+                updateCameraState();
+                timeoutId = null;
+            }, 100); // Update every 100ms max
+        };
+
+        // Listen to control changes
+        const controlsObj = controls as any;
+        if (controlsObj.addEventListener) {
+            controlsObj.addEventListener('change', throttledUpdate);
+        }
+
+        // Also check periodically (for programmatic changes)
+        const intervalId = setInterval(throttledUpdate, 200);
+
+        return () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            clearInterval(intervalId);
+            if (controlsObj.removeEventListener) {
+                controlsObj.removeEventListener('change', throttledUpdate);
+            }
+        };
+    }, [camera, controls, onCameraStateChange]);
 
     return (
         <>
@@ -641,6 +834,11 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     movingHeadFixtures,
     backgroundBrightness = 100,
     pixelSizeMultiplier = 1.0,
+    cameraState,
+    onCameraStateChange,
+    shouldAutoFit,
+    onAutoFitComplete,
+    cameraStateLoaded = true,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -820,6 +1018,11 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             movingHeadFixtures={movingHeadFixtures}
                             backgroundBrightness={backgroundBrightness}
                             pixelSizeMultiplier={pixelSizeMultiplier}
+                            cameraState={cameraState}
+                            onCameraStateChange={onCameraStateChange}
+                            shouldAutoFit={shouldAutoFit}
+                            onAutoFitComplete={onAutoFitComplete}
+                            cameraStateLoaded={cameraStateLoaded}
                         />
                         {showStats && <Stats />}
                     </Canvas>
