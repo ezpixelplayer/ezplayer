@@ -27,6 +27,7 @@ interface HouseMeshProps {
     frameServerUrl?: string;
     liveData?: LatestFrameRingBuffer;
     points?: Point3D[]; // Points to look up channel information
+    backgroundBrightness?: number; // 0-100, overrides viewObject brightness for background meshes
 }
 
 /**
@@ -423,13 +424,13 @@ function createShowFileLoadingManager(
 // HouseMeshContent – the actual R3F component
 // ---------------------------------------------------------------------------
 
-function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: HouseMeshProps) {
+function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgroundBrightness }: HouseMeshProps) {
     const {
         objFile,
         worldPosX, worldPosY, worldPosZ,
         scaleX, scaleY, scaleZ,
         rotateX, rotateY, rotateZ,
-        brightness,
+        brightness: viewObjectBrightness,
         startChannel: viewObjectStartChannel,
         channelsPerNode: viewObjectChannelsPerNode = 3,
         nodeCount: viewObjectNodeCount = 1,
@@ -438,6 +439,9 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
         gOffset: viewObjectGOffset = 1,
         bOffset: viewObjectBOffset = 2,
     } = viewObject;
+
+    // Use backgroundBrightness override if provided, otherwise use viewObject brightness
+    const brightness = backgroundBrightness !== undefined ? backgroundBrightness : viewObjectBrightness;
 
     // The loaded THREE.Group – null until MTL + OBJ are ready
     const [obj, setObj] = useState<THREE.Group | null>(null);
@@ -683,7 +687,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points }: Hous
 
         loadModel();
         return () => { aborted = true; };
-    }, [objUrl, mtlUrl, frameServerUrl, objFile, viewObject.name]);
+    }, [objUrl, mtlUrl, frameServerUrl, objFile, viewObject.name, brightness]);
 
     // ----- Transforms -----
     const position = useMemo(

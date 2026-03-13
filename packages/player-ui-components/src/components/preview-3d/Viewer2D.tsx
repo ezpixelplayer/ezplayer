@@ -11,6 +11,12 @@ import { getGammaFromModelConfiguration } from './pointShaders';
 import { MovingHeadMarkers2D } from './MovingHeadMarkers2D';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 
+export interface CameraState2D {
+    position: [number, number, number];
+    zoom: number;
+    target: [number, number, number];
+}
+
 export interface Viewer2DProps {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -20,12 +26,20 @@ export interface Viewer2DProps {
     onPointClick?: (pointId: string) => void;
     onPointHover?: (pointId: string | null) => void;
     viewPlane?: 'xy' | 'xz' | 'yz';
-    pointSize?: number;
+    pointSize?: number; // Base point size (will be multiplied by pixelSizeMultiplier)
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
+    backgroundBrightness?: number; // 0-100, affects background images only
+    pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
+    cameraState?: CameraState2D | null; // Saved camera state to restore
+    onCameraStateChange?: (state: CameraState2D) => void; // Callback when camera state changes
+    shouldAutoFit?: boolean; // Whether to auto-fit camera (for reset view)
+    onAutoFitComplete?: () => void; // Callback when auto-fit completes
+    cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
+    onGetCurrentCameraState?: (setFn: (fn: () => CameraState2D | null) => void) => void; // Callback to set function to get current camera state immediately
 }
 
 function Optimized2DPointCloud({
@@ -37,6 +51,7 @@ function Optimized2DPointCloud({
     viewPlane,
     selectedModelNames,
     modelMetadata,
+    pixelSizeMultiplier,
 }: {
     points: Point3D[];
     liveData?: LatestFrameRingBuffer;
@@ -46,14 +61,26 @@ function Optimized2DPointCloud({
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
     modelMetadata?: ModelMetadata[];
+    pixelSizeMultiplier?: number;
 }) {
     const geometryManagerRef = useRef<GeometryManager | null>(null);
-    const groupRef = useRef<THREE.Group | null>(null);
+    const [group, setGroup] = useState<THREE.Group | null>(null);
     const animationTimeRef = useRef(0);
 
     // Initialize geometry manager
     useEffect(() => {
-        if (!points || points.length === 0) return;
+        if (!points || points.length === 0) {
+            setGroup(null);
+            return;
+        }
+
+        // Clean up previous geometry manager and group first
+        const prevManager = geometryManagerRef.current;
+        if (prevManager) {
+            prevManager.dispose();
+            geometryManagerRef.current = null;
+        }
+        setGroup(null); // Clear old group immediately
 
         // Extract gamma explicitly from model configuration (or use default)
         const gamma = getGammaFromModelConfiguration(points);
@@ -95,23 +122,33 @@ function Optimized2DPointCloud({
             modelPixelSizeMap,
             modelPixelStyleMap,
             modelTransparencyMap,
+            pixelSizeMultiplier: pixelSizeMultiplier ?? 1.0,
         });
         manager.initializeGroups();
         geometryManagerRef.current = manager;
 
         // Create group to hold all point objects
-        const group = new THREE.Group();
+        const nextGroup = new THREE.Group();
         manager.getPointObjects().forEach((pointsObj) => {
-            group.add(pointsObj);
+            nextGroup.add(pointsObj);
         });
-        groupRef.current = group;
+        setGroup(nextGroup);
 
         return () => {
-            manager.dispose();
-            geometryManagerRef.current = null;
-            groupRef.current = null;
+            if (geometryManagerRef.current) {
+                geometryManagerRef.current.dispose();
+                geometryManagerRef.current = null;
+            }
+            setGroup(null);
         };
+        // NOTE: pixelSizeMultiplier is intentionally excluded — it is applied
+        // via a cheap uniform update in useFrame, not a full geometry rebuild.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [points, pointSize, viewPlane, modelMetadata]);
+
+    // Keep pixelSizeMultiplier in a ref so useFrame can apply it cheaply.
+    const pixelSizeMultiplierRef = useRef(pixelSizeMultiplier ?? 1.0);
+    pixelSizeMultiplierRef.current = pixelSizeMultiplier ?? 1.0;
 
     // Reset animation time when selected models change
     useEffect(() => {
@@ -124,9 +161,12 @@ function Optimized2DPointCloud({
         geometryManagerRef.current.updateStates(selectedIds, hoveredId, selectedModelNames);
     }, [selectedIds, hoveredId, selectedModelNames]);
 
-    // Update animation time and point sizes
+    // Update animation time, point sizes, and multiplier
     useFrame((_state, delta) => {
         if (!geometryManagerRef.current) return;
+
+        // Apply pixel-size multiplier changes (cheap uniform update, < 1ms)
+        geometryManagerRef.current.updatePixelSizeMultiplier(pixelSizeMultiplierRef.current);
 
         animationTimeRef.current += delta;
 
@@ -137,9 +177,11 @@ function Optimized2DPointCloud({
         geometryManagerRef.current.updateLiveDataColors(liveData);
     });
 
-    if (!groupRef.current) return null;
+    const primitiveKey = `point-cloud-2d-${points.length}`;
 
-    return <primitive object={groupRef.current} />;
+    if (!group) return null;
+
+    return <primitive key={primitiveKey} object={group} />;
 }
 
 interface Shape2DMeshProps {
@@ -249,16 +291,16 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                          const firstPoint = points[0];
-                          switch (viewPlane) {
-                              case 'xy':
-                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                              case 'xz':
-                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                              case 'yz':
-                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                          }
-                      })()
+                        const firstPoint = points[0];
+                        switch (viewPlane) {
+                            case 'xy':
+                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                            case 'xz':
+                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                            case 'yz':
+                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                        }
+                    })()
                     : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
@@ -432,12 +474,16 @@ function HoverHandler2D({
 function BackgroundImage2D({
     layoutSettings,
     frameServerUrl,
+    backgroundBrightnessOverride,
 }: {
     layoutSettings: LayoutSettings;
     frameServerUrl: string;
+    backgroundBrightnessOverride?: number;
 }) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
-    const { backgroundImage, backgroundBrightness, previewWidth, previewHeight } = layoutSettings;
+    const { backgroundImage, backgroundBrightness: layoutBrightness, previewWidth, previewHeight } = layoutSettings;
+    // Use override if provided, otherwise use layout setting
+    const backgroundBrightness = backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
 
     useEffect(() => {
         if (!backgroundImage || !frameServerUrl) return;
@@ -523,6 +569,14 @@ function Scene2DContent({
     layoutSettings,
     frameServerUrl,
     movingHeadFixtures,
+    backgroundBrightness,
+    pixelSizeMultiplier,
+    cameraState,
+    onCameraStateChange,
+    shouldAutoFit,
+    onAutoFitComplete,
+    cameraStateLoaded,
+    onGetCurrentCameraState,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -538,12 +592,104 @@ function Scene2DContent({
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
+    backgroundBrightness?: number;
+    pixelSizeMultiplier?: number;
+    cameraState?: CameraState2D | null;
+    onCameraStateChange?: (state: CameraState2D) => void;
+    shouldAutoFit?: boolean;
+    onAutoFitComplete?: () => void;
+    cameraStateLoaded?: boolean;
+    onGetCurrentCameraState?: (setFn: (fn: () => CameraState2D | null) => void) => void;
 }) {
     const { camera, controls } = useThree();
+    const hasRestoredCameraRef = useRef(false);
+    const lastCameraStateRef = useRef<CameraState2D | null>(null);
+    const lastCameraStatePropRef = useRef<CameraState2D | null | undefined>(cameraState);
 
-    // Auto-fit camera to scene
+    // Reset restore flag when cameraState prop changes
+    useEffect(() => {
+        if (lastCameraStatePropRef.current !== cameraState) {
+            hasRestoredCameraRef.current = false;
+            lastCameraStatePropRef.current = cameraState;
+        }
+    }, [cameraState]);
+
+    // Restore saved camera state
+    useEffect(() => {
+        // Wait for camera state to be loaded before attempting restore
+        if (cameraStateLoaded === false) return;
+
+        if (!cameraState || points.length === 0 || hasRestoredCameraRef.current) return;
+
+        // Wait for controls to be ready
+        if (!controls) {
+            console.log('[Viewer2D] Waiting for controls to be ready for restore');
+            return;
+        }
+
+        const mapControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
+        if (!mapControls || !mapControls.target) {
+            console.log('[Viewer2D] Controls not ready for restore');
+            return;
+        }
+
+        console.log('[Viewer2D] Restoring camera state:', cameraState);
+
+        if (camera instanceof THREE.OrthographicCamera) {
+            camera.position.set(...cameraState.position);
+            camera.zoom = cameraState.zoom;
+            camera.updateProjectionMatrix();
+            camera.updateMatrixWorld();
+        }
+
+        // Restore controls target
+        mapControls.target.set(...cameraState.target);
+
+        // Update controls to apply the changes
+        if (mapControls.update) {
+            mapControls.update();
+        }
+
+        console.log('[Viewer2D] Camera state restored successfully');
+
+        // Mark as restored after a small delay to ensure it's applied
+        requestAnimationFrame(() => {
+            hasRestoredCameraRef.current = true;
+            console.log('[Viewer2D] Camera restore flag set to true');
+        });
+    }, [cameraState, camera, controls, points.length, cameraStateLoaded]);
+
+    // Reset restore flag when shouldAutoFit becomes true
+    useEffect(() => {
+        if (shouldAutoFit) {
+            hasRestoredCameraRef.current = false;
+        }
+    }, [shouldAutoFit]);
+
+    // Auto-fit camera to scene (only when shouldAutoFit is true or no saved state)
     useEffect(() => {
         if (points.length === 0) return;
+
+        // Wait for camera state to be loaded before deciding whether to auto-fit
+        if (cameraStateLoaded === false) {
+            return;
+        }
+
+        // If we have a saved camera state, NEVER auto-fit unless explicitly requested
+        // (restoration will happen in the restore effect)
+        if (cameraState && !shouldAutoFit) {
+            // Only skip if restoration hasn't completed yet - give it one more frame
+            if (!hasRestoredCameraRef.current) {
+                // Defer to next frame to allow restore to complete
+                requestAnimationFrame(() => {
+                    // If still not restored after a frame, restoration might have failed
+                    // but we still won't auto-fit if cameraState exists
+                });
+                return;
+            }
+            // Restoration completed, skip auto-fit
+            return;
+        }
 
         const box = new THREE.Box3();
         points.forEach((point) => {
@@ -627,7 +773,90 @@ function Scene2DContent({
         // Re-force identity after controls.update() which calls lookAt internally
         camera.quaternion.set(0, 0, 0, 1);
         camera.updateMatrixWorld();
-    }, [points, shapes, camera, controls, viewPlane]);
+
+        // Reset the restore flag when auto-fitting
+        hasRestoredCameraRef.current = false;
+
+        // Notify that auto-fit completed
+        if (shouldAutoFit && onAutoFitComplete) {
+            requestAnimationFrame(() => {
+                onAutoFitComplete?.();
+            });
+        }
+    }, [points, shapes, camera, controls, viewPlane, cameraState, shouldAutoFit, onAutoFitComplete, cameraStateLoaded]);
+
+    // Track camera state changes and notify parent
+    useEffect(() => {
+        if (!onCameraStateChange || !controls) return;
+
+        const mapControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
+        if (!mapControls || !mapControls.target) return;
+
+        const getCurrentCameraState = (): CameraState2D => {
+            return {
+                position: [camera.position.x, camera.position.y, camera.position.z],
+                zoom: camera instanceof THREE.OrthographicCamera ? camera.zoom : 1,
+                target: [mapControls.target.x, mapControls.target.y, mapControls.target.z],
+            };
+        };
+
+        const updateCameraState = () => {
+            const state = getCurrentCameraState();
+
+            // Only notify if state actually changed
+            const stateStr = JSON.stringify(state);
+            const lastStr = JSON.stringify(lastCameraStateRef.current);
+            if (stateStr !== lastStr) {
+                lastCameraStateRef.current = state;
+                onCameraStateChange(state);
+                console.log('[Viewer2D] Camera state changed:', state);
+            }
+        };
+
+        // Store function to get current camera state immediately (for "Ok" button)
+        const getCurrentStateFn = () => {
+            if (controls && mapControls && mapControls.target) {
+                const state = getCurrentCameraState();
+                lastCameraStateRef.current = state;
+                return state;
+            }
+            return null;
+        };
+
+        // Expose via callback if provided
+        if (onGetCurrentCameraState) {
+            onGetCurrentCameraState((setFn) => {
+                setFn(getCurrentStateFn);
+            });
+        }
+
+        // Throttle updates to avoid excessive callbacks
+        let timeoutId: NodeJS.Timeout | null = null;
+        const throttledUpdate = () => {
+            if (timeoutId) return;
+            timeoutId = setTimeout(() => {
+                updateCameraState();
+                timeoutId = null;
+            }, 100); // Update every 100ms max
+        };
+
+        // Listen to control changes
+        const controlsObj = controls as any;
+        if (controlsObj.addEventListener) {
+            controlsObj.addEventListener('change', throttledUpdate);
+        }
+
+        // Also check periodically (for programmatic changes)
+        const intervalId = setInterval(throttledUpdate, 200);
+
+        return () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            clearInterval(intervalId);
+            if (controlsObj.removeEventListener) {
+                controlsObj.removeEventListener('change', throttledUpdate);
+            }
+        };
+    }, [camera, controls, onCameraStateChange, onGetCurrentCameraState]);
 
     // Enforce face-on orientation every frame.
     // MapControls.update() (called each frame for damping) internally calls lookAt()
@@ -647,7 +876,11 @@ function Scene2DContent({
 
             {/* Background image from layout settings */}
             {layoutSettings?.backgroundImage && frameServerUrl && (
-                <BackgroundImage2D layoutSettings={layoutSettings} frameServerUrl={frameServerUrl} />
+                <BackgroundImage2D
+                    layoutSettings={layoutSettings}
+                    frameServerUrl={frameServerUrl}
+                    backgroundBrightnessOverride={backgroundBrightness}
+                />
             )}
 
             {shapes?.map((shape) => (
@@ -657,8 +890,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => {})}
-                    onHover={onPointHover || (() => {})}
+                    onClick={onPointClick || (() => { })}
+                    onHover={onPointHover || (() => { })}
                 />
             ))}
 
@@ -671,6 +904,7 @@ function Scene2DContent({
                 viewPlane={viewPlane}
                 selectedModelNames={selectedModelNames}
                 modelMetadata={modelMetadata}
+                pixelSizeMultiplier={pixelSizeMultiplier}
             />
 
             {movingHeadFixtures && movingHeadFixtures.length > 0 && (
@@ -699,6 +933,13 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     layoutSettings,
     frameServerUrl,
     movingHeadFixtures,
+    backgroundBrightness = 100,
+    pixelSizeMultiplier = 1.0,
+    cameraState,
+    onCameraStateChange,
+    shouldAutoFit,
+    onAutoFitComplete,
+    cameraStateLoaded = true,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -864,6 +1105,13 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             layoutSettings={layoutSettings}
                             frameServerUrl={frameServerUrl}
                             movingHeadFixtures={movingHeadFixtures}
+                            backgroundBrightness={backgroundBrightness}
+                            pixelSizeMultiplier={pixelSizeMultiplier}
+                            cameraState={cameraState}
+                            onCameraStateChange={onCameraStateChange}
+                            shouldAutoFit={shouldAutoFit}
+                            onAutoFitComplete={onAutoFitComplete}
+                            cameraStateLoaded={cameraStateLoaded}
                         />
                     </Canvas>
                 </Box>

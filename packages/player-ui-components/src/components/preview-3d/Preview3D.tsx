@@ -18,9 +18,10 @@ import ListIcon from '@mui/icons-material/List';
 import CloseIcon from '@mui/icons-material/Close';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import { Viewer3D } from './Viewer3D';
-import { Viewer2D } from './Viewer2D';
+import { Viewer3D, type CameraState3D } from './Viewer3D';
+import { Viewer2D, type CameraState2D } from './Viewer2D';
 import { ModelList } from './ModelList';
+import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
@@ -73,8 +74,66 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // This is the selection state of the model list
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
 
+    // Settings state
+    const [settingsAnchorPosition, setSettingsAnchorPosition] = useState<{ top: number; left: number } | null>(null);
+    const [previewSettings, setPreviewSettings] = useState<PreviewSettingsData>({
+        pixelSize: 1.0,
+        brightnessMultiplier: 100, // Percentage multiplier applied to XML brightness (0–100)
+    });
+
+    // Camera state for 2D and 3D views
+    const [cameraState2D, setCameraState2D] = useState<CameraState2D | null>(null);
+    const [cameraState3D, setCameraState3D] = useState<CameraState3D | null>(null);
+    const [shouldAutoFit, setShouldAutoFit] = useState(false);
+    const [cameraStateLoaded, setCameraStateLoaded] = useState(false);
+
+    // Refs to track latest camera state (always current, even if state hasn't updated yet)
+    const cameraState2DRef = React.useRef<CameraState2D | null>(null);
+    const cameraState3DRef = React.useRef<CameraState3D | null>(null);
+
+    // Refs to store callbacks to get current camera state immediately
+    const getCurrentCameraState2DRef = React.useRef<(() => CameraState2D | null) | null>(null);
+    const getCurrentCameraState3DRef = React.useRef<(() => CameraState3D | null) | null>(null);
+
     // Get show directory from Redux store to detect changes
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
+
+    // Load preview settings and camera state from localStorage on mount
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.pixelSize !== undefined) {
+                    setPreviewSettings({
+                        pixelSize: parsed.pixelSize ?? 1.0,
+                        brightnessMultiplier: parsed.brightnessMultiplier ?? 100,
+                    });
+                }
+                // Restore view mode if saved
+                if (parsed.mode === '2d' || parsed.mode === '3d') {
+                    setViewMode(parsed.mode);
+                }
+                // Restore camera states if saved
+                if (parsed.cameraState2D) {
+                    console.log('[Preview3D] Loading saved cameraState2D:', parsed.cameraState2D);
+                    setCameraState2D(parsed.cameraState2D);
+                    cameraState2DRef.current = parsed.cameraState2D;
+                }
+                if (parsed.cameraState3D) {
+                    console.log('[Preview3D] Loading saved cameraState3D:', parsed.cameraState3D);
+                    setCameraState3D(parsed.cameraState3D);
+                    cameraState3DRef.current = parsed.cameraState3D;
+                }
+            }
+            // Mark camera state as loaded (even if null, we've checked localStorage)
+            setCameraStateLoaded(true);
+            console.log('[Preview3D] Camera state loaded from localStorage');
+        } catch (err) {
+            console.error('[Preview3D] Failed to load preview settings:', err);
+            setCameraStateLoaded(true);
+        }
+    }, []);
 
     // Auto-detect frame server URL if not provided
     const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
@@ -264,7 +323,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             // (500ms → 1s → 2s → 4s, capped at 4s) until the server has
             // the new data ready.
             let delay = 0;
-            for (;;) {
+            for (; ;) {
                 if (cancelled) return;
                 if (delay > 0) {
                     await new Promise((r) => setTimeout(r, delay));
@@ -336,6 +395,139 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setViewMode(newMode);
         }
     }, []);
+
+    // Handle settings button click
+    const handleSettingsClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        setSettingsAnchorPosition({
+            top: Math.round(rect.bottom),
+            left: Math.round(rect.left),
+        });
+    }, []);
+
+    // Handle settings close
+    const handleSettingsClose = useCallback(() => {
+        setSettingsAnchorPosition(null);
+    }, []);
+
+    // Handle settings change
+    const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
+        // Validate and clamp values
+        const clampedPixelSize = Math.max(0.5, Math.min(3.0, Number(newSettings.pixelSize) || 1.0));
+        const clampedMultiplier = Math.max(0, Math.min(100, Number(newSettings.brightnessMultiplier) || 100));
+
+        setPreviewSettings({
+            pixelSize: clampedPixelSize,
+            brightnessMultiplier: clampedMultiplier,
+        });
+    }, []);
+
+    // Handle camera state changes
+    const handleCameraStateChange2D = useCallback((state: CameraState2D) => {
+        setCameraState2D(state);
+        cameraState2DRef.current = state; // Keep ref updated with latest value
+        // Auto-save to localStorage for persistence when switching screens
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            const parsed = saved ? JSON.parse(saved) : {};
+            parsed.cameraState2D = state;
+            localStorage.setItem('previewSettings', JSON.stringify(parsed));
+        } catch (err) {
+            console.error('[Preview3D] Failed to save camera state:', err);
+        }
+    }, []);
+
+    const handleCameraStateChange3D = useCallback((state: CameraState3D) => {
+        setCameraState3D(state);
+        cameraState3DRef.current = state; // Keep ref updated with latest value
+        // Auto-save to localStorage for persistence when switching screens
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            const parsed = saved ? JSON.parse(saved) : {};
+            parsed.cameraState3D = state;
+            localStorage.setItem('previewSettings', JSON.stringify(parsed));
+        } catch (err) {
+            console.error('[Preview3D] Failed to save camera state:', err);
+        }
+    }, []);
+
+    // Handle reset view
+    const handleResetView = useCallback(() => {
+        setShouldAutoFit(true);
+        // Clear saved camera states
+        setCameraState2D(null);
+        setCameraState3D(null);
+        cameraState2DRef.current = null;
+        cameraState3DRef.current = null;
+        // Clear from localStorage
+        try {
+            const saved = localStorage.getItem('previewSettings');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                delete parsed.cameraState2D;
+                delete parsed.cameraState3D;
+                localStorage.setItem('previewSettings', JSON.stringify(parsed));
+            }
+        } catch (err) {
+            console.error('[Preview3D] Failed to clear camera state:', err);
+        }
+    }, []);
+
+    // Handle auto-fit complete
+    const handleAutoFitComplete = useCallback(() => {
+        setShouldAutoFit(false);
+    }, []);
+
+    // Handle save as default - saves current camera state at the moment of clicking "Ok"
+    const handleSaveAsDefault = useCallback(() => {
+        try {
+            // First try to get current camera state directly from viewers (bypasses throttling)
+            let currentCameraState2D = cameraState2DRef.current;
+            let currentCameraState3D = cameraState3DRef.current;
+
+            // If refs are null, try to get current state directly from viewers
+            if (viewMode === '2d' && getCurrentCameraState2DRef.current) {
+                const directState = getCurrentCameraState2DRef.current();
+                if (directState) {
+                    currentCameraState2D = directState;
+                    cameraState2DRef.current = directState;
+                }
+            } else if (viewMode === '3d' && getCurrentCameraState3DRef.current) {
+                const directState = getCurrentCameraState3DRef.current();
+                if (directState) {
+                    currentCameraState3D = directState;
+                    cameraState3DRef.current = directState;
+                }
+            }
+
+            console.log('[Preview3D] Saving camera state:', {
+                mode: viewMode,
+                cameraState2D: currentCameraState2D,
+                cameraState3D: currentCameraState3D
+            });
+
+            const settingsToSave = {
+                mode: viewMode,
+                pixelSize: previewSettings.pixelSize,
+                brightnessMultiplier: previewSettings.brightnessMultiplier,
+                cameraState2D: currentCameraState2D,
+                cameraState3D: currentCameraState3D,
+            };
+            localStorage.setItem('previewSettings', JSON.stringify(settingsToSave));
+
+            // Also update state to ensure consistency
+            if (currentCameraState2D) {
+                setCameraState2D(currentCameraState2D);
+            }
+            if (currentCameraState3D) {
+                setCameraState3D(currentCameraState3D);
+            }
+
+            console.log('[Preview3D] Camera state saved successfully');
+        } catch (err) {
+            console.error('[Preview3D] Failed to save preview settings:', err);
+        }
+    }, [viewMode, previewSettings]);
 
     // Handle model selection from model list
     const handleModelSelect = useCallback(
@@ -648,6 +840,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
+                    {/* Settings Button */}
+                    <SettingsButton onClick={handleSettingsClick} />
+
+                    <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
+
                     {/* Selection Info & Color Picker */}
                     {selectionState.selectedIds.size > 0 && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -694,40 +891,70 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
             <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 <Box sx={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
-                    {viewMode === '3d' ? (
-                        <Viewer3D
-                            points={modelData.points}
-                            shapes={modelData.shapes}
-                            liveData={livePixels}
-                            selectedIds={selectionState.selectedIds}
-                            hoveredId={selectionState.hoveredId}
-                            onPointClick={handleItemClick}
-                            onPointHover={handleItemHover}
-                            pointSize={pointSize}
-                            selectedModelNames={selectedModelNames}
-                            modelMetadata={modelData.metadata?.models}
-                            viewObjects={viewObjects}
-                            frameServerUrl={effectiveFrameServerUrl}
-                            movingHeadFixtures={movingHeadFixtures}
-                        />
-                    ) : (
-                        <Viewer2D
-                            points={(modelData2D ?? modelData).points}
-                            shapes={(modelData2D ?? modelData).shapes}
-                            liveData={livePixels}
-                            selectedIds={selectionState.selectedIds}
-                            hoveredId={selectionState.hoveredId}
-                            onPointClick={handleItemClick}
-                            onPointHover={handleItemHover}
-                            viewPlane={'xy'}
-                            pointSize={pointSize}
-                            selectedModelNames={selectedModelNames}
-                            modelMetadata={(modelData2D ?? modelData).metadata?.models}
-                            layoutSettings={layoutSettings}
-                            frameServerUrl={effectiveFrameServerUrl}
-                            movingHeadFixtures={movingHeadFixtures}
-                        />
-                    )}
+                    {(() => {
+                        // Compute final brightness: xmlBrightness * (sliderPercent / 100)
+                        const baseBrightness = layoutSettings.backgroundBrightness ?? 100;
+                        const finalBrightness = baseBrightness * (previewSettings.brightnessMultiplier / 100);
+
+                        return viewMode === '3d' ? (
+                            <Viewer3D
+                                points={modelData.points}
+                                shapes={modelData.shapes}
+                                liveData={livePixels}
+                                selectedIds={selectionState.selectedIds}
+                                hoveredId={selectionState.hoveredId}
+                                onPointClick={handleItemClick}
+                                onPointHover={handleItemHover}
+                                pointSize={pointSize}
+                                selectedModelNames={selectedModelNames}
+                                modelMetadata={modelData.metadata?.models}
+                                viewObjects={viewObjects}
+                                frameServerUrl={effectiveFrameServerUrl}
+                                movingHeadFixtures={movingHeadFixtures}
+                                backgroundBrightness={finalBrightness}
+                                pixelSizeMultiplier={previewSettings.pixelSize}
+                                cameraState={cameraState3D}
+                                onCameraStateChange={handleCameraStateChange3D}
+                                shouldAutoFit={shouldAutoFit}
+                                onAutoFitComplete={handleAutoFitComplete}
+                                cameraStateLoaded={cameraStateLoaded}
+                                onGetCurrentCameraState={(setFn) => {
+                                    setFn((fn) => {
+                                        getCurrentCameraState3DRef.current = fn;
+                                    });
+                                }}
+                            />
+                        ) : (
+                            <Viewer2D
+                                points={(modelData2D ?? modelData).points}
+                                shapes={(modelData2D ?? modelData).shapes}
+                                liveData={livePixels}
+                                selectedIds={selectionState.selectedIds}
+                                hoveredId={selectionState.hoveredId}
+                                onPointClick={handleItemClick}
+                                onPointHover={handleItemHover}
+                                viewPlane={'xy'}
+                                pointSize={pointSize}
+                                selectedModelNames={selectedModelNames}
+                                modelMetadata={(modelData2D ?? modelData).metadata?.models}
+                                layoutSettings={layoutSettings}
+                                frameServerUrl={effectiveFrameServerUrl}
+                                movingHeadFixtures={movingHeadFixtures}
+                                backgroundBrightness={finalBrightness}
+                                pixelSizeMultiplier={previewSettings.pixelSize}
+                                cameraState={cameraState2D}
+                                onCameraStateChange={handleCameraStateChange2D}
+                                shouldAutoFit={shouldAutoFit}
+                                onAutoFitComplete={handleAutoFitComplete}
+                                cameraStateLoaded={cameraStateLoaded}
+                                onGetCurrentCameraState={(setFn) => {
+                                    setFn((fn) => {
+                                        getCurrentCameraState2DRef.current = fn;
+                                    });
+                                }}
+                            />
+                        );
+                    })()}
                 </Box>
 
                 {showItemList && (
@@ -776,6 +1003,17 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     </Paper>
                 )}
             </Box>
+
+            {/* Settings Popover */}
+            <PreviewSettings
+                anchorPosition={settingsAnchorPosition}
+                open={Boolean(settingsAnchorPosition)}
+                onClose={handleSettingsClose}
+                settings={previewSettings}
+                onSettingsChange={handleSettingsChange}
+                onSaveAsDefault={handleSaveAsDefault}
+                onResetView={handleResetView}
+            />
         </Box>
     );
 };
