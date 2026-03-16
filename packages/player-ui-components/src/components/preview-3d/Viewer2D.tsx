@@ -39,7 +39,7 @@ export interface Viewer2DProps {
     shouldAutoFit?: boolean; // Whether to auto-fit camera (for reset view)
     onAutoFitComplete?: () => void; // Callback when auto-fit completes
     cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
-    onGetCurrentCameraState?: (setFn: (fn: () => CameraState2D | null) => void) => void; // Callback to set function to get current camera state immediately
+    onGetCurrentCameraState?: (getter: () => CameraState2D | null) => void; // Callback to register a function that gets current camera state
 }
 
 function Optimized2DPointCloud({
@@ -599,17 +599,27 @@ function Scene2DContent({
     shouldAutoFit?: boolean;
     onAutoFitComplete?: () => void;
     cameraStateLoaded?: boolean;
-    onGetCurrentCameraState?: (setFn: (fn: () => CameraState2D | null) => void) => void;
+    onGetCurrentCameraState?: (getter: () => CameraState2D | null) => void;
 }) {
     const { camera, controls } = useThree();
     const hasRestoredCameraRef = useRef(false);
     const lastCameraStateRef = useRef<CameraState2D | null>(null);
     const lastCameraStatePropRef = useRef<CameraState2D | null | undefined>(cameraState);
+    const [restoreTrigger, setRestoreTrigger] = useState(0);
 
-    // Reset restore flag when cameraState prop changes
+    // Keep onGetCurrentCameraState in a ref so the camera-tracking effect
+    // doesn't tear down / rebuild every time Preview3D re-renders with a new
+    // inline callback reference.
+    const onGetCurrentCameraStateRef = useRef(onGetCurrentCameraState);
+    onGetCurrentCameraStateRef.current = onGetCurrentCameraState;
+
+    // Reset restore flag when cameraState prop changes (compare by value, not reference)
     useEffect(() => {
-        if (lastCameraStatePropRef.current !== cameraState) {
+        const currentStateStr = JSON.stringify(cameraState);
+        const lastStateStr = JSON.stringify(lastCameraStatePropRef.current);
+        if (currentStateStr !== lastStateStr) {
             hasRestoredCameraRef.current = false;
+            setRestoreTrigger(prev => prev + 1);
             lastCameraStatePropRef.current = cameraState;
         }
     }, [cameraState]);
@@ -617,47 +627,66 @@ function Scene2DContent({
     // Restore saved camera state
     useEffect(() => {
         // Wait for camera state to be loaded before attempting restore
-        if (cameraStateLoaded === false) return;
-
-        if (!cameraState || points.length === 0 || hasRestoredCameraRef.current) return;
-
-        // Wait for controls to be ready
-        if (!controls) {
-            console.log('[Viewer2D] Waiting for controls to be ready for restore');
+        if (cameraStateLoaded === false) {
             return;
+        }
+
+        // If no camera state to restore, skip
+        if (!cameraState) {
+            return;
+        }
+
+        // Wait for scene to be ready
+        if (points.length === 0) {
+            return;
+        }
+
+        // If already restored this camera state, skip
+        if (hasRestoredCameraRef.current) {
+            return;
+        }
+
+        // Wait for controls to be ready - retry with a delay if not ready
+        if (!controls) {
+            const retryTimeout = setTimeout(() => {
+                setRestoreTrigger(prev => prev + 1);
+            }, 100);
+            return () => clearTimeout(retryTimeout);
         }
 
         const mapControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
         if (!mapControls || !mapControls.target) {
-            console.log('[Viewer2D] Controls not ready for restore');
-            return;
+            const retryTimeout = setTimeout(() => {
+                setRestoreTrigger(prev => prev + 1);
+            }, 100);
+            return () => clearTimeout(retryTimeout);
         }
 
-        console.log('[Viewer2D] Restoring camera state:', cameraState);
-
         if (camera instanceof THREE.OrthographicCamera) {
-            camera.position.set(...cameraState.position);
+            camera.position.set(cameraState.position[0], cameraState.position[1], cameraState.position[2]);
             camera.zoom = cameraState.zoom;
             camera.updateProjectionMatrix();
             camera.updateMatrixWorld();
         }
 
         // Restore controls target
-        mapControls.target.set(...cameraState.target);
+        mapControls.target.set(cameraState.target[0], cameraState.target[1], cameraState.target[2]);
 
         // Update controls to apply the changes
         if (mapControls.update) {
             mapControls.update();
         }
 
-        console.log('[Viewer2D] Camera state restored successfully');
-
-        // Mark as restored after a small delay to ensure it's applied
-        requestAnimationFrame(() => {
+        // Mark as restored after ensuring the values are set
+        // Use a small delay to ensure the camera state is fully applied
+        const restoreTimeout = setTimeout(() => {
             hasRestoredCameraRef.current = true;
-            console.log('[Viewer2D] Camera restore flag set to true');
-        });
-    }, [cameraState, camera, controls, points.length, cameraStateLoaded]);
+        }, 100);
+
+        return () => {
+            clearTimeout(restoreTimeout);
+        };
+    }, [cameraState, camera, controls, points.length, cameraStateLoaded, restoreTrigger]);
 
     // Reset restore flag when shouldAutoFit becomes true
     useEffect(() => {
@@ -785,14 +814,15 @@ function Scene2DContent({
         }
     }, [points, shapes, camera, controls, viewPlane, cameraState, shouldAutoFit, onAutoFitComplete, cameraStateLoaded]);
 
-    // Track camera state changes and notify parent
+    // Register a getter so Preview3D can read the exact camera state on demand
+    // (e.g. when the user clicks "Ok" or switches view modes).
     useEffect(() => {
-        if (!onCameraStateChange || !controls) return;
+        if (!controls) return;
 
-        const mapControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
-        if (!mapControls || !mapControls.target) return;
+        const mapControls = controls as unknown as { target: THREE.Vector3 };
+        if (!mapControls?.target) return;
 
-        const getCurrentCameraState = (): CameraState2D => {
+        const getCurrentStateFn = (): CameraState2D | null => {
             return {
                 position: [camera.position.x, camera.position.y, camera.position.z],
                 zoom: camera instanceof THREE.OrthographicCamera ? camera.zoom : 1,
@@ -800,63 +830,50 @@ function Scene2DContent({
             };
         };
 
-        const updateCameraState = () => {
-            const state = getCurrentCameraState();
-
-            // Only notify if state actually changed
-            const stateStr = JSON.stringify(state);
-            const lastStr = JSON.stringify(lastCameraStateRef.current);
-            if (stateStr !== lastStr) {
-                lastCameraStateRef.current = state;
-                onCameraStateChange(state);
-                console.log('[Viewer2D] Camera state changed:', state);
-            }
-        };
-
-        // Store function to get current camera state immediately (for "Ok" button)
-        const getCurrentStateFn = () => {
-            if (controls && mapControls && mapControls.target) {
-                const state = getCurrentCameraState();
-                lastCameraStateRef.current = state;
-                return state;
-            }
-            return null;
-        };
-
-        // Expose via callback if provided
-        if (onGetCurrentCameraState) {
-            onGetCurrentCameraState((setFn) => {
-                setFn(getCurrentStateFn);
-            });
+        if (onGetCurrentCameraStateRef.current) {
+            onGetCurrentCameraStateRef.current(getCurrentStateFn);
         }
+    }, [camera, controls]);
 
-        // Throttle updates to avoid excessive callbacks
+    // Optional: track camera state changes and notify parent via throttled callback.
+    // This is only active when onCameraStateChange is provided.
+    useEffect(() => {
+        if (!onCameraStateChange || !controls) return;
+
+        const mapControls = controls as unknown as { target: THREE.Vector3 };
+        if (!mapControls?.target) return;
+
         let timeoutId: NodeJS.Timeout | null = null;
         const throttledUpdate = () => {
             if (timeoutId) return;
             timeoutId = setTimeout(() => {
-                updateCameraState();
+                const state: CameraState2D = {
+                    position: [camera.position.x, camera.position.y, camera.position.z],
+                    zoom: camera instanceof THREE.OrthographicCamera ? camera.zoom : 1,
+                    target: [mapControls.target.x, mapControls.target.y, mapControls.target.z],
+                };
+                const stateStr = JSON.stringify(state);
+                const lastStr = JSON.stringify(lastCameraStateRef.current);
+                if (stateStr !== lastStr) {
+                    lastCameraStateRef.current = state;
+                    onCameraStateChange(state);
+                }
                 timeoutId = null;
-            }, 100); // Update every 100ms max
+            }, 100);
         };
 
-        // Listen to control changes
         const controlsObj = controls as any;
         if (controlsObj.addEventListener) {
             controlsObj.addEventListener('change', throttledUpdate);
         }
 
-        // Also check periodically (for programmatic changes)
-        const intervalId = setInterval(throttledUpdate, 200);
-
         return () => {
             if (timeoutId) clearTimeout(timeoutId);
-            clearInterval(intervalId);
             if (controlsObj.removeEventListener) {
                 controlsObj.removeEventListener('change', throttledUpdate);
             }
         };
-    }, [camera, controls, onCameraStateChange, onGetCurrentCameraState]);
+    }, [camera, controls, onCameraStateChange]);
 
     // Enforce face-on orientation every frame.
     // MapControls.update() (called each frame for damping) internally calls lookAt()
@@ -940,6 +957,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     shouldAutoFit,
     onAutoFitComplete,
     cameraStateLoaded = true,
+    onGetCurrentCameraState,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -1074,6 +1092,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                     >
                         <OrthographicCamera makeDefault position={[0, 0, 10]} zoom={0.5} near={0.1} far={50000} />
                         <MapControls
+                            makeDefault
                             key={`controls-${viewPlane}`}
                             enableDamping
                             dampingFactor={0.35}
@@ -1112,6 +1131,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             shouldAutoFit={shouldAutoFit}
                             onAutoFitComplete={onAutoFitComplete}
                             cameraStateLoaded={cameraStateLoaded}
+                            onGetCurrentCameraState={onGetCurrentCameraState}
                         />
                     </Canvas>
                 </Box>

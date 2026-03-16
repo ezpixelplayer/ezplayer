@@ -440,8 +440,20 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgr
         bOffset: viewObjectBOffset = 2,
     } = viewObject;
 
-    // Use backgroundBrightness override if provided, otherwise use viewObject brightness
-    const brightness = backgroundBrightness !== undefined ? backgroundBrightness : viewObjectBrightness;
+    // Use the calculated brightness passed from Viewer3D
+    // This is: house model XML brightness * (slider multiplier / 100)
+    // If backgroundBrightness is provided, use it (it's the calculated value from Viewer3D)
+    // Otherwise, use viewObject brightness directly and apply slider multiplier here
+    // IMPORTANT: We NEVER use layoutSettings.backgroundBrightness for house models
+    // We ONLY use the house model's own brightness from XML
+    let brightness: number | undefined;
+    if (backgroundBrightness !== undefined) {
+        // Use the calculated brightness from Viewer3D (house model brightness * slider)
+        brightness = backgroundBrightness;
+    } else {
+        // Fallback: use viewObject brightness directly (should not happen if Viewer3D is working correctly)
+        brightness = viewObjectBrightness;
+    }
 
     // The loaded THREE.Group – null until MTL + OBJ are ready
     const [obj, setObj] = useState<THREE.Group | null>(null);

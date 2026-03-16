@@ -34,14 +34,15 @@ export interface Viewer3DProps {
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
-    backgroundBrightness?: number; // 0-100, affects background meshes/images only
+    backgroundBrightness?: number; // 0-100, affects background images only
+    brightnessMultiplier?: number; // 0-200, slider multiplier to apply to view object brightness
     pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
     cameraState?: CameraState3D | null; // Saved camera state to restore
     onCameraStateChange?: (state: CameraState3D) => void; // Callback when camera state changes
     shouldAutoFit?: boolean; // Whether to auto-fit camera (for reset view)
     onAutoFitComplete?: () => void; // Callback when auto-fit completes
     cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
-    onGetCurrentCameraState?: (callback: (state: CameraState3D | null) => void) => void; // Callback to get current camera state immediately
+    onGetCurrentCameraState?: (getter: () => CameraState3D | null) => void; // Callback to register a function that gets current camera state
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -475,12 +476,14 @@ function SceneContent({
     frameServerUrl,
     movingHeadFixtures,
     backgroundBrightness,
+    brightnessMultiplier,
     pixelSizeMultiplier,
     cameraState,
     onCameraStateChange,
     shouldAutoFit,
     onAutoFitComplete,
     cameraStateLoaded,
+    onGetCurrentCameraState,
 }: {
     points: Point3D[];
     shapes?: Shape3D[];
@@ -496,22 +499,34 @@ function SceneContent({
     frameServerUrl?: string;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number;
+    brightnessMultiplier?: number;
     pixelSizeMultiplier?: number;
     cameraState?: CameraState3D | null;
     onCameraStateChange?: (state: CameraState3D) => void;
     shouldAutoFit?: boolean;
     onAutoFitComplete?: () => void;
     cameraStateLoaded?: boolean;
+    onGetCurrentCameraState?: (getter: () => CameraState3D | null) => void;
 }) {
     const { camera, controls } = useThree();
     const hasRestoredCameraRef = useRef(false);
     const lastCameraStateRef = useRef<CameraState3D | null>(null);
     const lastCameraStatePropRef = useRef<CameraState3D | null | undefined>(cameraState);
+    const [restoreTrigger, setRestoreTrigger] = useState(0);
 
-    // Reset restore flag when cameraState prop changes
+    // Keep onGetCurrentCameraState in a ref so the camera-tracking effect
+    // doesn't tear down / rebuild every time Preview3D re-renders with a new
+    // inline callback reference.
+    const onGetCurrentCameraStateRef = useRef(onGetCurrentCameraState);
+    onGetCurrentCameraStateRef.current = onGetCurrentCameraState;
+
+    // Reset restore flag when cameraState prop changes (compare by value, not reference)
     useEffect(() => {
-        if (lastCameraStatePropRef.current !== cameraState) {
+        const currentStateStr = JSON.stringify(cameraState);
+        const lastStateStr = JSON.stringify(lastCameraStatePropRef.current);
+        if (currentStateStr !== lastStateStr) {
             hasRestoredCameraRef.current = false;
+            setRestoreTrigger(prev => prev + 1);
             lastCameraStatePropRef.current = cameraState;
         }
     }, [cameraState]);
@@ -519,45 +534,64 @@ function SceneContent({
     // Restore saved camera state
     useEffect(() => {
         // Wait for camera state to be loaded before attempting restore
-        if (cameraStateLoaded === false) return;
-
-        if (!cameraState || (points.length === 0 && (!viewObjects || viewObjects.length === 0)) || hasRestoredCameraRef.current) return;
-
-        // Wait for controls to be ready
-        if (!controls) {
-            console.log('[Viewer3D] Waiting for controls to be ready for restore');
+        if (cameraStateLoaded === false) {
             return;
+        }
+
+        // If no camera state to restore, skip
+        if (!cameraState) {
+            return;
+        }
+
+        // Wait for scene to be ready
+        if (points.length === 0 && (!viewObjects || viewObjects.length === 0)) {
+            return;
+        }
+
+        // If already restored this camera state, skip
+        if (hasRestoredCameraRef.current) {
+            return;
+        }
+
+        // Wait for controls to be ready - retry with a delay if not ready
+        if (!controls) {
+            const retryTimeout = setTimeout(() => {
+                setRestoreTrigger(prev => prev + 1);
+            }, 100);
+            return () => clearTimeout(retryTimeout);
         }
 
         const orbitControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
         if (!orbitControls || !orbitControls.target) {
-            console.log('[Viewer3D] Controls not ready for restore');
-            return;
+            const retryTimeout = setTimeout(() => {
+                setRestoreTrigger(prev => prev + 1);
+            }, 100);
+            return () => clearTimeout(retryTimeout);
         }
 
-        console.log('[Viewer3D] Restoring camera state:', cameraState);
-
         // Restore camera position and rotation
-        camera.position.set(...cameraState.position);
-        camera.quaternion.set(...cameraState.quaternion);
+        camera.position.set(cameraState.position[0], cameraState.position[1], cameraState.position[2]);
+        camera.quaternion.set(cameraState.quaternion[0], cameraState.quaternion[1], cameraState.quaternion[2], cameraState.quaternion[3]);
         camera.updateMatrixWorld();
 
         // Restore controls target
-        orbitControls.target.set(...cameraState.target);
+        orbitControls.target.set(cameraState.target[0], cameraState.target[1], cameraState.target[2]);
 
         // Update controls to apply the changes
         if (orbitControls.update) {
             orbitControls.update();
         }
 
-        console.log('[Viewer3D] Camera state restored successfully');
-
-        // Mark as restored after a small delay to ensure it's applied
-        requestAnimationFrame(() => {
+        // Mark as restored after ensuring the values are set
+        // Use a small delay to ensure the camera state is fully applied
+        const restoreTimeout = setTimeout(() => {
             hasRestoredCameraRef.current = true;
-            console.log('[Viewer3D] Camera restore flag set to true');
-        });
-    }, [cameraState, camera, controls, points.length, viewObjects, cameraStateLoaded]);
+        }, 100);
+
+        return () => {
+            clearTimeout(restoreTimeout);
+        };
+    }, [cameraState, camera, controls, points.length, viewObjects, cameraStateLoaded, restoreTrigger]);
 
     // Reset restore flag when shouldAutoFit becomes true
     useEffect(() => {
@@ -677,14 +711,17 @@ function SceneContent({
         }
     }, [points, shapes, viewObjects, camera, controls, cameraState, shouldAutoFit, onAutoFitComplete, cameraStateLoaded]);
 
-    // Track camera state changes and notify parent
+    // Register a getter so Preview3D can read the exact camera state on demand
+    // (e.g. when the user clicks "Ok" or switches view modes).
+    // This is intentionally separate from any change-tracking so it works even
+    // when onCameraStateChange is not provided.
     useEffect(() => {
-        if (!onCameraStateChange || !controls) return;
+        if (!controls) return;
 
-        const orbitControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
-        if (!orbitControls || !orbitControls.target) return;
+        const orbitControls = controls as unknown as { target: THREE.Vector3 };
+        if (!orbitControls?.target) return;
 
-        const getCurrentCameraState = (): CameraState3D => {
+        const getCurrentStateFn = (): CameraState3D | null => {
             return {
                 position: [camera.position.x, camera.position.y, camera.position.z],
                 target: [orbitControls.target.x, orbitControls.target.y, orbitControls.target.z],
@@ -697,59 +734,50 @@ function SceneContent({
             };
         };
 
-        const updateCameraState = () => {
-            const state = getCurrentCameraState();
-
-            // Only notify if state actually changed
-            const stateStr = JSON.stringify(state);
-            const lastStr = JSON.stringify(lastCameraStateRef.current);
-            if (stateStr !== lastStr) {
-                lastCameraStateRef.current = state;
-                onCameraStateChange(state);
-                console.log('[Viewer3D] Camera state changed:', state);
-            }
-        };
-
-        // Store function to get current camera state immediately (for "Ok" button)
-        // This will be exposed via a ref in Preview3D
-        const getCurrentStateFn = () => {
-            if (controls && orbitControls && orbitControls.target) {
-                const state = getCurrentCameraState();
-                lastCameraStateRef.current = state;
-                return state;
-            }
-            return null;
-        };
-
-        // Expose via callback if provided
-        if (onGetCurrentCameraState) {
-            onGetCurrentCameraState((setFn) => {
-                setFn(getCurrentStateFn);
-            });
+        if (onGetCurrentCameraStateRef.current) {
+            onGetCurrentCameraStateRef.current(getCurrentStateFn);
         }
+    }, [camera, controls]);
 
-        // Throttle updates to avoid excessive callbacks
+    // Optional: track camera state changes and notify parent via throttled callback.
+    // This is only active when onCameraStateChange is provided.
+    useEffect(() => {
+        if (!onCameraStateChange || !controls) return;
+
+        const orbitControls = controls as unknown as { target: THREE.Vector3 };
+        if (!orbitControls?.target) return;
+
         let timeoutId: NodeJS.Timeout | null = null;
         const throttledUpdate = () => {
             if (timeoutId) return;
             timeoutId = setTimeout(() => {
-                updateCameraState();
+                const state: CameraState3D = {
+                    position: [camera.position.x, camera.position.y, camera.position.z],
+                    target: [orbitControls.target.x, orbitControls.target.y, orbitControls.target.z],
+                    quaternion: [
+                        camera.quaternion.x,
+                        camera.quaternion.y,
+                        camera.quaternion.z,
+                        camera.quaternion.w,
+                    ],
+                };
+                const stateStr = JSON.stringify(state);
+                const lastStr = JSON.stringify(lastCameraStateRef.current);
+                if (stateStr !== lastStr) {
+                    lastCameraStateRef.current = state;
+                    onCameraStateChange(state);
+                }
                 timeoutId = null;
-            }, 100); // Update every 100ms max
+            }, 100);
         };
 
-        // Listen to control changes
         const controlsObj = controls as any;
         if (controlsObj.addEventListener) {
             controlsObj.addEventListener('change', throttledUpdate);
         }
 
-        // Also check periodically (for programmatic changes)
-        const intervalId = setInterval(throttledUpdate, 200);
-
         return () => {
             if (timeoutId) clearTimeout(timeoutId);
-            clearInterval(intervalId);
             if (controlsObj.removeEventListener) {
                 controlsObj.removeEventListener('change', throttledUpdate);
             }
@@ -780,6 +808,31 @@ function SceneContent({
             {/* Render house meshes from view objects */}
             {viewObjects?.map((viewObj) => {
                 if (viewObj.displayAs === 'Mesh' && viewObj.objFile && viewObj.active !== false) {
+                    // Calculate brightness for this view object: xmlBrightness * (sliderMultiplier / 100)
+                    // Use ONLY the view object's own brightness from XML, multiplied by the slider
+                    // Do NOT use background brightness - only use the house model's brightness
+                    const viewObjectXmlBrightness = viewObj.brightness;
+
+                    if (viewObjectXmlBrightness === undefined || viewObjectXmlBrightness === null) {
+                        // If no brightness in XML, pass undefined so HouseMesh uses viewObject.brightness
+                        return (
+                            <HouseMesh
+                                key={viewObj.name}
+                                viewObject={viewObj}
+                                frameServerUrl={frameServerUrl}
+                                liveData={liveData}
+                                points={points}
+                                backgroundBrightness={undefined}
+                            />
+                        );
+                    }
+
+                    // Calculate brightness: house model XML brightness * (slider / 100)
+                    // This ensures we ONLY use the house model's brightness, never background brightness
+                    const calculatedBrightness = brightnessMultiplier !== undefined
+                        ? viewObjectXmlBrightness * (brightnessMultiplier / 100)
+                        : viewObjectXmlBrightness;
+
                     return (
                         <HouseMesh
                             key={viewObj.name}
@@ -787,7 +840,7 @@ function SceneContent({
                             frameServerUrl={frameServerUrl}
                             liveData={liveData}
                             points={points}
-                            backgroundBrightness={backgroundBrightness}
+                            backgroundBrightness={calculatedBrightness}
                         />
                     );
                 }
@@ -797,12 +850,35 @@ function SceneContent({
             {/* Render image planes from view objects */}
             {viewObjects?.map((viewObj) => {
                 if (viewObj.displayAs === 'Image' && viewObj.imageFile && viewObj.active !== false) {
+                    // Calculate brightness for this image view object: xmlBrightness * (sliderMultiplier / 100)
+                    // Use ONLY the view object's own brightness from XML, multiplied by the slider
+                    // Do NOT use background brightness - only use the view object's brightness
+                    const viewObjectXmlBrightness = viewObj.brightness;
+
+                    if (viewObjectXmlBrightness === undefined || viewObjectXmlBrightness === null) {
+                        // If no brightness in XML, pass undefined so ImagePlane uses viewObject.brightness
+                        return (
+                            <ImagePlane
+                                key={viewObj.name}
+                                viewObject={viewObj}
+                                frameServerUrl={frameServerUrl}
+                                backgroundBrightness={undefined}
+                            />
+                        );
+                    }
+
+                    // Calculate brightness: view object XML brightness * (slider / 100)
+                    // This ensures we ONLY use the view object's brightness, never background brightness
+                    const calculatedBrightness = brightnessMultiplier !== undefined
+                        ? viewObjectXmlBrightness * (brightnessMultiplier / 100)
+                        : viewObjectXmlBrightness;
+
                     return (
                         <ImagePlane
                             key={viewObj.name}
                             viewObject={viewObj}
                             frameServerUrl={frameServerUrl}
-                            backgroundBrightness={backgroundBrightness}
+                            backgroundBrightness={calculatedBrightness}
                         />
                     );
                 }
@@ -833,12 +909,14 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     frameServerUrl,
     movingHeadFixtures,
     backgroundBrightness = 100,
+    brightnessMultiplier = 100,
     pixelSizeMultiplier = 1.0,
     cameraState,
     onCameraStateChange,
     shouldAutoFit,
     onAutoFitComplete,
     cameraStateLoaded = true,
+    onGetCurrentCameraState,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -981,6 +1059,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     >
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
                         <OrbitControls
+                            makeDefault
                             enableDamping
                             dampingFactor={0.35}
                             minDistance={10}
@@ -1017,12 +1096,14 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             frameServerUrl={frameServerUrl}
                             movingHeadFixtures={movingHeadFixtures}
                             backgroundBrightness={backgroundBrightness}
+                            brightnessMultiplier={brightnessMultiplier}
                             pixelSizeMultiplier={pixelSizeMultiplier}
                             cameraState={cameraState}
                             onCameraStateChange={onCameraStateChange}
                             shouldAutoFit={shouldAutoFit}
                             onAutoFitComplete={onAutoFitComplete}
                             cameraStateLoaded={cameraStateLoaded}
+                            onGetCurrentCameraState={onGetCurrentCameraState}
                         />
                         {showStats && <Stats />}
                     </Canvas>

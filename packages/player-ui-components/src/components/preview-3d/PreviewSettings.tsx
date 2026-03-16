@@ -41,13 +41,13 @@ const pixelSizeMarks: SliderMark[] = [
 
 const brightnessMarks: SliderMark[] = [
     { value: 0, label: '0%' },
-    { value: 50, label: '50%' },
     { value: 100, label: '100%' },
+    { value: 200, label: '200%' },
 ];
 
 export interface PreviewSettingsData {
     pixelSize: number; // Multiplier: 0.5 to 3.0
-    brightnessMultiplier: number; // 0–100 percentage multiplier applied to XML brightness
+    brightnessMultiplier: number; // 0–200 percentage multiplier applied to XML brightness (0% = 0x, 100% = 1x, 200% = 2x)
 }
 
 interface PreviewSettingsProps {
@@ -139,7 +139,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
     const handleBrightnessChange = useCallback(
         (_event: Event | React.SyntheticEvent, value: number | number[]) => {
             const raw = typeof value === 'number' ? value : value[0];
-            const clamped = Math.max(0, Math.min(100, raw));
+            const clamped = Math.max(0, Math.min(200, raw));
             const next = { ...localSettingsRef.current, brightnessMultiplier: clamped };
             localSettingsRef.current = next;
             setLocalSettings(next);
@@ -204,7 +204,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                                 value={localSettings.brightnessMultiplier}
                                 onChange={handleBrightnessChange}
                                 min={0}
-                                max={100}
+                                max={200}
                                 step={1}
                                 marks={brightnessMarks}
                                 valueLabelDisplay="auto"
