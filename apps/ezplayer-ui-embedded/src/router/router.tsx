@@ -15,12 +15,23 @@ import {
 } from '@ezplayer/player-ui-components';
 import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
+const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
+
+/** Routes excluded in kiosk mode */
+const KIOSK_HIDDEN_ROUTES = new Set([
+    ROUTES.SONGS,
+    ROUTES.PLAYLIST,
+    ROUTES.SCHEDULE,
+    ROUTES.BACKGROUND_SCHEDULE,
+    ROUTES.PLAYBACKSETTINGS,
+]);
+
 const getStatusArea = () => [];
 
 const routes: RouteObject[] = [
     {
         path: '',
-        element: <SidebarLayout hideLocal={false} hideCloud={true} hidePlayer={false} />,
+        element: <SidebarLayout hideLocal={false} hideCloud={true} hidePlayer={false} kioskMode={isKiosk} />,
         children: [
             {
                 index: true,
@@ -42,7 +53,7 @@ const routes: RouteObject[] = [
                         AddSongDialog={AddSongDialogElectron}
                         statusArea={getStatusArea()}
                         showEditAction={false}
-                        showDeleteAction={false}
+                        showDeleteAction={!isKiosk}
                         showAddSongButton={false}
                     />
                 ),
@@ -81,7 +92,7 @@ const routes: RouteObject[] = [
                 path: ROUTES.PREVIEW_3D,
                 element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} compressed />,
             },
-        ],
+        ].filter(route => !isKiosk || !route.path || !KIOSK_HIDDEN_ROUTES.has(route.path)),
     },
 ];
 

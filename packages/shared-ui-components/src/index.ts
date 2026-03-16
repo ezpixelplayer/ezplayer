@@ -8,6 +8,7 @@ export { TextField } from './shared/components/text-field/TextField';
 export { ToastMsgs } from './shared/components/toaster/Toast';
 
 export { SidebarContext, SidebarProvider } from './shared/providers/SidebarContext';
+export { PageHeaderLogoContext, PageHeaderLogoProvider } from './shared/providers/PageHeaderLogoContext';
 
 export { themeCreator } from './shared/theme/base';
 import { ExtendedTheme, ExtendedThemeOptions } from './shared/theme/base';

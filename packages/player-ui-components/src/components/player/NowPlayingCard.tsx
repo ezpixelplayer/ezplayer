@@ -1,7 +1,7 @@
-import { Card, CardContent, Typography, Chip, IconButton, Slider } from '@mui/material';
+import { Card, CardContent, Typography, Chip, IconButton, Slider, Button } from '@mui/material';
 import { Box } from '../box/Box';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
-import { VolumeOff, VolumeUp } from '@mui/icons-material';
+import { VolumeOff, VolumeUp, Refresh } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
 import { AppDispatch } from '../../store/Store';
@@ -154,6 +154,21 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                 {/* Playback controls — only when playing or paused */}
                 {isActive && (
                     <QueueAndControlStack />
+                )}
+
+                {/* Reload schedule button — only when stopped */}
+                {!isActive && (
+                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                        <Button
+                            variant="outlined"
+                            startIcon={<Refresh />}
+                            onClick={async () => {
+                                await dispatch(callImmediateCommand({ command: 'resetplayback' })).unwrap();
+                            }}
+                        >
+                            Reload Schedule
+                        </Button>
+                    </Box>
                 )}
             </CardContent>
         </Card>
