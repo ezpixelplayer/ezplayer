@@ -81,6 +81,7 @@ export type PlayerCommand =
           seqs: SequenceRecord[];
           pls: PlaylistRecord[];
           sched: ScheduledPlaylist[];
+          forceRestart?: boolean;
       }
     | { type: 'frontendcmd'; cmd: EZPlayerCommand }
     | { type: 'settings'; settings: PlaybackSettings }
