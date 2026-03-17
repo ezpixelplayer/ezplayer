@@ -343,7 +343,8 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                         zIndex: 2, // Ensure text is above the icon
                     }}
                 >
-                    {song?.artist + `${song?.vendor ? '(' + song + ')' : ''}`}
+                    {song?.artist}
+                    {song?.vendor ? ` (${song.vendor})` : ''}
                 </Typography>
 
                 {/* Control Buttons */}
@@ -836,6 +837,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                 id={song.id}
                                 title={song.title}
                                 artist={song.artist}
+                                vendor={song.vendor}
                                 artwork={song.artwork}
                                 localImagePath={song.localImagePath}
                                 buttons={songButtons}

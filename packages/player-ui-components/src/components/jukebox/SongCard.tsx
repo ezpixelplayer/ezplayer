@@ -16,18 +16,19 @@ interface SongCardProps {
     id: string;
     title: string;
     artist: string;
+    vendor?: string;
     artwork?: string;
     localImagePath?: string;
     // Buttons to render
     buttons: SongCardButton[];
 }
 
-export const SongCard: FC<SongCardProps> = ({ id, title, artist, artwork, localImagePath, buttons }) => {
+export const SongCard: FC<SongCardProps> = ({ id, title, artist, vendor, artwork, localImagePath, buttons }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
     // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [artwork, localImagePath]);
+    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [id, artwork, localImagePath]);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `${id}-${imageUrl}`, [id, imageUrl]);
@@ -127,6 +128,7 @@ export const SongCard: FC<SongCardProps> = ({ id, title, artist, artwork, localI
                     }}
                 >
                     {artist}
+                    {vendor ? ` (${vendor})` : ''}
                 </Typography>
 
                 {/* Action Buttons */}
