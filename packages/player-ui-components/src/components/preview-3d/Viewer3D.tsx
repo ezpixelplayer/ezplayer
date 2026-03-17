@@ -406,6 +406,37 @@ function KeyboardNavigationHandler() {
     const keysRef = useRef<Record<string, boolean>>({});
     const holdTimeRef = useRef(0);
 
+    // When OrbitControls enforces limits (e.g. min/max distance), it can partially
+    // or fully negate a requested movement. We detect that and "spend" the
+    // remaining movement by shifting the focus target, so WASD motion never
+    // hard-stops at boundaries.
+    const applyFpsMovement = (
+        orbitControls: { target: THREE.Vector3; update: () => void } | null,
+        deltaMovement: THREE.Vector3,
+    ) => {
+        const startPos = camera.position.clone();
+
+        camera.position.add(deltaMovement);
+        if (orbitControls?.target) {
+            orbitControls.target.add(deltaMovement);
+        }
+        orbitControls?.update?.();
+
+        // If controls clamped/adjusted the camera, recover the "blocked" portion
+        // by shifting both camera + target together (this preserves relative look).
+        const actualMovement = camera.position.clone().sub(startPos);
+        const remaining = deltaMovement.clone().sub(actualMovement);
+
+        // Small epsilon to avoid jitter from floating point / damping.
+        if (remaining.lengthSq() > 1e-10) {
+            camera.position.add(remaining);
+            if (orbitControls?.target) {
+                orbitControls.target.add(remaining);
+            }
+            orbitControls?.update?.();
+        }
+    };
+
     useEffect(() => {
         const onDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -435,27 +466,39 @@ function KeyboardNavigationHandler() {
         const orbitControls = controls as { target: THREE.Vector3; update: () => void } | null;
         const targetDist = orbitControls?.target
             ? camera.position.distanceTo(orbitControls.target) : 100;
-        // Accelerate from 1x to 8x over ~1 second of holding
-        const accelFactor = Math.min(1 + holdTimeRef.current * 7.0, 8.0);
-        const speed = targetDist * 1.5 * delta * accelFactor;
+        // Movement tuning:
+        // - Use a mostly distance-independent baseline (FPS-like).
+        // - Keep a gentle acceleration curve when holding keys.
+        // - Cap step size to avoid extreme speeds when zoomed far out.
+        const accelFactor = Math.min(1 + holdTimeRef.current * 3.0, 4.0); // 1x → 4x over ~1s
+        const baseUnitsPerSecond = 120; // baseline "walk" speed
+        const zoomAssist = Math.min(Math.max(targetDist / 250, 0.5), 2.0); // mild scaling only
+        const maxUnitsPerSecond = 900; // hard cap (prevents huge jumps)
+        const unitsPerSecond = Math.min(baseUnitsPerSecond * accelFactor * zoomAssist, maxUnitsPerSecond);
+        const speed = unitsPerSecond * delta;
 
+        // FPS-style walking: WASD stays on the "ground plane" (no vertical drift when looking up/down).
+        // Q/E remains the explicit vertical movement.
         const forward = new THREE.Vector3();
         camera.getWorldDirection(forward);
-        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+        const up = camera.up.clone().normalize();
+        const forwardOnPlane = forward.sub(up.clone().multiplyScalar(forward.dot(up))).normalize();
+        // If camera is looking nearly straight up/down, fall back to the raw forward.
+        if (!Number.isFinite(forwardOnPlane.x) || forwardOnPlane.lengthSq() < 1e-8) {
+            camera.getWorldDirection(forwardOnPlane);
+            forwardOnPlane.normalize();
+        }
+        const rightOnPlane = new THREE.Vector3().crossVectors(forwardOnPlane, up).normalize();
 
         const movement = new THREE.Vector3();
-        if (keys.w) movement.addScaledVector(forward, speed);
-        if (keys.s) movement.addScaledVector(forward, -speed);
-        if (keys.d) movement.addScaledVector(right, speed);
-        if (keys.a) movement.addScaledVector(right, -speed);
-        if (keys.e) movement.addScaledVector(camera.up, speed);
-        if (keys.q) movement.addScaledVector(camera.up, -speed);
+        if (keys.w) movement.addScaledVector(forwardOnPlane, speed);
+        if (keys.s) movement.addScaledVector(forwardOnPlane, -speed);
+        if (keys.d) movement.addScaledVector(rightOnPlane, speed);
+        if (keys.a) movement.addScaledVector(rightOnPlane, -speed);
+        if (keys.e) movement.addScaledVector(up, speed);
+        if (keys.q) movement.addScaledVector(up, -speed);
 
-        camera.position.add(movement);
-        if (orbitControls?.target) {
-            orbitControls.target.add(movement);
-            orbitControls.update();
-        }
+        applyFpsMovement(orbitControls, movement);
     });
 
     return null;
@@ -475,7 +518,7 @@ function SceneContent({
     viewObjects,
     frameServerUrl,
     movingHeadFixtures,
-    backgroundBrightness,
+    backgroundBrightness: _backgroundBrightness,
     brightnessMultiplier,
     pixelSizeMultiplier,
     cameraState,
@@ -771,7 +814,10 @@ function SceneContent({
             }, 100);
         };
 
-        const controlsObj = controls as any;
+        const controlsObj = controls as unknown as {
+            addEventListener?: (event: string, handler: () => void) => void;
+            removeEventListener?: (event: string, handler: () => void) => void;
+        };
         if (controlsObj.addEventListener) {
             controlsObj.addEventListener('change', throttledUpdate);
         }
