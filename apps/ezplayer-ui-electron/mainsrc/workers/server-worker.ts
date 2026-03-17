@@ -186,7 +186,7 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
 });
 
 async function startServer(config: ServerWorkerData) {
-    const { port, portSource } = config;
+    const { port, portSource, kioskPort, kioskPortSource } = config;
 
     // Initialize ZSTD codec for frame compression (non-blocking, best-effort)
     try {
@@ -796,6 +796,87 @@ async function startServer(config: ServerWorkerData) {
 
     // Initialize WebSocket broadcaster with the WebSocket server
     wsBroadcaster.attach(wss);
+
+    // ----------------------------
+    // Kiosk server — second port, same API, limited sidebar
+    // ----------------------------
+    if (kioskPort) {
+        console.log(`[server-worker] Starting kiosk server on port ${kioskPort} (source: ${kioskPortSource})`);
+
+        const kioskApp = new Koa();
+
+        // Proxy middleware
+        kioskApp.use(createProxyMiddleware());
+
+        // Body parser
+        kioskApp.use(bodyParser());
+
+        // Reuse the same API router
+        kioskApp.use(router.routes());
+        kioskApp.use(router.allowedMethods());
+
+        // Local mode CORS
+        if (process.env.APP_MODE === 'local') {
+            kioskApp.use(async (ctx, next) => {
+                ctx.set('Access-Control-Allow-Origin', '*');
+                ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+                ctx.set('Access-Control-Allow-Headers', 'Content-Type');
+                if (ctx.method === 'OPTIONS') {
+                    ctx.status = 204;
+                    return;
+                }
+                await next();
+            });
+        }
+
+        // Static file serving (same assets)
+        kioskApp.use(serve(staticPath, { index: false }));
+
+        // JavaScript MIME type middleware
+        kioskApp.use(async (ctx: any, next: () => Promise<any>) => {
+            await next();
+            if ((ctx.path.endsWith('.js') || ctx.path.endsWith('.mjs')) && ctx.status === 200) {
+                ctx.type = 'application/javascript; charset=utf-8';
+            }
+        });
+
+        // SPA fallback — inject kiosk mode flag into index.html
+        kioskApp.use(async (ctx: any) => {
+            if (ctx.path.startsWith('/api/') || ctx.path.startsWith('/assets/')) {
+                return;
+            }
+
+            if (await exists(indexPath)) {
+                const html = fs.readFileSync(indexPath, 'utf-8');
+                ctx.type = 'text/html';
+                ctx.body = html.replace('<head>', '<head><script>window.__EZPLAYER_MODE__="kiosk"</script>');
+            } else {
+                ctx.status = 404;
+                ctx.body = 'React app not built. Please run: cd apps/ezplayer-ui-embedded && pnpm build:web';
+            }
+        });
+
+        const kioskHttpServer = createServer(kioskApp.callback());
+
+        kioskHttpServer.listen(kioskPort, () => {
+            console.log(`[server-worker] Kiosk server running at http://localhost:${kioskPort}`);
+            console.log(`[server-worker] Kiosk WebSocket available at ws://localhost:${kioskPort}/ws`);
+        });
+
+        kioskHttpServer.on('error', (err) => {
+            console.error('[server-worker] Kiosk HTTP server error:', err);
+        });
+
+        // Attach WebSocket proxy for /proxy/ paths on kiosk server too
+        attachWebSocketProxy(kioskHttpServer);
+
+        // Create WebSocket server for kiosk (shares the same broadcaster)
+        const kioskWss = new WebSocketServer({
+            server: kioskHttpServer,
+            path: '/ws',
+        });
+        wsBroadcaster.attach(kioskWss);
+    }
 }
 
 // Signal that we're ready to receive init message (sent immediately when worker starts)

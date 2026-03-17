@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import MenuTwoToneIcon from '@mui/icons-material/MenuTwoTone';
 import CloseTwoToneIcon from '@mui/icons-material/CloseTwoTone';
 import { SidebarContext } from '../../providers/SidebarContext';
+import { PageHeaderLogoContext } from '../../providers/PageHeaderLogoContext';
 
 interface PageHeaderProps {
     children?: React.ReactNode[];
@@ -26,6 +27,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
     ...rest
 }) => {
     const { sidebarToggle, toggleSidebar } = useContext(SidebarContext);
+    const headerLogo = useContext(PageHeaderLogoContext);
     const theme = useTheme();
     const isLg = useMediaQuery(theme.breakpoints.up('lg'));
     const navigate = useNavigate();
@@ -49,7 +51,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
             }}
             {...rest}
         >
-            {/* Left side: Breadcrumbs, Heading, Subheading */}
+            {/* Left side: Logo, Breadcrumbs, Heading, Subheading */}
             <Box
                 sx={{
                     display: 'flex',
@@ -61,6 +63,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
                     pr: { xs: 8, sm: 6, md: 4 }, // Responsive padding
                 }}
             >
+                {headerLogo}
                 {breadcrumbs?.map((breadcrumb) => (
                     <Link
                         underline={breadcrumb.route ? 'hover' : 'none'}

@@ -12,6 +12,7 @@ interface SidebarLayoutProps {
     hideCloud: boolean;
     hideLocal: boolean;
     hidePlayer: boolean;
+    kioskMode?: boolean;
 }
 
 export const SidebarLayout: FC<SidebarLayoutProps> = ({
@@ -19,6 +20,7 @@ export const SidebarLayout: FC<SidebarLayoutProps> = ({
     hideCloud,
     hideLocal,
     hidePlayer,
+    kioskMode,
 }: SidebarLayoutProps) => {
     const theme = useTheme<ExtendedTheme>();
 
@@ -32,7 +34,7 @@ export const SidebarLayout: FC<SidebarLayoutProps> = ({
                 }
             >
                 {/* <Header /> */}
-                <Sidebar logo={logo} hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} />
+                <Sidebar logo={logo} hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} kioskMode={kioskMode} />
                 <Box
                     className="layout"
                     sx={{

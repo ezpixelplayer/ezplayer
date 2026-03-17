@@ -12,9 +12,9 @@ import type {
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
-import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer } from './ipcezplayer.js';
+import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer, loadShowFolder } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
-import type { PlaybackSettings } from '@ezplayer/ezplayer-core';
+import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
 
 // Polyfill for `__dirname` in ES Modules
@@ -28,6 +28,8 @@ export interface ServerWorkerConfig {
     mainWindow: BrowserWindow | null;
     getMainWindow: () => BrowserWindow | null;
     distDir?: string; // Optional: base directory for workers (defaults to __dirname)
+    kioskPort?: number;
+    kioskPortSource?: string;
 }
 
 export interface ServerStatus {
@@ -40,6 +42,8 @@ let serverWorker: Worker | null = null;
 let currentServerStatus: ServerStatus | null = null;
 let playWorkerRef: Worker | null = null;
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
+let kioskPortRef: number | undefined = undefined;
+let kioskPortSourceRef: string | undefined = undefined;
 
 export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
@@ -57,6 +61,12 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
     },
     sendPlayerCommand: (command: unknown) => {
+        const cmd = command as EZPlayerCommand;
+        if (cmd.command === 'resetplayback') {
+            // Same path as folder change: reload everything and force worker restart
+            loadShowFolder(true);
+            return;
+        }
         if (playWorkerRef) {
             playWorkerRef.postMessage({
                 type: 'frontendcmd',
@@ -85,9 +95,11 @@ const rpcHandlers: ServerWorkerRPCAPI = {
  * @param config Server configuration
  */
 export async function setUpServerWorker(config: ServerWorkerConfig): Promise<void> {
-    const { port, portSource, playWorker, mainWindow, getMainWindow, distDir } = config;
+    const { port, portSource, playWorker, mainWindow, getMainWindow, distDir, kioskPort, kioskPortSource } = config;
     playWorkerRef = playWorker;
     getMainWindowRef = getMainWindow;
+    kioskPortRef = kioskPort;
+    kioskPortSourceRef = kioskPortSource;
 
     console.log(`🌐 Starting Koa server worker on port ${port} (source: ${portSource})`);
 
@@ -229,6 +241,8 @@ function initializeServerWorker(port: number, portSource: string, mainWindow: Br
             portSource,
             staticPath,
             indexPath,
+            kioskPort: kioskPortRef,
+            kioskPortSource: kioskPortSourceRef,
         },
     };
 

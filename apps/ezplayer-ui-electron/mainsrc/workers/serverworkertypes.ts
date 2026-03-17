@@ -9,6 +9,8 @@ export interface ServerWorkerData {
     portSource: string;
     staticPath?: string;
     indexPath?: string;
+    kioskPort?: number;
+    kioskPortSource?: string;
 }
 
 export type ServerWorkerToMainMessage =

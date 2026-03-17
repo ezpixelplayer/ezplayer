@@ -138,17 +138,18 @@ let playWorker: Worker | null = null;
 
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
-function scheduleUpdated() {
+function scheduleUpdated(forceRestart?: boolean) {
     playWorker?.postMessage({
         type: 'schedupdate',
         seqs: curSequences,
         pls: curPlaylists,
         showFolder: getCurrentShowFolder() ?? '<no show folder yet>',
         sched: curSchedule.filter((e) => !e.deleted),
+        forceRestart,
     } satisfies PlayerCommand);
 }
 
-export async function loadShowFolder() {
+export async function loadShowFolder(forceRestart?: boolean) {
     const showFolder = getCurrentShowFolder();
     if (!showFolder) {
         return;
@@ -212,7 +213,7 @@ export async function loadShowFolder() {
         } as PlayerCommand);
         broadcastToWebSocket('playbackSettings', settings);
     }
-    scheduleUpdated();
+    scheduleUpdated(forceRestart);
 }
 
 const handlers: MainRPCAPI = {
@@ -323,7 +324,8 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
         if (cmd.command === 'resetplayback') {
-            loadShowFolder();
+            await loadShowFolder(true);
+            return true;
         }
         if (!playWorker) {
             console.log(`No player worker`);
