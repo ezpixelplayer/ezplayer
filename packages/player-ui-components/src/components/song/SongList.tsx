@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { PageHeader, TextField } from '@ezplayer/shared-ui-components';
 
 import type { SequenceSettings } from '@ezplayer/ezplayer-core';
-import { RootState } from '../..';
+import { AppDispatch, postSequenceData, RootState } from '../..';
 
 import {
     Autocomplete,
     alpha,
     Button,
     Card,
+    Checkbox,
     Typography,
     useTheme,
     Table,
@@ -21,6 +22,7 @@ import {
     TableRow,
     Paper,
     TableSortLabel,
+    Tooltip,
 } from '@mui/material';
 import { Box } from '../box/Box';
 
@@ -49,6 +51,7 @@ interface SongListRow {
     vendor: string;
     length: string;
     settings?: SequenceSettings;
+    hideFromJukebox: boolean;
     isDeletableSong: boolean;
 }
 
@@ -201,6 +204,7 @@ export function SongList({
     showDeleteAction = true,
     showAddSongButton = true,
 }: SongListProps) {
+    const dispatch = useDispatch<AppDispatch>();
     const [openAddDialog, setOpenAddDialog] = useState(false);
     const [openEditDialog, setOpenEditDialog] = useState(false);
     const [rows, setRows] = useState<SongListRow[]>([]);
@@ -240,6 +244,45 @@ export function SongList({
         setSongIdToDelete(null);
     };
 
+    const sequenceById = useMemo(() => {
+        const map = new Map<string, (typeof sequenceData extends (infer T)[] ? T : any)>();
+        (sequenceData || []).forEach((s: any) => {
+            if (s?.id) map.set(s.id, s);
+        });
+        return map;
+    }, [sequenceData]);
+
+    const handleToggleHideFromJukebox = useCallback(
+        async (songId: string, hide: boolean) => {
+            const prevSong: any = sequenceById.get(songId);
+            if (!prevSong) return;
+
+            // Optimistic UI update
+            setRows((prev) => prev.map((r) => (r.id === songId ? { ...r, hideFromJukebox: hide } : r)));
+
+            const updatedSong = {
+                ...prevSong,
+                settings: {
+                    ...(prevSong.settings || {}),
+                    hideFromJukebox: hide,
+                },
+            };
+
+            try {
+                await dispatch(postSequenceData([updatedSong])).unwrap();
+            } catch (e) {
+                console.error('Failed to update hideFromJukebox:', e);
+                // Revert optimistic update on failure
+                setRows((prev) =>
+                    prev.map((r) =>
+                        r.id === songId ? { ...r, hideFromJukebox: Boolean(prevSong.settings?.hideFromJukebox) } : r,
+                    ),
+                );
+            }
+        },
+        [dispatch, sequenceById],
+    );
+
     // Modify the useEffect that creates the rows data to combine local and server songs
     useEffect(() => {
         // Create nonnull array of server and local songs
@@ -272,6 +315,7 @@ export function SongList({
                     tags: song?.settings?.tags || [],
                     length: formatDuration(song?.work?.length || 0),
                     settings: song?.settings || {},
+                    hideFromJukebox: Boolean(song?.settings?.hideFromJukebox),
                     isDeletableSong: isLocalSong, // Flag to determine if we can delete it
                 };
             })
@@ -396,6 +440,34 @@ export function SongList({
                     </Box>
                 </RowWrapper>
             ),
+        },
+        {
+            field: 'hideFromJukebox',
+            headerName: 'HIDE FROM JUKEBOX',
+            flex: 0.8,
+            minWidth: 170,
+            sortable: false,
+            renderHeader: () => <Typography fontWeight="bold">HIDE FROM JUKEBOX</Typography>,
+            renderCell: (params: any) => {
+                const checked = Boolean(params.row.hideFromJukebox);
+                return (
+                    <RowWrapper>
+                        <Tooltip title="When enabled, this song will not appear in the public jukebox.">
+                            <Box
+                                onClick={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                sx={{ display: 'flex', alignItems: 'center' }}
+                            >
+                                <Checkbox
+                                    size="small"
+                                    checked={checked}
+                                    onChange={(_, next) => handleToggleHideFromJukebox(params.row.id, next)}
+                                />
+                            </Box>
+                        </Tooltip>
+                    </RowWrapper>
+                );
+            },
         },
         {
             field: 'length',

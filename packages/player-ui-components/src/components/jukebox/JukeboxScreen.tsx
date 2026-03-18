@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
+import type { Theme } from '@mui/material/styles';
 import { Box } from '../box/Box';
 import { MusicNote, Lightbulb } from '@mui/icons-material';
 import { PageHeader } from '@ezplayer/shared-ui-components';
@@ -10,9 +11,10 @@ import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
 import { PlaylistDropdown } from './PlaylistDropdown';
-import { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
+import type { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
 import { getImageUrl } from '../../util/imageUtils';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
+import { isSongAllowedForJukebox } from '../../services/jukeboxFilter';
 
 interface Song {
     isMusical: boolean;
@@ -40,6 +42,7 @@ interface SequenceItem {
     };
     settings?: {
         tags?: string[];
+        hideFromJukebox?: boolean;
     };
     sequence?: {
         vendor?: string;
@@ -79,7 +82,7 @@ function SongThumbnail({
     localImagePath?: string;
     isMusical: boolean;
     size: string;
-    theme: any;
+    theme: Theme;
 }) {
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
@@ -198,6 +201,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const theme = useTheme();
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
+    const jukeboxSettings = useSelector((state: RootState) => state.playerStatus.playbackSettings.jukebox);
 
     // Media queries for responsive design
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -205,16 +209,25 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
 
     // Transform sequenceData into the format needed for the jukebox
     const songs =
-        sequenceData?.map((song: SequenceItem) => ({
-            isMusical: song.work?.music_url ? true : false,
-            title: song.work?.title || '',
-            artist: song.work?.artist || '',
-            urlPart: song.files?.fseq || '', // Using fseq file name as the URL part
-            id: song.id,
-            artwork: song.work?.artwork, // Add artwork field
-            localImagePath: song.files?.thumb, // Add local image path field
-            vendor: song.sequence?.vendor || '',
-        })) || [];
+        sequenceData
+            ?.filter((s: SequenceItem) =>
+                isSongAllowedForJukebox({
+                    songTags: s.settings?.tags,
+                    excludedTags: jukeboxSettings?.excludedTags,
+                    includedTags: jukeboxSettings?.includedTags,
+                    hideFromJukebox: s.settings?.hideFromJukebox,
+                }),
+            )
+            .map((song: SequenceItem) => ({
+                isMusical: song.work?.music_url ? true : false,
+                title: song.work?.title || '',
+                artist: song.work?.artist || '',
+                urlPart: song.files?.fseq || '', // Using fseq file name as the URL part
+                id: song.id,
+                artwork: song.work?.artwork, // Add artwork field
+                localImagePath: song.files?.thumb, // Add local image path field
+                vendor: song.sequence?.vendor || '',
+            })) || [];
 
     const song: Song | undefined = songs[index];
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -555,6 +568,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const dispatch = useDispatch<AppDispatch>();
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData) as SequenceItem[] | undefined;
+    const jukeboxSettings = useSelector((state: RootState) => state.playerStatus.playbackSettings.jukebox);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('artist');
     const [selectedPlaylist, setSelectedPlaylist] = useState('all');
@@ -581,18 +595,27 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     // Transform sequenceData into songs, filtering by playlist if needed
     const songs = useMemo(() => {
         const allSongs =
-            sequenceData?.map(
-                (song: SequenceItem): Song => ({
-                    isMusical: song.work?.music_url ? true : false,
-                    title: song.work?.title || '',
-                    artist: song.work?.artist || '',
-                    urlPart: song.files?.fseq || '',
-                    id: song.id,
-                    artwork: song.work?.artwork,
-                    localImagePath: song.files?.thumb,
-                    vendor: song.sequence?.vendor || '',
-                }),
-            ) || [];
+            sequenceData
+                ?.filter((s: SequenceItem) =>
+                    isSongAllowedForJukebox({
+                        songTags: s.settings?.tags,
+                        excludedTags: jukeboxSettings?.excludedTags,
+                        includedTags: jukeboxSettings?.includedTags,
+                        hideFromJukebox: s.settings?.hideFromJukebox,
+                    }),
+                )
+                .map(
+                    (song: SequenceItem): Song => ({
+                        isMusical: song.work?.music_url ? true : false,
+                        title: song.work?.title || '',
+                        artist: song.work?.artist || '',
+                        urlPart: song.files?.fseq || '',
+                        id: song.id,
+                        artwork: song.work?.artwork,
+                        localImagePath: song.files?.thumb,
+                        vendor: song.sequence?.vendor || '',
+                    }),
+                ) || [];
 
         if (selectedPlaylist === 'all') {
             return allSongs;
@@ -601,7 +624,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
         // Filter songs to only those in the selected playlist
         const playlistSongIds = new Set(playlistItems.map((item: PlaylistItem) => item.id));
         return allSongs.filter((song) => playlistSongIds.has(song.id));
-    }, [sequenceData, selectedPlaylist, playlistItems]);
+    }, [sequenceData, selectedPlaylist, playlistItems, jukeboxSettings?.excludedTags, jukeboxSettings?.includedTags]);
 
     // Filter and sort songs
     const filteredAndSortedSongs = useMemo(() => {
@@ -799,7 +822,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                 action: handlePlay,
                                 variant: 'contained' as const,
                                 color: 'primary' as const,
-                                isDisabled: (id: string) => {
+                                isDisabled: (_id: string) => {
                                     // Example: Disable play button if song is currently playing
                                     return false; // Implement your logic here
                                 },
@@ -809,7 +832,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                                 action: handleQueue,
                                 variant: 'outlined' as const,
                                 color: 'primary' as const,
-                                isDisabled: (id: string) => {
+                                isDisabled: (_id: string) => {
                                     // Example: Disable queue button if song is already queued
                                     return false; // Implement your logic here
                                 },
