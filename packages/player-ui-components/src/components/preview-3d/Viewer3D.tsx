@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
+import { PerspectiveCamera, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
@@ -400,62 +400,332 @@ function HoverHandler({
     return null;
 }
 
-// Component to handle WASD + Q/E keyboard navigation
-function KeyboardNavigationHandler() {
-    const { camera, controls } = useThree();
+// Custom FPS-style camera controller
+// Left drag: freelook (rotate in place). Right drag: orbit around raycast hit.
+// Scroll: move forward/back. Keyboard: W/S forward/back, A/D turn, Z/C strafe, Q/E up/down.
+function FreelookCameraController() {
+    const { camera, gl, scene } = useThree();
+    const { set } = useThree();
+
+    // Camera orientation
+    const yawRef = useRef(0);
+    const pitchRef = useRef(0);
+
+    // Drag state
+    const isDraggingRef = useRef(false);
+    const dragButtonRef = useRef(-1);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const lastMouseRef = useRef({ x: 0, y: 0 });
+    const wasDraggingRef = useRef(false);
+
+    // Right-click orbit state
+    const orbitPivotRef = useRef<THREE.Vector3 | null>(null);
+    const orbitRadiusRef = useRef(0);
+    const orbitStartPosRef = useRef(new THREE.Vector3());
+    const orbitStartQuatRef = useRef(new THREE.Quaternion());
+
+    // Right-click center animation: smooth look-at transition before orbit begins
+    const centerAnimRef = useRef<{
+        startQuat: THREE.Quaternion;
+        endQuat: THREE.Quaternion;
+        elapsed: number;
+        duration: number;
+    } | null>(null);
+
+    // Keyboard state
     const keysRef = useRef<Record<string, boolean>>({});
     const holdTimeRef = useRef(0);
 
-    // When OrbitControls enforces limits (e.g. min/max distance), it can partially
-    // or fully negate a requested movement. We detect that and "spend" the
-    // remaining movement by shifting the focus target, so WASD motion never
-    // hard-stops at boundaries.
-    const applyFpsMovement = (
-        orbitControls: { target: THREE.Vector3; update: () => void } | null,
-        deltaMovement: THREE.Vector3,
-    ) => {
-        const startPos = camera.position.clone();
+    // Controls object registered in R3F store
+    const controlsRef = useRef<THREE.EventDispatcher<{ change: {} }> & {
+        target: THREE.Vector3;
+        update: () => void;
+        syncFromCamera: () => void;
+    }>(null!);
 
-        camera.position.add(deltaMovement);
-        if (orbitControls?.target) {
-            orbitControls.target.add(deltaMovement);
-        }
-        orbitControls?.update?.();
-
-        // If controls clamped/adjusted the camera, recover the "blocked" portion
-        // by shifting both camera + target together (this preserves relative look).
-        const actualMovement = camera.position.clone().sub(startPos);
-        const remaining = deltaMovement.clone().sub(actualMovement);
-
-        // Small epsilon to avoid jitter from floating point / damping.
-        if (remaining.lengthSq() > 1e-10) {
-            camera.position.add(remaining);
-            if (orbitControls?.target) {
-                orbitControls.target.add(remaining);
-            }
-            orbitControls?.update?.();
-        }
+    // Helpers — defined as plain functions over refs (stable across renders)
+    const applyCameraOrientation = () => {
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0), yawRef.current,
+        );
+        const qPitch = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0), pitchRef.current,
+        );
+        camera.quaternion.copy(qYaw).multiply(qPitch);
     };
 
+    const updateTarget = () => {
+        if (!controlsRef.current) return;
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        controlsRef.current.target.copy(camera.position).addScaledVector(dir, 100);
+    };
+
+    const notifyChange = () => {
+        updateTarget();
+        controlsRef.current?.dispatchEvent({ type: 'change' });
+    };
+
+    // Initialize controls object and register in R3F store
     useEffect(() => {
-        const onDown = (e: KeyboardEvent) => {
+        // Derive initial yaw/pitch from camera's current quaternion
+        const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+        yawRef.current = euler.y;
+        pitchRef.current = euler.x;
+
+        const target = new THREE.Vector3();
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        target.copy(camera.position).addScaledVector(dir, 100);
+
+        const dispatcher = new THREE.EventDispatcher<{ change: {} }>();
+        const controlsObj = Object.assign(dispatcher, {
+            target,
+            update: () => {
+                const d = new THREE.Vector3();
+                camera.getWorldDirection(d);
+                target.copy(camera.position).addScaledVector(d, 100);
+            },
+            syncFromCamera: () => {
+                const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+                yawRef.current = e.y;
+                pitchRef.current = e.x;
+                const d = new THREE.Vector3();
+                camera.getWorldDirection(d);
+                target.copy(camera.position).addScaledVector(d, 100);
+            },
+        });
+
+        controlsRef.current = controlsObj;
+        set({ controls: controlsObj as any });
+
+        return () => { set({ controls: null as any }); };
+    }, [camera, set]);
+
+    // Pointer + keyboard event listeners
+    useEffect(() => {
+        const canvas = gl.domElement;
+        const DRAG_THRESHOLD = 3;
+        const SENSITIVITY = 0.003;
+        const PITCH_LIMIT = Math.PI / 2 - 0.01;
+        const SCROLL_SPEED = 0.3;
+
+        const onPointerDown = (e: PointerEvent) => {
+            if (e.button !== 0 && e.button !== 2) return;
+
+            isDraggingRef.current = false;
+            dragButtonRef.current = e.button;
+            dragStartRef.current = { x: e.clientX, y: e.clientY };
+            lastMouseRef.current = { x: e.clientX, y: e.clientY };
+            wasDraggingRef.current = false;
+            canvas.setPointerCapture(e.pointerId);
+
+            if (e.button === 2) {
+                // Raycast to find orbit pivot — try mesh hit first, then proximity to points
+                const rect = canvas.getBoundingClientRect();
+                const ndc = new THREE.Vector2(
+                    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+                    -((e.clientY - rect.top) / rect.height) * 2 + 1,
+                );
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(ndc, camera);
+
+                let hitPoint: THREE.Vector3 | null = null;
+
+                // 1) Standard mesh raycast (houses, image planes, beams, etc.)
+                const meshHits = raycaster.intersectObjects(scene.children, true);
+                if (meshHits.length > 0) {
+                    hitPoint = meshHits[0].point.clone();
+                }
+
+                // 2) Proximity check against point-cloud positions (same approach as hover/click)
+                if (!hitPoint) {
+                    const cameraDistance = camera.position.length() || 1000;
+                    const threshold = Math.max(3.0 * 0.15, cameraDistance * 0.02);
+                    let closestDist = Infinity;
+                    let closestPos: THREE.Vector3 | null = null;
+
+                    scene.traverse((obj) => {
+                        if ((obj as THREE.Points).isPoints) {
+                            const geom = (obj as THREE.Points).geometry;
+                            const posAttr = geom.getAttribute('position');
+                            if (!posAttr) return;
+                            const tmp = new THREE.Vector3();
+                            for (let i = 0; i < posAttr.count; i++) {
+                                tmp.fromBufferAttribute(posAttr, i);
+                                obj.localToWorld(tmp);
+                                const d = raycaster.ray.distanceToPoint(tmp);
+                                if (d < threshold && d < closestDist) {
+                                    closestDist = d;
+                                    closestPos = tmp.clone();
+                                }
+                            }
+                        }
+                    });
+                    if (closestPos) hitPoint = closestPos;
+                }
+
+                if (hitPoint) {
+                    orbitPivotRef.current = hitPoint;
+                    orbitRadiusRef.current = camera.position.distanceTo(hitPoint);
+
+                    // Start a smooth look-at animation toward the pivot
+                    const startQuat = camera.quaternion.clone();
+                    // Compute the target quaternion (camera looking at the pivot)
+                    const tempCam = camera.clone();
+                    tempCam.lookAt(hitPoint);
+                    const endQuat = tempCam.quaternion.clone();
+
+                    centerAnimRef.current = {
+                        startQuat,
+                        endQuat,
+                        elapsed: 0,
+                        duration: 0.25, // seconds
+                    };
+
+                    // The orbit start state will be set when the animation finishes
+                } else {
+                    orbitPivotRef.current = null;
+                }
+            }
+        };
+
+        const onPointerMove = (e: PointerEvent) => {
+            if (dragButtonRef.current === -1) return;
+
+            const dx = e.clientX - dragStartRef.current.x;
+            const dy = e.clientY - dragStartRef.current.y;
+
+            if (!isDraggingRef.current) {
+                if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+                isDraggingRef.current = true;
+                wasDraggingRef.current = true;
+            }
+
+            if (dragButtonRef.current === 0) {
+                // Left drag: freelook (rotate camera in place)
+                const moveDx = e.clientX - lastMouseRef.current.x;
+                const moveDy = e.clientY - lastMouseRef.current.y;
+                lastMouseRef.current = { x: e.clientX, y: e.clientY };
+
+                yawRef.current += moveDx * SENSITIVITY;
+                pitchRef.current += moveDy * SENSITIVITY;
+                pitchRef.current = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitchRef.current));
+                applyCameraOrientation();
+                notifyChange();
+            } else if (dragButtonRef.current === 2 && orbitPivotRef.current && !centerAnimRef.current) {
+                // Right drag: orbit around raycast hit point
+                // Rotate both position offset AND camera orientation by the same
+                // amount so the initial framing is preserved (no snap).
+                const pivot = orbitPivotRef.current;
+                const up = new THREE.Vector3(0, 1, 0);
+
+                // Build orbit rotation from total mouse delta
+                const yawQuat = new THREE.Quaternion().setFromAxisAngle(up, dx * SENSITIVITY);
+                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(orbitStartQuatRef.current);
+                const pitchQuat = new THREE.Quaternion().setFromAxisAngle(right, dy * SENSITIVITY);
+                const totalRotation = new THREE.Quaternion().multiplyQuaternions(yawQuat, pitchQuat);
+
+                // Rotate the start offset around the pivot
+                const startOffset = orbitStartPosRef.current.clone().sub(pivot);
+                startOffset.applyQuaternion(totalRotation);
+                startOffset.normalize().multiplyScalar(orbitRadiusRef.current);
+                camera.position.copy(pivot).add(startOffset);
+
+                // Rotate camera orientation by the same rotation
+                camera.quaternion.copy(orbitStartQuatRef.current).premultiply(totalRotation);
+
+                // Re-derive yaw/pitch so freelook continues seamlessly
+                const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+                yawRef.current = euler.y;
+                pitchRef.current = euler.x;
+                notifyChange();
+            }
+        };
+
+        const onPointerUp = (e: PointerEvent) => {
+            canvas.releasePointerCapture(e.pointerId);
+            isDraggingRef.current = false;
+            dragButtonRef.current = -1;
+            orbitPivotRef.current = null;
+            centerAnimRef.current = null;
+        };
+
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            camera.position.addScaledVector(dir, -e.deltaY * SCROLL_SPEED);
+            notifyChange();
+        };
+
+        const onContextMenu = (e: Event) => { e.preventDefault(); };
+
+        // Suppress click events after a drag so ClickHandler doesn't fire
+        const onClickCapture = (e: MouseEvent) => {
+            if (wasDraggingRef.current) {
+                e.stopPropagation();
+                wasDraggingRef.current = false;
+            }
+        };
+
+        canvas.addEventListener('pointerdown', onPointerDown);
+        canvas.addEventListener('pointermove', onPointerMove);
+        canvas.addEventListener('pointerup', onPointerUp);
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        canvas.addEventListener('contextmenu', onContextMenu);
+        canvas.addEventListener('click', onClickCapture, { capture: true });
+
+        // Keyboard listeners
+        const onKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
             keysRef.current[e.key.toLowerCase()] = true;
         };
-        const onUp = (e: KeyboardEvent) => {
+        const onKeyUp = (e: KeyboardEvent) => {
             keysRef.current[e.key.toLowerCase()] = false;
         };
-        window.addEventListener('keydown', onDown);
-        window.addEventListener('keyup', onUp);
-        return () => {
-            window.removeEventListener('keydown', onDown);
-            window.removeEventListener('keyup', onUp);
-        };
-    }, []);
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
 
+        return () => {
+            canvas.removeEventListener('pointerdown', onPointerDown);
+            canvas.removeEventListener('pointermove', onPointerMove);
+            canvas.removeEventListener('pointerup', onPointerUp);
+            canvas.removeEventListener('wheel', onWheel);
+            canvas.removeEventListener('contextmenu', onContextMenu);
+            canvas.removeEventListener('click', onClickCapture, { capture: true });
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+        };
+    }, [camera, gl, scene]);
+
+    // Per-frame: center animation + keyboard movement
     useFrame((_state, delta) => {
+        // Animate smooth look-at transition on right-click before orbit starts
+        const anim = centerAnimRef.current;
+        if (anim) {
+            anim.elapsed += delta;
+            const t = Math.min(anim.elapsed / anim.duration, 1);
+            // Smooth ease-out curve
+            const ease = 1 - (1 - t) * (1 - t);
+            camera.quaternion.copy(anim.startQuat).slerp(anim.endQuat, ease);
+
+            // Sync yaw/pitch from the interpolated quaternion
+            const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+            yawRef.current = euler.y;
+            pitchRef.current = euler.x;
+            notifyChange();
+
+            if (t >= 1) {
+                // Animation complete — snapshot current state as orbit start
+                orbitStartPosRef.current.copy(camera.position);
+                orbitStartQuatRef.current.copy(camera.quaternion);
+                centerAnimRef.current = null;
+            }
+        }
+
         const keys = keysRef.current;
-        const anyMovement = keys.w || keys.a || keys.s || keys.d || keys.q || keys.e;
+        const anyMovement = keys.w || keys.s || keys.z || keys.c || keys.q || keys.e || keys.a || keys.d;
         if (!anyMovement) {
             holdTimeRef.current = 0;
             return;
@@ -463,27 +733,14 @@ function KeyboardNavigationHandler() {
 
         holdTimeRef.current += delta;
 
-        const orbitControls = controls as { target: THREE.Vector3; update: () => void } | null;
-        const targetDist = orbitControls?.target
-            ? camera.position.distanceTo(orbitControls.target) : 100;
-        // Movement tuning:
-        // - Use a mostly distance-independent baseline (FPS-like).
-        // - Keep a gentle acceleration curve when holding keys.
-        // - Cap step size to avoid extreme speeds when zoomed far out.
-        const accelFactor = Math.min(1 + holdTimeRef.current * 3.0, 4.0); // 1x → 4x over ~1s
-        const baseUnitsPerSecond = 120; // baseline "walk" speed
-        const zoomAssist = Math.min(Math.max(targetDist / 250, 0.5), 2.0); // mild scaling only
-        const maxUnitsPerSecond = 900; // hard cap (prevents huge jumps)
-        const unitsPerSecond = Math.min(baseUnitsPerSecond * accelFactor * zoomAssist, maxUnitsPerSecond);
-        const speed = unitsPerSecond * delta;
+        const accelFactor = Math.min(1 + holdTimeRef.current * 3.0, 4.0);
+        const speed = Math.min(120 * accelFactor, 900) * delta;
 
-        // FPS-style walking: WASD stays on the "ground plane" (no vertical drift when looking up/down).
-        // Q/E remains the explicit vertical movement.
+        // Ground-plane directions
         const forward = new THREE.Vector3();
         camera.getWorldDirection(forward);
         const up = camera.up.clone().normalize();
         const forwardOnPlane = forward.sub(up.clone().multiplyScalar(forward.dot(up))).normalize();
-        // If camera is looking nearly straight up/down, fall back to the raw forward.
         if (!Number.isFinite(forwardOnPlane.x) || forwardOnPlane.lengthSq() < 1e-8) {
             camera.getWorldDirection(forwardOnPlane);
             forwardOnPlane.normalize();
@@ -493,12 +750,24 @@ function KeyboardNavigationHandler() {
         const movement = new THREE.Vector3();
         if (keys.w) movement.addScaledVector(forwardOnPlane, speed);
         if (keys.s) movement.addScaledVector(forwardOnPlane, -speed);
-        if (keys.d) movement.addScaledVector(rightOnPlane, speed);
-        if (keys.a) movement.addScaledVector(rightOnPlane, -speed);
+        if (keys.c) movement.addScaledVector(rightOnPlane, speed);
+        if (keys.z) movement.addScaledVector(rightOnPlane, -speed);
         if (keys.e) movement.addScaledVector(up, speed);
         if (keys.q) movement.addScaledVector(up, -speed);
 
-        applyFpsMovement(orbitControls, movement);
+        camera.position.add(movement);
+
+        // A/D: yaw (turn head left/right)
+        const turnRate = 0.5 * accelFactor;
+        let yawDelta = 0;
+        if (keys.a) yawDelta += turnRate * delta;
+        if (keys.d) yawDelta -= turnRate * delta;
+        if (yawDelta !== 0) {
+            yawRef.current += yawDelta;
+            applyCameraOrientation();
+        }
+
+        notifyChange();
     });
 
     return null;
@@ -604,8 +873,8 @@ function SceneContent({
             return () => clearTimeout(retryTimeout);
         }
 
-        const orbitControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
-        if (!orbitControls || !orbitControls.target) {
+        const ctrl = controls as unknown as { target: THREE.Vector3; update?: () => void; syncFromCamera?: () => void };
+        if (!ctrl || !ctrl.target) {
             const retryTimeout = setTimeout(() => {
                 setRestoreTrigger(prev => prev + 1);
             }, 100);
@@ -617,12 +886,11 @@ function SceneContent({
         camera.quaternion.set(cameraState.quaternion[0], cameraState.quaternion[1], cameraState.quaternion[2], cameraState.quaternion[3]);
         camera.updateMatrixWorld();
 
-        // Restore controls target
-        orbitControls.target.set(cameraState.target[0], cameraState.target[1], cameraState.target[2]);
-
-        // Update controls to apply the changes
-        if (orbitControls.update) {
-            orbitControls.update();
+        // Sync controller state (yaw/pitch/target) from the restored quaternion
+        if (ctrl.syncFromCamera) {
+            ctrl.syncFromCamera();
+        } else if (ctrl.update) {
+            ctrl.update();
         }
 
         // Mark as restored after ensuring the values are set
@@ -736,11 +1004,11 @@ function SceneContent({
         camera.position.set(center.x + distance, center.y + distance, center.z + distance);
         camera.lookAt(center);
 
-        // Update OrbitControls target to scene center
-        if (controls && 'target' in controls) {
-            const orbitControls = controls as unknown as { target: THREE.Vector3; update: () => void };
-            orbitControls.target.copy(center);
-            orbitControls.update();
+        // Sync controller state from the new camera orientation
+        if (controls && 'syncFromCamera' in controls) {
+            (controls as unknown as { syncFromCamera: () => void }).syncFromCamera();
+        } else if (controls && 'update' in controls) {
+            (controls as unknown as { update: () => void }).update();
         }
 
         // Reset the restore flag when auto-fitting
@@ -834,7 +1102,6 @@ function SceneContent({
         <>
             <ClickHandler points={points} onPointClick={onPointClick} pointSize={pointSize} />
             <HoverHandler points={points} onPointHover={onPointHover} pointSize={pointSize} />
-            <KeyboardNavigationHandler />
             <ambientLight intensity={0.5} />
             <directionalLight position={[10, 10, 5]} intensity={1} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
@@ -1035,25 +1302,25 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     variant="caption"
                     sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                 >
-                    🖱️ Left drag: Rotate
+                    🖱️ Left drag: Look around
                 </Typography>
                 <Typography
                     variant="caption"
                     sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                 >
-                    🖱️ Right drag: Pan
+                    🖱️ Right drag: Orbit object
                 </Typography>
                 <Typography
                     variant="caption"
                     sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                 >
-                    🖱️ Scroll: Zoom
+                    🖱️ Scroll: Move forward/back
                 </Typography>
                 <Typography
                     variant="caption"
                     sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                 >
-                    ⌨️ WASD: Move &nbsp; Q/E: Down/Up
+                    ⌨️ W/S: Move &nbsp; A/D: Turn &nbsp; Z/C: Strafe &nbsp; Q/E: Down/Up
                 </Typography>
             </Box>
             {error ? (
@@ -1104,29 +1371,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         }}
                     >
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
-                        <OrbitControls
-                            makeDefault
-                            enableDamping
-                            dampingFactor={0.35}
-                            minDistance={10}
-                            maxDistance={10000}
-                            enablePan={true}
-                            enableRotate={true}
-                            enableZoom={true}
-                            zoomToCursor={true}
-                            panSpeed={1.0}
-                            rotateSpeed={1.0}
-                            zoomSpeed={1.0}
-                            mouseButtons={{
-                                LEFT: THREE.MOUSE.ROTATE,
-                                MIDDLE: THREE.MOUSE.DOLLY,
-                                RIGHT: THREE.MOUSE.PAN,
-                            }}
-                            touches={{
-                                ONE: THREE.TOUCH.ROTATE,
-                                TWO: THREE.TOUCH.DOLLY_PAN,
-                            }}
-                        />
+                        <FreelookCameraController />
                         <SceneContent
                             points={points}
                             shapes={shapes}
