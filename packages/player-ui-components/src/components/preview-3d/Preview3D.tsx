@@ -423,6 +423,27 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         setSettingsAnchorPosition(null);
     }, []);
 
+    // Handle OK — persist slider values to localStorage and close
+    const handleSettingsOk = useCallback(() => {
+        try {
+            let existing: Record<string, unknown> = {};
+            try {
+                const raw = localStorage.getItem('previewSettings');
+                if (raw) existing = JSON.parse(raw);
+            } catch { /* ignore parse errors */ }
+
+            const updated = {
+                ...existing,
+                pixelSize: previewSettings.pixelSize,
+                brightnessMultiplier: previewSettings.brightnessMultiplier,
+            };
+            localStorage.setItem('previewSettings', JSON.stringify(updated));
+        } catch (err) {
+            console.error('[Preview3D] Failed to save slider settings:', err);
+        }
+        setSettingsAnchorPosition(null);
+    }, [previewSettings]);
+
     // Handle settings change
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
         // Validate and clamp values
@@ -460,28 +481,33 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         setShouldAutoFit(false);
     }, []);
 
-    // Handle save as default — reads the exact current camera state via the
-    // getter registered by the active viewer and persists everything to
-    // localStorage.  React state is NOT updated here to avoid triggering
-    // a camera-restore feedback loop in the viewer.
+    // Handle save as default view — persists only the camera position/angle/zoom
+    // and 2D/3D mode. Slider values (pixel size, brightness) are NOT saved here;
+    // they are saved separately via the OK button flow.
     const handleSaveAsDefault = useCallback(() => {
         try {
             // Read the exact camera position at this instant from the active viewer
             const currentCameraState2D = getCurrentCameraState2DRef.current?.() ?? null;
             const currentCameraState3D = getCurrentCameraState3DRef.current?.() ?? null;
 
+            // Merge into existing saved settings so slider values are preserved
+            let existing: Record<string, unknown> = {};
+            try {
+                const raw = localStorage.getItem('previewSettings');
+                if (raw) existing = JSON.parse(raw);
+            } catch { /* ignore parse errors */ }
+
             const settingsToSave = {
+                ...existing,
                 mode: viewMode,
-                pixelSize: previewSettings.pixelSize,
-                brightnessMultiplier: previewSettings.brightnessMultiplier,
                 cameraState2D: currentCameraState2D,
                 cameraState3D: currentCameraState3D,
             };
             localStorage.setItem('previewSettings', JSON.stringify(settingsToSave));
         } catch (err) {
-            console.error('[Preview3D] Failed to save preview settings:', err);
+            console.error('[Preview3D] Failed to save default view:', err);
         }
-    }, [viewMode, previewSettings]);
+    }, [viewMode]);
 
     // Handle model selection from model list
     const handleModelSelect = useCallback(
@@ -957,6 +983,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 settings={previewSettings}
                 onSettingsChange={handleSettingsChange}
                 onSaveAsDefault={handleSaveAsDefault}
+                onOk={handleSettingsOk}
                 onResetView={handleResetView}
             />
         </Box>

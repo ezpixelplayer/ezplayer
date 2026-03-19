@@ -57,6 +57,7 @@ interface PreviewSettingsProps {
     settings: PreviewSettingsData;
     onSettingsChange: (settings: PreviewSettingsData) => void;
     onSaveAsDefault: () => void;
+    onOk: () => void;
     onResetView?: () => void;
 }
 
@@ -67,6 +68,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
     settings,
     onSettingsChange,
     onSaveAsDefault,
+    onOk,
     onResetView,
 }) => {
     const [localSettings, setLocalSettings] = useState<PreviewSettingsData>(settings);
@@ -237,28 +239,41 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                         <Divider />
 
                         {/* Action Buttons */}
-                        <Box sx={{ display: 'flex', gap: 1.5, mt: 1, justifyContent: 'flex-end' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, mt: 1 }}>
                             <Button
-                                variant="text"
-                                color="inherit"
-                                size="small"
-                                onClick={handleCancel}
-                                sx={{ textTransform: 'none', minWidth: 70 }}
-                            >
-                                Revert
-                            </Button>
-                            <Button
-                                variant="contained"
+                                variant="outlined"
                                 color="primary"
                                 size="small"
                                 onClick={() => {
                                     onSaveAsDefault();
                                     onClose();
                                 }}
-                                sx={{ textTransform: 'none', minWidth: 120 }}
+                                fullWidth
+                                sx={{ textTransform: 'none' }}
                             >
-                                Ok
+                                Set as Default View
                             </Button>
+
+                            <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end' }}>
+                                <Button
+                                    variant="text"
+                                    color="inherit"
+                                    size="small"
+                                    onClick={handleCancel}
+                                    sx={{ textTransform: 'none', minWidth: 80 }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    color="primary"
+                                    size="small"
+                                    onClick={onOk}
+                                    sx={{ textTransform: 'none', minWidth: 80 }}
+                                >
+                                    OK
+                                </Button>
+                            </Box>
                         </Box>
                     </Box>
                 </Paper>
