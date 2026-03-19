@@ -188,6 +188,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         vendor: formData.vendor.trim(),
                     },
                     settings: {
+                        ...(prevSong.settings || {}),
                         lead_time: parseFloat(formData.lead_time),
                         trail_time: parseFloat(formData.trail_time),
                         volume_adj: parseFloat(formData.volume_adj),

@@ -5,6 +5,8 @@ import { savePlayerSettings } from './PlayerStatusStore';
 export const SYNC_SETTINGS_ACTION_TYPES = new Set<string>([
     'playerStatus/setAudioSyncAdjust',
     'playerStatus/setBackgroundSequence',
+    'playerStatus/setJukeboxExcludedTags',
+    'playerStatus/setJukeboxIncludedTags',
     'playerStatus/setViewerControlEnabled',
     'playerStatus/setViewerControlType',
     'playerStatus/setRemoteFalconToken',

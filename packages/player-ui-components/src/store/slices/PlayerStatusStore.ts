@@ -24,13 +24,46 @@ export interface PlayerStatusState {
     error?: string;
 }
 
+const DEFAULT_JUKEBOX_EXCLUDED_TAGS = ['nojukebox'];
+
+function normalizeTagList(tags: unknown, fallback: string[] = []): string[] {
+    if (!Array.isArray(tags)) return fallback;
+    const normalized = tags.map((t) => (typeof t === 'string' ? t.trim().toLowerCase() : '')).filter(Boolean);
+    return Array.from(new Set(normalized));
+}
+
+function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
+    const jukebox = input?.jukebox ?? {};
+    const excludedNormalized = normalizeTagList(jukebox.excludedTags, []);
+    const includedNormalized = normalizeTagList(jukebox.includedTags, []);
+    return {
+        ...input,
+        audioSyncAdjust: input.audioSyncAdjust ?? 0,
+        backgroundSequence: input.backgroundSequence ?? 'overlay',
+        viewerControl: input.viewerControl ?? {
+            enabled: false,
+            type: 'disabled',
+            remoteFalconToken: undefined,
+            schedule: [],
+        },
+        volumeControl: input.volumeControl ?? {
+            defaultVolume: 100,
+            schedule: [],
+        },
+        jukebox: {
+            excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
+            includedTags: includedNormalized,
+        },
+    };
+}
+
 export const initialStatusState: PlayerStatusState = {
     playerStatus: {},
     loading: false,
     issuing: false,
     settingsSaving: false,
     error: undefined,
-    playbackSettings: {
+    playbackSettings: normalizePlaybackSettings({
         audioSyncAdjust: 0,
         backgroundSequence: 'overlay',
         viewerControl: {
@@ -43,7 +76,11 @@ export const initialStatusState: PlayerStatusState = {
             defaultVolume: 100,
             schedule: [],
         },
-    },
+        jukebox: {
+            excludedTags: DEFAULT_JUKEBOX_EXCLUDED_TAGS,
+            includedTags: [],
+        },
+    }),
 };
 
 export const callImmediateCommand = createAsyncThunk<boolean, EZPlayerCommand, { extra: DataStorageAPI }>(
@@ -81,13 +118,26 @@ export function createPlayerStatusSlice(extraReducers: (builder: ActionReducerMa
 
             // Simple setters
             hydratePlaybackSettings(state, action: PayloadAction<PlaybackSettings>) {
-                state.playbackSettings = action.payload;
+                state.playbackSettings = normalizePlaybackSettings(action.payload);
             },
             setAudioSyncAdjust(state, action: PayloadAction<number>) {
                 state.playbackSettings.audioSyncAdjust = action.payload;
             },
             setBackgroundSequence(state, action: PayloadAction<'overlay' | 'underlay'>) {
                 state.playbackSettings.backgroundSequence = action.payload;
+            },
+
+            // Jukebox management
+            setJukeboxExcludedTags(state, action: PayloadAction<string[]>) {
+                state.playbackSettings.jukebox = state.playbackSettings.jukebox ?? {};
+                const next = normalizeTagList(action.payload, []);
+                state.playbackSettings.jukebox.excludedTags = Array.from(
+                    new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...next]),
+                );
+            },
+            setJukeboxIncludedTags(state, action: PayloadAction<string[]>) {
+                state.playbackSettings.jukebox = state.playbackSettings.jukebox ?? {};
+                state.playbackSettings.jukebox.includedTags = normalizeTagList(action.payload, []);
             },
 
             // Viewer control
