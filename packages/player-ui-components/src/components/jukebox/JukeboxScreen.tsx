@@ -42,7 +42,6 @@ interface SequenceItem {
     };
     settings?: {
         tags?: string[];
-        hideFromJukebox?: boolean;
     };
     sequence?: {
         vendor?: string;
@@ -215,7 +214,6 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                     songTags: s.settings?.tags,
                     excludedTags: jukeboxSettings?.excludedTags,
                     includedTags: jukeboxSettings?.includedTags,
-                    hideFromJukebox: s.settings?.hideFromJukebox,
                 }),
             )
             .map((song: SequenceItem) => ({
@@ -601,7 +599,6 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                         songTags: s.settings?.tags,
                         excludedTags: jukeboxSettings?.excludedTags,
                         includedTags: jukeboxSettings?.includedTags,
-                        hideFromJukebox: s.settings?.hideFromJukebox,
                     }),
                 )
                 .map(

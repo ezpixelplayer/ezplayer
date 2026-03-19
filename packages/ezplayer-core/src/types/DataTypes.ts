@@ -33,11 +33,6 @@ export interface SequenceSettings {
     lead_time?: number;
     trail_time?: number;
     tags?: string[];
-    /**
-     * When true, this song will not appear in the public jukebox.
-     * This is applied before any other jukebox filtering.
-     */
-    hideFromJukebox?: boolean;
 }
 
 export interface SequenceFiles {

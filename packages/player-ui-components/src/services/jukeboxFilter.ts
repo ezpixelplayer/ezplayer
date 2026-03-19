@@ -20,10 +20,7 @@ export function isSongAllowedForJukebox(args: {
     songTags: string[] | undefined;
     excludedTags: string[] | undefined;
     includedTags: string[] | undefined;
-    hideFromJukebox?: boolean;
 }): boolean {
-    if (args.hideFromJukebox === true) return false;
-
     // Always enforce 'nojukebox' exclusion (even if user adds/removes other tags).
     const excluded = Array.from(
         new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...normalizeTagList(args.excludedTags, [])]),
