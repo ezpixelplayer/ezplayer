@@ -421,11 +421,25 @@ export interface VolumeControlState {
     schedule: VolumeScheduleEntry[];
 }
 
+export interface JukeboxSettings {
+    /**
+     * Tags that always exclude a song from the jukebox.
+     * Matching is intended to be case-insensitive on the client.
+     */
+    excludedTags?: string[];
+    /**
+     * If empty/undefined: no "include" filtering is applied (all songs allowed except excluded ones).
+     * If present: only songs matching at least one tag are allowed (after excluded-tags filtering).
+     */
+    includedTags?: string[];
+}
+
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
+    jukebox?: JukeboxSettings;
 }
 
 /// Player full state & websocket sync

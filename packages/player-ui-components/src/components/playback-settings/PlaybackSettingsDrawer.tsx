@@ -33,6 +33,7 @@ import { useMemo } from 'react';
 import Licenses from '../../constants/licenses.json';
 import { playerStatusActions } from '../../store/slices/PlayerStatusStore';
 import { ColorPaletteDialog } from '../theme/ColorPaletteDialog';
+import { TagListInput } from '../tag-list-input/TagListInput';
 
 interface UISettings {
     theme?: string;
@@ -645,17 +646,17 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                     disabled={
                         dialogType === 'schedule'
                             ? !newScheduleEntry.days ||
-                              !newScheduleEntry.startTime ||
-                              !newScheduleEntry.endTime ||
-                              !newScheduleEntry.playlist ||
-                              !isValidTimeFormat(newScheduleEntry.startTime) ||
-                              !isValidExtendedTimeFormat(newScheduleEntry.endTime)
+                            !newScheduleEntry.startTime ||
+                            !newScheduleEntry.endTime ||
+                            !newScheduleEntry.playlist ||
+                            !isValidTimeFormat(newScheduleEntry.startTime) ||
+                            !isValidExtendedTimeFormat(newScheduleEntry.endTime)
                             : !newVolumeScheduleEntry.days ||
-                              !newVolumeScheduleEntry.startTime ||
-                              !newVolumeScheduleEntry.endTime ||
-                              newVolumeScheduleEntry.volumeLevel === undefined ||
-                              !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
-                              !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
+                            !newVolumeScheduleEntry.startTime ||
+                            !newVolumeScheduleEntry.endTime ||
+                            newVolumeScheduleEntry.volumeLevel === undefined ||
+                            !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
+                            !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
                     }
                     sx={{ minWidth: 140 }}
                 >
@@ -1272,6 +1273,40 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Card>
                     )}
 
+                    {/* Jukebox Management Group */}
+                    <Card
+                        sx={{
+                            mb: 3,
+                            p: 3,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            backgroundColor: 'background.paper',
+                        }}
+                    >
+                        <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                            Jukebox Management
+                        </Typography>
+
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <TagListInput
+                                label="Excluded Tags (Always Filtered Out)"
+                                value={settings.jukebox?.excludedTags || ['nojukebox']}
+                                onChange={(next) => dispatch(playerStatusActions.setJukeboxExcludedTags(next))}
+                                placeholder='Type a tag and press Enter (e.g., "nojukebox")'
+                                helperText="Songs containing any of these tags will always be excluded from the jukebox."
+                            />
+
+                            <TagListInput
+                                label="Included Tags (Optional Filter)"
+                                value={settings.jukebox?.includedTags || []}
+                                onChange={(next) => dispatch(playerStatusActions.setJukeboxIncludedTags(next))}
+                                placeholder='Leave empty to allow all (except excluded). Add tags to restrict.'
+                                helperText="If empty: no filtering is applied. If one or more tags are present: only songs matching at least one tag are allowed."
+                            />
+                        </Box>
+                    </Card>
+
                     {/* About & License Buttons */}
                     <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                         <Button
@@ -1358,8 +1393,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         {itemToDelete?.type === 'schedule'
                             ? 'Schedule Entry'
                             : itemToDelete?.type === 'volume'
-                              ? 'Volume Override'
-                              : 'Item'}
+                                ? 'Volume Override'
+                                : 'Item'}
                     </Typography>
                 </DialogTitle>
                 <DialogContent>

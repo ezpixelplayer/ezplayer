@@ -34,6 +34,10 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
                     defaultVolume: 100,
                     schedule: [],
                 },
+                jukebox: {
+                    excludedTags: ['nojukebox'],
+                    includedTags: [],
+                },
             };
             currentSettings = defaults;
             return defaults;
