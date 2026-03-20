@@ -25,6 +25,8 @@ export class GeometryGroupRenderer {
     public points: THREE.Points;
     public group: GeometryGroup;
     public allPointsCount: number;
+    /** Base point size (before pixel-size multiplier). Set by GeometryManager after construction. */
+    public basePointSize: number = 3.0;
 
     private selectionStates: Float32Array;
     private hoverStates: Float32Array;
@@ -289,6 +291,7 @@ export class GeometryManager {
     private modelPixelSizeMap: Map<string, number> = new Map();
     private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
     private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
+    private pixelSizeMultiplier: number; // Multiplier for pixel size (from settings)
 
     constructor(
         points: Point3D[],
@@ -300,6 +303,7 @@ export class GeometryManager {
             modelPixelSizeMap?: Map<string, number>;
             modelPixelStyleMap?: Map<string, string>; // pixelStyle as string from XML
             modelTransparencyMap?: Map<string, number>; // transparency (0–100) from xLights XML
+            pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
         },
     ) {
         this.allPoints = points;
@@ -309,6 +313,10 @@ export class GeometryManager {
         this.viewPlane = options?.viewPlane;
         // Extract gamma explicitly: from options > from uniforms > from model configuration > default
         this.gamma = options?.gamma ?? uniforms.gamma ?? getGammaFromModelConfiguration(points) ?? DEFAULT_GAMMA;
+        // Store pixel size multiplier (default to 1.0 if not provided)
+        // Ensure multiplier is always positive and within reasonable bounds
+        const rawMultiplier = options?.pixelSizeMultiplier ?? 1.0;
+        this.pixelSizeMultiplier = Math.max(0.1, Math.min(10.0, Number(rawMultiplier) || 1.0));
         // Store model pixel size map for per-model point size lookup
         this.modelPixelSizeMap = options?.modelPixelSizeMap || new Map();
         // Store model pixel style map for per-model pixel shape lookup
@@ -345,8 +353,19 @@ export class GeometryManager {
 
             // Look up pixelSize for this model
             // Use model's pixelSize from XML if available, otherwise fall back to default pointSize
+            // Apply pixelSizeMultiplier to both model-specific and default sizes
+            // The multiplier is already validated in the constructor, so we can use it directly
+            const multiplier = this.pixelSizeMultiplier;
             const modelPixelSize = modelName ? this.modelPixelSizeMap.get(modelName) : undefined;
-            const effectivePointSize = modelPixelSize !== undefined ? modelPixelSize : this.pointSize;
+            const basePointSize = modelPixelSize !== undefined 
+                ? Math.max(0.1, Number(modelPixelSize) || this.pointSize)
+                : Math.max(0.1, Number(this.pointSize) || 3.0);
+            // Calculate effective point size: base size multiplied by user's pixel size multiplier
+            // The UI slider shows "2x" meaning "2 times bigger", so:
+            // - multiplier 1.0 = normal size (basePointSize * 1.0)
+            // - multiplier 2.0 = 2x bigger pixels (basePointSize * 2.0)
+            // - multiplier 0.5 = 0.5x smaller pixels (basePointSize * 0.5)
+            const effectivePointSize = basePointSize * multiplier;
 
             // Look up pixelStyle for this model
             // Convert pixelStyle string to number:
@@ -394,6 +413,9 @@ export class GeometryManager {
                 pixelStyle: effectivePixelStyle, // Pass model-specific pixel style
                 opacity: effectiveOpacity, // Pass model-specific opacity (derived from xLights Transparency)
             });
+            // Store the base size (before multiplier) so updatePixelSizeMultiplier
+            // can cheaply recalculate the uniform without a full geometry rebuild.
+            renderer.basePointSize = basePointSize;
             this.renderers.set(group.id, renderer);
         });
     }
@@ -403,6 +425,21 @@ export class GeometryManager {
      */
     getPointObjects(): THREE.Points[] {
         return Array.from(this.renderers.values()).map((renderer) => renderer.points);
+    }
+
+    /**
+     * Update pixel size multiplier by patching the `size` uniform on every
+     * renderer. This is an O(groups) operation — no geometry or material is
+     * recreated, so it returns in < 1 ms even for large models.
+     */
+    updatePixelSizeMultiplier(multiplier: number): void {
+        const clampedMultiplier = Math.max(0.1, Math.min(10.0, Number(multiplier) || 1.0));
+        if (Math.abs(this.pixelSizeMultiplier - clampedMultiplier) < 0.001) return;
+
+        this.pixelSizeMultiplier = clampedMultiplier;
+        this.renderers.forEach((renderer) => {
+            renderer.material.uniforms.size.value = renderer.basePointSize * clampedMultiplier;
+        });
     }
 
     /**

@@ -15,6 +15,7 @@ const MAX_TEXTURE_SIZE = 2048;
 interface ImagePlaneProps {
     viewObject: ViewObject;
     frameServerUrl?: string;
+    backgroundBrightness?: number; // 0-100, overrides viewObject brightness for background images
 }
 
 // ---------------------------------------------------------------------------
@@ -73,15 +74,18 @@ function imageHasAlpha(img: HTMLImageElement | HTMLCanvasElement): boolean {
 // ImagePlaneContent – the actual R3F component
 // ---------------------------------------------------------------------------
 
-function ImagePlaneContent({ viewObject, frameServerUrl }: ImagePlaneProps) {
+function ImagePlaneContent({ viewObject, frameServerUrl, backgroundBrightness }: ImagePlaneProps) {
     const {
         imageFile,
         worldPosX, worldPosY, worldPosZ,
         scaleX, scaleY, scaleZ,
         rotateX, rotateY, rotateZ,
-        brightness,
+        brightness: viewObjectBrightness,
         transparency,
     } = viewObject;
+
+    // Use backgroundBrightness override if provided, otherwise use viewObject brightness
+    const brightness = backgroundBrightness !== undefined ? backgroundBrightness : viewObjectBrightness;
 
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [imgWidth, setImgWidth] = useState(1);
