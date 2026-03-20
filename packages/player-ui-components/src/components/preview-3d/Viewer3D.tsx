@@ -403,9 +403,13 @@ function HoverHandler({
 // Custom FPS-style camera controller
 // Left drag: freelook (rotate in place). Right drag: orbit around raycast hit.
 // Scroll: move forward/back. Keyboard: W/S forward/back, A/D turn, Z/C strafe, Q/E up/down.
-function FreelookCameraController() {
+function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; hoveredId?: string | null }) {
     const { camera, gl, scene } = useThree();
     const { set } = useThree();
+
+    // Keep hoveredId in a ref so event handlers always see the latest value
+    const hoveredIdRef = useRef(hoveredId);
+    hoveredIdRef.current = hoveredId;
 
     // Camera orientation
     const yawRef = useRef(0);
@@ -508,10 +512,12 @@ function FreelookCameraController() {
         const DRAG_THRESHOLD = 3;
         const SENSITIVITY = 0.003;
         const PITCH_LIMIT = Math.PI / 2 - 0.01;
-        const SCROLL_SPEED = 0.3;
+        const SCROLL_SPEED = 1.5;
 
         const onPointerDown = (e: PointerEvent) => {
             if (e.button !== 0 && e.button !== 2) return;
+            // Ignore if we're already tracking a different button
+            if (dragButtonRef.current !== -1) return;
 
             isDraggingRef.current = false;
             dragButtonRef.current = e.button;
@@ -521,48 +527,29 @@ function FreelookCameraController() {
             canvas.setPointerCapture(e.pointerId);
 
             if (e.button === 2) {
-                // Raycast to find orbit pivot — try mesh hit first, then proximity to points
-                const rect = canvas.getBoundingClientRect();
-                const ndc = new THREE.Vector2(
-                    ((e.clientX - rect.left) / rect.width) * 2 - 1,
-                    -((e.clientY - rect.top) / rect.height) * 2 + 1,
-                );
-                const raycaster = new THREE.Raycaster();
-                raycaster.setFromCamera(ndc, camera);
-
+                // Use the currently hovered point as the orbit pivot.
+                // If nothing is hovered, fall back to mesh raycast.
                 let hitPoint: THREE.Vector3 | null = null;
 
-                // 1) Standard mesh raycast (houses, image planes, beams, etc.)
-                const meshHits = raycaster.intersectObjects(scene.children, true);
-                if (meshHits.length > 0) {
-                    hitPoint = meshHits[0].point.clone();
+                const hId = hoveredIdRef.current;
+                if (hId) {
+                    const p = points.find((pt) => pt.id === hId);
+                    if (p) hitPoint = new THREE.Vector3(p.x, p.y, p.z);
                 }
 
-                // 2) Proximity check against point-cloud positions (same approach as hover/click)
+                // Fallback: standard mesh raycast (houses, image planes, etc.)
                 if (!hitPoint) {
-                    const cameraDistance = camera.position.length() || 1000;
-                    const threshold = Math.max(3.0 * 0.15, cameraDistance * 0.02);
-                    let closestDist = Infinity;
-                    let closestPos: THREE.Vector3 | null = null;
-
-                    scene.traverse((obj) => {
-                        if ((obj as THREE.Points).isPoints) {
-                            const geom = (obj as THREE.Points).geometry;
-                            const posAttr = geom.getAttribute('position');
-                            if (!posAttr) return;
-                            const tmp = new THREE.Vector3();
-                            for (let i = 0; i < posAttr.count; i++) {
-                                tmp.fromBufferAttribute(posAttr, i);
-                                obj.localToWorld(tmp);
-                                const d = raycaster.ray.distanceToPoint(tmp);
-                                if (d < threshold && d < closestDist) {
-                                    closestDist = d;
-                                    closestPos = tmp.clone();
-                                }
-                            }
-                        }
-                    });
-                    if (closestPos) hitPoint = closestPos;
+                    const rect = canvas.getBoundingClientRect();
+                    const ndc = new THREE.Vector2(
+                        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+                        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+                    );
+                    const raycaster = new THREE.Raycaster();
+                    raycaster.setFromCamera(ndc, camera);
+                    const meshHits = raycaster.intersectObjects(scene.children, true);
+                    if (meshHits.length > 0) {
+                        hitPoint = meshHits[0].point.clone();
+                    }
                 }
 
                 if (hitPoint) {
@@ -621,9 +608,9 @@ function FreelookCameraController() {
                 const up = new THREE.Vector3(0, 1, 0);
 
                 // Build orbit rotation from total mouse delta
-                const yawQuat = new THREE.Quaternion().setFromAxisAngle(up, dx * SENSITIVITY);
+                const yawQuat = new THREE.Quaternion().setFromAxisAngle(up, -dx * SENSITIVITY);
                 const right = new THREE.Vector3(1, 0, 0).applyQuaternion(orbitStartQuatRef.current);
-                const pitchQuat = new THREE.Quaternion().setFromAxisAngle(right, dy * SENSITIVITY);
+                const pitchQuat = new THREE.Quaternion().setFromAxisAngle(right, -dy * SENSITIVITY);
                 const totalRotation = new THREE.Quaternion().multiplyQuaternions(yawQuat, pitchQuat);
 
                 // Rotate the start offset around the pivot
@@ -655,7 +642,11 @@ function FreelookCameraController() {
             e.preventDefault();
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
-            camera.position.addScaledVector(dir, -e.deltaY * SCROLL_SPEED);
+            // Scale scroll speed with camera distance so it feels consistent
+            // whether zoomed far out (post-reset) or up close
+            const dist = camera.position.length() || 100;
+            const scaledSpeed = SCROLL_SPEED * Math.max(dist / 100, 0.5);
+            camera.position.addScaledVector(dir, -e.deltaY * scaledSpeed);
             notifyChange();
         };
 
@@ -1371,7 +1362,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         }}
                     >
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
-                        <FreelookCameraController />
+                        <FreelookCameraController points={points} hoveredId={hoveredId} />
                         <SceneContent
                             points={points}
                             shapes={shapes}
