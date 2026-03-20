@@ -512,7 +512,7 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         const DRAG_THRESHOLD = 3;
         const SENSITIVITY = 0.003;
         const PITCH_LIMIT = Math.PI / 2 - 0.01;
-        const SCROLL_SPEED = 1.5;
+        const SCROLL_SPEED = 0.15;
 
         const onPointerDown = (e: PointerEvent) => {
             if (e.button !== 0 && e.button !== 2) return;
@@ -640,13 +640,24 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
 
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
+            let dy = e.deltaY;
+            if (e.deltaMode === 1) dy *= 33;  // DOM_DELTA_LINE → approx pixels
+            if (e.deltaMode === 2) dy *= 100;  // DOM_DELTA_PAGE → approx pixels
+
+            // ctrlKey is synthetically set by browsers for trackpad pinch gestures.
+            // Pinch values are already small, so use a higher multiplier.
+            // Mouse wheel notches (~100) need damping + clamp.
+            const isPinch = e.ctrlKey;
+            if (!isPinch) {
+                dy = Math.max(-150, Math.min(150, dy));
+            }
+            const baseMultiplier = isPinch ? 1.0 : SCROLL_SPEED;
+
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
-            // Scale scroll speed with camera distance so it feels consistent
-            // whether zoomed far out (post-reset) or up close
             const dist = camera.position.length() || 100;
-            const scaledSpeed = SCROLL_SPEED * Math.max(dist / 100, 0.5);
-            camera.position.addScaledVector(dir, -e.deltaY * scaledSpeed);
+            const scaledSpeed = baseMultiplier * Math.max(dist / 100, 0.5);
+            camera.position.addScaledVector(dir, -dy * scaledSpeed);
             notifyChange();
         };
 
