@@ -1235,14 +1235,29 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
 }) => {
     const [error, setError] = useState<string | null>(null);
 
-    // Detect touch-only devices (tablets, kiosks) — use OrbitControls for them
-    const [isTouchOnly] = useState(() => {
+    // Detect touch-only devices (tablets, kiosks) via runtime input detection.
+    // Media queries are unreliable on Windows kiosks, so we detect based on
+    // actual input: default to touch mode if the device has touch support,
+    // then switch to mouse mode on the first real mouse event.
+    const [isTouchOnly, setIsTouchOnly] = useState(() => {
         if (typeof window === 'undefined') return false;
-        // Primary pointer is coarse (touch) and no fine pointer (mouse/trackpad) exists
-        const coarse = window.matchMedia('(pointer: coarse)').matches;
-        const noFine = !window.matchMedia('(any-pointer: fine)').matches;
-        return coarse && noFine;
+        return navigator.maxTouchPoints > 0;
     });
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        // If we defaulted to touch mode, listen for a real mouse event to switch.
+        // mousemove with non-zero movement means an actual mouse, not a touch-generated event.
+        if (!isTouchOnly) return;
+        const onMouseMove = (e: MouseEvent) => {
+            if (e.movementX !== 0 || e.movementY !== 0) {
+                setIsTouchOnly(false);
+                window.removeEventListener('mousemove', onMouseMove);
+            }
+        };
+        window.addEventListener('mousemove', onMouseMove);
+        return () => window.removeEventListener('mousemove', onMouseMove);
+    }, [isTouchOnly]);
 
     // Show empty state if no points
     if (!points || points.length === 0) {
