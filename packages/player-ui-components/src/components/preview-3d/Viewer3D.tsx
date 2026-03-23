@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { PerspectiveCamera, Stats } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
@@ -1235,6 +1235,15 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
 }) => {
     const [error, setError] = useState<string | null>(null);
 
+    // Detect touch-only devices (tablets, kiosks) — use OrbitControls for them
+    const [isTouchOnly] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        // Primary pointer is coarse (touch) and no fine pointer (mouse/trackpad) exists
+        const coarse = window.matchMedia('(pointer: coarse)').matches;
+        const noFine = !window.matchMedia('(any-pointer: fine)').matches;
+        return coarse && noFine;
+    });
+
     // Show empty state if no points
     if (!points || points.length === 0) {
         return (
@@ -1300,30 +1309,49 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 >
                     Controls:
                 </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
-                >
-                    🖱️ Left drag: Look around
-                </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
-                >
-                    🖱️ Right drag: Orbit object
-                </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
-                >
-                    🖱️ Scroll: Move forward/back
-                </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
-                >
-                    ⌨️ W/S: Move &nbsp; A/D: Turn &nbsp; Z/C: Strafe &nbsp; Q/E: Down/Up
-                </Typography>
+                {isTouchOnly ? (
+                    <>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            👆 One finger: Rotate
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            👆 Two fingers: Pan / Zoom
+                        </Typography>
+                    </>
+                ) : (
+                    <>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Left drag: Look around
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Right drag: Orbit object
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Scroll: Move forward/back
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            ⌨️ W/S: Move &nbsp; A/D: Turn &nbsp; Z/C: Strafe &nbsp; Q/E: Down/Up
+                        </Typography>
+                    </>
+                )}
             </Box>
             {error ? (
                 <Box
@@ -1373,7 +1401,33 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         }}
                     >
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
-                        <FreelookCameraController points={points} hoveredId={hoveredId} />
+                        {isTouchOnly ? (
+                            <OrbitControls
+                                makeDefault
+                                enableDamping
+                                dampingFactor={0.35}
+                                minDistance={10}
+                                maxDistance={10000}
+                                enablePan={true}
+                                enableRotate={true}
+                                enableZoom={true}
+                                zoomToCursor={true}
+                                panSpeed={1.0}
+                                rotateSpeed={1.0}
+                                zoomSpeed={1.0}
+                                mouseButtons={{
+                                    LEFT: THREE.MOUSE.ROTATE,
+                                    MIDDLE: THREE.MOUSE.DOLLY,
+                                    RIGHT: THREE.MOUSE.PAN,
+                                }}
+                                touches={{
+                                    ONE: THREE.TOUCH.ROTATE,
+                                    TWO: THREE.TOUCH.DOLLY_PAN,
+                                }}
+                            />
+                        ) : (
+                            <FreelookCameraController points={points} hoveredId={hoveredId} />
+                        )}
                         <SceneContent
                             points={points}
                             shapes={shapes}
