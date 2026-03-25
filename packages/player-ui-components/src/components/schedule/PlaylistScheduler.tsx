@@ -1,4 +1,4 @@
-import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
+import { PlaylistRecord, SequenceRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -30,10 +30,11 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { addDays, addMonths, addWeeks, eachDayOfInterval, format, subDays, subMonths, subWeeks } from 'date-fns';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { postScheduledPlaylists } from '../../store/slices/ScheduleStore';
+import { postSequenceData } from '../../store/slices/SequenceStore';
 import { formatDateStandard } from '../../util/dateUtils';
 import { AppDispatch, RootState } from '../../store/Store';
 import DailyView from './DailyView';
@@ -105,6 +106,20 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const [scheduledPlaylists, setScheduledPlaylists] = useState<ScheduledPlaylist[]>(initialSchedules);
     const [selectedSchedule, setSelectedSchedule] = useState<ScheduledPlaylist | null>(null);
+    const [overrideAudioWithPlaylist, setOverrideAudioWithPlaylist] = useState(false);
+    const [overrideAudioPlaylistId, setOverrideAudioPlaylistId] = useState<string>('');
+    const [audioOverrideApplied, setAudioOverrideApplied] = useState<{
+        overridePlaylistId: string;
+        targetPlaylistId: string;
+        nSequences: number;
+    } | null>(null);
+
+    /**
+     * Keeps original per-sequence audio so the checkbox can revert overrides.
+     * Only reverts sequences we touched in this session.
+     */
+    const audioOverrideBackupRef = useRef<Map<string, string | undefined>>(new Map());
+    const audioOverrideTouchedSeqIdsRef = useRef<Set<string>>(new Set());
 
     // Helper function to combine date and time into a timestamp
     const combineDateAndTime = (date: Date, time: string) => {
@@ -125,6 +140,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     const dispatch = useDispatch<AppDispatch>();
 
+    const sequenceById = useMemo(() => {
+        const next = new Map<string, SequenceRecord>();
+        for (const s of sequenceData ?? []) next.set(s.id, s);
+        return next;
+    }, [sequenceData]);
+
     useEffect(() => {
         setScheduledPlaylists(initialSchedules);
     }, [initialSchedules]);
@@ -144,6 +165,165 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             }
         }
     }, [formData.fromTime]);
+
+    const revertAudioOverride = async (opts?: { clearUI?: boolean }) => {
+        const clearUI = opts?.clearUI ?? true;
+        const touched = Array.from(audioOverrideTouchedSeqIdsRef.current);
+        if (!touched.length) return;
+
+        const updatedSequences: SequenceRecord[] = [];
+        for (const seqId of touched) {
+            const seq = sequenceById.get(seqId);
+            if (!seq) continue;
+
+            const originalAudio = audioOverrideBackupRef.current.get(seqId);
+            const updatedFiles = { ...(seq.files || {}) };
+
+            if (originalAudio === undefined) {
+                // Restore "audio not set" state.
+                delete (updatedFiles as any).audio;
+            } else {
+                updatedFiles.audio = originalAudio;
+            }
+
+            updatedSequences.push({
+                ...seq,
+                files: updatedFiles,
+            });
+        }
+
+        try {
+            await dispatch(postSequenceData(updatedSequences)).unwrap();
+        } catch (err) {
+            console.error('Failed to revert audio override', err);
+            ToastMsgs.showErrorMessage('Failed to remove audio override', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        } finally {
+            audioOverrideTouchedSeqIdsRef.current.clear();
+            audioOverrideBackupRef.current.clear();
+            setAudioOverrideApplied(null);
+            if (clearUI) setOverrideAudioPlaylistId('');
+        }
+    };
+
+    const applyAudioOverrideForPlaylist = async (targetPlaylistId: string, overridePlaylistId: string) => {
+        if (!targetPlaylistId || !overridePlaylistId) return;
+
+        const targetPlaylist = availablePlaylists.find((p) => p.id === targetPlaylistId);
+        const overridePlaylist = availablePlaylists.find((p) => p.id === overridePlaylistId);
+
+        if (!targetPlaylist || !overridePlaylist) {
+            ToastMsgs.showErrorMessage('Could not find the selected playlist(s) for audio override', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2500,
+            });
+            return;
+        }
+
+        // Match sequences by playlist position (`PlaylistItem.sequence`) so overrides
+        // remain stable even if playlist item arrays differ in length/order.
+        const targetItems = [...(targetPlaylist.items ?? [])].sort((a, b) => a.sequence - b.sequence);
+        const overrideItems = [...(overridePlaylist.items ?? [])].sort((a, b) => a.sequence - b.sequence);
+
+        const overrideBySequenceNumber = new Map<number, string>();
+        for (const oi of overrideItems) {
+            overrideBySequenceNumber.set(oi.sequence, oi.id);
+        }
+
+        const updatedSequences: SequenceRecord[] = [];
+        for (const ti of targetItems) {
+            const overrideSeqId = overrideBySequenceNumber.get(ti.sequence);
+            if (!overrideSeqId) continue;
+
+            const targetSeq = sequenceById.get(ti.id);
+            const overrideSeq = sequenceById.get(overrideSeqId);
+            if (!targetSeq || !overrideSeq) continue;
+
+            const overrideAudio = overrideSeq.files?.audio;
+            if (!overrideAudio) continue;
+
+            if (!audioOverrideBackupRef.current.has(targetSeq.id)) {
+                audioOverrideBackupRef.current.set(targetSeq.id, targetSeq.files?.audio);
+            }
+            audioOverrideTouchedSeqIdsRef.current.add(targetSeq.id);
+
+            updatedSequences.push({
+                ...targetSeq,
+                files: {
+                    ...(targetSeq.files || {}),
+                    audio: overrideAudio,
+                },
+            });
+        }
+
+        if (!updatedSequences.length) {
+            ToastMsgs.showErrorMessage('No matching sequence audio found to override', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2500,
+            });
+            return;
+        }
+
+        try {
+            const res = await dispatch(postSequenceData(updatedSequences)).unwrap();
+            setAudioOverrideApplied({
+                overridePlaylistId,
+                targetPlaylistId,
+                // Prefer our local computed count (res length can vary based on server merge behavior).
+                nSequences: updatedSequences.length || res.length,
+            });
+        } catch (err) {
+            console.error('Failed to apply audio override', err);
+            ToastMsgs.showErrorMessage('Failed to apply audio override', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
+
+    // Keep audio override in sync with checkbox + selected playlists.
+    useEffect(() => {
+        if (!overrideAudioWithPlaylist) return;
+        if (!formData.playlistId) return;
+
+        const run = async () => {
+            if (!overrideAudioPlaylistId) {
+                await revertAudioOverride({ clearUI: true });
+                return;
+            }
+
+            // If the user changed the override playlist, restore previous overrides first
+            // so we don't keep stale audio on sequences skipped by the new override.
+            if (audioOverrideTouchedSeqIdsRef.current.size > 0) {
+                await revertAudioOverride({ clearUI: false });
+            }
+
+            await applyAudioOverrideForPlaylist(formData.playlistId, overrideAudioPlaylistId);
+        };
+
+        void run();
+        // Intentionally omit `sequenceData/sequenceById` to avoid loops during async updates.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [overrideAudioWithPlaylist, overrideAudioPlaylistId, formData.playlistId]);
+
+    const overridePlaylistTitle = availablePlaylists.find((p) => p.id === overrideAudioPlaylistId)?.title;
+
+    const handleOverrideAudioToggle = (checked: boolean) => {
+        setOverrideAudioWithPlaylist(checked);
+        if (!checked) {
+            void revertAudioOverride();
+        } else {
+            // The user still has to pick the override playlist.
+            setAudioOverrideApplied(null);
+            setOverrideAudioPlaylistId('');
+        }
+    };
 
     const handlePrevMonth = () => {
         if (view === 'monthly') {
@@ -178,6 +358,14 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         setSelectedDate(date);
         // Apply 2-minute start buffer to the selected time
         const actualStartTime = calcActualStartTime(time);
+
+        // New schedule: ensure audio override UI/state is not carried over.
+        setOverrideAudioWithPlaylist(false);
+        setOverrideAudioPlaylistId('');
+        setAudioOverrideApplied(null);
+        audioOverrideTouchedSeqIdsRef.current.clear();
+        audioOverrideBackupRef.current.clear();
+
         setFormData((prev) => ({
             ...prev,
             fromTime: actualStartTime,
@@ -193,6 +381,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             setSelectedSchedule(schedule);
             const scheduleDate = timestampToDate(schedule.date);
             setSelectedDate(scheduleDate);
+
+            // Edit schedule: start with override unchecked.
+            setOverrideAudioWithPlaylist(false);
+            setOverrideAudioPlaylistId('');
+            setAudioOverrideApplied(null);
+            audioOverrideTouchedSeqIdsRef.current.clear();
+            audioOverrideBackupRef.current.clear();
 
             const seriesStartDate =
                 schedule.recurrenceRule?.startDate && ['daily', 'selectedDays'].includes(schedule.recurrence ?? '')
@@ -230,6 +425,11 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const handleClose = () => {
         setIsDialogOpen(false);
         setSelectedSchedule(null);
+        setOverrideAudioWithPlaylist(false);
+        setOverrideAudioPlaylistId('');
+        setAudioOverrideApplied(null);
+        audioOverrideTouchedSeqIdsRef.current.clear();
+        audioOverrideBackupRef.current.clear();
         setFormData({
             title: '',
             fromTime: '',
@@ -1341,6 +1541,70 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 onChange={handleTitleChange}
                             />
                         </Box>
+
+                        {selectedSchedule && (
+                            <Box sx={{ mt: 1 }}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={overrideAudioWithPlaylist}
+                                            onChange={(e) => handleOverrideAudioToggle(e.target.checked)}
+                                        />
+                                    }
+                                    label="Override audio with playlist"
+                                />
+
+                                {overrideAudioWithPlaylist && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+                                    <FormControl fullWidth>
+                                        <InputLabel id="override-audio-playlist-select-label">
+                                            Override Playlist
+                                        </InputLabel>
+                                        <Select
+                                            labelId="override-audio-playlist-select-label"
+                                            value={overrideAudioPlaylistId || ''}
+                                            label="Override Playlist"
+                                            onChange={(e) => setOverrideAudioPlaylistId(e.target.value as string)}
+                                        >
+                                            <MenuItem value="">
+                                                <em>Select playlist</em>
+                                            </MenuItem>
+                                            {availablePlaylists.map((playlist) => (
+                                                <MenuItem key={playlist.id} value={playlist.id}>
+                                                    <Box
+                                                        sx={{
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            width: '100%',
+                                                        }}
+                                                    >
+                                                        <span>{playlist.title}</span>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            {formatDuration(
+                                                                calculatePlaylistDuration(playlist?.id || '')
+                                                                    .totalDuration,
+                                                            )}
+                                                        </Typography>
+                                                    </Box>
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+
+                                    {audioOverrideApplied?.overridePlaylistId === overrideAudioPlaylistId ? (
+                                        <Typography variant="body2" color="primary">
+                                            Audio overridden with “{overridePlaylistTitle}” ({audioOverrideApplied.nSequences}{' '}
+                                            sequence(s))
+                                        </Typography>
+                                    ) : (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Select an override playlist to replace audio for this schedule playlist’s sequences.
+                                        </Typography>
+                                    )}
+                                </Box>
+                                )}
+                            </Box>
+                        )}
                         <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
                             <TextField
                                 name="fromTime"
