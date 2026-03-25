@@ -421,6 +421,23 @@ export interface VolumeControlState {
     schedule: VolumeScheduleEntry[];
 }
 
+export interface BrightnessScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    /**
+     * Brightness override expressed as a percentage (0-100).
+     * The player converts this into a multiplier (0.0-1.0) applied to each output pixel byte.
+     */
+    brightnessLevel: number; // 0-100
+}
+
+export interface BrightnessControlState {
+    defaultBrightness: number; // 0-100
+    schedule: BrightnessScheduleEntry[];
+}
+
 export interface JukeboxSettings {
     /**
      * Tags that always exclude a song from the jukebox.
@@ -439,6 +456,7 @@ export interface PlaybackSettings {
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
+    brightnessControl: BrightnessControlState;
     jukebox?: JukeboxSettings;
 }
 

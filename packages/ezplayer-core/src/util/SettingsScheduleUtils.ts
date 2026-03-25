@@ -2,6 +2,8 @@ import {
     ScheduleDays,
     ViewerControlScheduleEntry,
     ViewerControlState,
+    BrightnessControlState,
+    BrightnessScheduleEntry,
     VolumeControlState,
     VolumeScheduleEntry,
 } from '../types/DataTypes';
@@ -65,12 +67,18 @@ type BaseScheduleEntry = {
 };
 
 function scheduleEntryMatchesNow<T extends BaseScheduleEntry>(entry: T, nowMinutesOfWeek: number): boolean {
-    const startMinutesLocal = parseExtendedTimeToMinutes(entry.startTime);
-    const endMinutesLocal = parseExtendedTimeToMinutes(entry.endTime);
+    let startMinutesLocal = parseExtendedTimeToMinutes(entry.startTime);
+    let endMinutesLocal = parseExtendedTimeToMinutes(entry.endTime);
 
-    if (endMinutesLocal <= startMinutesLocal) {
-        // invalid / zero-length; treat as non-matching
+    if (endMinutesLocal === startMinutesLocal) {
+        // Invalid / zero-length; treat as non-matching.
         return false;
+    }
+
+    // Support "overnight within the day" schedules like 23:00 → 06:00.
+    // If end <= start, interpret end as next day.
+    if (endMinutesLocal < startMinutesLocal) {
+        endMinutesLocal += MINUTES_PER_DAY;
     }
 
     const dayIndices = expandScheduleDays(entry.days);
@@ -146,4 +154,12 @@ export function getActiveVolumeSchedule(
         return null;
     }
     return findMatchingScheduleEntry(volumeControl.schedule, now);
+}
+
+export function getActiveBrightnessSchedule(
+    brightnessControl: BrightnessControlState,
+    now: Date = new Date(),
+): BrightnessScheduleEntry | null {
+    if (!brightnessControl.schedule.length) return null;
+    return findMatchingScheduleEntry<BrightnessScheduleEntry>(brightnessControl.schedule, now);
 }

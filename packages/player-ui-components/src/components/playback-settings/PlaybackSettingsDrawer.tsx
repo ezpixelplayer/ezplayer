@@ -1,5 +1,5 @@
 import { isElectron, PageHeader, Select, ToastMsgs } from '@ezplayer/shared-ui-components';
-import { Add, Delete, Info } from '@mui/icons-material';
+import { Add, Delete, Edit, Info } from '@mui/icons-material';
 import PaletteIcon from '@mui/icons-material/Palette';
 import {
     Button,
@@ -27,7 +27,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
 import { ezrgbThemeOptions, useThemeContext } from '../../theme/ThemeBase';
 import { AboutDialog } from './AboutDialog';
-import { EZPElectronAPI, ViewerControlScheduleEntry, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import { EZPElectronAPI, ViewerControlScheduleEntry, VolumeScheduleEntry, BrightnessScheduleEntry } from '@ezplayer/ezplayer-core';
 import { LicenseDialog, LicenseEntry } from './LicenseDialog';
 import { useMemo } from 'react';
 import Licenses from '../../constants/licenses.json';
@@ -295,11 +295,12 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
 
     // Dialog state
     const [unifiedDialogOpen, setUnifiedDialogOpen] = useState<boolean>(false);
-    const [dialogType, setDialogType] = useState<'schedule' | 'volume'>('schedule');
+    const [dialogType, setDialogType] = useState<'schedule' | 'volume' | 'brightness'>('schedule');
 
     // Delete confirmation dialog state
     const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
-    const [itemToDelete, setItemToDelete] = useState<{ id: string; type: 'schedule' | 'volume' } | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<{ id: string; type: 'schedule' | 'volume' | 'brightness' } | null>(null);
+    const [editingBrightnessId, setEditingBrightnessId] = useState<string | null>(null);
 
     // About dialog state
     const [aboutDialogOpen, setAboutDialogOpen] = useState<boolean>(false);
@@ -310,6 +311,14 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         startTime: '00:00',
         endTime: '23:59',
         volumeLevel: 100,
+    });
+
+    // New brightness schedule entry form state
+    const [newBrightnessScheduleEntry, setNewBrightnessScheduleEntry] = useState<Partial<BrightnessScheduleEntry>>({
+        days: 'all',
+        startTime: '00:00',
+        endTime: '23:59',
+        brightnessLevel: 100,
     });
 
     // License dialog state
@@ -329,6 +338,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     const playlists = useSelector(selectPlaylists);
     const versionInfo = useSelector(selectVersionInfo);
     const settings = useSelector(selectSettings);
+    const safeBrightnessControl = useMemo((): { defaultBrightness: number; schedule: BrightnessScheduleEntry[] } => {
+        const bc = (settings as any)?.brightnessControl;
+        return {
+            defaultBrightness: typeof bc?.defaultBrightness === 'number' ? bc.defaultBrightness : 100,
+            schedule: Array.isArray(bc?.schedule) ? (bc.schedule as BrightnessScheduleEntry[]) : [],
+        };
+    }, [settings]);
 
     // Update the selectedDirectory state when storedShowDirectory changes
     useEffect(() => {
@@ -414,6 +430,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
             endTime: '23:59',
             playlist: '',
         });
+        setEditingBrightnessId(null);
         setDialogType('schedule');
         setUnifiedDialogOpen(true);
     };
@@ -425,12 +442,36 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
             endTime: '23:59',
             volumeLevel: 100,
         });
+        setEditingBrightnessId(null);
         setDialogType('volume');
+        setUnifiedDialogOpen(true);
+    };
+
+    const handleOpenBrightnessDialog = (entry?: BrightnessScheduleEntry) => {
+        if (entry) {
+            setNewBrightnessScheduleEntry({
+                days: entry.days,
+                startTime: entry.startTime,
+                endTime: entry.endTime,
+                brightnessLevel: entry.brightnessLevel,
+            });
+            setEditingBrightnessId(entry.id);
+        } else {
+            setNewBrightnessScheduleEntry({
+                days: 'all',
+                startTime: '00:00',
+                endTime: '23:59',
+                brightnessLevel: 100,
+            });
+            setEditingBrightnessId(null);
+        }
+        setDialogType('brightness');
         setUnifiedDialogOpen(true);
     };
 
     const handleCloseUnifiedDialog = (event?: any, reason?: string) => {
         setUnifiedDialogOpen(false);
+        setEditingBrightnessId(null);
     };
 
     // Unified Dialog content component
@@ -474,15 +515,26 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                                     ...newScheduleEntry,
                                     days: (e.target as HTMLSelectElement).value as ViewerControlScheduleEntry['days'],
                                 });
-                            } else {
+                            } else if (dialogType === 'volume') {
                                 setNewVolumeScheduleEntry({
                                     ...newVolumeScheduleEntry,
                                     days: (e.target as HTMLSelectElement).value as VolumeScheduleEntry['days'],
                                 });
+                            } else {
+                                setNewBrightnessScheduleEntry({
+                                    ...newBrightnessScheduleEntry,
+                                    days: (e.target as HTMLSelectElement).value as BrightnessScheduleEntry['days'],
+                                });
                             }
                         }}
                         label="Select Days"
-                        value={dialogType === 'schedule' ? newScheduleEntry.days : newVolumeScheduleEntry.days}
+                        value={
+                            dialogType === 'schedule'
+                                ? newScheduleEntry.days
+                                : dialogType === 'volume'
+                                  ? newVolumeScheduleEntry.days
+                                  : newBrightnessScheduleEntry.days
+                        }
                         MenuProps={{
                             PaperProps: {
                                 style: {
@@ -524,13 +576,17 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         value={
                             dialogType === 'schedule'
                                 ? newScheduleEntry.startTime || ''
-                                : newVolumeScheduleEntry.startTime || ''
+                                : dialogType === 'volume'
+                                  ? newVolumeScheduleEntry.startTime || ''
+                                  : newBrightnessScheduleEntry.startTime || ''
                         }
                         onChange={(value) => {
                             if (dialogType === 'schedule') {
                                 setNewScheduleEntry({ ...newScheduleEntry, startTime: value });
-                            } else {
+                            } else if (dialogType === 'volume') {
                                 setNewVolumeScheduleEntry({ ...newVolumeScheduleEntry, startTime: value });
+                            } else {
+                                setNewBrightnessScheduleEntry({ ...newBrightnessScheduleEntry, startTime: value });
                             }
                         }}
                         isFromTime={true}
@@ -542,13 +598,17 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         value={
                             dialogType === 'schedule'
                                 ? newScheduleEntry.endTime || ''
-                                : newVolumeScheduleEntry.endTime || ''
+                                : dialogType === 'volume'
+                                  ? newVolumeScheduleEntry.endTime || ''
+                                  : newBrightnessScheduleEntry.endTime || ''
                         }
                         onChange={(value) => {
                             if (dialogType === 'schedule') {
                                 setNewScheduleEntry({ ...newScheduleEntry, endTime: value });
-                            } else {
+                            } else if (dialogType === 'volume') {
                                 setNewVolumeScheduleEntry({ ...newVolumeScheduleEntry, endTime: value });
+                            } else {
+                                setNewBrightnessScheduleEntry({ ...newBrightnessScheduleEntry, endTime: value });
                             }
                         }}
                         isFromTime={false}
@@ -582,19 +642,62 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         />
                     </FormControl>
                 </Box>
-            ) : (
+            ) : dialogType === 'volume' ? (
                 <Box>
                     <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
                         Volume Level
                     </Typography>
                     <Box sx={{ px: 2 }}>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Set volume level: {newVolumeScheduleEntry.volumeLevel || 100}%
+                            Set volume level: {newVolumeScheduleEntry.volumeLevel ?? 100}%
                         </Typography>
                         <Slider
-                            value={newVolumeScheduleEntry.volumeLevel || 100}
+                            value={newVolumeScheduleEntry.volumeLevel ?? 100}
                             onChangeCommitted={(_, value) =>
                                 setNewVolumeScheduleEntry({ ...newVolumeScheduleEntry, volumeLevel: value as number })
+                            }
+                            min={0}
+                            max={100}
+                            marks={[
+                                { value: 0, label: '0' },
+                                { value: 25, label: '25' },
+                                { value: 50, label: '50' },
+                                { value: 75, label: '75' },
+                                { value: 100, label: '100' },
+                            ]}
+                            step={1}
+                            size="small"
+                            sx={{
+                                '& .MuiSlider-thumb': {
+                                    width: 20,
+                                    height: 20,
+                                },
+                                '& .MuiSlider-track': {
+                                    height: 6,
+                                },
+                                '& .MuiSlider-rail': {
+                                    height: 6,
+                                },
+                            }}
+                        />
+                    </Box>
+                </Box>
+            ) : (
+                <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                        Brightness Level
+                    </Typography>
+                    <Box sx={{ px: 2 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Set brightness level: {newBrightnessScheduleEntry.brightnessLevel ?? 100}%
+                        </Typography>
+                        <Slider
+                            value={newBrightnessScheduleEntry.brightnessLevel ?? 100}
+                            onChangeCommitted={(_, value) =>
+                                setNewBrightnessScheduleEntry({
+                                    ...newBrightnessScheduleEntry,
+                                    brightnessLevel: value as number,
+                                })
                             }
                             min={0}
                             max={100}
@@ -642,7 +745,13 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 <Button
                     variant="contained"
                     startIcon={<Add />}
-                    onClick={dialogType === 'schedule' ? addViewerControlScheduleEntry : addVolumeScheduleEntry}
+                    onClick={
+                        dialogType === 'schedule'
+                            ? addViewerControlScheduleEntry
+                            : dialogType === 'volume'
+                              ? addVolumeScheduleEntry
+                              : addOrUpdateBrightnessScheduleEntry
+                    }
                     disabled={
                         dialogType === 'schedule'
                             ? !newScheduleEntry.days ||
@@ -651,16 +760,29 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             !newScheduleEntry.playlist ||
                             !isValidTimeFormat(newScheduleEntry.startTime) ||
                             !isValidExtendedTimeFormat(newScheduleEntry.endTime)
-                            : !newVolumeScheduleEntry.days ||
-                            !newVolumeScheduleEntry.startTime ||
-                            !newVolumeScheduleEntry.endTime ||
-                            newVolumeScheduleEntry.volumeLevel === undefined ||
-                            !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
-                            !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
+                            : dialogType === 'volume'
+                              ? !newVolumeScheduleEntry.days ||
+                                !newVolumeScheduleEntry.startTime ||
+                                !newVolumeScheduleEntry.endTime ||
+                                newVolumeScheduleEntry.volumeLevel === undefined ||
+                                !isValidTimeFormat(newVolumeScheduleEntry.startTime) ||
+                                !isValidExtendedTimeFormat(newVolumeScheduleEntry.endTime)
+                              : !newBrightnessScheduleEntry.days ||
+                                !newBrightnessScheduleEntry.startTime ||
+                                !newBrightnessScheduleEntry.endTime ||
+                                newBrightnessScheduleEntry.brightnessLevel === undefined ||
+                                !isValidTimeFormat(newBrightnessScheduleEntry.startTime) ||
+                                !isValidExtendedTimeFormat(newBrightnessScheduleEntry.endTime)
                     }
                     sx={{ minWidth: 140 }}
                 >
-                    {dialogType === 'schedule' ? 'Add Schedule Entry' : 'Add Volume Override'}
+                    {dialogType === 'schedule'
+                        ? 'Add Schedule Entry'
+                        : dialogType === 'volume'
+                          ? 'Add Volume Override'
+                          : editingBrightnessId
+                            ? 'Save Brightness Override'
+                            : 'Add Brightness Override'}
                 </Button>
             </Box>
         </Box>
@@ -673,6 +795,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 return 'schedule entry';
             } else if (itemToDelete?.type === 'volume') {
                 return 'volume override';
+            } else if (itemToDelete?.type === 'brightness') {
+                return 'brightness override';
             }
             return 'item';
         };
@@ -760,7 +884,8 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
     const isValidExtendedTimeFormat = (timeString: string): boolean => {
         if (!timeString) return false;
         // Accept extended time format (0-168:59) for end times
-        const timeRegex = /^([0-9]|[1-9][0-9]|1[0-6][0-9]|16[0-8]):[0-5][0-9]$/;
+        // Allows leading zeros for 0-09 (e.g. "06:30") and supports extended hours up to 168.
+        const timeRegex = /^([0-9]|0[0-9]|[1-9][0-9]|1[0-6][0-9]|16[0-8]):[0-5][0-9]$/;
         return timeRegex.test(timeString);
     };
 
@@ -797,16 +922,60 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
         setDeleteDialogOpen(true);
     };
 
+    // Helper functions for brightness schedule management
+    const addOrUpdateBrightnessScheduleEntry = () => {
+        if (
+            newBrightnessScheduleEntry.days &&
+            newBrightnessScheduleEntry.startTime &&
+            newBrightnessScheduleEntry.endTime &&
+            newBrightnessScheduleEntry.brightnessLevel !== undefined &&
+            isValidTimeFormat(newBrightnessScheduleEntry.startTime) &&
+            isValidExtendedTimeFormat(newBrightnessScheduleEntry.endTime)
+        ) {
+            const id = editingBrightnessId ?? generateId();
+            const entry: BrightnessScheduleEntry = {
+                id,
+                days: newBrightnessScheduleEntry.days,
+                startTime: formatTime24Hour(newBrightnessScheduleEntry.startTime),
+                endTime: formatTime24Hour(newBrightnessScheduleEntry.endTime),
+                brightnessLevel: newBrightnessScheduleEntry.brightnessLevel,
+            };
+
+            if (editingBrightnessId) {
+                dispatch(playerStatusActions.updateBrightnessScheduleEntry({ id: editingBrightnessId, entry }));
+            } else {
+                dispatch(playerStatusActions.addBrightnessScheduleEntry(entry));
+            }
+
+            setEditingBrightnessId(null);
+            setNewBrightnessScheduleEntry({
+                days: 'all',
+                startTime: '00:00',
+                endTime: '23:59',
+                brightnessLevel: 100,
+            });
+            setUnifiedDialogOpen(false);
+        }
+    };
+
+    const removeBrightnessScheduleEntry = (id: string) => {
+        setItemToDelete({ id, type: 'brightness' });
+        setDeleteDialogOpen(true);
+    };
+
     const confirmDelete = () => {
         if (itemToDelete) {
             if (itemToDelete.type === 'schedule') {
                 dispatch(playerStatusActions.removeViewerControlScheduleEntry(itemToDelete.id));
             } else if (itemToDelete.type === 'volume') {
                 dispatch(playerStatusActions.removeVolumeScheduleEntry(itemToDelete.id));
+            } else if (itemToDelete.type === 'brightness') {
+                dispatch(playerStatusActions.removeBrightnessScheduleEntry(itemToDelete.id));
             }
         }
         setDeleteDialogOpen(false);
         setItemToDelete(null);
+        setEditingBrightnessId(null);
     };
 
     const handleCloseDeleteDialog = (event?: any, reason?: string) => {
@@ -1232,6 +1401,147 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Box>
                     </Card>
 
+                    {/* Brightness Control Group */}
+                    <Card
+                        sx={{
+                            mb: 3,
+                            p: 3,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            backgroundColor: 'background.paper',
+                        }}
+                    >
+                        <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                            Brightness Control
+                        </Typography>
+
+                        {/* Default Brightness */}
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                                Default Brightness
+                            </Typography>
+                            <Box sx={{ px: 2 }}>
+                                <Slider
+                                    value={safeBrightnessControl.defaultBrightness}
+                                    onChange={(_, value) =>
+                                        dispatch(playerStatusActions.setDefaultBrightness(value as number))
+                                    }
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    marks={[
+                                        { value: 0, label: '0' },
+                                        { value: 25, label: '25' },
+                                        { value: 50, label: '50' },
+                                        { value: 75, label: '75' },
+                                        { value: 100, label: '100' },
+                                    ]}
+                                    valueLabelDisplay="auto"
+                                    valueLabelFormat={(value) => `${value}%`}
+                                    sx={{
+                                        '& .MuiSlider-thumb': {
+                                            width: 20,
+                                            height: 20,
+                                        },
+                                        '& .MuiSlider-track': {
+                                            height: 6,
+                                        },
+                                        '& .MuiSlider-rail': {
+                                            height: 6,
+                                        },
+                                    }}
+                                />
+                            </Box>
+                            <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
+                                Default Brightness: {safeBrightnessControl.defaultBrightness}%
+                            </Typography>
+                        </Box>
+
+                        {/* Brightness Schedule Management */}
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                                Brightness Schedule Overrides
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Configure brightness overrides for specific times. Last entry takes priority for
+                                overlapping times.
+                            </Typography>
+
+                            {safeBrightnessControl.schedule.length > 0 && (
+                                <Box sx={{ mb: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                        Current Brightness Overrides ({safeBrightnessControl.schedule.length} entries)
+                                    </Typography>
+                                    <List dense>
+                                        {safeBrightnessControl.schedule.map((entry, index) => (
+                                            <React.Fragment key={entry.id}>
+                                                <ListItem>
+                                                    <ListItemText
+                                                        primary={
+                                                            <Box
+                                                                sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 1,
+                                                                    flexWrap: 'wrap',
+                                                                }}
+                                                            >
+                                                                <Chip label={getDaysDisplayName(entry.days)} size="small" />
+                                                                <Typography variant="body2">
+                                                                    {formatTime24Hour(entry.startTime)} -{' '}
+                                                                    {formatTime24Hour(entry.endTime)}
+                                                                </Typography>
+                                                                <Chip
+                                                                    label={`${entry.brightnessLevel}%`}
+                                                                    size="small"
+                                                                    color="primary"
+                                                                    variant="outlined"
+                                                                />
+                                                            </Box>
+                                                        }
+                                                        secondary={`Priority: ${safeBrightnessControl.schedule.length - index}`}
+                                                    />
+                                                    <ListItemSecondaryAction>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            <IconButton
+                                                                edge="end"
+                                                                onClick={() => handleOpenBrightnessDialog(entry)}
+                                                                size="small"
+                                                                color="primary"
+                                                            >
+                                                                <Edit />
+                                                            </IconButton>
+                                                            <IconButton
+                                                                edge="end"
+                                                                onClick={() => removeBrightnessScheduleEntry(entry.id)}
+                                                                size="small"
+                                                                color="error"
+                                                            >
+                                                                <Delete />
+                                                            </IconButton>
+                                                        </Box>
+                                                    </ListItemSecondaryAction>
+                                                </ListItem>
+                                                {index < safeBrightnessControl.schedule.length - 1 && <Divider />}
+                                            </React.Fragment>
+                                        ))}
+                                    </List>
+                                </Box>
+                            )}
+
+                            {/* Add Brightness Override Button */}
+                            <Button
+                                variant="contained"
+                                startIcon={<Add />}
+                                onClick={() => handleOpenBrightnessDialog()}
+                                sx={{ mb: 2 }}
+                            >
+                                Add Brightness Override
+                            </Button>
+                        </Box>
+                    </Card>
+
                     {/* Show Directory Group */}
                     {isElectron() && (
                         <Card
@@ -1373,11 +1683,17 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                 </Card>
             </Box>
 
-            {/* Unified Dialog for both Schedule Entry and Volume Override */}
+            {/* Unified Dialog for Schedule Entry, Volume Override, and Brightness Override */}
             <Dialog open={unifiedDialogOpen} onClose={handleCloseUnifiedDialog}>
                 <DialogTitle>
                     <Typography variant="h5">
-                        {dialogType === 'schedule' ? 'Add Schedule Entry' : 'Add Volume Override'}
+                        {dialogType === 'schedule'
+                            ? 'Add Schedule Entry'
+                            : dialogType === 'volume'
+                              ? 'Add Volume Override'
+                              : editingBrightnessId
+                                ? 'Edit Brightness Override'
+                                : 'Add Brightness Override'}
                     </Typography>
                 </DialogTitle>
                 <DialogContent>
@@ -1394,7 +1710,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             ? 'Schedule Entry'
                             : itemToDelete?.type === 'volume'
                                 ? 'Volume Override'
-                                : 'Item'}
+                                : itemToDelete?.type === 'brightness'
+                                  ? 'Brightness Override'
+                                  : 'Item'}
                     </Typography>
                 </DialogTitle>
                 <DialogContent>

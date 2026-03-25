@@ -5,6 +5,7 @@ import {
     findMatchingScheduleEntry,
     getActiveViewerControlSchedule,
     getActiveVolumeSchedule,
+    getActiveBrightnessSchedule,
 } from '../src/util/SettingsScheduleUtils';
 
 import type {
@@ -12,6 +13,8 @@ import type {
     VolumeScheduleEntry,
     ViewerControlState,
     VolumeControlState,
+    BrightnessScheduleEntry,
+    BrightnessControlState,
 } from '../src/types/DataTypes'; // adjust this import
 
 // Helper: pick a known week where 2024-09-01 is Sunday
@@ -124,6 +127,30 @@ describe('findMatchingScheduleEntry', () => {
         expect(matchSat23?.id).toBe('sat-night');
         expect(matchSun01?.id).toBe('sat-night'); // wrapped across week
         expect(matchSun03).toBeNull();
+    });
+
+    it('supports overnight within the day (end before start)', () => {
+        const entries: VolumeScheduleEntry[] = [
+            {
+                id: 'overnight',
+                days: 'all',
+                startTime: '23:00',
+                endTime: '06:00',
+                volumeLevel: 10,
+            },
+        ];
+
+        const late = makeLocalDate(2, 23, 30); // Tuesday 23:30
+        const early = makeLocalDate(3, 6, 0); // Wednesday 06:00 (end boundary is exclusive)
+        const early2 = makeLocalDate(3, 5, 59); // Wednesday 05:59
+
+        const matchLate = findMatchingScheduleEntry(entries, late);
+        const matchEarly = findMatchingScheduleEntry(entries, early);
+        const matchEarly2 = findMatchingScheduleEntry(entries, early2);
+
+        expect(matchLate?.id).toBe('overnight');
+        expect(matchEarly).toBeNull();
+        expect(matchEarly2?.id).toBe('overnight');
     });
 
     it('gives priority to later entries when overlapping', () => {
@@ -285,5 +312,62 @@ describe('getActiveVolumeSchedule', () => {
 
         expect(effectiveEveningVolume).toBe(20);
         expect(effectiveMorningVolume).toBe(40);
+    });
+});
+
+describe('getActiveBrightnessSchedule', () => {
+    it('returns null when brightness schedule entries do not exist', () => {
+        const brightnessState: BrightnessControlState = {
+            defaultBrightness: 100,
+            schedule: [],
+        };
+
+        const now = makeLocalDate(2, 12, 0);
+        expect(getActiveBrightnessSchedule(brightnessState, now)).toBeNull();
+    });
+
+    it('returns matching brightness override when in range', () => {
+        const brightnessState: BrightnessControlState = {
+            defaultBrightness: 100,
+            schedule: [
+                {
+                    id: 'night',
+                    days: 'all',
+                    startTime: '18:00',
+                    endTime: '23:00',
+                    brightnessLevel: 40,
+                },
+            ],
+        };
+
+        const inside = makeLocalDate(2, 20, 0);
+        const outside = makeLocalDate(2, 23, 0);
+
+        const matchInside = getActiveBrightnessSchedule(brightnessState, inside);
+        const matchOutside = getActiveBrightnessSchedule(brightnessState, outside);
+
+        expect(matchInside?.id).toBe('night');
+        expect(matchOutside).toBeNull();
+    });
+
+    it('supports overnight brightness (23:00 → 06:00)', () => {
+        const brightnessState: BrightnessControlState = {
+            defaultBrightness: 100,
+            schedule: [
+                {
+                    id: 'overnight',
+                    days: 'all',
+                    startTime: '23:00',
+                    endTime: '06:00',
+                    brightnessLevel: 10,
+                },
+            ],
+        };
+
+        const late = makeLocalDate(2, 23, 30);
+        const early2 = makeLocalDate(3, 5, 0);
+
+        expect(getActiveBrightnessSchedule(brightnessState, late)?.id).toBe('overnight');
+        expect(getActiveBrightnessSchedule(brightnessState, early2)?.id).toBe('overnight');
     });
 });

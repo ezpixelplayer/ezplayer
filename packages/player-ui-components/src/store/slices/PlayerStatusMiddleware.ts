@@ -15,6 +15,10 @@ export const SYNC_SETTINGS_ACTION_TYPES = new Set<string>([
     'playerStatus/setDefaultVolume',
     'playerStatus/addVolumeScheduleEntry',
     'playerStatus/removeVolumeScheduleEntry',
+    'playerStatus/setDefaultBrightness',
+    'playerStatus/addBrightnessScheduleEntry',
+    'playerStatus/updateBrightnessScheduleEntry',
+    'playerStatus/removeBrightnessScheduleEntry',
 ]);
 
 export const playerSettingsAutoSaveMiddleware: Middleware =

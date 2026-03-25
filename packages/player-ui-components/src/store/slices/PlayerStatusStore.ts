@@ -8,6 +8,7 @@ import {
     EZPlayerCommand,
     PlaybackSettings,
     ViewerControlScheduleEntry,
+    BrightnessScheduleEntry,
     VolumeScheduleEntry,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
@@ -32,23 +33,40 @@ function normalizeTagList(tags: unknown, fallback: string[] = []): string[] {
     return Array.from(new Set(normalized));
 }
 
-function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
-    const jukebox = input?.jukebox ?? {};
+function normalizePlaybackSettings(input: Partial<PlaybackSettings> | undefined): PlaybackSettings {
+    const safeInput = input ?? {};
+    const jukebox = safeInput.jukebox ?? {};
     const excludedNormalized = normalizeTagList(jukebox.excludedTags, []);
     const includedNormalized = normalizeTagList(jukebox.includedTags, []);
+
+    const viewerControl = safeInput.viewerControl as any;
+    const volumeControl = safeInput.volumeControl as any;
+    const brightnessControl = safeInput.brightnessControl as any;
+
+    const normalizedViewerSchedule = Array.isArray(viewerControl?.schedule) ? viewerControl.schedule : [];
+    const normalizedVolumeSchedule = Array.isArray(volumeControl?.schedule) ? volumeControl.schedule : [];
+    const normalizedBrightnessSchedule = Array.isArray(brightnessControl?.schedule) ? brightnessControl.schedule : [];
+
     return {
-        ...input,
-        audioSyncAdjust: input.audioSyncAdjust ?? 0,
-        backgroundSequence: input.backgroundSequence ?? 'overlay',
-        viewerControl: input.viewerControl ?? {
-            enabled: false,
-            type: 'disabled',
-            remoteFalconToken: undefined,
-            schedule: [],
+        ...safeInput,
+        audioSyncAdjust: safeInput.audioSyncAdjust ?? 0,
+        backgroundSequence: safeInput.backgroundSequence ?? 'overlay',
+        viewerControl: {
+            enabled: Boolean(viewerControl?.enabled) ? true : false,
+            type: viewerControl?.type ?? 'disabled',
+            remoteFalconToken: viewerControl?.remoteFalconToken,
+            schedule: normalizedViewerSchedule,
         },
-        volumeControl: input.volumeControl ?? {
-            defaultVolume: 100,
-            schedule: [],
+        volumeControl: {
+            defaultVolume: typeof volumeControl?.defaultVolume === 'number' ? volumeControl.defaultVolume : 100,
+            schedule: normalizedVolumeSchedule,
+        },
+        brightnessControl: {
+            defaultBrightness:
+                typeof brightnessControl?.defaultBrightness === 'number'
+                    ? brightnessControl.defaultBrightness
+                    : 100,
+            schedule: normalizedBrightnessSchedule,
         },
         jukebox: {
             excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
@@ -74,6 +92,10 @@ export const initialStatusState: PlayerStatusState = {
         },
         volumeControl: {
             defaultVolume: 100,
+            schedule: [],
+        },
+        brightnessControl: {
+            defaultBrightness: 100,
             schedule: [],
         },
         jukebox: {
@@ -173,6 +195,56 @@ export function createPlayerStatusSlice(extraReducers: (builder: ActionReducerMa
             },
             removeVolumeScheduleEntry(state, action: PayloadAction<string>) {
                 state.playbackSettings.volumeControl.schedule = state.playbackSettings.volumeControl.schedule.filter(
+                    (e) => e.id !== action.payload,
+                );
+            },
+
+            // Brightness control
+            setDefaultBrightness(state, action: PayloadAction<number>) {
+                if (!state.playbackSettings.brightnessControl) {
+                    state.playbackSettings.brightnessControl = { defaultBrightness: 100, schedule: [] };
+                }
+                if (!Array.isArray(state.playbackSettings.brightnessControl.schedule)) {
+                    state.playbackSettings.brightnessControl.schedule = [];
+                }
+                state.playbackSettings.brightnessControl.defaultBrightness = action.payload;
+            },
+            addBrightnessScheduleEntry(state, action: PayloadAction<BrightnessScheduleEntry>) {
+                if (!state.playbackSettings.brightnessControl) {
+                    state.playbackSettings.brightnessControl = { defaultBrightness: 100, schedule: [] };
+                }
+                if (!Array.isArray(state.playbackSettings.brightnessControl.schedule)) {
+                    state.playbackSettings.brightnessControl.schedule = [];
+                }
+                state.playbackSettings.brightnessControl.schedule.push(action.payload);
+            },
+            updateBrightnessScheduleEntry(
+                state,
+                action: PayloadAction<{ id: string; entry: BrightnessScheduleEntry }>,
+            ) {
+                const { id, entry } = action.payload;
+                if (!state.playbackSettings.brightnessControl) {
+                    state.playbackSettings.brightnessControl = { defaultBrightness: 100, schedule: [] };
+                }
+                if (!Array.isArray(state.playbackSettings.brightnessControl.schedule)) {
+                    state.playbackSettings.brightnessControl.schedule = [];
+                }
+                const idx = state.playbackSettings.brightnessControl.schedule.findIndex((e) => e.id === id);
+                if (idx < 0) {
+                    state.playbackSettings.brightnessControl.schedule.push(entry);
+                    return;
+                }
+                // Preserve array order (priority derived from array position).
+                state.playbackSettings.brightnessControl.schedule[idx] = entry;
+            },
+            removeBrightnessScheduleEntry(state, action: PayloadAction<string>) {
+                if (!state.playbackSettings.brightnessControl) {
+                    state.playbackSettings.brightnessControl = { defaultBrightness: 100, schedule: [] };
+                }
+                if (!Array.isArray(state.playbackSettings.brightnessControl.schedule)) {
+                    state.playbackSettings.brightnessControl.schedule = [];
+                }
+                state.playbackSettings.brightnessControl.schedule = state.playbackSettings.brightnessControl.schedule.filter(
                     (e) => e.id !== action.payload,
                 );
             },

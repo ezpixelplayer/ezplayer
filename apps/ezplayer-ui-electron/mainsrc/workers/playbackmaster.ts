@@ -33,6 +33,7 @@ import type {
 import {
     AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
+    getActiveBrightnessSchedule,
     getActiveVolumeSchedule,
     LatestFrameRingBuffer,
     PlayerRunState,
@@ -383,6 +384,28 @@ function doVolumeAdjust(dn: number) {
     volumeSF = muted ? 0 : volume / 100;
 }
 
+let lastBrightCheck: number = Date.now();
+function doBrightnessAdjust(dn: number) {
+    if (dn - lastBrightCheck < 10) return;
+    lastBrightCheck = dn;
+    const settings = latestSettings;
+    if (!settings || !settings.brightnessControl) {
+        return;
+    }
+
+    const bsched = getActiveBrightnessSchedule(settings.brightnessControl);
+    let tgtBrightness = settings.brightnessControl.defaultBrightness ?? 100;
+    if (bsched) {
+        tgtBrightness = bsched.brightnessLevel;
+    }
+    tgtBrightness = Math.max(0, Math.min(100, tgtBrightness));
+
+    // Change 1% at a time toward target, matching the volume behavior.
+    if (tgtBrightness > brightness) ++brightness;
+    if (tgtBrightness < brightness) --brightness;
+    brightnessSF = Math.max(0, Math.min(1, brightness / 100));
+}
+
 /////////
 // Inbound messages
 function processCommand(cmd: EZPlayerCommand) {
@@ -711,6 +734,7 @@ const _pollTimes = setInterval(async () => {
 let showFolder: string | undefined = undefined;
 let isPaused = false;
 let volume = 100;
+let brightness = 100; // 0-100 (percent)
 let muted = false;
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
@@ -735,6 +759,7 @@ let audioPlayerRunTime: number = foregroundPlayerRunState.currentTime;
 let targetFrameRTC: number = foregroundPlayerRunState.currentTime;
 
 let volumeSF = 1.0; // Most representations are 0-100, not this one
+let brightnessSF = 1.0; // Clamped 0..1 used to scale outgoing pixel bytes
 
 // Thread-safe stop flag to prevent further frame sending after stop
 let isStopped = false;
@@ -1727,6 +1752,9 @@ async function processQueue() {
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            // Update brightness right before emitting the frame (schedule changes can occur between iterations).
+            doBrightnessAdjust(Date.now());
+            sender.setBrightnessFactor(brightnessSF);
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
                 bframe: bframeRef,

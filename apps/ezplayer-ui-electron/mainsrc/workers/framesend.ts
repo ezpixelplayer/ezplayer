@@ -81,8 +81,55 @@ export class FrameSender {
     blackFrame: Uint8Array | undefined = undefined;
     mixFrame: Uint8Array | undefined = undefined;
     exportBuffer: LatestFrameRingBuffer | undefined = undefined;
+
+    // Brightness multiplier applied to outgoing pixel/channel byte values.
+    // 1.0 => no scaling, 0.0 => all output bytes become 0.
+    brightnessSF: number = 1.0;
+    private brightnessLut: Uint8Array | undefined = undefined;
+
     emitWarning?: (msg: string) => void;
     emitError?: (err: Error) => void;
+
+    setBrightnessFactor(sf: number) {
+        // Clamp to valid range and avoid LUT churn when brightness isn't changing.
+        const clamped = Math.max(0, Math.min(1, sf));
+        if (Math.abs(clamped - this.brightnessSF) < 1e-6) return;
+
+        this.brightnessSF = clamped;
+        if (clamped >= 1) {
+            // Fast path: no scaling required.
+            this.brightnessLut = undefined;
+            return;
+        }
+
+        // Precompute 256-byte LUT for fast per-pixel mapping.
+        const lut = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) {
+            const v = Math.round(i * clamped);
+            lut[i] = v > 255 ? 255 : v;
+        }
+        this.brightnessLut = lut;
+    }
+
+    private scaleInto(dst: Uint8Array, src: Uint8Array) {
+        const lut = this.brightnessLut;
+        if (!lut) {
+            // No scaling active; still copy to keep behavior consistent.
+            dst.set(src);
+            return;
+        }
+        for (let i = 0; i < this.nChannels; i++) {
+            dst[i] = lut[src[i]];
+        }
+    }
+
+    private scaleInPlace(buf: Uint8Array) {
+        const lut = this.brightnessLut;
+        if (!lut) return;
+        for (let i = 0; i < this.nChannels; i++) {
+            buf[i] = lut[buf[i]];
+        }
+    }
 
     async sendBlackFrame(args: {
         targetFramePN: number;
@@ -159,9 +206,20 @@ export class FrameSender {
                     maxUint8(this.mixFrame, args.frame.frame, args.bframe.frame);
                     const mixTime = performance.now() - preMax;
                     args.playbackStatsAgg.totalMixTime += mixTime;
+
+                    // Apply brightness after blending so the final output reflects the multiplier.
+                    if (this.brightnessLut) {
+                        this.scaleInPlace(this.mixFrame);
+                    }
                     this.job.dataBuffers = [this.mixFrame];
                 } else {
-                    this.job.dataBuffers = [args.frame.frame];
+                    // If brightness != 1, scale into a scratch buffer so we never mutate cached frames.
+                    if (this.mixFrame && this.brightnessLut) {
+                        this.scaleInto(this.mixFrame, args.frame.frame);
+                        this.job.dataBuffers = [this.mixFrame];
+                    } else {
+                        this.job.dataBuffers = [args.frame.frame];
+                    }
                 }
 
                 // Export frame

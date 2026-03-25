@@ -30,6 +30,7 @@ export type {
     PlaybackSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    BrightnessScheduleEntry,
     PlayerWebSocketSnapshot,
     PlayerWebSocketPing,
     PlayerWebSocketKick,
@@ -65,6 +66,7 @@ export {
 export {
     getActiveVolumeSchedule,
     getActiveViewerControlSchedule,
+    getActiveBrightnessSchedule,
 } from './util/SettingsScheduleUtils';
 
 export {

@@ -15,8 +15,56 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
         const raw = await fs.readFile(settingsPath, 'utf8');
         const parsed = JSON.parse(raw) as PlaybackSettings;
 
-        currentSettings = parsed;
-        return parsed;
+        // Backward compatible merge for older settings files.
+        const defaults: PlaybackSettings = {
+            audioSyncAdjust: 0,
+            backgroundSequence: 'overlay',
+            viewerControl: {
+                enabled: false,
+                type: 'disabled',
+                remoteFalconToken: undefined,
+                schedule: [],
+            },
+            volumeControl: {
+                defaultVolume: 100,
+                schedule: [],
+            },
+            brightnessControl: {
+                defaultBrightness: 100,
+                schedule: [],
+            },
+            jukebox: {
+                excludedTags: ['nojukebox'],
+                includedTags: [],
+            },
+        };
+
+        const merged: PlaybackSettings = {
+            ...defaults,
+            ...parsed,
+            viewerControl: {
+                ...defaults.viewerControl,
+                ...(parsed.viewerControl ?? {}),
+                schedule: parsed.viewerControl?.schedule ?? [],
+            },
+            volumeControl: {
+                ...defaults.volumeControl,
+                ...(parsed.volumeControl ?? {}),
+                schedule: parsed.volumeControl?.schedule ?? [],
+            },
+            brightnessControl: {
+                ...defaults.brightnessControl,
+                ...(parsed.brightnessControl ?? {}),
+                schedule: parsed.brightnessControl?.schedule ?? [],
+            },
+            jukebox: {
+                ...defaults.jukebox,
+                ...(parsed.jukebox ?? {}),
+            },
+        };
+
+        currentSettings = merged;
+        return merged;
     } catch (e) {
         const err = e as { code?: string };
         if (err?.code === 'ENOENT') {
@@ -32,6 +80,10 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
                 },
                 volumeControl: {
                     defaultVolume: 100,
+                    schedule: [],
+                },
+                brightnessControl: {
+                    defaultBrightness: 100,
                     schedule: [],
                 },
                 jukebox: {
