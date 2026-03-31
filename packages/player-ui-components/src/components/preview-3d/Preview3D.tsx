@@ -25,8 +25,9 @@ import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './Pre
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
-import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import { useFrameBuffer } from '../../hooks/useFrameBuffer';
+import { GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+// import { useFrameBuffer } from '../../hooks/useFrameBuffer';
+import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import { useAudioStream } from '../../hooks/useAudioStream';
 import { isElectron } from '@ezplayer/shared-ui-components';
 import type { RootState } from '../../store/Store';
@@ -41,8 +42,13 @@ export interface Preview3DProps {
     showControls?: boolean;
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
-    frameServerUrl?: string; // URL for frame data server, e.g., "http://localhost:3000"
-    compressed?: boolean; // Use ZSTD-compressed frame endpoint for lower bandwidth
+    // frameServerUrl?: string; // URL for frame data server, e.g., "http://localhost:3000"
+    // compressed?: boolean; // Use ZSTD-compressed frame endpoint for lower bandwidth
+    // /** Externally managed frame buffer — bypasses the internal HTTP polling when provided. */
+    // externalLiveData?: LatestFrameRingBuffer;
+    frameServerUrl?: string; // URL for the frame/model server, e.g., "http://localhost:3000"
+    /** Live frame ring buffer produced by the caller (e.g. useFrameBuffer or useBrowserPlayback). */
+    liveData?: LatestFrameRingBuffer;
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -53,14 +59,18 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     defaultViewMode = '3d',
     pointSize = 3.0,
     frameServerUrl,
-    compressed = false,
+    // compressed = false,
+    // externalLiveData,
+    liveData,
 }) => {
     const theme = useTheme();
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
     const [showItemList, setShowItemList] = useState(showList && initialShowList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
-    const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
+    // const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
+    // Lazy init from the prop so the first render already has live data when available.
+    const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(() => liveData);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [viewObjects, setViewObjects] = useState<ViewObject[]>([]);
@@ -139,64 +149,68 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, []);
 
-    // Auto-detect frame server URL if not provided
-    const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
+    // // Auto-detect frame server URL if not provided
+    // const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
 
-    useEffect(() => {
-        // If prop is provided, use it
-        if (frameServerUrl) {
-            setEffectiveFrameServerUrl(frameServerUrl);
-            return;
-        }
+    // useEffect(() => {
+    //     // If prop is provided, use it
+    //     if (frameServerUrl) {
+    //         setEffectiveFrameServerUrl(frameServerUrl);
+    //         return;
+    //     }
 
-        // Auto-detect based on environment
-        const detectUrl = async () => {
-            const electronAPI = (window as any).electronAPI as EZPElectronAPI;
+    //     // Auto-detect based on environment
+    //     const detectUrl = async () => {
+    //         const electronAPI = (window as any).electronAPI as EZPElectronAPI;
 
-            // In Electron, query the server status for the port
-            if (electronAPI?.getServerStatus) {
-                try {
-                    const status = await electronAPI.getServerStatus();
-                    if (status?.port && status.status === 'listening') {
-                        setEffectiveFrameServerUrl(`http://localhost:${status.port}`);
-                        return;
-                    }
-                } catch (err) {
-                    console.error('[Preview3D] Failed to get server status:', err);
-                }
-            }
+    //         // In Electron, query the server status for the port
+    //         if (electronAPI?.getServerStatus) {
+    //             try {
+    //                 const status = await electronAPI.getServerStatus();
+    //                 if (status?.port && status.status === 'listening') {
+    //                     setEffectiveFrameServerUrl(`http://localhost:${status.port}`);
+    //                     return;
+    //                 }
+    //             } catch (err) {
+    //                 console.error('[Preview3D] Failed to get server status:', err);
+    //             }
+    //         }
 
-            // In web app, use current origin (we're served from the same server)
-            if (typeof window !== 'undefined' && window.location?.origin) {
-                // Only use if it looks like a valid HTTP origin (not file://)
-                if (window.location.origin.startsWith('http')) {
-                    setEffectiveFrameServerUrl(window.location.origin);
-                }
-            }
-        };
+    //         // In web app, use current origin (we're served from the same server)
+    //         if (typeof window !== 'undefined' && window.location?.origin) {
+    //             // Only use if it looks like a valid HTTP origin (not file://)
+    //             if (window.location.origin.startsWith('http')) {
+    //                 setEffectiveFrameServerUrl(window.location.origin);
+    //             }
+    //         }
+    //     };
 
-        detectUrl();
-    }, [frameServerUrl]);
+    //     detectUrl();
+    // }, [frameServerUrl]);
 
-    // Frame buffer for live pixel data from server.
-    // resetKey forces the poll loop to restart when the show folder changes
-    // (clearing stale buffers and resetting error counters).
-    const { buffer: livePixelBuffer } = useFrameBuffer({
-        baseUrl: effectiveFrameServerUrl,
-        enabled: !!effectiveFrameServerUrl,
-        compressed,
-        resetKey: showDirectory,
-    });
+    // // Frame buffer for live pixel data from server.
+    // // resetKey forces the poll loop to restart when the show folder changes
+    // // (clearing stale buffers and resetting error counters).
+    // // Disabled when externalLiveData is provided (browser playback mode).
+    // const { buffer: livePixelBuffer } = useFrameBuffer({
+    //     baseUrl: effectiveFrameServerUrl,
+    //     enabled: !!effectiveFrameServerUrl && !externalLiveData,
+    //     compressed,
+    //     resetKey: showDirectory,
+    // });
+
+    // Resolve the server URL (auto-detects Electron port or falls back to same-origin).
+    const { url: effectiveFrameServerUrl } = useFrameServerUrl({ frameServerUrl });
 
     // Audio stream for web client (not used in Electron — it has its own audio window)
     const { audioEnabled, toggleAudio } = useAudioStream({
         baseUrl: effectiveFrameServerUrl,
     });
 
-    // Update livePixels when the frame buffer changes
+    // Live pixel buffer is always provided by the caller.
     useEffect(() => {
-        setLivePixels(livePixelBuffer);
-    }, [livePixelBuffer]);
+        setLivePixels(liveData);
+    }, [liveData]);
 
     // Clear stale state immediately when show folder changes so old data
     // is never rendered with new frame buffers (or vice versa).

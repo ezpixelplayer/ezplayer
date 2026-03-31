@@ -1,8 +1,12 @@
 import React from 'react';
+import { useSelector } from 'react-redux';
 import { Box } from '../box/Box';
 import { PageHeader, ExtendedTheme } from '@ezplayer/shared-ui-components';
 import { useTheme } from '@mui/material';
 import { Preview3D } from './Preview3D';
+import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
+import { useFrameBuffer } from '../../hooks/useFrameBuffer';
+import type { RootState } from '../../store/Store';
 
 export interface Preview3DPageProps {
     title: string;
@@ -10,8 +14,18 @@ export interface Preview3DPageProps {
     compressed?: boolean;
 }
 
-export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea, compressed }) => {
+export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea, compressed = false }) => {
     const theme = useTheme<ExtendedTheme>();
+
+    const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
+
+    const { url } = useFrameServerUrl();
+    const { buffer: liveData } = useFrameBuffer({
+        baseUrl: url,
+        enabled: !!url,
+        compressed,
+        resetKey: showDirectory,
+    });
 
     return (
         <Box
@@ -56,7 +70,8 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea,
                         border: (theme) => `1px solid ${theme.palette.divider}`,
                     }}
                 >
-                    <Preview3D showList={true} showControls={true} compressed={compressed} />
+                    <Preview3D showList={true} showControls={true} frameServerUrl={url}
+                        liveData={liveData} />
                 </Box>
             </Box>
         </Box>
