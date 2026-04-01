@@ -192,6 +192,12 @@ export interface EZPElectronAPI {
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
+    validateShowDirectory: (showDirectory?: string) => Promise<{
+        valid: boolean;
+        missingFiles: string[];
+        inaccessibleFiles: string[];
+        error?: string;
+    }>;
     getSequences: () => Promise<SequenceRecord[]>;
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
     getPlaylists: () => Promise<PlaylistRecord[]>;

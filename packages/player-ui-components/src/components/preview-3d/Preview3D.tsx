@@ -3,6 +3,11 @@ import {
     ToggleButton,
     ToggleButtonGroup,
     Button,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
     IconButton,
     Tooltip,
     useTheme,
@@ -87,6 +92,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const [cameraState3D, setCameraState3D] = useState<CameraState3D | null>(null);
     const [shouldAutoFit, setShouldAutoFit] = useState(false);
     const [cameraStateLoaded, setCameraStateLoaded] = useState(false);
+    const [invalidShowDialogOpen, setInvalidShowDialogOpen] = useState(false);
+    const [invalidShowMessage, setInvalidShowMessage] = useState<string>('');
+    const [isChoosingShowFolder, setIsChoosingShowFolder] = useState(false);
+    const lastInvalidStateRef = React.useRef<string | null>(null);
 
     // Refs to store getter functions registered by the viewers — called on
     // "Ok" click and mode switch to read the exact current camera state.
@@ -177,6 +186,76 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         detectUrl();
     }, [frameServerUrl]);
+
+    // Validate the configured show directory when preview loads or when it changes.
+    // Prompt only once for a given invalid state to prevent repeated triggers.
+    useEffect(() => {
+        let cancelled = false;
+
+        const validateShowDirectory = async () => {
+            const electronAPI = (window as any).electronAPI as EZPElectronAPI | undefined;
+            if (!electronAPI?.validateShowDirectory) {
+                return;
+            }
+
+            try {
+                const result = await electronAPI.validateShowDirectory(showDirectory);
+                if (cancelled) return;
+
+                if (result.valid) {
+                    lastInvalidStateRef.current = null;
+                    setInvalidShowDialogOpen(false);
+                    return;
+                }
+
+                const invalidStateKey = JSON.stringify({
+                    showDirectory,
+                    missingFiles: result.missingFiles,
+                    inaccessibleFiles: result.inaccessibleFiles,
+                });
+                if (lastInvalidStateRef.current === invalidStateKey) {
+                    return;
+                }
+
+                lastInvalidStateRef.current = invalidStateKey;
+                const missing = result.missingFiles.length
+                    ? `Missing: ${result.missingFiles.join(', ')}.`
+                    : '';
+                const inaccessible = result.inaccessibleFiles.length
+                    ? ` Inaccessible: ${result.inaccessibleFiles.join(', ')}.`
+                    : '';
+                setInvalidShowMessage(
+                    `${result.error ?? 'Selected show folder is invalid.'} ${missing}${inaccessible}`.trim(),
+                );
+                setInvalidShowDialogOpen(true);
+            } catch (err) {
+                console.error('[Preview3D] Failed to validate show directory:', err);
+            }
+        };
+
+        validateShowDirectory();
+        return () => {
+            cancelled = true;
+        };
+    }, [showDirectory]);
+
+    const handlePickValidShowFolder = useCallback(async () => {
+        const electronAPI = (window as any).electronAPI as EZPElectronAPI | undefined;
+        if (!electronAPI?.requestChooseShowFolder) {
+            return;
+        }
+
+        setIsChoosingShowFolder(true);
+        try {
+            await electronAPI.requestChooseShowFolder();
+            // Keep dialog closed after the picker to avoid repeated popups if user cancels.
+            setInvalidShowDialogOpen(false);
+        } catch (err) {
+            console.error('[Preview3D] Failed to select show folder:', err);
+        } finally {
+            setIsChoosingShowFolder(false);
+        }
+    }, []);
 
     // Frame buffer for live pixel data from server.
     // resetKey forces the poll loop to restart when the show folder changes
@@ -589,8 +668,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, []);
 
+    let content: React.ReactNode;
+
     if (loading) {
-        return (
+        content = (
             <Box
                 sx={{
                     display: 'flex',
@@ -603,10 +684,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 Loading model...
             </Box>
         );
-    }
-
-    if (webglSupported === false) {
-        return (
+    } else if (webglSupported === false) {
+        content = (
             <Box
                 sx={{
                     display: 'flex',
@@ -633,10 +712,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 </Box>
             </Box>
         );
-    }
-
-    if (error && !modelData) {
-        return (
+    } else if (error && !modelData) {
+        content = (
             <Box
                 sx={{
                     display: 'flex',
@@ -654,10 +731,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 </Button>
             </Box>
         );
-    }
-
-    if (!modelData || !modelData.points || modelData.points.length === 0) {
-        return (
+    } else if (!modelData || !modelData.points || modelData.points.length === 0) {
+        content = (
             <Box
                 sx={{
                     display: 'flex',
@@ -675,9 +750,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 </Typography>
             </Box>
         );
-    }
-
-    return (
+    } else {
+        content = (
         <Box
             sx={{
                 display: 'flex',
@@ -987,5 +1061,33 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 onResetView={handleResetView}
             />
         </Box>
+        );
+    }
+
+    return (
+        <>
+            {content}
+            <Dialog
+                open={invalidShowDialogOpen}
+                onClose={() => setInvalidShowDialogOpen(false)}
+                aria-labelledby="invalid-show-folder-dialog-title"
+                aria-describedby="invalid-show-folder-dialog-description"
+            >
+                <DialogTitle id="invalid-show-folder-dialog-title">Invalid Show Folder</DialogTitle>
+                <DialogContent>
+                    <DialogContentText id="invalid-show-folder-dialog-description">
+                        {invalidShowMessage || 'The selected show folder is missing required xLights files.'}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setInvalidShowDialogOpen(false)} disabled={isChoosingShowFolder}>
+                        Later
+                    </Button>
+                    <Button onClick={handlePickValidShowFolder} variant="contained" disabled={isChoosingShowFolder}>
+                        Select Show Folder
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
     );
 };
