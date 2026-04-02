@@ -285,6 +285,9 @@ importers:
       '@xmldom/xmldom':
         specifier: ^0.8.10
         version: 0.8.11
+      xllayoutcalcs:
+        specifier: file:../../libs/xllayoutcalcs-0.0.13.tgz
+        version: file:libs/xllayoutcalcs-0.0.13.tgz
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
