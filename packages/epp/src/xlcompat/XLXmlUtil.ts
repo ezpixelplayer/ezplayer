@@ -1,6 +1,8 @@
+import * as path from 'path';
 import { getBoolAttrDef, getNumAttrDef, XMLConstants } from '../util/XMLUtil';
 import { loadXmlFile } from '../util/FileUtil';
 import { ExplicitControllerDesc } from './XLControllerDesc';
+import { migrateToFormat } from 'xllayoutcalcs';
 
 export class ModelRec {
     name: string;
@@ -73,8 +75,9 @@ export async function readControllersAndModels(xldir: string) {
     const models: ModelRec[] = [];
     const controllers: ControllerRec[] = [];
     const controllersByName: Map<string, number> = new Map();
-    const xmodelsXml = await loadXmlFile(`${xldir}/xlights_rgbeffects.xml`);
-    const xnetworksXml = await loadXmlFile(`${xldir}/xlights_networks.xml`);
+    const xmodelsXml = await loadXmlFile(path.join(xldir, 'xlights_rgbeffects.xml'));
+    migrateToFormat(xmodelsXml, 'x2026_2');
+    const xnetworksXml = await loadXmlFile(path.join(xldir, 'xlights_networks.xml'));
 
     // Handle networks
     const xndNetworks = xnetworksXml.documentElement;
