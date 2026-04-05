@@ -55,7 +55,9 @@
         },
         "linux": {
             "target": [
-                "AppImage"
+                "AppImage",
+                "deb",
+                "tar.gz"
             ],
             "icon": "src/assets/images/EZPlayerLogoTransparent.png",
             "category": "Utility"

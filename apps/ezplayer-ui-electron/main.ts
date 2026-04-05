@@ -15,6 +15,12 @@ import type { Event as ElectronEvent } from 'electron';
 
 import os from 'os';
 
+// Linux AppImage: work around Ubuntu 24.04+ restricting unprivileged user
+// namespaces (AppArmor) and older distros missing the SUID sandbox helper.
+if (process.platform === 'linux') {
+    app.commandLine.appendSwitch('no-sandbox');
+}
+
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
 
 app.setPath('crashDumps', dumpDir);

@@ -12,6 +12,20 @@ let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 let updateDownloaded = false;
 let availableVersion: string | null = null;
 
+/** Simple semver "is A newer than B" (major.minor.patch). */
+function isNewerVersion(available: string, current: string): boolean {
+    const parse = (v: string) => v.replace(/^v/, '').split(/[-+]/)[0].split('.').map(Number);
+    const a = parse(available);
+    const c = parse(current);
+    for (let i = 0; i < Math.max(a.length, c.length); i++) {
+        const av = a[i] ?? 0;
+        const cv = c[i] ?? 0;
+        if (av > cv) return true;
+        if (av < cv) return false;
+    }
+    return false;
+}
+
 function sendStatus(status: AutoUpdateStatus) {
     mainWin?.webContents.send('update:autoupdate-status', status);
 }
@@ -92,6 +106,11 @@ async function startupCheck() {
     if (!result?.updateInfo) return;
 
     const version = result.updateInfo.version;
+
+    // electron-updater populates updateInfo even when no update is available.
+    // Guard against prompting users who are already on the latest (or newer) version.
+    if (!isNewerVersion(version, app.getVersion())) return;
+
     if (isVersionSkipped(version)) return;
 
     if (!mainWin) return;
@@ -154,6 +173,7 @@ function startIdleWatcher() {
         }
 
         if (!result?.updateInfo) return;
+        if (!isNewerVersion(result.updateInfo.version, app.getVersion())) return;
         if (isVersionSkipped(result.updateInfo.version)) return;
 
         try {
