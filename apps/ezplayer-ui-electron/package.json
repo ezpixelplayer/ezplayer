@@ -1,5 +1,9 @@
 {
     "name": "ezplayer-ui-electron",
+    "author": {
+        "name": "EZPlayer",
+        "email": "ezplayer@ezplayer.dev"
+    },
     "repository": {
         "type": "git",
         "url": "https://github.com/ezpixelplayer/ezplayer.git"
