@@ -27,7 +27,7 @@
     "license": "AGPL-3.0-only",
     "dependencies": {
         "@xmldom/xmldom": "^0.8.10",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.14.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.15.tgz",
         "zstddec": "^0.1.0"
     },
     "devDependencies": {

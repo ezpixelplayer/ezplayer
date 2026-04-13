@@ -35,6 +35,11 @@ export interface ModelMetadata {
      * 0 = fully opaque, 100 = fully transparent.
      */
     transparency?: number;
+    /**
+     * 1-based channel of the model's first node (as resolved by xlLayoutCalcs
+     * and actually sampled by the preview).
+     */
+    firstNodeChannel?: number;
 }
 
 export interface ModelSetMetadata {
