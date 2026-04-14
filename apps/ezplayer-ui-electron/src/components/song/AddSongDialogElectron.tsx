@@ -75,10 +75,25 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
 
     const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
+            const lowerFile = file.toLowerCase();
             if (type === 'fseq') {
-                if (file.endsWith('.fseq')) {
+                if (lowerFile.endsWith('.fseq')) {
                     setFseqFile(file);
                     setNeedValidFseqFile(false);
+
+                    if (typeof window !== 'undefined' && (window as any).electronAPI?.autoDetectSongFilesFromFseq) {
+                        try {
+                            const detected = await (window as any).electronAPI.autoDetectSongFilesFromFseq(file);
+                            if (detected?.audioFile) {
+                                setMp3File((prev) => prev ?? detected.audioFile);
+                            }
+                            if (detected?.imageFile) {
+                                setImageFile((prev) => prev ?? detected.imageFile);
+                            }
+                        } catch (error) {
+                            console.warn('Auto-detect from FSEQ failed:', error);
+                        }
+                    }
 
                     // TODO CRAZ Get duration from the FSEQ file on electron side
                     // TODO CRAZ this belongs in main process side
@@ -95,13 +110,12 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     setFseqFile(undefined);
                 }
             } else if (type === 'mp3') {
-                if (file.endsWith('.mp3')) {
+                if (lowerFile.endsWith('.mp3')) {
                     setMp3File(file);
                 } else {
                     setMp3File(undefined);
                 }
             } else if (type === 'image') {
-                const lowerFile = file.toLowerCase();
                 if (
                     lowerFile.endsWith('.jpg') ||
                     lowerFile.endsWith('.jpeg') ||

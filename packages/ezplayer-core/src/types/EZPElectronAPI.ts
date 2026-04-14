@@ -43,6 +43,12 @@ export interface FileSelectOptions {
     multi?: boolean;
 }
 
+export interface AutoDetectedSongFiles {
+    audioFile?: string;
+    imageFile?: string;
+    imageGeneratedFromAudio?: boolean;
+}
+
 export interface NodeCoord {
     // For default / logical render buffer
     //  This ought to be a separate concern really...
@@ -172,6 +178,7 @@ export interface EZPElectronAPI {
     // FS Utilities
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
+    autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;

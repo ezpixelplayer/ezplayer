@@ -30,6 +30,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
+    autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),
 
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) =>
         ipcRenderer.invoke('dialog:openDirectory', options),

@@ -39,6 +39,7 @@ export type {
 } from './types/DataTypes';
 
 export type {
+    AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
     AutoUpdateStatus,

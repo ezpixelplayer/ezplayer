@@ -121,10 +121,32 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setErrors((prev) => ({ ...prev, [name]: false }));
     };
 
-    const handleFileChange = (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
+    const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file }));
+
+            if (
+                type === 'fseq' &&
+                typeof window !== 'undefined' &&
+                (window as any).electronAPI?.autoDetectSongFilesFromFseq
+            ) {
+                try {
+                    const detected = await (window as any).electronAPI.autoDetectSongFilesFromFseq(file);
+                    setNewFiles((prev) => {
+                        const next = { ...prev };
+                        if (!next.audio && detected?.audioFile) {
+                            next.audio = detected.audioFile;
+                        }
+                        if (!next.thumb && detected?.imageFile) {
+                            next.thumb = detected.imageFile;
+                        }
+                        return next;
+                    });
+                } catch (error) {
+                    console.warn('Auto-detect from FSEQ failed:', error);
+                }
+            }
         } else {
             // If file is undefined (cleared), remove it from newFiles
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
