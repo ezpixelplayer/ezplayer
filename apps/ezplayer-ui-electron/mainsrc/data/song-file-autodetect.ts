@@ -125,16 +125,7 @@ async function extractCoverArt(filePath: string): Promise<CoverArt | null> {
             const info = CODEC_TO_EXT[codec] ?? { ext: '.jpg', mime: 'image/jpeg' };
 
             const chunks: Uint8Array[] = [];
-            const proc = spawn('ffmpeg', [
-                '-i',
-                filePath,
-                '-an',
-                '-vcodec',
-                'copy',
-                '-f',
-                'image2pipe',
-                'pipe:1',
-            ]);
+            const proc = spawn('ffmpeg', ['-i', filePath, '-an', '-vcodec', 'copy', '-f', 'image2pipe', 'pipe:1']);
 
             proc.stdout.on('data', (chunk: Uint8Array) => chunks.push(chunk));
             proc.stderr.on('data', () => {});
@@ -184,8 +175,9 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
 
     if (out.audioFile) {
         const audioBase = path.parse(out.audioFile).name;
-        out.imageFile = (await findWithBasename(fseqDir, audioBase, IMAGE_EXTENSIONS))
-            ?? (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS));
+        out.imageFile =
+            (await findWithBasename(fseqDir, audioBase, IMAGE_EXTENSIONS)) ??
+            (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS));
     } else {
         out.imageFile = await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS);
     }

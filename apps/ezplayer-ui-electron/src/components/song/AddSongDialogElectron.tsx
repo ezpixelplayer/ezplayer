@@ -78,21 +78,31 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
             const lowerFile = file.toLowerCase();
             if (type === 'fseq') {
                 if (lowerFile.endsWith('.fseq')) {
+                    console.log(`[AddSong] FSEQ selected: "${file}"`);
                     setFseqFile(file);
                     setNeedValidFseqFile(false);
 
                     if (typeof window !== 'undefined' && (window as any).electronAPI?.autoDetectSongFilesFromFseq) {
                         try {
+                            console.log('[AddSong] Requesting backend auto-detect for audio/image...');
                             const detected = await (window as any).electronAPI.autoDetectSongFilesFromFseq(file);
+                            console.log(
+                                `[AddSong] Auto-detect result -> audio: ${detected?.audioFile ?? '<none>'}, image: ${detected?.imageFile ?? '<none>'}, imageGeneratedFromAudio: ${detected?.imageGeneratedFromAudio ? 'yes' : 'no'}`,
+                            );
                             if (detected?.audioFile) {
                                 setMp3File((prev) => prev ?? detected.audioFile);
                             }
                             if (detected?.imageFile) {
                                 setImageFile((prev) => prev ?? detected.imageFile);
                             }
+                            if (!detected?.audioFile && !detected?.imageFile) {
+                                console.log('[AddSong] No matching audio/image found. Manual selection remains available.');
+                            }
                         } catch (error) {
-                            console.warn('Auto-detect from FSEQ failed:', error);
+                            console.warn('[AddSong] Auto-detect from FSEQ failed:', error);
                         }
+                    } else {
+                        console.log('[AddSong] electronAPI.autoDetectSongFilesFromFseq is unavailable in this environment.');
                     }
 
                     // TODO CRAZ Get duration from the FSEQ file on electron side
@@ -106,6 +116,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         console.error('Error getting FSEQ duration:', error);
                     }
                 } else {
+                    console.log(`[AddSong] Ignored non-fseq file for FSEQ field: "${file}"`);
                     setNeedValidFseqFile(true);
                     setFseqFile(undefined);
                 }
