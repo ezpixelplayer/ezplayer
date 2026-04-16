@@ -28,8 +28,8 @@ const FileSelectButton = ({
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
-                                      ? ['.mp3']
-                                      : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                        ? ['.mp3']
+                                        : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
                     multi: false,
@@ -121,6 +121,33 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setErrors((prev) => ({ ...prev, [name]: false }));
     };
 
+    const applyDetectedMetadata = (metadata: {
+        title?: string;
+        artist?: string;
+        detectedTitle?: string;
+        detectedArtist?: string;
+        imageFile?: string;
+    }) => {
+        const resolvedTitle = metadata.title ?? metadata.detectedTitle;
+        const resolvedArtist = metadata.artist ?? metadata.detectedArtist;
+        console.log('[EditSong][Meta] Resolved metadata fields:', {
+            rawTitle: metadata.title,
+            rawArtist: metadata.artist,
+            detectedTitle: metadata.detectedTitle,
+            detectedArtist: metadata.detectedArtist,
+            resolvedTitle,
+            resolvedArtist,
+        });
+        setFormData((prev) => ({
+            ...prev,
+            title: prev.title || resolvedTitle || '',
+            artist: prev.artist || resolvedArtist || '',
+        }));
+        if (metadata.imageFile) {
+            setNewFiles((prev) => ({ ...prev, thumb: prev.thumb ?? metadata.imageFile }));
+        }
+    };
+
     const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
@@ -143,9 +170,31 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         }
                         return next;
                     });
+                    applyDetectedMetadata(detected ?? {});
+                    console.log('[EditSong][FSEQ] Title/Artist after auto-detect mapping:', {
+                        detectedTitle: detected?.detectedTitle,
+                        detectedArtist: detected?.detectedArtist,
+                    });
                 } catch (error) {
                     console.warn('Auto-detect from FSEQ failed:', error);
                 }
+            }
+
+            if (type === 'mp3' && typeof window !== 'undefined' && (window as any).electronAPI?.extractMp3TagMetadata) {
+                try {
+                    console.log(`[EditSong][MP3] Starting metadata extraction for: "${file}"`);
+                    const metadata = await (window as any).electronAPI.extractMp3TagMetadata(file);
+                    console.log('[EditSong][MP3] Extracted metadata payload:', metadata ?? {});
+                    applyDetectedMetadata(metadata ?? {});
+                    console.log('[EditSong][MP3] Metadata applied (only empty fields are auto-filled).');
+                    if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
+                        console.log('[EditSong][MP3] No usable ID3 metadata found (title/artist/image all empty).');
+                    }
+                } catch (error) {
+                    console.warn('MP3 metadata extraction failed:', error);
+                }
+            } else if (type === 'mp3') {
+                console.warn('[EditSong][MP3] electronAPI.extractMp3TagMetadata is unavailable in this environment.');
             }
         } else {
             // If file is undefined (cleared), remove it from newFiles
@@ -191,9 +240,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 // Merge existing files with new files (only in Electron)
                 const updatedFiles = isElectron()
                     ? {
-                          ...prevSong.files,
-                          ...newFiles,
-                      }
+                        ...prevSong.files,
+                        ...newFiles,
+                    }
                     : prevSong.files;
 
                 const updatedSong = {

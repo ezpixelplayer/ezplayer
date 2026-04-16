@@ -17,9 +17,26 @@ const CODEC_TO_EXT: Record<string, { ext: string; mime: string }> = {
     jpeg: { ext: '.jpg', mime: 'image/jpeg' },
     png: { ext: '.png', mime: 'image/png' },
 };
+const MIME_TO_EXT: Record<string, { ext: string; mime: string }> = {
+    'image/jpeg': { ext: '.jpg', mime: 'image/jpeg' },
+    'image/jpg': { ext: '.jpg', mime: 'image/jpeg' },
+    'image/png': { ext: '.png', mime: 'image/png' },
+    'image/webp': { ext: '.webp', mime: 'image/webp' },
+    'image/gif': { ext: '.gif', mime: 'image/gif' },
+    'image/bmp': { ext: '.bmp', mime: 'image/bmp' },
+};
 
 export interface AutoDetectedSongFiles {
     audioFile?: string;
+    imageFile?: string;
+    imageGeneratedFromAudio?: boolean;
+    detectedTitle?: string;
+    detectedArtist?: string;
+}
+
+export interface MP3TagMetadata {
+    title?: string;
+    artist?: string;
     imageFile?: string;
     imageGeneratedFromAudio?: boolean;
 }
@@ -146,6 +163,87 @@ async function extractCoverArt(filePath: string): Promise<CoverArt | null> {
     });
 }
 
+function normalizePictureFormatToInfo(format: string | undefined): { ext: string; mime: string } {
+    const normalized = (format ?? '').toLowerCase();
+    if (MIME_TO_EXT[normalized]) return MIME_TO_EXT[normalized];
+    const withPrefix = normalized.includes('/') ? normalized : `image/${normalized}`;
+    if (MIME_TO_EXT[withPrefix]) return MIME_TO_EXT[withPrefix];
+    return { ext: '.jpg', mime: 'image/jpeg' };
+}
+
+async function writeCoverArtNearAudio(audioPath: string, coverArt: CoverArt): Promise<string | undefined> {
+    try {
+        const imageBase = path.parse(audioPath).name;
+        const outputPath = path.join(path.dirname(audioPath), `${imageBase}${coverArt.extension}`);
+        await fs.writeFile(outputPath, coverArt.data);
+        return outputPath;
+    } catch {
+        return undefined;
+    }
+}
+
+async function extractMp3Metadata(
+    filePath: string,
+): Promise<{ title?: string; artist?: string; coverArt?: CoverArt } | null> {
+    if (!filePath || path.extname(filePath).toLowerCase() !== '.mp3') return null;
+    try {
+        // Use Node parser in Electron main process. The browser build can break when bundled for main.
+        const { parseFile } = await import('music-metadata');
+        const metadata = await parseFile(filePath);
+        console.log(`[SongAutoDetect][MP3] parseFile succeeded: "${filePath}"`);
+
+        const title = sanitizeHeaderValue(metadata.common.title);
+        const artist = sanitizeHeaderValue(metadata.common.artist);
+        const picture = metadata.common.picture?.[0];
+        let coverArt: CoverArt | undefined;
+
+        if (picture?.data?.length) {
+            const info = normalizePictureFormatToInfo(picture.format);
+            coverArt = {
+                data: Buffer.from(picture.data),
+                codec: picture.format ?? info.mime,
+                extension: info.ext,
+                mimeType: info.mime,
+            };
+        }
+
+        if (!title && !artist && !coverArt) return null;
+        return { title, artist, coverArt };
+    } catch (error) {
+        console.warn(`[SongAutoDetect][MP3] Metadata parse failed for "${filePath}"`, error);
+        return null;
+    }
+}
+
+export async function extractMp3TagMetadata(mp3FilePath: string): Promise<MP3TagMetadata> {
+    const out: MP3TagMetadata = {};
+    const parsed = await extractMp3Metadata(mp3FilePath);
+    if (!parsed) {
+        console.log(`[SongAutoDetect][MP3] No parse result for "${mp3FilePath}"`);
+        return out;
+    }
+
+    out.title = parsed.title;
+    out.artist = parsed.artist;
+
+    if (parsed.coverArt) {
+        const imageFile = await writeCoverArtNearAudio(mp3FilePath, parsed.coverArt);
+        if (imageFile) {
+            out.imageFile = imageFile;
+            out.imageGeneratedFromAudio = true;
+            console.log(`[SongAutoDetect][MP3] Cover art extracted to: "${imageFile}"`);
+        }
+    }
+
+    console.log(`[SongAutoDetect][MP3] Final extracted metadata for "${mp3FilePath}"`, {
+        hasTitle: !!out.title,
+        hasArtist: !!out.artist,
+        hasImage: !!out.imageFile,
+    });
+
+    return out;
+}
+
 export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise<AutoDetectedSongFiles> {
     const out: AutoDetectedSongFiles = {};
     if (!fseqFilePath || path.extname(fseqFilePath).toLowerCase() !== '.fseq') {
@@ -178,6 +276,14 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         out.imageFile =
             (await findWithBasename(fseqDir, audioBase, IMAGE_EXTENSIONS)) ??
             (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS));
+
+        const mp3Metadata = await extractMp3TagMetadata(out.audioFile);
+        out.detectedTitle = mp3Metadata.title;
+        out.detectedArtist = mp3Metadata.artist;
+        if (!out.imageFile && mp3Metadata.imageFile) {
+            out.imageFile = mp3Metadata.imageFile;
+            out.imageGeneratedFromAudio = mp3Metadata.imageGeneratedFromAudio;
+        }
     } else {
         out.imageFile = await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS);
     }
@@ -186,11 +292,11 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         try {
             const coverArt = await extractCoverArt(out.audioFile);
             if (coverArt) {
-                const imageBase = path.parse(out.audioFile).name;
-                const outputPath = path.join(path.dirname(out.audioFile), `${imageBase}${coverArt.extension}`);
-                await fs.writeFile(outputPath, coverArt.data);
-                out.imageFile = outputPath;
-                out.imageGeneratedFromAudio = true;
+                const outputPath = await writeCoverArtNearAudio(out.audioFile, coverArt);
+                if (outputPath) {
+                    out.imageFile = outputPath;
+                    out.imageGeneratedFromAudio = true;
+                }
             }
         } catch {
             // Non-intrusive fallback: keep original behavior when ffmpeg fails.

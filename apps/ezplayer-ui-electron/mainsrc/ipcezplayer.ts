@@ -24,7 +24,7 @@ import {
 } from './data/FileStorage.js';
 
 import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
-import { autoDetectSongFilesFromFseq } from './data/song-file-autodetect.js';
+import { autoDetectSongFilesFromFseq, extractMp3TagMetadata } from './data/song-file-autodetect.js';
 
 import type {
     CombinedPlayerStatus,
@@ -47,7 +47,13 @@ import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMess
 import { RPCClient, RPCServer } from './workers/rpc.js';
 import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
-import { updateFrameBuffer, updateAudioBuffer, broadcastToWebSocket, pushModelCoordinates, clearShowData } from './server-worker-manager.js';
+import {
+    updateFrameBuffer,
+    updateAudioBuffer,
+    broadcastToWebSocket,
+    pushModelCoordinates,
+    clearShowData,
+} from './server-worker-manager.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -293,6 +299,9 @@ export async function registerContentHandlers(
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
         return autoDetectSongFilesFromFseq(fseqPath);
+    });
+    ipcMain.handle('ipcExtractMp3TagMetadata', async (_event, mp3Path: string) => {
+        return extractMp3TagMetadata(mp3Path);
     });
 
     ipcMain.handle('ipcGetCloudPlaylists', async (_event): Promise<PlaylistRecord[]> => {
