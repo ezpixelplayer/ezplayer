@@ -306,6 +306,22 @@ export const ModelList = React.memo(function ModelList({
                                                                     </Typography>
                                                                 </>
                                                             )}
+                                                            {model.firstNodeChannel !== undefined && (
+                                                                <>
+                                                                    <Typography
+                                                                        variant="caption"
+                                                                        color="text.secondary"
+                                                                    >
+                                                                        •
+                                                                    </Typography>
+                                                                    <Typography
+                                                                        variant="caption"
+                                                                        color="text.secondary"
+                                                                    >
+                                                                        Ch: {model.firstNodeChannel.toLocaleString()}
+                                                                    </Typography>
+                                                                </>
+                                                            )}
                                                         </Box>
                                                         {model.pixelStyle && (
                                                             <Chip

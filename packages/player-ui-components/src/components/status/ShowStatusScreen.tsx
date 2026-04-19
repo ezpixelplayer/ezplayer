@@ -436,6 +436,15 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                             </Typography>
                                                         </Grid>
                                                     )}
+                                                    {ctrl.startCh !== undefined && ctrl.nCh !== undefined && ctrl.nCh > 0 && (
+                                                        <Grid item xs={12}>
+                                                            <Typography variant="body2">
+                                                                Channels: {ctrl.startCh.toLocaleString()}–
+                                                                {(ctrl.startCh + ctrl.nCh - 1).toLocaleString()} (
+                                                                {ctrl.nCh.toLocaleString()})
+                                                            </Typography>
+                                                        </Grid>
+                                                    )}
                                                     {ctrl.reported_time && (
                                                         <Grid item xs={12}>
                                                             <Typography variant="body2" color="text.secondary">

@@ -52,7 +52,7 @@ import {
     getNumAttrDef,
 } from '@ezplayer/epp';
 
-import { getAllModelCoordinates, getAllMovingHeads, GetNodeResult, type MhFixtureInfo } from 'xllayoutcalcs';
+import { getAllModelCoordinates, getAllMovingHeads, GetNodeResult, type MhFixtureInfo, migrateToFormat } from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -294,6 +294,8 @@ function sendControllerStateUpdate() {
             connectivity,
             pingSummary: pss,
             reported_time: stats.latestUpdate,
+            startCh: c.setup.startCh,
+            nCh: c.setup.nCh,
         });
     }
     send({ type: 'nstatus', status: cstatus });
@@ -834,6 +836,7 @@ async function loadXmlCoordinates() {
     let xnet;
     try {
         xrgb = await loadXmlFile(xmlPath);
+        migrateToFormat(xrgb, 'x2026_2');
         xnet = await loadXmlFile(netPath);
     } catch (err) {
         emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
