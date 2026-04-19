@@ -45,7 +45,7 @@ import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
-import { getCurrentShowFolder, pickAnotherShowFolder } from '../showfolder.js';
+import { getCurrentShowFolder, isValidShowDirectory, pickAnotherShowFolder } from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
 import {
     updateFrameBuffer,
@@ -249,6 +249,9 @@ export async function registerContentHandlers(
         const sf = await pickAnotherShowFolder();
         await loadShowFolder();
         return sf!;
+    });
+    ipcMain.handle('ipcValidateShowDirectory', async (_event, showDirectory?: string) => {
+        return await isValidShowDirectory(showDirectory ?? getCurrentShowFolder());
     });
 
     ipcMain.handle('ipcGetCloudSequences', async (_event): Promise<SequenceRecord[]> => {

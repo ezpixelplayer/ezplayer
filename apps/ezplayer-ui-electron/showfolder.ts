@@ -8,6 +8,7 @@ import { getMainWindow } from './main';
 const store = new Store<{ showFolder?: string }>();
 let releaseLock: null | (() => Promise<void>) = null;
 let currentShowFolder: string | null = null;
+const REQUIRED_SHOW_FILES = ['xlights_rgbeffects.xml', 'xlights_networks.xml'] as const;
 
 async function dirExists(p?: string | null) {
     if (!p) return false;
@@ -16,6 +17,61 @@ async function dirExists(p?: string | null) {
     } catch {
         return false;
     }
+}
+
+export interface ShowDirectoryValidationResult {
+    valid: boolean;
+    missingFiles: string[];
+    inaccessibleFiles: string[];
+    error?: string;
+}
+
+export async function isValidShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
+    if (!showFolder) {
+        return {
+            valid: false,
+            missingFiles: [...REQUIRED_SHOW_FILES],
+            inaccessibleFiles: [],
+            error: 'No show folder selected.',
+        };
+    }
+
+    if (!(await dirExists(showFolder))) {
+        return {
+            valid: false,
+            missingFiles: [...REQUIRED_SHOW_FILES],
+            inaccessibleFiles: [],
+            error: 'Show folder does not exist or is not accessible.',
+        };
+    }
+
+    const missingFiles: string[] = [];
+    const inaccessibleFiles: string[] = [];
+
+    for (const fileName of REQUIRED_SHOW_FILES) {
+        const filePath = path.join(showFolder, fileName);
+        try {
+            // fs.access covers both existence and readability.
+            await fsp.access(filePath, fsp.constants.R_OK);
+        } catch {
+            try {
+                await fsp.stat(filePath);
+                inaccessibleFiles.push(fileName);
+            } catch {
+                missingFiles.push(fileName);
+            }
+        }
+    }
+
+    return {
+        valid: missingFiles.length === 0 && inaccessibleFiles.length === 0,
+        missingFiles,
+        inaccessibleFiles,
+        error:
+            missingFiles.length || inaccessibleFiles.length
+                ? 'Show folder is missing required xLights configuration files.'
+                : undefined,
+    };
 }
 
 async function promptForFolder(): Promise<string | null> {
@@ -96,6 +152,24 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
         const showFolder = await getOrPickShowFolder(forcepick);
         if (!showFolder) return null;
 
+        const validation = await isValidShowDirectory(showFolder);
+        if (!validation.valid) {
+            const detail = [
+                validation.missingFiles.length ? `Missing: ${validation.missingFiles.join(', ')}` : '',
+                validation.inaccessibleFiles.length ? `Inaccessible: ${validation.inaccessibleFiles.join(', ')}` : '',
+            ].filter(Boolean).join('\n');
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: validation.error ?? 'Selected folder is not a valid show directory.',
+                detail: detail || undefined,
+                buttons: ['Pick another folder', 'Use anyway', 'Quit'],
+                cancelId: 2,
+                defaultId: 0,
+            });
+            if (response === 0) { forcepick = true; continue; }
+            if (response === 2) return null;
+        }
+
         try {
             const newReleaseLock = await tryLockShowFolder(showFolder);
             setNewShowFolder(newReleaseLock, showFolder);
@@ -126,6 +200,28 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
         if (!chosen) return currentShowFolder; // Gave up
         if (chosen && (await dirExists(chosen))) {
             store.set('showFolder', chosen!);
+        }
+
+        const validation = await isValidShowDirectory(chosen);
+        if (!validation.valid) {
+            const detail = [
+                validation.missingFiles.length ? `Missing: ${validation.missingFiles.join(', ')}` : '',
+                validation.inaccessibleFiles.length ? `Inaccessible: ${validation.inaccessibleFiles.join(', ')}` : '',
+            ].filter(Boolean).join('\n');
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: validation.error ?? 'Selected folder is not a valid show directory.',
+                detail: detail || undefined,
+                buttons: ['Pick another folder', 'Use anyway', 'Keep Current'],
+                cancelId: 2,
+                defaultId: 0,
+            });
+            if (response === 0) continue;
+            if (response === 2) return currentShowFolder;
+        }
+
+        if (chosen === currentShowFolder) {
+            return currentShowFolder; // Already using this folder
         }
 
         try {

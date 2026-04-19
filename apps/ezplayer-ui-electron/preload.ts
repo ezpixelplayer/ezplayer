@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     requestChooseShowFolder: async (): Promise<string> => {
         return await ipcRenderer.invoke('ipcUIChooseShowFolder');
     },
+    validateShowDirectory: async (
+        showDirectory?: string,
+    ): Promise<{ valid: boolean; missingFiles: string[]; inaccessibleFiles: string[]; error?: string }> => {
+        return await ipcRenderer.invoke('ipcValidateShowDirectory', showDirectory);
+    },
 
     openExternal: (url: string) => ipcRenderer.invoke('open-external-url', url),
 
