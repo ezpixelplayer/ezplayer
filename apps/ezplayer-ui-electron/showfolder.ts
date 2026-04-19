@@ -152,6 +152,24 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
         const showFolder = await getOrPickShowFolder(forcepick);
         if (!showFolder) return null;
 
+        const validation = await isValidShowDirectory(showFolder);
+        if (!validation.valid) {
+            const detail = [
+                validation.missingFiles.length ? `Missing: ${validation.missingFiles.join(', ')}` : '',
+                validation.inaccessibleFiles.length ? `Inaccessible: ${validation.inaccessibleFiles.join(', ')}` : '',
+            ].filter(Boolean).join('\n');
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: validation.error ?? 'Selected folder is not a valid show directory.',
+                detail: detail || undefined,
+                buttons: ['Pick another folder', 'Use anyway', 'Quit'],
+                cancelId: 2,
+                defaultId: 0,
+            });
+            if (response === 0) { forcepick = true; continue; }
+            if (response === 2) return null;
+        }
+
         try {
             const newReleaseLock = await tryLockShowFolder(showFolder);
             setNewShowFolder(newReleaseLock, showFolder);
@@ -182,6 +200,24 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
         if (!chosen) return currentShowFolder; // Gave up
         if (chosen && (await dirExists(chosen))) {
             store.set('showFolder', chosen!);
+        }
+
+        const validation = await isValidShowDirectory(chosen);
+        if (!validation.valid) {
+            const detail = [
+                validation.missingFiles.length ? `Missing: ${validation.missingFiles.join(', ')}` : '',
+                validation.inaccessibleFiles.length ? `Inaccessible: ${validation.inaccessibleFiles.join(', ')}` : '',
+            ].filter(Boolean).join('\n');
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: validation.error ?? 'Selected folder is not a valid show directory.',
+                detail: detail || undefined,
+                buttons: ['Pick another folder', 'Use anyway', 'Keep Current'],
+                cancelId: 2,
+                defaultId: 0,
+            });
+            if (response === 0) continue;
+            if (response === 2) return currentShowFolder;
         }
 
         try {

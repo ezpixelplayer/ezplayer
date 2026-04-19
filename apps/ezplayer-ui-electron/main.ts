@@ -220,6 +220,24 @@ let playWorker: Worker | null = null;
 
 app.whenReady().then(async () => {
     console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
+
+    if (process.argv.includes('--reset')) {
+        const userDataPath = app.getPath('userData');
+        const preserve = new Set(['logs']);
+        try {
+            for (const entry of fs.readdirSync(userDataPath)) {
+                if (preserve.has(entry)) continue;
+                const full = path.join(userDataPath, entry);
+                fs.rmSync(full, { recursive: true, force: true });
+            }
+            console.log(`Reset complete — cleared ${userDataPath} (preserved: ${[...preserve].join(', ')})`);
+        } catch (e: any) {
+            console.warn(`Reset failed:`, e.message);
+        }
+        app.quit();
+        return;
+    }
+
     // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
     const showFolderSpec = await ensureExclusiveFolder();
     if (!showFolderSpec) {
