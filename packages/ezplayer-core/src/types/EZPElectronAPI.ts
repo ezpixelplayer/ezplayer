@@ -49,6 +49,7 @@ export interface AutoDetectedSongFiles {
     imageGeneratedFromAudio?: boolean;
     detectedTitle?: string;
     detectedArtist?: string;
+    durationSecs?: number;
 }
 
 export interface AudioTagMetadata {

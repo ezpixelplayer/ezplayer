@@ -88,6 +88,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     });
     const [uploadedFiles, setUploadedFiles] = useState<SequenceFiles>({});
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
+    const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
 
     useEffect(() => {
         if (open && selectedSongId) {
@@ -163,6 +164,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         }
                         return next;
                     });
+                    if (detected?.durationSecs) {
+                        setNewDurationSecs(detected.durationSecs);
+                    }
                     applyDetectedMetadata(detected ?? {});
                     console.log(`[EditSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
                 } catch (error) {
@@ -242,7 +246,8 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         ...prevSong.work,
                         title: formData.title.trim(),
                         artist: formData.artist.trim(),
-                        artwork: imageUrl || undefined, // Update image URL
+                        artwork: imageUrl || undefined,
+                        ...(newDurationSecs !== undefined && { length: newDurationSecs }),
                     },
                     sequence: {
                         ...(prevSong.sequence || {}),
@@ -296,6 +301,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setImageUrl(originalSong?.work?.artwork || '');
         setErrors({ title: false, artist: false, lead_time: false, trail_time: false, volume_adj: false, tags: false });
         setNewFiles({});
+        setNewDurationSecs(undefined);
     };
 
     const handleCancel = () => {

@@ -137,6 +137,9 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             if (detected?.imageFile) {
                                 setImageFile((prev) => prev ?? detected.imageFile);
                             }
+                            if (detected?.durationSecs) {
+                                setNewSongData((prev) => ({ ...prev, length: detected.durationSecs! }));
+                            }
                             applyMetadataIfEmpty(detected ?? {});
                             console.log(`[AddSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
                             if (!detected?.audioFile && !detected?.imageFile) {
@@ -149,16 +152,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         console.log('[AddSong] electronAPI.autoDetectSongFilesFromFseq is unavailable in this environment.');
                     }
 
-                    // TODO CRAZ Get duration from the FSEQ file on electron side
-                    // TODO CRAZ this belongs in main process side
-                    try {
-                        // Update the new song data with the duration
-                        setNewSongData((prev) => ({
-                            ...prev,
-                        }));
-                    } catch (error) {
-                        console.error('Error getting FSEQ duration:', error);
-                    }
                 } else {
                     console.log(`[AddSong] Ignored non-fseq file for FSEQ field: "${file}"`);
                     setNeedValidFseqFile(true);

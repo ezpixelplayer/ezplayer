@@ -20,6 +20,7 @@ export interface AutoDetectedSongFiles {
     imageGeneratedFromAudio?: boolean;
     detectedTitle?: string;
     detectedArtist?: string;
+    durationSecs?: number;
 }
 
 export interface AudioTagMetadata {
@@ -113,10 +114,11 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
     let headerAudioName: string | undefined;
     try {
         const header = await FSEQReaderAsync.readFSEQHeaderAsync(fseqFilePath);
+        out.durationSecs = (header.frames * header.msperframe) / 1000;
         const keys = Object.keys(header.headers);
         console.log(`[SongAutoDetect] FSEQ headers [${keys.join(', ')}]: ${keys.map((k) => `${k}="${header.headers[k]}"`).join(', ') || '(empty)'}`);
         headerAudioName = getAudioNameFromFseqHeader(header.headers);
-        console.log(`[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}`);
+        console.log(`[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s`);
     } catch (error) {
         console.warn(`[SongAutoDetect] FSEQ header read failed for "${fseqFilePath}":`, String(error));
     }
