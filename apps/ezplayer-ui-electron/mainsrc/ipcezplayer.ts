@@ -24,7 +24,7 @@ import {
 } from './data/FileStorage.js';
 
 import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
-import { autoDetectSongFilesFromFseq, extractMp3TagMetadata } from './data/song-file-autodetect.js';
+import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 
 import type {
     CombinedPlayerStatus,
@@ -262,19 +262,6 @@ export async function registerContentHandlers(
             return { ...r, updatedAt: Date.now() };
         });
         for (const ups of uppl) {
-            if (ups.files?.fseq && (!ups.files.audio || !ups.files.thumb)) {
-                try {
-                    const detected = await autoDetectSongFilesFromFseq(ups.files.fseq);
-                    if (!ups.files.audio && detected.audioFile) {
-                        ups.files.audio = detected.audioFile;
-                    }
-                    if (!ups.files.thumb && detected.imageFile) {
-                        ups.files.thumb = detected.imageFile;
-                    }
-                } catch (err) {
-                    console.warn(`[ipcPutCloudSequences] Auto-detect failed for ${ups.files.fseq}:`, err);
-                }
-            }
             if (!ups?.work?.length && ups.files?.fseq) {
                 const fseq = new FSEQReaderAsync(ups.files.fseq);
                 await fseq.open();
@@ -300,8 +287,8 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
         return autoDetectSongFilesFromFseq(fseqPath);
     });
-    ipcMain.handle('ipcExtractMp3TagMetadata', async (_event, mp3Path: string) => {
-        return extractMp3TagMetadata(mp3Path);
+    ipcMain.handle('ipcExtractAudioTagMetadata', async (_event, audioPath: string) => {
+        return extractAudioTagMetadata(audioPath);
     });
 
     ipcMain.handle('ipcGetCloudPlaylists', async (_event): Promise<PlaylistRecord[]> => {

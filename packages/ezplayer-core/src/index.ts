@@ -46,7 +46,7 @@ export type {
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,
-    MP3TagMetadata,
+    AudioTagMetadata,
 } from './types/EZPElectronAPI';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';

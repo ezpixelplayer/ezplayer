@@ -51,7 +51,7 @@ export interface AutoDetectedSongFiles {
     detectedArtist?: string;
 }
 
-export interface MP3TagMetadata {
+export interface AudioTagMetadata {
     title?: string;
     artist?: string;
     imageFile?: string;
@@ -188,7 +188,7 @@ export interface EZPElectronAPI {
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
     autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
-    extractMp3TagMetadata: (mp3Path: string) => Promise<MP3TagMetadata>;
+    extractAudioTagMetadata: (audioPath: string) => Promise<AudioTagMetadata>;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;

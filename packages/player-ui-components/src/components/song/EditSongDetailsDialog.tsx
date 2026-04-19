@@ -130,14 +130,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     }) => {
         const resolvedTitle = metadata.title ?? metadata.detectedTitle;
         const resolvedArtist = metadata.artist ?? metadata.detectedArtist;
-        console.log('[EditSong][Meta] Resolved metadata fields:', {
-            rawTitle: metadata.title,
-            rawArtist: metadata.artist,
-            detectedTitle: metadata.detectedTitle,
-            detectedArtist: metadata.detectedArtist,
-            resolvedTitle,
-            resolvedArtist,
-        });
+        console.log(`[EditSong][Meta] Resolved metadata: title=${resolvedTitle ?? '(none)'}, artist=${resolvedArtist ?? '(none)'}`);
         setFormData((prev) => ({
             ...prev,
             title: prev.title || resolvedTitle || '',
@@ -171,20 +164,17 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         return next;
                     });
                     applyDetectedMetadata(detected ?? {});
-                    console.log('[EditSong][FSEQ] Title/Artist after auto-detect mapping:', {
-                        detectedTitle: detected?.detectedTitle,
-                        detectedArtist: detected?.detectedArtist,
-                    });
+                    console.log(`[EditSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
                 } catch (error) {
                     console.warn('Auto-detect from FSEQ failed:', error);
                 }
             }
 
-            if (type === 'mp3' && typeof window !== 'undefined' && (window as any).electronAPI?.extractMp3TagMetadata) {
+            if (type === 'mp3' && typeof window !== 'undefined' && (window as any).electronAPI?.extractAudioTagMetadata) {
                 try {
                     console.log(`[EditSong][MP3] Starting metadata extraction for: "${file}"`);
-                    const metadata = await (window as any).electronAPI.extractMp3TagMetadata(file);
-                    console.log('[EditSong][MP3] Extracted metadata payload:', metadata ?? {});
+                    const metadata = await (window as any).electronAPI.extractAudioTagMetadata(file);
+                    console.log(`[EditSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`);
                     applyDetectedMetadata(metadata ?? {});
                     console.log('[EditSong][MP3] Metadata applied (only empty fields are auto-filled).');
                     if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
@@ -194,7 +184,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                     console.warn('MP3 metadata extraction failed:', error);
                 }
             } else if (type === 'mp3') {
-                console.warn('[EditSong][MP3] electronAPI.extractMp3TagMetadata is unavailable in this environment.');
+                console.warn('[EditSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.');
             }
         } else {
             // If file is undefined (cleared), remove it from newFiles

@@ -85,15 +85,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     ) => {
         const resolvedTitle = metadata.title ?? metadata.detectedTitle;
         const resolvedArtist = metadata.artist ?? metadata.detectedArtist;
-        console.log('[AddSong][Meta] Resolved metadata fields:', {
-            mode,
-            rawTitle: metadata.title,
-            rawArtist: metadata.artist,
-            detectedTitle: metadata.detectedTitle,
-            detectedArtist: metadata.detectedArtist,
-            resolvedTitle,
-            resolvedArtist,
-        });
+        console.log(`[AddSong][Meta] Resolved metadata (${mode}): title=${resolvedTitle ?? '(none)'}, artist=${resolvedArtist ?? '(none)'}`);
         if (mode === 'replace-existing') {
             // On explicit MP3 reselection, always refresh fields and clear stale values if missing.
             setNewSongData((prev) => ({
@@ -146,10 +138,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 setImageFile((prev) => prev ?? detected.imageFile);
                             }
                             applyMetadataIfEmpty(detected ?? {});
-                            console.log('[AddSong][FSEQ] Title/Artist after auto-detect mapping:', {
-                                detectedTitle: detected?.detectedTitle,
-                                detectedArtist: detected?.detectedArtist,
-                            });
+                            console.log(`[AddSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
                             if (!detected?.audioFile && !detected?.imageFile) {
                                 console.log('[AddSong] No matching audio/image found. Manual selection remains available.');
                             }
@@ -179,29 +168,13 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                 if (lowerFile.endsWith('.mp3')) {
                     console.log(`[AddSong][MP3] Selected MP3 file: "${file}"`);
                     setMp3File(file);
-                    if (typeof window !== 'undefined' && window.electronAPI?.extractMp3TagMetadata) {
+                    if (typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
                         try {
                             console.log(`[AddSong][MP3] Starting metadata extraction for: "${file}"`);
-                            const metadata = await window.electronAPI.extractMp3TagMetadata(file);
-                            const beforeSnapshot = {
-                                title: newSongData.title,
-                                artist: newSongData.artist,
-                                imageFile,
-                            };
-                            console.log('[AddSong][MP3] Extracted metadata payload:', metadata ?? {});
+                            const metadata = await window.electronAPI.extractAudioTagMetadata(file);
+                            console.log(`[AddSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`);
                             // MP3 field re-selection should refresh title/artist/image for the newly selected song.
                             applyMetadata(metadata ?? {}, 'replace-existing');
-                            const appliedInfo = {
-                                titleApplied: !beforeSnapshot.title && !!metadata?.title,
-                                artistApplied: !beforeSnapshot.artist && !!metadata?.artist,
-                                imageApplied: !beforeSnapshot.imageFile && !!metadata?.imageFile,
-                            };
-                            console.log('[AddSong][MP3] Metadata apply decision:', {
-                                before: beforeSnapshot,
-                                appliedInfo,
-                                incomingTitle: metadata?.title,
-                                incomingArtist: metadata?.artist,
-                            });
                             if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
                                 console.log('[AddSong][MP3] No usable ID3 metadata found (title/artist/image all empty).');
                             }
@@ -209,7 +182,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             console.warn('[AddSong] MP3 metadata extraction failed:', error);
                         }
                     } else {
-                        console.warn('[AddSong][MP3] electronAPI.extractMp3TagMetadata is unavailable in this environment.');
+                        console.warn('[AddSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.');
                     }
                 } else {
                     console.warn(`[AddSong][MP3] Ignored non-MP3 file in MP3 field: "${file}"`);

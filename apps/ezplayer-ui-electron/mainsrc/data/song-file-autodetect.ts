@@ -1,29 +1,17 @@
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { parseAudioTags } from 'audiofile';
 import { FSEQReaderAsync } from '@ezplayer/epp';
-
-type CoverArt = {
-    data: Buffer;
-    codec: string;
-    extension: string;
-    mimeType: string;
-};
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'];
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
-const CODEC_TO_EXT: Record<string, { ext: string; mime: string }> = {
-    mjpeg: { ext: '.jpg', mime: 'image/jpeg' },
-    jpeg: { ext: '.jpg', mime: 'image/jpeg' },
-    png: { ext: '.png', mime: 'image/png' },
-};
-const MIME_TO_EXT: Record<string, { ext: string; mime: string }> = {
-    'image/jpeg': { ext: '.jpg', mime: 'image/jpeg' },
-    'image/jpg': { ext: '.jpg', mime: 'image/jpeg' },
-    'image/png': { ext: '.png', mime: 'image/png' },
-    'image/webp': { ext: '.webp', mime: 'image/webp' },
-    'image/gif': { ext: '.gif', mime: 'image/gif' },
-    'image/bmp': { ext: '.bmp', mime: 'image/bmp' },
+const MIME_TO_EXT: Record<string, string> = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/bmp': '.bmp',
 };
 
 export interface AutoDetectedSongFiles {
@@ -34,7 +22,7 @@ export interface AutoDetectedSongFiles {
     detectedArtist?: string;
 }
 
-export interface MP3TagMetadata {
+export interface AudioTagMetadata {
     title?: string;
     artist?: string;
     imageFile?: string;
@@ -50,43 +38,16 @@ async function fileExists(filePath: string): Promise<boolean> {
     }
 }
 
-function sanitizeHeaderValue(value: string | undefined): string | undefined {
-    if (!value) return undefined;
-    const cleaned = value.replace(/\0/g, '').trim();
-    return cleaned || undefined;
-}
-
-function extractAudioPathCandidate(rawValue: string): string | undefined {
-    // Recover a valid audio path/name from noisy header bytes (e.g. trailing `"sp`).
-    const matches = rawValue.match(/[^\0\r\n]*?\.(mp3|wav|m4a|aac|flac|ogg|wma)/gi);
-    if (!matches?.length) return undefined;
-    const best = matches[0].replace(/["']/g, '').trim();
-    return best || undefined;
-}
-
 function getAudioNameFromFseqHeader(headers: Record<string, string> | undefined): string | undefined {
     if (!headers) return undefined;
-    const preferredKeys = ['mf', 'mu', 'md'];
-    for (const key of preferredKeys) {
-        const val = sanitizeHeaderValue(headers[key]);
+    for (const key of ['mf', 'mu', 'md']) {
+        const val = headers[key]?.trim();
         if (!val) continue;
-        const recovered = extractAudioPathCandidate(val) ?? val;
-        const ext = path.extname(recovered).toLowerCase();
+        const ext = path.extname(val).toLowerCase();
         if (AUDIO_EXTENSIONS.includes(ext)) {
-            return path.basename(recovered);
+            return path.basename(val);
         }
     }
-
-    for (const val of Object.values(headers)) {
-        const candidate = sanitizeHeaderValue(val);
-        if (!candidate) continue;
-        const recovered = extractAudioPathCandidate(candidate) ?? candidate;
-        const ext = path.extname(recovered).toLowerCase();
-        if (AUDIO_EXTENSIONS.includes(ext)) {
-            return path.basename(recovered);
-        }
-    }
-
     return undefined;
 }
 
@@ -98,149 +59,45 @@ async function findWithBasename(dir: string, baseName: string, exts: string[]): 
     return undefined;
 }
 
-async function extractCoverArt(filePath: string): Promise<CoverArt | null> {
-    return new Promise((resolve, reject) => {
-        const probeProc = spawn('ffprobe', ['-v', 'quiet', '-print_format', 'json', '-show_streams', filePath]);
-        let stdout = '';
-        let stderr = '';
-
-        probeProc.stdout.on('data', (chunk: Buffer) => {
-            stdout += chunk.toString('utf8');
-        });
-        probeProc.stderr.on('data', (chunk: Buffer) => {
-            stderr += chunk.toString('utf8');
-        });
-        probeProc.on('error', reject);
-
-        probeProc.on('close', (code) => {
-            if (code !== 0) {
-                if (stderr.includes('not recognized as an internal or external command')) {
-                    resolve(null);
-                    return;
-                }
-                reject(new Error(`ffprobe failed with code ${code}`));
-                return;
-            }
-
-            let probe: any;
-            try {
-                probe = JSON.parse(stdout);
-            } catch {
-                resolve(null);
-                return;
-            }
-
-            const picStream = (probe.streams ?? []).find(
-                (s: any) => s.codec_type === 'video' && s.disposition?.attached_pic === 1,
-            );
-            if (!picStream) {
-                resolve(null);
-                return;
-            }
-
-            const codec = picStream.codec_name ?? 'mjpeg';
-            const info = CODEC_TO_EXT[codec] ?? { ext: '.jpg', mime: 'image/jpeg' };
-
-            const chunks: Uint8Array[] = [];
-            const proc = spawn('ffmpeg', ['-i', filePath, '-an', '-vcodec', 'copy', '-f', 'image2pipe', 'pipe:1']);
-
-            proc.stdout.on('data', (chunk: Uint8Array) => chunks.push(chunk));
-            proc.stderr.on('data', () => {});
-            proc.on('error', reject);
-            proc.on('close', (extractCode) => {
-                if (extractCode !== 0 || chunks.length === 0) {
-                    resolve(null);
-                    return;
-                }
-                resolve({
-                    data: Buffer.concat(chunks),
-                    codec,
-                    extension: info.ext,
-                    mimeType: info.mime,
-                });
-            });
-        });
-    });
-}
-
-function normalizePictureFormatToInfo(format: string | undefined): { ext: string; mime: string } {
-    const normalized = (format ?? '').toLowerCase();
-    if (MIME_TO_EXT[normalized]) return MIME_TO_EXT[normalized];
-    const withPrefix = normalized.includes('/') ? normalized : `image/${normalized}`;
-    if (MIME_TO_EXT[withPrefix]) return MIME_TO_EXT[withPrefix];
-    return { ext: '.jpg', mime: 'image/jpeg' };
-}
-
-async function writeCoverArtNearAudio(audioPath: string, coverArt: CoverArt): Promise<string | undefined> {
+async function findWithPrefix(dir: string, prefix: string, exts: string[]): Promise<string | undefined> {
+    const extSet = new Set(exts);
+    const lowerPrefix = prefix.toLowerCase();
     try {
-        const imageBase = path.parse(audioPath).name;
-        const outputPath = path.join(path.dirname(audioPath), `${imageBase}${coverArt.extension}`);
-        await fs.writeFile(outputPath, coverArt.data);
-        return outputPath;
+        const entries = await fs.readdir(dir);
+        for (const entry of entries) {
+            const ext = path.extname(entry).toLowerCase();
+            if (!extSet.has(ext)) continue;
+            if (entry.toLowerCase().startsWith(lowerPrefix)) {
+                return path.join(dir, entry);
+            }
+        }
     } catch {
-        return undefined;
+        // Directory unreadable — caller will proceed without a match.
     }
+    return undefined;
 }
 
-async function extractMp3Metadata(
-    filePath: string,
-): Promise<{ title?: string; artist?: string; coverArt?: CoverArt } | null> {
-    if (!filePath || path.extname(filePath).toLowerCase() !== '.mp3') return null;
+export async function extractAudioTagMetadata(audioFilePath: string): Promise<AudioTagMetadata> {
+    const out: AudioTagMetadata = {};
     try {
-        // Use Node parser in Electron main process. The browser build can break when bundled for main.
-        const { parseFile } = await import('music-metadata');
-        const metadata = await parseFile(filePath);
-        console.log(`[SongAutoDetect][MP3] parseFile succeeded: "${filePath}"`);
+        const data = await fs.readFile(audioFilePath);
+        const tags = parseAudioTags(new Uint8Array(data));
 
-        const title = sanitizeHeaderValue(metadata.common.title);
-        const artist = sanitizeHeaderValue(metadata.common.artist);
-        const picture = metadata.common.picture?.[0];
-        let coverArt: CoverArt | undefined;
+        out.title = tags.title;
+        out.artist = tags.artist;
 
-        if (picture?.data?.length) {
-            const info = normalizePictureFormatToInfo(picture.format);
-            coverArt = {
-                data: Buffer.from(picture.data),
-                codec: picture.format ?? info.mime,
-                extension: info.ext,
-                mimeType: info.mime,
-            };
-        }
-
-        if (!title && !artist && !coverArt) return null;
-        return { title, artist, coverArt };
-    } catch (error) {
-        console.warn(`[SongAutoDetect][MP3] Metadata parse failed for "${filePath}"`, error);
-        return null;
-    }
-}
-
-export async function extractMp3TagMetadata(mp3FilePath: string): Promise<MP3TagMetadata> {
-    const out: MP3TagMetadata = {};
-    const parsed = await extractMp3Metadata(mp3FilePath);
-    if (!parsed) {
-        console.log(`[SongAutoDetect][MP3] No parse result for "${mp3FilePath}"`);
-        return out;
-    }
-
-    out.title = parsed.title;
-    out.artist = parsed.artist;
-
-    if (parsed.coverArt) {
-        const imageFile = await writeCoverArtNearAudio(mp3FilePath, parsed.coverArt);
-        if (imageFile) {
-            out.imageFile = imageFile;
+        if (tags.coverArt?.data?.length) {
+            const ext = MIME_TO_EXT[tags.coverArt.mimeType] ?? '.jpg';
+            const imageBase = path.parse(audioFilePath).name;
+            const outputPath = path.join(path.dirname(audioFilePath), `${imageBase}${ext}`);
+            await fs.writeFile(outputPath, tags.coverArt.data);
+            out.imageFile = outputPath;
             out.imageGeneratedFromAudio = true;
-            console.log(`[SongAutoDetect][MP3] Cover art extracted to: "${imageFile}"`);
         }
+        console.log(`[SongAutoDetect] "${audioFilePath}" -> title=${out.title ?? '(none)'}, artist=${out.artist ?? '(none)'}, image=${out.imageFile ?? '(none)'}`);
+    } catch (error) {
+        console.warn(`[SongAutoDetect] Metadata parse failed for "${audioFilePath}": ${String(error)}`);
     }
-
-    console.log(`[SongAutoDetect][MP3] Final extracted metadata for "${mp3FilePath}"`, {
-        hasTitle: !!out.title,
-        hasArtist: !!out.artist,
-        hasImage: !!out.imageFile,
-    });
-
     return out;
 }
 
@@ -256,9 +113,12 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
     let headerAudioName: string | undefined;
     try {
         const header = await FSEQReaderAsync.readFSEQHeaderAsync(fseqFilePath);
+        const keys = Object.keys(header.headers);
+        console.log(`[SongAutoDetect] FSEQ headers [${keys.join(', ')}]: ${keys.map((k) => `${k}="${header.headers[k]}"`).join(', ') || '(empty)'}`);
         headerAudioName = getAudioNameFromFseqHeader(header.headers);
-    } catch {
-        // Keep existing flow when header is missing/invalid.
+        console.log(`[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}`);
+    } catch (error) {
+        console.warn(`[SongAutoDetect] FSEQ header read failed for "${fseqFilePath}":`, String(error));
     }
 
     if (headerAudioName) {
@@ -266,42 +126,37 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         if (await fileExists(direct)) {
             out.audioFile = direct;
         }
+        if (!out.audioFile) {
+            const headerBase = path.parse(headerAudioName).name;
+            out.audioFile = await findWithBasename(fseqDir, headerBase, AUDIO_EXTENSIONS)
+                ?? await findWithPrefix(fseqDir, headerBase, AUDIO_EXTENSIONS);
+        }
     }
     if (!out.audioFile) {
-        out.audioFile = await findWithBasename(fseqDir, fseqBase, AUDIO_EXTENSIONS);
+        out.audioFile = await findWithBasename(fseqDir, fseqBase, AUDIO_EXTENSIONS)
+            ?? await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS);
     }
 
     if (out.audioFile) {
         const audioBase = path.parse(out.audioFile).name;
         out.imageFile =
             (await findWithBasename(fseqDir, audioBase, IMAGE_EXTENSIONS)) ??
-            (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS));
+            (await findWithPrefix(fseqDir, audioBase, IMAGE_EXTENSIONS)) ??
+            (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS)) ??
+            (await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS));
 
-        const mp3Metadata = await extractMp3TagMetadata(out.audioFile);
-        out.detectedTitle = mp3Metadata.title;
-        out.detectedArtist = mp3Metadata.artist;
-        if (!out.imageFile && mp3Metadata.imageFile) {
-            out.imageFile = mp3Metadata.imageFile;
-            out.imageGeneratedFromAudio = mp3Metadata.imageGeneratedFromAudio;
+        const metadata = await extractAudioTagMetadata(out.audioFile);
+        out.detectedTitle = metadata.title;
+        out.detectedArtist = metadata.artist;
+        if (!out.imageFile && metadata.imageFile) {
+            out.imageFile = metadata.imageFile;
+            out.imageGeneratedFromAudio = metadata.imageGeneratedFromAudio;
         }
     } else {
-        out.imageFile = await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS);
+        out.imageFile = await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS)
+            ?? await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS);
     }
 
-    if (out.audioFile && !out.imageFile) {
-        try {
-            const coverArt = await extractCoverArt(out.audioFile);
-            if (coverArt) {
-                const outputPath = await writeCoverArtNearAudio(out.audioFile, coverArt);
-                if (outputPath) {
-                    out.imageFile = outputPath;
-                    out.imageGeneratedFromAudio = true;
-                }
-            }
-        } catch {
-            // Non-intrusive fallback: keep original behavior when ffmpeg fails.
-        }
-    }
-
+    console.log(`[SongAutoDetect] FSEQ "${fseqBase}" -> audio=${out.audioFile ?? '(none)'}, image=${out.imageFile ?? '(none)'}, title=${out.detectedTitle ?? '(none)'}, artist=${out.detectedArtist ?? '(none)'}`);
     return out;
 }
