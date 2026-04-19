@@ -82,6 +82,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      audiofile:
+        specifier: file:..\..\libs\audiofile-0.0.1.tgz
+        version: file:libs/audiofile-0.0.1.tgz
       axios:
         specifier: ^1.13.4
         version: 1.13.5(debug@4.4.3)
@@ -2770,6 +2773,10 @@ packages:
     resolution: {integrity: sha512-0bDNnY/u6pPwHDMoF0FieU354oBi0a8rD9FcsLwzcGWbc8KS8KPIi7y+s13OlVY+gMWc/9xEMUgNE6Qm8ZllYQ==}
     engines: {node: '>=4'}
 
+  audiofile@file:libs/audiofile-0.0.1.tgz:
+    resolution: {integrity: sha512-asxWIieGeYYYEt+yI11NT6t2WYzMErt70YJqhpiQpUM0uIwAF3jb/WnSk784KGrMwN1DKbjIqXLTwU7Apw1k+Q==, tarball: file:libs/audiofile-0.0.1.tgz}
+    version: 0.0.1
+
   axios@1.13.5:
     resolution: {integrity: sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q==}
 
@@ -4124,6 +4131,7 @@ packages:
   keygrip@1.1.0:
     resolution: {integrity: sha512-iYSchDJ+liQ8iwbSI2QqsQOvqv58eJCEanyJPJi+Khyu8smkcKSFUCbPwzFcL7YVtZ6eONjqRX/38caJ7QjRAQ==}
     engines: {node: '>= 0.6'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -8056,6 +8064,8 @@ snapshots:
       when-exit: 2.1.5
 
   attr-accept@2.2.5: {}
+
+  audiofile@file:libs/audiofile-0.0.1.tgz: {}
 
   axios@1.13.5(debug@4.4.3):
     dependencies:
