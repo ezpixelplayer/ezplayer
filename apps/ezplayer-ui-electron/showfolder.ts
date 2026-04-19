@@ -220,6 +220,10 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
             if (response === 2) return currentShowFolder;
         }
 
+        if (chosen === currentShowFolder) {
+            return currentShowFolder; // Already using this folder
+        }
+
         try {
             const newReleaseLock = await tryLockShowFolder(chosen);
             await closeShowFolder();
