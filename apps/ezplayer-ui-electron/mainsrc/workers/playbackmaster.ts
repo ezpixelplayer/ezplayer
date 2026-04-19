@@ -294,6 +294,8 @@ function sendControllerStateUpdate() {
             connectivity,
             pingSummary: pss,
             reported_time: stats.latestUpdate,
+            startCh: c.setup.startCh,
+            nCh: c.setup.nCh,
         });
     }
     send({ type: 'nstatus', status: cstatus });

@@ -94,6 +94,13 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
 
         const endIndex = allPoints.length - 1;
         if (pointIndex > 0) {
+            // Display channel is the first node's channel. This is the same channel
+            // the preview actually samples from, so any off-by-one in channel
+            // resolution will surface here directly.
+            // node.channel is 0-based; convert to 1-based for display.
+            const firstNodeChannel = allPoints[startIndex].channel;
+            const firstNodeChannel1Based = firstNodeChannel !== undefined ? firstNodeChannel + 1 : undefined;
+
             const metadata = {
                 name: modelName,
                 pointCount: pointIndex,
@@ -107,6 +114,7 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                 // Extract brightness and gamma from colorProfile
                 brightness,
                 gamma,
+                firstNodeChannel: firstNodeChannel1Based,
             };
             modelMetadata.push(metadata);
         }

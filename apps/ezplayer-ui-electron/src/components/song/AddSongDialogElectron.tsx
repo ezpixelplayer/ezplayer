@@ -73,35 +73,115 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
         setNewSongData((prev) => ({ ...prev, [name]: value }));
     };
 
+    const applyMetadata = (
+        metadata: {
+            title?: string;
+            artist?: string;
+            detectedTitle?: string;
+            detectedArtist?: string;
+            imageFile?: string;
+        },
+        mode: 'fill-empty' | 'replace-existing' = 'fill-empty',
+    ) => {
+        const resolvedTitle = metadata.title ?? metadata.detectedTitle;
+        const resolvedArtist = metadata.artist ?? metadata.detectedArtist;
+        console.log(`[AddSong][Meta] Resolved metadata (${mode}): title=${resolvedTitle ?? '(none)'}, artist=${resolvedArtist ?? '(none)'}`);
+        if (mode === 'replace-existing') {
+            // On explicit MP3 reselection, always refresh fields and clear stale values if missing.
+            setNewSongData((prev) => ({
+                ...prev,
+                title: resolvedTitle || '',
+                artist: resolvedArtist || '',
+            }));
+        } else if (resolvedTitle || resolvedArtist) {
+            setNewSongData((prev) => ({
+                ...prev,
+                title: prev.title || resolvedTitle || '',
+                artist: prev.artist || resolvedArtist || '',
+            }));
+        }
+        if (metadata.imageFile) {
+            setImageFile((prev) => (mode === 'replace-existing' ? metadata.imageFile : prev ?? metadata.imageFile));
+        }
+    };
+
+    const applyMetadataIfEmpty = (metadata: {
+        title?: string;
+        artist?: string;
+        detectedTitle?: string;
+        detectedArtist?: string;
+        imageFile?: string;
+    }) => {
+        applyMetadata(metadata, 'fill-empty');
+    };
+
     const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
+            const lowerFile = file.toLowerCase();
             if (type === 'fseq') {
-                if (file.endsWith('.fseq')) {
+                if (lowerFile.endsWith('.fseq')) {
+                    console.log(`[AddSong] FSEQ selected: "${file}"`);
                     setFseqFile(file);
                     setNeedValidFseqFile(false);
 
-                    // TODO CRAZ Get duration from the FSEQ file on electron side
-                    // TODO CRAZ this belongs in main process side
-                    try {
-                        // Update the new song data with the duration
-                        setNewSongData((prev) => ({
-                            ...prev,
-                        }));
-                    } catch (error) {
-                        console.error('Error getting FSEQ duration:', error);
+                    if (typeof window !== 'undefined' && window.electronAPI?.autoDetectSongFilesFromFseq) {
+                        try {
+                            console.log('[AddSong] Requesting backend auto-detect for audio/image...');
+                            const detected = await window.electronAPI.autoDetectSongFilesFromFseq(file);
+                            console.log(
+                                `[AddSong] Auto-detect result -> audio: ${detected?.audioFile ?? '<none>'}, image: ${detected?.imageFile ?? '<none>'}, imageGeneratedFromAudio: ${detected?.imageGeneratedFromAudio ? 'yes' : 'no'}`,
+                            );
+                            if (detected?.audioFile) {
+                                setMp3File((prev) => prev ?? detected.audioFile);
+                            }
+                            if (detected?.imageFile) {
+                                setImageFile((prev) => prev ?? detected.imageFile);
+                            }
+                            if (detected?.durationSecs) {
+                                setNewSongData((prev) => ({ ...prev, length: detected.durationSecs! }));
+                            }
+                            applyMetadataIfEmpty(detected ?? {});
+                            console.log(`[AddSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
+                            if (!detected?.audioFile && !detected?.imageFile) {
+                                console.log('[AddSong] No matching audio/image found. Manual selection remains available.');
+                            }
+                        } catch (error) {
+                            console.warn('[AddSong] Auto-detect from FSEQ failed:', error);
+                        }
+                    } else {
+                        console.log('[AddSong] electronAPI.autoDetectSongFilesFromFseq is unavailable in this environment.');
                     }
+
                 } else {
+                    console.log(`[AddSong] Ignored non-fseq file for FSEQ field: "${file}"`);
                     setNeedValidFseqFile(true);
                     setFseqFile(undefined);
                 }
             } else if (type === 'mp3') {
-                if (file.endsWith('.mp3')) {
+                if (lowerFile.endsWith('.mp3')) {
+                    console.log(`[AddSong][MP3] Selected MP3 file: "${file}"`);
                     setMp3File(file);
+                    if (typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
+                        try {
+                            console.log(`[AddSong][MP3] Starting metadata extraction for: "${file}"`);
+                            const metadata = await window.electronAPI.extractAudioTagMetadata(file);
+                            console.log(`[AddSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`);
+                            // MP3 field re-selection should refresh title/artist/image for the newly selected song.
+                            applyMetadata(metadata ?? {}, 'replace-existing');
+                            if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
+                                console.log('[AddSong][MP3] No usable ID3 metadata found (title/artist/image all empty).');
+                            }
+                        } catch (error) {
+                            console.warn('[AddSong] MP3 metadata extraction failed:', error);
+                        }
+                    } else {
+                        console.warn('[AddSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.');
+                    }
                 } else {
+                    console.warn(`[AddSong][MP3] Ignored non-MP3 file in MP3 field: "${file}"`);
                     setMp3File(undefined);
                 }
             } else if (type === 'image') {
-                const lowerFile = file.toLowerCase();
                 if (
                     lowerFile.endsWith('.jpg') ||
                     lowerFile.endsWith('.jpeg') ||

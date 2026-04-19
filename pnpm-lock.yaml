@@ -82,6 +82,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      audiofile:
+        specifier: file:..\..\libs\audiofile-0.0.1.tgz
+        version: file:libs/audiofile-0.0.1.tgz
       axios:
         specifier: ^1.13.4
         version: 1.13.5(debug@4.4.3)
@@ -155,8 +158,8 @@ importers:
         specifier: ^8.19.0
         version: 8.19.0
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.0.13.tgz
-        version: file:libs/xllayoutcalcs-0.0.13.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.0.15.tgz
+        version: file:libs/xllayoutcalcs-0.0.15.tgz
       zstd-codec:
         specifier: ^0.1.5
         version: 0.1.5
@@ -286,8 +289,8 @@ importers:
         specifier: ^0.8.10
         version: 0.8.11
       xllayoutcalcs:
-        specifier: file:../../libs/xllayoutcalcs-0.0.13.tgz
-        version: file:libs/xllayoutcalcs-0.0.13.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.0.15.tgz
+        version: file:libs/xllayoutcalcs-0.0.15.tgz
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
@@ -480,8 +483,8 @@ importers:
         specifier: ^8.2.1
         version: 8.5.0(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)(keycharm@0.4.0)(moment@2.30.1)(propagating-hammerjs@3.0.0(@egjs/hammerjs@2.0.17))(uuid@11.1.0)(vis-data@8.0.3(uuid@11.1.0)(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)))(vis-util@6.0.0(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1))(xss@1.0.15)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.0.13.tgz
-        version: file:libs/xllayoutcalcs-0.0.13.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.0.15.tgz
+        version: file:libs/xllayoutcalcs-0.0.15.tgz
     devDependencies:
       '@eslint/js':
         specifier: ^9.19.0
@@ -2770,6 +2773,10 @@ packages:
     resolution: {integrity: sha512-0bDNnY/u6pPwHDMoF0FieU354oBi0a8rD9FcsLwzcGWbc8KS8KPIi7y+s13OlVY+gMWc/9xEMUgNE6Qm8ZllYQ==}
     engines: {node: '>=4'}
 
+  audiofile@file:libs/audiofile-0.0.1.tgz:
+    resolution: {integrity: sha512-asxWIieGeYYYEt+yI11NT6t2WYzMErt70YJqhpiQpUM0uIwAF3jb/WnSk784KGrMwN1DKbjIqXLTwU7Apw1k+Q==, tarball: file:libs/audiofile-0.0.1.tgz}
+    version: 0.0.1
+
   axios@1.13.5:
     resolution: {integrity: sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q==}
 
@@ -4124,6 +4131,7 @@ packages:
   keygrip@1.1.0:
     resolution: {integrity: sha512-iYSchDJ+liQ8iwbSI2QqsQOvqv58eJCEanyJPJi+Khyu8smkcKSFUCbPwzFcL7YVtZ6eONjqRX/38caJ7QjRAQ==}
     engines: {node: '>= 0.6'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -5848,9 +5856,9 @@ packages:
       utf-8-validate:
         optional: true
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.13.tgz:
-    resolution: {integrity: sha512-Peq/uc55DAR04zkR3yruEGXIKlCEUAWTN3C/422PbbilbCFN90GpgAGqsEK7oZcsExHul5N9a8bPV2dsVzf8LA==, tarball: file:libs/xllayoutcalcs-0.0.13.tgz}
-    version: 0.0.13
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.15.tgz:
+    resolution: {integrity: sha512-Vtn5tKPLrNrpn3k8dy9Z1zlS/TF5bto1uTYuOKfREzV1LwA0Q68f8wkLEoSXmBxYX+HFOEqehHhNjCAwam7C7A==, tarball: file:libs/xllayoutcalcs-0.0.15.tgz}
+    version: 0.0.15
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -8056,6 +8064,8 @@ snapshots:
       when-exit: 2.1.5
 
   attr-accept@2.2.5: {}
+
+  audiofile@file:libs/audiofile-0.0.1.tgz: {}
 
   axios@1.13.5(debug@4.4.3):
     dependencies:
@@ -11417,7 +11427,7 @@ snapshots:
 
   ws@8.19.0: {}
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.13.tgz:
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.0.15.tgz:
     dependencies:
       gl-matrix: 3.4.4
 

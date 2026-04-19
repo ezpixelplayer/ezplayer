@@ -43,6 +43,22 @@ export interface FileSelectOptions {
     multi?: boolean;
 }
 
+export interface AutoDetectedSongFiles {
+    audioFile?: string;
+    imageFile?: string;
+    imageGeneratedFromAudio?: boolean;
+    detectedTitle?: string;
+    detectedArtist?: string;
+    durationSecs?: number;
+}
+
+export interface AudioTagMetadata {
+    title?: string;
+    artist?: string;
+    imageFile?: string;
+    imageGeneratedFromAudio?: boolean;
+}
+
 export interface NodeCoord {
     // For default / logical render buffer
     //  This ought to be a separate concern really...
@@ -172,6 +188,8 @@ export interface EZPElectronAPI {
     // FS Utilities
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
+    autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
+    extractAudioTagMetadata: (audioPath: string) => Promise<AudioTagMetadata>;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;
@@ -192,6 +210,12 @@ export interface EZPElectronAPI {
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
+    validateShowDirectory: (showDirectory?: string) => Promise<{
+        valid: boolean;
+        missingFiles: string[];
+        inaccessibleFiles: string[];
+        error?: string;
+    }>;
     getSequences: () => Promise<SequenceRecord[]>;
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
     getPlaylists: () => Promise<PlaylistRecord[]>;
