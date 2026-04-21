@@ -30,12 +30,19 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
+    autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),
+    extractAudioTagMetadata: (audioPath: string) => ipcRenderer.invoke('ipcExtractAudioTagMetadata', audioPath),
 
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) =>
         ipcRenderer.invoke('dialog:openDirectory', options),
 
     requestChooseShowFolder: async (): Promise<string> => {
         return await ipcRenderer.invoke('ipcUIChooseShowFolder');
+    },
+    validateShowDirectory: async (
+        showDirectory?: string,
+    ): Promise<{ valid: boolean; missingFiles: string[]; inaccessibleFiles: string[]; error?: string }> => {
+        return await ipcRenderer.invoke('ipcValidateShowDirectory', showDirectory);
     },
 
     openExternal: (url: string) => ipcRenderer.invoke('open-external-url', url),

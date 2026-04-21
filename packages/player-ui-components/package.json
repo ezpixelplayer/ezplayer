@@ -1,7 +1,7 @@
 {
     "name": "@ezplayer/player-ui-components",
     "private": true,
-    "version": "0.10.4",
+    "version": "0.11.0",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -73,7 +73,7 @@
         "uuid": "^11.0.5",
         "vis-data": "^8.0.1",
         "vis-timeline": "^8.2.1",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.12.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.15.tgz"
     },
     "peerDependencies": {
         "@ezplayer/ezplayer-core": "*",

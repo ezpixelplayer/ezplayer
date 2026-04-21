@@ -39,12 +39,14 @@ export type {
 } from './types/DataTypes';
 
 export type {
+    AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
     AutoUpdateStatus,
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,
+    AudioTagMetadata,
 } from './types/EZPElectronAPI';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
