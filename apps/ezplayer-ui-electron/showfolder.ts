@@ -99,8 +99,7 @@ function parseCliForShowFolder(argv: string[]): string | undefined {
     if (eq) return eq.split('=')[1];
     const i = argv.findIndex((a) => a === '--show-folder' || a === '--showFolder');
     if (i >= 0 && argv[i + 1]) return argv[i + 1];
-    const pos = argv.find((a) => !a.startsWith('-') && !a.includes('electron'));
-    return pos;
+    return undefined;
 }
 
 // Choose the show folder, suitable for initial run, does not lock
@@ -145,6 +144,18 @@ export function getCurrentShowFolder() {
     return currentShowFolder;
 }
 
+export async function hasConfiguredShowFolder(): Promise<boolean> {
+    const persisted = store.get('showFolder');
+    return await dirExists(persisted);
+}
+
+export async function hasValidConfiguredShowFolder(): Promise<boolean> {
+    const persisted = store.get('showFolder');
+    if (!(await dirExists(persisted))) return false;
+    const validation = await isValidShowDirectory(persisted);
+    return validation.valid;
+}
+
 export async function ensureExclusiveFolder(): Promise<string | null> {
     if (currentShowFolder) return currentShowFolder;
     let forcepick = false;
@@ -154,20 +165,11 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
 
         const validation = await isValidShowDirectory(showFolder);
         if (!validation.valid) {
-            const detail = [
-                validation.missingFiles.length ? `Missing: ${validation.missingFiles.join(', ')}` : '',
-                validation.inaccessibleFiles.length ? `Inaccessible: ${validation.inaccessibleFiles.join(', ')}` : '',
-            ].filter(Boolean).join('\n');
-            const { response } = await dialog.showMessageBox({
-                type: 'warning',
-                message: validation.error ?? 'Selected folder is not a valid show directory.',
-                detail: detail || undefined,
-                buttons: ['Pick another folder', 'Use anyway', 'Quit'],
-                cancelId: 2,
-                defaultId: 0,
-            });
-            if (response === 0) { forcepick = true; continue; }
-            if (response === 2) return null;
+            // Startup now uses a dedicated welcome flow for first-time users.
+            // If a persisted/CLI folder is invalid, immediately reprompt for another
+            // folder instead of showing a separate warning/quit dialog.
+            forcepick = true;
+            continue;
         }
 
         try {
@@ -200,24 +202,6 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
         if (!chosen) return currentShowFolder; // Gave up
         if (chosen && (await dirExists(chosen))) {
             store.set('showFolder', chosen!);
-        }
-
-        const validation = await isValidShowDirectory(chosen);
-        if (!validation.valid) {
-            const detail = [
-                validation.missingFiles.length ? `Missing: ${validation.missingFiles.join(', ')}` : '',
-                validation.inaccessibleFiles.length ? `Inaccessible: ${validation.inaccessibleFiles.join(', ')}` : '',
-            ].filter(Boolean).join('\n');
-            const { response } = await dialog.showMessageBox({
-                type: 'warning',
-                message: validation.error ?? 'Selected folder is not a valid show directory.',
-                detail: detail || undefined,
-                buttons: ['Pick another folder', 'Use anyway', 'Keep Current'],
-                cancelId: 2,
-                defaultId: 0,
-            });
-            if (response === 0) continue;
-            if (response === 2) return currentShowFolder;
         }
 
         if (chosen === currentShowFolder) {
