@@ -17,6 +17,8 @@ export const API_ENDPOINTS = {
     DOWNLOAD_CHECK_HTML: `enduser/downloadlatestcheckhtml`,
     DOWNLOAD_LAYOUT_OPTIONS: `enduser/downloadlatestoptionsjson`,
     DOWNLOAD_LAYOUT_HINTS: `enduser/downloadlatesthintsjson`,
+    DOWNLOAD_LATEST_NETWORKS: `enduser/downloadlatestnetworks`,
+    DOWNLOAD_LATEST_RGBEFF: `enduser/downloadlatestrgbeff`,
     START_UPLOAD_LAYOUT_HINTS: `enduser/startuploadhintsjson`,
     DONE_UPLOAD_LAYOUT_HINTS: `enduser/doneuploadhintsjson`,
 

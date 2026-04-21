@@ -124,6 +124,50 @@ export const getCloudMediaFileAPI = async (
     return response.data;
 };
 
+/**
+ * Fetch a presigned URL for the logged-in user's latest `xlights_networks.xml`.
+ * No file id — "latest" is implicit from the auth context, same shape as the other
+ * `downloadlatest*` endpoints.
+ */
+export const getCloudLatestNetworksAPI = async (
+    inst: AxiosInstance,
+    apiServerUrl: string,
+): Promise<CloudFileDownloadResponse> => {
+    const authToken = localStorage.getItem('auth_token');
+    const headers = {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+    };
+    const response = await apiPost<CloudFileDownloadResponse>(
+        inst,
+        `${apiServerUrl}${API_ENDPOINTS.DOWNLOAD_LATEST_NETWORKS}`,
+        {},
+        { headers },
+    );
+    return response.data;
+};
+
+/**
+ * Fetch a presigned URL for the logged-in user's latest `xlights_rgbeffects.xml`.
+ */
+export const getCloudLatestRgbeffAPI = async (
+    inst: AxiosInstance,
+    apiServerUrl: string,
+): Promise<CloudFileDownloadResponse> => {
+    const authToken = localStorage.getItem('auth_token');
+    const headers = {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+    };
+    const response = await apiPost<CloudFileDownloadResponse>(
+        inst,
+        `${apiServerUrl}${API_ENDPOINTS.DOWNLOAD_LATEST_RGBEFF}`,
+        {},
+        { headers },
+    );
+    return response.data;
+};
+
 export const getCloudXsqzFileAPI = async (
     inst: AxiosInstance,
     apiServerUrl: string,

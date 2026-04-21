@@ -8,6 +8,9 @@ import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import type { RootState } from '../../store/Store';
 
+/** Isolated from home sequence modal and default `previewSettings`; stores Preview dropdown + per-group camera/mode. */
+export const PREVIEW_3D_PAGE_STORAGE_KEY = 'previewSettings3DPreview';
+
 export interface Preview3DPageProps {
     title: string;
     statusArea: React.ReactNode[];
@@ -16,7 +19,6 @@ export interface Preview3DPageProps {
 
 export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea, compressed = false }) => {
     const theme = useTheme<ExtendedTheme>();
-
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
 
     const { url } = useFrameServerUrl();
@@ -70,8 +72,15 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea,
                         border: (theme) => `1px solid ${theme.palette.divider}`,
                     }}
                 >
-                    <Preview3D showList={true} showControls={true} frameServerUrl={url}
-                        liveData={liveData} />
+                    <Preview3D
+                        showList={true}
+                        showControls={true}
+                        frameServerUrl={url}
+                        liveData={liveData}
+                        compact={compressed}
+                        previewSettingsStorageKey={PREVIEW_3D_PAGE_STORAGE_KEY}
+                        defaultViewMode="3d"
+                    />
                 </Box>
             </Box>
         </Box>

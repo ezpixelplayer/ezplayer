@@ -208,6 +208,20 @@ export const getCloudXsqzFile = createAsyncThunk<CloudFileDownloadResponse, stri
     },
 );
 
+export const getCloudLatestNetworks = createAsyncThunk<CloudFileDownloadResponse, void, { extra: DataStorageAPI }>(
+    'homeStore/getCloudLatestNetworks',
+    async (_, { extra }) => {
+        return await extra.getCloudLatestNetworks();
+    },
+);
+
+export const getCloudLatestRgbeff = createAsyncThunk<CloudFileDownloadResponse, void, { extra: DataStorageAPI }>(
+    'homeStore/getCloudLatestRgbeff',
+    async (_, { extra }) => {
+        return await extra.getCloudLatestRgbeff();
+    },
+);
+
 export const getCloudPreviewVideo = createAsyncThunk<CloudFileDownloadResponse, string, { extra: DataStorageAPI }>(
     'homeStore/getCloudPreviewVideo',
     async (fileId, { extra }) => {

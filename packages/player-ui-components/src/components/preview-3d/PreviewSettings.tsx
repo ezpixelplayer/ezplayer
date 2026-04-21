@@ -156,6 +156,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
         <Popper
             open={open}
             anchorEl={popperAnchorEl}
+            disablePortal
             placement="bottom-start"
             style={{ zIndex: 1300 }}
             modifiers={[
