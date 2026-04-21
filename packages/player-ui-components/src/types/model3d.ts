@@ -1,6 +1,7 @@
 /**
  * Types for 3D model data structure
  */
+import type { LayoutGroupInfo, ViewpointsResult } from 'xllayoutcalcs';
 
 export interface ModelPointMetadata {
     modelName?: string;
@@ -35,6 +36,7 @@ export interface ModelMetadata {
      * 0 = fully opaque, 100 = fully transparent.
      */
     transparency?: number;
+    layoutGroup?: string;
     /**
      * 1-based channel of the model's first node (as resolved by xlLayoutCalcs
      * and actually sampled by the preview).
@@ -113,6 +115,9 @@ export interface LayoutSettings {
     backgroundBrightness?: number; // 0-100 brightness for the background image
     previewWidth?: number;      // Layout preview canvas width in pixels
     previewHeight?: number;     // Layout preview canvas height in pixels
+    layoutGroups?: LayoutGroupInfo[];
+    /** xLights saved camera viewpoints (from `<Viewpoints>` in xlights_rgbeffects.xml). */
+    viewpoints?: ViewpointsResult;
 }
 
 export interface SelectionState {

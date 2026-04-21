@@ -27,7 +27,8 @@
         "clean": "rimraf dist"
     },
     "dependencies": {
-        "uuid": "^11.0.5"
+        "uuid": "^11.0.5",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.16.tgz"
     },
     "devDependencies": {
         "tsup": "^8.1.0",

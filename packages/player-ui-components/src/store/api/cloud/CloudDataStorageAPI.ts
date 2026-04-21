@@ -60,6 +60,8 @@ import {
     getCloudSeqFileAPI,
     getCloudMediaFileAPI,
     getCloudXsqzFileAPI,
+    getCloudLatestNetworksAPI,
+    getCloudLatestRgbeffAPI,
     getCloudPreviewVideoAPI,
     postCloudZipUploadAPI,
     postCloudDoneUploadZipAPI,
@@ -339,6 +341,12 @@ export class CloudDataStorageAPI implements DataStorageAPI {
             fileId,
         );
         return response as CloudFileDownloadResponse;
+    }
+    async getCloudLatestNetworks(): Promise<CloudFileDownloadResponse> {
+        return await getCloudLatestNetworksAPI(this.axiosInstance, this.apiUrl);
+    }
+    async getCloudLatestRgbeff(): Promise<CloudFileDownloadResponse> {
+        return await getCloudLatestRgbeffAPI(this.axiosInstance, this.apiUrl);
     }
 
     async getCloudPreviewVideo(fileId: string): Promise<CloudFileDownloadResponse> {
