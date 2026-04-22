@@ -1,5 +1,18 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
-import { Button, Card, CardContent, Chip, CircularProgress, Grid, Typography, useTheme } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
+    Button,
+    Card,
+    CardContent,
+    Chip,
+    CircularProgress,
+    Grid,
+    Typography,
+    useTheme,
+} from '@mui/material';
 import { Box } from '../box/Box';
 import { format } from 'date-fns';
 import React, { useState, useEffect } from 'react';
@@ -17,7 +30,6 @@ import {
     getControllersSeverity,
     getControllerStats,
     severityToChipColor,
-    severityToLightColor,
     severityToMainColor,
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
@@ -40,52 +52,17 @@ const getControllerStatusLabel = (controllers?: ControllerStatus[]) => {
     return `${stat.offline} controller(s) offline`;
 };
 
-function severityToBoxSx(severity: ControllerStatusSeverity): SxProps<Theme> {
-    switch (severity) {
-        case 'error':
-            return {
-                border: '1px solid',
-                borderColor: 'error.main',
-                backgroundColor: 'error.light',
-                opacity: 0.9,
-            };
-        case 'warning':
-            return {
-                border: '1px solid',
-                borderColor: 'warning.main',
-                backgroundColor: 'warning.light',
-                opacity: 0.9,
-            };
-        case 'pending':
-            return {
-                border: '1px solid',
-                borderColor: 'info.main',
-                backgroundColor: 'info.light',
-                opacity: 0.9,
-            };
-        case 'success':
-            return {
-                border: '1px solid',
-                borderColor: 'success.main',
-                backgroundColor: 'success.light',
-                opacity: 0.8,
-            };
-        case 'disabled':
-            return {
-                border: '1px solid',
-                borderColor: 'grey.400',
-                backgroundColor: 'grey.100',
-                opacity: 0.6,
-            };
-        case 'neutral':
-        default:
-            return {
-                border: '1px solid',
-                borderColor: 'divider',
-                backgroundColor: 'background.paper',
-                opacity: 1,
-            };
-    }
+/** Section chrome only (no full-area background); status is conveyed by left accent + border. */
+function severityToSectionSurfaceSx(severity: ControllerStatusSeverity): SxProps<Theme> {
+    return {
+        border: '1px solid',
+        borderColor: 'divider',
+        borderLeftWidth: 4,
+        borderLeftStyle: 'solid',
+        borderLeftColor: severityToMainColor(severity),
+        bgcolor: 'transparent',
+        '&:before': { display: 'none' },
+    };
 }
 
 const formatTime = (timestamp?: number | string) => {
@@ -104,6 +81,8 @@ export interface ShowStatusScreenProps {
 export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) => {
     const theme = useTheme();
     const [statsDialogOpen, setStatsDialogOpen] = useState(false);
+    /** Per-controller accordion: omitted index defaults to expanded (matches prior “always open” behavior). */
+    const [controllerSectionExpanded, setControllerSectionExpanded] = useState<Record<number, boolean>>({});
     const [serverStatus, setServerStatus] = useState<{
         port: number;
         portSource: string;
@@ -354,182 +333,292 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
 
                                 {/* Individual Controller Details */}
                                 {controller.controllers && controller.controllers.length > 0 && (
-                                    <Box>
-                                        <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
-                                            Controller Details
-                                        </Typography>
-                                        {controller.controllers.map((ctrl, index) => (
-                                            <Box
-                                                key={index}
-                                                sx={{
-                                                    mb: 2,
-                                                    p: 2,
-                                                    border: '1px solid',
-                                                    borderRadius: 1,
-                                                    ...severityToBoxSx(getControllerSeverity(ctrl)),
-                                                }}
-                                            >
-                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mr: 1 }}>
-                                                        {ctrl.name || `Controller ${index + 1}`}
-                                                    </Typography>
-                                                    <Chip
-                                                        label={ctrl.status || 'unknown'}
-                                                        color={severityToChipColor(getControllerSeverity(ctrl))}
-                                                        variant={
-                                                            getControllerSeverity(ctrl) === 'disabled'
-                                                                ? 'outlined'
-                                                                : 'filled'
-                                                        }
-                                                        size="small"
-                                                    />
-                                                </Box>
-
-                                                <Grid container spacing={1}>
-                                                    {ctrl.description && (
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Description: {ctrl.description}
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.type && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">Type: {ctrl.type}</Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.model && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">Model: {ctrl.model}</Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.address && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">
-                                                                Address: {ctrl.address}
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.proto && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">
-                                                                Protocol: {ctrl.proto}
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.state && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">State: {ctrl.state}</Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.connectivity && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">
-                                                                Connectivity: {ctrl.connectivity}
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.pingSummary && (
-                                                        <Grid item xs={6}>
-                                                            <Typography variant="body2">
-                                                                Ping: {ctrl.pingSummary}
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.startCh !== undefined && ctrl.nCh !== undefined && ctrl.nCh > 0 && (
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2">
-                                                                Channels: {ctrl.startCh.toLocaleString()}–
-                                                                {(ctrl.startCh + ctrl.nCh - 1).toLocaleString()} (
-                                                                {ctrl.nCh.toLocaleString()})
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                    {ctrl.reported_time && (
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Last Reported: {formatTime(ctrl.reported_time)}
-                                                            </Typography>
-                                                        </Grid>
-                                                    )}
-                                                </Grid>
-
-                                                {/* Notices */}
-                                                {ctrl.notices && ctrl.notices.length > 0 && (
-                                                    <Box sx={{ mt: 1 }}>
-                                                        <Typography
-                                                            variant="body2"
-                                                            sx={{ fontWeight: 'bold', color: 'info.main' }}
-                                                        >
-                                                            Notices:
-                                                        </Typography>
-                                                        {ctrl.notices.map((notice, noticeIndex) => (
-                                                            <Typography
-                                                                key={noticeIndex}
-                                                                variant="caption"
-                                                                display="block"
-                                                                color="info.main"
-                                                            >
-                                                                • {notice}
-                                                            </Typography>
-                                                        ))}
-                                                    </Box>
-                                                )}
-
-                                                {/* Errors */}
-                                                {ctrl.errors && ctrl.errors.length > 0 && (
-                                                    <Box
-                                                        sx={{
-                                                            mt: 1,
-                                                            p: 1,
-                                                            bgcolor: severityToLightColor(getControllerSeverity(ctrl)),
-                                                            borderRadius: 1,
-                                                            border: '1px solid',
-                                                            borderColor: severityToMainColor(
-                                                                getControllerSeverity(ctrl),
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 1.5,
+                                            mt: 1,
+                                        }}
+                                    >
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                flexWrap: 'wrap',
+                                                gap: 1,
+                                                mb: 0.5,
+                                            }}
+                                        >
+                                            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                                                Controller Details
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() =>
+                                                        setControllerSectionExpanded(
+                                                            Object.fromEntries(
+                                                                (controller.controllers ?? []).map((_, idx) => [
+                                                                    idx,
+                                                                    true,
+                                                                ]),
                                                             ),
+                                                        )
+                                                    }
+                                                >
+                                                    Expand All
+                                                </Button>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() =>
+                                                        setControllerSectionExpanded(
+                                                            Object.fromEntries(
+                                                                (controller.controllers ?? []).map((_, idx) => [
+                                                                    idx,
+                                                                    false,
+                                                                ]),
+                                                            ),
+                                                        )
+                                                    }
+                                                >
+                                                    Collapse All
+                                                </Button>
+                                            </Box>
+                                        </Box>
+                                        {controller.controllers.map((ctrl, index) => {
+                                            const ctrlSeverity = getControllerSeverity(ctrl);
+                                            const sectionExpanded = controllerSectionExpanded[index] !== false;
+                                            return (
+                                                <Accordion
+                                                    key={index}
+                                                    expanded={sectionExpanded}
+                                                    onChange={(_, isExpanded) =>
+                                                        setControllerSectionExpanded((prev) => ({
+                                                            ...prev,
+                                                            [index]: isExpanded,
+                                                        }))
+                                                    }
+                                                    disableGutters
+                                                    elevation={0}
+                                                    sx={{
+                                                        borderRadius: 1,
+                                                        overflow: 'hidden',
+                                                        ...severityToSectionSurfaceSx(ctrlSeverity),
+                                                    }}
+                                                >
+                                                    <AccordionSummary
+                                                        expandIcon={<ExpandMoreIcon aria-hidden />}
+                                                        aria-controls={`controller-status-panel-${index}`}
+                                                        id={`controller-status-header-${index}`}
+                                                        sx={{
+                                                            px: 2,
+                                                            minHeight: 52,
+                                                            bgcolor: 'background.paper',
+                                                            color: 'text.primary',
+                                                            borderBottom: '1px solid',
+                                                            borderColor: 'divider',
+                                                            '&.Mui-expanded': { minHeight: 52 },
+                                                            '& .MuiAccordionSummary-expandIconWrapper': {
+                                                                color: 'text.primary',
+                                                            },
                                                         }}
                                                     >
-                                                        <Typography
-                                                            variant="body2"
+                                                        <Box
                                                             sx={{
-                                                                fontWeight: 'bold',
-                                                                color: severityToMainColor(getControllerSeverity(ctrl)),
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                flexWrap: 'wrap',
+                                                                gap: 1,
+                                                                py: 0.5,
+                                                                width: '100%',
+                                                                pr: 1,
                                                             }}
                                                         >
-                                                            Errors:
-                                                        </Typography>
-                                                        {ctrl.errors.map((error, errorIndex) => (
-                                                            <Typography
-                                                                key={errorIndex}
-                                                                variant="body2"
-                                                                display="block"
-                                                                color={severityToMainColor(getControllerSeverity(ctrl))}
-                                                                sx={{ fontWeight: 'medium' }}
-                                                            >
-                                                                • {error}
+                                                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                                                                {ctrl.name || `Controller ${index + 1}`}
                                                             </Typography>
-                                                        ))}
-                                                    </Box>
-                                                )}
+                                                            <Chip
+                                                                label={ctrl.status || 'unknown'}
+                                                                color={severityToChipColor(ctrlSeverity)}
+                                                                variant={
+                                                                    ctrlSeverity === 'disabled' ? 'outlined' : 'filled'
+                                                                }
+                                                                size="small"
+                                                            />
+                                                        </Box>
+                                                    </AccordionSummary>
+                                                    <AccordionDetails
+                                                        id={`controller-status-panel-${index}`}
+                                                        sx={{ px: 2, pt: 2, pb: 2 }}
+                                                    >
+                                                        <Grid container spacing={1}>
+                                                            {ctrl.description && (
+                                                                <Grid item xs={12}>
+                                                                    <Typography
+                                                                        variant="body2"
+                                                                        color="text.secondary"
+                                                                    >
+                                                                        Description: {ctrl.description}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.type && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        Type: {ctrl.type}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.model && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        Model: {ctrl.model}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.address && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        Address: {ctrl.address}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.proto && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        Protocol: {ctrl.proto}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.state && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        State: {ctrl.state}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.connectivity && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        Connectivity: {ctrl.connectivity}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.pingSummary && (
+                                                                <Grid item xs={6}>
+                                                                    <Typography variant="body2">
+                                                                        Ping: {ctrl.pingSummary}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                            {ctrl.startCh !== undefined &&
+                                                                ctrl.nCh !== undefined &&
+                                                                ctrl.nCh > 0 && (
+                                                                    <Grid item xs={12}>
+                                                                        <Typography variant="body2">
+                                                                            Channels: {ctrl.startCh.toLocaleString()}–
+                                                                            {(ctrl.startCh + ctrl.nCh - 1).toLocaleString()}{' '}
+                                                                            ({ctrl.nCh.toLocaleString()})
+                                                                        </Typography>
+                                                                    </Grid>
+                                                                )}
+                                                            {ctrl.reported_time && (
+                                                                <Grid item xs={12}>
+                                                                    <Typography
+                                                                        variant="body2"
+                                                                        color="text.secondary"
+                                                                    >
+                                                                        Last Reported: {formatTime(ctrl.reported_time)}
+                                                                    </Typography>
+                                                                </Grid>
+                                                            )}
+                                                        </Grid>
 
-                                                {/* Protocol Details */}
-                                                {ctrl.protoDetails && (
-                                                    <Box sx={{ mt: 1 }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                                                            Protocol Details:
-                                                        </Typography>
-                                                        <Typography
-                                                            variant="caption"
-                                                            display="block"
-                                                            color="text.secondary"
-                                                        >
-                                                            {ctrl.protoDetails}
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-                                            </Box>
-                                        ))}
+                                                        {/* Notices */}
+                                                        {ctrl.notices && ctrl.notices.length > 0 && (
+                                                            <Box sx={{ mt: 1 }}>
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    sx={{ fontWeight: 'bold' }}
+                                                                    color="text.primary"
+                                                                >
+                                                                    Notices:
+                                                                </Typography>
+                                                                {ctrl.notices.map((notice, noticeIndex) => (
+                                                                    <Typography
+                                                                        key={noticeIndex}
+                                                                        variant="body2"
+                                                                        display="block"
+                                                                        color="text.secondary"
+                                                                        sx={{ pl: 0.5 }}
+                                                                    >
+                                                                        • {notice}
+                                                                    </Typography>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+
+                                                        {/* Errors */}
+                                                        {ctrl.errors && ctrl.errors.length > 0 && (
+                                                            <Box
+                                                                sx={{
+                                                                    mt: 1,
+                                                                    p: 1.5,
+                                                                    borderRadius: 1,
+                                                                    border: '1px solid',
+                                                                    borderColor: 'divider',
+                                                                    borderLeftWidth: 4,
+                                                                    borderLeftStyle: 'solid',
+                                                                    borderLeftColor: severityToMainColor(ctrlSeverity),
+                                                                }}
+                                                            >
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    sx={{
+                                                                        fontWeight: 'bold',
+                                                                    }}
+                                                                    color="text.primary"
+                                                                >
+                                                                    Errors:
+                                                                </Typography>
+                                                                {ctrl.errors.map((error, errorIndex) => (
+                                                                    <Typography
+                                                                        key={errorIndex}
+                                                                        variant="body2"
+                                                                        display="block"
+                                                                        color="text.primary"
+                                                                        sx={{ fontWeight: 'medium', pl: 0.5 }}
+                                                                    >
+                                                                        • {error}
+                                                                    </Typography>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+
+                                                        {/* Protocol Details */}
+                                                        {ctrl.protoDetails && (
+                                                            <Box sx={{ mt: 1 }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                                                    Protocol Details:
+                                                                </Typography>
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    display="block"
+                                                                    color="text.secondary"
+                                                                    sx={{ mt: 0.5 }}
+                                                                >
+                                                                    {ctrl.protoDetails}
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                    </AccordionDetails>
+                                                </Accordion>
+                                            );
+                                        })}
                                     </Box>
                                 )}
                             </CardContent>
