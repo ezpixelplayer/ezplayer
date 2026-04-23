@@ -1,6 +1,6 @@
 {
     "name": "@ezplayer/epp",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "EZPlayer EPP Core (pixel / controller data layer)",
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
