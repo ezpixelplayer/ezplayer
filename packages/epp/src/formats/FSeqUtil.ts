@@ -788,29 +788,39 @@ export class FSEQReaderAsync {
     }
 }
 
-export function dumpFSEQHeader(hdr: FSEQHeader) {
-    console.log(
-        `Frames: ${hdr.frames} x ${hdr.msperframe}ms = ${hdr.frames * hdr.msperframe}ms; ${hdr.channels} channels`,
+export function summarizeFSEQHeader(hdr: FSEQHeader): string {
+    const comp = hdr.compression === 0 ? 'none' : hdr.compression === 1 ? 'zstd' : hdr.compression === 2 ? 'zlib' : `unknown(${hdr.compression})`;
+    return (
+        `v${hdr.majver}.${hdr.minver} ${hdr.hdr4}; ` +
+        `channels=${hdr.channels} stepsize=${hdr.stepsize} ` +
+        `frames=${hdr.frames} msperframe=${hdr.msperframe} ` +
+        `comp=${comp} blocks=${hdr.compblks} sparseranges=${hdr.nsparseranges} ` +
+        `chdata_offset=${hdr.chdata_offset}`
     );
-    console.log(`Channels: ${hdr.channels}`);
-    console.log(`Header: ${hdr.chdata_offset} bytes; v${hdr.majver}.${hdr.minver}`);
-    console.log();
-    console.log('Extras:');
+}
+
+export function formatFSEQHeader(hdr: FSEQHeader): string {
+    const lines: string[] = [];
+    lines.push(summarizeFSEQHeader(hdr));
+    if (hdr.channels !== hdr.stepsize) {
+        lines.push(`  NOTE: stepsize (${hdr.stepsize}) != channels (${hdr.channels}) — frame data padded by ${hdr.stepsize - hdr.channels} byte(s)`);
+    }
     for (const k of Object.keys(hdr.headers)) {
-        console.log(`  ${k}=${hdr.headers[k]}`);
+        lines.push(`  extra[${k}]=${hdr.headers[k]}`);
     }
-    console.log();
-    console.log(`Chunks: ${hdr.compblks}`);
-    let acc: number = 0,
-        i = 0;
-    for (const chunk of hdr.compblocklist) {
-        console.log(`  #${i} -> ${chunk.framenum}:${chunk.blocksize}@${acc}`);
+    let acc: number = 0;
+    for (let i = 0; i < hdr.compblocklist.length; ++i) {
+        const chunk = hdr.compblocklist[i];
+        lines.push(`  block#${i} startFrame=${chunk.framenum} compSize=${chunk.blocksize} fileOff=${acc}`);
         acc += chunk.blocksize;
-        ++i;
     }
-    console.log();
-    console.log(`Ranges (if sparse): ${hdr.nsparseranges}`);
-    for (const range of hdr.chranges) {
-        console.log(`  ${range.startch}: ${range.chcount}`);
+    for (let i = 0; i < hdr.chranges.length; ++i) {
+        const r = hdr.chranges[i];
+        lines.push(`  range#${i} startch=${r.startch} chcount=${r.chcount}`);
     }
+    return lines.join('\n');
+}
+
+export function dumpFSEQHeader(hdr: FSEQHeader) {
+    console.log(formatFSEQHeader(hdr));
 }

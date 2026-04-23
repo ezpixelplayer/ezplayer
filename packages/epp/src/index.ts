@@ -14,7 +14,15 @@ export { busySleep, lpBusySleep } from './util/Utils';
 
 export { getFileSize, readFileRange, readHandleRange, readJsonFile, loadXmlFile } from './util/FileUtil';
 
-export { CompBlockCache, FSEQHeader, FSEQReaderAsync, FSEQReaderSync } from './formats/FSeqUtil';
+export {
+    CompBlockCache,
+    FSEQHeader,
+    FSEQReaderAsync,
+    FSEQReaderSync,
+    dumpFSEQHeader,
+    formatFSEQHeader,
+    summarizeFSEQHeader,
+} from './formats/FSeqUtil';
 
 export { ControllerRec, ModelRec, readControllersAndModels } from './xlcompat/XLXmlUtil';
 
