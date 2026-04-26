@@ -18,7 +18,8 @@
         "files": [
             "dist/**/*",
             "package.json",
-            "build/Release/*.node"
+            "build/Release/*.node",
+            "node_modules/@ezplayer/icmp-ping/build/Release/*.node"
         ],
         "extraResources": [
             {
@@ -106,6 +107,7 @@
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
+        "@ezplayer/icmp-ping": "workspace:*",
         "@ezplayer/player-ui-components": "workspace:*",
         "@ezplayer/shared-ui-components": "workspace:*",
         "@ezplayer/ui-embedded": "workspace:*",
