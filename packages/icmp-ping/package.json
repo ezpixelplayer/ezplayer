@@ -4,14 +4,12 @@
     "version": "0.1.0",
     "description": "Async ICMP ping via native addon (Windows IcmpSendEcho2 / POSIX SOCK_DGRAM).",
     "type": "module",
-    "main": "./dist/index.cjs",
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js",
-            "require": "./dist/index.cjs",
             "default": "./dist/index.js"
         },
         "./package.json": "./package.json"
@@ -24,7 +22,7 @@
     ],
     "scripts": {
         "install": "node-gyp rebuild",
-        "build": "tsup src/index.ts --dts --format cjs,esm --out-dir dist",
+        "build": "tsup src/index.ts --dts --format esm --out-dir dist",
         "rebuild": "node-gyp rebuild",
         "clean": "rimraf dist build"
     },
