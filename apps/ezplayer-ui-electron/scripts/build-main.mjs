@@ -48,6 +48,11 @@ const nodeExternals = [
     'mpg123-decoder-ezp',
     'bindings',
     'node-gyp',
+    // @ezplayer/icmp-ping wraps a native addon loaded via bindings(). It
+    // MUST stay external so the call site's __dirname is the package's
+    // own dist/ at runtime — otherwise bindings walks up from the bundled
+    // location and can't find the .node file.
+    '@ezplayer/icmp-ping',
     'koa',
     '@koa/bodyparser',
     '@koa/router',

@@ -1,6 +1,6 @@
 {
     "name": "@ezplayer/epp",
-    "version": "0.0.23",
+    "version": "0.1.0",
     "description": "EZPlayer EPP Core (pixel / controller data layer)",
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
@@ -26,7 +26,8 @@
     "author": "",
     "license": "AGPL-3.0-only",
     "dependencies": {
-        "@xmldom/xmldom": "^0.8.10",
+        "@xmldom/xmldom": "^0.8.13",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.16.tgz",
         "zstddec": "^0.1.0"
     },
     "devDependencies": {

@@ -1542,7 +1542,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Box>
                     </Card>
 
-                    {/* Show Directory Group */}
+                    {/* Show Folder Group */}
                     {isElectron() && (
                         <Card
                             sx={{
@@ -1555,7 +1555,7 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                             }}
                         >
                             <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
-                                Show Directory
+                                Show Folder
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                 <Button

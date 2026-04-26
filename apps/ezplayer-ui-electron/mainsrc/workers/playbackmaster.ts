@@ -53,7 +53,15 @@ import {
     getNumAttrDef,
 } from '@ezplayer/epp';
 
-import { getAllModelCoordinates, getAllMovingHeads, GetNodeResult, type MhFixtureInfo } from 'xllayoutcalcs';
+import {
+    getAllLayoutGroups,
+    getAllModelCoordinates,
+    getAllMovingHeads,
+    getAllViewpoints,
+    GetNodeResult,
+    type MhFixtureInfo,
+    migrateToFormat,
+} from 'xllayoutcalcs';
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -295,6 +303,8 @@ function sendControllerStateUpdate() {
             connectivity,
             pingSummary: pss,
             reported_time: stats.latestUpdate,
+            startCh: c.setup.startCh,
+            nCh: c.setup.nCh,
         });
     }
     send({ type: 'nstatus', status: cstatus });
@@ -859,6 +869,7 @@ async function loadXmlCoordinates() {
     let xnet;
     try {
         xrgb = await loadXmlFile(xmlPath);
+        migrateToFormat(xrgb, 'x2026_2');
         xnet = await loadXmlFile(netPath);
     } catch (err) {
         emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
@@ -869,6 +880,7 @@ async function loadXmlCoordinates() {
     modelCoordinates = new Map<string, GetNodeResult>();
     modelCoordinates2D = new Map<string, GetNodeResult>();
     movingHeads = [];
+    layoutSettings = {};
 
     if (xrgb && xnet) {
         const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
@@ -1052,7 +1064,6 @@ async function loadXmlCoordinates() {
             // Parse layout <settings> element (backgroundImage, previewWidth, etc.)
             try {
                 const xsettings = getElementByTag(xrgb.documentElement, 'settings');
-                layoutSettings = {};
 
                 if (xsettings) {
                     for (let is = 0; is < xsettings.childNodes.length; ++is) {
@@ -1090,6 +1101,51 @@ async function loadXmlCoordinates() {
                 }
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing settings element: ${parseErr}`);
+            }
+
+            // Layout groups — xllayoutcalcs parses the <layoutGroups> section; we resolve
+            // show-folder-relative backgroundImage paths here since that part is Electron-side.
+            try {
+                const parsedGroups = getAllLayoutGroups(xrgb);
+                if (parsedGroups.length > 0) {
+                    layoutSettings.layoutGroups = parsedGroups.map((g) => ({
+                        name: g.name,
+                        backgroundImage: g.backgroundImage
+                            ? resolveFilePathFromIndex(g.backgroundImage, resolvedShow, fileIndex) || undefined
+                            : undefined,
+                        posX: g.posX,
+                        posY: g.posY,
+                        paneWidth: g.paneWidth,
+                        paneHeight: g.paneHeight,
+                        backgroundBrightness: g.backgroundBrightness,
+                        backgroundAlpha: g.backgroundAlpha,
+                    }));
+
+                    const names = parsedGroups.slice(0, 8).map((g) => g.name).join(', ');
+                    emitInfo(
+                        `[loadXmlCoordinates] layoutGroups parsed: ${parsedGroups.length}` +
+                            (names ? `; groups=[${names}]` : ''),
+                    );
+                } else {
+                    emitWarning('[loadXmlCoordinates] No <layoutGroups> section found in xlights_rgbeffects.xml');
+                }
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing layoutGroups element: ${parseErr}`);
+            }
+
+            // Named viewpoints (saved 3D camera poses) — surfaced for the Preview3D viewpoint chooser.
+            try {
+                const vpResult = getAllViewpoints(xrgb);
+                if (vpResult.viewpoints.length > 0 || vpResult.default2D || vpResult.default3D) {
+                    layoutSettings.viewpoints = vpResult;
+                    emitInfo(
+                        `[loadXmlCoordinates] viewpoints parsed: ${vpResult.viewpoints.length}` +
+                            (vpResult.default3D ? '; has default3D' : '') +
+                            (vpResult.default2D ? '; has default2D' : ''),
+                    );
+                }
+            } catch (parseErr) {
+                emitError(`[loadXmlCoordinates] Error parsing Viewpoints element: ${parseErr}`);
             }
         }
     }

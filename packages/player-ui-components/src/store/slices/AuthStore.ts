@@ -36,7 +36,7 @@ export interface AuthState {
     loading: boolean;
     error?: string;
 
-    // Show directory path selected in the electron app
+    // Show folder path selected in the electron app
     showDirectory?: string;
 
     // TODO CRAZ is this redundant with end user slice?

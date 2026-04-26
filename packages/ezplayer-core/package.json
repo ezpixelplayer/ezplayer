@@ -1,7 +1,7 @@
 {
     "name": "@ezplayer/ezplayer-core",
     "private": true,
-    "version": "0.0.10",
+    "version": "0.1.0",
     "sideEffects": false,
     "files": [
         "dist"
@@ -27,7 +27,8 @@
         "clean": "rimraf dist"
     },
     "dependencies": {
-        "uuid": "^11.0.5"
+        "uuid": "^14.0.0",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.16.tgz"
     },
     "devDependencies": {
         "tsup": "^8.1.0",

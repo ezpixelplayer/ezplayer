@@ -43,6 +43,8 @@ export interface Viewer3DProps {
     onAutoFitComplete?: () => void; // Callback when auto-fit completes
     cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
     onGetCurrentCameraState?: (getter: () => CameraState3D | null) => void; // Callback to register a function that gets current camera state
+    /** When true, omit fixed minHeight so the canvas fills a flex parent (e.g. dialog). */
+    fillContainer?: boolean;
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -1232,6 +1234,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     onAutoFitComplete,
     cameraStateLoaded = true,
     onGetCurrentCameraState,
+    fillContainer = false,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -1266,7 +1269,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 sx={{
                     width: '100%',
                     height: '100%',
-                    minHeight: 600,
+                    minHeight: fillContainer ? 0 : 600,
                     position: 'relative',
                     backgroundColor: '#191919',
                     display: 'flex',
@@ -1293,7 +1296,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
             sx={{
                 width: '100%',
                 height: '100%',
-                minHeight: 600,
+                minHeight: fillContainer ? 0 : 600,
                 position: 'relative',
                 backgroundColor: '#191919',
             }}

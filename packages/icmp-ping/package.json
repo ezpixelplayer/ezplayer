@@ -1,0 +1,39 @@
+{
+    "name": "@ezplayer/icmp-ping",
+    "private": true,
+    "version": "0.1.0",
+    "description": "Async ICMP ping via native addon (Windows IcmpSendEcho2 / POSIX SOCK_DGRAM).",
+    "type": "module",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist",
+        "src/addon.cpp",
+        "binding.gyp",
+        "build/Release/*.node"
+    ],
+    "scripts": {
+        "install": "node-gyp rebuild",
+        "build": "tsup src/index.ts --dts --format esm --out-dir dist",
+        "rebuild": "node-gyp rebuild",
+        "clean": "rimraf dist build"
+    },
+    "dependencies": {
+        "bindings": "^1.5.0",
+        "node-addon-api": "^7.1.1"
+    },
+    "devDependencies": {
+        "node-gyp": "^10.3.1",
+        "rimraf": "^6.0.1",
+        "tsup": "^8.5.1",
+        "typescript": "^5.7.3"
+    }
+}
