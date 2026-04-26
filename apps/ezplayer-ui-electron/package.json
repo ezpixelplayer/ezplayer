@@ -19,10 +19,8 @@
             "dist/**/*",
             "package.json",
             "build/Release/*.node",
-            "node_modules/@ezplayer/icmp-ping/**/*"
-        ],
-        "asarUnpack": [
-            "build/Release/*.node",
+            "node_modules/@ezplayer/icmp-ping/dist/**/*",
+            "node_modules/@ezplayer/icmp-ping/package.json",
             "node_modules/@ezplayer/icmp-ping/build/Release/*.node"
         ],
         "extraResources": [
