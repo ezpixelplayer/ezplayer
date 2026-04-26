@@ -73,6 +73,8 @@ export type AutoUpdateStatus =
     | { state: 'error'; message: string };
 
 export interface EZPElectronAPI {
+    shouldShowWelcomeOnLaunch: () => boolean;
+
     // FS Utilities
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;

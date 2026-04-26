@@ -267,7 +267,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, [layoutGroupOptions, layoutSettings.layoutGroups]);
 
-    // Get show directory from Redux store to detect changes
+    // Get show folder from Redux store to detect changes
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
 
     // Load preview settings and camera state from localStorage on mount
