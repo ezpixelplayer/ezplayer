@@ -86,7 +86,7 @@ const routes: RouteObject[] = [
             },
             {
                 path: ROUTES.PLAYBACKSETTINGS,
-                element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
+                element: <PlaybackSettingsDrawer title="Settings" statusArea={getStatusArea()} />,
             },
             {
                 path: ROUTES.PREVIEW_3D,

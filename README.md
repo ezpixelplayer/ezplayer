@@ -57,7 +57,7 @@ Just download the installer or portable build and run it.
 
 ### Running EZPlayer
 
-When you first run EZPlayer, you will choose your show directory. This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Playback Settings" screen.
+When you first run EZPlayer, you will choose your show folder. This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
 
 The player opens to the "Player" screen, but there will not be much here yet. So, navigate between screens using the sidebar menu. (If no sidebar is visible, click the 3 bars in the upper right.)
 

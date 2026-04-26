@@ -129,7 +129,7 @@ export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hi
                                   pathname: ROUTES.PLAYBACKSETTINGS,
                                   subpathname: '',
                                   icon: <DisplaySettingsIcon />,
-                                  submenuname: 'Playback Settings',
+                                  submenuname: 'Settings',
                               },
                           ]),
                 ]}

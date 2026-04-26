@@ -28,7 +28,11 @@ export interface M2RIPC<Payload> {
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+const launchArgs: string[] = Array.isArray(process.argv) ? process.argv : [];
+const shouldShowWelcomeOnLaunch = launchArgs.includes('--show-welcome=true');
+
 contextBridge.exposeInMainWorld('electronAPI', {
+    shouldShowWelcomeOnLaunch: () => shouldShowWelcomeOnLaunch,
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
     autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),
     extractAudioTagMetadata: (audioPath: string) => ipcRenderer.invoke('ipcExtractAudioTagMetadata', audioPath),

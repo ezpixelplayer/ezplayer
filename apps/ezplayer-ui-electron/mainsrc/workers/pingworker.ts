@@ -1,4 +1,4 @@
-import { ping, shutdown } from '../icmp-ping/icmpping';
+import { ping, shutdown } from '@ezplayer/icmp-ping';
 import { parentPort } from 'node:worker_threads';
 
 if (!parentPort) {
