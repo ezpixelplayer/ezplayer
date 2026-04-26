@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
-import { closeShowFolder, ensureExclusiveFolder } from './showfolder.js';
+import { closeShowFolder, ensureExclusiveFolder, hasValidConfiguredShowFolder } from './showfolder.js';
 import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
@@ -84,7 +84,7 @@ const __dirname = path.dirname(__filename);
 
 Menu.setApplicationMenu(null);
 
-const createWindow = (showFolder: string) => {
+const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     let iconFile = 'EZPlayerLogoTransparent.png';
     if (process.platform === 'win32') {
         iconFile = 'EZPlayerLogoTransparent.ico';
@@ -140,7 +140,10 @@ const createWindow = (showFolder: string) => {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             webSecurity: false,
-            additionalArguments: [`--show-folder=${showFolder}`].filter(Boolean),
+            additionalArguments: [
+                showFolder ? `--show-folder=${showFolder}` : undefined,
+                `--show-welcome=${showWelcomeOnLaunch ? 'true' : 'false'}`,
+            ].filter(Boolean) as string[],
             // enableWebGL: true,
             offscreen: false,
         },
@@ -244,11 +247,15 @@ app.whenReady().then(async () => {
         return;
     }
 
-    // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
-    const showFolderSpec = await ensureExclusiveFolder();
-    if (!showFolderSpec) {
-        app.quit();
-        return;
+    const shouldShowWelcome = !(await hasValidConfiguredShowFolder());
+    let showFolderSpec: string | null = null;
+    if (!shouldShowWelcome) {
+        // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
+        showFolderSpec = await ensureExclusiveFolder();
+        if (!showFolderSpec) {
+            app.quit();
+            return;
+        }
     }
 
     const portInfo = getWebPort();
@@ -276,7 +283,7 @@ app.whenReady().then(async () => {
     });
 
     registerFileListHandlers();
-    createWindow(showFolderSpec);
+    createWindow(showFolderSpec ?? undefined, shouldShowWelcome);
 
     await registerContentHandlers(mainWindow, audioWindow, playWorker);
 

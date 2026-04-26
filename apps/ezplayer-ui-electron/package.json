@@ -22,7 +22,10 @@
         "files": [
             "dist/**/*",
             "package.json",
-            "build/Release/*.node"
+            "build/Release/*.node",
+            "node_modules/@ezplayer/icmp-ping/dist/**/*",
+            "node_modules/@ezplayer/icmp-ping/package.json",
+            "node_modules/@ezplayer/icmp-ping/build/Release/*.node"
         ],
         "extraResources": [
             {
@@ -112,13 +115,14 @@
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
+        "@ezplayer/icmp-ping": "workspace:*",
         "@ezplayer/player-ui-components": "workspace:*",
         "@ezplayer/shared-ui-components": "workspace:*",
         "@ezplayer/ui-embedded": "workspace:*",
         "@floating-ui/core": "^1.7.4",
         "@floating-ui/react": "^0.27.17",
         "@koa/bodyparser": "^6.1.0",
-        "@koa/router": "^15.3.0",
+        "@koa/router": "^15.4.0",
         "@koa/send": "^6.0.0",
         "@mui/icons-material": "^5.18.0",
         "@mui/material": "^5.18.0",
@@ -126,14 +130,14 @@
         "@mui/x-date-pickers": "5.0.0",
         "@reduxjs/toolkit": "^2.11.2",
         "@types/ws": "^8.18.1",
-        "axios": "^1.13.4",
+        "axios": "^1.15.2",
         "bindings": "^1.5.0",
         "crc-32": "^1.2.2",
         "debug": "^4.4.3",
         "electron-store": "^10.1.0",
         "electron-updater": "^6.3.9",
         "i18next": "^23.16.8",
-        "koa": "^3.1.1",
+        "koa": "^3.2.0",
         "koa-static": "^5.0.0",
         "mpg123-decoder-ezp": "file:..\\..\\libs\\mpg123-decoder-ezp-1.0.4.tgz",
         "audiofile": "file:..\\..\\libs\\audiofile-0.0.1.tgz",
@@ -149,9 +153,9 @@
         "react-router": "^6.30.3",
         "react-router-dom": "^6.30.3",
         "react-toastify": "^10.0.6",
-        "uuid": "^11.1.0",
+        "uuid": "^14.0.0",
         "ws": "^8.19.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.15.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.16.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.1.0"
     }

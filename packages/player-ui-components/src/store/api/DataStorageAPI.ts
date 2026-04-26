@@ -154,6 +154,11 @@ export interface DataStorageAPI {
     getCloudXsqzFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
     getCloudPreviewVideo: (fileId: string) => Promise<CloudFileDownloadResponse>;
 
+    /** Presigned URL for the logged-in user's latest `xlights_networks.xml`. */
+    getCloudLatestNetworks: () => Promise<CloudFileDownloadResponse>;
+    /** Presigned URL for the logged-in user's latest `xlights_rgbeffects.xml`. */
+    getCloudLatestRgbeff: () => Promise<CloudFileDownloadResponse>;
+
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 

@@ -9,10 +9,18 @@ import {
     Paper,
     Divider,
     Typography,
+    FormControl,
+    Select,
+    MenuItem,
+    InputLabel,
+    Menu,
+    ListSubheader,
 } from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material/Select';
 import { useSelector } from 'react-redux';
 import { Box } from '../box/Box';
 import View3DIcon from '@mui/icons-material/ViewInAr';
+import VideocamIcon from '@mui/icons-material/Videocam';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
 import ListIcon from '@mui/icons-material/List';
 import CloseIcon from '@mui/icons-material/Close';
@@ -23,44 +31,119 @@ import { Viewer2D, type CameraState2D } from './Viewer2D';
 import { ModelList } from './ModelList';
 import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
-import type { MhFixtureInfo } from 'xllayoutcalcs';
-import { EZPElectronAPI, GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import { useFrameBuffer } from '../../hooks/useFrameBuffer';
+import type {
+    Model3DData,
+    ModelMetadata,
+    SelectionState,
+    ViewObject,
+    LayoutSettings,
+} from '../../types/model3d';
+import type { LayoutGroupInfo, MhFixtureInfo, ViewpointInfo } from 'xllayoutcalcs';
+import { viewpointToCameraState } from './viewpointCamera';
+import { GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import { useAudioStream } from '../../hooks/useAudioStream';
 import { isElectron } from '@ezplayer/shared-ui-components';
 import type { RootState } from '../../store/Store';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
+type PreviewSelectionValue = 'default' | 'all' | `group:${string}`;
+type SelectionViewState = {
+    mode: ViewMode;
+    cameraState2D: CameraState2D | null;
+    cameraState3D: CameraState3D | null;
+};
+
+interface PreviewSelectionOption {
+    value: PreviewSelectionValue;
+    label: string;
+    groupName?: string;
+}
+
+/**
+ * Restrict a Model3DData to the models whose metadata reports `layoutGroup === groupName`.
+ * When `groupName` is null, returns the input unchanged.
+ */
+function filterModelDataByLayoutGroup(data: Model3DData | null, groupName: string | null): Model3DData | null {
+    if (!data || !groupName) return data;
+    const groupModels = new Set<string>(
+        (data.metadata?.models ?? [])
+            .filter((m) => m.layoutGroup === groupName)
+            .map((m) => m.name),
+    );
+    const filteredPoints = data.points.filter((p) => {
+        const name = p.metadata?.modelName;
+        return Boolean(name && groupModels.has(name));
+    });
+    const filteredModels = (data.metadata?.models ?? []).filter((m) => groupModels.has(m.name));
+    return {
+        ...data,
+        points: filteredPoints,
+        metadata: data.metadata
+            ? { ...data.metadata, totalModels: filteredModels.length, models: filteredModels }
+            : data.metadata,
+    };
+}
 
 export interface Preview3DProps {
     modelData?: Model3DData;
+    /** Optional 2D-projected layout from the caller (e.g. browser XSQZ); used by the 2D viewer when set. */
+    modelData2D?: Model3DData;
+    /** Optional layout settings from caller (e.g. browser XSQZ parsing path). */
+    layoutSettings?: LayoutSettings;
     showList?: boolean;
     initialShowList?: boolean;
     showControls?: boolean;
     defaultViewMode?: ViewMode;
     pointSize?: number; // TODO This will come from models individually
-    frameServerUrl?: string; // URL for frame data server, e.g., "http://localhost:3000"
-    compressed?: boolean; // Use ZSTD-compressed frame endpoint for lower bandwidth
+    frameServerUrl?: string; // URL for the frame/model server, e.g., "http://localhost:3000"
+    /** Live frame ring buffer produced by the caller (e.g. useFrameBuffer or useBrowserPlayback). */
+    liveData?: LatestFrameRingBuffer;
+    /**
+     * localStorage key for preview settings (sliders, camera, view mode).
+     * Default `previewSettings`. Use a distinct key for an isolated preview so it does not share state with the live player preview.
+     */
+    previewSettingsStorageKey?: string;
+    /**
+     * `'standalone'` (default) — live-player preview page. Click-to-select, audio mute toggle,
+     * and the layout name label are all shown.
+     *
+     * `'embedded'` — hosted inside a dialog / card with its own shell. Disables click-to-select,
+     * hides the audio toggle (audio is the caller's responsibility), and hides the layout label
+     * to avoid redundancy with the caller's own title/chrome.
+     */
+    mode?: 'standalone' | 'embedded';
+    /** When true, viewers use minHeight 0 so the preview fills a flex/dialog container instead of forcing 600px. */
+    compact?: boolean;
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
     modelData: initialModelData,
+    modelData2D: initialModelData2D,
+    layoutSettings: initialLayoutSettings,
     showList = false,
     initialShowList = false,
     showControls = true,
     defaultViewMode = '3d',
     pointSize = 3.0,
     frameServerUrl,
-    compressed = false,
+    liveData,
+    previewSettingsStorageKey = 'previewSettings',
+    mode = 'standalone',
+    compact = false,
 }) => {
     const theme = useTheme();
+    const embedded = mode === 'embedded';
+    const disableModelSelection = embedded;
+    const hideAudioControls = embedded;
+    const showLayoutLabel = !embedded;
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
     const [showItemList, setShowItemList] = useState(showList && initialShowList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
-    const [livePixels, setLivePixels] = useState<LatestFrameRingBuffer | undefined>(undefined);
+    // Lazy init from the prop so the first render already has live data when available.
+    // `liveData` is used directly — no local state mirror needed.
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [viewObjects, setViewObjects] = useState<ViewObject[]>([]);
@@ -85,13 +168,24 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // updated on mode switches to preserve position when toggling 3D↔2D).
     const [cameraState2D, setCameraState2D] = useState<CameraState2D | null>(null);
     const [cameraState3D, setCameraState3D] = useState<CameraState3D | null>(null);
+    const [previewSelection, setPreviewSelection] = useState<PreviewSelectionValue>('default');
     const [shouldAutoFit, setShouldAutoFit] = useState(false);
     const [cameraStateLoaded, setCameraStateLoaded] = useState(false);
+    const [viewStateBySelection, setViewStateBySelection] = useState<Record<string, SelectionViewState>>({});
+    const [viewpointMenuAnchor, setViewpointMenuAnchor] = useState<null | HTMLElement>(null);
 
     // Refs to store getter functions registered by the viewers — called on
     // "Ok" click and mode switch to read the exact current camera state.
     const getCurrentCameraState2DRef = React.useRef<(() => CameraState2D | null) | null>(null);
     const getCurrentCameraState3DRef = React.useRef<(() => CameraState3D | null) | null>(null);
+
+    // Set on mount when localStorage has a saved group selection; applied once layoutGroups arrive.
+    // Used to avoid race conditions where the invalid-selection reset effect clobbers the saved value
+    // before layoutSettings has been fetched.
+    const pendingRestoreRef = React.useRef<{
+        selection: PreviewSelectionValue;
+        viewState: SelectionViewState | undefined;
+    } | null>(null);
 
     // Stable callbacks for registering getter functions from viewers
     const handleGetCurrentCameraState3D = useCallback((getter: () => CameraState3D | null) => {
@@ -101,13 +195,85 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         getCurrentCameraState2DRef.current = getter;
     }, []);
 
-    // Get show directory from Redux store to detect changes
+    const layoutGroupOptions = React.useMemo<PreviewSelectionOption[]>(() => {
+        const groups = (layoutSettings.layoutGroups ?? [])
+            .filter((g): g is LayoutGroupInfo => Boolean(g?.name))
+            .map((g) => ({ value: `group:${g.name}` as const, label: g.name, groupName: g.name }));
+        return [
+            { value: 'default', label: 'Default' },
+            { value: 'all', label: 'All Models' },
+            ...groups,
+        ];
+    }, [layoutSettings.layoutGroups]);
+
+    const activeLayoutGroupName = React.useMemo(() => {
+        return previewSelection.startsWith('group:') ? previewSelection.slice('group:'.length) : null;
+    }, [previewSelection]);
+
+    const activeLayoutGroup = React.useMemo(
+        () => (activeLayoutGroupName ? layoutSettings.layoutGroups?.find((g) => g.name === activeLayoutGroupName) : undefined),
+        [layoutSettings.layoutGroups, activeLayoutGroupName],
+    );
+
+    const filteredModelData = React.useMemo(
+        () => filterModelDataByLayoutGroup(modelData, activeLayoutGroupName),
+        [modelData, activeLayoutGroupName],
+    );
+
+    const filteredModelData2D = React.useMemo(
+        () => filterModelDataByLayoutGroup(modelData2D, activeLayoutGroupName),
+        [modelData2D, activeLayoutGroupName],
+    );
+
+    const effectiveLayoutSettings = React.useMemo<LayoutSettings>(() => {
+        if (!activeLayoutGroup) return layoutSettings;
+        return {
+            ...layoutSettings,
+            backgroundImage: activeLayoutGroup.backgroundImage ?? layoutSettings.backgroundImage,
+            backgroundBrightness: activeLayoutGroup.backgroundBrightness ?? layoutSettings.backgroundBrightness,
+            previewWidth: activeLayoutGroup.paneWidth ?? layoutSettings.previewWidth,
+            previewHeight: activeLayoutGroup.paneHeight ?? layoutSettings.previewHeight,
+        };
+    }, [layoutSettings, activeLayoutGroup]);
+    const renderedModelData = filteredModelData;
+    const renderedModelData2D = (filteredModelData2D ?? filteredModelData) as Model3DData;
+
+    // If the currently-selected preview doesn't exist in the options, fall back to 'default'.
+    // Guarded on `layoutGroups !== undefined` so we don't reset before the settings have loaded
+    // (otherwise a saved `group:Foo` selection would be clobbered during mount).
+    useEffect(() => {
+        if (layoutSettings.layoutGroups === undefined) return;
+        if (pendingRestoreRef.current) return;
+        const hasSelection = layoutGroupOptions.some((opt) => opt.value === previewSelection);
+        if (!hasSelection) {
+            setPreviewSelection('default');
+        }
+    }, [layoutGroupOptions, previewSelection, layoutSettings.layoutGroups]);
+
+    // Restore a saved group selection once the layoutGroups have actually loaded and contain it.
+    // If the group was deleted from the show, we leave previewSelection at 'default'.
+    useEffect(() => {
+        const pending = pendingRestoreRef.current;
+        if (!pending) return;
+        if (layoutSettings.layoutGroups === undefined) return;
+        pendingRestoreRef.current = null;
+        if (layoutGroupOptions.some((opt) => opt.value === pending.selection)) {
+            setPreviewSelection(pending.selection);
+            if (pending.viewState) {
+                setViewMode(pending.viewState.mode);
+                setCameraState2D(pending.viewState.cameraState2D);
+                setCameraState3D(pending.viewState.cameraState3D);
+            }
+        }
+    }, [layoutGroupOptions, layoutSettings.layoutGroups]);
+
+    // Get show folder from Redux store to detect changes
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
 
     // Load preview settings and camera state from localStorage on mount
     useEffect(() => {
         try {
-            const saved = localStorage.getItem('previewSettings');
+            const saved = localStorage.getItem(previewSettingsStorageKey);
             if (saved) {
                 const parsed = JSON.parse(saved);
                 if (parsed.pixelSize !== undefined) {
@@ -130,6 +296,30 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 if (parsed.cameraState3D) {
                     setCameraState3D(parsed.cameraState3D);
                 }
+                const parsedViewStateBySelection = (
+                    parsed.viewStateBySelection && typeof parsed.viewStateBySelection === 'object'
+                        ? parsed.viewStateBySelection
+                        : {}
+                ) as Record<string, SelectionViewState>;
+                setViewStateBySelection(parsedViewStateBySelection);
+
+                // Restore the previously-active selection. 'default' and 'all' are always valid and
+                // can be applied immediately; 'group:*' values require layoutGroups to be loaded first
+                // (handled by a separate effect via pendingRestoreRef).
+                const savedSelection: PreviewSelectionValue =
+                    typeof parsed.previewSelection === 'string' ? parsed.previewSelection : 'default';
+                const restoreViewState = parsedViewStateBySelection[savedSelection];
+
+                if (savedSelection === 'default' || savedSelection === 'all') {
+                    setPreviewSelection(savedSelection);
+                    if (restoreViewState) {
+                        setViewMode(restoreViewState.mode);
+                        setCameraState2D(restoreViewState.cameraState2D);
+                        setCameraState3D(restoreViewState.cameraState3D);
+                    }
+                } else if (savedSelection.startsWith('group:')) {
+                    pendingRestoreRef.current = { selection: savedSelection, viewState: restoreViewState };
+                }
             }
             // Mark camera state as loaded (even if null, we've checked localStorage)
             setCameraStateLoaded(true);
@@ -137,66 +327,36 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             console.error('[Preview3D] Failed to load preview settings:', err);
             setCameraStateLoaded(true);
         }
-    }, []);
+    }, [previewSettingsStorageKey]);
 
-    // Auto-detect frame server URL if not provided
-    const [effectiveFrameServerUrl, setEffectiveFrameServerUrl] = useState<string | undefined>(frameServerUrl);
-
+    // Sync preview selection + per-selection view state to localStorage whenever they change.
+    // Centralising the write avoids closure-staleness bugs that happened when individual handlers
+    // persisted these fields manually. Guard on `cameraStateLoaded` so the initial mount (before
+    // the load effect has read existing storage) doesn't overwrite saved state with defaults.
     useEffect(() => {
-        // If prop is provided, use it
-        if (frameServerUrl) {
-            setEffectiveFrameServerUrl(frameServerUrl);
-            return;
+        if (!cameraStateLoaded) return;
+        try {
+            let existing: Record<string, unknown> = {};
+            const raw = localStorage.getItem(previewSettingsStorageKey);
+            if (raw) existing = JSON.parse(raw);
+            localStorage.setItem(
+                previewSettingsStorageKey,
+                JSON.stringify({ ...existing, previewSelection, viewStateBySelection }),
+            );
+        } catch (err) {
+            console.error('[Preview3D] Failed to persist preview selection state:', err);
         }
+    }, [previewSelection, viewStateBySelection, cameraStateLoaded, previewSettingsStorageKey]);
 
-        // Auto-detect based on environment
-        const detectUrl = async () => {
-            const electronAPI = (window as any).electronAPI as EZPElectronAPI;
+    // Resolve the server URL (auto-detects Electron port or falls back to same-origin).
+    const { url: effectiveFrameServerUrl } = useFrameServerUrl({ frameServerUrl });
 
-            // In Electron, query the server status for the port
-            if (electronAPI?.getServerStatus) {
-                try {
-                    const status = await electronAPI.getServerStatus();
-                    if (status?.port && status.status === 'listening') {
-                        setEffectiveFrameServerUrl(`http://localhost:${status.port}`);
-                        return;
-                    }
-                } catch (err) {
-                    console.error('[Preview3D] Failed to get server status:', err);
-                }
-            }
-
-            // In web app, use current origin (we're served from the same server)
-            if (typeof window !== 'undefined' && window.location?.origin) {
-                // Only use if it looks like a valid HTTP origin (not file://)
-                if (window.location.origin.startsWith('http')) {
-                    setEffectiveFrameServerUrl(window.location.origin);
-                }
-            }
-        };
-
-        detectUrl();
-    }, [frameServerUrl]);
-
-    // Frame buffer for live pixel data from server.
-    // resetKey forces the poll loop to restart when the show folder changes
-    // (clearing stale buffers and resetting error counters).
-    const { buffer: livePixelBuffer } = useFrameBuffer({
-        baseUrl: effectiveFrameServerUrl,
-        enabled: !!effectiveFrameServerUrl,
-        compressed,
-        resetKey: showDirectory,
-    });
-
-    // Audio stream for web client (not used in Electron — it has its own audio window)
+    // Audio stream for the standalone web client. In embedded mode the host (e.g. the browser
+    // preview dialog) owns audio, so we pass no baseUrl — that short-circuits `useAudioStream`
+    // before any HTTP polling, even if audioEnabled somehow flips on.
     const { audioEnabled, toggleAudio } = useAudioStream({
-        baseUrl: effectiveFrameServerUrl,
+        baseUrl: embedded ? undefined : effectiveFrameServerUrl,
     });
-
-    // Update livePixels when the frame buffer changes
-    useEffect(() => {
-        setLivePixels(livePixelBuffer);
-    }, [livePixelBuffer]);
 
     // Clear stale state immediately when show folder changes so old data
     // is never rendered with new frame buffers (or vice versa).
@@ -209,7 +369,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setViewObjects([]);
             setLayoutSettings({});
             setMovingHeadFixtures([]);
-            setLivePixels(undefined);
             setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
             setSelectedModelNames(new Set<string>());
         }
@@ -220,6 +379,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         // If initialModelData is provided, use it
         if (initialModelData) {
             setModelData(initialModelData);
+            setModelData2D(initialModelData2D ?? null);
+            setLayoutSettings(initialLayoutSettings ?? {});
             setLoading(false);
             return;
         }
@@ -342,21 +503,21 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         loadFromXml();
         return () => { cancelled = true; };
-    }, [initialModelData, showDirectory, effectiveFrameServerUrl]);
+    }, [initialModelData, initialModelData2D, initialLayoutSettings, showDirectory, effectiveFrameServerUrl]);
 
     // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
         (itemId: string) => {
-            if (!modelData) return;
+            if (!filteredModelData) return;
 
             // Find the clicked point to get its model name
-            const clickedPoint = modelData.points.find((p) => p.id === itemId);
+            const clickedPoint = filteredModelData.points.find((p) => p.id === itemId);
             const modelName = clickedPoint?.metadata?.modelName as string | undefined;
 
             if (!modelName) return;
 
             // Get all points belonging to this model
-            const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === modelName);
+            const modelPoints = filteredModelData.points.filter((p) => p.metadata?.modelName === modelName);
             const modelPointIds = new Set(modelPoints.map((p) => p.id));
 
             // Check if this model is currently selected
@@ -385,13 +546,40 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 });
             }
         },
-        [modelData, selectedModelNames],
+        [filteredModelData, selectedModelNames],
     );
 
     // Handle item hover
     const handleItemHover = useCallback((itemId: string | null) => {
         setSelectionState((prev) => ({ ...prev, hoveredId: itemId }));
     }, []);
+
+    // Viewpoint chooser — lists xLights saved cameras. 3D only; read-only (no write-back to XML).
+    const layoutViewpoints = layoutSettings.viewpoints;
+    const userViewpoints3D = React.useMemo<ViewpointInfo[]>(
+        () => (layoutViewpoints?.viewpoints ?? []).filter((v) => v.is3D),
+        [layoutViewpoints],
+    );
+    const defaultViewpoint3D = layoutViewpoints?.default3D;
+    const hasAnyViewpoints = Boolean(defaultViewpoint3D || userViewpoints3D.length > 0);
+
+    const handleViewpointMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>) => {
+        setViewpointMenuAnchor(event.currentTarget);
+    }, []);
+    const handleViewpointMenuClose = useCallback(() => {
+        setViewpointMenuAnchor(null);
+    }, []);
+    const handleViewpointPick = useCallback((vp: ViewpointInfo) => {
+        setCameraState3D(viewpointToCameraState(vp));
+        setShouldAutoFit(false);
+        setViewpointMenuAnchor(null);
+    }, []);
+
+    // Close the viewpoint menu if the user switches out of 3D mode while it is open,
+    // since the anchor button disappears and the floating menu would be orphaned.
+    useEffect(() => {
+        if (viewMode !== '3d') setViewpointMenuAnchor(null);
+    }, [viewMode]);
 
     // Handle view mode change — capture the current viewer's camera state
     // before switching so it can be restored when the user toggles back.
@@ -408,6 +596,33 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setViewMode(newMode);
         }
     }, [viewMode]);
+
+    const handlePreviewSelectionChange = useCallback((event: SelectChangeEvent<PreviewSelectionValue>) => {
+        const nextSelection = event.target.value as PreviewSelectionValue;
+        const currentSelectionState: SelectionViewState = {
+            mode: viewMode,
+            cameraState2D: getCurrentCameraState2DRef.current?.() ?? cameraState2D,
+            cameraState3D: getCurrentCameraState3DRef.current?.() ?? cameraState3D,
+        };
+
+        // Snapshot the outgoing selection's view state; the sync-to-storage effect handles persistence.
+        setViewStateBySelection((prev) => ({ ...prev, [previewSelection]: currentSelectionState }));
+
+        const nextState = viewStateBySelection[nextSelection];
+        if (nextState) {
+            setViewMode(nextState.mode);
+            setCameraState2D(nextState.cameraState2D);
+            setCameraState3D(nextState.cameraState3D);
+            setShouldAutoFit(false);
+        } else {
+            setCameraState2D(null);
+            setCameraState3D(null);
+            setShouldAutoFit(true);
+        }
+        setPreviewSelection(nextSelection);
+        setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
+        setSelectedModelNames(new Set<string>());
+    }, [previewSelection, viewMode, cameraState2D, cameraState3D, viewStateBySelection]);
 
     // Handle settings button click
     const handleSettingsClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
@@ -428,7 +643,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         try {
             let existing: Record<string, unknown> = {};
             try {
-                const raw = localStorage.getItem('previewSettings');
+                const raw = localStorage.getItem(previewSettingsStorageKey);
                 if (raw) existing = JSON.parse(raw);
             } catch { /* ignore parse errors */ }
 
@@ -437,12 +652,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 pixelSize: previewSettings.pixelSize,
                 brightnessMultiplier: previewSettings.brightnessMultiplier,
             };
-            localStorage.setItem('previewSettings', JSON.stringify(updated));
+            localStorage.setItem(previewSettingsStorageKey, JSON.stringify(updated));
         } catch (err) {
             console.error('[Preview3D] Failed to save slider settings:', err);
         }
         setSettingsAnchorPosition(null);
-    }, [previewSettings]);
+    }, [previewSettings, previewSettingsStorageKey]);
 
     // Handle settings change
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
@@ -459,22 +674,26 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // Handle reset view
     const handleResetView = useCallback(() => {
         setShouldAutoFit(true);
-        // Clear saved camera states
         setCameraState2D(null);
         setCameraState3D(null);
-        // Clear from localStorage
+        setViewStateBySelection((prev) => {
+            const next = { ...prev };
+            delete next[previewSelection];
+            return next;
+        });
+        // Clear legacy top-level camera fields; viewStateBySelection is handled by the sync effect.
         try {
-            const saved = localStorage.getItem('previewSettings');
+            const saved = localStorage.getItem(previewSettingsStorageKey);
             if (saved) {
                 const parsed = JSON.parse(saved);
                 delete parsed.cameraState2D;
                 delete parsed.cameraState3D;
-                localStorage.setItem('previewSettings', JSON.stringify(parsed));
+                localStorage.setItem(previewSettingsStorageKey, JSON.stringify(parsed));
             }
         } catch (err) {
             console.error('[Preview3D] Failed to clear camera state:', err);
         }
-    }, []);
+    }, [previewSettingsStorageKey, previewSelection]);
 
     // Handle auto-fit complete
     const handleAutoFitComplete = useCallback(() => {
@@ -485,29 +704,39 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // and 2D/3D mode. Slider values (pixel size, brightness) are NOT saved here;
     // they are saved separately via the OK button flow.
     const handleSaveAsDefault = useCallback(() => {
-        try {
-            // Read the exact camera position at this instant from the active viewer
-            const currentCameraState2D = getCurrentCameraState2DRef.current?.() ?? null;
-            const currentCameraState3D = getCurrentCameraState3DRef.current?.() ?? null;
+        const currentCameraState2D = getCurrentCameraState2DRef.current?.() ?? null;
+        const currentCameraState3D = getCurrentCameraState3DRef.current?.() ?? null;
 
-            // Merge into existing saved settings so slider values are preserved
-            let existing: Record<string, unknown> = {};
-            try {
-                const raw = localStorage.getItem('previewSettings');
-                if (raw) existing = JSON.parse(raw);
-            } catch { /* ignore parse errors */ }
-
-            const settingsToSave = {
-                ...existing,
+        setViewStateBySelection((prev) => ({
+            ...prev,
+            [previewSelection]: {
                 mode: viewMode,
                 cameraState2D: currentCameraState2D,
                 cameraState3D: currentCameraState3D,
-            };
-            localStorage.setItem('previewSettings', JSON.stringify(settingsToSave));
+            },
+        }));
+
+        // Also write legacy top-level fields for backwards compatibility with saves created before
+        // the per-selection feature. The sync effect handles viewStateBySelection itself.
+        try {
+            let existing: Record<string, unknown> = {};
+            try {
+                const raw = localStorage.getItem(previewSettingsStorageKey);
+                if (raw) existing = JSON.parse(raw);
+            } catch { /* ignore parse errors */ }
+            localStorage.setItem(
+                previewSettingsStorageKey,
+                JSON.stringify({
+                    ...existing,
+                    mode: viewMode,
+                    cameraState2D: currentCameraState2D,
+                    cameraState3D: currentCameraState3D,
+                }),
+            );
         } catch (err) {
             console.error('[Preview3D] Failed to save default view:', err);
         }
-    }, [viewMode]);
+    }, [viewMode, previewSettingsStorageKey, previewSelection]);
 
     // Handle model selection from model list
     const handleModelSelect = useCallback(
@@ -534,8 +763,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 });
 
                 // Deselect all points of this model
-                if (modelData) {
-                    const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
+                if (filteredModelData) {
+                    const modelPoints = filteredModelData.points.filter((p) => p.metadata?.modelName === model.name);
                     const pointIds = new Set(modelPoints.map((p) => p.id));
 
                     setSelectionState((prev) => {
@@ -552,8 +781,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 setSelectedModelNames(new Set([model.name]));
 
                 // Select all points of this model
-                if (modelData) {
-                    const modelPoints = modelData.points.filter((p) => p.metadata?.modelName === model.name);
+                if (filteredModelData) {
+                    const modelPoints = filteredModelData.points.filter((p) => p.metadata?.modelName === model.name);
                     const pointIds = new Set(modelPoints.map((p) => p.id));
 
                     setSelectionState((prev) => {
@@ -565,7 +794,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 }
             }
         },
-        [modelData, selectedModelNames],
+        [filteredModelData, selectedModelNames],
     );
 
     // Check WebGL support
@@ -635,7 +864,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         );
     }
 
-    if (error && !modelData) {
+    if (error && !renderedModelData) {
         return (
             <Box
                 sx={{
@@ -656,7 +885,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         );
     }
 
-    if (!modelData || !modelData.points || modelData.points.length === 0) {
+    const hasRenderablePoints = Boolean(renderedModelData && renderedModelData.points && renderedModelData.points.length > 0);
+    const isEmptySelectedGroup = !hasRenderablePoints && Boolean(activeLayoutGroupName);
+
+    if (!hasRenderablePoints && !isEmptySelectedGroup) {
         return (
             <Box
                 sx={{
@@ -671,7 +903,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 }}
             >
                 <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
-                    No layout in the selected show folder.
+                    {activeLayoutGroupName
+                        ? `No models in preview group "${activeLayoutGroupName}".`
+                        : 'No layout in the selected show folder.'}
                 </Typography>
             </Box>
         );
@@ -684,6 +918,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 flexDirection: 'column',
                 height: '100%',
                 width: '100%',
+                minHeight: compact ? 0 : undefined,
                 overflow: 'hidden',
             }}
         >
@@ -818,6 +1053,54 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         </ToggleButtonGroup>
                     </Box>
 
+                    <FormControl size="small" sx={{ minWidth: 210 }}>
+                        <InputLabel id="preview-select-label">Preview</InputLabel>
+                        <Select
+                            labelId="preview-select-label"
+                            value={previewSelection}
+                            label="Preview"
+                            onChange={handlePreviewSelectionChange}
+                        >
+                            {layoutGroupOptions.map((option) => (
+                                <MenuItem key={option.value} value={option.value}>
+                                    {option.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+
+                    {viewMode === '3d' && hasAnyViewpoints && (
+                        <Tooltip title="Camera viewpoints">
+                            <IconButton size="small" onClick={handleViewpointMenuOpen}>
+                                <VideocamIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    <Menu
+                        anchorEl={viewpointMenuAnchor}
+                        open={Boolean(viewpointMenuAnchor)}
+                        onClose={handleViewpointMenuClose}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                    >
+                        {defaultViewpoint3D && (
+                            <MenuItem onClick={() => handleViewpointPick(defaultViewpoint3D)}>
+                                Default ({defaultViewpoint3D.name})
+                            </MenuItem>
+                        )}
+                        {defaultViewpoint3D && userViewpoints3D.length > 0 && <Divider />}
+                        {userViewpoints3D.length > 0 && [
+                            <ListSubheader key="__hdr" sx={{ lineHeight: 1.8 }}>
+                                Saved viewpoints
+                            </ListSubheader>,
+                            ...userViewpoints3D.map((vp) => (
+                                <MenuItem key={vp.name} onClick={() => handleViewpointPick(vp)}>
+                                    {vp.name}
+                                </MenuItem>
+                            )),
+                        ]}
+                    </Menu>
+
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
                     {/* Settings Button */}
@@ -826,7 +1109,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
                     {/* Selection Info & Color Picker */}
-                    {selectionState.selectedIds.size > 0 && (
+                    {!disableModelSelection && selectionState.selectedIds.size > 0 && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
                                 {selectionState.selectedIds.size} selected
@@ -838,12 +1121,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     {/* Right Side Controls */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {modelData.name && (
+                        {showLayoutLabel && renderedModelData?.name && (
                             <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontStyle: 'italic' }}>
-                                {modelData.name}
+                                {renderedModelData?.name}
                             </Typography>
                         )}
-                        {!isElectron() && (
+                        {!isElectron() && !hideAudioControls && (
                             <Tooltip title={audioEnabled ? 'Mute audio' : 'Play audio'}>
                                 <IconButton
                                     size="small"
@@ -871,23 +1154,39 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
             <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 <Box sx={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
-                    {(() => {
+                    {isEmptySelectedGroup ? (
+                        <Box
+                            sx={{
+                                width: '100%',
+                                height: '100%',
+                                minHeight: compact ? 0 : 600,
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                p: 3,
+                            }}
+                        >
+                            <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
+                                {`No models in preview group "${activeLayoutGroupName}". Use the Preview dropdown to switch groups.`}
+                            </Typography>
+                        </Box>
+                    ) : (() => {
                         // Use ONLY house model brightness - do NOT use background image brightness
                         // The slider value (0-200) is converted to a multiplier (0-2x)
                         // Example: slider at 100% = 1x multiplier, slider at 200% = 2x multiplier
 
                         return viewMode === '3d' ? (
                             <Viewer3D
-                                points={modelData.points}
-                                shapes={modelData.shapes}
-                                liveData={livePixels}
+                                points={renderedModelData?.points ?? []}
+                                shapes={renderedModelData?.shapes}
+                                liveData={liveData}
                                 selectedIds={selectionState.selectedIds}
                                 hoveredId={selectionState.hoveredId}
-                                onPointClick={handleItemClick}
-                                onPointHover={handleItemHover}
+                                onPointClick={disableModelSelection ? undefined : handleItemClick}
+                                onPointHover={disableModelSelection ? undefined : handleItemHover}
                                 pointSize={pointSize}
                                 selectedModelNames={selectedModelNames}
-                                modelMetadata={modelData.metadata?.models}
+                                modelMetadata={renderedModelData?.metadata?.models}
                                 viewObjects={viewObjects}
                                 frameServerUrl={effectiveFrameServerUrl}
                                 movingHeadFixtures={movingHeadFixtures}
@@ -899,21 +1198,22 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 onAutoFitComplete={handleAutoFitComplete}
                                 cameraStateLoaded={cameraStateLoaded}
                                 onGetCurrentCameraState={handleGetCurrentCameraState3D}
+                                fillContainer={compact}
                             />
                         ) : (
                             <Viewer2D
-                                points={(modelData2D ?? modelData).points}
-                                shapes={(modelData2D ?? modelData).shapes}
-                                liveData={livePixels}
+                                points={renderedModelData2D.points}
+                                shapes={renderedModelData2D.shapes}
+                                liveData={liveData}
                                 selectedIds={selectionState.selectedIds}
                                 hoveredId={selectionState.hoveredId}
-                                onPointClick={handleItemClick}
-                                onPointHover={handleItemHover}
+                                onPointClick={disableModelSelection ? undefined : handleItemClick}
+                                onPointHover={disableModelSelection ? undefined : handleItemHover}
                                 viewPlane={'xy'}
                                 pointSize={pointSize}
                                 selectedModelNames={selectedModelNames}
-                                modelMetadata={(modelData2D ?? modelData).metadata?.models}
-                                layoutSettings={layoutSettings}
+                                modelMetadata={renderedModelData2D.metadata?.models}
+                                layoutSettings={effectiveLayoutSettings}
                                 frameServerUrl={effectiveFrameServerUrl}
                                 movingHeadFixtures={movingHeadFixtures}
                                 backgroundBrightness={undefined}
@@ -923,6 +1223,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 onAutoFitComplete={handleAutoFitComplete}
                                 cameraStateLoaded={cameraStateLoaded}
                                 onGetCurrentCameraState={handleGetCurrentCameraState2D}
+                                fillContainer={compact}
                             />
                         );
                     })()}
@@ -969,7 +1270,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             selectedModelNames={selectedModelNames}
                             onModelSelect={handleModelSelect}
                             searchable={true}
-                            modelData={modelData}
+                            modelData={renderedModelData}
                         />
                     </Paper>
                 )}

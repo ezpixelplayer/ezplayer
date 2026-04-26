@@ -1,5 +1,10 @@
-import { GetNodeResult, type MhFixtureInfo } from 'xllayoutcalcs';
-export type { MhFixtureInfo };
+import {
+    GetNodeResult,
+    type LayoutGroupInfo,
+    type MhFixtureInfo,
+    type ViewpointsResult,
+} from 'xllayoutcalcs';
+export type { LayoutGroupInfo, MhFixtureInfo, ViewpointsResult };
 import type { RPCRequest, RPCResponse } from './rpctypes';
 import type {
     AudioChunk,
@@ -34,6 +39,8 @@ export interface LayoutSettings {
     backgroundBrightness?: number; // 0-100 brightness for the background image
     previewWidth?: number;      // Layout preview canvas width in pixels
     previewHeight?: number;     // Layout preview canvas height in pixels
+    layoutGroups?: LayoutGroupInfo[];
+    viewpoints?: ViewpointsResult;
 }
 
 // View objects (meshes like house models, images) from XML
