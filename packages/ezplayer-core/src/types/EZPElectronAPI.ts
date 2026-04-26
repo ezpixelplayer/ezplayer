@@ -43,122 +43,26 @@ export interface FileSelectOptions {
     multi?: boolean;
 }
 
-export interface NodeCoord {
-    // For default / logical render buffer
-    //  This ought to be a separate concern really...
-    //  Other things can be determined by ordinal number or
-    bufX: number;
-    bufY: number;
-    bufZ: number;
-
-    // In 3D space, prop relative not world
-    modelX: number;
-    modelY: number;
-    modelZ: number;
-
-    // World
-    wX: number;
-    wY: number;
-    wZ: number;
+export interface AutoDetectedSongFiles {
+    audioFile?: string;
+    imageFile?: string;
+    imageGeneratedFromAudio?: boolean;
+    detectedTitle?: string;
+    detectedArtist?: string;
+    durationSecs?: number;
 }
 
-export interface NodeLoc {
-    physicalNum: number; // Number 1-n, based on wiring
-    physicalStrand: number; // Strand number, for models that do this, ignoreable but affects some render styles.  0-based?
-    physicalNumOnStrand: number; // Physical pixel num on strand, 0-sl
-    channel?: number;
-
-    logicalNum: number; // Number logical to a model type, regardless of how it is wired, for example top to bottom left to right
-    logicalX: number; // Commonly, the column in a grid
-    logicalY: number; // Commonly, the row in a grid
-    logicalZ: number; // Commonly, the grid sheet
-
-    coords: NodeCoord[];
+export interface AudioTagMetadata {
+    title?: string;
+    artist?: string;
+    imageFile?: string;
+    imageGeneratedFromAudio?: boolean;
 }
 
-/**
- * To apply the color curve to a value (in range 0-1):
- * (value^gamma)*brightness
- *
- * To invert the color curve (say to take an RGB value from FSEQ to screen):
- *     r = Math.pow((r * invbright / 255.0), invgamma);
- *   where invbright = 1/brightness and invgamma = 1/gamma
- */
-export interface NodeColorProfile {
-    // Brightness values are 0-1-? (multiplier, where 1 does nothing)
-    allBrightness?: number;
-    // Gamma values are exponents, where 1 does nothing
-    allGamma?: number;
-
-    rBrightness?: number;
-    rGamma?: number;
-    gBrightness?: number;
-    gGamma?: number;
-    bBrightness?: number;
-    bGamma?: number;
-}
-
-/**
- * A contiguous run of nodes mapped to channels.
- * Most models have a single run; Advanced mode models may have multiple.
- *
- * All channel numbers are 0-based (matching xLights model export).
- */
-export interface ChannelRun {
-    nodeStart: number; // First node index in this run (0-based)
-    nodeCount: number; // Number of nodes in this run
-    channelStart: number; // First channel (0-based)
-    channelsPerNode: number; // 3=RGB, 4=RGBW, 1=single color, etc.
-    stringIndex: number; // Which string/strand this run belongs to (0-based)
-}
-
-/**
- * Complete channel mapping for a model.
- * Maps from node index space to channel space.
- *
- * All channel numbers are 0-based (matching xLights model export).
- */
-export interface ModelChannelMapping {
-    nodeChannelMap: ChannelRun[]; // Usually just 1, but multiple for Advanced mode
-    totalNodes: number; // Total nodes in model
-    totalChannels: number; // Sum of nodeCount * channelsPerNode across runs
-    channelsPerNode: number; // Default/common value from StringType
-    numStrings: number; // Number of strings in the model
-
-    // Convenience: overall channel bounds (0-based)
-    firstChannel: number; // Min channel used
-    lastChannel: number; // Max channel used
-}
-
-/**
- * The return of getNodeCoords.
- * We are making a different abstraction than xLights.
- *   Coordinates in nodes[] is normalized / logical
- * Thus the attachment of some of the physical transformation
- *   A good bit more of that was already done by xLights
- */
-export interface GetNodeResult {
-    nodes: NodeLoc[];
-
-    logicalBufferWidth: number;
-    logicalBufferHeight: number;
-    logicalBufferDepth: number;
-
-    /** Metadata */
-    modelType?: string;
-    pixelSize?: number;
-    pixelStyle?: string;
-    pixelType?: string;
-    pixelSpacing?: string;
-    transparency?: number;
-    stringType?: string;
-
-    /** Channel mapping (populated after channel resolution) */
-    channelMapping?: ModelChannelMapping;
-
-    /** Color profile */
-    colorProfile?: NodeColorProfile;
-}
+// Node/coord types, color profile, channel mapping, and `GetNodeResult` now live in
+// xllayoutcalcs — this package re-exports `GetNodeResult` so consumers have a single source
+// of truth and don't drift when the upstream shape evolves.
+export type { GetNodeResult } from 'xllayoutcalcs';
 
 export type AutoUpdateStatus =
     | { state: 'checking' }
@@ -169,9 +73,13 @@ export type AutoUpdateStatus =
     | { state: 'error'; message: string };
 
 export interface EZPElectronAPI {
+    shouldShowWelcomeOnLaunch: () => boolean;
+
     // FS Utilities
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) => Promise<string[]>;
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
+    autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
+    extractAudioTagMetadata: (audioPath: string) => Promise<AudioTagMetadata>;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;
@@ -192,6 +100,12 @@ export interface EZPElectronAPI {
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
+    validateShowDirectory: (showDirectory?: string) => Promise<{
+        valid: boolean;
+        missingFiles: string[];
+        inaccessibleFiles: string[];
+        error?: string;
+    }>;
     getSequences: () => Promise<SequenceRecord[]>;
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
     getPlaylists: () => Promise<PlaylistRecord[]>;

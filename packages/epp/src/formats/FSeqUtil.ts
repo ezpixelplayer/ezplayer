@@ -314,8 +314,8 @@ export class FSEQReaderSync {
                 const hlen = (await this.read16bit()) - 4;
                 const hname = utfDecoder.decode(await this.read(2));
                 //console.log ("Header "+hname+": "+str(hlen))
-                const hval = utfDecoder.decode(await this.read(hlen));
-                v1headers[hname] = hval; // TODO: Does it need to chop 1 off the end for trailing \0?
+                const hval = utfDecoder.decode(await this.read(hlen)).replace(/\0+$/, '');
+                v1headers[hname] = hval;
             }
         }
         this.header = {
@@ -625,8 +625,8 @@ export class FSEQReaderAsync {
                     // Sparse range map
                     // Sparse ranges: 3 ch num, 3 num ch
                     for (let i = 0; i < nranges; ++i) {
-                        const startnum = buf.getUint32(off, true);
-                        off += 4;
+                        const startnum = readUInt24LE(buf, off);
+                        off += 3;
                         const chcount = readUInt24LE(buf, off);
                         off += 3;
                         chrangelist.push({ startch: startnum, chcount: chcount });
@@ -641,15 +641,14 @@ export class FSEQReaderAsync {
             if (!fixed) {
                 while (off + 4 - origoff <= off2chdata) {
                     //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
-                    const hlen = buf.getUint16(off, true);
-                    -4;
+                    const hlen = buf.getUint16(off, true) - 4;
                     off += 2;
                     const hname = utfDecoder.decode(ibuf.subarray(off, off + 2));
                     off += 2;
                     //console.log ("Header "+hname+": "+str(hlen))
-                    const hval = utfDecoder.decode(ibuf.subarray(off, off + hlen));
+                    const hval = utfDecoder.decode(ibuf.subarray(off, off + hlen)).replace(/\0+$/, '');
                     off += hlen;
-                    v1headers[hname] = hval; // TODO: Does it need subarray(-1) off the end for trailing \0;
+                    v1headers[hname] = hval;
                 }
             }
         }

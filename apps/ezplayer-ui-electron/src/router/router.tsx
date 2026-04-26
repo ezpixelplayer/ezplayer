@@ -20,6 +20,7 @@ import {
 } from '@ezplayer/player-ui-components';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
+import { WelcomeScreen, WELCOME_ROUTE } from '../modules/Welcome/WelcomeScreen';
 
 const ERROR_PAGE = import('../modules/ErrorPage/ErrorPage');
 
@@ -38,6 +39,10 @@ const ErrorPage = Loader(lazy(() => ERROR_PAGE));
 const getStatusArea = () => [];
 
 const routes: RouteObject[] = [
+    {
+        path: WELCOME_ROUTE,
+        element: <WelcomeScreen />,
+    },
     {
         path: '',
         element: <SidebarLayout hideLocal={false} hideCloud={true} hidePlayer={false} /*logo={<Logo />}*/ />,
@@ -86,7 +91,7 @@ const routes: RouteObject[] = [
             },
             {
                 path: ROUTES.PLAYBACKSETTINGS,
-                element: <PlaybackSettingsDrawer title="Playback Settings" statusArea={getStatusArea()} />,
+                element: <PlaybackSettingsDrawer title="Settings" statusArea={getStatusArea()} />,
             },
             {
                 path: ROUTES.PREVIEW_3D,

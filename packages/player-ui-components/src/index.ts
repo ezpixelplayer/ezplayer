@@ -22,7 +22,7 @@ export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { Preview3D } from './components/preview-3d/Preview3D';
 export type { Preview3DProps, ViewMode, ViewPlane } from './components/preview-3d/Preview3D';
-export { Preview3DPage } from './components/preview-3d/Preview3DPage';
+export { Preview3DPage, PREVIEW_3D_PAGE_STORAGE_KEY } from './components/preview-3d/Preview3DPage';
 export type { Preview3DPageProps } from './components/preview-3d/Preview3DPage';
 export { Viewer3D } from './components/preview-3d/Viewer3D';
 export type { Viewer3DProps } from './components/preview-3d/Viewer3D';
@@ -99,3 +99,6 @@ export { getImageUrl } from './util/imageUtils';
 
 export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';
+
+export { useFrameServerUrl } from './hooks/useFrameServerUrl';
+export type { UseFrameServerUrlOptions, UseFrameServerUrlResult } from './hooks/useFrameServerUrl';

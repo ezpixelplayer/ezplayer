@@ -39,7 +39,9 @@ function parseColorOffsets(stringType?: string): [number, number, number] {
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
  * This function handles the structure returned by xllayoutcalcs getModelCoordinates
  */
-export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, GetNodeResult>): Model3DData {
+export function convertXmlCoordinatesToModel3D(
+    modelCoordinates: Record<string, GetNodeResult>,
+): Model3DData {
     const allPoints: Point3D[] = [];
     const modelMetadata: ModelMetadata[] = [];
 
@@ -58,6 +60,7 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
         // Extract transparency (0–100 percentage from xLights XML Transparency attribute)
         // 0 = fully opaque (default), 100 = fully transparent
         const transparency = modelData.transparency;
+        const layoutGroup = modelData.layoutGroup;
 
         // Extract points
         if (modelData) {
@@ -94,6 +97,13 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
 
         const endIndex = allPoints.length - 1;
         if (pointIndex > 0) {
+            // Display channel is the first node's channel. This is the same channel
+            // the preview actually samples from, so any off-by-one in channel
+            // resolution will surface here directly.
+            // node.channel is 0-based; convert to 1-based for display.
+            const firstNodeChannel = allPoints[startIndex].channel;
+            const firstNodeChannel1Based = firstNodeChannel !== undefined ? firstNodeChannel + 1 : undefined;
+
             const metadata = {
                 name: modelName,
                 pointCount: pointIndex,
@@ -104,9 +114,11 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                 pixelStyle: modelData.pixelStyle,
                 // Extract transparency from XML (0–100 integer, 0 = opaque, 100 = transparent)
                 transparency,
+                layoutGroup,
                 // Extract brightness and gamma from colorProfile
                 brightness,
                 gamma,
+                firstNodeChannel: firstNodeChannel1Based,
             };
             modelMetadata.push(metadata);
         }

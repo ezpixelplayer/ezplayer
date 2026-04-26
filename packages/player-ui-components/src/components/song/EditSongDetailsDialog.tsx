@@ -28,8 +28,8 @@ const FileSelectButton = ({
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
-                                      ? ['.mp3']
-                                      : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                        ? ['.mp3']
+                                        : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
                     multi: false,
@@ -88,6 +88,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     });
     const [uploadedFiles, setUploadedFiles] = useState<SequenceFiles>({});
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
+    const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
 
     useEffect(() => {
         if (open && selectedSongId) {
@@ -121,10 +122,74 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setErrors((prev) => ({ ...prev, [name]: false }));
     };
 
-    const handleFileChange = (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
+    const applyDetectedMetadata = (metadata: {
+        title?: string;
+        artist?: string;
+        detectedTitle?: string;
+        detectedArtist?: string;
+        imageFile?: string;
+    }) => {
+        const resolvedTitle = metadata.title ?? metadata.detectedTitle;
+        const resolvedArtist = metadata.artist ?? metadata.detectedArtist;
+        console.log(`[EditSong][Meta] Resolved metadata: title=${resolvedTitle ?? '(none)'}, artist=${resolvedArtist ?? '(none)'}`);
+        setFormData((prev) => ({
+            ...prev,
+            title: prev.title || resolvedTitle || '',
+            artist: prev.artist || resolvedArtist || '',
+        }));
+        if (metadata.imageFile) {
+            setNewFiles((prev) => ({ ...prev, thumb: prev.thumb ?? metadata.imageFile }));
+        }
+    };
+
+    const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file }));
+
+            if (
+                type === 'fseq' &&
+                typeof window !== 'undefined' &&
+                (window as any).electronAPI?.autoDetectSongFilesFromFseq
+            ) {
+                try {
+                    const detected = await (window as any).electronAPI.autoDetectSongFilesFromFseq(file);
+                    setNewFiles((prev) => {
+                        const next = { ...prev };
+                        if (!next.audio && detected?.audioFile) {
+                            next.audio = detected.audioFile;
+                        }
+                        if (!next.thumb && detected?.imageFile) {
+                            next.thumb = detected.imageFile;
+                        }
+                        return next;
+                    });
+                    if (detected?.durationSecs) {
+                        setNewDurationSecs(detected.durationSecs);
+                    }
+                    applyDetectedMetadata(detected ?? {});
+                    console.log(`[EditSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
+                } catch (error) {
+                    console.warn('Auto-detect from FSEQ failed:', error);
+                }
+            }
+
+            if (type === 'mp3' && typeof window !== 'undefined' && (window as any).electronAPI?.extractAudioTagMetadata) {
+                try {
+                    console.log(`[EditSong][MP3] Starting metadata extraction for: "${file}"`);
+                    const metadata = await (window as any).electronAPI.extractAudioTagMetadata(file);
+                    console.log(`[EditSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`);
+                    applyDetectedMetadata(metadata ?? {});
+                    console.log('[EditSong][MP3] Metadata applied (only empty fields are auto-filled).');
+                    if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
+                        console.log('[EditSong][MP3] No usable ID3 metadata found (title/artist/image all empty).');
+                    }
+                } catch (error) {
+                    console.warn('MP3 metadata extraction failed:', error);
+                }
+            } else if (type === 'mp3') {
+                console.warn('[EditSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.');
+            }
         } else {
             // If file is undefined (cleared), remove it from newFiles
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
@@ -169,9 +234,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 // Merge existing files with new files (only in Electron)
                 const updatedFiles = isElectron()
                     ? {
-                          ...prevSong.files,
-                          ...newFiles,
-                      }
+                        ...prevSong.files,
+                        ...newFiles,
+                    }
                     : prevSong.files;
 
                 const updatedSong = {
@@ -181,7 +246,8 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         ...prevSong.work,
                         title: formData.title.trim(),
                         artist: formData.artist.trim(),
-                        artwork: imageUrl || undefined, // Update image URL
+                        artwork: imageUrl || undefined,
+                        ...(newDurationSecs !== undefined && { length: newDurationSecs }),
                     },
                     sequence: {
                         ...(prevSong.sequence || {}),
@@ -235,6 +301,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setImageUrl(originalSong?.work?.artwork || '');
         setErrors({ title: false, artist: false, lead_time: false, trail_time: false, volume_adj: false, tags: false });
         setNewFiles({});
+        setNewDurationSecs(undefined);
     };
 
     const handleCancel = () => {

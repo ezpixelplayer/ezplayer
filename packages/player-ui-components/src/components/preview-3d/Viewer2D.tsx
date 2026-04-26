@@ -40,6 +40,7 @@ export interface Viewer2DProps {
     onAutoFitComplete?: () => void; // Callback when auto-fit completes
     cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
     onGetCurrentCameraState?: (getter: () => CameraState2D | null) => void; // Callback to register a function that gets current camera state
+    fillContainer?: boolean;
 }
 
 function Optimized2DPointCloud({
@@ -958,6 +959,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     onAutoFitComplete,
     cameraStateLoaded = true,
     onGetCurrentCameraState,
+    fillContainer = false,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -968,7 +970,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                 sx={{
                     width: '100%',
                     height: '100%',
-                    minHeight: 600,
+                    minHeight: fillContainer ? 0 : 600,
                     position: 'relative',
                     backgroundColor: '#191919',
                     display: 'flex',
@@ -995,7 +997,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
             sx={{
                 width: '100%',
                 height: '100%',
-                minHeight: 600,
+                minHeight: fillContainer ? 0 : 600,
                 position: 'relative',
                 backgroundColor: '#191919',
             }}

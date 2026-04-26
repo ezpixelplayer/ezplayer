@@ -8,6 +8,7 @@ import { getMainWindow } from './main';
 const store = new Store<{ showFolder?: string }>();
 let releaseLock: null | (() => Promise<void>) = null;
 let currentShowFolder: string | null = null;
+const REQUIRED_SHOW_FILES = ['xlights_rgbeffects.xml', 'xlights_networks.xml'] as const;
 
 async function dirExists(p?: string | null) {
     if (!p) return false;
@@ -16,6 +17,61 @@ async function dirExists(p?: string | null) {
     } catch {
         return false;
     }
+}
+
+export interface ShowDirectoryValidationResult {
+    valid: boolean;
+    missingFiles: string[];
+    inaccessibleFiles: string[];
+    error?: string;
+}
+
+export async function isValidShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
+    if (!showFolder) {
+        return {
+            valid: false,
+            missingFiles: [...REQUIRED_SHOW_FILES],
+            inaccessibleFiles: [],
+            error: 'No show folder selected.',
+        };
+    }
+
+    if (!(await dirExists(showFolder))) {
+        return {
+            valid: false,
+            missingFiles: [...REQUIRED_SHOW_FILES],
+            inaccessibleFiles: [],
+            error: 'Show folder does not exist or is not accessible.',
+        };
+    }
+
+    const missingFiles: string[] = [];
+    const inaccessibleFiles: string[] = [];
+
+    for (const fileName of REQUIRED_SHOW_FILES) {
+        const filePath = path.join(showFolder, fileName);
+        try {
+            // fs.access covers both existence and readability.
+            await fsp.access(filePath, fsp.constants.R_OK);
+        } catch {
+            try {
+                await fsp.stat(filePath);
+                inaccessibleFiles.push(fileName);
+            } catch {
+                missingFiles.push(fileName);
+            }
+        }
+    }
+
+    return {
+        valid: missingFiles.length === 0 && inaccessibleFiles.length === 0,
+        missingFiles,
+        inaccessibleFiles,
+        error:
+            missingFiles.length || inaccessibleFiles.length
+                ? 'Show folder is missing required xLights configuration files.'
+                : undefined,
+    };
 }
 
 async function promptForFolder(): Promise<string | null> {
@@ -43,8 +99,7 @@ function parseCliForShowFolder(argv: string[]): string | undefined {
     if (eq) return eq.split('=')[1];
     const i = argv.findIndex((a) => a === '--show-folder' || a === '--showFolder');
     if (i >= 0 && argv[i + 1]) return argv[i + 1];
-    const pos = argv.find((a) => !a.startsWith('-') && !a.includes('electron'));
-    return pos;
+    return undefined;
 }
 
 // Choose the show folder, suitable for initial run, does not lock
@@ -89,12 +144,33 @@ export function getCurrentShowFolder() {
     return currentShowFolder;
 }
 
+export async function hasConfiguredShowFolder(): Promise<boolean> {
+    const persisted = store.get('showFolder');
+    return await dirExists(persisted);
+}
+
+export async function hasValidConfiguredShowFolder(): Promise<boolean> {
+    const persisted = store.get('showFolder');
+    if (!(await dirExists(persisted))) return false;
+    const validation = await isValidShowDirectory(persisted);
+    return validation.valid;
+}
+
 export async function ensureExclusiveFolder(): Promise<string | null> {
     if (currentShowFolder) return currentShowFolder;
     let forcepick = false;
     while (true) {
         const showFolder = await getOrPickShowFolder(forcepick);
         if (!showFolder) return null;
+
+        const validation = await isValidShowDirectory(showFolder);
+        if (!validation.valid) {
+            // Startup now uses a dedicated welcome flow for first-time users.
+            // If a persisted/CLI folder is invalid, immediately reprompt for another
+            // folder instead of showing a separate warning/quit dialog.
+            forcepick = true;
+            continue;
+        }
 
         try {
             const newReleaseLock = await tryLockShowFolder(showFolder);
@@ -126,6 +202,10 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
         if (!chosen) return currentShowFolder; // Gave up
         if (chosen && (await dirExists(chosen))) {
             store.set('showFolder', chosen!);
+        }
+
+        if (chosen === currentShowFolder) {
+            return currentShowFolder; // Already using this folder
         }
 
         try {
