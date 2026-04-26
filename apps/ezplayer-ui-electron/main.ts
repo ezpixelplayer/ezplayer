@@ -224,8 +224,7 @@ let playWorker: Worker | null = null;
 app.whenReady().then(async () => {
     console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
-    const shouldReset = process.argv.includes('--reset');
-    if (shouldReset) {
+    if (process.argv.includes('--reset')) {
         const userDataPath = app.getPath('userData');
         const preserve = new Set(['logs']);
         try {
@@ -238,9 +237,11 @@ app.whenReady().then(async () => {
         } catch (e: any) {
             console.warn(`Reset failed:`, e.message);
         }
+        app.quit();
+        return;
     }
 
-    const shouldShowWelcome = shouldReset || !(await hasValidConfiguredShowFolder());
+    const shouldShowWelcome = !(await hasValidConfiguredShowFolder());
     let showFolderSpec: string | null = null;
     if (!shouldShowWelcome) {
         // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)

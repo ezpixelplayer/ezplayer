@@ -7,8 +7,3 @@ declare global {
         electronAPI?: EZPElectronAPI;
     }
 }
-
-declare module '*.png' {
-    const src: string;
-    export default src;
-}

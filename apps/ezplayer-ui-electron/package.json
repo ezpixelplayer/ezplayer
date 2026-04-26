@@ -11,9 +11,8 @@
     "build": {
         "appId": "dev.ezplayer.ezplayer",
         "productName": "EZPlayer",
-        "npmRebuild": false,
         "directories": {
-            "output": "release-temp",
+            "output": "release",
             "buildResources": "assets"
         },
         "files": [
@@ -44,7 +43,7 @@
         ],
         "win": {
             "target": [
-                "dir"
+                "nsis"
             ],
             "icon": "src/assets/images/EZPlayerLogoTransparent.ico"
         },
@@ -84,10 +83,10 @@
         "build:preload": "tsc -p tsconfig.preload.json",
         "lint": "eslint .",
         "lint:fix": "eslint --fix .",
-        "prod": "sh -c './release-temp/win-unpacked/EZPlayer.exe'",
-        "prod:nodetrace": "sh -c 'export NODE_OPTIONS=\"--trace-opt --trace-deopt --trace-turbo-inlining\" && .\\release-temp\\win-unpacked\\EZPlayer.exe --enable-logging --v=1'",
-        "prod:log": "sh -c './release-temp/win-unpacked/EZPlayer.exe --enable-logging --v=1'",
-        "prod:sf": "sh -c './release-temp/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
+        "prod": "sh -c './release/win-unpacked/EZPlayer.exe'",
+        "prod:nodetrace": "sh -c 'export NODE_OPTIONS=\"--trace-opt --trace-deopt --trace-turbo-inlining\" && .\\release\\win-unpacked\\EZPlayer.exe --enable-logging --v=1'",
+        "prod:log": "sh -c './release/win-unpacked/EZPlayer.exe --enable-logging --v=1'",
+        "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
     "devDependencies": {
         "@types/koa": "^3.0.1",
