@@ -1197,6 +1197,8 @@ async function processQueue() {
                 decompZstd: decompressZStdWithWorker,
             },
             emitError,
+            emitWarning,
+            emitInfo,
         );
     }
 

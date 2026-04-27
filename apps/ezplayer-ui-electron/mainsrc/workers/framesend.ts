@@ -83,6 +83,8 @@ export class FrameSender {
     exportBuffer: LatestFrameRingBuffer | undefined = undefined;
     emitWarning?: (msg: string) => void;
     emitError?: (err: Error) => void;
+    private warnedShortFrame = false;
+    private warnedLongFrame = false;
 
     async sendBlackFrame(args: {
         targetFramePN: number;
@@ -166,6 +168,21 @@ export class FrameSender {
 
                 // Export frame
                 if (this.exportBuffer) {
+                    const srcLen = this.job.dataBuffers[0].length;
+                    if (srcLen < this.nChannels && !this.warnedShortFrame) {
+                        this.warnedShortFrame = true;
+                        this.emitWarning?.(
+                            `[framesend] export frame shorter than nChannels: ` +
+                                `src=${srcLen} nChannels=${this.nChannels} ` +
+                                `(trailing ${this.nChannels - srcLen} bytes of each ring-buffer slot will retain stale data)`,
+                        );
+                    } else if (srcLen > this.nChannels && !this.warnedLongFrame) {
+                        this.warnedLongFrame = true;
+                        this.emitWarning?.(
+                            `[framesend] export frame longer than nChannels (truncating): ` +
+                                `src=${srcLen} nChannels=${this.nChannels}`,
+                        );
+                    }
                     this.exportBuffer.publishFrom(this.job.dataBuffers[0].slice(0, this.nChannels));
                 }
 

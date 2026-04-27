@@ -3,7 +3,7 @@ import { promises as fsp } from 'fs';
 
 import { ArrayBufferPool } from '../util/BufferRecycler';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '../util/PrefetchCache';
-import { CompBlockCache, FSEQHeader, FSEQReaderAsync } from './FSeqUtil';
+import { CompBlockCache, FSEQHeader, FSEQReaderAsync, formatFSEQHeader } from './FSeqUtil';
 import { readHandleRange } from '../util/FileUtil';
 
 /**
@@ -67,6 +67,20 @@ export interface FSeqFileKey {
 export interface FSeqFileVal {
     header: FSEQHeader;
     chunkMap: CompBlockCache;
+    layout: FileLayout;
+}
+
+export interface ScatterRange {
+    srcOffset: number; // byte offset within one decompressed sparse frame
+    dstOffset: number; // byte offset within one dense frame (= absolute channel)
+    length: number;    // number of bytes (channels) to copy
+}
+
+export interface FileLayout {
+    isSparse: boolean;
+    fileStride: number; // per-frame byte stride in decompressed file data
+    denseStep: number;  // per-frame byte stride in dense output (padded to 4)
+    scatterPlan: ScatterRange[]; // empty when isSparse=false
 }
 
 interface DecompCacheKey {
@@ -75,11 +89,66 @@ interface DecompCacheKey {
     fileOffset: number;
     fileLen: number;
     compression: number;
-    decompLen: number;
+    decompLen: number;   // dense output size: nframes * denseStep
+    nframes: number;
+    fileStride: number;
+    denseStep: number;
+    scatterPlan: ScatterRange[];
 }
 
 interface DecompCacheVal {
     decompChunk: ArrayBuffer;
+}
+
+function computeFileLayout(header: FSEQHeader): FileLayout {
+    if (header.nsparseranges === 0) {
+        return {
+            isSparse: false,
+            fileStride: header.stepsize,
+            denseStep: header.stepsize,
+            scatterPlan: [],
+        };
+    }
+    const scatterPlan: ScatterRange[] = [];
+    let cumulativeSrc = 0;
+    let maxCh = 0;
+    for (const r of header.chranges) {
+        scatterPlan.push({ srcOffset: cumulativeSrc, dstOffset: r.startch, length: r.chcount });
+        cumulativeSrc += r.chcount;
+        if (r.startch + r.chcount > maxCh) maxCh = r.startch + r.chcount;
+    }
+    const denseStep = (maxCh + 3) & ~3;
+    return {
+        isSparse: true,
+        fileStride: cumulativeSrc, // xLights packs sparse frames tight: sum of chcounts
+        denseStep,
+        scatterPlan,
+    };
+}
+
+function scatterChunk(
+    dense: Uint8Array,
+    sparse: Uint8Array,
+    nframes: number,
+    fileStride: number,
+    denseStep: number,
+    plan: ScatterRange[],
+): void {
+    for (let f = 0; f < nframes; ++f) {
+        const sBase = f * fileStride;
+        const dBase = f * denseStep;
+        let dCursor = 0;
+        for (const r of plan) {
+            if (r.dstOffset > dCursor) {
+                dense.subarray(dBase + dCursor, dBase + r.dstOffset).fill(0);
+            }
+            dense.set(sparse.subarray(sBase + r.srcOffset, sBase + r.srcOffset + r.length), dBase + r.dstOffset);
+            dCursor = r.dstOffset + r.length;
+        }
+        if (dCursor < denseStep) {
+            dense.subarray(dBase + dCursor, dBase + denseStep).fill(0);
+        }
+    }
 }
 
 export type FrameTimeOrNumber = { num?: number; time?: number };
@@ -134,15 +203,22 @@ export class FSeqPrefetchCache {
             decompZstd?: DecompZStd; // Allow a worker thread...
         },
         emitError: (msg: string) => void,
+        emitWarning?: (msg: string) => void,
+        emitInfo?: (msg: string) => void,
     ) {
         this.now = arg.now;
+        this.emitWarning = emitWarning ?? emitError;
+        this.emitInfo = emitInfo;
         this.decompDataPool = new ArrayBufferPool();
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
         this.decompPrefetchCache = new PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>({
             fetchFunction: async (key, _abort) => {
                 // Fetch file data
                 let readBuf = this.decompDataPool.get(key.fileLen);
-                let ref = false;
+                let readBufReleased = false;
+                const isSparse = key.scatterPlan.length > 0;
+                const fileChunkLen = key.nframes * key.fileStride;
+                const denseChunkLen = key.decompLen; // = nframes * denseStep
                 const start = performance.now();
                 try {
                     const fh = await fsp.open(key.fseqfile);
@@ -157,20 +233,66 @@ export class FSeqPrefetchCache {
                             throw new Error(
                                 `File read of ${key.fseqfile} expected ${key.fileLen} bytes but could only read ${rlen}`,
                             );
-                        if (key.compression === 1) {
-                            // Decompress
-                            const dbuf = this.decompDataPool.get(key.decompLen);
-                            const decres = await this.decompFunc(dbuf, readBuf, 0, key.fileLen, key.decompLen);
-                            readBuf = decres.compBuf; // May not be same as input due to transfer to/from worker
-                            return { decompChunk: decres.decompBuf };
-                        } else if (key.compression === 2) {
-                            throw new Error('Compression type 2 not supported');
-                        } else {
-                            ref = true;
-                            return {
-                                decompChunk: readBuf,
-                            };
+
+                        // Non-sparse path: decode (or pass through) straight into the dense buffer;
+                        // the file's on-disk frame stride already equals denseStep.
+                        if (!isSparse) {
+                            if (key.compression === 1) {
+                                const dbuf = this.decompDataPool.get(denseChunkLen);
+                                if (dbuf.byteLength < denseChunkLen) {
+                                    this.emitWarning(
+                                        `[fseq] decomp pool buffer smaller than requested: ` +
+                                            `file=${key.fseqfile} chunk=${key.chunknum} ` +
+                                            `got=${dbuf.byteLength} want=${denseChunkLen}`,
+                                    );
+                                }
+                                const decres = await this.decompFunc(dbuf, readBuf, 0, key.fileLen, denseChunkLen);
+                                readBuf = decres.compBuf;
+                                return { decompChunk: decres.decompBuf };
+                            } else if (key.compression === 2) {
+                                throw new Error('Compression type 2 not supported');
+                            } else {
+                                readBufReleased = true;
+                                return { decompChunk: readBuf };
+                            }
                         }
+
+                        // Sparse path: decode (or view) file data at fileStride, then scatter into
+                        // a dense buffer with gap bytes zeroed.
+                        const denseBuf = this.decompDataPool.get(denseChunkLen);
+                        let sparseBuf: ArrayBuffer;
+                        let sparseBufIsReadBuf = false;
+                        if (key.compression === 1) {
+                            sparseBuf = this.decompDataPool.get(fileChunkLen);
+                            const decres = await this.decompFunc(sparseBuf, readBuf, 0, key.fileLen, fileChunkLen);
+                            readBuf = decres.compBuf;
+                            sparseBuf = decres.decompBuf;
+                            if (sparseBuf.byteLength < fileChunkLen) {
+                                this.emitWarning(
+                                    `[fseq] sparse decomp returned buffer smaller than expected: ` +
+                                        `file=${key.fseqfile} chunk=${key.chunknum} ` +
+                                        `got=${sparseBuf.byteLength} want=${fileChunkLen}`,
+                                );
+                            }
+                        } else if (key.compression === 0) {
+                            sparseBuf = readBuf;
+                            sparseBufIsReadBuf = true;
+                        } else {
+                            throw new Error('Compression type 2 not supported');
+                        }
+                        try {
+                            scatterChunk(
+                                new Uint8Array(denseBuf, 0, denseChunkLen),
+                                new Uint8Array(sparseBuf, 0, fileChunkLen),
+                                key.nframes,
+                                key.fileStride,
+                                key.denseStep,
+                                key.scatterPlan,
+                            );
+                        } finally {
+                            if (!sparseBufIsReadBuf) this.decompDataPool.release(sparseBuf);
+                        }
+                        return { decompChunk: denseBuf };
                     } catch (e) {
                         emitError((e as Error).message);
                         throw e;
@@ -180,7 +302,7 @@ export class FSeqPrefetchCache {
                         } catch (_e) {}
                     }
                 } finally {
-                    if (!ref) this.decompDataPool.release(readBuf);
+                    if (!readBufReleased) this.decompDataPool.release(readBuf);
                 }
             },
             budgetPredictor: (key) => key.decompLen,
@@ -295,16 +417,20 @@ export class FSeqPrefetchCache {
         const cidx = hdr.chunkMap.index[chunk];
 
         const nframes = cidx.endFrame - cidx.startFrame;
-        const lenraw = nframes * hdr.header.stepsize;
         const comptype = hdr.header.compression;
+        const layout = hdr.layout;
 
         const dk: DecompCacheKey = {
             fseqfile: fseq,
             chunknum: chunk,
             fileLen: cidx.fileSize,
             fileOffset: cidx.fileOffset,
-            decompLen: lenraw,
+            decompLen: nframes * layout.denseStep,
             compression: comptype,
+            nframes,
+            fileStride: layout.fileStride,
+            denseStep: layout.denseStep,
+            scatterPlan: layout.scatterPlan,
         };
         return { dk, hdr };
     }
@@ -320,15 +446,21 @@ export class FSeqPrefetchCache {
 
         const cnum = fk.dk.chunknum;
         const chunk = fk.hdr.chunkMap.index[cnum];
+        const denseStep = fk.hdr.layout.denseStep;
+        const frameOffset = (frame.num - chunk.startFrame) * denseStep;
+        const decompBytes = cref.ref.v.decompChunk.byteLength;
+        if (frameOffset + denseStep > decompBytes) {
+            this.emitWarning(
+                `[fseq] frame ${frame.num} view out of bounds: ` +
+                    `file=${fseq} chunk=${cnum} offset=${frameOffset} denseStep=${denseStep} ` +
+                    `decompBuf=${decompBytes} chunkFrames=[${chunk.startFrame},${chunk.endFrame})`,
+            );
+        }
 
         return {
             ref: new FrameReference(
                 cref.ref,
-                new Uint8Array(
-                    cref.ref.v.decompChunk,
-                    (frame.num - chunk.startFrame) * fk.hdr.header.stepsize,
-                    fk.hdr.header.stepsize,
-                ),
+                new Uint8Array(cref.ref.v.decompChunk, frameOffset, denseStep),
                 `${fseq}:${frame}`,
             ),
         };
@@ -347,9 +479,17 @@ export class FSeqPrefetchCache {
             const header = await FSEQReaderAsync.readFSEQHeaderAsync(key.fseqfile);
             const chunkMap = new CompBlockCache();
             FSEQReaderAsync.createCompBlockCache(header, chunkMap);
+            const layout = computeFileLayout(header);
+            if (this.emitInfo) {
+                this.emitInfo(
+                    `[fseq] opened ${key.fseqfile}\n${formatFSEQHeader(header)}\n` +
+                        `  layout: isSparse=${layout.isSparse} fileStride=${layout.fileStride} denseStep=${layout.denseStep}`,
+                );
+            }
             return {
                 header,
                 chunkMap,
+                layout,
             };
         },
         budgetPredictor: (_key) => 1,
@@ -365,6 +505,8 @@ export class FSeqPrefetchCache {
     decompFunc: DecompZStd;
     decompPrefetchCache: PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>;
     fileReadTimeCumulative: number = 0;
+    private emitWarning: (msg: string) => void;
+    private emitInfo?: (msg: string) => void;
 
     getStats() {
         const decompPool = this.decompDataPool.getStats();

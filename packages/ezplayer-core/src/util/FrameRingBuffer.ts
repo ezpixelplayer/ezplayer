@@ -37,6 +37,7 @@ export class LatestFrameRingBuffer {
     private readonly slotCount: number;
     private readonly slots: Uint8Array[];
     private readonly isShared: boolean;
+    private warnedShortPublish = false;
 
     private readonly headerBytes: number;
     private readonly payloadOffset: number;
@@ -107,6 +108,14 @@ export class LatestFrameRingBuffer {
         const n = src.byteLength;
         if (n > this.frameSize) {
             throw new Error(`publishFrom: src too large (${n}) > frameSize (${this.frameSize})`);
+        }
+        if (n < this.frameSize && !this.warnedShortPublish) {
+            this.warnedShortPublish = true;
+            console.warn(
+                `[FrameRingBuffer] publishFrom received src shorter than frameSize: ` +
+                    `n=${n} frameSize=${this.frameSize} ` +
+                    `(tail ${this.frameSize - n} bytes of each slot will retain stale data until overwritten)`,
+            );
         }
 
         const slot = this._loadWriteSlot();
