@@ -19,7 +19,7 @@
         "./package.json": "./package.json"
     },
     "scripts": {
-        "build": "tsup src/index.ts --dts --format cjs,esm --out-dir dist",
+        "build": "tsup",
         "lint": "eslint .",
         "lint:fix": "eslint --fix .",
         "test": "vitest",
@@ -27,8 +27,7 @@
         "clean": "rimraf dist"
     },
     "dependencies": {
-        "uuid": "^14.0.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.16.tgz"
+        "uuid": "^14.0.0"
     },
     "devDependencies": {
         "tsup": "^8.1.0",
@@ -36,6 +35,7 @@
         "vitest": "^2.1.8",
         "eslint": "^9.19.0",
         "typescript-eslint": "^8.21.0",
-        "rimraf": "^6.0.1"
+        "rimraf": "^6.0.1",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.0.tgz"
     }
 }
