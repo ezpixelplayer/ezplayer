@@ -21,13 +21,12 @@
         "pack": "npm pack"
     },
     "files": [
-        "dist/src/**/*"
+        "dist/**/*"
     ],
     "author": "",
     "license": "AGPL-3.0-only",
     "dependencies": {
         "@xmldom/xmldom": "^0.8.13",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.0.16.tgz",
         "zstddec": "^0.1.0"
     },
     "devDependencies": {
@@ -37,6 +36,7 @@
         "eslint": "^8.56.0",
         "tsup": "^8.5.0",
         "typescript": "^5.4.5",
-        "vitest": "^2.1.9"
+        "vitest": "^2.1.9",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.0.tgz"
     }
 }

@@ -18,7 +18,7 @@ import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/compone
 const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
 
 /** Routes excluded in kiosk mode */
-const KIOSK_HIDDEN_ROUTES = new Set([
+const KIOSK_HIDDEN_ROUTES = new Set<string>([
     ROUTES.SONGS,
     ROUTES.PLAYLIST,
     ROUTES.SCHEDULE,
