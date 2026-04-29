@@ -3,7 +3,7 @@ import { promises as fsp } from 'fs';
 
 import { ArrayBufferPool } from '../util/BufferRecycler';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '../util/PrefetchCache';
-import { CompBlockCache, FSEQHeader, FSEQReaderAsync, formatFSEQHeader } from './FSeqUtil';
+import { CompBlockCache, FSEQHeader, FSEQReaderAsync, summarizeFSEQHeader } from './FSeqUtil';
 import { readHandleRange } from '../util/FileUtil';
 
 /**
@@ -482,8 +482,8 @@ export class FSeqPrefetchCache {
             const layout = computeFileLayout(header);
             if (this.emitInfo) {
                 this.emitInfo(
-                    `[fseq] opened ${key.fseqfile}\n${formatFSEQHeader(header)}\n` +
-                        `  layout: isSparse=${layout.isSparse} fileStride=${layout.fileStride} denseStep=${layout.denseStep}`,
+                    `[fseq] opened ${key.fseqfile}; ${summarizeFSEQHeader(header)}; ` +
+                        `layout: isSparse=${layout.isSparse} fileStride=${layout.fileStride} denseStep=${layout.denseStep}`,
                 );
             }
             return {

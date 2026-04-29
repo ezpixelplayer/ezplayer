@@ -36,6 +36,6 @@
         "eslint": "^9.19.0",
         "typescript-eslint": "^8.21.0",
         "rimraf": "^6.0.1",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.1.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.4.tgz"
     }
 }

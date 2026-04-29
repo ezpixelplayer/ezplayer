@@ -59,8 +59,14 @@ import {
     getAllViewpoints,
     GetNodeResult,
     type MhFixtureInfo,
+    type ModelParseOptions,
     migrateToFormat,
 } from 'xllayoutcalcs';
+
+// xllayoutcalcs warns about XML attributes the model parser ignored — useful
+// during in-tree development, but actionable only by xllayoutcalcs maintainers,
+// so silence it in the shipped player.
+const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -858,12 +864,12 @@ async function loadXmlCoordinates() {
     layoutSettings = {};
 
     if (xrgb && xnet) {
-        const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
-        const gmc3d = getAllModelCoordinates(xrgb, xnet, false);
+        const gmc2d = getAllModelCoordinates(xrgb, xnet, true, PARSE_OPTS);
+        const gmc3d = getAllModelCoordinates(xrgb, xnet, false, PARSE_OPTS);
 
         // Extract moving head fixture definitions
         try {
-            movingHeads = getAllMovingHeads(xrgb, xnet);
+            movingHeads = getAllMovingHeads(xrgb, xnet, PARSE_OPTS);
             emitInfo(`[loadXmlCoordinates] Found ${movingHeads.length} moving head fixture(s)`);
         } catch (mhErr) {
             emitWarning(`[loadXmlCoordinates] Error extracting moving heads: ${mhErr}`);
