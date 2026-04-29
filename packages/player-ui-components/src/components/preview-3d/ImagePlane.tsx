@@ -151,8 +151,6 @@ function useImageTexture(imageFile: string | undefined, frameServerUrl: string |
                 tex.generateMipmaps = false;
                 tex.minFilter = THREE.LinearFilter;
                 tex.magFilter = THREE.LinearFilter;
-                // eslint-disable-next-line no-console
-                console.log(`[ImagePlane] texture loaded "${imageFile}" ${img?.width ?? 0}x${img?.height ?? 0} whiteAsAlpha=${whiteAsAlpha}`);
                 setTexture(tex);
             },
             undefined,
@@ -181,18 +179,6 @@ function useImageTexture(imageFile: string | undefined, frameServerUrl: string |
 function ModelImagePlane({ viewObject, frameServerUrl, liveData }: ImagePlaneProps) {
     const { imageFile, transparency, imageInfo, worldMatrix, startChannel } = viewObject;
 
-    // TEMP debug: surface every image model that hits the renderer so we can
-    // tell whether plane invisibility is on the data side or the GL side.
-    useEffect(() => {
-        // eslint-disable-next-line no-console
-        console.log(
-            `[ModelImagePlane] mount "${viewObject.name}" imageFile="${imageFile}" startChannel=${startChannel} ` +
-            `offBrightness=${imageInfo?.offBrightness} whiteAsAlpha=${imageInfo?.whiteAsAlpha} ` +
-            `customColor=${imageInfo?.customColor ?? '<none>'} ` +
-            `worldMatrix=${worldMatrix ? `[${worldMatrix.map(v => Number(v).toFixed(2)).join(',')}]` : '<missing>'}`,
-        );
-    }, [viewObject.name, imageFile, startChannel, imageInfo, worldMatrix]);
-
     const whiteAsAlpha = !!imageInfo?.whiteAsAlpha;
     const { texture } = useImageTexture(imageFile, frameServerUrl, whiteAsAlpha);
 
@@ -213,20 +199,18 @@ function ModelImagePlane({ viewObject, frameServerUrl, liveData }: ImagePlanePro
     const lastFrameSeqRef = useRef<number | undefined>(undefined);
     const lastIntensityRef = useRef<number>(-1);
 
-    // Apply the world matrix once the mesh exists.
+    // Apply the world matrix once both matrix and mesh exist.  Depends on
+    // `texture` because the mesh isn't mounted until the texture loads
+    // (the `return null` below gates render on texture), so the first run
+    // of this effect finds meshRef.current=null.  Re-running when the
+    // texture arrives is what lets the matrix actually land on the mesh.
     useEffect(() => {
         const mesh = meshRef.current;
-        if (!mesh || !matrix) {
-            // eslint-disable-next-line no-console
-            console.log(`[ModelImagePlane] "${viewObject.name}" matrix-apply skipped: mesh=${!!mesh} matrix=${!!matrix}`);
-            return;
-        }
+        if (!mesh || !matrix) return;
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(matrix);
         mesh.matrixWorldNeedsUpdate = true;
-        // eslint-disable-next-line no-console
-        console.log(`[ModelImagePlane] "${viewObject.name}" matrix applied; pos=(${matrix.elements[12].toFixed(2)},${matrix.elements[13].toFixed(2)},${matrix.elements[14].toFixed(2)})`);
-    }, [matrix, viewObject.name]);
+    }, [matrix, texture]);
 
     useFrame(() => {
         const mesh = meshRef.current;

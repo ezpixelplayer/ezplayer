@@ -1037,18 +1037,13 @@ async function loadXmlCoordinates() {
                 // position/rotation/scale in xLights units, so we pass the matrix
                 // through verbatim and let the renderer apply it.
                 let imageModelCount = 0;
-                let imageModelCandidates = 0;
                 for (const [modelName, modelEntry] of gmc3d.models.entries()) {
                     const nr = modelEntry.nodeResult;
                     if (!nr.imageInfo) continue;
-                    imageModelCandidates++;
                     const resolvedImageFile = resolveFilePathFromIndex(
                         nr.imageInfo.imageFile,
                         resolvedShow,
                         fileIndex,
-                    );
-                    emitInfo(
-                        `[loadXmlCoordinates] Image model "${modelName}": file="${nr.imageInfo.imageFile}" → resolved="${resolvedImageFile ?? '<unresolved>'}", offBrightness=${nr.imageInfo.offBrightness}, whiteAsAlpha=${nr.imageInfo.whiteAsAlpha}, customColor=${nr.imageInfo.customColor ?? '<none>'}, firstChannel=${modelEntry.channelMapping.firstChannel}, matrix=[${Array.from(nr.toWorldCoords as Float32Array).map(v => v.toFixed(2)).join(',')}]`,
                     );
                     if (!resolvedImageFile) {
                         emitWarning(
@@ -1074,9 +1069,6 @@ async function loadXmlCoordinates() {
                     });
                     imageModelCount++;
                 }
-                emitInfo(
-                    `[loadXmlCoordinates] Image-model surfacing: ${imageModelCandidates} candidate(s) with imageInfo, ${imageModelCount} pushed as view objects`,
-                );
 
                 emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images${imageModelCount ? ` incl. ${imageModelCount} image model${imageModelCount === 1 ? '' : 's'}` : ''})`);
             } catch (parseErr) {
