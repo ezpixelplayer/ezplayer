@@ -210,38 +210,52 @@ export class GeometryGroupRenderer {
         const pointCount = this.group.points.length;
         let needsUpdate = false;
 
+        const bytes = latestFrame.bytes;
+        const bytesLen = bytes.length;
+        const INV_255 = 1 / 255;
+
         for (let i = 0; i < pointCount; i++) {
             const point = this.group.points[i];
             const originalIndex = this.group.originalIndices[i];
             const colorIndex = point.channel ?? originalIndex * 3;
 
-            if (colorIndex + 2 < latestFrame.bytes.length) {
-                // Get color channel offsets from point metadata (defaults to RGB order: 0,1,2)
-                const rOffset = point.metadata?.rOffset ?? 0;
-                const gOffset = point.metadata?.gOffset ?? 1;
-                const bOffset = point.metadata?.bOffset ?? 2;
-
-                // Read bytes using the correct channel offsets
-                // This handles different color orders (RGB, GRB, RBG, etc.)
-                const rByte = latestFrame.bytes[colorIndex + rOffset];
-                const gByte = latestFrame.bytes[colorIndex + gOffset];
-                const bByte = latestFrame.bytes[colorIndex + bOffset];
-
-                const r = rByte / 255.0;
-                const g = gByte / 255.0;
-                const b = bByte / 255.0;
-
-                const baseColorIndex = i * 3;
-                if (
-                    this.baseColors[baseColorIndex] !== r ||
-                    this.baseColors[baseColorIndex + 1] !== g ||
-                    this.baseColors[baseColorIndex + 2] !== b
-                ) {
-                    this.baseColors[baseColorIndex] = r;
-                    this.baseColors[baseColorIndex + 1] = g;
-                    this.baseColors[baseColorIndex + 2] = b;
-                    needsUpdate = true;
+            // Channel-role mixer (offset, rTint, gTint, bTint) per role.
+            // Built once per model from xllayoutcalcs `channelRoles` so the
+            // hot loop never re-parses StringType.
+            const mix = point.metadata?.colorMix;
+            let r = 0;
+            let g = 0;
+            let b = 0;
+            if (mix) {
+                const maxOff = point.metadata?.colorMixMaxOffset ?? 0;
+                if (colorIndex + maxOff >= bytesLen) continue;
+                for (let m = 0; m < mix.length; m += 4) {
+                    const v = bytes[colorIndex + mix[m]] * INV_255;
+                    r += v * mix[m + 1];
+                    g += v * mix[m + 2];
+                    b += v * mix[m + 3];
                 }
+                if (r > 1) r = 1;
+                if (g > 1) g = 1;
+                if (b > 1) b = 1;
+            } else {
+                // Fallback: legacy 3-byte RGB read for points lacking baked mix.
+                if (colorIndex + 2 >= bytesLen) continue;
+                r = bytes[colorIndex] * INV_255;
+                g = bytes[colorIndex + 1] * INV_255;
+                b = bytes[colorIndex + 2] * INV_255;
+            }
+
+            const baseColorIndex = i * 3;
+            if (
+                this.baseColors[baseColorIndex] !== r ||
+                this.baseColors[baseColorIndex + 1] !== g ||
+                this.baseColors[baseColorIndex + 2] !== b
+            ) {
+                this.baseColors[baseColorIndex] = r;
+                this.baseColors[baseColorIndex + 1] = g;
+                this.baseColors[baseColorIndex + 2] = b;
+                needsUpdate = true;
             }
         }
 

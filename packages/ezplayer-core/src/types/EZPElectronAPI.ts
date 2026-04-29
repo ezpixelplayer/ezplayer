@@ -62,7 +62,7 @@ export interface AudioTagMetadata {
 // Node/coord types, color profile, channel mapping, and `GetNodeResult` now live in
 // xllayoutcalcs — this package re-exports `GetNodeResult` so consumers have a single source
 // of truth and don't drift when the upstream shape evolves.
-export type { GetNodeResult } from 'xllayoutcalcs';
+export type { GetNodeResult, ChannelRole, ChannelRoleKind, ImageInfo } from 'xllayoutcalcs';
 
 export type AutoUpdateStatus =
     | { state: 'checking' }

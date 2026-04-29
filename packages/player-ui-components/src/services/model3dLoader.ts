@@ -3,36 +3,59 @@
  */
 
 import type { Model3DData, ModelMetadata, Point3D } from '../types/model3d';
-import type { GetNodeResult } from '@ezplayer/ezplayer-core';
+import type { ChannelRole, GetNodeResult } from '@ezplayer/ezplayer-core';
+
+// xLights warm-white in 0–1 (#ffe5cc).
+const WARM_WHITE: [number, number, number] = [1.0, 0xe5 / 255, 0xcc / 255];
+
+function parseHex(hex: string | undefined): [number, number, number] {
+    if (!hex) return [1, 1, 1];
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
+    if (!m) return [1, 1, 1];
+    const v = parseInt(m[1], 16);
+    return [((v >> 16) & 0xff) / 255, ((v >> 8) & 0xff) / 255, (v & 0xff) / 255];
+}
+
+function roleTint(role: ChannelRole): [number, number, number] {
+    switch (role.kind) {
+        case 'red':
+            return [1, 0, 0];
+        case 'green':
+            return [0, 1, 0];
+        case 'blue':
+            return [0, 0, 1];
+        case 'white':
+            return [1, 1, 1];
+        case 'warmWhite':
+            return WARM_WHITE;
+        case 'intensity':
+        case 'tint':
+            return parseHex(role.tint);
+        case 'unused':
+            return [0, 0, 0];
+    }
+}
 
 /**
- * Parse color channel offsets from StringType (e.g., "RGB Nodes", "GRB Nodes")
- * Returns [rOffset, gOffset, bOffset] where each is 0, 1, or 2
+ * Bake xllayoutcalcs `channelRoles` into a flat Float32Array the per-frame
+ * loop can sum without any branching on `kind`.
  */
-function parseColorOffsets(stringType?: string): [number, number, number] {
-    if (!stringType) {
-        return [0, 1, 2]; // Default RGB
+function buildColorMix(
+    channelRoles: ChannelRole[] | undefined,
+): { mix: Float32Array; maxOffset: number } | undefined {
+    if (!channelRoles?.length) return undefined;
+    const mix = new Float32Array(channelRoles.length * 4);
+    let maxOffset = 0;
+    for (let i = 0; i < channelRoles.length; i++) {
+        const role = channelRoles[i];
+        const [r, g, b] = roleTint(role);
+        mix[i * 4 + 0] = role.offset;
+        mix[i * 4 + 1] = r;
+        mix[i * 4 + 2] = g;
+        mix[i * 4 + 3] = b;
+        if (role.offset > maxOffset) maxOffset = role.offset;
     }
-
-    // Extract color order from strings like "RGB Nodes", "GRB Nodes", etc.
-    const match = stringType.match(/^([RGB]{3})\s+Nodes/i);
-    if (!match) {
-        return [0, 1, 2]; // Default RGB
-    }
-
-    const colorOrder = match[1].toUpperCase();
-
-    // Map each color to its position in the string (0-based index)
-    const rOffset = colorOrder.indexOf('R');
-    const gOffset = colorOrder.indexOf('G');
-    const bOffset = colorOrder.indexOf('B');
-
-    // Validate that we found all three colors
-    if (rOffset === -1 || gOffset === -1 || bOffset === -1) {
-        return [0, 1, 2]; // Default RGB
-    }
-
-    return [rOffset, gOffset, bOffset];
+    return { mix, maxOffset };
 }
 
 /**
@@ -47,11 +70,19 @@ export function convertXmlCoordinatesToModel3D(
 
     // Iterate through each model's coordinates
     Object.entries(modelCoordinates).forEach(([modelName, modelData], modelIndex) => {
+        // Image models render as a textured plane via ImagePlane (driven by
+        // viewObjects), not as discrete light points.  Their two corner
+        // coords would otherwise show as stray dots at the image bounds.
+        if (modelData.modelType === 'Image') return;
+
         const startIndex = allPoints.length;
         let pointIndex = 0;
 
-        // Parse color order for this model (GRB, RGB, etc.)
-        const [rOffset, gOffset, bOffset] = parseColorOffsets(modelData.stringType);
+        // Build a baked channel-to-RGB mixer once per model from channelRoles.
+        // Shared by reference across every point in the model — no per-point copy.
+        const baked = buildColorMix(modelData.channelRoles);
+        const colorMix = baked?.mix;
+        const colorMixMaxOffset = baked?.maxOffset;
 
         // Extract brightness and gamma from colorProfile
         const brightness = modelData.colorProfile?.allBrightness ?? 1.0;
@@ -81,9 +112,8 @@ export function convertXmlCoordinatesToModel3D(
                                     modelIndex,
                                     nodeIndex,
                                     coordIndex,
-                                    rOffset,
-                                    gOffset,
-                                    bOffset,
+                                    colorMix,
+                                    colorMixMaxOffset,
                                     brightness,
                                     gamma,
                                 },

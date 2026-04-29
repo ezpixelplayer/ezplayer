@@ -1031,7 +1031,54 @@ async function loadXmlCoordinates() {
                     }
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images)`);
+                // Surface Image *models* as ImagePlane view objects too.  The
+                // model carries imageInfo (path, off-brightness, white-as-alpha,
+                // custom tint) and a world transform matrix that already encodes
+                // position/rotation/scale in xLights units, so we pass the matrix
+                // through verbatim and let the renderer apply it.
+                let imageModelCount = 0;
+                let imageModelCandidates = 0;
+                for (const [modelName, modelEntry] of gmc3d.models.entries()) {
+                    const nr = modelEntry.nodeResult;
+                    if (!nr.imageInfo) continue;
+                    imageModelCandidates++;
+                    const resolvedImageFile = resolveFilePathFromIndex(
+                        nr.imageInfo.imageFile,
+                        resolvedShow,
+                        fileIndex,
+                    );
+                    emitInfo(
+                        `[loadXmlCoordinates] Image model "${modelName}": file="${nr.imageInfo.imageFile}" → resolved="${resolvedImageFile ?? '<unresolved>'}", offBrightness=${nr.imageInfo.offBrightness}, whiteAsAlpha=${nr.imageInfo.whiteAsAlpha}, customColor=${nr.imageInfo.customColor ?? '<none>'}, firstChannel=${modelEntry.channelMapping.firstChannel}, matrix=[${Array.from(nr.toWorldCoords as Float32Array).map(v => v.toFixed(2)).join(',')}]`,
+                    );
+                    if (!resolvedImageFile) {
+                        emitWarning(
+                            `[loadXmlCoordinates] Could not resolve image "${nr.imageInfo.imageFile}" for image model "${modelName}"`,
+                        );
+                        continue;
+                    }
+                    viewObjects.push({
+                        name: modelName,
+                        displayAs: 'Image',
+                        imageFile: resolvedImageFile,
+                        // Identity placeholders — the renderer uses worldMatrix instead.
+                        worldPosX: 0, worldPosY: 0, worldPosZ: 0,
+                        scaleX: 1, scaleY: 1, scaleZ: 1,
+                        rotateX: 0, rotateY: 0, rotateZ: 0,
+                        active: true,
+                        startChannel: modelEntry.channelMapping.firstChannel,
+                        channelsPerNode: modelEntry.channelMapping.channelsPerNode,
+                        nodeCount: modelEntry.channelMapping.totalNodes,
+                        modelName,
+                        imageInfo: nr.imageInfo,
+                        worldMatrix: Array.from(nr.toWorldCoords as Float32Array),
+                    });
+                    imageModelCount++;
+                }
+                emitInfo(
+                    `[loadXmlCoordinates] Image-model surfacing: ${imageModelCandidates} candidate(s) with imageInfo, ${imageModelCount} pushed as view objects`,
+                );
+
+                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images${imageModelCount ? ` incl. ${imageModelCount} image model${imageModelCount === 1 ? '' : 's'}` : ''})`);
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
             }
