@@ -9,5 +9,11 @@ export default defineConfig({
     sourcemap: true,
     clean: true,
     outDir: 'dist',
-    noExternal: ['xllayoutcalcs'],
+    noExternal: ['xllayoutcalcs', /^@mui\/icons-material(\/|$)/],
+    esbuildOptions(options) {
+        options.alias = {
+            ...(options.alias || {}),
+            '@mui/icons-material': '@mui/icons-material/esm',
+        };
+    },
 });
