@@ -57,12 +57,7 @@ function normalizeAssetKey(path: string): string {
 export function createZipAssetResolver(
     assets: Map<string, string> | undefined,
 ): AssetResolver {
-    // Creation log is always-on so a developer can immediately confirm whether the resolver
-    // was even constructed and with how many assets — without having to flip any flag.
-    if (!assets || assets.size === 0) {
-        console.info('[assetResolver] zip resolver created with 0 assets (no-op)');
-        return () => null;
-    }
+    if (!assets || assets.size === 0) return () => null;
 
     const byBasename = new Map<string, string>();
     for (const [key, value] of assets) {
@@ -70,14 +65,10 @@ export function createZipAssetResolver(
         if (base && !byBasename.has(base)) byBasename.set(base, value);
     }
 
-    console.info(
-        `[assetResolver] zip resolver created with ${assets.size} asset(s); ` +
-            `${byBasename.size} unique basename(s)`,
-    );
-
-    // Lookup tracing: log the first MAX_TRACE calls verbatim, then a single suppression notice
-    // and silence. Bounded so a long-running session doesn't spam the console, but unconditional
-    // so a developer doesn't need to flip a flag before opening the preview.
+    // Per-lookup tracing is opt-in via `globalThis.__ezResolverDebug = true` in DevTools so a
+    // developer can see every hit / miss with a stack trace pointing at the caller without
+    // production builds being noisy. Bounded by `MAX_LOOKUP_TRACE` regardless, so even with the
+    // flag on a long session can't spam the console indefinitely.
     let traceLeft = MAX_LOOKUP_TRACE;
 
     return (path) => {
@@ -85,29 +76,32 @@ export function createZipAssetResolver(
         const norm = normalizeAssetKey(path);
         const direct = assets.get(norm);
         if (direct) {
-            traceLookup(`hit direct: ${path} -> ${norm}`, () => traceLeft--, () => traceLeft);
+            if (isResolverDebug()) traceLookup(`hit direct: ${path} -> ${norm}`, () => traceLeft--, () => traceLeft);
             return direct;
         }
         const base = norm.split('/').pop();
         if (base) {
             const viaBasename = byBasename.get(base);
             if (viaBasename) {
-                traceLookup(`hit basename: ${path} -> ${base}`, () => traceLeft--, () => traceLeft);
+                if (isResolverDebug()) traceLookup(`hit basename: ${path} -> ${base}`, () => traceLeft--, () => traceLeft);
                 return viaBasename;
             }
         }
-        // Stack trace on misses identifies the caller (HouseMesh loading manager,
-        // ImagePlane, Viewer2D background plane, etc.) so we can tell whether the asking
-        // path came from `objFile` / `imageFile` / `layoutSettings.backgroundImage` /
-        // an MTL-internal texture reference. Bounded by the same suppression as the lookup log.
-        const stillTracing = traceLeft > 0;
-        traceLookup(`miss: ${path} (norm=${norm}, base=${base ?? ''})`, () => traceLeft--, () => traceLeft);
-        if (stillTracing) console.trace('[assetResolver] miss origin');
+        if (isResolverDebug()) {
+            const stillTracing = traceLeft > 0;
+            traceLookup(`miss: ${path} (norm=${norm}, base=${base ?? ''})`, () => traceLeft--, () => traceLeft);
+            // Stack trace identifies the caller (HouseMesh loading manager, ImagePlane,
+            // Viewer2D background plane, etc.) when chasing a "why didn't this resolve" bug.
+            if (stillTracing) console.trace('[assetResolver] miss origin');
+        }
         return null;
     };
 }
 
 const MAX_LOOKUP_TRACE = 50;
+function isResolverDebug(): boolean {
+    return (globalThis as { __ezResolverDebug?: boolean }).__ezResolverDebug === true;
+}
 function traceLookup(msg: string, decrement: () => void, peek: () => number): void {
     const remaining = peek();
     if (remaining > 0) {
