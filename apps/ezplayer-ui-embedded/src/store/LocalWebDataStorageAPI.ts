@@ -344,6 +344,10 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         throw new Error('File download not implemented in local web mode');
     }
 
+    async getCloudLatestLayzip(): Promise<CloudFileDownloadResponse> {
+        throw new Error('File download not implemented in local web mode');
+    }
+
     async getCloudPreviewVideo(_fileId: string): Promise<CloudFileDownloadResponse> {
         throw new Error('File download not implemented in local web mode');
     }

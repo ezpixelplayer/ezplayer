@@ -12,6 +12,7 @@ import { HouseMesh } from './HouseMesh';
 import { ImagePlane } from './ImagePlane';
 import { MovingHeadBeams } from './MovingHeadBeams';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
+import type { AssetResolver } from '../../services/assetResolver';
 
 export interface CameraState3D {
     position: [number, number, number];
@@ -33,6 +34,12 @@ export interface Viewer3DProps {
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
+    /**
+     * Resolves an asset path (mesh / texture / image) to a fetchable URL. Built by
+     * `Preview3D` from `layoutAssets` + `frameServerUrl`. When omitted, leaves fall back
+     * to constructing show-file URLs from `frameServerUrl` directly (legacy behaviour).
+     */
+    assetResolver?: AssetResolver;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number; // 0-100, affects background images only
     brightnessMultiplier?: number; // 0-200, slider multiplier to apply to view object brightness
@@ -790,6 +797,7 @@ function SceneContent({
     modelMetadata,
     viewObjects,
     frameServerUrl,
+    assetResolver,
     movingHeadFixtures,
     backgroundBrightness: _backgroundBrightness,
     brightnessMultiplier,
@@ -813,6 +821,12 @@ function SceneContent({
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
+    /**
+     * Resolves an asset path (mesh / texture / image) to a fetchable URL. Built by
+     * `Preview3D` from `layoutAssets` + `frameServerUrl`. When omitted, leaves fall back
+     * to constructing show-file URLs from `frameServerUrl` directly (legacy behaviour).
+     */
+    assetResolver?: AssetResolver;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number;
     brightnessMultiplier?: number;
@@ -1155,6 +1169,7 @@ function SceneContent({
                             key={viewObj.name}
                             viewObject={viewObj}
                             frameServerUrl={frameServerUrl}
+                            assetResolver={assetResolver}
                             liveData={liveData}
                             points={points}
                             backgroundBrightness={calculatedBrightness}
@@ -1195,6 +1210,7 @@ function SceneContent({
                             key={viewObj.name}
                             viewObject={viewObj}
                             frameServerUrl={frameServerUrl}
+                            assetResolver={assetResolver}
                             backgroundBrightness={calculatedBrightness}
                         />
                     );
@@ -1224,6 +1240,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     modelMetadata,
     viewObjects,
     frameServerUrl,
+    assetResolver,
     movingHeadFixtures,
     backgroundBrightness = 100,
     brightnessMultiplier = 100,
@@ -1459,6 +1476,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             modelMetadata={modelMetadata}
                             viewObjects={viewObjects}
                             frameServerUrl={frameServerUrl}
+                            assetResolver={assetResolver}
                             movingHeadFixtures={movingHeadFixtures}
                             backgroundBrightness={backgroundBrightness}
                             brightnessMultiplier={brightnessMultiplier}

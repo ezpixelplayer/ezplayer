@@ -222,6 +222,13 @@ export const getCloudLatestRgbeff = createAsyncThunk<CloudFileDownloadResponse, 
     },
 );
 
+export const getCloudLatestLayzip = createAsyncThunk<CloudFileDownloadResponse, void, { extra: DataStorageAPI }>(
+    'homeStore/getCloudLatestLayzip',
+    async (_, { extra }) => {
+        return await extra.getCloudLatestLayzip();
+    },
+);
+
 export const getCloudPreviewVideo = createAsyncThunk<CloudFileDownloadResponse, string, { extra: DataStorageAPI }>(
     'homeStore/getCloudPreviewVideo',
     async (fileId, { extra }) => {

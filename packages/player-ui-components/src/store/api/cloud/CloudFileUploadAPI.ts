@@ -168,6 +168,30 @@ export const getCloudLatestRgbeffAPI = async (
     return response.data;
 };
 
+/**
+ * Fetch a presigned URL for the logged-in user's latest layout zip — a single archive
+ * containing `xlights_rgbeffects.xml`, `xlights_networks.xml`, and any associated mesh /
+ * image / texture assets that the layout references. Preferred over the per-XML endpoints
+ * when the caller wants the assets too (e.g. browser 3D preview).
+ */
+export const getCloudLatestLayzipAPI = async (
+    inst: AxiosInstance,
+    apiServerUrl: string,
+): Promise<CloudFileDownloadResponse> => {
+    const authToken = localStorage.getItem('auth_token');
+    const headers = {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+    };
+    const response = await apiPost<CloudFileDownloadResponse>(
+        inst,
+        `${apiServerUrl}${API_ENDPOINTS.DOWNLOAD_LATEST_LAY_ZIP}`,
+        {},
+        { headers },
+    );
+    return response.data;
+};
+
 export const getCloudXsqzFileAPI = async (
     inst: AxiosInstance,
     apiServerUrl: string,
