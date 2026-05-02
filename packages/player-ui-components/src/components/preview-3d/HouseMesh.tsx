@@ -5,6 +5,10 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as THREE from 'three';
 import type { ViewObject, Point3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import {
+    type AssetResolver,
+    createShowFileResolver,
+} from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -24,7 +28,19 @@ const MAX_TEXTURE_SIZE = 2048;
 
 interface HouseMeshProps {
     viewObject: ViewObject;
+    /**
+     * Local-Koa server URL (Electron / local browser) used to (a) build show-file URLs
+     * when no `assetResolver` is supplied and (b) detect URLs that MTLLoader synthesizes
+     * against this origin so the loading manager can rewrite them through the resolver.
+     */
     frameServerUrl?: string;
+    /**
+     * Optional asset resolver. When supplied, mesh / MTL / texture lookups go through it
+     * (so e.g. cloud-only callers can serve assets out of an unpacked layout zip). When
+     * omitted, this component falls back to building `frameServerUrl/api/show-file?path=…`
+     * URLs directly — preserves legacy behaviour for callers that haven't been updated.
+     */
+    assetResolver?: AssetResolver;
     liveData?: LatestFrameRingBuffer;
     points?: Point3D[]; // Points to look up channel information
     backgroundBrightness?: number; // 0-100, overrides viewObject brightness for background meshes
@@ -369,52 +385,68 @@ class HouseMeshErrorBoundary extends React.Component<
 // ---------------------------------------------------------------------------
 
 /**
- * Build a THREE.LoadingManager whose `resolveURL` redirects texture
- * requests through our `/api/show-file` endpoint so the Koa server
- * can serve them from the show folder on disk.
+ * Build a THREE.LoadingManager whose `resolveURL` rewrites every relative texture / MTL
+ * reference through the supplied `AssetResolver`. The resolver decides where the bytes
+ * come from — local Koa show-file URL, blob URL out of a layout zip, etc. — so this same
+ * loading manager works in Electron, local-browser, cloud-only, and FSEQ-only previews.
+ *
+ * URL shapes we receive (from MTLLoader / OBJLoader):
+ *   - `data:` URIs                   → pass through unchanged
+ *   - `blob:…/relativeFile.png`      → MTLLoader appended a relative path to a blob: base
+ *                                      (we loaded the MTL via blob URL); strip to basename
+ *   - HTTP(S) URLs of the form
+ *     `<frameServerUrl>/api/<relpath>` → MTLLoader's internal `extractUrlBase` synthesised
+ *                                      this when the MTL was loaded via show-file; strip
+ *                                      the `/api/` prefix to recover the relative path
+ *   - any other absolute URL         → pass through unchanged (don't intercept third-party CDNs)
+ *   - plain relative path            → resolve directly
+ *
+ * In every case where we recover a relative path, we prefix `objDir` (so e.g. an MTL line
+ * `map_Kd texture_1001.png` becomes `<objDir>/texture_1001.png` before resolver lookup).
  */
-function createShowFileLoadingManager(
-    frameServerUrl: string,
+function createAssetLoadingManager(
+    resolver: AssetResolver,
     objDir: string,
+    frameServerUrl: string | undefined,
 ): THREE.LoadingManager {
     const loadingManager = new THREE.LoadingManager();
 
     loadingManager.resolveURL = (url: string) => {
-        // data: URIs – pass through unchanged
         if (url.startsWith('data:')) return url;
 
-        // HTTP(S) URLs – may be a texture URL synthesised by
-        // MTLLoader's internal extractUrlBase (e.g.
-        // http://localhost:PORT/api/texture_1001.png)
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-            try {
-                const parsed = new URL(url);
-                const serverParsed = new URL(frameServerUrl);
+        let assetPath: string | null = null;
 
-                if (
-                    parsed.origin === serverParsed.origin &&
-                    parsed.pathname.startsWith('/api/') &&
-                    !parsed.pathname.includes('show-file')
-                ) {
-                    const filename = parsed.pathname.replace(/^\/api\//, '');
-                    if (filename) {
-                        const texturePath = objDir + filename;
-                        const textureUrl = new URL('/api/show-file', frameServerUrl);
-                        textureUrl.searchParams.set('path', texturePath);
-                        return textureUrl.toString();
+        if (url.startsWith('blob:')) {
+            // MTLLoader appended a relative path onto a blob: base URL. The trailing
+            // segment is the relative file we need to resolve.
+            const trailing = url.split('/').pop();
+            if (trailing) assetPath = objDir + trailing;
+        } else if (url.startsWith('http://') || url.startsWith('https://')) {
+            if (frameServerUrl) {
+                try {
+                    const parsed = new URL(url);
+                    const serverParsed = new URL(frameServerUrl);
+                    if (
+                        parsed.origin === serverParsed.origin &&
+                        parsed.pathname.startsWith('/api/') &&
+                        !parsed.pathname.includes('show-file')
+                    ) {
+                        const filename = parsed.pathname.replace(/^\/api\//, '');
+                        if (filename) assetPath = objDir + filename;
                     }
+                } catch {
+                    /* URL parse error – pass through */
                 }
-            } catch {
-                /* URL parse error – fall through */
             }
-            return url;
+            // External or already-resolved URL — leave it alone.
+            if (!assetPath) return url;
+        } else {
+            // Relative / plain filename, e.g. "texture_1001.png"
+            assetPath = objDir + url;
         }
 
-        // Relative / plain filenames (e.g. "texture_1001.png")
-        const texturePath = objDir + url;
-        const textureUrl = new URL('/api/show-file', frameServerUrl);
-        textureUrl.searchParams.set('path', texturePath);
-        return textureUrl.toString();
+        if (!assetPath) return url;
+        return resolver(assetPath) ?? url;
     };
 
     return loadingManager;
@@ -424,7 +456,15 @@ function createShowFileLoadingManager(
 // HouseMeshContent – the actual R3F component
 // ---------------------------------------------------------------------------
 
-function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgroundBrightness }: HouseMeshProps) {
+function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData, points, backgroundBrightness }: HouseMeshProps) {
+    // Use the caller-supplied resolver when present, otherwise fall back to a show-file resolver
+    // built from `frameServerUrl` so legacy callers that haven't been updated to thread a resolver
+    // through still work against local Koa hosting.
+    const effectiveResolver = useMemo<AssetResolver>(
+        () => assetResolver ?? createShowFileResolver(frameServerUrl),
+        [assetResolver, frameServerUrl],
+    );
+
     const {
         objFile,
         worldPosX, worldPosY, worldPosZ,
@@ -515,33 +555,19 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgr
     const colorMix = channelInfo?.colorMix;
 
     // ----- URL construction -----
+    // Mesh + companion MTL are resolved through the asset resolver so cloud-only callers can
+    // serve them as blob URLs from an unpacked layout zip while local Koa callers still get
+    // show-file URLs. MTL is best-effort — its URL may be null when neither source has it.
     const objUrl = useMemo(() => {
-        if (!objFile || !frameServerUrl) return null;
+        if (!objFile) return null;
+        return effectiveResolver(objFile);
+    }, [objFile, effectiveResolver]);
 
-        try {
-            const url = new URL('/api/show-file', frameServerUrl);
-            url.searchParams.set('path', objFile);
-            return url.toString();
-        } catch (err) {
-            console.error('[HouseMesh] Failed to construct OBJ URL:', err);
-            return null;
-        }
-    }, [objFile, frameServerUrl]);
-
-    // Determine MTL file path (same directory as OBJ, same name with .mtl extension)
     const mtlUrl = useMemo(() => {
-        if (!objFile || !frameServerUrl) return null;
-
-        try {
-            const pathWithoutExt = objFile.replace(/\.obj$/i, '');
-            const url = new URL('/api/show-file', frameServerUrl);
-            url.searchParams.set('path', `${pathWithoutExt}.mtl`);
-            return url.toString();
-        } catch (err) {
-            console.error('[HouseMesh] Failed to construct MTL URL:', err);
-            return null;
-        }
-    }, [objFile, frameServerUrl]);
+        if (!objFile) return null;
+        const pathWithoutExt = objFile.replace(/\.obj$/i, '');
+        return effectiveResolver(`${pathWithoutExt}.mtl`);
+    }, [objFile, effectiveResolver]);
 
     // -----------------------------------------------------------------
     // Combined MTL → OBJ loader
@@ -552,7 +578,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgr
     //   5. Post-process materials: convert to unlit, fix colorSpace
     // -----------------------------------------------------------------
     React.useEffect(() => {
-        if (!objUrl || !frameServerUrl || !objFile) return;
+        if (!objUrl || !objFile) return;
 
         let aborted = false;
 
@@ -561,7 +587,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgr
                 // Paths are now always forward-slash-normalized relative paths from playbackmaster
                 const objDir = objFile.substring(0, objFile.lastIndexOf('/') + 1);
 
-                const loadingManager = createShowFileLoadingManager(frameServerUrl, objDir);
+                const loadingManager = createAssetLoadingManager(effectiveResolver, objDir, frameServerUrl);
 
                 // ---- Step 1: Load MTL (best-effort) ----
                 let materialCreator: MTLLoader.MaterialCreator | null = null;
@@ -705,7 +731,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, liveData, points, backgr
 
         loadModel();
         return () => { aborted = true; };
-    }, [objUrl, mtlUrl, frameServerUrl, objFile, viewObject.name, brightness]);
+    }, [objUrl, mtlUrl, effectiveResolver, frameServerUrl, objFile, viewObject.name, brightness]);
 
     // ----- Transforms -----
     const position = useMemo(

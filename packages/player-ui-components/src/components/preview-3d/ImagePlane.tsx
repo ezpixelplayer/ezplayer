@@ -3,6 +3,10 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import type { ViewObject } from '../../types/model3d';
 import type { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import {
+    type AssetResolver,
+    createShowFileResolver,
+} from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -16,7 +20,14 @@ const MAX_TEXTURE_SIZE = 2048;
 
 interface ImagePlaneProps {
     viewObject: ViewObject;
+    /** Local-Koa server URL — used to build show-file URLs when no `assetResolver` is supplied. */
     frameServerUrl?: string;
+    /**
+     * Optional asset resolver (e.g. layzip blob map). When supplied it takes precedence over
+     * `frameServerUrl`-derived show-file URLs, so the same component works in cloud-only,
+     * FSEQ-only, and local-Koa hosting.
+     */
+    assetResolver?: AssetResolver;
     backgroundBrightness?: number; // 0-100, overrides viewObject brightness for background images
     /** Live frame ring buffer.  Only consumed by Image-model planes. */
     liveData?: LatestFrameRingBuffer;
@@ -110,23 +121,30 @@ function parseHexColor(hex: string | undefined): [number, number, number] {
  * Shared texture-loader.  Returns a Texture once loaded along with the
  * detected natural dimensions and alpha presence.  Optionally bakes
  * white-as-alpha into the canvas before handing it to THREE.
+ *
+ * Takes an `AssetResolver` so the same hook serves textures from local Koa
+ * (`/api/show-file?path=…`) or from a layout-zip blob URL (cloud-only / FSEQ-only).
  */
-function useImageTexture(imageFile: string | undefined, frameServerUrl: string | undefined, whiteAsAlpha: boolean) {
+function useImageTexture(
+    imageFile: string | undefined,
+    resolver: AssetResolver,
+    whiteAsAlpha: boolean,
+) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [imgWidth, setImgWidth] = useState(1);
     const [imgHeight, setImgHeight] = useState(1);
     const [hasAlpha, setHasAlpha] = useState(false);
 
     useEffect(() => {
-        if (!imageFile || !frameServerUrl) return;
-        let disposed = false;
+        if (!imageFile) return;
+        const url = resolver(imageFile);
+        if (!url) return;
 
-        const url = new URL('/api/show-file', frameServerUrl);
-        url.searchParams.set('path', imageFile);
+        let disposed = false;
 
         const loader = new THREE.TextureLoader();
         loader.load(
-            url.toString(),
+            url,
             (tex) => {
                 if (disposed) {
                     tex.dispose();
@@ -166,7 +184,7 @@ function useImageTexture(imageFile: string | undefined, frameServerUrl: string |
                 return null;
             });
         };
-    }, [imageFile, frameServerUrl, whiteAsAlpha]);
+    }, [imageFile, resolver, whiteAsAlpha]);
 
     return { texture, imgWidth, imgHeight, hasAlpha };
 }
@@ -176,11 +194,16 @@ function useImageTexture(imageFile: string | undefined, frameServerUrl: string |
 // xllayoutcalcs, optional white-as-alpha cutout, optional custom tint.
 // ---------------------------------------------------------------------------
 
-function ModelImagePlane({ viewObject, frameServerUrl, liveData }: ImagePlaneProps) {
+function ModelImagePlane({ viewObject, frameServerUrl, assetResolver, liveData }: ImagePlaneProps) {
+    const effectiveResolver = useMemo<AssetResolver>(
+        () => assetResolver ?? createShowFileResolver(frameServerUrl),
+        [assetResolver, frameServerUrl],
+    );
+
     const { imageFile, transparency, imageInfo, worldMatrix, startChannel } = viewObject;
 
     const whiteAsAlpha = !!imageInfo?.whiteAsAlpha;
-    const { texture } = useImageTexture(imageFile, frameServerUrl, whiteAsAlpha);
+    const { texture } = useImageTexture(imageFile, effectiveResolver, whiteAsAlpha);
 
     const tint = useMemo(() => parseHexColor(imageInfo?.customColor), [imageInfo?.customColor]);
     const offBright = useMemo(
@@ -274,7 +297,12 @@ function ModelImagePlane({ viewObject, frameServerUrl, liveData }: ImagePlanePro
 // (Original behaviour, preserved verbatim.)
 // ---------------------------------------------------------------------------
 
-function ViewObjectImagePlane({ viewObject, frameServerUrl, backgroundBrightness }: ImagePlaneProps) {
+function ViewObjectImagePlane({ viewObject, frameServerUrl, assetResolver, backgroundBrightness }: ImagePlaneProps) {
+    const effectiveResolver = useMemo<AssetResolver>(
+        () => assetResolver ?? createShowFileResolver(frameServerUrl),
+        [assetResolver, frameServerUrl],
+    );
+
     const {
         imageFile,
         worldPosX, worldPosY, worldPosZ,
@@ -285,7 +313,7 @@ function ViewObjectImagePlane({ viewObject, frameServerUrl, backgroundBrightness
     } = viewObject;
 
     const brightness = backgroundBrightness !== undefined ? backgroundBrightness : viewObjectBrightness;
-    const { texture, imgWidth, imgHeight, hasAlpha } = useImageTexture(imageFile, frameServerUrl, false);
+    const { texture, imgWidth, imgHeight, hasAlpha } = useImageTexture(imageFile, effectiveResolver, false);
 
     if (!texture) return null;
 
