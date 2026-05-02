@@ -1190,6 +1190,7 @@ function SceneContent({
                                 key={viewObj.name}
                                 viewObject={viewObj}
                                 frameServerUrl={frameServerUrl}
+                                assetResolver={assetResolver}
                                 liveData={liveData}
                             />
                         );
@@ -1207,6 +1208,7 @@ function SceneContent({
                                 key={viewObj.name}
                                 viewObject={viewObj}
                                 frameServerUrl={frameServerUrl}
+                                assetResolver={assetResolver}
                                 backgroundBrightness={undefined}
                             />
                         );
