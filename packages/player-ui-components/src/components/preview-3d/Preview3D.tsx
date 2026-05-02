@@ -106,6 +106,19 @@ export interface Preview3DProps {
      * components work in cloud-only, FSEQ-only, and local-Koa hosting.
      */
     layoutAssets?: Map<string, string>;
+    /**
+     * Optional view objects (mesh / image planes) parsed from rgbeffects. When supplied,
+     * Preview3D uses them directly and skips the `frameServerUrl/api/view-objects` fetch —
+     * required for the cloud-only path where there is no Koa server. When omitted, falls
+     * back to the show-server fetch (Electron / local browser).
+     */
+    viewObjects?: ViewObject[];
+    /**
+     * Optional DMX moving-head fixtures. Same role as `viewObjects` for the
+     * `frameServerUrl/api/moving-heads` fetch — supply when the caller has already extracted
+     * them client-side (e.g. via `xllayoutcalcs.getAllMovingHeads`).
+     */
+    movingHeadFixtures?: MhFixtureInfo[];
     showList?: boolean;
     initialShowList?: boolean;
     showControls?: boolean;
@@ -137,6 +150,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     modelData2D: initialModelData2D,
     layoutSettings: initialLayoutSettings,
     layoutAssets,
+    viewObjects: initialViewObjects,
+    movingHeadFixtures: initialMovingHeadFixtures,
     showList = false,
     initialShowList = false,
     showControls = true,
@@ -409,6 +424,15 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setModelData(initialModelData);
             setModelData2D(initialModelData2D ?? null);
             setLayoutSettings(initialLayoutSettings ?? {});
+            // Caller-supplied view objects + moving heads (cloud-only path) — when present we
+            // skip the corresponding `frameServerUrl/api/...` fetches entirely, since the
+            // parser in `useBrowserPlayback` already produced them client-side.
+            if (initialViewObjects !== undefined) {
+                setViewObjects(initialViewObjects);
+            }
+            if (initialMovingHeadFixtures !== undefined) {
+                setMovingHeadFixtures(initialMovingHeadFixtures);
+            }
             setLoading(false);
             return;
         }
@@ -531,7 +555,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         loadFromXml();
         return () => { cancelled = true; };
-    }, [initialModelData, initialModelData2D, initialLayoutSettings, showDirectory, effectiveFrameServerUrl]);
+    }, [initialModelData, initialModelData2D, initialLayoutSettings, initialViewObjects, initialMovingHeadFixtures, showDirectory, effectiveFrameServerUrl]);
 
     // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
