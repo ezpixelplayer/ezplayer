@@ -138,7 +138,12 @@ function useImageTexture(
     useEffect(() => {
         if (!imageFile) return;
         const url = resolver(imageFile);
-        if (!url) return;
+        if (!url) {
+            // Resolver had nothing to offer — neither a layout-zip blob URL nor a show-file
+            // fallback. Worth surfacing because it's silent otherwise: the plane renders empty.
+            console.warn(`[ImagePlane] No resolver match for image "${imageFile}"`);
+            return;
+        }
 
         let disposed = false;
 
@@ -173,7 +178,11 @@ function useImageTexture(
             },
             undefined,
             (err) => {
-                if (!disposed) console.error(`[ImagePlane] Failed to load image "${imageFile}":`, err);
+                if (!disposed) {
+                    // Include the URL we actually tried — without it, "failed to load X.jpg"
+                    // doesn't tell us whether we were fetching a zip blob or a show-file URL.
+                    console.error(`[ImagePlane] Failed to load image "${imageFile}" (URL ${url}):`, err);
+                }
             },
         );
 
