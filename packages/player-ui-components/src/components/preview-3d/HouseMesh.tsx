@@ -503,14 +503,22 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
 
     // ----- Channel info (auto-detect from points if needed) -----
     const channelInfo = useMemo(() => {
+        // ViewObject XML carries plain rOffset/gOffset/bOffset; synthesize a
+        // colorMix so the inner loop has a single code path.
+        const offsetsToMix = (rOff: number, gOff: number, bOff: number): Float32Array => {
+            const mix = new Float32Array(12);
+            mix[0] = rOff; mix[1] = 1; mix[2] = 0; mix[3] = 0;
+            mix[4] = gOff; mix[5] = 0; mix[6] = 1; mix[7] = 0;
+            mix[8] = bOff; mix[9] = 0; mix[10] = 0; mix[11] = 1;
+            return mix;
+        };
+
         if (viewObjectStartChannel !== undefined) {
             return {
                 startChannel: viewObjectStartChannel,
                 channelsPerNode: viewObjectChannelsPerNode,
                 nodeCount: viewObjectNodeCount,
-                rOffset: viewObjectROffset,
-                gOffset: viewObjectGOffset,
-                bOffset: viewObjectBOffset,
+                colorMix: offsetsToMix(viewObjectROffset, viewObjectGOffset, viewObjectBOffset),
             };
         }
 
@@ -527,13 +535,13 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         if (channels.length === 0) return null;
 
         const firstPoint = matchingPoints[0];
+        // Prefer the model's baked colorMix; fall back to RGB if absent.
+        const colorMix = firstPoint.metadata?.colorMix ?? offsetsToMix(0, 1, 2);
         return {
             startChannel: channels[0],
             channelsPerNode: 3,
             nodeCount: Math.ceil((channels[channels.length - 1] - channels[0] + 3) / 3),
-            rOffset: firstPoint.metadata?.rOffset ?? 0,
-            gOffset: firstPoint.metadata?.gOffset ?? 1,
-            bOffset: firstPoint.metadata?.bOffset ?? 2,
+            colorMix,
         };
     }, [
         viewObjectStartChannel, viewObjectChannelsPerNode, viewObjectNodeCount,
@@ -544,9 +552,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
     const startChannel = channelInfo?.startChannel;
     const channelsPerNode = channelInfo?.channelsPerNode ?? 3;
     const nodeCount = channelInfo?.nodeCount ?? 1;
-    const rOffset = channelInfo?.rOffset ?? 0;
-    const gOffset = channelInfo?.gOffset ?? 1;
-    const bOffset = channelInfo?.bOffset ?? 2;
+    const colorMix = channelInfo?.colorMix;
 
     // ----- URL construction -----
     // Mesh + companion MTL are resolved through the asset resolver so cloud-only callers can
@@ -784,13 +790,31 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         if (!latestFrame?.bytes) return;
 
         let totalR = 0, totalG = 0, totalB = 0, validNodes = 0;
+        const mix = colorMix;
+        const mixLen = mix?.length ?? 0;
+        // Largest offset present in the mix — used to bounds-check once per node.
+        let maxOff = 0;
+        if (mix) {
+            for (let m = 0; m < mixLen; m += 4) if (mix[m] > maxOff) maxOff = mix[m];
+        }
 
         for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
             const ch = startChannel + nodeIndex * channelsPerNode;
-            if (ch + 2 < latestFrame.bytes.length) {
-                totalR += latestFrame.bytes[ch + rOffset];
-                totalG += latestFrame.bytes[ch + gOffset];
-                totalB += latestFrame.bytes[ch + bOffset];
+            if (mix) {
+                if (ch + maxOff >= latestFrame.bytes.length) continue;
+                let nr = 0, ng = 0, nb = 0;
+                for (let m = 0; m < mixLen; m += 4) {
+                    const v = latestFrame.bytes[ch + mix[m]];
+                    nr += v * mix[m + 1];
+                    ng += v * mix[m + 2];
+                    nb += v * mix[m + 3];
+                }
+                totalR += nr; totalG += ng; totalB += nb;
+                validNodes++;
+            } else if (ch + 2 < latestFrame.bytes.length) {
+                totalR += latestFrame.bytes[ch];
+                totalG += latestFrame.bytes[ch + 1];
+                totalB += latestFrame.bytes[ch + 2];
                 validNodes++;
             }
         }

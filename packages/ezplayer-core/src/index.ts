@@ -46,6 +46,9 @@ export type {
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,
+    ChannelRole,
+    ChannelRoleKind,
+    ImageInfo,
     AudioTagMetadata,
 } from './types/EZPElectronAPI';
 

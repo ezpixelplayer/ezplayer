@@ -1182,6 +1182,19 @@ function SceneContent({
             {/* Render image planes from view objects */}
             {viewObjects?.map((viewObj) => {
                 if (viewObj.displayAs === 'Image' && viewObj.imageFile && viewObj.active !== false) {
+                    // Image *models* drive their own brightness from live channel data
+                    // via the ImagePlane shader path — ignore the view-object brightness slider.
+                    if (viewObj.imageInfo) {
+                        return (
+                            <ImagePlane
+                                key={viewObj.name}
+                                viewObject={viewObj}
+                                frameServerUrl={frameServerUrl}
+                                liveData={liveData}
+                            />
+                        );
+                    }
+
                     // Calculate brightness for this image view object: xmlBrightness * (sliderMultiplier / 100)
                     // Use ONLY the view object's own brightness from XML, multiplied by the slider
                     // Do NOT use background brightness - only use the view object's brightness

@@ -59,8 +59,14 @@ import {
     getAllViewpoints,
     GetNodeResult,
     type MhFixtureInfo,
+    type ModelParseOptions,
     migrateToFormat,
 } from 'xllayoutcalcs';
+
+// xllayoutcalcs warns about XML attributes the model parser ignored — useful
+// during in-tree development, but actionable only by xllayoutcalcs maintainers,
+// so silence it in the shipped player.
+const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
@@ -858,12 +864,12 @@ async function loadXmlCoordinates() {
     layoutSettings = {};
 
     if (xrgb && xnet) {
-        const gmc2d = getAllModelCoordinates(xrgb, xnet, true);
-        const gmc3d = getAllModelCoordinates(xrgb, xnet, false);
+        const gmc2d = getAllModelCoordinates(xrgb, xnet, true, PARSE_OPTS);
+        const gmc3d = getAllModelCoordinates(xrgb, xnet, false, PARSE_OPTS);
 
         // Extract moving head fixture definitions
         try {
-            movingHeads = getAllMovingHeads(xrgb, xnet);
+            movingHeads = getAllMovingHeads(xrgb, xnet, PARSE_OPTS);
             emitInfo(`[loadXmlCoordinates] Found ${movingHeads.length} moving head fixture(s)`);
         } catch (mhErr) {
             emitWarning(`[loadXmlCoordinates] Error extracting moving heads: ${mhErr}`);
@@ -1031,7 +1037,46 @@ async function loadXmlCoordinates() {
                     }
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images)`);
+                // Surface Image *models* as ImagePlane view objects too.  The
+                // model carries imageInfo (path, off-brightness, white-as-alpha,
+                // custom tint) and a world transform matrix that already encodes
+                // position/rotation/scale in xLights units, so we pass the matrix
+                // through verbatim and let the renderer apply it.
+                let imageModelCount = 0;
+                for (const [modelName, modelEntry] of gmc3d.models.entries()) {
+                    const nr = modelEntry.nodeResult;
+                    if (!nr.imageInfo) continue;
+                    const resolvedImageFile = resolveFilePathFromIndex(
+                        nr.imageInfo.imageFile,
+                        resolvedShow,
+                        fileIndex,
+                    );
+                    if (!resolvedImageFile) {
+                        emitWarning(
+                            `[loadXmlCoordinates] Could not resolve image "${nr.imageInfo.imageFile}" for image model "${modelName}"`,
+                        );
+                        continue;
+                    }
+                    viewObjects.push({
+                        name: modelName,
+                        displayAs: 'Image',
+                        imageFile: resolvedImageFile,
+                        // Identity placeholders — the renderer uses worldMatrix instead.
+                        worldPosX: 0, worldPosY: 0, worldPosZ: 0,
+                        scaleX: 1, scaleY: 1, scaleZ: 1,
+                        rotateX: 0, rotateY: 0, rotateZ: 0,
+                        active: true,
+                        startChannel: modelEntry.channelMapping.firstChannel,
+                        channelsPerNode: modelEntry.channelMapping.channelsPerNode,
+                        nodeCount: modelEntry.channelMapping.totalNodes,
+                        modelName,
+                        imageInfo: nr.imageInfo,
+                        worldMatrix: Array.from(nr.toWorldCoords as Float32Array),
+                    });
+                    imageModelCount++;
+                }
+
+                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images${imageModelCount ? ` incl. ${imageModelCount} image model${imageModelCount === 1 ? '' : 's'}` : ''})`);
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
             }

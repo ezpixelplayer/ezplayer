@@ -1,7 +1,7 @@
 /**
  * Types for 3D model data structure
  */
-import type { LayoutGroupInfo, ViewpointsResult } from 'xllayoutcalcs';
+import type { ImageInfo, LayoutGroupInfo, ViewpointsResult } from 'xllayoutcalcs';
 
 export interface ModelPointMetadata {
     modelName?: string;
@@ -10,10 +10,15 @@ export interface ModelPointMetadata {
     coordIndex?: number;
     key?: string;
     itemIndex?: number;
-    // Color channel offsets for handling different color orders (RGB, GRB, etc.)
-    rOffset?: number; // Red channel offset (0, 1, or 2)
-    gOffset?: number; // Green channel offset (0, 1, or 2)
-    bOffset?: number; // Blue channel offset (0, 1, or 2)
+    /** Baked channel-to-RGB mixer derived from xllayoutcalcs `channelRoles`.
+     *  Layout: [offset0, r0, g0, b0, offset1, r1, g1, b1, ...].  The hot
+     *  render loop sums `bytes[colorIndex + offset_i] / 255 * (r_i, g_i, b_i)`
+     *  to produce final RGB.  Shared (by reference) between every point of
+     *  the same model — do not mutate. */
+    colorMix?: Float32Array;
+    /** Largest offset present in `colorMix`; used to bounds-check once per
+     *  point instead of per role. */
+    colorMixMaxOffset?: number;
     // Brightness and gamma for grouping geometries with same rendering properties
     brightness?: number; // Brightness multiplier (default: 1.0)
     gamma?: number; // Gamma correction value (default: 2.2)
@@ -100,6 +105,15 @@ export interface ViewObject {
     rOffset?: number; // Red channel offset (0, 1, or 2)
     gOffset?: number; // Green channel offset (0, 1, or 2)
     bOffset?: number; // Blue channel offset (0, 1, or 2)
+
+    /** Set when this view object is actually an Image *model* (carries
+     *  channel data + offBrightness/whiteAsAlpha/customColor).  Drives the
+     *  live-tinted shader path in ImagePlane. */
+    imageInfo?: ImageInfo;
+    /** Column-major 4×4 world transform for Image-model view objects.
+     *  When present, ImagePlane applies this directly and ignores the
+     *  worldPos / scale / rotate fields above. */
+    worldMatrix?: number[];
 }
 
 export interface Model3DData {

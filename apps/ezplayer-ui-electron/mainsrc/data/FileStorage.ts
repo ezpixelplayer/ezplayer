@@ -72,6 +72,18 @@ export const blankUserProfile: EndUser = {
 };
 
 /**
+ * Log a load failure as a single line.  Missing-file (ENOENT) is expected on
+ * first run for every show-folder JSON we read, so we suppress those entirely
+ * and only surface real errors (parse failures, permission denied, etc.).
+ */
+function logLoadFailure(file: string, err: unknown): void {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') return;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[FileStorage] ${file}: ${msg}`);
+}
+
+/**
  * Ensure path is absolute relative to a base directory.
  */
 function ensureAbsolute(p: string, base: string): string {
@@ -122,8 +134,7 @@ export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]
         }
         return seqs;
     } catch (e) {
-        // Maybe no file yet...
-        console.log(e);
+        logLoadFailure('sequences.json', e);
         return [];
     }
 }
@@ -156,7 +167,7 @@ export async function loadPlaylistsAPI(folder: string): Promise<PlaylistRecord[]
         );
         return p.data.playlists ?? [];
     } catch (e) {
-        console.log(e);
+        logLoadFailure('playlists.json', e);
         return [];
     }
 }
@@ -177,7 +188,7 @@ export async function loadScheduleAPI(folder: string) {
         );
         return p.data.scheduledPlaylists ?? [];
     } catch (e) {
-        console.log(e);
+        logLoadFailure('schedule.json', e);
         return [];
     }
 }
@@ -196,7 +207,7 @@ export async function loadShowProfileAPI(folder: string) {
         const p: TempShowAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'show.json'), 'utf-8'));
         return p.data.show ?? blankShowProfile;
     } catch (e) {
-        console.log(e);
+        logLoadFailure('show.json', e);
         return blankShowProfile;
     }
 }
@@ -213,7 +224,7 @@ export async function loadUserProfileAPI(folder: string) {
         const p: TempUserAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'user.json'), 'utf-8'));
         return p.data.user ?? blankUserProfile;
     } catch (e) {
-        console.log(e);
+        logLoadFailure('user.json', e);
         return blankUserProfile;
     }
 }

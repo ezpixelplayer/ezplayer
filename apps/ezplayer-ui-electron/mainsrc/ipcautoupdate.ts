@@ -214,12 +214,25 @@ export function registerAutoUpdateHandlers(win: BrowserWindow) {
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowPrerelease = true;
 
+    // Quiet one-line logger.  electron-updater's default emits full stack
+    // traces for routine 404s (missing latest.yml on disabled platforms,
+    // etc.); collapse those to a single line and drop debug noise.
+    autoUpdater.logger = {
+        debug: () => {},
+        info: (msg: unknown) => console.log(`[AutoUpdate] ${typeof msg === 'string' ? msg : (msg as Error)?.message ?? msg}`),
+        warn: (msg: unknown) => console.warn(`[AutoUpdate] ${typeof msg === 'string' ? msg : (msg as Error)?.message ?? msg}`),
+        error: (msg: unknown) => {
+            const text = msg instanceof Error ? msg.message : typeof msg === 'string' ? msg : String(msg);
+            console.error(`[AutoUpdate] ${text}`);
+        },
+    };
+
     wireUpdaterEvents();
     registerIPCHandlers();
     startIdleWatcher();
 
     // Fire startup check (non-blocking)
-    startupCheck().catch((err) => console.error('Auto-update startup check error:', err));
+    startupCheck().catch((err) => console.error(`[AutoUpdate] startup check error: ${err?.message ?? err}`));
 }
 
 export function cleanupAutoUpdate() {

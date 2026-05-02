@@ -1,10 +1,11 @@
 import {
     GetNodeResult,
+    type ImageInfo,
     type LayoutGroupInfo,
     type MhFixtureInfo,
     type ViewpointsResult,
 } from 'xllayoutcalcs';
-export type { LayoutGroupInfo, MhFixtureInfo, ViewpointsResult };
+export type { ImageInfo, LayoutGroupInfo, MhFixtureInfo, ViewpointsResult };
 import type { RPCRequest, RPCResponse } from './rpctypes';
 import type {
     AudioChunk,
@@ -61,6 +62,20 @@ export interface ViewObject {
     rotateZ: number;
     brightness?: number;
     active?: boolean;
+    // Channel mapping (used for live tinting of HouseMesh and Image-model planes)
+    startChannel?: number;
+    channelsPerNode?: number;
+    nodeCount?: number;
+    modelName?: string;
+
+    /** Set when this view object is actually an Image *model* — drives the
+     *  live-tinted shader path in ImagePlane (off-brightness floor, custom
+     *  tint, white-as-alpha). */
+    imageInfo?: ImageInfo;
+    /** Column-major 4×4 world transform from xllayoutcalcs.  When present,
+     *  ImagePlane applies this directly and ignores the worldPos / scale /
+     *  rotate fields above. */
+    worldMatrix?: number[];
 }
 
 // Should something be in the RPC API?

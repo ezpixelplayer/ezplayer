@@ -102,6 +102,6 @@
         "vite-plugin-svgr": "^4.3.0",
         "vitest": "^2.1.8",
         "tsup": "^8.5.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.0.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.4.tgz"
     }
 }

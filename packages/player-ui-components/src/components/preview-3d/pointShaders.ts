@@ -351,7 +351,8 @@ export function createPointShaderMaterial(
         vertexColors: false, // We're using custom attributes
         transparent: isTransparent, // Enable transparency for circles and blended circles
         depthWrite: !isTransparent, // Disable depth write for transparent materials to avoid z-fighting
-        blending: isTransparent ? THREE.NormalBlending : undefined, // Use normal blending for transparency (default for opaque)
+        // blending defaults to THREE.NormalBlending — leave it unset rather than
+        // pass `undefined`, which trips THREE.Material.setValues() with a warning.
         premultipliedAlpha: false, // Standard alpha blending
     });
 
