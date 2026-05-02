@@ -10,6 +10,7 @@ import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
 import { MovingHeadMarkers2D } from './MovingHeadMarkers2D';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
+import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
 
 export interface CameraState2D {
     position: [number, number, number];
@@ -31,6 +32,12 @@ export interface Viewer2DProps {
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
+    /**
+     * Resolves an asset path (background image / texture) to a fetchable URL. Built by
+     * `Preview3D` from `layoutAssets` + `frameServerUrl`. When omitted, the background
+     * image plane falls back to constructing show-file URLs from `frameServerUrl` directly.
+     */
+    assetResolver?: AssetResolver;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number; // 0-100, affects background images only
     pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
@@ -474,11 +481,11 @@ function HoverHandler2D({
 
 function BackgroundImage2D({
     layoutSettings,
-    frameServerUrl,
+    assetResolver,
     backgroundBrightnessOverride,
 }: {
     layoutSettings: LayoutSettings;
-    frameServerUrl: string;
+    assetResolver: AssetResolver;
     backgroundBrightnessOverride?: number;
 }) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -487,16 +494,15 @@ function BackgroundImage2D({
     const backgroundBrightness = backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
 
     useEffect(() => {
-        if (!backgroundImage || !frameServerUrl) return;
+        if (!backgroundImage) return;
+        const url = assetResolver(backgroundImage);
+        if (!url) return;
 
         let disposed = false;
 
-        const url = new URL('/api/show-file', frameServerUrl);
-        url.searchParams.set('path', backgroundImage);
-
         const loader = new THREE.TextureLoader();
         loader.load(
-            url.toString(),
+            url,
             (tex) => {
                 if (disposed) {
                     tex.dispose();
@@ -523,7 +529,7 @@ function BackgroundImage2D({
                 return null;
             });
         };
-    }, [backgroundImage, frameServerUrl]);
+    }, [backgroundImage, assetResolver]);
 
     if (!texture || !previewWidth || !previewHeight) return null;
 
@@ -569,6 +575,7 @@ function Scene2DContent({
     modelMetadata,
     layoutSettings,
     frameServerUrl,
+    assetResolver,
     movingHeadFixtures,
     backgroundBrightness,
     pixelSizeMultiplier,
@@ -592,6 +599,7 @@ function Scene2DContent({
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
+    assetResolver?: AssetResolver;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number;
     pixelSizeMultiplier?: number;
@@ -892,11 +900,12 @@ function Scene2DContent({
             <ambientLight intensity={0.7} />
             <directionalLight position={[10, 10, 5]} intensity={0.5} />
 
-            {/* Background image from layout settings */}
-            {layoutSettings?.backgroundImage && frameServerUrl && (
+            {/* Background image from layout settings — render whenever the layout names a
+                background image and we have any way to resolve it (zip blob or show-file). */}
+            {layoutSettings?.backgroundImage && (assetResolver || frameServerUrl) && (
                 <BackgroundImage2D
                     layoutSettings={layoutSettings}
-                    frameServerUrl={frameServerUrl}
+                    assetResolver={assetResolver ?? createShowFileResolver(frameServerUrl)}
                     backgroundBrightnessOverride={backgroundBrightness}
                 />
             )}
@@ -950,6 +959,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     modelMetadata,
     layoutSettings,
     frameServerUrl,
+    assetResolver,
     movingHeadFixtures,
     backgroundBrightness = 100,
     pixelSizeMultiplier = 1.0,
@@ -1125,6 +1135,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             modelMetadata={modelMetadata}
                             layoutSettings={layoutSettings}
                             frameServerUrl={frameServerUrl}
+                            assetResolver={assetResolver}
                             movingHeadFixtures={movingHeadFixtures}
                             backgroundBrightness={backgroundBrightness}
                             pixelSizeMultiplier={pixelSizeMultiplier}

@@ -62,6 +62,7 @@ import {
     getCloudXsqzFileAPI,
     getCloudLatestNetworksAPI,
     getCloudLatestRgbeffAPI,
+    getCloudLatestLayzipAPI,
     getCloudPreviewVideoAPI,
     postCloudZipUploadAPI,
     postCloudDoneUploadZipAPI,
@@ -347,6 +348,9 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     }
     async getCloudLatestRgbeff(): Promise<CloudFileDownloadResponse> {
         return await getCloudLatestRgbeffAPI(this.axiosInstance, this.apiUrl);
+    }
+    async getCloudLatestLayzip(): Promise<CloudFileDownloadResponse> {
+        return await getCloudLatestLayzipAPI(this.axiosInstance, this.apiUrl);
     }
 
     async getCloudPreviewVideo(fileId: string): Promise<CloudFileDownloadResponse> {

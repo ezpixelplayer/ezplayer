@@ -1,6 +1,10 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useMemo, useState, useEffect, Suspense } from 'react';
 import * as THREE from 'three';
 import type { ViewObject } from '../../types/model3d';
+import {
+    type AssetResolver,
+    createShowFileResolver,
+} from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -14,7 +18,14 @@ const MAX_TEXTURE_SIZE = 2048;
 
 interface ImagePlaneProps {
     viewObject: ViewObject;
+    /** Local-Koa server URL — used to build show-file URLs when no `assetResolver` is supplied. */
     frameServerUrl?: string;
+    /**
+     * Optional asset resolver (e.g. layzip blob map). When supplied it takes precedence over
+     * `frameServerUrl`-derived show-file URLs, so the same component works in cloud-only,
+     * FSEQ-only, and local-Koa hosting.
+     */
+    assetResolver?: AssetResolver;
     backgroundBrightness?: number; // 0-100, overrides viewObject brightness for background images
 }
 
@@ -74,7 +85,12 @@ function imageHasAlpha(img: HTMLImageElement | HTMLCanvasElement): boolean {
 // ImagePlaneContent – the actual R3F component
 // ---------------------------------------------------------------------------
 
-function ImagePlaneContent({ viewObject, frameServerUrl, backgroundBrightness }: ImagePlaneProps) {
+function ImagePlaneContent({ viewObject, frameServerUrl, assetResolver, backgroundBrightness }: ImagePlaneProps) {
+    const effectiveResolver = useMemo<AssetResolver>(
+        () => assetResolver ?? createShowFileResolver(frameServerUrl),
+        [assetResolver, frameServerUrl],
+    );
+
     const {
         imageFile,
         worldPosX, worldPosY, worldPosZ,
@@ -92,18 +108,18 @@ function ImagePlaneContent({ viewObject, frameServerUrl, backgroundBrightness }:
     const [imgHeight, setImgHeight] = useState(1);
     const [hasAlpha, setHasAlpha] = useState(false);
 
-    // Load texture via /api/show-file
+    // Load texture through the asset resolver — works for both /api/show-file (local Koa)
+    // and zip-blob URLs (cloud-only / FSEQ-only previews).
     useEffect(() => {
-        if (!imageFile || !frameServerUrl) return;
+        if (!imageFile) return;
+        const url = effectiveResolver(imageFile);
+        if (!url) return;
 
         let disposed = false;
 
-        const url = new URL('/api/show-file', frameServerUrl);
-        url.searchParams.set('path', imageFile);
-
         const loader = new THREE.TextureLoader();
         loader.load(
-            url.toString(),
+            url,
             (tex) => {
                 if (disposed) {
                     tex.dispose();
@@ -149,7 +165,7 @@ function ImagePlaneContent({ viewObject, frameServerUrl, backgroundBrightness }:
                 return null;
             });
         };
-    }, [imageFile, frameServerUrl]);
+    }, [imageFile, effectiveResolver]);
 
     if (!texture) return null;
 

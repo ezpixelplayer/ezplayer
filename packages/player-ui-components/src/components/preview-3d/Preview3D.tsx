@@ -45,6 +45,12 @@ import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import { useAudioStream } from '../../hooks/useAudioStream';
 import { isElectron } from '@ezplayer/shared-ui-components';
 import type { RootState } from '../../store/Store';
+import {
+    type AssetResolver,
+    combineResolvers,
+    createShowFileResolver,
+    createZipAssetResolver,
+} from '../../services/assetResolver';
 
 export type ViewMode = '3d' | '2d';
 export type ViewPlane = 'xy' | 'xz' | 'yz';
@@ -92,6 +98,14 @@ export interface Preview3DProps {
     modelData2D?: Model3DData;
     /** Optional layout settings from caller (e.g. browser XSQZ parsing path). */
     layoutSettings?: LayoutSettings;
+    /**
+     * Optional map of layout asset paths → blob URLs supplied by callers that have the layout
+     * zip in hand (e.g. the browser-preview path via `useBrowserPlayback`). Keyed by lowercase
+     * forward-slash relative path. Preview3D builds a chained `AssetResolver` from this map
+     * (preferred) plus `frameServerUrl` (fallback) and passes it down to leaves so the same
+     * components work in cloud-only, FSEQ-only, and local-Koa hosting.
+     */
+    layoutAssets?: Map<string, string>;
     showList?: boolean;
     initialShowList?: boolean;
     showControls?: boolean;
@@ -122,6 +136,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     modelData: initialModelData,
     modelData2D: initialModelData2D,
     layoutSettings: initialLayoutSettings,
+    layoutAssets,
     showList = false,
     initialShowList = false,
     showControls = true,
@@ -350,6 +365,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Resolve the server URL (auto-detects Electron port or falls back to same-origin).
     const { url: effectiveFrameServerUrl } = useFrameServerUrl({ frameServerUrl });
+
+    // Build the asset resolver leaves use to turn a layout asset path into a fetchable URL.
+    // Zip-blob first so any asset present in the caller-supplied layout zip wins; show-file
+    // second so disk-served assets are still resolvable when running against local Koa
+    // (Electron / local browser). When neither yields a URL the leaves fall back to no-op.
+    const assetResolver = React.useMemo<AssetResolver>(
+        () =>
+            combineResolvers(
+                createZipAssetResolver(layoutAssets),
+                createShowFileResolver(effectiveFrameServerUrl),
+            ),
+        [layoutAssets, effectiveFrameServerUrl],
+    );
 
     // Audio stream for the standalone web client. In embedded mode the host (e.g. the browser
     // preview dialog) owns audio, so we pass no baseUrl — that short-circuits `useAudioStream`
@@ -1189,6 +1217,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 modelMetadata={renderedModelData?.metadata?.models}
                                 viewObjects={viewObjects}
                                 frameServerUrl={effectiveFrameServerUrl}
+                                assetResolver={assetResolver}
                                 movingHeadFixtures={movingHeadFixtures}
                                 backgroundBrightness={undefined}
                                 brightnessMultiplier={previewSettings.brightnessMultiplier}
@@ -1215,6 +1244,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 modelMetadata={renderedModelData2D.metadata?.models}
                                 layoutSettings={effectiveLayoutSettings}
                                 frameServerUrl={effectiveFrameServerUrl}
+                                assetResolver={assetResolver}
                                 movingHeadFixtures={movingHeadFixtures}
                                 backgroundBrightness={undefined}
                                 pixelSizeMultiplier={previewSettings.pixelSize}

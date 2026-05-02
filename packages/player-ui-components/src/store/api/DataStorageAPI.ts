@@ -158,6 +158,8 @@ export interface DataStorageAPI {
     getCloudLatestNetworks: () => Promise<CloudFileDownloadResponse>;
     /** Presigned URL for the logged-in user's latest `xlights_rgbeffects.xml`. */
     getCloudLatestRgbeff: () => Promise<CloudFileDownloadResponse>;
+    /** Presigned URL for the logged-in user's latest layout zip (XMLs + mesh/image assets). */
+    getCloudLatestLayzip: () => Promise<CloudFileDownloadResponse>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
