@@ -15,7 +15,6 @@ import {
     SongList,
     ShowStatusScreen,
     PlaybackSettingsDrawer,
-    SchedulePreview,
     Preview3DPage,
     toRouteChildren,
 } from '@ezplayer/player-ui-components';
@@ -26,7 +25,6 @@ import PlayArrow from '@mui/icons-material/PlayArrow';
 import InfoRounded from '@mui/icons-material/InfoRounded';
 import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
 import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
-import PreviewIcon from '@mui/icons-material/Preview';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 
@@ -68,16 +66,6 @@ const menuRoutes: MenuRoute[] = [
         path: ROUTES.SCHEDULE,
         element: <Schedule title="Schedule" statusArea={getStatusArea()} />,
         sidebar: { icon: <TableChartTwoToneIcon />, label: 'Schedule' },
-    },
-    {
-        path: ROUTES.BACKGROUND_SCHEDULE,
-        element: <Schedule title="Background Schedule" statusArea={getStatusArea()} scheduleType="background" />,
-        sidebar: { icon: <TableChartTwoToneIcon />, label: 'Background Schedule' },
-    },
-    {
-        path: ROUTES.SCHEDULE_PREVIEW,
-        element: <SchedulePreview title="Schedule Preview" statusArea={getStatusArea()} />,
-        sidebar: { icon: <PreviewIcon />, label: 'Schedule Preview' },
     },
     {
         path: ROUTES.JUKEBOXSCR,

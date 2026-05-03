@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Box } from '../box/Box';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import PlaylistScheduler from './PlaylistScheduler';
@@ -5,17 +6,21 @@ import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 import { postScheduledPlaylists } from '../../store/slices/ScheduleStore';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
+import { SchedulePreviewDialog } from '../schedule-preview/SchedulePreviewDialog';
+
+type ScheduleType = 'main' | 'background';
 
 interface ScheduleProps {
     title: string;
     statusArea: React.ReactNode[];
-    scheduleType?: 'main' | 'background';
+    initialScheduleType?: ScheduleType;
 }
 
-export const Schedule = ({ title, statusArea, scheduleType = 'main' }: ScheduleProps) => {
+export const Schedule = ({ title, statusArea, initialScheduleType = 'main' }: ScheduleProps) => {
+    const [scheduleType, setScheduleType] = useState<ScheduleType>(initialScheduleType);
+    const [previewOpen, setPreviewOpen] = useState(false);
     const allScheduledPlaylists = useSelector((state: RootState) => state.schedule.scheduledPlaylists || []);
 
-    // Filter schedules based on scheduleType
     const scheduledPlaylists =
         scheduleType === 'background'
             ? allScheduledPlaylists.filter((playlist) => playlist.scheduleType === 'background')
@@ -31,13 +36,12 @@ export const Schedule = ({ title, statusArea, scheduleType = 'main' }: ScheduleP
             await dispatch(postScheduledPlaylists(spls)).unwrap();
         } catch (error) {
             console.error('Error refreshing scheduled playlists', error);
-            throw error; // Optional: Re-throw for higher-level handling
+            throw error;
         }
     };
 
     const handleScheduleSubmit = async (scheduleData: ScheduledPlaylist[]) => {
         try {
-            // Ensure all submitted schedules are marked with the correct scheduleType
             const typedScheduleData = scheduleData.map((schedule) => ({
                 ...schedule,
                 scheduleType: scheduleType,
@@ -54,7 +58,7 @@ export const Schedule = ({ title, statusArea, scheduleType = 'main' }: ScheduleP
                 height: '100vh',
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden', // Prevent outer scrolling
+                overflow: 'hidden',
             }}
         >
             <Box sx={{ padding: 2, flexShrink: 0 }}>
@@ -63,7 +67,7 @@ export const Schedule = ({ title, statusArea, scheduleType = 'main' }: ScheduleP
             <Box
                 sx={{
                     flex: 1,
-                    overflow: 'auto', // Enable scrolling for content
+                    overflow: 'auto',
                 }}
             >
                 <PlaylistScheduler
@@ -78,8 +82,11 @@ export const Schedule = ({ title, statusArea, scheduleType = 'main' }: ScheduleP
                     initialSchedules={scheduledPlaylists}
                     loading={loading}
                     scheduleType={scheduleType}
+                    onScheduleTypeChange={setScheduleType}
+                    onOpenPreview={() => setPreviewOpen(true)}
                 />
             </Box>
+            <SchedulePreviewDialog open={previewOpen} onClose={() => setPreviewOpen(false)} />
         </Box>
     );
 };

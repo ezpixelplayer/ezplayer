@@ -8,6 +8,7 @@ export { SidebarLayout } from './components/side-bar/SidebarLayout';
 export { ConfigsButton } from './components/header/ConfigsButton';
 export { Schedule } from './components/schedule/Schedule';
 export { SchedulePreview } from './components/schedule-preview/SchedulePreview';
+export { SchedulePreviewDialog } from './components/schedule-preview/SchedulePreviewDialog';
 export { CreateEditPlaylist } from './components/playlist/CreateEditPlaylist';
 export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
