@@ -2,8 +2,6 @@ import type {
     AudioDevice,
     AutoUpdateStatus,
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
     EZPlayerCommand,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -18,14 +16,12 @@ import type {
 import {
     AppDispatch,
     CloudDataStorageAPI,
-    setEndUser,
     setPlayerStatus,
     setPlaybackStatistics,
     setPlaylists,
     hydratePlaybackSettings,
     setScheduledPlaylists,
     setSequenceData,
-    setShowProfile,
     setCStatus,
     setNStatus,
     setPStatus,
@@ -53,16 +49,6 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         window.electronAPI!.onScheduleUpdated((data: ScheduledPlaylist[]) => {
             if (this.dispatch) {
                 this.dispatch(setScheduledPlaylists(data));
-            }
-        });
-        window.electronAPI!.onShowUpdated((data: EndUserShowSettings) => {
-            if (this.dispatch) {
-                this.dispatch(setShowProfile(data));
-            }
-        });
-        window.electronAPI!.onUserUpdated((data: EndUser) => {
-            if (this.dispatch) {
-                this.dispatch(setEndUser(data));
             }
         });
         window.electronAPI!.onStatusUpdated((data: CombinedPlayerStatus) => {
@@ -199,22 +185,6 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         return await window.electronAPI!.getCombinedStatus();
     }
 
-    override async getCloudShowProfile(): Promise<EndUserShowSettings> {
-        return await window.electronAPI!.getShowProfile();
-    }
-
-    override async postCloudShowProfile(data: EndUserShowSettings): Promise<EndUserShowSettings> {
-        return await window.electronAPI!.putShowProfile(data);
-    }
-
-    override async getCloudUserProfile(): Promise<EndUser> {
-        return await window.electronAPI!.getUserProfile();
-    }
-
-    override async postCloudUserProfile(data: Partial<EndUser>): Promise<EndUser> {
-        return await window.electronAPI!.putUserProfile(data);
-    }
-
     override async issuePlayerCommand(req: EZPlayerCommand) {
         return await window.electronAPI!.immediatePlayerCommand(req);
     }
@@ -258,49 +228,4 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         // const pn1 = performance.now();
         // const act = this.audioCtx?.currentTime;
     }
-
-    /*
-    // TODO CRAZ
-    // Set up for data connectivity
-
-    requestChangeServerUrl: (data: {cloudURL: string}) => Promise<void>;
-
-    requestLoginToken: (data: UserLoginBody) => Promise<string>;
-    requestLogout: () => Promise<void>;
-
-    postCloudRegister: (data: UserRegisterBody) => Promise<UserRegisterBody>;
-
-    postRequestPasswordReset: (data: {
-        email: string;
-    }) => Promise<{ message: string }>;
-
-    postChangePassword: (data: {
-        oldPassword: string;
-        newPassword: string;
-    }) => Promise<{ message: string }>;
-
-    requestSetPlayerIdToken: (data: {playerIdToken?: string})
-        => Promise<{message: string}>;
-  
-    postRegisterPlayer: (data: {
-        playerId: string;
-    }) => Promise<{ message: string }>;
-
-    getUserPlayers: () => Promise<UserPlayer[]>;
-
-    // EZSeq integration
-    postCloudRgbUpload: () => Promise<CloudFileUpload>;
-
-    postCloudNetworksUpload: () => Promise<CloudFileUpload>;
-
-    postCloudDoneUploadLayoutFiles: (
-        data: CloudLayoutFileUpload
-    ) => Promise<CloudFileUploadResponse>;
-
-    getCloudUploadedFiles: () => Promise<DownloadFileResponse>;
-
-    getCloudSeqFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
-    getCloudMediaFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
-    getCloudXsqzFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
-*/
 }

@@ -1,12 +1,7 @@
 import {
-    CloudLayoutFileUpload,
-    CloudFileUploadResponse,
     DataStorageAPI,
-    DownloadFileResponse,
-    CloudFileDownloadResponse,
     getOrInitializePlayerId,
     setOrGeneratePlayerIdToken,
-    CloudFileUpload,
 } from '../DataStorageAPI';
 
 import {
@@ -14,11 +9,6 @@ import {
     PlaylistRecord,
     ScheduledPlaylist,
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
-    UserPlayer,
-    JSONEditSheet,
-    JSONEditState,
     EZPlayerCommand,
     PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
@@ -29,10 +19,7 @@ import {
     fetchPlaylists,
     fetchScheduledPlaylists,
     fetchSequences,
-    fetchShowProfile,
-    getCloudUploadedFiles,
     authSliceActions,
-    fetchUserProfile,
 } from '../../..';
 
 import { AxiosInstance } from 'axios';
@@ -41,40 +28,15 @@ import { getSequencesAPI, postSequencesDataAPI } from './CloudSequenceAPI';
 import { getPlaylistsAPI, postPlaylistsDataAPI } from './CloudPlaylistAPI';
 import { getScheduledPlaylistsAPI, postScheduledPlaylistsAPI } from './CloudScheduleAPI';
 import { getCloudStatusAPI } from './CloudStatusAPI';
-import { getCloudUserProfileAPI, postCloudUserProfileAPI } from './CloudUserProfileAPI';
-import { getCloudShowProfileAPI, postCloudShowProfileAPI } from './CloudShowProfile';
-import {
-    postLoginCall,
-    postRegisterCall,
-    postRequestPasswordResetCall,
-    postChangePasswordCall,
-    postRegisterPlayerCall,
-    isPlayerRegisteredCall,
-} from './CloudAuthAPI';
-import { UserLoginBody, UserRegisterBody } from '../DataStorageAPI';
-import {
-    postCloudNetworksUploadAPI,
-    postCloudRgbUploadAPI,
-    postCloudDoneUploadLayoutFilesAPI,
-    getCloudUploadedFilesAPI,
-    getCloudSeqFileAPI,
-    getCloudMediaFileAPI,
-    getCloudXsqzFileAPI,
-    getCloudLatestNetworksAPI,
-    getCloudLatestRgbeffAPI,
-    getCloudLatestLayzipAPI,
-    getCloudPreviewVideoAPI,
-    postCloudZipUploadAPI,
-    postCloudDoneUploadZipAPI,
-} from './CloudFileUploadAPI';
-import { getPlayersAPI } from './CloudPlayers';
-import {
-    getLayoutOptionsAPI,
-    startLayoutHintsUploadAPI,
-    uploadLayoutHintsFileAPI,
-    getLayoutHintsAPI,
-} from './CloudLayoutAPI';
+import { postRegisterPlayerCall, isPlayerRegisteredCall } from './CloudAuthAPI';
 
+/**
+ * Player-side cloud client. Implements `DataStorageAPI` — connectivity, auth identity,
+ * sequence/playlist/schedule sync, and status. The show-builder app uses
+ * `BuilderCloudDataStorageAPI` (in `@ezplayer/show-builder-components`) which extends this
+ * with show-profile, user-profile, layout-edit, and entitlement/file-upload methods, and
+ * extends `refreshAll()` to dispatch the builder-only bootstrap fetches.
+ */
 export class CloudDataStorageAPI implements DataStorageAPI {
     baseUrl: string;
     axiosInstance: AxiosInstance;
@@ -107,6 +69,11 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         return await this.refreshAll();
     }
 
+    /**
+     * Auth check + auth slice setup, then dispatch the player-relevant bootstrap fetches.
+     * `BuilderCloudDataStorageAPI` overrides this and adds builder-only fetches
+     * (`fetchUserProfile`, `fetchShowProfile`, `getCloudUploadedFiles`).
+     */
     async refreshAll() {
         let isregistered = false;
         let ver = 'unknown';
@@ -132,15 +99,10 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         dispatch(authSliceActions.setCloudServiceUrl(this.baseUrl));
         dispatch(authSliceActions.setPlayerIdToken(this.playerIdToken));
         dispatch(authSliceActions.setUserToken(token));
-        if (token) {
-            await dispatch(fetchUserProfile()).unwrap();
-        }
         await dispatch(fetchSequences()).unwrap();
         await dispatch(fetchPlaylists()).unwrap();
         await dispatch(fetchScheduledPlaylists()).unwrap();
-        await dispatch(fetchShowProfile()).unwrap();
         await dispatch(fetchPlayerStatus()).unwrap();
-        await dispatch(getCloudUploadedFiles()).unwrap();
     }
 
     async disconnect() {
@@ -153,10 +115,10 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     }
 
     // Player immediate
-    async issuePlayerCommand(req: EZPlayerCommand) {
+    async issuePlayerCommand(_req: EZPlayerCommand) {
         return false;
     }
-    async setPlayerSettings(s: PlaybackSettings) {
+    async setPlayerSettings(_s: PlaybackSettings) {
         return false;
     }
 
@@ -197,67 +159,6 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         }
     }
 
-    async getCloudShowProfile(): Promise<EndUserShowSettings> {
-        return await getCloudShowProfileAPI(this.axiosInstance, this.apiUrl, this.getPlayerIDToken());
-    }
-
-    async postCloudShowProfile(data: EndUserShowSettings): Promise<EndUserShowSettings> {
-        return await postCloudShowProfileAPI(this.axiosInstance, this.apiUrl, this.getPlayerIDToken(), data);
-    }
-
-    async getCloudUserProfile(): Promise<EndUser> {
-        return await getCloudUserProfileAPI(
-            this.axiosInstance,
-            this.apiUrl,
-            // this.EZP_SERVER_API_TOKEN
-        );
-    }
-
-    async getUserPlayers(): Promise<UserPlayer[]> {
-        const response = await getPlayersAPI(this.axiosInstance, this.apiUrl);
-        return response;
-    }
-
-    async postCloudUserProfile(data: Partial<EndUser>): Promise<EndUser> {
-        return await postCloudUserProfileAPI(
-            this.axiosInstance,
-            this.apiUrl,
-            // this.EZP_SERVER_API_TOKEN,
-            data,
-        );
-    }
-
-    async requestLoginToken(data: UserLoginBody): Promise<string> {
-        const res = await postLoginCall(this.axiosInstance, this.apiUrl, data);
-
-        if (res) {
-            localStorage.setItem('auth_token', res);
-        } else {
-            localStorage.removeItem('auth_token');
-        }
-
-        await this.refreshAll();
-        return res;
-    }
-
-    async requestLogout(): Promise<void> {
-        localStorage.removeItem('auth_token');
-        await this.refreshAll();
-        return;
-    }
-
-    async postCloudRegister(data: UserRegisterBody): Promise<UserRegisterBody> {
-        return await postRegisterCall(this.axiosInstance, this.apiUrl, data);
-    }
-
-    async postRequestPasswordReset(data: { email: string }): Promise<{ message: string }> {
-        return await postRequestPasswordResetCall(this.axiosInstance, this.apiUrl, data);
-    }
-
-    async postChangePassword(data: { oldPassword: string; newPassword: string }): Promise<{ message: string }> {
-        return await postChangePasswordCall(this.axiosInstance, this.apiUrl, data);
-    }
-
     async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
         const newtoken = setOrGeneratePlayerIdToken(data.playerIdToken);
         this.playerIdToken = newtoken;
@@ -278,115 +179,9 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         await this.refreshAll();
         return res;
     }
-    async postCloudRgbUpload(): Promise<CloudFileUpload> {
-        return await postCloudRgbUploadAPI(this.axiosInstance, this.apiUrl);
-    }
-
-    async postCloudNetworksUpload(): Promise<CloudFileUpload> {
-        return await postCloudNetworksUploadAPI(this.axiosInstance, this.apiUrl);
-    }
-
-    async postCloudZipUpload(): Promise<CloudFileUpload> {
-        return await postCloudZipUploadAPI(this.axiosInstance, this.apiUrl);
-    }
-
-    async postCloudDoneUploadLayoutFiles(data: CloudLayoutFileUpload): Promise<CloudFileUploadResponse> {
-        return await postCloudDoneUploadLayoutFilesAPI(this.axiosInstance, this.apiUrl, data);
-    }
-
-    async postCloudDoneUploadZip(fileId: string, fileTime: string): Promise<CloudFileUploadResponse> {
-        return await postCloudDoneUploadZipAPI(this.axiosInstance, this.apiUrl, fileId, fileTime);
-    }
-
-    async getCloudUploadedFiles(): Promise<DownloadFileResponse> {
-        try {
-            const response = await getCloudUploadedFilesAPI(
-                this.axiosInstance,
-                this.apiUrl,
-                this.fileDownloadUrl,
-                this.getPlayerIDToken(),
-            );
-            // TODO CRAZ Move this
-            return response;
-        } catch (_e) {
-            return { sequences: [] };
-        }
-    }
-
-    async getCloudSeqFile(fileId: string): Promise<CloudFileDownloadResponse> {
-        const response = await getCloudSeqFileAPI(
-            this.axiosInstance,
-            this.apiUrl,
-            this.fileDownloadUrl,
-            this.getPlayerIDToken(),
-            fileId,
-        );
-        return response as CloudFileDownloadResponse;
-    }
-    async getCloudMediaFile(fileId: string): Promise<CloudFileDownloadResponse> {
-        const response = await getCloudMediaFileAPI(
-            this.axiosInstance,
-            this.apiUrl,
-            this.fileDownloadUrl,
-            this.getPlayerIDToken(),
-            fileId,
-        );
-        return response as CloudFileDownloadResponse;
-    }
-    async getCloudXsqzFile(fileId: string): Promise<CloudFileDownloadResponse> {
-        const response = await getCloudXsqzFileAPI(
-            this.axiosInstance,
-            this.apiUrl,
-            this.fileDownloadUrl,
-            this.getPlayerIDToken(),
-            fileId,
-        );
-        return response as CloudFileDownloadResponse;
-    }
-    async getCloudLatestNetworks(): Promise<CloudFileDownloadResponse> {
-        return await getCloudLatestNetworksAPI(this.axiosInstance, this.apiUrl);
-    }
-    async getCloudLatestRgbeff(): Promise<CloudFileDownloadResponse> {
-        return await getCloudLatestRgbeffAPI(this.axiosInstance, this.apiUrl);
-    }
-    async getCloudLatestLayzip(): Promise<CloudFileDownloadResponse> {
-        return await getCloudLatestLayzipAPI(this.axiosInstance, this.apiUrl);
-    }
-
-    async getCloudPreviewVideo(fileId: string): Promise<CloudFileDownloadResponse> {
-        const response = await getCloudPreviewVideoAPI(
-            this.axiosInstance,
-            this.apiUrl,
-            this.fileDownloadUrl,
-            this.getPlayerIDToken(),
-            fileId,
-        );
-        return response as CloudFileDownloadResponse;
-    }
 
     async isPlayerRegistered(playerId: string): Promise<boolean> {
         const res = await isPlayerRegisteredCall(this.axiosInstance, this.apiUrl, playerId);
-        if (res.registered) {
-            // Fetch players but don't use the result - this is likely for side effects
-            await getPlayersAPI(this.axiosInstance, this.apiUrl);
-        }
         return res.registered;
-    }
-
-    async getLayoutOptions(): Promise<JSONEditSheet | null> {
-        const response = await getLayoutOptionsAPI(this.axiosInstance, this.apiUrl);
-        return response as JSONEditSheet | null;
-    }
-
-    async uploadLayoutHints(data: any): Promise<void> {
-        // First get the upload URL and file info
-        const { fileId, fileTime, post } = await startLayoutHintsUploadAPI(this.axiosInstance, this.apiUrl);
-
-        // Then upload the actual file content
-        await uploadLayoutHintsFileAPI(fileId, fileTime, data, this.axiosInstance, this.apiUrl, post);
-    }
-
-    async getLayoutHints(): Promise<{ modelEditState: JSONEditState } | null> {
-        return await getLayoutHintsAPI(this.axiosInstance, this.apiUrl);
     }
 }

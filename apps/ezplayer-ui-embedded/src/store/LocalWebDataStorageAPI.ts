@@ -3,40 +3,24 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     CombinedPlayerStatus,
-    EndUserShowSettings,
-    EndUser,
-    UserPlayer,
-    JSONEditSheet,
-    JSONEditState,
     EZPlayerCommand,
     PlaybackSettings,
     PlayerWebSocketMessage,
 } from '@ezplayer/ezplayer-core';
 
-import type {
-    DataStorageAPI,
-    UserLoginBody,
-    UserRegisterBody,
-    CloudLayoutFileUpload,
-    CloudFileUploadResponse,
-    DownloadFileResponse,
-    CloudFileDownloadResponse,
-    CloudFileUpload,
-} from '@ezplayer/player-ui-components';
+import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/player-ui-components';
 
 import {
     AppDispatch,
     authSliceActions,
     hydratePlaybackSettings,
     setCStatus,
-    setEndUser,
     setNStatus,
     setPlaybackStatistics,
     setPlaylists,
     setPStatus,
     setScheduledPlaylists,
     setSequenceData,
-    setShowProfile,
 } from '@ezplayer/player-ui-components';
 import { wsService } from '../services/websocket';
 
@@ -81,12 +65,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.schedule !== undefined) {
                 dispatch(setScheduledPlaylists(data.schedule));
             }
-            if (data.show !== undefined) {
-                dispatch(setShowProfile(data.show));
-            }
-            if (data.user !== undefined) {
-                dispatch(setEndUser(data.user));
-            }
             if (data.playbackSettings !== undefined) {
                 dispatch(hydratePlaybackSettings(data.playbackSettings));
             }
@@ -102,6 +80,8 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.playbackStatistics !== undefined) {
                 dispatch(setPlaybackStatistics(data.playbackStatistics));
             }
+            // `data.show` and `data.user` snapshot fields are show-builder concerns and are
+            // ignored here — the embedded player store has no `showProfile` or `endUser` slice.
         });
 
         const unsubscribePing = wsService.subscribe('ping', (msg) => {
@@ -250,26 +230,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return {};
     }
 
-    async getCloudShowProfile(): Promise<EndUserShowSettings> {
-        return {} as EndUserShowSettings;
-    }
-
-    async postCloudShowProfile(data: EndUserShowSettings): Promise<EndUserShowSettings> {
-        return data;
-    }
-
-    async getCloudUserProfile(): Promise<EndUser> {
-        return {} as EndUser;
-    }
-
-    async getUserPlayers(): Promise<UserPlayer[]> {
-        return [];
-    }
-
-    async postCloudUserProfile(data: Partial<EndUser>): Promise<EndUser> {
-        return data as EndUser;
-    }
-
     async requestLoginToken(_data: UserLoginBody): Promise<string> {
         throw new Error('Authentication not supported in local web mode');
     }
@@ -298,73 +258,5 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {
         return { message: 'Player registration not needed in local web mode' };
-    }
-
-    async postCloudRgbUpload(): Promise<CloudFileUpload> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudNetworksUpload(): Promise<CloudFileUpload> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudZipUpload(): Promise<CloudFileUpload> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudDoneUploadLayoutFiles(_data: CloudLayoutFileUpload): Promise<CloudFileUploadResponse> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudDoneUploadZip(_fileId: string, _fileTime: string): Promise<CloudFileUploadResponse> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async getCloudUploadedFiles(): Promise<DownloadFileResponse> {
-        return { sequences: [] };
-    }
-
-    async getCloudSeqFile(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudMediaFile(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudXsqzFile(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudLatestNetworks(): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudLatestRgbeff(): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudLatestLayzip(): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudPreviewVideo(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async isPlayerRegistered(_playerId: string): Promise<boolean> {
-        return true;
-    }
-
-    async getLayoutOptions(): Promise<JSONEditSheet | null> {
-        return null;
-    }
-
-    async uploadLayoutHints(_data: any): Promise<void> {
-        throw new Error('Layout hints upload not supported in local web mode');
-    }
-
-    async getLayoutHints(): Promise<{ modelEditState: JSONEditState } | null> {
-        return null;
     }
 }

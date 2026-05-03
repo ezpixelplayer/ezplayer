@@ -1,36 +1,11 @@
+/**
+ * Player-side cloud endpoint paths. The Electron player only registers itself and uses
+ * `player/...` API calls; everything else (login, account management, layout uploads,
+ * entitlement listing, file downloads, show/user profile, etc.) lives in
+ * `BUILDER_API_ENDPOINTS` in `@ezplayer/show-builder-components`.
+ */
 export const API_ENDPOINTS = {
-    GET_SHOW_PROFILE: `enduser/getshowprofile`,
-    UPDATE_SHOW_PROFILE: `enduser/updateshowprofile`,
-    LOGIN: `enduser/login`,
-    REGISTER: `enduser/register`,
-    REQUEST_PASSWORD_RESET: `enduser/requestpasswordreset`,
-    CHANGE_PASSWORD: `enduser/changepassword`,
-    GET_USER_PROFILE: `enduser/details`,
-    UPDATE_USER_PROFILE: `enduser/edit/`,
-
-    START_UPLOAD_RGB: `enduser/startuploadrgbeff`,
-    START_UPLOAD_NETWORKS: `enduser/startuploadnetworks`,
-    START_UPLOAD_LAY_ZIP: `enduser/startuploadlayzip`,
-    DONE_UPLOAD_LAYOUT_FILES: `enduser/doneuploadlayoutfiles`,
-    DONE_UPLOAD_LAY_ZIP: `enduser/doneuploadlayzip`,
-    DOWNLOAD_MODEL_JSON: `enduser/downloadlatestmodeljson`,
-    DOWNLOAD_CHECK_HTML: `enduser/downloadlatestcheckhtml`,
-    DOWNLOAD_LAYOUT_OPTIONS: `enduser/downloadlatestoptionsjson`,
-    DOWNLOAD_LAYOUT_HINTS: `enduser/downloadlatesthintsjson`,
-    DOWNLOAD_LATEST_NETWORKS: `enduser/downloadlatestnetworks`,
-    DOWNLOAD_LATEST_RGBEFF: `enduser/downloadlatestrgbeff`,
-    DOWNLOAD_LATEST_LAY_ZIP: `enduser/downloadlatestlayzip`,
-    START_UPLOAD_LAYOUT_HINTS: `enduser/startuploadhintsjson`,
-    DONE_UPLOAD_LAYOUT_HINTS: `enduser/doneuploadhintsjson`,
-
-    USER_LIST_SEQFILES: `enduser/listseqfiles/`,
-    USER_GET_SEQ_FILE: `enduser/getseqfile/`,
-    USER_GET_MEDIA_FILE: `enduser/getmediafile/`,
-    USER_GET_XSQZ_FILE: `enduser/getxsqzfile/`,
-    USER_GET_PREVIEW_VIDEO: `enduser/getpreviewvideo/`,
-
     REGISTER_PLAYER: `enduser/registerplayer/`,
-    USER_PLAYER: `enduser/players`,
 
     IS_PLAYER_REGISTERED: `player/isregistered/`,
     GET_PLAYLIST: `player/getplaylistsforplayer/`,
@@ -40,11 +15,4 @@ export const API_ENDPOINTS = {
     GET_SEQUENCE: `player/getseqforplayer/`,
     UPDATE_SEQUENCE: `player/postseqsforplayer`,
     GET_STATUS: `player/getstat/`,
-    GET_SHOW_PROFILE_TOKEN: `player/getshowprof/`,
-    SET_SHOW_PROFILE_TOKEN: `player/setshowprof/`,
-    GET_UPLOADED_FILES: `player/getseqforplayer/`,
-    PLAYER_GET_SEQ_FILE: `player/getseqfile/`,
-    PLAYER_GET_MEDIA_FILE: `player/getmediafile/`,
-    PLAYER_GET_XSQZ_FILE: `player/getxsqzfile/`,
-    PLAYER_GET_PREVIEW_VIDEO: `player/getpreviewvideo/`,
 };

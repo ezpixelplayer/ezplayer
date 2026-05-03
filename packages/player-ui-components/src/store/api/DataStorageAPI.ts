@@ -3,11 +3,6 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     CombinedPlayerStatus,
-    EndUserShowSettings,
-    EndUser,
-    UserPlayer,
-    JSONEditSheet,
-    JSONEditState,
     EZPlayerCommand,
     PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
@@ -92,15 +87,20 @@ export function setOrGeneratePlayerIdToken(token?: string | null) {
     return newtoken;
 }
 
+/**
+ * Player-side surface for the cloud/local backing store. The show-builder app uses an
+ * extended interface (`BuilderDataStorageAPI` in `@ezplayer/show-builder-components`) that
+ * adds account auth (login/logout/register/password), layout-edit, entitlement-listing,
+ * file-upload/download, and show/user-profile methods — none of which the Electron player
+ * or its embedded Koa-served browser pages need. The player only registers itself and uses
+ * `player/...` API calls.
+ */
 export interface DataStorageAPI {
     // Set up for data connectivity
     connect(dispatch: AppDispatch): Promise<void>;
     disconnect(): Promise<void>;
 
     requestChangeServerUrl: (data: { cloudURL: string }) => Promise<void>;
-
-    requestLoginToken: (data: UserLoginBody) => Promise<string>;
-    requestLogout: () => Promise<void>;
 
     /** This fetches the master cloud storage list */
     getCloudSequences: () => Promise<SequenceRecord[]>;
@@ -120,56 +120,10 @@ export interface DataStorageAPI {
 
     // There is such thing as posting cloud status, but not from the UI...
 
-    getCloudShowProfile: () => Promise<EndUserShowSettings>;
-
-    postCloudShowProfile: (data: EndUserShowSettings) => Promise<EndUserShowSettings>;
-
-    getCloudUserProfile: () => Promise<EndUser>;
-
-    postCloudUserProfile: (data: Partial<EndUser>) => Promise<EndUser>;
-
-    postCloudRegister: (data: UserRegisterBody) => Promise<UserRegisterBody>;
-
-    postRequestPasswordReset: (data: { email: string }) => Promise<{ message: string }>;
-
-    postChangePassword: (data: { oldPassword: string; newPassword: string }) => Promise<{ message: string }>;
-
     requestSetPlayerIdToken: (data: { playerIdToken?: string }) => Promise<{ message: string }>;
 
     postRegisterPlayer: (data: { playerId: string }) => Promise<{ message: string }>;
 
-    getUserPlayers: () => Promise<UserPlayer[]>;
-
-    // EZSeq integration
-    postCloudRgbUpload: () => Promise<CloudFileUpload>;
-    postCloudNetworksUpload: () => Promise<CloudFileUpload>;
-    postCloudZipUpload: () => Promise<CloudFileUpload>;
-    postCloudDoneUploadLayoutFiles: (data: CloudLayoutFileUpload) => Promise<CloudFileUploadResponse>;
-    postCloudDoneUploadZip: (fileId: string, fileTime: string) => Promise<CloudFileUploadResponse>;
-
-    getCloudUploadedFiles: () => Promise<DownloadFileResponse>;
-
-    getCloudSeqFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
-    getCloudMediaFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
-    getCloudXsqzFile: (fileId: string) => Promise<CloudFileDownloadResponse>;
-    getCloudPreviewVideo: (fileId: string) => Promise<CloudFileDownloadResponse>;
-
-    /** Presigned URL for the logged-in user's latest `xlights_networks.xml`. */
-    getCloudLatestNetworks: () => Promise<CloudFileDownloadResponse>;
-    /** Presigned URL for the logged-in user's latest `xlights_rgbeffects.xml`. */
-    getCloudLatestRgbeff: () => Promise<CloudFileDownloadResponse>;
-    /** Presigned URL for the logged-in user's latest layout zip (XMLs + mesh/image assets). */
-    getCloudLatestLayzip: () => Promise<CloudFileDownloadResponse>;
-
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
-
-    /** This fetches the layout options JSON */
-    getLayoutOptions: () => Promise<JSONEditSheet | null>;
-
-    /** This uploads layout hints to the server */
-    uploadLayoutHints: (data: unknown) => Promise<void>;
-
-    /** This fetches the saved layout hints from the server */
-    getLayoutHints: () => Promise<{ modelEditState: JSONEditState } | null>;
 }

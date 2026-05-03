@@ -1,7 +1,6 @@
 import { ActionReducerMapBuilder, PayloadAction, createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { DataStorageAPI } from '../api/DataStorageAPI';
-import { UserLoginBody, UserRegisterBody } from '../api/DataStorageAPI';
-import { AxiosError } from 'axios';
+import { UserRegisterBody } from '../api/DataStorageAPI';
 import { EZPlayerVersions } from '@ezplayer/ezplayer-core';
 
 export interface AuthState {
@@ -49,6 +48,12 @@ export interface AuthState {
     cloudVersion: string;
 }
 
+/**
+ * Slice factory. The player package builds an instance with `applyPlayerAuthExtraReducers`;
+ * the show-builder package builds its own instance combining the player-side cases with its
+ * own `applyBuilderAuthExtraReducers` so both stores share the same `auth` state shape but
+ * each only handles the thunks its app actually dispatches.
+ */
 export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder<AuthState>) => void) {
     const initialAuthState: AuthState = {
         supportsLogin: true,
@@ -116,83 +121,6 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
     });
 }
 
-export const postLoginData = createAsyncThunk<string, UserLoginBody, { extra: DataStorageAPI }>(
-    'auth/postLoginData',
-    async (serverLoginData: UserLoginBody, { extra }) => {
-        try {
-            const token = await extra.requestLoginToken(serverLoginData);
-            if (!token) {
-                throw new Error('No token received from login API');
-            }
-            return token;
-        } catch (error) {
-            console.error('Error in postLoginData:', error);
-            throw error;
-        }
-    },
-);
-
-export const requestLogout = createAsyncThunk<void, void, { extra: DataStorageAPI }>(
-    'auth/requestLogout',
-    async (_serverLoginData: void, { extra }) => {
-        try {
-            await extra.requestLogout();
-            return;
-        } catch (error) {
-            console.error('Error in requestLogout', error);
-            throw error;
-        }
-    },
-);
-
-export const postRegisterData = createAsyncThunk<
-    UserRegisterBody,
-    UserRegisterBody,
-    { extra: DataStorageAPI; rejectValue: { status: number; message: string } } // add rejectValue typing
->('auth/postRegisterData', async (data: UserRegisterBody, { extra, rejectWithValue }) => {
-    try {
-        const response = await extra.postCloudRegister(data);
-        return response;
-    } catch (e) {
-        const err = e as AxiosError<{ message?: string }>;
-        if (err.response) {
-            return rejectWithValue({
-                status: err.response.status,
-                message: err.response.data?.message || 'Something went wrong',
-            });
-        }
-        throw err;
-    }
-});
-
-export const postRequestPasswordReset = createAsyncThunk<
-    { message: string },
-    { email: string },
-    { extra: DataStorageAPI }
->('auth/postRequestPasswordReset', async (data: { email: string }, { extra }) => {
-    try {
-        const response = await extra.postRequestPasswordReset(data);
-        return response;
-    } catch (error) {
-        console.error('Error in postRequestPasswordReset:', error);
-        throw error;
-    }
-});
-
-export const postChangePassword = createAsyncThunk<
-    { message: string },
-    { oldPassword: string; newPassword: string },
-    { extra: DataStorageAPI }
->('auth/postChangePassword', async (data: { oldPassword: string; newPassword: string }, { extra }) => {
-    try {
-        const response = await extra.postChangePassword(data);
-        return response;
-    } catch (error) {
-        console.error('Error in postChangePassword:', error);
-        throw error;
-    }
-});
-
 export const postRegisterPlayer = createAsyncThunk<
     { message: string },
     { playerId: string },
@@ -246,43 +174,13 @@ export const setShowDirectoryPath = createAsyncThunk<void, { directoryPath: stri
     },
 );
 
-const authSlice = createAuthSlice((builder) => {
+/**
+ * Reducer cases for the player-side auth thunks. Exported so the show-builder package can
+ * compose this with its own builder-only cases (login/logout/register/password) when
+ * building its extended auth slice.
+ */
+export function applyPlayerAuthExtraReducers(builder: ActionReducerMapBuilder<AuthState>) {
     builder
-        .addCase(postLoginData.pending, (state, _action) => {
-            state.loading = true;
-            state.error = undefined;
-        })
-        .addCase(postLoginData.fulfilled, (state, action) => {
-            state.loading = false;
-            state.cloudUserToken = action.payload;
-            state.error = undefined;
-        })
-        .addCase(postLoginData.rejected, (state, action) => {
-            state.loading = false;
-            state.error = action.error.message;
-        })
-        .addCase(requestLogout.pending, (state, _action) => {
-            state.loading = true;
-            state.error = undefined;
-        })
-        .addCase(requestLogout.fulfilled, (state, _action) => {
-            state.loading = false;
-            state.cloudUserToken = null;
-            state.error = undefined;
-        })
-        .addCase(requestLogout.rejected, (state, action) => {
-            state.loading = false;
-            state.error = action.error.message;
-        })
-        .addCase(postRegisterData.pending, (state, _action) => {
-            state.loading = true;
-            state.error = undefined;
-        })
-        .addCase(postRegisterData.fulfilled, (state, action) => {
-            state.loading = false;
-            state.user = action.payload;
-            state.error = undefined;
-        })
         .addCase(postSetPlayerIdToken.rejected, (state, action) => {
             state.loading = false;
             state.error = action.error.message;
@@ -294,36 +192,6 @@ const authSlice = createAuthSlice((builder) => {
         .addCase(postSetPlayerIdToken.fulfilled, (state, _action) => {
             state.loading = false;
             state.error = undefined;
-        })
-        .addCase(postRegisterData.rejected, (state, action) => {
-            state.loading = false;
-            state.error = action.error.message;
-        })
-        .addCase(postRequestPasswordReset.pending, (state, _action) => {
-            state.loading = true;
-            state.error = undefined;
-        })
-        .addCase(postRequestPasswordReset.fulfilled, (state, action) => {
-            state.loading = false;
-            state.forgotPassword = action.payload.message;
-            state.error = undefined;
-        })
-        .addCase(postRequestPasswordReset.rejected, (state, action) => {
-            state.loading = false;
-            state.error = action.error.message;
-        })
-        .addCase(postChangePassword.pending, (state, _action) => {
-            state.loading = true;
-            state.error = undefined;
-        })
-        .addCase(postChangePassword.fulfilled, (state, _action) => {
-            state.loading = false;
-            state.changePassword = _action.payload.message;
-            state.error = undefined;
-        })
-        .addCase(postChangePassword.rejected, (state, action) => {
-            state.loading = false;
-            state.error = action.error.message;
         })
         .addCase(postSetCloudUrl.rejected, (state, action) => {
             state.loading = false;
@@ -350,7 +218,9 @@ const authSlice = createAuthSlice((builder) => {
             state.loading = false;
             state.error = action.error.message;
         });
-});
+}
+
+const authSlice = createAuthSlice(applyPlayerAuthExtraReducers);
 
 export const authSliceActions = authSlice.actions;
 export default authSlice.reducer;
