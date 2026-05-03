@@ -112,7 +112,7 @@ export const SidebarMenu = (props: { hidePlayer: boolean; hideCloud: boolean; hi
                               },
                           ].filter(item => !props.kioskMode || !KIOSK_HIDDEN_ROUTES.has(item.pathname))),
 
-                    ...(props.hideCloud
+                    ...(props.hideCloud || props.hideLocal
                         ? []
                         : [
                               {

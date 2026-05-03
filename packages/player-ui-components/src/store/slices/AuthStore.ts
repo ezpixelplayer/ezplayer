@@ -49,10 +49,8 @@ export interface AuthState {
 }
 
 /**
- * Slice factory. The player package builds an instance with `applyPlayerAuthExtraReducers`;
- * the show-builder package builds its own instance combining the player-side cases with its
- * own `applyBuilderAuthExtraReducers` so both stores share the same `auth` state shape but
- * each only handles the thunks its app actually dispatches.
+ * Slice factory taking an `extraReducers` callback so callers can compose additional
+ * reducer cases for thunks they bring along.
  */
 export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder<AuthState>) => void) {
     const initialAuthState: AuthState = {
@@ -121,20 +119,6 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
     });
 }
 
-export const postRegisterPlayer = createAsyncThunk<
-    { message: string },
-    { playerId: string },
-    { extra: DataStorageAPI }
->('auth/postRegisterPlayer', async (data: { playerId: string }, { extra }) => {
-    try {
-        const response = await extra.postRegisterPlayer(data);
-        return response;
-    } catch (error) {
-        console.error('Error in postRegisterPlayer:', error);
-        throw error;
-    }
-});
-
 export const postSetPlayerIdToken = createAsyncThunk<
     { message: string },
     { playerIdToken: string },
@@ -174,11 +158,7 @@ export const setShowDirectoryPath = createAsyncThunk<void, { directoryPath: stri
     },
 );
 
-/**
- * Reducer cases for the player-side auth thunks. Exported so the show-builder package can
- * compose this with its own builder-only cases (login/logout/register/password) when
- * building its extended auth slice.
- */
+/** Reducer cases for the player-side auth thunks. */
 export function applyPlayerAuthExtraReducers(builder: ActionReducerMapBuilder<AuthState>) {
     builder
         .addCase(postSetPlayerIdToken.rejected, (state, action) => {

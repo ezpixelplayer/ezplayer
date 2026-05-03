@@ -9,11 +9,6 @@ import authReducer from './slices/AuthStore';
 import { DataStorageAPI } from './api/DataStorageAPI';
 import { playerSettingsAutoSaveMiddleware } from './slices/PlayerStatusMiddleware';
 
-/**
- * Reducer map for the player-side store. Show-builder apps wire `createBuilderAppStore`
- * (in `@ezplayer/show-builder-components`) which combines this map with the builder-only
- * slices (home, layoutEdit, showProfile, endUser).
- */
 export const playerReducers = {
     sequences: sequenceReducer,
     playlists: playlistReducer,

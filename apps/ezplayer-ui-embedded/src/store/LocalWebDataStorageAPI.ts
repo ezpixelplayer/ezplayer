@@ -80,8 +80,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.playbackStatistics !== undefined) {
                 dispatch(setPlaybackStatistics(data.playbackStatistics));
             }
-            // `data.show` and `data.user` snapshot fields are show-builder concerns and are
-            // ignored here — the embedded player store has no `showProfile` or `endUser` slice.
         });
 
         const unsubscribePing = wsService.subscribe('ping', (msg) => {

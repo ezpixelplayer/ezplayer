@@ -88,12 +88,8 @@ export function setOrGeneratePlayerIdToken(token?: string | null) {
 }
 
 /**
- * Player-side surface for the cloud/local backing store. The show-builder app uses an
- * extended interface (`BuilderDataStorageAPI` in `@ezplayer/show-builder-components`) that
- * adds account auth (login/logout/register/password), layout-edit, entitlement-listing,
- * file-upload/download, and show/user-profile methods — none of which the Electron player
- * or its embedded Koa-served browser pages need. The player only registers itself and uses
- * `player/...` API calls.
+ * Player-side surface for the cloud/local backing store: connectivity, registration,
+ * sequence/playlist/schedule sync, status, and player commands.
  */
 export interface DataStorageAPI {
     // Set up for data connectivity
@@ -121,8 +117,6 @@ export interface DataStorageAPI {
     // There is such thing as posting cloud status, but not from the UI...
 
     requestSetPlayerIdToken: (data: { playerIdToken?: string }) => Promise<{ message: string }>;
-
-    postRegisterPlayer: (data: { playerId: string }) => Promise<{ message: string }>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;

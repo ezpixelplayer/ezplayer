@@ -86,7 +86,6 @@ export {
     authSliceActions,
     createAuthSlice,
     applyPlayerAuthExtraReducers,
-    postRegisterPlayer,
     postSetCloudUrl,
     postSetPlayerIdToken,
     setShowDirectoryPath,

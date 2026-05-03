@@ -28,14 +28,11 @@ import { getSequencesAPI, postSequencesDataAPI } from './CloudSequenceAPI';
 import { getPlaylistsAPI, postPlaylistsDataAPI } from './CloudPlaylistAPI';
 import { getScheduledPlaylistsAPI, postScheduledPlaylistsAPI } from './CloudScheduleAPI';
 import { getCloudStatusAPI } from './CloudStatusAPI';
-import { postRegisterPlayerCall, isPlayerRegisteredCall } from './CloudAuthAPI';
+import { isPlayerRegisteredCall } from './CloudAuthAPI';
 
 /**
- * Player-side cloud client. Implements `DataStorageAPI` — connectivity, auth identity,
- * sequence/playlist/schedule sync, and status. The show-builder app uses
- * `BuilderCloudDataStorageAPI` (in `@ezplayer/show-builder-components`) which extends this
- * with show-profile, user-profile, layout-edit, and entitlement/file-upload methods, and
- * extends `refreshAll()` to dispatch the builder-only bootstrap fetches.
+ * Cloud client implementing `DataStorageAPI` — connectivity, auth identity,
+ * sequence/playlist/schedule sync, and status.
  */
 export class CloudDataStorageAPI implements DataStorageAPI {
     baseUrl: string;
@@ -69,11 +66,6 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         return await this.refreshAll();
     }
 
-    /**
-     * Auth check + auth slice setup, then dispatch the player-relevant bootstrap fetches.
-     * `BuilderCloudDataStorageAPI` overrides this and adds builder-only fetches
-     * (`fetchUserProfile`, `fetchShowProfile`, `getCloudUploadedFiles`).
-     */
     async refreshAll() {
         let isregistered = false;
         let ver = 'unknown';
@@ -163,21 +155,10 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         const newtoken = setOrGeneratePlayerIdToken(data.playerIdToken);
         this.playerIdToken = newtoken;
         this.dispatch?.(authSliceActions.setPlayerIdToken(newtoken));
-        // Set the registration if we're logged in...
-        // TODO CRAZ centralize
-        if (localStorage.getItem('auth_token')) {
-            await this.postRegisterPlayer({ playerId: this.playerIdToken });
-        }
-        await this.refreshAll(); // May trigger a full refresh
+        await this.refreshAll();
         return {
             message: 'Player ID set',
         };
-    }
-
-    async postRegisterPlayer(data: { playerId: string }): Promise<{ message: string }> {
-        const res = await postRegisterPlayerCall(this.axiosInstance, this.apiUrl, data.playerId);
-        await this.refreshAll();
-        return res;
     }
 
     async isPlayerRegistered(playerId: string): Promise<boolean> {
