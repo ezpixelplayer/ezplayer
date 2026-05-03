@@ -118,6 +118,13 @@ export interface DataStorageAPI {
 
     requestSetPlayerIdToken: (data: { playerIdToken?: string }) => Promise<{ message: string }>;
 
+    /**
+     * Lightweight check of whether the current player ID is registered with the cloud.
+     * Used by the registration dialog while it polls. Eventually this should be driven
+     * by the node-side process (electron main / embedded server) rather than the UI.
+     */
+    requestIsPlayerRegistered: () => Promise<{ registered: boolean; version?: string }>;
+
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 }

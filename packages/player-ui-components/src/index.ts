@@ -20,6 +20,7 @@ export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/juke
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { StatsDialog } from './components/status/StatsDialog';
 export { PlaybackSettingsDrawer } from './components/playback-settings/PlaybackSettingsDrawer';
+export { PlayerCloudRegistrationDialog } from './components/player-cloud-registration/PlayerCloudRegistrationDialog';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { Preview3D } from './components/preview-3d/Preview3D';

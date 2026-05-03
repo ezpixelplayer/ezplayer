@@ -34,6 +34,7 @@ import Licenses from '../../constants/licenses.json';
 import { playerStatusActions } from '../../store/slices/PlayerStatusStore';
 import { ColorPaletteDialog } from '../theme/ColorPaletteDialog';
 import { TagListInput } from '../tag-list-input/TagListInput';
+import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
 
 interface UISettings {
     theme?: string;
@@ -317,6 +318,9 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
 
     // Color palette dialog state
     const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState<boolean>(false);
+
+    // Player cloud registration dialog state
+    const [cloudRegistrationDialogOpen, setCloudRegistrationDialogOpen] = useState<boolean>(false);
 
     const licenseEntries: LicenseEntry[] = useMemo(() => {
         // Map each dependency to a license entry
@@ -1307,6 +1311,32 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
                         </Box>
                     </Card>
 
+                    {/* Cloud Connection Group */}
+                    <Card
+                        sx={{
+                            mb: 3,
+                            p: 3,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            backgroundColor: 'background.paper',
+                        }}
+                    >
+                        <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                            Cloud Connection
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Register this player with your cloud account to pull cloud content and manage it remotely.
+                            A player can run without being registered.
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            onClick={() => setCloudRegistrationDialogOpen(true)}
+                        >
+                            Player Cloud Registration…
+                        </Button>
+                    </Card>
+
                     {/* About & License Buttons */}
                     <Box sx={{ mt: 1, pt: 1, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                         <Button
@@ -1419,6 +1449,12 @@ export const PlaybackSettingsDrawer: React.FC<PlaybackSettingsDrawerProps> = ({ 
 
             {/* Color Palette Dialog */}
             <ColorPaletteDialog open={colorPaletteDialogOpen} onClose={() => setColorPaletteDialogOpen(false)} />
+
+            {/* Player Cloud Registration Dialog */}
+            <PlayerCloudRegistrationDialog
+                open={cloudRegistrationDialogOpen}
+                onClose={() => setCloudRegistrationDialogOpen(false)}
+            />
         </Box>
     );
 };

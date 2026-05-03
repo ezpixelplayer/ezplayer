@@ -102,6 +102,16 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         return Promise.resolve();
     }
 
+    async requestIsPlayerRegistered(): Promise<{ registered: boolean; version?: string }> {
+        try {
+            const res = await isPlayerRegisteredCall(this.axiosInstance, this.apiUrl, this.playerIdToken);
+            return { registered: res.registered, version: res.version };
+        } catch (e) {
+            console.warn('isPlayerRegisteredCall failed', e);
+            return { registered: false };
+        }
+    }
+
     getPlayerIDToken(): string {
         return this.playerIdToken;
     }
