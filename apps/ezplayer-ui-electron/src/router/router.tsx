@@ -17,7 +17,18 @@ import {
     PlaybackSettingsDrawer,
     SchedulePreview,
     Preview3DPage,
+    toRouteChildren,
 } from '@ezplayer/player-ui-components';
+import type { MenuRoute } from '@ezplayer/player-ui-components';
+
+import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
+import PlayArrow from '@mui/icons-material/PlayArrow';
+import InfoRounded from '@mui/icons-material/InfoRounded';
+import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
+import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
+import PreviewIcon from '@mui/icons-material/Preview';
+import ViewInArIcon from '@mui/icons-material/ViewInAr';
+import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
 import { WelcomeScreen, WELCOME_ROUTE } from '../modules/Welcome/WelcomeScreen';
@@ -32,11 +43,67 @@ const Loader =
         </Suspense>
     );
 
-// Pages
 const ErrorPage = Loader(lazy(() => ERROR_PAGE));
 
 //const getStatusArea = ()=>[<ConnectivityStatus key="connectivity-status" />];
 const getStatusArea = () => [];
+
+const menuRoutes: MenuRoute[] = [
+    {
+        path: ROUTES.PLAYER,
+        element: <PlayerScreen title="Player" statusArea={getStatusArea()} />,
+        sidebar: { icon: <TableChartTwoToneIcon />, label: 'Player' },
+    },
+    {
+        path: ROUTES.SONGS,
+        element: <SongList title="Songs" AddSongDialog={AddSongDialogElectron} statusArea={getStatusArea()} />,
+        sidebar: { icon: <MusicIcon />, label: 'Songs' },
+    },
+    {
+        path: ROUTES.PLAYLIST,
+        element: <PlaylistList title="Playlists" statusArea={getStatusArea()} />,
+        sidebar: { icon: <ListTwoToneIcon />, label: 'Playlists' },
+    },
+    {
+        path: ROUTES.SCHEDULE,
+        element: <Schedule title="Schedule" statusArea={getStatusArea()} />,
+        sidebar: { icon: <TableChartTwoToneIcon />, label: 'Schedule' },
+    },
+    {
+        path: ROUTES.BACKGROUND_SCHEDULE,
+        element: <Schedule title="Background Schedule" statusArea={getStatusArea()} scheduleType="background" />,
+        sidebar: { icon: <TableChartTwoToneIcon />, label: 'Background Schedule' },
+    },
+    {
+        path: ROUTES.SCHEDULE_PREVIEW,
+        element: <SchedulePreview title="Schedule Preview" statusArea={getStatusArea()} />,
+        sidebar: { icon: <PreviewIcon />, label: 'Schedule Preview' },
+    },
+    {
+        path: ROUTES.JUKEBOXSCR,
+        element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} />,
+        sidebar: { icon: <PlayArrow />, label: 'Jukebox' },
+    },
+    {
+        path: ROUTES.SHOWSTATUS,
+        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
+        sidebar: { icon: <InfoRounded />, label: 'Show Status' },
+    },
+    {
+        path: ROUTES.PREVIEW_3D,
+        element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
+        sidebar: { icon: <ViewInArIcon />, label: '3D Preview' },
+    },
+    {
+        path: ROUTES.PLAYBACKSETTINGS,
+        element: <PlaybackSettingsDrawer title="Settings" statusArea={getStatusArea()} />,
+        sidebar: { icon: <DisplaySettingsIcon />, label: 'Settings' },
+    },
+    {
+        path: `${ROUTES.CREATE_EDIT_PLAYLIST}/:id`,
+        element: <CreateEditPlaylist title="unused" statusArea={getStatusArea()} />,
+    },
+];
 
 const routes: RouteObject[] = [
     {
@@ -45,67 +112,19 @@ const routes: RouteObject[] = [
     },
     {
         path: '',
-        element: <SidebarLayout hideLocal={false} hideCloud={true} hidePlayer={false} /*logo={<Logo />}*/ />,
+        element: <SidebarLayout menuItems={menuRoutes} />,
         children: [
             {
-                index: true, // This makes it the default child route
-                element: <Navigate to={ROUTES.PLAYER} replace />, // Redirect to /songs
+                index: true,
+                element: <Navigate to={ROUTES.PLAYER} replace />,
             },
-            {
-                path: ROUTES.SONGS,
-                element: <SongList title="Songs" AddSongDialog={AddSongDialogElectron} statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.PLAYLIST,
-                element: <PlaylistList title="Playlists" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.SCHEDULE,
-                element: <Schedule title="Schedule" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.BACKGROUND_SCHEDULE,
-                element: (
-                    <Schedule title="Background Schedule" statusArea={getStatusArea()} scheduleType="background" />
-                ),
-            },
-            {
-                path: ROUTES.SCHEDULE_PREVIEW,
-                element: <SchedulePreview title="Schedule Preview" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.PLAYER,
-                element: <PlayerScreen title="Player" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.JUKEBOXSCR,
-                element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.SHOWSTATUS,
-                element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
-            },
-            {
-                path: `${ROUTES.CREATE_EDIT_PLAYLIST}/:id`,
-                element: <CreateEditPlaylist title="unused" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.PLAYBACKSETTINGS,
-                element: <PlaybackSettingsDrawer title="Settings" statusArea={getStatusArea()} />,
-            },
-            {
-                path: ROUTES.PREVIEW_3D,
-                element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
-            },
+            ...toRouteChildren(menuRoutes),
         ],
     },
-
-    // Special Fullscreen Jukebox Route (No Sidebar)
     {
         path: ROUTES.JUKEBOXSA,
-        element: <JukeboxFullScreen />, // This will be the fullscreen view
+        element: <JukeboxFullScreen />,
     },
-
     {
         path: ROUTES.ERROR_PAGE,
         element: <ErrorPage />,

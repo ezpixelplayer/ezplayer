@@ -5,23 +5,15 @@ import { ExtendedTheme } from '@ezplayer/shared-ui-components';
 import { Outlet } from 'react-router-dom';
 // import { Header } from '../..';
 import { Sidebar } from './Sidebar';
+import type { MenuRoute } from '../../types/menuRoute';
 
 interface SidebarLayoutProps {
     children?: ReactNode;
     logo?: ReactNode;
-    hideCloud: boolean;
-    hideLocal: boolean;
-    hidePlayer: boolean;
-    kioskMode?: boolean;
+    menuItems: MenuRoute[];
 }
 
-export const SidebarLayout: FC<SidebarLayoutProps> = ({
-    logo,
-    hideCloud,
-    hideLocal,
-    hidePlayer,
-    kioskMode,
-}: SidebarLayoutProps) => {
+export const SidebarLayout: FC<SidebarLayoutProps> = ({ logo, menuItems }: SidebarLayoutProps) => {
     const theme = useTheme<ExtendedTheme>();
 
     return (
@@ -34,7 +26,7 @@ export const SidebarLayout: FC<SidebarLayoutProps> = ({
                 }
             >
                 {/* <Header /> */}
-                <Sidebar logo={logo} hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} kioskMode={kioskMode} />
+                <Sidebar logo={logo} menuItems={menuItems} />
                 <Box
                     className="layout"
                     sx={{

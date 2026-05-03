@@ -32,6 +32,8 @@ export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
 export { ModelList } from './components/preview-3d/ModelList';
 export type { ModelListProps } from './components/preview-3d/ModelList';
 export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState, LayoutSettings, ViewObject } from './types/model3d';
+export type { MenuRoute } from './types/menuRoute';
+export { toRouteChildren } from './types/menuRoute';
 export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
 
 export type { AuthState } from './store/slices/AuthStore';
