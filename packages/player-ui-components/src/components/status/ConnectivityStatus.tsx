@@ -13,9 +13,11 @@ import { useNavigate } from 'react-router-dom';
 import { RootState } from '../../store/Store';
 
 export const ConnectivityStatus: React.FC = () => {
-    // Get connectivity status from Redux store
-    const auth = useSelector((state: RootState) => state.auth);
-    const { cloudIsReachable, cloudUserToken, playerIdToken, playerIdIsRegistered } = auth;
+    // Get connectivity status from Redux store. Cloud config + status live in their own
+    // slices now; only user auth + reachability remain on the auth slice.
+    const { cloudIsReachable, cloudUserToken } = useSelector((state: RootState) => state.auth);
+    const { playerIdToken } = useSelector((state: RootState) => state.cloudConfig);
+    const { playerIdIsRegistered } = useSelector((state: RootState) => state.cloudStatus);
     const navigate = useNavigate();
 
     // Determine connection status and icon

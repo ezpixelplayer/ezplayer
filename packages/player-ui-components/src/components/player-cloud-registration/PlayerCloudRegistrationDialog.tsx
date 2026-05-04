@@ -36,10 +36,11 @@ interface PlayerCloudRegistrationDialogProps {
     onClose: () => void;
 }
 
-const selectAuth = (state: RootState) => state.auth;
-const selectPlayerIdToken = createSelector([selectAuth], (auth) => auth.playerIdToken);
-const selectCloudServiceUrl = createSelector([selectAuth], (auth) => auth.cloudServiceUrl);
-const selectIsRegistered = createSelector([selectAuth], (auth) => auth.playerIdIsRegistered);
+const selectCloudConfig = (state: RootState) => state.cloudConfig;
+const selectCloudStatus = (state: RootState) => state.cloudStatus;
+const selectPlayerIdToken = createSelector([selectCloudConfig], (cfg) => cfg.playerIdToken);
+const selectCloudServiceUrl = createSelector([selectCloudConfig], (cfg) => cfg.cloudServiceUrl);
+const selectIsRegistered = createSelector([selectCloudStatus], (s) => s.playerIdIsRegistered);
 
 export const PlayerCloudRegistrationDialog: React.FC<PlayerCloudRegistrationDialogProps> = ({ open, onClose }) => {
     const dispatch = useDispatch<AppDispatch>();

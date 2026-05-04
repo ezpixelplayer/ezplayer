@@ -20,6 +20,8 @@ import {
     fetchScheduledPlaylists,
     fetchSequences,
     authSliceActions,
+    cloudConfigActions,
+    cloudStatusActions,
 } from '../../..';
 
 import { AxiosInstance } from 'axios';
@@ -84,13 +86,22 @@ export class CloudDataStorageAPI implements DataStorageAPI {
 
         const token = localStorage.getItem('auth_token');
         dispatch(authSliceActions.setCloudIsReachable(isconnected));
-        dispatch(authSliceActions.setCloudVersion(ver));
-        dispatch(authSliceActions.setPlayerIsRegistered(isregistered));
         dispatch(authSliceActions.setSupportsLogin(true));
         dispatch(authSliceActions.setSupportsToken(true));
-        dispatch(authSliceActions.setCloudServiceUrl(this.baseUrl));
-        dispatch(authSliceActions.setPlayerIdToken(this.playerIdToken));
         dispatch(authSliceActions.setUserToken(token));
+        dispatch(
+            cloudConfigActions.setCloudConfig({
+                cloudServiceUrl: this.baseUrl,
+                playerIdToken: this.playerIdToken,
+            }),
+        );
+        dispatch(
+            cloudStatusActions.setCloudStatus({
+                playerIdIsRegistered: isregistered,
+                cloudVersion: ver,
+                lastCheckedAt: Date.now(),
+            }),
+        );
         await dispatch(fetchSequences()).unwrap();
         await dispatch(fetchPlaylists()).unwrap();
         await dispatch(fetchScheduledPlaylists()).unwrap();
@@ -155,7 +166,7 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
         const newtoken = setOrGeneratePlayerIdToken(data.playerIdToken);
         this.playerIdToken = newtoken;
-        this.dispatch?.(authSliceActions.setPlayerIdToken(newtoken));
+        this.dispatch?.(cloudConfigActions.setPlayerIdToken(newtoken));
         await this.refreshAll();
         return {
             message: 'Player ID set',

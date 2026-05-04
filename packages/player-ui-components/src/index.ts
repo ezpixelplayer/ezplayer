@@ -95,6 +95,9 @@ export {
     setShowDirectoryPath,
 } from './store/slices/AuthStore';
 
+export { cloudConfigActions } from './store/slices/CloudConfigStore';
+export { cloudStatusActions } from './store/slices/CloudStatusStore';
+
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 
 export { initI18N } from './i18n/i18n';

@@ -28,6 +28,8 @@ import {
     setNStatus,
     setPStatus,
     authSliceActions,
+    cloudConfigActions,
+    cloudStatusActions,
 } from '@ezplayer/player-ui-components';
 
 export class ElectronDataStorageAPI extends CloudDataStorageAPI {
@@ -65,15 +67,11 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         });
         window.electronAPI!.onCloudConfigUpdated((data: CloudConfig) => {
             if (!this.dispatch) return;
-            this.dispatch(authSliceActions.setCloudServiceUrl(data.cloudServiceUrl));
-            this.dispatch(authSliceActions.setPlayerIdToken(data.playerIdToken));
+            this.dispatch(cloudConfigActions.setCloudConfig(data));
         });
         window.electronAPI!.onCloudStatusUpdated((data: CloudStatus) => {
             if (!this.dispatch) return;
-            this.dispatch(authSliceActions.setPlayerIsRegistered(data.playerIdIsRegistered));
-            if (data.cloudVersion) {
-                this.dispatch(authSliceActions.setCloudVersion(data.cloudVersion));
-            }
+            this.dispatch(cloudStatusActions.setCloudStatus(data));
         });
         window.electronAPI!.ipcRequestAudioDevices(async () => {
             const devices = await navigator.mediaDevices.enumerateDevices();

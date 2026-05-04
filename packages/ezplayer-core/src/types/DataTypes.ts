@@ -444,6 +444,24 @@ export interface PlaybackSettings {
     jukebox?: JukeboxSettings;
 }
 
+/** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
+export interface CloudConfig {
+    cloudServiceUrl: string;
+    playerIdToken: string;
+}
+
+/** In-memory cloud connectivity status owned by node main. Pushed; never persisted. */
+export interface CloudStatus {
+    /** True if the cloud confirms this player ID is registered to a user. */
+    playerIdIsRegistered: boolean;
+    /** Reported by the cloud during the registration check. */
+    cloudVersion?: string;
+    /** Epoch ms of the last poll reply (success or graceful error). */
+    lastCheckedAt?: number;
+    /** Last error string from the polling loop. Cleared on the next success. */
+    lastError?: string;
+}
+
 /// Player full state & websocket sync
 export type FullPlayerState = {
     showFolder?: string;
@@ -458,6 +476,8 @@ export type FullPlayerState = {
     playbackSettings?: PlaybackSettings;
     playbackStatistics?: PlaybackStatistics;
     versions?: EZPlayerVersions;
+    cloudConfig?: CloudConfig;
+    cloudStatus?: CloudStatus;
 };
 
 export type PlayerWebSocketSnapshot = {
@@ -480,7 +500,9 @@ export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPi
 
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
-    | { type: 'subscribe'; keys: (keyof FullPlayerState)[] };
+    | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
+    | { type: 'setPlayerIdToken'; token: string }
+    | { type: 'setCloudServiceUrl'; url: string };
 
 /// Layout Edit
 

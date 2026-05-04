@@ -1,4 +1,6 @@
 export type {
+    CloudConfig,
+    CloudStatus,
     EZPlayerVersions,
     PlaylistRecord,
     PlaylistItem,
@@ -43,8 +45,6 @@ export type {
     AudioDevice,
     AudioChunk,
     AutoUpdateStatus,
-    CloudConfig,
-    CloudStatus,
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,

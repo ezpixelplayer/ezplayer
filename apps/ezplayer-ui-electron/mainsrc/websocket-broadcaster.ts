@@ -78,6 +78,13 @@ export class WebSocketBroadcaster {
 
     private conns = new Set<Conn>();
 
+    /** Handler for non-pong client messages. Set by server-worker.ts after construction. */
+    private clientMessageHandler?: (msg: PlayerClientWebSocketMessage) => void;
+
+    setClientMessageHandler(handler: (msg: PlayerClientWebSocketMessage) => void) {
+        this.clientMessageHandler = handler;
+    }
+
     // backpressure thresholds (tune)
     private readonly MAX_BUFFERED_BYTES = 8 * 1024 * 1024; // 8MB
     private readonly HEARTBEAT_MS = 5_000;
@@ -211,6 +218,9 @@ export class WebSocketBroadcaster {
             c.lastPongMs = Date.now();
             return;
         }
+
+        // Forward everything else to the registered handler (set by server-worker.ts).
+        this.clientMessageHandler?.(msg);
     }
 
     private heartbeatSweep() {

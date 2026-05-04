@@ -47,4 +47,6 @@ export interface ServerWorkerRPCAPI {
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
+    setPlayerIdToken(token: string): Promise<void>;
+    setCloudServiceUrl(url: string): Promise<void>;
 }

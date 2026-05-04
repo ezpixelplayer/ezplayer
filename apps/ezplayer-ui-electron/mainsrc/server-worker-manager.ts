@@ -12,7 +12,14 @@ import type {
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
-import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer, loadShowFolder } from './ipcezplayer.js';
+import {
+    updatePlaylistsHandler,
+    updateScheduleHandler,
+    curFrameBuffer,
+    loadShowFolder,
+    applyPlayerIdToken,
+    applyCloudServiceUrl,
+} from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
@@ -87,6 +94,12 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendToMainWindow: (channel: string, ...args: unknown[]) => {
         const mainWindow = getMainWindowRef?.();
         mainWindow?.webContents?.send(channel, ...args);
+    },
+    setPlayerIdToken: async (token: string) => {
+        applyPlayerIdToken(token);
+    },
+    setCloudServiceUrl: async (url: string) => {
+        applyCloudServiceUrl(url);
     },
 };
 

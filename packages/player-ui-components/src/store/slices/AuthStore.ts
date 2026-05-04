@@ -4,20 +4,10 @@ import { UserRegisterBody } from '../api/DataStorageAPI';
 import { EZPlayerVersions } from '@ezplayer/ezplayer-core';
 
 export interface AuthState {
-    // This is called the "Auth" slice... and it does have the authentication info in it.
-    //  But... it's really more of a "connectivity" slice.
-    //    It remembers what whe can connect to, how we're connected, if there's an error, outstanding request, etc.
-    // Capabilities exposed
-    //  Recall that there are 3 scenarios:
-    //   Cloud console - doesn't do any playing, no player token, but does let you see and D/L your stuff.  Login required
-    //   Player electron - local - allows adding/removing local files, player token, and/or cloud login
-    //   Player remote HTTP - by rights, data should be saved on the player for aggregation w/ its local store, rather than go via the cloud
-
-    // Placeholder - for capabilities o
+    // User-auth + connectivity state. The cloud-config (URL + player token) and cloud-status
+    // (registration + cloud version) live in the `cloudConfig` and `cloudStatus` slices.
     supportsLogin: boolean;
     supportsToken: boolean;
-
-    cloudServiceUrl: string; // Cloud service; if empty the cloud service is disabled
 
     // FUTURE; some player-specific interaction is offloaded from main URL; established by cloud service
     //  This is expected only as diagnostic info, established in the API layer
@@ -25,12 +15,6 @@ export interface AuthState {
 
     cloudIsReachable: boolean; // True if we're able to access the cloud
     cloudUserToken: string | null; // True if we're logged in (we think)
-    playerIdToken: string; // Used to access player-side API without being logged in - this may be registered to a user.
-
-    // Note - this DOES NOT MEAN that the player is registered to *this* user.
-    //   For that, we can check to see if playerIdToken is in the list in the user slice
-    // This tells us if we have a registered player at all, within the cloud service
-    playerIdIsRegistered: boolean;
 
     loading: boolean;
     error?: string;
@@ -40,12 +24,10 @@ export interface AuthState {
 
     // TODO CRAZ is this redundant with end user slice?
     user?: UserRegisterBody;
-    forgotPassword?: string; // Message that comes back from forgot password rq
-    changePassword?: string; // Message that comes back from change password rq
+    forgotPassword?: string;
+    changePassword?: string;
 
-    // Software version - we may add cloud service version FYI beside this
     playerVersion?: EZPlayerVersions;
-    cloudVersion: string;
 }
 
 /**
@@ -57,11 +39,8 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
         supportsLogin: true,
         supportsToken: true,
 
-        cloudServiceUrl: '',
         cloudIsReachable: false,
         cloudUserToken: null,
-        playerIdToken: '',
-        playerIdIsRegistered: false,
         playerRemoteUrl: undefined,
         showDirectory: undefined,
 
@@ -72,7 +51,6 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
         changePassword: undefined,
 
         playerVersion: undefined,
-        cloudVersion: 'unknown',
     };
 
     return createSlice({
@@ -85,26 +63,14 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
             setSupportsToken: (state: AuthState, action: PayloadAction<boolean>) => {
                 state.supportsToken = action.payload;
             },
-            setCloudServiceUrl: (state: AuthState, action: PayloadAction<string>) => {
-                state.cloudServiceUrl = action.payload;
-            },
             setCloudIsReachable: (state: AuthState, action: PayloadAction<boolean>) => {
                 state.cloudIsReachable = action.payload;
             },
             setUserToken: (state: AuthState, action: PayloadAction<string | null>) => {
                 state.cloudUserToken = action.payload;
             },
-            setPlayerIdToken: (state: AuthState, action: PayloadAction<string>) => {
-                state.playerIdToken = action.payload;
-            },
-            setPlayerIsRegistered: (state: AuthState, action: PayloadAction<boolean>) => {
-                state.playerIdIsRegistered = action.payload;
-            },
             setPlayerVersion: (state: AuthState, action: PayloadAction<EZPlayerVersions>) => {
                 state.playerVersion = action.payload;
-            },
-            setCloudVersion: (state: AuthState, action: PayloadAction<string>) => {
-                state.cloudVersion = action.payload;
             },
             setShowDirectory: (state: AuthState, action: PayloadAction<string>) => {
                 state.showDirectory = action.payload;

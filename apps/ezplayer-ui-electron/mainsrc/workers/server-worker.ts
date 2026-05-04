@@ -128,6 +128,20 @@ const rpc = new MainThreadRPC();
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
+// Forward client → server WebSocket messages that mutate cloud config to main via RPC.
+// Server pushes the resulting state back to all clients via the broadcast channel.
+wsBroadcaster.setClientMessageHandler((msg) => {
+    if (msg.type === 'setPlayerIdToken') {
+        void rpc.call('setPlayerIdToken', msg.token).catch((err) => {
+            console.error('[server-worker] setPlayerIdToken failed:', err);
+        });
+    } else if (msg.type === 'setCloudServiceUrl') {
+        void rpc.call('setCloudServiceUrl', msg.url).catch((err) => {
+            console.error('[server-worker] setCloudServiceUrl failed:', err);
+        });
+    }
+});
+
 // Side cache for model coordinates (pushed from main thread on show folder load)
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};

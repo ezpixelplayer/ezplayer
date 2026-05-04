@@ -1,4 +1,6 @@
 import type {
+    CloudConfig,
+    CloudStatus,
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
@@ -71,24 +73,6 @@ export type AutoUpdateStatus =
     | { state: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
     | { state: 'downloaded'; version: string }
     | { state: 'error'; message: string };
-
-/** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
-export interface CloudConfig {
-    cloudServiceUrl: string;
-    playerIdToken: string;
-}
-
-/** In-memory cloud status owned by node main. Pushed to renderer; never persisted to JSON. */
-export interface CloudStatus {
-    /** True if the cloud confirms this player ID is registered to a user. */
-    playerIdIsRegistered: boolean;
-    /** Reported by the cloud during the registration check. */
-    cloudVersion?: string;
-    /** Epoch ms of the last successful cloud reply (success or graceful 404). */
-    lastCheckedAt?: number;
-    /** Last error string from the polling loop. Cleared on the next success. */
-    lastError?: string;
-}
 
 export interface EZPElectronAPI {
     shouldShowWelcomeOnLaunch: () => boolean;

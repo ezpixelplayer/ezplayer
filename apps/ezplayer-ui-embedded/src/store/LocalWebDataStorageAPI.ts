@@ -13,6 +13,8 @@ import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/
 import {
     AppDispatch,
     authSliceActions,
+    cloudConfigActions,
+    cloudStatusActions,
     hydratePlaybackSettings,
     setCStatus,
     setNStatus,
@@ -79,6 +81,12 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
             if (data.playbackStatistics !== undefined) {
                 dispatch(setPlaybackStatistics(data.playbackStatistics));
+            }
+            if (data.cloudConfig !== undefined) {
+                dispatch(cloudConfigActions.setCloudConfig(data.cloudConfig));
+            }
+            if (data.cloudStatus !== undefined) {
+                dispatch(cloudStatusActions.setCloudStatus(data.cloudStatus));
             }
         });
 
@@ -154,10 +162,10 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         }
     }
 
-    // The following methods are not used by the web app when connected locally
-    // Data is synced via WebSocket instead
-    async requestChangeServerUrl(_data: { cloudURL: string }) {
-        throw new Error('Not supported in local web mode');
+    // Cloud config writes route over the WebSocket: koa worker forwards to main, main
+    // updates the file and reconfigures the poller, status echoes back as a snapshot.
+    async requestChangeServerUrl(data: { cloudURL: string }) {
+        wsService.send({ type: 'setCloudServiceUrl', url: data.cloudURL ?? '' });
     }
 
     async refreshAll() {
@@ -248,10 +256,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         throw new Error('Password change not supported in local web mode');
     }
 
-    async requestSetPlayerIdToken(_data: { playerIdToken?: string }): Promise<{ message: string }> {
-        return {
-            message: 'Player ID management not needed in local web mode',
-        };
+    async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
+        wsService.send({ type: 'setPlayerIdToken', token: data.playerIdToken ?? '' });
+        return { message: 'ok' };
     }
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {

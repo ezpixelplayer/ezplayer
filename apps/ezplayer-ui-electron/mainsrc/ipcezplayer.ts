@@ -188,6 +188,8 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
     updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
+    broadcastToWebSocket('cloudConfig', cloudConfig);
+    broadcastToWebSocket('cloudStatus', getCurrentCloudStatus());
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -244,6 +246,23 @@ const handlers: MainRPCAPI = {
         throw new Error(msg);
     },
 };
+
+/** Update the persisted player ID token and reconfigure the cloud poller. Called from
+ *  the renderer (electron IPC) and from the embedded UI (koa worker → RPC). */
+export function applyPlayerIdToken(token: string) {
+    const cfg = updateCloudConfig({ playerIdToken: token ?? '' });
+    setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
+    updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    broadcastToWebSocket('cloudConfig', cfg);
+}
+
+/** Update the persisted cloud service URL and reconfigure the cloud poller. */
+export function applyCloudServiceUrl(url: string) {
+    const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
+    setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
+    updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    broadcastToWebSocket('cloudConfig', cfg);
+}
 
 export async function registerContentHandlers(
     mainWindow: BrowserWindow | null,
@@ -391,14 +410,10 @@ export async function registerContentHandlers(
         return getCloudConfigCache();
     });
     ipcMain.handle('ipcSetPlayerIdToken', async (_event, token: string) => {
-        const cfg = updateCloudConfig({ playerIdToken: token ?? '' });
-        setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
-        updateWindow?.webContents?.send('update:cloudConfig', cfg);
+        applyPlayerIdToken(token);
     });
     ipcMain.handle('ipcSetCloudServiceUrl', async (_event, url: string) => {
-        const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
-        setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
-        updateWindow?.webContents?.send('update:cloudConfig', cfg);
+        applyCloudServiceUrl(url);
     });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
@@ -406,6 +421,7 @@ export async function registerContentHandlers(
 
     onCloudStatus((status) => {
         updateWindow?.webContents?.send('update:cloudStatus', status);
+        broadcastToWebSocket('cloudStatus', status);
     });
 
     /// Connection from player worker thread

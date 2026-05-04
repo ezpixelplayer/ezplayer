@@ -267,12 +267,13 @@ const TimeInput: React.FC<{
 
 // Selectors
 const selectAuth = (state: RootState) => state.auth;
+const selectCloudStatus = (state: RootState) => state.cloudStatus;
 const selectShowDirectory = (state: RootState) => state.auth.showDirectory;
 const selectPlaylists = (state: RootState) => state.playlists.playlists;
 const selectSettings = (state: RootState) => state.playerStatus.playbackSettings;
-const selectVersionInfo = createSelector([selectAuth], (auth) => ({
+const selectVersionInfo = createSelector([selectAuth, selectCloudStatus], (auth, status) => ({
     playerVersion: auth.playerVersion,
-    cloudVersion: auth.cloudVersion,
+    cloudVersion: status.cloudVersion ?? 'unknown',
 }));
 
 // Extend Window interface to include electronAPI
