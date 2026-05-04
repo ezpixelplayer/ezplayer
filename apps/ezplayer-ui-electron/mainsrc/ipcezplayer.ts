@@ -29,6 +29,7 @@ import {
     loadCloudConfigFromDisk,
     updateCloudConfig,
 } from './data/CloudConfigStorage.js';
+import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
     getCurrentCloudStatus,
     onCloudStatus,
@@ -182,8 +183,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);
     curUser = await loadUserProfileAPI(showFolder);
-    await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
-    const cloudConfig = await loadCloudConfigFromDisk(path.join(showFolder, 'cloud-config.json'));
+    // Settings live under `.ezplayer/` in the show folder. First call also migrates any
+    // pre-existing root-level files into that subdirectory.
+    await ensureEzplayerSubdir(showFolder);
+    await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
+    const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
     setCloudPollConfig(cloudConfig.cloudServiceUrl, cloudConfig.playerIdToken);
 
     updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
@@ -390,7 +394,7 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<Boolean> => {
         const showFolder = getCurrentShowFolder();
-        if (showFolder) applySettingsFromRenderer(path.join(showFolder, 'playbackSettings.json'), settings);
+        if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,

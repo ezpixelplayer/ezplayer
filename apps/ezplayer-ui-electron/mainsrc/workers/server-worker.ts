@@ -372,7 +372,7 @@ async function startServer(config: ServerWorkerData) {
             }
             const showFolder = wsBroadcaster.get('showFolder');
             if (showFolder) {
-                const settingsPath = path.join(showFolder, 'playbackSettings.json');
+                const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
                 await rpc.call('applySettingsFromRenderer', settingsPath, settings);
             }
             await rpc.call('sendPlaybackSettings', settings);

@@ -106,10 +106,13 @@ function toRelative(p: string, base: string): string {
     return rel;
 }
 
+/** Resolve a show-folder JSON file to its `.ezplayer/`-prefixed location. */
+const sf = (folder: string, name: string) => path.join(folder, '.ezplayer', name);
+
 export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
     try {
         const p: TempSeqsAPIPayload = await JSON.parse(
-            await fsp.readFile(path.join(folder, 'sequences.json'), 'utf-8'),
+            await fsp.readFile(sf(folder, 'sequences.json'), 'utf-8'),
         );
         const seqs = p?.data?.allSongs ?? [];
         for (const s of seqs) {
@@ -157,13 +160,13 @@ export async function saveSequencesAPI(folder: string, payload: SequenceRecord[]
             allSongs: npayload,
         },
     };
-    await fsp.writeFile(path.join(folder, 'sequences.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await fsp.writeFile(sf(folder, 'sequences.json'), JSON.stringify(userData, null, 4), 'utf-8');
 }
 
 export async function loadPlaylistsAPI(folder: string): Promise<PlaylistRecord[]> {
     try {
         const p: TempPlaylistsPayload = await JSON.parse(
-            await fsp.readFile(path.join(folder, 'playlists.json'), 'utf-8'),
+            await fsp.readFile(sf(folder, 'playlists.json'), 'utf-8'),
         );
         return p.data.playlists ?? [];
     } catch (e) {
@@ -178,13 +181,13 @@ export const savePlaylistsAPI = async (folder: string, payload: PlaylistRecord[]
             playlists: payload,
         },
     };
-    await fsp.writeFile(path.join(folder, 'playlists.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await fsp.writeFile(sf(folder, 'playlists.json'), JSON.stringify(userData, null, 4), 'utf-8');
 };
 
 export async function loadScheduleAPI(folder: string) {
     try {
         const p: TempScheduleAPIPayload = await JSON.parse(
-            await fsp.readFile(path.join(folder, 'schedule.json'), 'utf-8'),
+            await fsp.readFile(sf(folder, 'schedule.json'), 'utf-8'),
         );
         return p.data.scheduledPlaylists ?? [];
     } catch (e) {
@@ -199,12 +202,12 @@ export const saveScheduleAPI = async (folder: string, payload: ScheduledPlaylist
             scheduledPlaylists: payload,
         },
     };
-    await fsp.writeFile(path.join(folder, 'schedule.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await fsp.writeFile(sf(folder, 'schedule.json'), JSON.stringify(userData, null, 4), 'utf-8');
 };
 
 export async function loadShowProfileAPI(folder: string) {
     try {
-        const p: TempShowAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'show.json'), 'utf-8'));
+        const p: TempShowAPIPayload = await JSON.parse(await fsp.readFile(sf(folder, 'show.json'), 'utf-8'));
         return p.data.show ?? blankShowProfile;
     } catch (e) {
         logLoadFailure('show.json', e);
@@ -216,12 +219,12 @@ export async function saveShowProfileAPI(folder: string, data: EndUserShowSettin
     const sData: TempShowAPIPayload = {
         data: { show: data },
     };
-    await fsp.writeFile(path.join(folder, 'show.json'), JSON.stringify(sData, null, 4), 'utf-8');
+    await fsp.writeFile(sf(folder, 'show.json'), JSON.stringify(sData, null, 4), 'utf-8');
 }
 
 export async function loadUserProfileAPI(folder: string) {
     try {
-        const p: TempUserAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'user.json'), 'utf-8'));
+        const p: TempUserAPIPayload = await JSON.parse(await fsp.readFile(sf(folder, 'user.json'), 'utf-8'));
         return p.data.user ?? blankUserProfile;
     } catch (e) {
         logLoadFailure('user.json', e);
@@ -233,7 +236,7 @@ export async function saveUserProfileAPI(folder: string, data: EndUser) {
     const sData: TempUserAPIPayload = {
         data: { user: data },
     };
-    await fsp.writeFile(path.join(folder, 'user.json'), JSON.stringify(sData, null, 4), 'utf-8');
+    await fsp.writeFile(sf(folder, 'user.json'), JSON.stringify(sData, null, 4), 'utf-8');
 }
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
