@@ -32,8 +32,12 @@ import {
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
     getCurrentCloudStatus,
+    getCurrentCStatus,
     onCloudStatus,
-    setCloudPollConfig,
+    onCStatus,
+    onInstallSequence,
+    setCloudWorkerConfig,
+    updateCloudWorkerSequences,
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 
@@ -154,6 +158,24 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 
+/** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
+ *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
+ *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
+async function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
+    const showFolder = getCurrentShowFolder();
+    const updList = mergeSequences(uppl, curSequences ?? []);
+    if (showFolder) {
+        await saveSequencesAPI(showFolder, updList);
+    }
+    curSequences = updList;
+    const filtered = updList.filter((r) => r.deleted !== true);
+    updateWindow?.webContents?.send('update:sequences', filtered);
+    broadcastToWebSocket('sequences', filtered);
+    scheduleUpdated();
+    updateCloudWorkerSequences(curSequences);
+    return filtered;
+}
+
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
 function scheduleUpdated(forceRestart?: boolean) {
@@ -190,7 +212,12 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curUser = await loadUserProfileAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
-    setCloudPollConfig(cloudConfig.cloudServiceUrl, cloudConfig.playerIdToken);
+    setCloudWorkerConfig(
+        cloudConfig.cloudServiceUrl,
+        cloudConfig.playerIdToken,
+        showFolder,
+        curSequences,
+    );
 
     updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
     updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
@@ -257,7 +284,12 @@ const handlers: MainRPCAPI = {
  *  the renderer (electron IPC) and from the embedded UI (koa worker → RPC). */
 export function applyPlayerIdToken(token: string) {
     const cfg = updateCloudConfig({ playerIdToken: token ?? '' });
-    setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
+    setCloudWorkerConfig(
+        cfg.cloudServiceUrl,
+        cfg.playerIdToken,
+        getCurrentShowFolder() ?? '',
+        curSequences,
+    );
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
@@ -265,7 +297,12 @@ export function applyPlayerIdToken(token: string) {
 /** Update the persisted cloud service URL and reconfigure the cloud poller. */
 export function applyCloudServiceUrl(url: string) {
     const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
-    setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
+    setCloudWorkerConfig(
+        cfg.cloudServiceUrl,
+        cfg.playerIdToken,
+        getCurrentShowFolder() ?? '',
+        curSequences,
+    );
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
@@ -314,17 +351,7 @@ export async function registerContentHandlers(
                 await fseq.close();
             }
         }
-        const showFolder = getCurrentShowFolder();
-        const updList = mergeSequences(uppl, curSequences ?? []);
-        if (showFolder) {
-            await saveSequencesAPI(showFolder, updList);
-        }
-        curSequences = updList;
-        const filtered = updList.filter((r) => r.deleted !== true);
-        updateWindow?.webContents?.send('update:sequences', filtered);
-        broadcastToWebSocket('sequences', filtered);
-        scheduleUpdated();
-        return filtered;
+        return await commitSequenceUpdates(uppl);
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
@@ -430,6 +457,50 @@ export async function registerContentHandlers(
         broadcastToWebSocket('cloudStatus', status);
     });
 
+    onCStatus((cStatus) => {
+        // Merge the cloud worker's content view into curStatus.content so the
+        // renderer's "usual channel" (playback:cstatus / setCStatus) picks it up.
+        curStatus.content = { ...(curStatus.content ?? {}), ...cStatus };
+        updateWindow?.webContents?.send('playback:cstatus', curStatus.content);
+        broadcastToWebSocket('cStatus', curStatus.content);
+    });
+
+    onInstallSequence(async (record, superseded) => {
+        // If the cloud didn't provide a thumb but did give us audio, extract embedded
+        // cover art the same way Add Song does. Writes a sibling image file in the show
+        // folder root and stamps `cloud.thumb` so future manifest ticks don't loop.
+        if (!record.files?.thumb && record.files?.audio) {
+            try {
+                const meta = await extractAudioTagMetadata(record.files.audio);
+                if (meta.imageFile) {
+                    record.files = { ...record.files, thumb: meta.imageFile };
+                    record.cloud = {
+                        ...(record.cloud ?? {}),
+                        thumb: { file_id: `mp3:${path.basename(meta.imageFile)}`, file_time: Date.now() },
+                    };
+                }
+            } catch (e) {
+                console.warn('[cloud-install] cover-art extract failed:', e);
+            }
+        }
+        // Same code path the renderer uses when it adds a song.
+        try {
+            await commitSequenceUpdates([record]);
+        } catch (e) {
+            console.error('[cloud-install] commit failed:', e);
+            return;
+        }
+        // After install, delete superseded files. Best-effort; missing/locked
+        // files just get logged.
+        for (const p of superseded) {
+            try {
+                await import('fs/promises').then((fsp) => fsp.unlink(p));
+            } catch (e) {
+                console.warn('[cloud-install] failed to delete superseded file', p, e);
+            }
+        }
+    });
+
     /// Connection from player worker thread
 
     const rpcs = new RPCServer<MainRPCAPI>(playWorker, handlers);
@@ -460,14 +531,12 @@ export async function registerContentHandlers(
                 break;
             }
             case 'cstatus': {
-                const nstatus: CombinedPlayerStatus = {
-                    ...curStatus,
-                    content: msg.status,
-                    content_updated: Date.now(),
-                };
-                curStatus = nstatus;
-                mainWindow?.webContents.send('playback:cstatus', msg.status);
-                broadcastToWebSocket('cStatus', msg.status);
+                // Merge instead of replace so cloud-content fields (files map, etc.) on
+                // curStatus.content survive playback's status updates.
+                const merged = { ...(curStatus.content ?? {}), ...msg.status };
+                curStatus = { ...curStatus, content: merged, content_updated: Date.now() };
+                mainWindow?.webContents.send('playback:cstatus', merged);
+                broadcastToWebSocket('cStatus', merged);
                 break;
             }
             case 'nstatus': {

@@ -1,12 +1,50 @@
-import type { CloudStatus } from '@ezplayer/ezplayer-core';
+import type {
+    CloudStatus,
+    PlayerCStatusContent,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
+
+/** Tunables for the worker. Aggressive defaults are demo values; production
+ *  callers will pass longer intervals to save cloud cost. */
+export interface CloudWorkerTuning {
+    /** Registration heartbeat poll cadence (ms). */
+    registrationIntervalMs?: number;
+    /** Manifest (sequence list) poll cadence (ms). */
+    manifestIntervalMs?: number;
+    /** Per-request timeout for downloads (ms). */
+    downloadTimeoutMs?: number;
+    /** Trip the circuit breaker after this many consecutive download failures. */
+    failureThreshold?: number;
+}
 
 /** Parent → worker. */
 export type CloudPollInMessage =
-    | { type: 'setConfig'; cloudUrl: string; playerIdToken: string; intervalMs?: number }
+    | {
+          type: 'setConfig';
+          cloudUrl: string;
+          playerIdToken: string;
+          showFolder: string;
+          /** Existing local sequences so the worker can diff against the manifest
+           *  without re-reading them. Refreshed on each setConfig. */
+          existingSequences: SequenceRecord[];
+          tuning?: CloudWorkerTuning;
+      }
+    | { type: 'updateSequences'; existingSequences: SequenceRecord[] }
     | { type: 'pollNow' }
+    | { type: 'manifestNow' }
     | { type: 'stop' };
 
 /** Worker → parent. */
 export type CloudPollOutMessage =
     | { type: 'cloudStatus'; status: CloudStatus }
+    | { type: 'cStatus'; status: PlayerCStatusContent }
+    | {
+          /** A sequence has fully landed (all files staged + promoted into the show folder).
+           *  Parent merges via the same path renderer-driven adds use. */
+          type: 'installSequence';
+          record: SequenceRecord;
+          /** Show-folder-relative paths of files this sequence is replacing
+           *  (so the parent / main can delete them after the merge). */
+          superseded: string[];
+      }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

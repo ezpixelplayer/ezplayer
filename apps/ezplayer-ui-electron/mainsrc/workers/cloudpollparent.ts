@@ -1,8 +1,16 @@
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CloudStatus } from '@ezplayer/ezplayer-core';
-import type { CloudPollInMessage, CloudPollOutMessage } from './cloudpolltypes';
+import type {
+    CloudStatus,
+    PlayerCStatusContent,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
+import type {
+    CloudPollInMessage,
+    CloudPollOutMessage,
+    CloudWorkerTuning,
+} from './cloudpolltypes';
 
 // cloudpollparent gets bundled into the parent file that imports it (e.g. dist/main.js),
 // so __dirname at runtime is the parent's location — not this source file's location.
@@ -14,7 +22,11 @@ const workerPath = path.join(__dirname, 'workers', 'cloudpoll.js');
 let worker: Worker | null = null;
 
 let currentStatus: CloudStatus = { playerIdIsRegistered: false };
+let currentCStatus: PlayerCStatusContent = {};
+
 let statusListener: ((s: CloudStatus) => void) | undefined;
+let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
+let installListener: ((record: SequenceRecord, superseded: string[]) => void) | undefined;
 
 function ensureWorker() {
     if (worker) return worker;
@@ -35,6 +47,16 @@ function ensureWorker() {
                 );
                 statusListener?.(currentStatus);
                 break;
+            case 'cStatus':
+                currentCStatus = msg.status;
+                cStatusListener?.(currentCStatus);
+                break;
+            case 'installSequence':
+                console.log(
+                    `[cloudpoll] installSequence id=${msg.record.id} superseded=${msg.superseded.length}`,
+                );
+                installListener?.(msg.record, msg.superseded);
+                break;
             case 'log':
                 console[msg.level === 'error' ? 'error' : 'log']('[cloudpoll]', msg.msg);
                 break;
@@ -47,23 +69,46 @@ function send(msg: CloudPollInMessage) {
     ensureWorker().postMessage(msg);
 }
 
-/** Configure (or reconfigure) the poll loop. Empty cloudUrl or playerIdToken disables polling. */
-export function setCloudPollConfig(cloudUrl: string, playerIdToken: string, intervalMs?: number) {
+/** Configure (or reconfigure) the cloud worker. Empty cloudUrl or playerIdToken disables it. */
+export function setCloudWorkerConfig(
+    cloudUrl: string,
+    playerIdToken: string,
+    showFolder: string,
+    existingSequences: SequenceRecord[],
+    tuning?: CloudWorkerTuning,
+) {
     console.log(
-        `[cloudpoll] setCloudPollConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'}`,
+        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}"`,
     );
-    // When polling is disabled (no URL or no token), there's no source of truth for
-    // registration anymore — reset to "not registered" and notify so stale state doesn't
-    // linger from a previous configuration.
     if (!cloudUrl || !playerIdToken) {
         currentStatus = { playerIdIsRegistered: false };
         statusListener?.(currentStatus);
+        currentCStatus = {};
+        cStatusListener?.(currentCStatus);
     }
-    send({ type: 'setConfig', cloudUrl, playerIdToken, intervalMs });
+    send({
+        type: 'setConfig',
+        cloudUrl,
+        playerIdToken,
+        showFolder,
+        existingSequences,
+        tuning,
+    });
+}
+
+/** Refresh the worker's cached snapshot of local sequences (used to diff against
+ *  the cloud manifest). Call after each install or after the renderer adds/removes one. */
+export function updateCloudWorkerSequences(existingSequences: SequenceRecord[]) {
+    if (!worker) return;
+    send({ type: 'updateSequences', existingSequences });
 }
 
 export function pollCloudNow() {
     send({ type: 'pollNow' });
+}
+
+export function manifestPollNow() {
+    send({ type: 'manifestNow' });
 }
 
 export function stopCloudPoll() {
@@ -75,7 +120,20 @@ export function getCurrentCloudStatus(): CloudStatus {
     return currentStatus;
 }
 
-/** Set the (single) listener that fires whenever the worker reports a status update. */
+export function getCurrentCStatus(): PlayerCStatusContent {
+    return currentCStatus;
+}
+
 export function onCloudStatus(listener: (s: CloudStatus) => void) {
     statusListener = listener;
+}
+
+export function onCStatus(listener: (s: PlayerCStatusContent) => void) {
+    cStatusListener = listener;
+}
+
+export function onInstallSequence(
+    listener: (record: SequenceRecord, superseded: string[]) => void,
+) {
+    installListener = listener;
 }

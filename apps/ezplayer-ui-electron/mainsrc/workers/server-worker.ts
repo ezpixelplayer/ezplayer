@@ -234,8 +234,12 @@ async function startServer(config: ServerWorkerData) {
             return;
         }
 
-        // Sanitize sequence ID to prevent path traversal
-        const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9-_]/g, '');
+        // Sanitize sequence ID to prevent path traversal. Cloud-sourced ids are
+        // composite (`<user_id>|<vseq_id>`) so `|` is allowed alongside the
+        // hyphen/underscore alphanumerics. The id is only used as a cache key — the
+        // actual file path is read from the cached SequenceRecord, not constructed
+        // from the id — so the rule just has to keep `/`, `\`, and `.` out.
+        const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9\-_|]/g, '');
         if (sanitizedId !== sequenceId) {
             ctx.status = 400;
             ctx.body = { error: 'Invalid sequence ID' };

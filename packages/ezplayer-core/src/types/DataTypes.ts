@@ -42,6 +42,20 @@ export interface SequenceFiles {
     thumb?: string;
 }
 
+/** Identifiers for a cloud-sourced file currently installed in the show folder.
+ *  Used by the cloud content sync to detect when a sequence's bytes have gone
+ *  stale relative to the manifest. */
+export interface CloudFileIdent {
+    file_id: string;
+    file_time: number;
+}
+
+export interface CloudSequenceMeta {
+    fseq?: CloudFileIdent;
+    audio?: CloudFileIdent;
+    thumb?: CloudFileIdent;
+}
+
 export interface SequenceRecord {
     instanceId: string;
     id: string;
@@ -51,6 +65,8 @@ export interface SequenceRecord {
     files?: SequenceFiles;
     updatedAt?: number;
     deleted?: boolean;
+    /** Set on sequences installed by the cloud content worker. */
+    cloud?: CloudSequenceMeta;
 }
 
 export interface PlaylistItem {
@@ -162,6 +178,59 @@ export interface PlayerPStatusContent {
     //   TODO figure out how to make sure that gets reflected...
 }
 
+/** Manifest entry returned by the cloud's per-player sequence list endpoint
+ *  (currently /fppapi/player/getseqforplayer/:token). One per sequence the
+ *  player is entitled to. The sub-records identify each downloadable file
+ *  by an opaque file_id and a file_time used for staleness checks. */
+export interface CloudSeqManifestEntry {
+    id: string;
+    user_id: string;
+    vseq_id: string;
+    title: string;
+    artist: string;
+    /** Vendor display string. Optional; cloud may not always provide it. */
+    vendor?: string;
+    duration_ms?: number;
+    fseq?: { file_id: string; file_time: number };
+    audio?: { file_id: string; file_time: number };
+    xsqz?: { file_id: string; file_time: number };
+    pvid?: { file_id: string; file_time: number };
+    /** Direct (presigned) thumbnail URL when available. */
+    thumb?: string;
+}
+
+/** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
+ *  from the per-file entries; this struct is just identity + which files belong. */
+export interface CloudSequenceProgress {
+    vseq_id: string;
+    title: string;
+    artist: string;
+    vendor?: string;
+    /** file_ids of every file the manifest lists for this sequence (fseq/audio/thumb). */
+    fileIds: string[];
+}
+
+/** Per-file status used by the cloud content sync. */
+export type CloudFileKind = 'fseq' | 'audio' | 'thumb';
+export type CloudFileStatus =
+    | 'known' // listed in manifest, nothing started yet
+    | 'downloading' // fetch in progress
+    | 'staged' // bytes on disk under .ezplayer/cloud, not yet promoted
+    | 'installed' // active in show folder root, sequence record updated
+    | 'error'; // last attempt failed
+
+export interface CloudFileEntry {
+    vseq_id: string;
+    kind: CloudFileKind;
+    file_id: string;
+    file_time?: number;
+    filename?: string;
+    status: CloudFileStatus;
+    bytes?: number;
+    totalBytes?: number;
+    error?: string;
+}
+
 export interface PlayerCStatusContent {
     // C - Content
     n_sequences?: number;
@@ -170,6 +239,14 @@ export interface PlayerCStatusContent {
     n_playlists?: number;
     n_schedules?: number;
     schedule_sync_time?: number;
+
+    // Cloud content sync (worker-driven)
+    files?: Record<string, CloudFileEntry>; // keyed by file_id
+    sequences?: Record<string, CloudSequenceProgress>; // keyed by vseq_id
+    lastManifestAt?: number;
+    lastError?: string;
+    /** True when the circuit breaker has tripped after consecutive download failures. */
+    halted?: boolean;
 }
 
 export interface ControllerStatus {

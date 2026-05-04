@@ -16,4 +16,13 @@ export const CLOUD_API_ENDPOINTS = {
     /** User-facing browser URL: ${cloudUrl}${REGISTER_PLAYER}<playerId> opens the
      *  cloud-side claim flow on a logged-in browser. */
     REGISTER_PLAYER: 'enduser/registerplayer/',
+
+    // Cloud content sync (currently under /fppapi/, will be renamed). These three are NOT
+    // prefixed with /api/ — append directly: `${cloudUrl}${endpoint}<args>`.
+    /** GET ${cloudUrl}fppapi/player/getseqforplayer/<token> -> { sequences: FppSeqRec[] } */
+    FPP_GET_SEQ_LIST: 'fppapi/player/getseqforplayer/',
+    /** GET ${cloudUrl}fppapi/player/getseqfile/<token>/<file_id> -> { url, filename } */
+    FPP_GET_SEQ_FILE: 'fppapi/player/getseqfile/',
+    /** GET ${cloudUrl}fppapi/player/getmediafile/<token>/<file_id> -> { url, filename } */
+    FPP_GET_MEDIA_FILE: 'fppapi/player/getmediafile/',
 } as const;

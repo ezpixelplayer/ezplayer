@@ -38,6 +38,13 @@ export type {
     PlayerWebSocketMessage,
     PlayerClientWebSocketMessage,
     FullPlayerState,
+    CloudFileKind,
+    CloudFileStatus,
+    CloudFileEntry,
+    CloudFileIdent,
+    CloudSequenceMeta,
+    CloudSeqManifestEntry,
+    CloudSequenceProgress,
 } from './types/DataTypes';
 
 export type {
