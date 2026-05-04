@@ -178,14 +178,16 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // from the previous show folder are never served to the frontend.
     clearShowData();
 
+    // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
+    // loader so that, on first run against an old folder, root-level files are moved
+    // into the subdir and the loaders read the migrated copies on this same tick.
+    await ensureEzplayerSubdir(showFolder);
+
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
     curShow = await loadShowProfileAPI(showFolder);
     curUser = await loadUserProfileAPI(showFolder);
-    // Settings live under `.ezplayer/` in the show folder. First call also migrates any
-    // pre-existing root-level files into that subdirectory.
-    await ensureEzplayerSubdir(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
     setCloudPollConfig(cloudConfig.cloudServiceUrl, cloudConfig.playerIdToken);
