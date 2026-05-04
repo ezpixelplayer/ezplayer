@@ -27,6 +27,7 @@ let currentCStatus: PlayerCStatusContent = {};
 let statusListener: ((s: CloudStatus) => void) | undefined;
 let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
 let installListener: ((record: SequenceRecord, superseded: string[]) => void) | undefined;
+let layoutInstalledListener: (() => void) | undefined;
 
 function ensureWorker() {
     if (worker) return worker;
@@ -56,6 +57,10 @@ function ensureWorker() {
                     `[cloudpoll] installSequence id=${msg.record.id} superseded=${msg.superseded.length}`,
                 );
                 installListener?.(msg.record, msg.superseded);
+                break;
+            case 'layoutInstalled':
+                console.log('[cloudpoll] layoutInstalled');
+                layoutInstalledListener?.();
                 break;
             case 'log':
                 console[msg.level === 'error' ? 'error' : 'log']('[cloudpoll]', msg.msg);
@@ -111,6 +116,10 @@ export function manifestPollNow() {
     send({ type: 'manifestNow' });
 }
 
+export function fetchLayoutNow() {
+    send({ type: 'fetchLayoutNow' });
+}
+
 export function stopCloudPoll() {
     if (!worker) return;
     send({ type: 'stop' });
@@ -136,4 +145,8 @@ export function onInstallSequence(
     listener: (record: SequenceRecord, superseded: string[]) => void,
 ) {
     installListener = listener;
+}
+
+export function onLayoutInstalled(listener: () => void) {
+    layoutInstalledListener = listener;
 }

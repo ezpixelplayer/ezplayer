@@ -182,4 +182,12 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     async requestCloudSyncNow(): Promise<void> {
         return Promise.resolve();
     }
+
+    async requestCloudFetchLayoutNow(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    async requestCloudPollNow(): Promise<void> {
+        return Promise.resolve();
+    }
 }

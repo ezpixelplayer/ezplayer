@@ -45,6 +45,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     requestChooseShowFolder: async (): Promise<string> => {
         return await ipcRenderer.invoke('ipcUIChooseShowFolder');
     },
+    /** Cloud-managed-folder picker. Picks any writable folder, seeds it with a fresh
+     *  cloud-config (`layoutSource: 'cloud'`), locks it, loads it. Returns the chosen path,
+     *  or empty string if the user cancelled. */
+    requestChooseCloudShowFolder: async (): Promise<string> => {
+        return await ipcRenderer.invoke('ipcUIChooseCloudShowFolder');
+    },
     validateShowDirectory: async (
         showDirectory?: string,
     ): Promise<{ valid: boolean; missingFiles: string[]; inaccessibleFiles: string[]; error?: string }> => {
@@ -123,6 +129,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     cloudSyncNow(): Promise<void> {
         return ipcRenderer.invoke('ipcCloudSyncNow');
+    },
+    cloudFetchLayoutNow(): Promise<void> {
+        return ipcRenderer.invoke('ipcCloudFetchLayoutNow');
+    },
+    cloudPollNow(): Promise<void> {
+        return ipcRenderer.invoke('ipcCloudPollNow');
     },
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => {
         ipcRenderer.on('update:cloudConfig', (_event: any, data: CloudConfig) => {

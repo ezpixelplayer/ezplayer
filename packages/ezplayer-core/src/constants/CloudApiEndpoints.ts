@@ -17,12 +17,15 @@ export const CLOUD_API_ENDPOINTS = {
      *  cloud-side claim flow on a logged-in browser. */
     REGISTER_PLAYER: 'enduser/registerplayer/',
 
-    // Cloud content sync (currently under /fppapi/, will be renamed). These three are NOT
+    // Cloud content sync — `/ezpapi/...` (formerly `/fppapi/...`). These are NOT
     // prefixed with /api/ — append directly: `${cloudUrl}${endpoint}<args>`.
-    /** GET ${cloudUrl}fppapi/player/getseqforplayer/<token> -> { sequences: FppSeqRec[] } */
-    FPP_GET_SEQ_LIST: 'fppapi/player/getseqforplayer/',
-    /** GET ${cloudUrl}fppapi/player/getseqfile/<token>/<file_id> -> { url, filename } */
-    FPP_GET_SEQ_FILE: 'fppapi/player/getseqfile/',
-    /** GET ${cloudUrl}fppapi/player/getmediafile/<token>/<file_id> -> { url, filename } */
-    FPP_GET_MEDIA_FILE: 'fppapi/player/getmediafile/',
+    /** GET ${cloudUrl}ezpapi/player/getseqforplayer/<token> -> { sequences: EzpSeqRec[] } */
+    EZP_GET_SEQ_LIST: 'ezpapi/player/getseqforplayer/',
+    /** GET ${cloudUrl}ezpapi/player/getseqfile/<token>/<file_id> -> { url, filename } */
+    EZP_GET_SEQ_FILE: 'ezpapi/player/getseqfile/',
+    /** GET ${cloudUrl}ezpapi/player/getmediafile/<token>/<file_id> -> { url, filename } */
+    EZP_GET_MEDIA_FILE: 'ezpapi/player/getmediafile/',
+    /** GET ${cloudUrl}ezpapi/player/getlatestlayout/<token>
+     *   -> { zip?, rgbeffects?, networks?: { url, filename, file_id, file_time } } */
+    EZP_GET_LATEST_LAYOUT: 'ezpapi/player/getlatestlayout/',
 } as const;

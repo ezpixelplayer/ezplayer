@@ -123,6 +123,14 @@ export interface DataStorageAPI {
      *  any future automated trigger (e.g. a cloud push notification). */
     requestCloudSyncNow: () => Promise<void>;
 
+    /** Ask the player's cloud worker to fetch the latest layout (zip + xml overlay)
+     *  immediately. Used by the "Fetch Layout" UI control and the bootstrap flow. */
+    requestCloudFetchLayoutNow: () => Promise<void>;
+
+    /** Ask the player's cloud worker to fire a single registration heartbeat poll
+     *  off-cycle. Cheap; the welcome bootstrap calls this on a 2 s tick while waiting. */
+    requestCloudPollNow: () => Promise<void>;
+
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 }

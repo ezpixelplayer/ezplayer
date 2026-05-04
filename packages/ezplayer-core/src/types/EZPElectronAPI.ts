@@ -96,6 +96,11 @@ export interface EZPElectronAPI {
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => void;
     /** Trigger an immediate manifest refresh + content sync. */
     cloudSyncNow: () => Promise<void>;
+    /** Trigger an immediate layout fetch (zip + xml overlay). */
+    cloudFetchLayoutNow: () => Promise<void>;
+    /** Run a single registration heartbeat poll off-cycle. Cheap; used by the welcome
+     *  bootstrap panel to tighten the wait-for-registration loop. */
+    cloudPollNow: () => Promise<void>;
 
     // Cloud status: in-memory in main, polled by the cloud worker, pushed to renderer.
     getCloudStatus: () => Promise<CloudStatus>;
@@ -114,6 +119,7 @@ export interface EZPElectronAPI {
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
+    requestChooseCloudShowFolder: () => Promise<string>;
     validateShowDirectory: (showDirectory?: string) => Promise<{
         valid: boolean;
         missingFiles: string[];

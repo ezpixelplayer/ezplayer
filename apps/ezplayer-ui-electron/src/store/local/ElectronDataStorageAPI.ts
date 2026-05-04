@@ -223,6 +223,14 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         await window.electronAPI!.cloudSyncNow();
     }
 
+    override async requestCloudFetchLayoutNow(): Promise<void> {
+        await window.electronAPI!.cloudFetchLayoutNow();
+    }
+
+    override async requestCloudPollNow(): Promise<void> {
+        await window.electronAPI!.cloudPollNow();
+    }
+
 
     override async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;

@@ -15,12 +15,13 @@ import {
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import SyncIcon from '@mui/icons-material/Sync';
+import DownloadIcon from '@mui/icons-material/Download';
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
 import type { AppDispatch, RootState } from '../../store/Store';
-import { triggerCloudSyncNow } from '../../store/slices/CloudStatusStore';
+import { triggerCloudSyncNow, triggerLayoutFetch } from '../../store/slices/CloudStatusStore';
 import type {
     CloudFileEntry,
     CloudFileStatus,
@@ -119,7 +120,7 @@ const SequenceRow: React.FC<{
             <TableRow>
                 <TableCell colSpan={4} sx={{ p: 0, border: 0 }}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
-                        <Box sx={{ p: 2, pl: 6, bgcolor: 'action.hover' }}>
+                        <Box sx={{ p: 2, pl: 6, bgcolor: 'background.default' }}>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
@@ -234,6 +235,15 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
             setSyncing(false);
         }
     };
+    const layout = cStatus?.layout;
+    const layoutFetching = layout?.status === 'fetching' || layout?.status === 'unpacking';
+    const handleFetchLayout = async () => {
+        try {
+            await dispatch(triggerLayoutFetch()).unwrap();
+        } catch (e) {
+            console.error('[CloudPage] fetch layout failed:', e);
+        }
+    };
 
     return (
         <Box
@@ -268,6 +278,43 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                     <Field label="Cloud Version" value={cloudStatus.cloudVersion ?? '(unknown)'} />
                     <Field label="Last Checked" value={formatTimestamp(cloudStatus.lastCheckedAt)} />
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
+                </Card>
+
+                <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Typography variant="h6" sx={{ color: 'primary.main' }}>
+                            Cloud Layout
+                        </Typography>
+                        <Box sx={{ flexGrow: 1 }} />
+                        <Button
+                            startIcon={<DownloadIcon />}
+                            variant="outlined"
+                            size="small"
+                            onClick={handleFetchLayout}
+                            disabled={layoutFetching}
+                        >
+                            {layoutFetching ? 'Fetching…' : 'Fetch Layout'}
+                        </Button>
+                    </Box>
+                    <Field label="Status" value={layout?.status ?? 'idle'} />
+                    <Field label="Last Fetched" value={formatTimestamp(layout?.lastFetchedAt)} />
+                    <Field label="Last Error" value={layout?.error ?? '(none)'} />
+                    {layoutFetching && layout?.totalBytes ? (
+                        <Box sx={{ mt: 1 }}>
+                            <LinearProgress
+                                variant="determinate"
+                                value={Math.min(
+                                    100,
+                                    ((layout.bytes ?? 0) / layout.totalBytes) * 100,
+                                )}
+                            />
+                            <Typography variant="caption">
+                                {fmtBytes(layout.bytes)} / {fmtBytes(layout.totalBytes)}
+                            </Typography>
+                        </Box>
+                    ) : layoutFetching ? (
+                        <LinearProgress sx={{ mt: 1 }} />
+                    ) : null}
                 </Card>
 
                 <Card sx={{ p: 4, mb: 3 }}>

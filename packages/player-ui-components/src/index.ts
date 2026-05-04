@@ -28,6 +28,8 @@ export { JukeboxSettings } from './components/playback-settings/sections/Jukebox
 export { AudioSettings } from './components/playback-settings/sections/AudioSettings';
 export { PlayerSettings } from './components/playback-settings/sections/PlayerSettings';
 export { PlayerCloudRegistrationDialog } from './components/player-cloud-registration/PlayerCloudRegistrationDialog';
+export { PlayerCloudRegistrationPanel } from './components/player-cloud-registration/PlayerCloudRegistrationPanel';
+export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/PlayerCloudWelcomePanel';
 export { CloudPage } from './components/cloud/CloudPage';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
@@ -104,7 +106,7 @@ export {
 } from './store/slices/AuthStore';
 
 export { cloudConfigActions } from './store/slices/CloudConfigStore';
-export { cloudStatusActions } from './store/slices/CloudStatusStore';
+export { cloudStatusActions, triggerCloudSyncNow, triggerLayoutFetch, triggerCloudPoll } from './store/slices/CloudStatusStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

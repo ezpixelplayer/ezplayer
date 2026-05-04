@@ -143,6 +143,14 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('cloudSyncNow').catch((err) => {
             console.error('[server-worker] cloudSyncNow failed:', err);
         });
+    } else if (msg.type === 'cloudFetchLayoutNow') {
+        void rpc.call('cloudFetchLayoutNow').catch((err) => {
+            console.error('[server-worker] cloudFetchLayoutNow failed:', err);
+        });
+    } else if (msg.type === 'cloudPollNow') {
+        void rpc.call('cloudPollNow').catch((err) => {
+            console.error('[server-worker] cloudPollNow failed:', err);
+        });
     }
 });
 

@@ -183,7 +183,7 @@ async function pollManifest() {
         return;
     }
     manifestInFlight = true;
-    const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.FPP_GET_SEQ_LIST}${playerIdToken}`;
+    const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SEQ_LIST}${playerIdToken}`;
     log('info', `manifest poll ${url}`);
     try {
         const res = await fetch(url, { method: 'GET' });
@@ -513,8 +513,8 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     } else {
         const endpoint =
             pf.fetchVia === 'seqfile'
-                ? CLOUD_API_ENDPOINTS.FPP_GET_SEQ_FILE
-                : CLOUD_API_ENDPOINTS.FPP_GET_MEDIA_FILE;
+                ? CLOUD_API_ENDPOINTS.EZP_GET_SEQ_FILE
+                : CLOUD_API_ENDPOINTS.EZP_GET_MEDIA_FILE;
         const ticketUrl = `${cloudUrl}${endpoint}${playerIdToken}/${pf.file_id}`;
         const res = await fetchWithTimeout(ticketUrl, downloadTimeoutMs);
         if (!res.ok) throw new Error(`ticket HTTP ${res.status}`);
@@ -777,6 +777,159 @@ function collectSupersededPaths(
     return out;
 }
 
+// -- layout fetch -------------------------------------------------------------
+
+function setLayout(info: Partial<import('@ezplayer/ezplayer-core').CloudLayoutInfo>) {
+    cStatus.layout = { status: 'idle', ...(cStatus.layout ?? {}), ...info };
+    pushCStatus();
+}
+
+interface LayoutEntry {
+    url: string;
+    filename: string;
+    file_id: string;
+    file_time: number;
+}
+interface LayoutManifest {
+    zip?: LayoutEntry;
+    rgbeffects?: LayoutEntry;
+    networks?: LayoutEntry;
+}
+
+let layoutInFlight = false;
+
+/** Manual / on-demand layout fetch. Hits getlatestlayout, downloads zip if present
+ *  (and unpacks it into the show folder root), then writes rgbeffects and networks
+ *  XMLs on top when their file_time is newer than the zip's. */
+async function fetchLayout(): Promise<void> {
+    if (layoutInFlight) {
+        log('info', 'fetchLayout skipped: already in flight');
+        return;
+    }
+    if (!showFolder) {
+        log('warn', 'fetchLayout skipped: no showFolder');
+        return;
+    }
+    if (!cloudUrl || !playerIdToken) {
+        log('warn', 'fetchLayout skipped: cloudUrl or playerIdToken empty');
+        return;
+    }
+    layoutInFlight = true;
+    setLayout({ status: 'fetching', error: undefined, bytes: undefined, totalBytes: undefined });
+    try {
+        const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_LATEST_LAYOUT}${playerIdToken}`;
+        log('info', `layout manifest ${url}`);
+        const res = await fetchWithTimeout(url, downloadTimeoutMs);
+        if (!res.ok) {
+            setLayout({ status: 'error', error: `HTTP ${res.status}` });
+            return;
+        }
+        const body = (await res.json()) as LayoutManifest;
+        if (!body.zip && !body.rgbeffects && !body.networks) {
+            log('info', 'layout manifest empty');
+            setLayout({ status: 'noLayout' });
+            return;
+        }
+
+        // 1) zip first (if present): download + unpack into show folder root.
+        let zipFileTime = -Infinity;
+        if (body.zip) {
+            zipFileTime = body.zip.file_time;
+            await downloadAndUnpackZip(body.zip);
+        }
+
+        // 2) overlay rgbeffects if newer than zip (or no zip).
+        if (body.rgbeffects && body.rgbeffects.file_time > zipFileTime) {
+            await downloadXmlOverlay(body.rgbeffects, 'xlights_rgbeffects.xml');
+        }
+        if (body.networks && body.networks.file_time > zipFileTime) {
+            await downloadXmlOverlay(body.networks, 'xlights_networks.xml');
+        }
+
+        setLayout({ status: 'done', lastFetchedAt: Date.now(), error: undefined });
+        log('info', 'layout fetch complete');
+        post({ type: 'layoutInstalled' });
+    } catch (e) {
+        const err = e as Error;
+        log('warn', `layout fetch error: ${err.message}`);
+        setLayout({ status: 'error', error: err.message });
+    } finally {
+        layoutInFlight = false;
+    }
+}
+
+async function downloadAndUnpackZip(entry: LayoutEntry): Promise<void> {
+    const stageDir = path.join(showFolder, '.ezplayer', 'cloud', 'layout');
+    await fsp.mkdir(stageDir, { recursive: true });
+    const stagePart = path.join(stageDir, `${entry.file_id}.zip.part`);
+    const stageFinal = path.join(stageDir, `${entry.file_id}.zip`);
+
+    setLayout({ status: 'fetching' });
+    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs);
+    if (!dl.ok || !dl.body) throw new Error(`zip download HTTP ${dl.status}`);
+    const totalBytes = Number(dl.headers.get('content-length') ?? 0) || undefined;
+    setLayout({ status: 'fetching', bytes: 0, totalBytes });
+
+    let bytes = 0;
+    let lastEmit = 0;
+    let lastEmitBytes = 0;
+    const counter = new Transform({
+        transform(chunk: Buffer, _enc, cb) {
+            bytes += chunk.length;
+            const now = Date.now();
+            if (now - lastEmit >= 250 && (bytes - lastEmitBytes >= 1024 * 1024 || now - lastEmit >= 1000)) {
+                lastEmit = now;
+                lastEmitBytes = bytes;
+                setLayout({ status: 'fetching', bytes, totalBytes });
+            }
+            cb(null, chunk);
+        },
+    });
+    await pipeline(Readable.fromWeb(dl.body as never), counter, fs.createWriteStream(stagePart));
+    await fsp.rename(stagePart, stageFinal);
+
+    setLayout({ status: 'unpacking' });
+    // Lazy-load JSZip so the worker startup cost is avoided when no layout fetch runs.
+    const JSZip = (await import('jszip')).default;
+    const zipBuf = await fsp.readFile(stageFinal);
+    const z = await JSZip.loadAsync(zipBuf);
+    const entries = Object.values(z.files);
+    log('info', `unpacking ${entries.length} entries from layout zip`);
+    for (const f of entries) {
+        if (f.dir) continue;
+        // Refuse anything that would escape the show folder.
+        if (f.name.includes('..') || path.isAbsolute(f.name)) {
+            log('warn', `skipping unsafe zip entry: ${f.name}`);
+            continue;
+        }
+        const out = path.join(showFolder, f.name);
+        await fsp.mkdir(path.dirname(out), { recursive: true });
+        const content = await f.async('nodebuffer');
+        await fsp.writeFile(out, content);
+    }
+}
+
+async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promise<void> {
+    setLayout({ status: 'fetching' });
+    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs);
+    if (!dl.ok || !dl.body) throw new Error(`${targetName} download HTTP ${dl.status}`);
+    const totalBytes = Number(dl.headers.get('content-length') ?? 0) || undefined;
+    setLayout({ status: 'fetching', bytes: 0, totalBytes });
+
+    const stageDir = path.join(showFolder, '.ezplayer', 'cloud', 'layout');
+    await fsp.mkdir(stageDir, { recursive: true });
+    const stagePart = path.join(stageDir, `${entry.file_id}__${targetName}.part`);
+    await pipeline(Readable.fromWeb(dl.body as never), fs.createWriteStream(stagePart));
+    const target = path.join(showFolder, targetName);
+    try {
+        await fsp.rename(stagePart, target);
+    } catch {
+        await fsp.copyFile(stagePart, target);
+        await fsp.unlink(stagePart).catch(() => {});
+    }
+    log('info', `wrote ${targetName} (file_id=${entry.file_id})`);
+}
+
 // -- message handling ---------------------------------------------------------
 
 parentPort?.on('message', (msg: CloudPollInMessage) => {
@@ -814,6 +967,10 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
         }
         case 'manifestNow': {
             void pollManifest();
+            break;
+        }
+        case 'fetchLayoutNow': {
+            void fetchLayout();
             break;
         }
         case 'stop': {

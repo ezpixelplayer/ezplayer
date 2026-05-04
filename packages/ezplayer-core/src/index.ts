@@ -45,6 +45,8 @@ export type {
     CloudSequenceMeta,
     CloudSeqManifestEntry,
     CloudSequenceProgress,
+    CloudLayoutInfo,
+    CloudLayoutStatus,
 } from './types/DataTypes';
 
 export type {

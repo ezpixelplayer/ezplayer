@@ -24,6 +24,9 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
         currentConfig = {
             cloudServiceUrl: parsed.cloudServiceUrl ?? '',
             playerIdToken: parsed.playerIdToken ?? '',
+            // Treat absent/unknown layoutSource as 'xlights' (the legacy default) on read,
+            // but preserve the field so writes don't silently rewrite a cloud-mode folder.
+            layoutSource: parsed.layoutSource === 'cloud' ? 'cloud' : 'xlights',
         };
         return currentConfig;
     } catch (e) {

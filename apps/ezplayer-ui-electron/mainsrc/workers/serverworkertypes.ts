@@ -50,4 +50,6 @@ export interface ServerWorkerRPCAPI {
     setPlayerIdToken(token: string): Promise<void>;
     setCloudServiceUrl(url: string): Promise<void>;
     cloudSyncNow(): Promise<void>;
+    cloudFetchLayoutNow(): Promise<void>;
+    cloudPollNow(): Promise<void>;
 }

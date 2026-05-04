@@ -265,6 +265,14 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         wsService.send({ type: 'cloudSyncNow' });
     }
 
+    async requestCloudFetchLayoutNow(): Promise<void> {
+        wsService.send({ type: 'cloudFetchLayoutNow' });
+    }
+
+    async requestCloudPollNow(): Promise<void> {
+        wsService.send({ type: 'cloudPollNow' });
+    }
+
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {
         return { message: 'Player registration not needed in local web mode' };
     }

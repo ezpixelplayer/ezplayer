@@ -32,6 +32,7 @@ export type CloudPollInMessage =
     | { type: 'updateSequences'; existingSequences: SequenceRecord[] }
     | { type: 'pollNow' }
     | { type: 'manifestNow' }
+    | { type: 'fetchLayoutNow' }
     | { type: 'stop' };
 
 /** Worker → parent. */
@@ -46,5 +47,11 @@ export type CloudPollOutMessage =
           /** Show-folder-relative paths of files this sequence is replacing
            *  (so the parent / main can delete them after the merge). */
           superseded: string[];
+      }
+    | {
+          /** Fired after a successful layout fetch (zip unpacked + XMLs overlaid).
+           *  The receiver should treat this as equivalent to a fresh "set show folder"
+           *  and reload everything that depends on layout (model coords, playback, ...). */
+          type: 'layoutInstalled';
       }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

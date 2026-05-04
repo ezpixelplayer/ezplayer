@@ -243,10 +243,30 @@ export interface PlayerCStatusContent {
     // Cloud content sync (worker-driven)
     files?: Record<string, CloudFileEntry>; // keyed by file_id
     sequences?: Record<string, CloudSequenceProgress>; // keyed by vseq_id
+    layout?: CloudLayoutInfo;
     lastManifestAt?: number;
     lastError?: string;
     /** True when the circuit breaker has tripped after consecutive download failures. */
     halted?: boolean;
+}
+
+export type CloudLayoutStatus =
+    | 'idle'
+    | 'fetching' // downloading zip and/or xml files
+    | 'unpacking' // extracting zip
+    | 'done'
+    | 'noLayout' // cloud reported no layout available
+    | 'error';
+
+export interface CloudLayoutInfo {
+    status: CloudLayoutStatus;
+    /** Bytes transferred this fetch (zip or current xml). */
+    bytes?: number;
+    /** Total bytes for the current download (zip or xml), when known. */
+    totalBytes?: number;
+    /** Epoch ms of last successful fetch. */
+    lastFetchedAt?: number;
+    error?: string;
 }
 
 export interface ControllerStatus {
@@ -525,6 +545,13 @@ export interface PlaybackSettings {
 export interface CloudConfig {
     cloudServiceUrl: string;
     playerIdToken: string;
+    /**
+     * Who owns this show folder's layout. `'xlights'` (or absent) = the user manages
+     * `xlights_rgbeffects.xml` / `xlights_networks.xml` themselves; the cloud worker
+     * does not touch them. `'cloud'` = the worker downloads layout from the cloud and
+     * writes those files into the folder root.
+     */
+    layoutSource?: 'xlights' | 'cloud';
 }
 
 /** In-memory cloud connectivity status owned by node main. Pushed; never persisted. */
@@ -580,7 +607,9 @@ export type PlayerClientWebSocketMessage =
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
     | { type: 'setPlayerIdToken'; token: string }
     | { type: 'setCloudServiceUrl'; url: string }
-    | { type: 'cloudSyncNow' };
+    | { type: 'cloudSyncNow' }
+    | { type: 'cloudFetchLayoutNow' }
+    | { type: 'cloudPollNow' };
 
 /// Layout Edit
 

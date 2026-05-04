@@ -23,5 +23,22 @@ export const triggerCloudSyncNow = createAsyncThunk<void, void, { extra: DataSto
     },
 );
 
+/** Trigger an immediate layout fetch (zip + xml overlay). Status updates flow
+ *  through cStatus.layout. */
+export const triggerLayoutFetch = createAsyncThunk<void, void, { extra: DataStorageAPI }>(
+    'cloud/fetchLayout',
+    async (_arg, { extra }) => {
+        await extra.requestCloudFetchLayoutNow();
+    },
+);
+
+/** Fire a single registration heartbeat poll off-cycle. */
+export const triggerCloudPoll = createAsyncThunk<void, void, { extra: DataStorageAPI }>(
+    'cloud/pollNow',
+    async (_arg, { extra }) => {
+        await extra.requestCloudPollNow();
+    },
+);
+
 export const cloudStatusActions = cloudStatusSlice.actions;
 export default cloudStatusSlice.reducer;

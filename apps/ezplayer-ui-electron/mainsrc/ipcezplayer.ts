@@ -33,10 +33,13 @@ import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js'
 import {
     getCurrentCloudStatus,
     getCurrentCStatus,
+    fetchLayoutNow,
     manifestPollNow,
     onCloudStatus,
     onCStatus,
     onInstallSequence,
+    onLayoutInstalled,
+    pollCloudNow,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
 } from './workers/cloudpollparent.js';
@@ -61,7 +64,12 @@ import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
 import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
-import { getCurrentShowFolder, isValidShowDirectory, pickAnotherShowFolder } from '../showfolder.js';
+import {
+    getCurrentShowFolder,
+    isValidShowDirectory,
+    pickAnotherShowFolder,
+    pickCloudShowFolder,
+} from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
 import {
     updateFrameBuffer,
@@ -328,6 +336,23 @@ export async function registerContentHandlers(
         await loadShowFolder();
         return sf!;
     });
+    ipcMain.handle('ipcUIChooseCloudShowFolder', async (_event): Promise<string> => {
+        const sf = await pickCloudShowFolder();
+        if (!sf) return '';
+        // Seed `.ezplayer/cloud-config.json` with `layoutSource: 'cloud'` BEFORE
+        // loadShowFolder runs, so the loaded config reflects cloud mode immediately.
+        await ensureEzplayerSubdir(sf);
+        const seedPath = settingsPath(sf, 'cloud-config.json');
+        const existing = await loadCloudConfigFromDisk(seedPath);
+        updateCloudConfig({
+            // Preserve any URL/token already there (e.g. from a previous bootstrap attempt).
+            cloudServiceUrl: existing.cloudServiceUrl,
+            playerIdToken: existing.playerIdToken,
+            layoutSource: 'cloud',
+        });
+        await loadShowFolder();
+        return sf;
+    });
     ipcMain.handle('ipcValidateShowDirectory', async (_event, showDirectory?: string) => {
         return await isValidShowDirectory(showDirectory ?? getCurrentShowFolder());
     });
@@ -452,6 +477,12 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcCloudSyncNow', async (_event) => {
         manifestPollNow();
     });
+    ipcMain.handle('ipcCloudFetchLayoutNow', async (_event) => {
+        fetchLayoutNow();
+    });
+    ipcMain.handle('ipcCloudPollNow', async (_event) => {
+        pollCloudNow();
+    });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
     });
@@ -467,6 +498,16 @@ export async function registerContentHandlers(
         curStatus.content = { ...(curStatus.content ?? {}), ...cStatus };
         updateWindow?.webContents?.send('playback:cstatus', curStatus.content);
         broadcastToWebSocket('cStatus', curStatus.content);
+    });
+
+    onLayoutInstalled(() => {
+        // Layout files (xlights_rgbeffects.xml / xlights_networks.xml plus anything
+        // unpacked from the layout zip) just changed under us. Re-run the same
+        // pipeline a "set show folder" runs: re-read all show JSON, broadcast,
+        // push schedupdate to playback so models/coords get recomputed. Force
+        // restart so any in-flight playback picks up the new layout.
+        console.log('[cloud-install] layout changed — reloading show folder');
+        void loadShowFolder(true);
     });
 
     onInstallSequence(async (record, superseded) => {

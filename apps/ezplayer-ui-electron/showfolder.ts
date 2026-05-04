@@ -10,6 +10,22 @@ let releaseLock: null | (() => Promise<void>) = null;
 let currentShowFolder: string | null = null;
 const REQUIRED_SHOW_FILES = ['xlights_rgbeffects.xml', 'xlights_networks.xml'] as const;
 
+/**
+ * Peek at `<folder>/.ezplayer/cloud-config.json` to figure out whether the folder is
+ * cloud-managed without going through the full CloudConfigStorage module. Returns
+ * `'cloud'` only when the file exists and explicitly says so; everything else
+ * (missing file, absent field, parse failure) is treated as xLights-managed.
+ */
+async function peekLayoutSource(folder: string): Promise<'xlights' | 'cloud'> {
+    try {
+        const raw = await fsp.readFile(path.join(folder, '.ezplayer', 'cloud-config.json'), 'utf8');
+        const parsed = JSON.parse(raw) as { layoutSource?: string };
+        return parsed.layoutSource === 'cloud' ? 'cloud' : 'xlights';
+    } catch {
+        return 'xlights';
+    }
+}
+
 async function dirExists(p?: string | null) {
     if (!p) return false;
     try {
@@ -26,7 +42,11 @@ export interface ShowDirectoryValidationResult {
     error?: string;
 }
 
-export async function isValidShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
+/** xLights-managed folder validation: requires both xlights_rgbeffects.xml and
+ *  xlights_networks.xml to exist and be readable. */
+export async function isValidXLightsShowDirectory(
+    showFolder?: string | null,
+): Promise<ShowDirectoryValidationResult> {
     if (!showFolder) {
         return {
             valid: false,
@@ -72,6 +92,53 @@ export async function isValidShowDirectory(showFolder?: string | null): Promise<
                 ? 'Show folder is missing required xLights configuration files.'
                 : undefined,
     };
+}
+
+/** Cloud-managed folder validation: the folder must exist and be writable. The
+ *  layout files may not have arrived yet (mid-bootstrap), so we don't require them. */
+export async function isValidCloudShowDirectory(
+    showFolder?: string | null,
+): Promise<ShowDirectoryValidationResult> {
+    if (!showFolder) {
+        return {
+            valid: false,
+            missingFiles: [],
+            inaccessibleFiles: [],
+            error: 'No show folder selected.',
+        };
+    }
+    if (!(await dirExists(showFolder))) {
+        return {
+            valid: false,
+            missingFiles: [],
+            inaccessibleFiles: [],
+            error: 'Show folder does not exist or is not accessible.',
+        };
+    }
+    try {
+        await fsp.access(showFolder, fsp.constants.W_OK);
+    } catch {
+        return {
+            valid: false,
+            missingFiles: [],
+            inaccessibleFiles: [],
+            error: 'Show folder is not writable.',
+        };
+    }
+    return { valid: true, missingFiles: [], inaccessibleFiles: [] };
+}
+
+/** Mode-aware validation: peeks `.ezplayer/cloud-config.json` for `layoutSource`,
+ *  then dispatches to the correct check. xLights is the default for any folder
+ *  that doesn't say otherwise. */
+export async function isValidShowDirectory(
+    showFolder?: string | null,
+): Promise<ShowDirectoryValidationResult> {
+    if (!showFolder) return isValidXLightsShowDirectory(showFolder);
+    const mode = await peekLayoutSource(showFolder);
+    return mode === 'cloud'
+        ? isValidCloudShowDirectory(showFolder)
+        : isValidXLightsShowDirectory(showFolder);
 }
 
 async function promptForFolder(): Promise<string | null> {
@@ -192,6 +259,53 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
             } else {
                 return null;
             }
+        }
+    }
+}
+
+/** Picker for the cloud-managed bootstrap path. Prompts for any folder (does NOT
+ *  require the xLights files), validates it as a cloud-eligible directory
+ *  (writable), locks it, and sets it as the active folder. Caller is responsible
+ *  for then seeding `cloud-config.json` with `layoutSource: 'cloud'` and calling
+ *  `loadShowFolder()` so the worker picks it up. */
+export async function pickCloudShowFolder(): Promise<string | null> {
+    while (true) {
+        const chosen = await promptForFolder();
+        if (!chosen) return null;
+        if (!(await dirExists(chosen))) continue;
+
+        const validation = await isValidCloudShowDirectory(chosen);
+        if (!validation.valid) {
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This folder cannot be used as a cloud show folder.',
+                detail: validation.error ?? 'Folder is not writable.',
+                buttons: ['Pick another folder', 'Cancel'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return null;
+            continue;
+        }
+
+        try {
+            const newReleaseLock = await tryLockShowFolder(chosen);
+            store.set('showFolder', chosen);
+            if (currentShowFolder && currentShowFolder !== chosen) {
+                await closeShowFolder();
+            }
+            setNewShowFolder(newReleaseLock, chosen);
+            return currentShowFolder;
+        } catch {
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This show folder is already in use by another instance.',
+                detail: 'Choose “Pick another folder” to select a different show folder.',
+                buttons: ['Pick another folder', 'Cancel'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return null;
         }
     }
 }

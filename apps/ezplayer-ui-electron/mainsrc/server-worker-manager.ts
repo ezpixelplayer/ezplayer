@@ -20,7 +20,7 @@ import {
     applyPlayerIdToken,
     applyCloudServiceUrl,
 } from './ipcezplayer.js';
-import { manifestPollNow } from './workers/cloudpollparent.js';
+import { fetchLayoutNow, manifestPollNow, pollCloudNow } from './workers/cloudpollparent.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
@@ -104,6 +104,12 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     cloudSyncNow: async () => {
         manifestPollNow();
+    },
+    cloudFetchLayoutNow: async () => {
+        fetchLayoutNow();
+    },
+    cloudPollNow: async () => {
+        pollCloudNow();
     },
 };
 
