@@ -1,6 +1,8 @@
 import type {
     AudioDevice,
     AutoUpdateStatus,
+    CloudConfig,
+    CloudStatus,
     CombinedPlayerStatus,
     EZPlayerCommand,
     PlaylistRecord,
@@ -59,6 +61,18 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         window.electronAPI!.onPlaybackSettingsUpdated((data: PlaybackSettings) => {
             if (this.dispatch) {
                 this.dispatch(hydratePlaybackSettings(data));
+            }
+        });
+        window.electronAPI!.onCloudConfigUpdated((data: CloudConfig) => {
+            if (!this.dispatch) return;
+            this.dispatch(authSliceActions.setCloudServiceUrl(data.cloudServiceUrl));
+            this.dispatch(authSliceActions.setPlayerIdToken(data.playerIdToken));
+        });
+        window.electronAPI!.onCloudStatusUpdated((data: CloudStatus) => {
+            if (!this.dispatch) return;
+            this.dispatch(authSliceActions.setPlayerIsRegistered(data.playerIdIsRegistered));
+            if (data.cloudVersion) {
+                this.dispatch(authSliceActions.setCloudVersion(data.cloudVersion));
             }
         });
         window.electronAPI!.ipcRequestAudioDevices(async () => {
@@ -192,6 +206,21 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     override async setPlayerSettings(s: PlaybackSettings) {
         return await window.electronAPI!.setPlaybackSettings(s);
     }
+
+    /**
+     * Cloud config writes route through main, which persists to the show folder and
+     * reconfigures the cloud-poll worker. The slice is updated when main echoes via
+     * `update:cloudConfig`, not synchronously here.
+     */
+    override async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
+        await window.electronAPI!.setPlayerIdToken(data.playerIdToken ?? '');
+        return { message: 'ok' };
+    }
+
+    override async requestChangeServerUrl(data: { cloudURL: string }): Promise<void> {
+        await window.electronAPI!.setCloudServiceUrl(data.cloudURL ?? '');
+    }
+
 
     override async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;

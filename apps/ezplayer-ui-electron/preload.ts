@@ -2,6 +2,8 @@ import type {
     AudioChunk,
     AudioDevice,
     AutoUpdateStatus,
+    CloudConfig,
+    CloudStatus,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -108,6 +110,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     setPlaybackSettings(s: PlaybackSettings): Promise<boolean> {
         return ipcRenderer.invoke('ipcSetPlaybackSettings', s);
+    },
+
+    getCloudConfig(): Promise<CloudConfig> {
+        return ipcRenderer.invoke('ipcGetCloudConfig');
+    },
+    setPlayerIdToken(token: string): Promise<void> {
+        return ipcRenderer.invoke('ipcSetPlayerIdToken', token);
+    },
+    setCloudServiceUrl(url: string): Promise<void> {
+        return ipcRenderer.invoke('ipcSetCloudServiceUrl', url);
+    },
+    onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => {
+        ipcRenderer.on('update:cloudConfig', (_event: any, data: CloudConfig) => {
+            callback(data);
+        });
+    },
+    getCloudStatus(): Promise<CloudStatus> {
+        return ipcRenderer.invoke('ipcGetCloudConnStatus');
+    },
+    onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => {
+        ipcRenderer.on('update:cloudStatus', (_event: any, data: CloudStatus) => {
+            callback(data);
+        });
     },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {

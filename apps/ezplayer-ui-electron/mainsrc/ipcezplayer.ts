@@ -24,6 +24,16 @@ import {
 } from './data/FileStorage.js';
 
 import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
+import {
+    getCloudConfigCache,
+    loadCloudConfigFromDisk,
+    updateCloudConfig,
+} from './data/CloudConfigStorage.js';
+import {
+    getCurrentCloudStatus,
+    onCloudStatus,
+    setCloudPollConfig,
+} from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 
 import type {
@@ -173,6 +183,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curShow = await loadShowProfileAPI(showFolder);
     curUser = await loadUserProfileAPI(showFolder);
     await loadSettingsFromDisk(path.join(showFolder, 'playbackSettings.json'));
+    const cloudConfig = await loadCloudConfigFromDisk(path.join(showFolder, 'cloud-config.json'));
+    setCloudPollConfig(cloudConfig.cloudServiceUrl, cloudConfig.playerIdToken);
+
+    updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
+    updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -369,6 +384,28 @@ export async function registerContentHandlers(
 
     ipcMain.handle('ipcGetServerStatus', async (_event) => {
         return getServerStatus();
+    });
+
+    // Cloud config / status
+    ipcMain.handle('ipcGetCloudConfig', async (_event) => {
+        return getCloudConfigCache();
+    });
+    ipcMain.handle('ipcSetPlayerIdToken', async (_event, token: string) => {
+        const cfg = updateCloudConfig({ playerIdToken: token ?? '' });
+        setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
+        updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    });
+    ipcMain.handle('ipcSetCloudServiceUrl', async (_event, url: string) => {
+        const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
+        setCloudPollConfig(cfg.cloudServiceUrl, cfg.playerIdToken);
+        updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    });
+    ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
+        return getCurrentCloudStatus();
+    });
+
+    onCloudStatus((status) => {
+        updateWindow?.webContents?.send('update:cloudStatus', status);
     });
 
     /// Connection from player worker thread

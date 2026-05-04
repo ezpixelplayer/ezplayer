@@ -254,10 +254,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         };
     }
 
-    async requestIsPlayerRegistered(): Promise<{ registered: boolean; version?: string }> {
-        return { registered: false };
-    }
-
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {
         return { message: 'Player registration not needed in local web mode' };
     }

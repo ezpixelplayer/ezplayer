@@ -145,20 +145,6 @@ export const postSetCloudUrl = createAsyncThunk<{}, { cloudUrl: string }, { extr
     },
 );
 
-/**
- * Re-checks the cloud-side registration status of the current player ID and writes the
- * result to `playerIdIsRegistered`. Used by the registration dialog to detect when the
- * out-of-band browser flow has completed. Eventually this should be driven by the node-
- * side process (electron main / embedded server), with the UI just reading slice state.
- */
-export const fetchPlayerRegistrationStatus = createAsyncThunk<
-    { registered: boolean; version?: string },
-    void,
-    { extra: DataStorageAPI }
->('auth/fetchPlayerRegistrationStatus', async (_, { extra }) => {
-    return await extra.requestIsPlayerRegistered();
-});
-
 export const setShowDirectoryPath = createAsyncThunk<void, { directoryPath: string }, { state: { auth: AuthState } }>(
     'auth/setShowDirectoryPath',
     async (data: { directoryPath: string }, { dispatch }) => {
@@ -199,12 +185,6 @@ export function applyPlayerAuthExtraReducers(builder: ActionReducerMapBuilder<Au
             state.loading = false;
             //state.cloudServiceUrl = action.payload (actually set from inside thunk)
             state.error = undefined;
-        })
-        .addCase(fetchPlayerRegistrationStatus.fulfilled, (state, action) => {
-            state.playerIdIsRegistered = action.payload.registered;
-            if (action.payload.version) {
-                state.cloudVersion = action.payload.version;
-            }
         })
         .addCase(setShowDirectoryPath.pending, (state, _action) => {
             state.loading = true;

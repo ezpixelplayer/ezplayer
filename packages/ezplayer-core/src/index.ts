@@ -43,6 +43,8 @@ export type {
     AudioDevice,
     AudioChunk,
     AutoUpdateStatus,
+    CloudConfig,
+    CloudStatus,
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,
@@ -51,6 +53,8 @@ export type {
     ImageInfo,
     AudioTagMetadata,
 } from './types/EZPElectronAPI';
+
+export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
