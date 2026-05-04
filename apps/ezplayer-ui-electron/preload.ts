@@ -121,6 +121,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setCloudServiceUrl(url: string): Promise<void> {
         return ipcRenderer.invoke('ipcSetCloudServiceUrl', url);
     },
+    cloudSyncNow(): Promise<void> {
+        return ipcRenderer.invoke('ipcCloudSyncNow');
+    },
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => {
         ipcRenderer.on('update:cloudConfig', (_event: any, data: CloudConfig) => {
             callback(data);

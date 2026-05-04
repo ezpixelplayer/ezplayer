@@ -579,7 +579,8 @@ export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
     | { type: 'setPlayerIdToken'; token: string }
-    | { type: 'setCloudServiceUrl'; url: string };
+    | { type: 'setCloudServiceUrl'; url: string }
+    | { type: 'cloudSyncNow' };
 
 /// Layout Edit
 

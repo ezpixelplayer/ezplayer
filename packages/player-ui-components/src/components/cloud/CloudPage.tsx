@@ -1,4 +1,5 @@
 import {
+    Button,
     Card,
     Chip,
     Collapse,
@@ -13,11 +14,13 @@ import {
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
+import SyncIcon from '@mui/icons-material/Sync';
 import React, { useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
-import type { RootState } from '../../store/Store';
+import type { AppDispatch, RootState } from '../../store/Store';
+import { triggerCloudSyncNow } from '../../store/slices/CloudStatusStore';
 import type {
     CloudFileEntry,
     CloudFileStatus,
@@ -219,6 +222,19 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
         describeSequence(a).localeCompare(describeSequence(b)),
     );
 
+    const dispatch = useDispatch<AppDispatch>();
+    const [syncing, setSyncing] = useState(false);
+    const handleSync = async () => {
+        setSyncing(true);
+        try {
+            await dispatch(triggerCloudSyncNow()).unwrap();
+        } catch (e) {
+            console.error('[CloudPage] sync now failed:', e);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     return (
         <Box
             sx={{
@@ -255,13 +271,23 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                 </Card>
 
                 <Card sx={{ p: 4, mb: 3 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                         <Typography variant="h6" sx={{ color: 'primary.main' }}>
                             Cloud Content
                         </Typography>
                         {cStatus?.halted && (
                             <Chip label="halted" color="error" size="small" />
                         )}
+                        <Box sx={{ flexGrow: 1 }} />
+                        <Button
+                            startIcon={<SyncIcon />}
+                            variant="outlined"
+                            size="small"
+                            onClick={handleSync}
+                            disabled={syncing}
+                        >
+                            {syncing ? 'Syncing…' : 'Sync Now'}
+                        </Button>
                     </Box>
                     <Field label="Last Manifest" value={formatTimestamp(cStatus?.lastManifestAt)} />
                     <Field label="Last Error" value={cStatus?.lastError ?? '(none)'} />

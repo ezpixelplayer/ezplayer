@@ -94,6 +94,8 @@ export interface EZPElectronAPI {
     setPlayerIdToken: (token: string) => Promise<void>;
     setCloudServiceUrl: (url: string) => Promise<void>;
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => void;
+    /** Trigger an immediate manifest refresh + content sync. */
+    cloudSyncNow: () => Promise<void>;
 
     // Cloud status: in-memory in main, polled by the cloud worker, pushed to renderer.
     getCloudStatus: () => Promise<CloudStatus>;

@@ -219,6 +219,10 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         await window.electronAPI!.setCloudServiceUrl(data.cloudURL ?? '');
     }
 
+    override async requestCloudSyncNow(): Promise<void> {
+        await window.electronAPI!.cloudSyncNow();
+    }
+
 
     override async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;

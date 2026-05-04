@@ -177,4 +177,9 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         const res = await isPlayerRegisteredCall(this.axiosInstance, this.apiUrl, playerId);
         return res.registered;
     }
+
+    /** Cloud-app surfaces don't run a local cloud-content worker, so sync-now is a no-op. */
+    async requestCloudSyncNow(): Promise<void> {
+        return Promise.resolve();
+    }
 }

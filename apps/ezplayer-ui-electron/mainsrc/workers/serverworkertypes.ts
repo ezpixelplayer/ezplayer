@@ -49,4 +49,5 @@ export interface ServerWorkerRPCAPI {
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     setPlayerIdToken(token: string): Promise<void>;
     setCloudServiceUrl(url: string): Promise<void>;
+    cloudSyncNow(): Promise<void>;
 }

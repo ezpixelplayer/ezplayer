@@ -118,6 +118,11 @@ export interface DataStorageAPI {
 
     requestSetPlayerIdToken: (data: { playerIdToken?: string }) => Promise<{ message: string }>;
 
+    /** Ask the player's cloud worker to refresh its content manifest immediately
+     *  (off-cycle from the regular poll). Used by the "Sync Now" UI control and
+     *  any future automated trigger (e.g. a cloud push notification). */
+    requestCloudSyncNow: () => Promise<void>;
+
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 }

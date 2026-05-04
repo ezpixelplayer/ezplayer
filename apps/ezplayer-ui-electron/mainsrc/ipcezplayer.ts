@@ -33,6 +33,7 @@ import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js'
 import {
     getCurrentCloudStatus,
     getCurrentCStatus,
+    manifestPollNow,
     onCloudStatus,
     onCStatus,
     onInstallSequence,
@@ -447,6 +448,9 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcSetCloudServiceUrl', async (_event, url: string) => {
         applyCloudServiceUrl(url);
+    });
+    ipcMain.handle('ipcCloudSyncNow', async (_event) => {
+        manifestPollNow();
     });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();

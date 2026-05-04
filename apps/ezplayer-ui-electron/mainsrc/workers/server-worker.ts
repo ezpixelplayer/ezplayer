@@ -139,6 +139,10 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('setCloudServiceUrl', msg.url).catch((err) => {
             console.error('[server-worker] setCloudServiceUrl failed:', err);
         });
+    } else if (msg.type === 'cloudSyncNow') {
+        void rpc.call('cloudSyncNow').catch((err) => {
+            console.error('[server-worker] cloudSyncNow failed:', err);
+        });
     }
 });
 
