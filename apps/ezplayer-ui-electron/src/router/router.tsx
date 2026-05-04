@@ -4,6 +4,7 @@ import { Navigate, RouteObject } from 'react-router';
 import { SuspenseLoader } from '@ezplayer/shared-ui-components';
 
 import {
+    CloudPage,
     CreateEditPlaylist,
     JukeboxScreen,
     JukeboxFullScreen,
@@ -27,6 +28,7 @@ import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
 import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
+import CloudIcon from '@mui/icons-material/Cloud';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
 import { WelcomeScreen, WELCOME_ROUTE } from '../modules/Welcome/WelcomeScreen';
@@ -81,6 +83,11 @@ const menuRoutes: MenuRoute[] = [
         path: ROUTES.PREVIEW_3D,
         element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
         sidebar: { icon: <ViewInArIcon />, label: '3D Preview' },
+    },
+    {
+        path: ROUTES.CLOUD,
+        element: <CloudPage title="Cloud" statusArea={getStatusArea()} />,
+        sidebar: { icon: <CloudIcon />, label: 'Cloud' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,

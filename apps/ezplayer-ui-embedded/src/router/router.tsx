@@ -1,5 +1,6 @@
 import { Navigate, RouteObject } from 'react-router-dom';
 import {
+    CloudPage,
     ShowStatusScreen,
     SidebarLayout,
     Routes as ROUTES,
@@ -22,6 +23,7 @@ import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
 import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
+import CloudIcon from '@mui/icons-material/Cloud';
 
 import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
@@ -33,6 +35,7 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
     ROUTES.PLAYLIST,
     ROUTES.SCHEDULE,
     ROUTES.PLAYBACKSETTINGS,
+    ROUTES.CLOUD,
 ]);
 
 const getStatusArea = () => [];
@@ -81,6 +84,11 @@ const allMenuRoutes: MenuRoute[] = [
         path: ROUTES.PREVIEW_3D,
         element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} compressed />,
         sidebar: { icon: <ViewInArIcon />, label: '3D Preview' },
+    },
+    {
+        path: ROUTES.CLOUD,
+        element: <CloudPage title="Cloud" statusArea={getStatusArea()} />,
+        sidebar: { icon: <CloudIcon />, label: 'Cloud' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,
