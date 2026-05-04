@@ -1,6 +1,11 @@
 import { Navigate, RouteObject } from 'react-router-dom';
+import { useState } from 'react';
 import {
+    AudioSettings,
     CloudPage,
+    JukeboxSettings,
+    PlayerCloudRegistrationDialog,
+    PlayerSettings,
     ShowStatusScreen,
     SidebarLayout,
     Routes as ROUTES,
@@ -10,11 +15,13 @@ import {
     PlayerScreen,
     Schedule,
     CreateEditPlaylist,
-    PlaybackSettingsDrawer,
+    SettingsDrawer,
     Preview3DPage,
+    UISettings,
+    ViewerSettings,
     toRouteChildren,
 } from '@ezplayer/player-ui-components';
-import type { MenuRoute } from '@ezplayer/player-ui-components';
+import type { MenuRoute, SettingsSection } from '@ezplayer/player-ui-components';
 
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
 import PlayArrow from '@mui/icons-material/PlayArrow';
@@ -24,6 +31,10 @@ import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
+import ContrastIcon from '@mui/icons-material/Contrast';
+import LanguageIcon from '@mui/icons-material/Language';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import TuneIcon from '@mui/icons-material/Tune';
 
 import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
@@ -39,6 +50,57 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
 ]);
 
 const getStatusArea = () => [];
+
+const EmbeddedSettingsPage = () => {
+    const [cloudOpen, setCloudOpen] = useState(false);
+    // Embedded is a browser; show-folder selection isn't possible here.
+    const sections: SettingsSection[] = [
+        {
+            key: 'ui',
+            label: 'UI',
+            icon: <ContrastIcon sx={{ fontSize: 56 }} />,
+            content: <UISettings />,
+        },
+        {
+            key: 'viewer',
+            label: 'Viewer',
+            icon: <LanguageIcon sx={{ fontSize: 56 }} />,
+            title: 'Viewer Control',
+            content: <ViewerSettings />,
+        },
+        {
+            key: 'jukebox',
+            label: 'Jukebox',
+            icon: <PlayArrow sx={{ fontSize: 56 }} />,
+            content: <JukeboxSettings />,
+        },
+        {
+            key: 'audio',
+            label: 'Audio',
+            icon: <VolumeUpIcon sx={{ fontSize: 56 }} />,
+            content: <AudioSettings />,
+        },
+        {
+            key: 'cloud',
+            label: 'Cloud',
+            icon: <CloudIcon sx={{ fontSize: 56 }} />,
+            onClick: () => setCloudOpen(true),
+        },
+        {
+            key: 'player',
+            label: 'Player',
+            icon: <TuneIcon sx={{ fontSize: 56 }} />,
+            title: 'Player Settings',
+            content: <PlayerSettings />,
+        },
+    ];
+    return (
+        <>
+            <SettingsDrawer title="Settings" statusArea={getStatusArea()} sections={sections} />
+            <PlayerCloudRegistrationDialog open={cloudOpen} onClose={() => setCloudOpen(false)} />
+        </>
+    );
+};
 
 const allMenuRoutes: MenuRoute[] = [
     {
@@ -92,7 +154,7 @@ const allMenuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,
-        element: <PlaybackSettingsDrawer title="Settings" statusArea={getStatusArea()} />,
+        element: <EmbeddedSettingsPage />,
         sidebar: { icon: <DisplaySettingsIcon />, label: 'Settings' },
     },
     {
