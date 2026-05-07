@@ -254,18 +254,24 @@ export type CloudLayoutStatus =
     | 'idle'
     | 'fetching' // downloading zip and/or xml files
     | 'unpacking' // extracting zip
+    | 'uploading' // packing + sending zip to cloud
     | 'done'
     | 'noLayout' // cloud reported no layout available
     | 'error';
 
 export interface CloudLayoutInfo {
     status: CloudLayoutStatus;
-    /** Bytes transferred this fetch (zip or current xml). */
+    /** Whether the most recent activity was a download or upload — disambiguates
+     *  the shared `done` / `error` states for the UI. */
+    direction?: 'download' | 'upload';
+    /** Bytes transferred this fetch/upload. */
     bytes?: number;
-    /** Total bytes for the current download (zip or xml), when known. */
+    /** Total bytes for the current transfer, when known. */
     totalBytes?: number;
-    /** Epoch ms of last successful fetch. */
+    /** Epoch ms of last successful download. */
     lastFetchedAt?: number;
+    /** Epoch ms of last successful upload. */
+    lastUploadedAt?: number;
     error?: string;
 }
 
@@ -541,6 +547,13 @@ export interface PlaybackSettings {
     jukebox?: JukeboxSettings;
 }
 
+/** Per-file identity for the layout files we have on disk. Lets the worker decide
+ *  whether the cloud's manifest entry is newer than what we have, by both id and time. */
+export interface LayoutFileMeta {
+    file_id: string;
+    file_time: number;
+}
+
 /** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
 export interface CloudConfig {
     cloudServiceUrl: string;
@@ -552,6 +565,18 @@ export interface CloudConfig {
      * writes those files into the folder root.
      */
     layoutSource?: 'xlights' | 'cloud';
+    /** Whether the cloud worker should be active. Default true. False keeps the
+     *  configured URL/token but suspends polling and downloads — the user can
+     *  flip back without re-entering anything. */
+    cloudEnabled?: boolean;
+    /** Last-known cloud file_id/file_time for each layout file we've successfully
+     *  downloaded. Drives staleness checks so we skip redundant downloads. */
+    layoutMeta?: {
+        zip?: LayoutFileMeta;
+        rgbeffects?: LayoutFileMeta;
+        networks?: LayoutFileMeta;
+        lastFetchedAt?: number;
+    };
 }
 
 /** In-memory cloud connectivity status owned by node main. Pushed; never persisted. */
@@ -610,10 +635,13 @@ export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPi
  *  `CloudDataStorageAPI.issueCloudCommand`). */
 export type CloudCommand =
     | { type: 'syncNow' } // immediate manifest + content sync
-    | { type: 'fetchLayoutNow' } // immediate layout fetch
+    | { type: 'fetchLayoutNow' } // immediate layout download
+    | { type: 'uploadLayoutNow' } // immediate layout upload
     | { type: 'pollNow' } // immediate registration heartbeat
     | { type: 'setPlayerIdToken'; token: string } // persist + reconfigure
-    | { type: 'setCloudServiceUrl'; url: string }; // persist + reconfigure
+    | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
+    | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
+    | { type: 'setCloudEnabled'; enabled: boolean }; // pause/resume cloud activity
 
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }

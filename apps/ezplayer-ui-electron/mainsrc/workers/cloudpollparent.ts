@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
+    CloudConfig,
     CloudStatus,
     PlayerCStatusContent,
     SequenceRecord,
@@ -27,7 +28,9 @@ let currentCStatus: PlayerCStatusContent = {};
 let statusListener: ((s: CloudStatus) => void) | undefined;
 let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
 let installListener: ((record: SequenceRecord, superseded: string[]) => void) | undefined;
-let layoutInstalledListener: (() => void) | undefined;
+let layoutInstalledListener:
+    | ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void)
+    | undefined;
 
 function ensureWorker() {
     if (worker) return worker;
@@ -60,7 +63,7 @@ function ensureWorker() {
                 break;
             case 'layoutInstalled':
                 console.log('[cloudpoll] layoutInstalled');
-                layoutInstalledListener?.();
+                layoutInstalledListener?.(msg.layoutMeta);
                 break;
             case 'log':
                 console[msg.level === 'error' ? 'error' : 'log']('[cloudpoll]', msg.msg);
@@ -80,10 +83,12 @@ export function setCloudWorkerConfig(
     playerIdToken: string,
     showFolder: string,
     existingSequences: SequenceRecord[],
+    layoutMeta?: CloudConfig['layoutMeta'],
+    layoutSource?: 'xlights' | 'cloud',
     tuning?: CloudWorkerTuning,
 ) {
     console.log(
-        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}"`,
+        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'}`,
     );
     if (!cloudUrl || !playerIdToken) {
         currentStatus = { playerIdIsRegistered: false };
@@ -97,6 +102,8 @@ export function setCloudWorkerConfig(
         playerIdToken,
         showFolder,
         existingSequences,
+        layoutMeta,
+        layoutSource,
         tuning,
     });
 }
@@ -118,6 +125,10 @@ export function manifestPollNow() {
 
 export function fetchLayoutNow() {
     send({ type: 'fetchLayoutNow' });
+}
+
+export function uploadLayoutNow() {
+    send({ type: 'uploadLayoutNow' });
 }
 
 export function stopCloudPoll() {
@@ -147,6 +158,8 @@ export function onInstallSequence(
     installListener = listener;
 }
 
-export function onLayoutInstalled(listener: () => void) {
+export function onLayoutInstalled(
+    listener: (layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void,
+) {
     layoutInstalledListener = listener;
 }

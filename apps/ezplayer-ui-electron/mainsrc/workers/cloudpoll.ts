@@ -7,6 +7,7 @@ import { Readable, Transform } from 'stream';
 import { randomUUID } from 'crypto';
 import {
     CLOUD_API_ENDPOINTS,
+    type CloudConfig,
     type CloudFileEntry,
     type CloudFileKind,
     type CloudSeqManifestEntry,
@@ -30,6 +31,8 @@ let cloudUrl = '';
 let playerIdToken = '';
 let showFolder = '';
 let existingSequences: SequenceRecord[] = [];
+let layoutMeta: NonNullable<CloudConfig['layoutMeta']> = {};
+let layoutSource: 'xlights' | 'cloud' = 'xlights';
 
 let registrationIntervalMs = DEFAULT_REGISTRATION_INTERVAL_MS;
 let manifestIntervalMs = DEFAULT_MANIFEST_INTERVAL_MS;
@@ -47,9 +50,12 @@ let halted = false;
 
 const cStatus: PlayerCStatusContent = { files: {} };
 
-/** file_id -> active absPath of files we've successfully landed this session.
- *  Survives partial-sequence failures so we don't re-fetch bytes that are already on disk. */
+/** `${file_id}|${file_time}` -> active absPath of files we've successfully landed this
+ *  session. Compound key so a re-used file_id with a fresh file_time is correctly
+ *  treated as a different file (the cloud may reuse ids; file_time is the source of
+ *  truth for "is this the bytes we already have"). */
 const installedFiles = new Map<string, string>();
+const fileKey = (file_id: string, file_time?: number) => `${file_id}|${file_time ?? 0}`;
 
 function post(msg: CloudPollOutMessage) {
     parentPort?.postMessage(msg);
@@ -183,6 +189,17 @@ async function pollManifest() {
         return;
     }
     manifestInFlight = true;
+    // In cloud-managed mode, layout comes first on every tick. The layoutMeta
+    // staleness check makes this cheap when nothing has changed (the call
+    // returns after the manifest comparison without downloading anything).
+    if (layoutSource === 'cloud') {
+        try {
+            await fetchLayout();
+        } catch (e) {
+            // fetchLayout already logs and writes to cStatus; don't fail the manifest tick.
+            log('warn', `pre-manifest layout fetch error: ${(e as Error).message}`);
+        }
+    }
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SEQ_LIST}${playerIdToken}`;
     log('info', `manifest poll ${url}`);
     try {
@@ -214,28 +231,30 @@ function needsDownload(
     existing: SequenceRecord | undefined,
     kind: CloudFileKind,
     file_id?: string,
+    file_time?: number,
 ): boolean {
     if (!file_id) return false;
-    // First check the in-session map — covers the partial-install case where some
-    // files of a sequence landed but the sequence as a whole hasn't been emitted yet.
-    const knownPath = installedFiles.get(file_id);
+    // In-session map covers the partial-install case where some files of a sequence
+    // landed but the sequence as a whole hasn't been emitted yet. Compound key forces
+    // a fresh download when file_time has bumped even if the id is unchanged.
+    const knownPath = installedFiles.get(fileKey(file_id, file_time));
     if (knownPath && fs.existsSync(knownPath)) return false;
     const cur = existing?.cloud?.[kind];
     if (!cur) return true;
-    return cur.file_id !== file_id;
+    return cur.file_id !== file_id || cur.file_time !== file_time;
 }
 
 function seedInstalledFiles() {
     installedFiles.clear();
     for (const s of existingSequences) {
         if (s.cloud?.fseq?.file_id && s.files?.fseq) {
-            installedFiles.set(s.cloud.fseq.file_id, s.files.fseq);
+            installedFiles.set(fileKey(s.cloud.fseq.file_id, s.cloud.fseq.file_time), s.files.fseq);
         }
         if (s.cloud?.audio?.file_id && s.files?.audio) {
-            installedFiles.set(s.cloud.audio.file_id, s.files.audio);
+            installedFiles.set(fileKey(s.cloud.audio.file_id, s.cloud.audio.file_time), s.files.audio);
         }
         if (s.cloud?.thumb?.file_id && s.files?.thumb) {
-            installedFiles.set(s.cloud.thumb.file_id, s.files.thumb);
+            installedFiles.set(fileKey(s.cloud.thumb.file_id, s.cloud.thumb.file_time), s.files.thumb);
         }
     }
 }
@@ -249,7 +268,7 @@ function recordPartialInstall(
     file_time: number | undefined,
     absPath: string,
 ) {
-    installedFiles.set(file_id, absPath);
+    installedFiles.set(fileKey(file_id, file_time), absPath);
     let rec = existingSequences.find((s) => s.id === entry.id);
     if (!rec) {
         rec = {
@@ -345,11 +364,13 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             pf: PendingFile | undefined,
         ) => {
             fileIds.push(file_id);
-            const alreadyInstalled =
-                installedFiles.has(file_id) && fs.existsSync(installedFiles.get(file_id)!);
-            const filename = installedFiles.has(file_id)
-                ? path.basename(installedFiles.get(file_id)!)
-                : undefined;
+            // installedFiles is keyed by `${file_id}|${file_time}` — a bare-id lookup
+            // would never hit, leaving previously-installed files reported as 'known'
+            // every cold start.
+            const key = fileKey(file_id, file_time);
+            const knownPath = installedFiles.get(key);
+            const alreadyInstalled = !!knownPath && fs.existsSync(knownPath);
+            const filename = knownPath ? path.basename(knownPath) : undefined;
             newFiles[file_id] = {
                 vseq_id: entry.vseq_id,
                 kind,
@@ -362,7 +383,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         };
 
         if (entry.fseq) {
-            const need = needsDownload(existing, 'fseq', entry.fseq.file_id);
+            const need = needsDownload(existing, 'fseq', entry.fseq.file_id, entry.fseq.file_time);
             seedFile(
                 'fseq',
                 entry.fseq.file_id,
@@ -378,7 +399,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             );
         }
         if (entry.audio) {
-            const need = needsDownload(existing, 'audio', entry.audio.file_id);
+            const need = needsDownload(existing, 'audio', entry.audio.file_id, entry.audio.file_time);
             seedFile(
                 'audio',
                 entry.audio.file_id,
@@ -654,14 +675,25 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     return activePath;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit): Promise<Response> {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), timeoutMs);
+    // Chain the global abort so a pause/setConfig kills in-flight requests and streams.
+    const onGlobalAbort = () => ac.abort();
+    globalAbort.signal.addEventListener('abort', onGlobalAbort, { once: true });
     try {
-        return await fetch(url, { method: 'GET', signal: ac.signal });
+        return await fetch(url, { ...(init ?? {}), signal: ac.signal });
     } finally {
         clearTimeout(t);
+        globalAbort.signal.removeEventListener('abort', onGlobalAbort);
     }
+}
+
+/** Wrap an error-checked HTTP response so failures include the body for debug. */
+async function expectOk(res: Response, label: string): Promise<Response> {
+    if (res.ok) return res;
+    const body = await res.text().catch(() => '');
+    throw new Error(`${label} HTTP ${res.status}${body ? ': ' + body.slice(0, 300) : ''}`);
 }
 
 function deriveFilenameFromUrl(url: string, kind: CloudFileKind, entry: CloudSeqManifestEntry): string {
@@ -797,6 +829,20 @@ interface LayoutManifest {
 }
 
 let layoutInFlight = false;
+let layoutUploadInFlight = false;
+
+/** Global abort, fired when the worker transitions to disabled (cloud paused / config
+ *  cleared). Live transfers using fetchWithTimeout abort their streams immediately
+ *  rather than running to completion after a Pause click. */
+let globalAbort = new AbortController();
+function abortAllAndReset() {
+    try {
+        globalAbort.abort();
+    } catch {
+        /* ignore */
+    }
+    globalAbort = new AbortController();
+}
 
 /** Manual / on-demand layout fetch. Hits getlatestlayout, downloads zip if present
  *  (and unpacks it into the show folder root), then writes rgbeffects and networks
@@ -831,31 +877,78 @@ async function fetchLayout(): Promise<void> {
             return;
         }
 
-        // 1) zip first (if present): download + unpack into show folder root.
+        // Staleness check: skip downloads when our persisted layoutMeta already
+        // matches the manifest. Match on BOTH file_id and file_time (the cloud may
+        // reuse an id with a fresh file_time when content updates).
+        const matches = (
+            cur: { file_id: string; file_time: number } | undefined,
+            cloud: { file_id: string; file_time: number } | undefined,
+        ): boolean => {
+            if (!cur && !cloud) return true;
+            if (!cur || !cloud) return false;
+            return cur.file_id === cloud.file_id && cur.file_time === cloud.file_time;
+        };
+        if (
+            matches(layoutMeta.zip, body.zip) &&
+            matches(layoutMeta.rgbeffects, body.rgbeffects) &&
+            matches(layoutMeta.networks, body.networks)
+        ) {
+            log('info', 'layout already up to date');
+            setLayout({ status: 'done', direction: 'download', lastFetchedAt: layoutMeta.lastFetchedAt, error: undefined });
+            return;
+        }
+
+        // 1) zip first (if present and changed): download + unpack into show folder root.
         // A malformed zip (no folder with both xLights XMLs) is treated as "no zip
         // extracted" — we keep zipFileTime at -Infinity so the XML overlay step
         // unconditionally writes whatever the cloud sent.
         let zipFileTime = -Infinity;
-        if (body.zip) {
+        let zipExtracted = false;
+        if (body.zip && !matches(layoutMeta.zip, body.zip)) {
             try {
                 await downloadAndUnpackZip(body.zip);
                 zipFileTime = body.zip.file_time;
+                zipExtracted = true;
             } catch (e) {
                 log('warn', `layout zip skipped: ${(e as Error).message}`);
             }
+        } else if (body.zip) {
+            // zip up to date but its time gates the XML overlay decision
+            zipFileTime = body.zip.file_time;
         }
 
-        // 2) overlay rgbeffects if newer than zip (or no zip).
-        if (body.rgbeffects && body.rgbeffects.file_time > zipFileTime) {
+        // 2) overlay rgbeffects if newer than zip (or no zip), and only if changed.
+        if (
+            body.rgbeffects &&
+            body.rgbeffects.file_time > zipFileTime &&
+            !matches(layoutMeta.rgbeffects, body.rgbeffects)
+        ) {
             await downloadXmlOverlay(body.rgbeffects, 'xlights_rgbeffects.xml');
         }
-        if (body.networks && body.networks.file_time > zipFileTime) {
+        if (
+            body.networks &&
+            body.networks.file_time > zipFileTime &&
+            !matches(layoutMeta.networks, body.networks)
+        ) {
             await downloadXmlOverlay(body.networks, 'xlights_networks.xml');
         }
 
-        setLayout({ status: 'done', lastFetchedAt: Date.now(), error: undefined });
-        log('info', 'layout fetch complete');
-        post({ type: 'layoutInstalled' });
+        const newMeta: NonNullable<CloudConfig['layoutMeta']> = {
+            zip: body.zip ?? layoutMeta.zip,
+            rgbeffects: body.rgbeffects ?? layoutMeta.rgbeffects,
+            networks: body.networks ?? layoutMeta.networks,
+            lastFetchedAt: Date.now(),
+        };
+        layoutMeta = newMeta;
+
+        setLayout({
+            status: 'done',
+            direction: 'download',
+            lastFetchedAt: newMeta.lastFetchedAt,
+            error: undefined,
+        });
+        log('info', `layout fetch complete (zipExtracted=${zipExtracted})`);
+        post({ type: 'layoutInstalled', layoutMeta: newMeta });
     } catch (e) {
         const err = e as Error;
         log('warn', `layout fetch error: ${err.message}`);
@@ -986,6 +1079,121 @@ async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promi
     log('info', `wrote ${targetName} (file_id=${entry.file_id})`);
 }
 
+// -- layout upload ------------------------------------------------------------
+
+interface PresignedPost {
+    url: string;
+    fields: Record<string, string>;
+}
+
+interface StartUploadResponse {
+    post: PresignedPost;
+    rec: { file_id: string; file_time: string | number };
+}
+
+/** Start (XML-only) layout upload. Reads xlights_rgbeffects.xml + xlights_networks.xml
+ *  from the show folder root, zips them, and uploads via the cloud's three-step
+ *  presigned-POST flow. Asset bundling (images / meshes / textures) is a TODO. */
+async function uploadLayout(): Promise<void> {
+    if (layoutUploadInFlight) {
+        log('info', 'uploadLayout skipped: already in flight');
+        return;
+    }
+    if (layoutInFlight) {
+        log('warn', 'uploadLayout skipped: layout download in progress');
+        return;
+    }
+    if (!showFolder) {
+        log('warn', 'uploadLayout skipped: no showFolder');
+        return;
+    }
+    if (!cloudUrl || !playerIdToken) {
+        log('warn', 'uploadLayout skipped: cloudUrl or playerIdToken empty');
+        return;
+    }
+    layoutUploadInFlight = true;
+    setLayout({
+        status: 'uploading',
+        direction: 'upload',
+        error: undefined,
+        bytes: 0,
+        totalBytes: undefined,
+    });
+    try {
+        // 1) Build the zip in memory. XMLs only for now; asset bundling is a TODO
+        //    (must traverse XML refs for images, meshes, textures).
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+        for (const name of ['xlights_rgbeffects.xml', 'xlights_networks.xml']) {
+            const p = path.join(showFolder, name);
+            try {
+                const buf = await fsp.readFile(p);
+                zip.file(name, buf);
+            } catch (e) {
+                throw new Error(`missing ${name}: ${(e as Error).message}`);
+            }
+        }
+        const zipAb = await zip.generateAsync({ type: 'arraybuffer' });
+        log('info', `built layout zip: ${zipAb.byteLength} bytes`);
+        setLayout({
+            status: 'uploading',
+            direction: 'upload',
+            bytes: 0,
+            totalBytes: zipAb.byteLength,
+        });
+
+        // 2) Ask the cloud for a presigned POST.
+        const startUrl = `${cloudUrl}ezpapi/player/startuploadlayoutzip/${playerIdToken}`;
+        log('info', `layout upload startupload POST ${startUrl}`);
+        const startRes = await expectOk(
+            await fetchWithTimeout(startUrl, downloadTimeoutMs, { method: 'POST' }),
+            'startupload',
+        );
+        const { post, rec } = (await startRes.json()) as StartUploadResponse;
+        log('info', `layout upload got presigned post (file_id=${rec.file_id}, file_time=${rec.file_time})`);
+
+        // 3) Upload to S3 via the presigned form post.
+        const form = new FormData();
+        for (const [k, v] of Object.entries(post.fields ?? {})) {
+            form.append(k, v);
+        }
+        form.append('file', new Blob([zipAb]), 'layout.zip');
+        const s3Res = await fetch(post.url, { method: 'POST', body: form, signal: globalAbort.signal });
+        await expectOk(s3Res, 's3 upload');
+        setLayout({
+            status: 'uploading',
+            direction: 'upload',
+            bytes: zipAb.byteLength,
+            totalBytes: zipAb.byteLength,
+        });
+
+        // 4) Tell the cloud the upload finished so it can finalize + run conversion.
+        const doneUrl = `${cloudUrl}ezpapi/player/doneuploadlayoutzip/${playerIdToken}`;
+        const donePayload = { file_id: rec.file_id, file_time: rec.file_time };
+        log('info', `layout upload doneupload POST ${doneUrl} body=${JSON.stringify(donePayload)}`);
+        const doneRes = await fetchWithTimeout(doneUrl, downloadTimeoutMs, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(donePayload),
+        });
+        await expectOk(doneRes, 'doneupload');
+
+        log('info', 'layout upload complete');
+        setLayout({
+            status: 'done',
+            direction: 'upload',
+            lastUploadedAt: Date.now(),
+            error: undefined,
+        });
+    } catch (e) {
+        const err = e as Error;
+        log('warn', `layout upload error: ${err.message}`);
+        setLayout({ status: 'error', direction: 'upload', error: err.message });
+    } finally {
+        layoutUploadInFlight = false;
+    }
+}
+
 // -- message handling ---------------------------------------------------------
 
 parentPort?.on('message', (msg: CloudPollInMessage) => {
@@ -995,8 +1203,16 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             playerIdToken = msg.playerIdToken ?? '';
             showFolder = msg.showFolder ?? '';
             existingSequences = msg.existingSequences ?? [];
+            layoutMeta = msg.layoutMeta ?? {};
+            layoutSource = msg.layoutSource === 'cloud' ? 'cloud' : 'xlights';
             seedInstalledFiles();
             applyTuning(msg.tuning);
+            // If the new config is "off" (empty url/token after the assignment above),
+            // immediately abort any in-flight transfers — pause/disconnect should be
+            // snappy, not finish the current file first.
+            if (!cloudUrl || !playerIdToken) {
+                abortAllAndReset();
+            }
             stopped = false;
             halted = false;
             consecutiveFailures = 0;
@@ -1027,6 +1243,10 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
         }
         case 'fetchLayoutNow': {
             void fetchLayout();
+            break;
+        }
+        case 'uploadLayoutNow': {
+            void uploadLayout();
             break;
         }
         case 'stop': {

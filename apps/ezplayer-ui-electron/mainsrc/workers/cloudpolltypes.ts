@@ -1,4 +1,5 @@
 import type {
+    CloudConfig,
     CloudStatus,
     PlayerCStatusContent,
     SequenceRecord,
@@ -27,12 +28,19 @@ export type CloudPollInMessage =
           /** Existing local sequences so the worker can diff against the manifest
            *  without re-reading them. Refreshed on each setConfig. */
           existingSequences: SequenceRecord[];
+          /** Last-known layout file ids/times — drives the staleness check on layout
+           *  fetch so we skip downloads for files that haven't changed. */
+          layoutMeta?: CloudConfig['layoutMeta'];
+          /** Whose layout this folder uses. In `'cloud'` mode the worker auto-fetches
+           *  layout at the head of every manifest tick (cheap when nothing's stale). */
+          layoutSource?: 'xlights' | 'cloud';
           tuning?: CloudWorkerTuning;
       }
     | { type: 'updateSequences'; existingSequences: SequenceRecord[] }
     | { type: 'pollNow' }
     | { type: 'manifestNow' }
     | { type: 'fetchLayoutNow' }
+    | { type: 'uploadLayoutNow' }
     | { type: 'stop' };
 
 /** Worker → parent. */
@@ -53,5 +61,8 @@ export type CloudPollOutMessage =
            *  The receiver should treat this as equivalent to a fresh "set show folder"
            *  and reload everything that depends on layout (model coords, playback, ...). */
           type: 'layoutInstalled';
+          /** Updated cloud meta — main persists this so future fetches can short-circuit
+           *  when nothing has changed. */
+          layoutMeta: NonNullable<CloudConfig['layoutMeta']>;
       }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

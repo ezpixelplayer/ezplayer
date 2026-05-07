@@ -27,6 +27,9 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
             // Treat absent/unknown layoutSource as 'xlights' (the legacy default) on read,
             // but preserve the field so writes don't silently rewrite a cloud-mode folder.
             layoutSource: parsed.layoutSource === 'cloud' ? 'cloud' : 'xlights',
+            // Default true on absent. Only an explicit `false` parks the worker.
+            cloudEnabled: parsed.cloudEnabled === false ? false : true,
+            layoutMeta: parsed.layoutMeta,
         };
         return currentConfig;
     } catch (e) {

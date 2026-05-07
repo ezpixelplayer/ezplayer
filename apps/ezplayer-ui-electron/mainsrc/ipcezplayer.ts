@@ -42,6 +42,7 @@ import {
     pollCloudNow,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
+    uploadLayoutNow,
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 
@@ -222,11 +223,14 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curUser = await loadUserProfileAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
+    const cloudActive = cloudConfig.cloudEnabled !== false;
     setCloudWorkerConfig(
-        cloudConfig.cloudServiceUrl,
-        cloudConfig.playerIdToken,
+        cloudActive ? cloudConfig.cloudServiceUrl : '',
+        cloudActive ? cloudConfig.playerIdToken : '',
         showFolder,
         curSequences,
+        cloudConfig.layoutMeta,
+        cloudConfig.layoutSource,
     );
 
     updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
@@ -296,10 +300,15 @@ const handlers: MainRPCAPI = {
 export function dispatchCloudCommand(cmd: CloudCommand): void {
     switch (cmd.type) {
         case 'syncNow':
+            // Pull the manifest. The worker auto-fetches layout at the head of each
+            // manifest tick when in cloud-managed mode (cheap when nothing's stale).
             manifestPollNow();
             break;
         case 'fetchLayoutNow':
             fetchLayoutNow();
+            break;
+        case 'uploadLayoutNow':
+            uploadLayoutNow();
             break;
         case 'pollNow':
             pollCloudNow();
@@ -310,11 +319,51 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
         case 'setCloudServiceUrl':
             applyCloudServiceUrl(cmd.url);
             break;
+        case 'setLayoutSource':
+            applyLayoutSource(cmd.mode);
+            break;
+        case 'setCloudEnabled':
+            applyCloudEnabled(cmd.enabled);
+            break;
         default: {
             const _exhaustive: never = cmd;
             console.warn('[cloud-command] unknown verb', _exhaustive);
         }
     }
+}
+
+/** Update the persisted layout-source mode (`xlights` or `cloud`). Reconfigures the
+ *  worker so it knows whether to auto-fetch layout at the head of each manifest tick. */
+export function applyLayoutSource(mode: 'xlights' | 'cloud') {
+    const cfg = updateCloudConfig({ layoutSource: mode });
+    const cloudActive = cfg.cloudEnabled !== false;
+    setCloudWorkerConfig(
+        cloudActive ? cfg.cloudServiceUrl : '',
+        cloudActive ? cfg.playerIdToken : '',
+        getCurrentShowFolder() ?? '',
+        curSequences,
+        cfg.layoutMeta,
+        cfg.layoutSource,
+    );
+    updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    broadcastToWebSocket('cloudConfig', cfg);
+}
+
+/** Pause/resume the cloud worker. Pausing keeps URL/token saved but parks all polling
+ *  and downloads. Implemented by passing empty url/token to the worker — the worker
+ *  already short-circuits everything on either being empty. */
+export function applyCloudEnabled(enabled: boolean) {
+    const cfg = updateCloudConfig({ cloudEnabled: enabled });
+    setCloudWorkerConfig(
+        enabled ? cfg.cloudServiceUrl : '',
+        enabled ? cfg.playerIdToken : '',
+        getCurrentShowFolder() ?? '',
+        curSequences,
+        cfg.layoutMeta,
+        cfg.layoutSource,
+    );
+    updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    broadcastToWebSocket('cloudConfig', cfg);
 }
 
 /** Update the persisted player ID token and reconfigure the cloud poller. Called from
@@ -326,6 +375,8 @@ export function applyPlayerIdToken(token: string) {
         cfg.playerIdToken,
         getCurrentShowFolder() ?? '',
         curSequences,
+        cfg.layoutMeta,
+        cfg.layoutSource,
     );
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
@@ -339,6 +390,8 @@ export function applyCloudServiceUrl(url: string) {
         cfg.playerIdToken,
         getCurrentShowFolder() ?? '',
         curSequences,
+        cfg.layoutMeta,
+        cfg.layoutSource,
     );
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
@@ -516,7 +569,13 @@ export async function registerContentHandlers(
         broadcastToWebSocket('cStatus', curStatus.content);
     });
 
-    onLayoutInstalled(() => {
+    onLayoutInstalled((layoutMeta) => {
+        // Persist the cloud meta so future fetches can short-circuit when nothing
+        // has changed (the worker uses this on the next setConfig).
+        const cfg = updateCloudConfig({ layoutMeta });
+        updateWindow?.webContents?.send('update:cloudConfig', cfg);
+        broadcastToWebSocket('cloudConfig', cfg);
+
         // Layout files (xlights_rgbeffects.xml / xlights_networks.xml plus anything
         // unpacked from the layout zip) just changed under us. Re-run the same
         // pipeline a "set show folder" runs: re-read all show JSON, broadcast,
