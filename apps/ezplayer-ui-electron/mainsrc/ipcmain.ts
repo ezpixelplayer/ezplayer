@@ -42,6 +42,12 @@ export function registerFileListHandlers() {
         }
     });
 
+    ipcMain.handle('ipcSetZoomFactor', async (_event, factor: number) => {
+        const w = getMainWindow();
+        // Native page zoom — Chromium scales canvas/WebGL correctly, unlike CSS `zoom`.
+        w?.webContents?.setZoomFactor(typeof factor === 'number' && factor > 0 ? factor : 1);
+    });
+
     ipcMain.handle('dialog:openDirectory', async (_event, options: Omit<FileSelectOptions, 'types'>) => {
         const props: OpenDialogOptions = {
             properties: ['openDirectory'],

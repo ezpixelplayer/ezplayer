@@ -102,6 +102,10 @@ export interface EZPElectronAPI {
      *  bootstrap panel to tighten the wait-for-registration loop. */
     cloudPollNow: () => Promise<void>;
 
+    /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
+     *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */
+    setZoomFactor: (factor: number) => Promise<void>;
+
     // Cloud status: in-memory in main, polled by the cloud worker, pushed to renderer.
     getCloudStatus: () => Promise<CloudStatus>;
     onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => void;

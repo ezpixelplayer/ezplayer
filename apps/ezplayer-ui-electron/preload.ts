@@ -136,6 +136,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cloudPollNow(): Promise<void> {
         return ipcRenderer.invoke('ipcCloudPollNow');
     },
+    setZoomFactor(factor: number): Promise<void> {
+        return ipcRenderer.invoke('ipcSetZoomFactor', factor);
+    },
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => {
         ipcRenderer.on('update:cloudConfig', (_event: any, data: CloudConfig) => {
             callback(data);
