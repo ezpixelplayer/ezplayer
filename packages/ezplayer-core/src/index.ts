@@ -47,6 +47,7 @@ export type {
     CloudSequenceProgress,
     CloudLayoutInfo,
     CloudLayoutStatus,
+    CloudCommand,
 } from './types/DataTypes';
 
 export type {

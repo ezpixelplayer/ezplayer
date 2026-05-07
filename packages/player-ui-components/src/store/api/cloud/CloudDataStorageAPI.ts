@@ -8,6 +8,7 @@ import {
     SequenceRecord,
     PlaylistRecord,
     ScheduledPlaylist,
+    CloudCommand,
     CombinedPlayerStatus,
     EZPlayerCommand,
     PlaybackSettings,
@@ -59,13 +60,6 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     async connect(dispatch: AppDispatch) {
         this.dispatch = dispatch;
         await this.refreshAll();
-    }
-
-    async requestChangeServerUrl(data: { cloudURL: string }) {
-        this.baseUrl = data.cloudURL;
-        localStorage.setItem('cloudBaseUrl', this.baseUrl);
-        localStorage.removeItem('auth_token'); // Clear this off as it came from another server
-        return await this.refreshAll();
     }
 
     async refreshAll() {
@@ -163,31 +157,33 @@ export class CloudDataStorageAPI implements DataStorageAPI {
         }
     }
 
-    async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
-        const newtoken = setOrGeneratePlayerIdToken(data.playerIdToken);
-        this.playerIdToken = newtoken;
-        this.dispatch?.(cloudConfigActions.setPlayerIdToken(newtoken));
-        await this.refreshAll();
-        return {
-            message: 'Player ID set',
-        };
-    }
-
     async isPlayerRegistered(playerId: string): Promise<boolean> {
         const res = await isPlayerRegisteredCall(this.axiosInstance, this.apiUrl, playerId);
         return res.registered;
     }
 
-    /** Cloud-app surfaces don't run a local cloud-content worker, so sync-now is a no-op. */
-    async requestCloudSyncNow(): Promise<void> {
-        return Promise.resolve();
-    }
-
-    async requestCloudFetchLayoutNow(): Promise<void> {
-        return Promise.resolve();
-    }
-
-    async requestCloudPollNow(): Promise<void> {
-        return Promise.resolve();
+    /** Cloud-app surfaces don't run a local cloud-content worker. The worker-targeted
+     *  verbs (syncNow, fetchLayoutNow, pollNow) are no-ops here; the config-mutating
+     *  verbs run their cloud-app-local equivalents (in-memory state + refreshAll). */
+    async issueCloudCommand(cmd: CloudCommand): Promise<void> {
+        switch (cmd.type) {
+            case 'setPlayerIdToken': {
+                const newtoken = setOrGeneratePlayerIdToken(cmd.token);
+                this.playerIdToken = newtoken;
+                this.dispatch?.(cloudConfigActions.setPlayerIdToken(newtoken));
+                await this.refreshAll();
+                return;
+            }
+            case 'setCloudServiceUrl': {
+                this.baseUrl = cmd.url;
+                localStorage.setItem('cloudBaseUrl', this.baseUrl);
+                localStorage.removeItem('auth_token'); // came from another server
+                await this.refreshAll();
+                return;
+            }
+            // syncNow / fetchLayoutNow / pollNow: no local cloud worker on this surface.
+            default:
+                return;
+        }
     }
 }

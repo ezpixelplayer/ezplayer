@@ -1,6 +1,7 @@
 import type {
     AudioDevice,
     AutoUpdateStatus,
+    CloudCommand,
     CloudConfig,
     CloudStatus,
     CombinedPlayerStatus,
@@ -206,29 +207,13 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     }
 
     /**
-     * Cloud config writes route through main, which persists to the show folder and
-     * reconfigures the cloud-poll worker. The slice is updated when main echoes via
-     * `update:cloudConfig`, not synchronously here.
+     * Single umbrella for cloud worker / cloud config commands. Routes through main,
+     * which persists state to the show folder and reconfigures the cloud-poll worker.
+     * The slice is updated when main echoes via the existing snapshot push channels
+     * (`update:cloudConfig`, etc.), not synchronously here.
      */
-    override async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
-        await window.electronAPI!.setPlayerIdToken(data.playerIdToken ?? '');
-        return { message: 'ok' };
-    }
-
-    override async requestChangeServerUrl(data: { cloudURL: string }): Promise<void> {
-        await window.electronAPI!.setCloudServiceUrl(data.cloudURL ?? '');
-    }
-
-    override async requestCloudSyncNow(): Promise<void> {
-        await window.electronAPI!.cloudSyncNow();
-    }
-
-    override async requestCloudFetchLayoutNow(): Promise<void> {
-        await window.electronAPI!.cloudFetchLayoutNow();
-    }
-
-    override async requestCloudPollNow(): Promise<void> {
-        await window.electronAPI!.cloudPollNow();
+    override async issueCloudCommand(cmd: CloudCommand): Promise<void> {
+        await window.electronAPI!.cloudCommand(cmd);
     }
 
 

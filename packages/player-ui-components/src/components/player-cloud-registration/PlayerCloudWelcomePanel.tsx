@@ -21,7 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Box } from '../box/Box';
 import { API_ENDPOINTS } from '../../store/api/ApiEndpoints';
 import { postSetCloudUrl, postSetPlayerIdToken } from '../../store/slices/AuthStore';
-import { triggerCloudPoll } from '../../store/slices/CloudStatusStore';
+import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
 import type { AppDispatch, RootState } from '../../store/Store';
 
 declare global {
@@ -71,7 +71,7 @@ export const PlayerCloudWelcomePanel: React.FC = () => {
     useEffect(() => {
         if (playerIdIsRegistered) return;
         const id = window.setInterval(() => {
-            void dispatch(triggerCloudPoll());
+            void dispatch(issueCloudCommand({ type: 'pollNow' }));
         }, 2000);
         return () => window.clearInterval(id);
     }, [playerIdIsRegistered, dispatch]);

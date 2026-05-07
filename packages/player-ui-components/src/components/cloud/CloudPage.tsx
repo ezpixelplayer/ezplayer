@@ -21,7 +21,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
 import type { AppDispatch, RootState } from '../../store/Store';
-import { triggerCloudSyncNow, triggerLayoutFetch } from '../../store/slices/CloudStatusStore';
+import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
 import type {
     CloudFileEntry,
     CloudFileStatus,
@@ -228,7 +228,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     const handleSync = async () => {
         setSyncing(true);
         try {
-            await dispatch(triggerCloudSyncNow()).unwrap();
+            await dispatch(issueCloudCommand({ type: 'syncNow' })).unwrap();
         } catch (e) {
             console.error('[CloudPage] sync now failed:', e);
         } finally {
@@ -239,7 +239,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     const layoutFetching = layout?.status === 'fetching' || layout?.status === 'unpacking';
     const handleFetchLayout = async () => {
         try {
-            await dispatch(triggerLayoutFetch()).unwrap();
+            await dispatch(issueCloudCommand({ type: 'fetchLayoutNow' })).unwrap();
         } catch (e) {
             console.error('[CloudPage] fetch layout failed:', e);
         }

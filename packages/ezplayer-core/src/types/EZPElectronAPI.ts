@@ -14,6 +14,7 @@ import type {
     EZPlayerVersions,
     EZPlayerCommand,
     PlaybackSettings,
+    CloudCommand,
 } from './DataTypes';
 
 export interface AudioDevice {
@@ -91,16 +92,11 @@ export interface EZPElectronAPI {
 
     // Cloud config: persisted in show-folder JSON, mutated through main.
     getCloudConfig: () => Promise<CloudConfig>;
-    setPlayerIdToken: (token: string) => Promise<void>;
-    setCloudServiceUrl: (url: string) => Promise<void>;
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => void;
-    /** Trigger an immediate manifest refresh + content sync. */
-    cloudSyncNow: () => Promise<void>;
-    /** Trigger an immediate layout fetch (zip + xml overlay). */
-    cloudFetchLayoutNow: () => Promise<void>;
-    /** Run a single registration heartbeat poll off-cycle. Cheap; used by the welcome
-     *  bootstrap panel to tighten the wait-for-registration loop. */
-    cloudPollNow: () => Promise<void>;
+    /** Single umbrella for player-cloud-worker verbs. Modeled on `immediatePlayerCommand`
+     *  (which uses an EZPlayerCommand discriminated union). New verbs add a variant
+     *  to `CloudCommand` and a case in main's dispatcher — no per-verb IPC plumbing. */
+    cloudCommand: (cmd: CloudCommand) => Promise<void>;
 
     /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
      *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */

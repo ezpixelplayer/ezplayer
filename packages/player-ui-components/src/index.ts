@@ -106,7 +106,7 @@ export {
 } from './store/slices/AuthStore';
 
 export { cloudConfigActions } from './store/slices/CloudConfigStore';
-export { cloudStatusActions, triggerCloudSyncNow, triggerLayoutFetch, triggerCloudPoll } from './store/slices/CloudStatusStore';
+export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

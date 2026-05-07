@@ -3,6 +3,7 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     CombinedPlayerStatus,
+    CloudCommand,
     EZPlayerCommand,
     PlaybackSettings,
     PlayerWebSocketMessage,
@@ -164,9 +165,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     // Cloud config writes route over the WebSocket: koa worker forwards to main, main
     // updates the file and reconfigures the poller, status echoes back as a snapshot.
-    async requestChangeServerUrl(data: { cloudURL: string }) {
-        wsService.send({ type: 'setCloudServiceUrl', url: data.cloudURL ?? '' });
-    }
 
     async refreshAll() {
         return Promise.resolve();
@@ -256,21 +254,8 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         throw new Error('Password change not supported in local web mode');
     }
 
-    async requestSetPlayerIdToken(data: { playerIdToken?: string }): Promise<{ message: string }> {
-        wsService.send({ type: 'setPlayerIdToken', token: data.playerIdToken ?? '' });
-        return { message: 'ok' };
-    }
-
-    async requestCloudSyncNow(): Promise<void> {
-        wsService.send({ type: 'cloudSyncNow' });
-    }
-
-    async requestCloudFetchLayoutNow(): Promise<void> {
-        wsService.send({ type: 'cloudFetchLayoutNow' });
-    }
-
-    async requestCloudPollNow(): Promise<void> {
-        wsService.send({ type: 'cloudPollNow' });
+    async issueCloudCommand(cmd: CloudCommand): Promise<void> {
+        wsService.send({ type: 'cloudCommand', cmd });
     }
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {

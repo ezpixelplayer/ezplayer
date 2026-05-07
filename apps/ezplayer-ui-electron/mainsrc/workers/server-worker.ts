@@ -128,28 +128,12 @@ const rpc = new MainThreadRPC();
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
-// Forward client → server WebSocket messages that mutate cloud config to main via RPC.
-// Server pushes the resulting state back to all clients via the broadcast channel.
+// Forward client → server WebSocket cloud commands to main via RPC. Main pushes
+// resulting state back to all clients via the broadcast channel.
 wsBroadcaster.setClientMessageHandler((msg) => {
-    if (msg.type === 'setPlayerIdToken') {
-        void rpc.call('setPlayerIdToken', msg.token).catch((err) => {
-            console.error('[server-worker] setPlayerIdToken failed:', err);
-        });
-    } else if (msg.type === 'setCloudServiceUrl') {
-        void rpc.call('setCloudServiceUrl', msg.url).catch((err) => {
-            console.error('[server-worker] setCloudServiceUrl failed:', err);
-        });
-    } else if (msg.type === 'cloudSyncNow') {
-        void rpc.call('cloudSyncNow').catch((err) => {
-            console.error('[server-worker] cloudSyncNow failed:', err);
-        });
-    } else if (msg.type === 'cloudFetchLayoutNow') {
-        void rpc.call('cloudFetchLayoutNow').catch((err) => {
-            console.error('[server-worker] cloudFetchLayoutNow failed:', err);
-        });
-    } else if (msg.type === 'cloudPollNow') {
-        void rpc.call('cloudPollNow').catch((err) => {
-            console.error('[server-worker] cloudPollNow failed:', err);
+    if (msg.type === 'cloudCommand') {
+        void rpc.call('cloudCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] cloudCommand failed:', err);
         });
     }
 });

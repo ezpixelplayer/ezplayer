@@ -47,9 +47,5 @@ export interface ServerWorkerRPCAPI {
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
-    setPlayerIdToken(token: string): Promise<void>;
-    setCloudServiceUrl(url: string): Promise<void>;
-    cloudSyncNow(): Promise<void>;
-    cloudFetchLayoutNow(): Promise<void>;
-    cloudPollNow(): Promise<void>;
+    cloudCommand(cmd: import('@ezplayer/ezplayer-core').CloudCommand): Promise<void>;
 }

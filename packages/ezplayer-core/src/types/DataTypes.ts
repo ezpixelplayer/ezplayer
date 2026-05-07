@@ -602,14 +602,23 @@ export type PlayerWebSocketKick = {
 
 export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPing | PlayerWebSocketKick;
 
+/** Verbs the renderer can ask the player's cloud worker (or the cloud app's local
+ *  cloud-state manager) to perform. Modeled on `EZPlayerCommand`: a discriminated
+ *  union dispatched through one umbrella API (`issueCloudCommand`) instead of a
+ *  separate IPC/RPC/WS plumb per verb. New commands add a variant here plus a case
+ *  in main's `dispatchCloudCommand` (and, on cloud-app surfaces, a case in
+ *  `CloudDataStorageAPI.issueCloudCommand`). */
+export type CloudCommand =
+    | { type: 'syncNow' } // immediate manifest + content sync
+    | { type: 'fetchLayoutNow' } // immediate layout fetch
+    | { type: 'pollNow' } // immediate registration heartbeat
+    | { type: 'setPlayerIdToken'; token: string } // persist + reconfigure
+    | { type: 'setCloudServiceUrl'; url: string }; // persist + reconfigure
+
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
-    | { type: 'setPlayerIdToken'; token: string }
-    | { type: 'setCloudServiceUrl'; url: string }
-    | { type: 'cloudSyncNow' }
-    | { type: 'cloudFetchLayoutNow' }
-    | { type: 'cloudPollNow' };
+    | { type: 'cloudCommand'; cmd: CloudCommand };
 
 /// Layout Edit
 

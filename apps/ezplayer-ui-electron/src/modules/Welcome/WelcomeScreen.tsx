@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     PlayerCloudWelcomePanel,
     Routes as ROUTES,
-    triggerLayoutFetch,
+    issueCloudCommand,
 } from '@ezplayer/player-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '@ezplayer/player-ui-components';
@@ -75,7 +75,7 @@ export const WelcomeScreen = () => {
     // error with Retry / Continue Anyway controls.
     React.useEffect(() => {
         if (stage !== 'cloud-bootstrap-layout') return;
-        void dispatch(triggerLayoutFetch());
+        void dispatch(issueCloudCommand({ type: 'fetchLayoutNow' }));
     }, [stage, dispatch]);
 
     React.useEffect(() => {
@@ -220,7 +220,7 @@ export const WelcomeScreen = () => {
                                 <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                                     <Button
                                         variant="contained"
-                                        onClick={() => void dispatch(triggerLayoutFetch())}
+                                        onClick={() => void dispatch(issueCloudCommand({ type: 'fetchLayoutNow' }))}
                                     >
                                         Retry
                                     </Button>

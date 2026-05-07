@@ -8,6 +8,7 @@ import type {
     FileSelectOptions,
     EZPlayerCommand,
     PlaybackSettings,
+    CloudCommand,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -121,20 +122,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getCloudConfig(): Promise<CloudConfig> {
         return ipcRenderer.invoke('ipcGetCloudConfig');
     },
-    setPlayerIdToken(token: string): Promise<void> {
-        return ipcRenderer.invoke('ipcSetPlayerIdToken', token);
-    },
-    setCloudServiceUrl(url: string): Promise<void> {
-        return ipcRenderer.invoke('ipcSetCloudServiceUrl', url);
-    },
-    cloudSyncNow(): Promise<void> {
-        return ipcRenderer.invoke('ipcCloudSyncNow');
-    },
-    cloudFetchLayoutNow(): Promise<void> {
-        return ipcRenderer.invoke('ipcCloudFetchLayoutNow');
-    },
-    cloudPollNow(): Promise<void> {
-        return ipcRenderer.invoke('ipcCloudPollNow');
+    cloudCommand(cmd: CloudCommand): Promise<void> {
+        return ipcRenderer.invoke('ipcCloudCommand', cmd);
     },
     setZoomFactor(factor: number): Promise<void> {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);

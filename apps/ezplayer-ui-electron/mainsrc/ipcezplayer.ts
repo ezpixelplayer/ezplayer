@@ -46,6 +46,7 @@ import {
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 
 import type {
+    CloudCommand,
     CombinedPlayerStatus,
     EndUser,
     EndUserShowSettings,
@@ -289,6 +290,33 @@ const handlers: MainRPCAPI = {
     },
 };
 
+/** Single dispatcher for renderer-issued cloud commands. New verbs only need a
+ *  variant on `CloudCommand` and a case here. The renderer hits this via either
+ *  `ipcCloudCommand` (electron) or the koa server-worker's RPC route (embedded). */
+export function dispatchCloudCommand(cmd: CloudCommand): void {
+    switch (cmd.type) {
+        case 'syncNow':
+            manifestPollNow();
+            break;
+        case 'fetchLayoutNow':
+            fetchLayoutNow();
+            break;
+        case 'pollNow':
+            pollCloudNow();
+            break;
+        case 'setPlayerIdToken':
+            applyPlayerIdToken(cmd.token);
+            break;
+        case 'setCloudServiceUrl':
+            applyCloudServiceUrl(cmd.url);
+            break;
+        default: {
+            const _exhaustive: never = cmd;
+            console.warn('[cloud-command] unknown verb', _exhaustive);
+        }
+    }
+}
+
 /** Update the persisted player ID token and reconfigure the cloud poller. Called from
  *  the renderer (electron IPC) and from the embedded UI (koa worker → RPC). */
 export function applyPlayerIdToken(token: string) {
@@ -468,20 +496,8 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcGetCloudConfig', async (_event) => {
         return getCloudConfigCache();
     });
-    ipcMain.handle('ipcSetPlayerIdToken', async (_event, token: string) => {
-        applyPlayerIdToken(token);
-    });
-    ipcMain.handle('ipcSetCloudServiceUrl', async (_event, url: string) => {
-        applyCloudServiceUrl(url);
-    });
-    ipcMain.handle('ipcCloudSyncNow', async (_event) => {
-        manifestPollNow();
-    });
-    ipcMain.handle('ipcCloudFetchLayoutNow', async (_event) => {
-        fetchLayoutNow();
-    });
-    ipcMain.handle('ipcCloudPollNow', async (_event) => {
-        pollCloudNow();
+    ipcMain.handle('ipcCloudCommand', async (_event, cmd: CloudCommand) => {
+        dispatchCloudCommand(cmd);
     });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();

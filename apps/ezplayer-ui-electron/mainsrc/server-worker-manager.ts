@@ -17,10 +17,8 @@ import {
     updateScheduleHandler,
     curFrameBuffer,
     loadShowFolder,
-    applyPlayerIdToken,
-    applyCloudServiceUrl,
+    dispatchCloudCommand,
 } from './ipcezplayer.js';
-import { fetchLayoutNow, manifestPollNow, pollCloudNow } from './workers/cloudpollparent.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
@@ -96,20 +94,8 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         const mainWindow = getMainWindowRef?.();
         mainWindow?.webContents?.send(channel, ...args);
     },
-    setPlayerIdToken: async (token: string) => {
-        applyPlayerIdToken(token);
-    },
-    setCloudServiceUrl: async (url: string) => {
-        applyCloudServiceUrl(url);
-    },
-    cloudSyncNow: async () => {
-        manifestPollNow();
-    },
-    cloudFetchLayoutNow: async () => {
-        fetchLayoutNow();
-    },
-    cloudPollNow: async () => {
-        pollCloudNow();
+    cloudCommand: async (cmd) => {
+        dispatchCloudCommand(cmd);
     },
 };
 

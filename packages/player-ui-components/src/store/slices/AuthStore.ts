@@ -86,28 +86,17 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
 }
 
 export const postSetPlayerIdToken = createAsyncThunk<
-    { message: string },
+    void,
     { playerIdToken: string },
     { extra: DataStorageAPI }
->('auth/postSetPlayerId', async (data: { playerIdToken: string }, { extra }) => {
-    try {
-        const response = await extra.requestSetPlayerIdToken(data);
-        return response;
-    } catch (error) {
-        console.error('Error in postSetPlayerIdToken:', error);
-        throw error;
-    }
+>('auth/postSetPlayerId', async (data, { extra }) => {
+    await extra.issueCloudCommand({ type: 'setPlayerIdToken', token: data.playerIdToken });
 });
 
-export const postSetCloudUrl = createAsyncThunk<{}, { cloudUrl: string }, { extra: DataStorageAPI }>(
+export const postSetCloudUrl = createAsyncThunk<void, { cloudUrl: string }, { extra: DataStorageAPI }>(
     'auth/postSetCloudUrl',
-    async (data: { cloudUrl: string }, { extra }) => {
-        try {
-            return await extra.requestChangeServerUrl({ cloudURL: data.cloudUrl });
-        } catch (error) {
-            console.error('Error in setCloudUrl:', error);
-            throw error;
-        }
+    async (data, { extra }) => {
+        await extra.issueCloudCommand({ type: 'setCloudServiceUrl', url: data.cloudUrl });
     },
 );
 

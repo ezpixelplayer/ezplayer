@@ -3,6 +3,7 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     CombinedPlayerStatus,
+    CloudCommand,
     EZPlayerCommand,
     PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
@@ -96,7 +97,6 @@ export interface DataStorageAPI {
     connect(dispatch: AppDispatch): Promise<void>;
     disconnect(): Promise<void>;
 
-    requestChangeServerUrl: (data: { cloudURL: string }) => Promise<void>;
 
     /** This fetches the master cloud storage list */
     getCloudSequences: () => Promise<SequenceRecord[]>;
@@ -116,20 +116,9 @@ export interface DataStorageAPI {
 
     // There is such thing as posting cloud status, but not from the UI...
 
-    requestSetPlayerIdToken: (data: { playerIdToken?: string }) => Promise<{ message: string }>;
-
-    /** Ask the player's cloud worker to refresh its content manifest immediately
-     *  (off-cycle from the regular poll). Used by the "Sync Now" UI control and
-     *  any future automated trigger (e.g. a cloud push notification). */
-    requestCloudSyncNow: () => Promise<void>;
-
-    /** Ask the player's cloud worker to fetch the latest layout (zip + xml overlay)
-     *  immediately. Used by the "Fetch Layout" UI control and the bootstrap flow. */
-    requestCloudFetchLayoutNow: () => Promise<void>;
-
-    /** Ask the player's cloud worker to fire a single registration heartbeat poll
-     *  off-cycle. Cheap; the welcome bootstrap calls this on a 2 s tick while waiting. */
-    requestCloudPollNow: () => Promise<void>;
+    /** Single umbrella for player-cloud-worker commands. New verbs add a `CloudCommand`
+     *  union variant + a case in main's `dispatchCloudCommand`; no per-verb plumbing. */
+    issueCloudCommand: (cmd: CloudCommand) => Promise<void>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
