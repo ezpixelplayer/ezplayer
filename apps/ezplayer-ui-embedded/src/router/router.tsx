@@ -63,7 +63,7 @@ const EmbeddedSettingsPage = () => {
         },
         {
             key: 'viewer',
-            label: 'Viewer',
+            label: 'Viewer Control',
             icon: <LanguageIcon sx={{ fontSize: 56 }} />,
             title: 'Viewer Control',
             content: <ViewerSettings />,

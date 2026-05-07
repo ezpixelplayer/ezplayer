@@ -832,10 +832,17 @@ async function fetchLayout(): Promise<void> {
         }
 
         // 1) zip first (if present): download + unpack into show folder root.
+        // A malformed zip (no folder with both xLights XMLs) is treated as "no zip
+        // extracted" — we keep zipFileTime at -Infinity so the XML overlay step
+        // unconditionally writes whatever the cloud sent.
         let zipFileTime = -Infinity;
         if (body.zip) {
-            zipFileTime = body.zip.file_time;
-            await downloadAndUnpackZip(body.zip);
+            try {
+                await downloadAndUnpackZip(body.zip);
+                zipFileTime = body.zip.file_time;
+            } catch (e) {
+                log('warn', `layout zip skipped: ${(e as Error).message}`);
+            }
         }
 
         // 2) overlay rgbeffects if newer than zip (or no zip).
@@ -894,19 +901,68 @@ async function downloadAndUnpackZip(entry: LayoutEntry): Promise<void> {
     const zipBuf = await fsp.readFile(stageFinal);
     const z = await JSZip.loadAsync(zipBuf);
     const entries = Object.values(z.files);
-    log('info', `unpacking ${entries.length} entries from layout zip`);
+
+    // Layout zips often have a wrapping folder (or two). Find the directory inside the
+    // zip that holds BOTH xlights_rgbeffects.xml and xlights_networks.xml as immediate
+    // children — that's the show-folder root. Pick the shallowest match. Anything
+    // outside that subtree is dropped; everything inside is written into the show
+    // folder root with the prefix stripped. If no directory qualifies, the zip is
+    // considered malformed and we throw — the caller treats that as "no zip extracted"
+    // and proceeds to the XML overlay step.
+    const root = findLayoutRoot(entries);
+    if (root === undefined) {
+        throw new Error('zip lacks a folder containing xlights_rgbeffects.xml + xlights_networks.xml');
+    }
+    log('info', `unpacking layout zip from root "${root || '(top level)'}" (${entries.length} entries)`);
+    let written = 0;
     for (const f of entries) {
         if (f.dir) continue;
-        // Refuse anything that would escape the show folder.
-        if (f.name.includes('..') || path.isAbsolute(f.name)) {
-            log('warn', `skipping unsafe zip entry: ${f.name}`);
+        const name = f.name.replace(/\\/g, '/');
+        if (!name.startsWith(root)) continue;
+        const rel = name.slice(root.length);
+        if (!rel) continue;
+        if (rel.includes('..') || path.isAbsolute(rel)) {
+            log('warn', `skipping unsafe zip entry: ${name}`);
             continue;
         }
-        const out = path.join(showFolder, f.name);
+        const out = path.join(showFolder, rel);
         await fsp.mkdir(path.dirname(out), { recursive: true });
         const content = await f.async('nodebuffer');
         await fsp.writeFile(out, content);
+        written += 1;
     }
+    log('info', `wrote ${written} entries from layout zip`);
+}
+
+/** Find the shallowest directory inside the zip whose immediate children include
+ *  both `xlights_rgbeffects.xml` and `xlights_networks.xml`. Returns the directory's
+ *  path WITH a trailing slash (or `''` for the zip's top level), or `undefined` if
+ *  no qualifying directory exists. */
+function findLayoutRoot(entries: { name: string; dir: boolean }[]): string | undefined {
+    const childrenByDir = new Map<string, Set<string>>();
+    for (const f of entries) {
+        if (f.dir) continue;
+        const name = f.name.replace(/\\/g, '/');
+        const slash = name.lastIndexOf('/');
+        const dir = slash >= 0 ? name.slice(0, slash + 1) : '';
+        const file = slash >= 0 ? name.slice(slash + 1) : name;
+        let s = childrenByDir.get(dir);
+        if (!s) {
+            s = new Set();
+            childrenByDir.set(dir, s);
+        }
+        s.add(file);
+    }
+    const candidates: string[] = [];
+    for (const [dir, files] of childrenByDir) {
+        if (files.has('xlights_rgbeffects.xml') && files.has('xlights_networks.xml')) {
+            candidates.push(dir);
+        }
+    }
+    if (candidates.length === 0) return undefined;
+    // Shallowest first (fewest path segments → outermost directory).
+    candidates.sort((a, b) => a.split('/').length - b.split('/').length);
+    return candidates[0];
 }
 
 async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promise<void> {
