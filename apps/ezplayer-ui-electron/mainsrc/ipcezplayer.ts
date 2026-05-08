@@ -98,8 +98,54 @@ let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
 /** Paths of files superseded by a new cloud install. Drained by `runGcSweep` when
  *  the player is idle — versioned filenames mean the new install never overwrites
- *  the old one, but the old one may still be open. */
+ *  the old one, but the old one may still be open. Persisted to
+ *  `<showFolder>/.ezplayer/cloud/gc-queue.json` so a crash or relaunch doesn't leak. */
 const gcQueue: string[] = [];
+
+function gcQueuePath(showFolder: string): string {
+    return path.join(showFolder, '.ezplayer', 'cloud', 'gc-queue.json');
+}
+
+async function loadGcQueue(showFolder: string): Promise<void> {
+    gcQueue.length = 0;
+    try {
+        const fsp = await import('fs/promises');
+        const raw = await fsp.readFile(gcQueuePath(showFolder), 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            for (const p of parsed) {
+                if (typeof p === 'string') gcQueue.push(p);
+            }
+        }
+        if (gcQueue.length > 0) {
+            console.log(`[cloud-gc] loaded ${gcQueue.length} pending paths`);
+        }
+    } catch (e) {
+        const code = (e as { code?: string })?.code;
+        if (code !== 'ENOENT') console.warn('[cloud-gc] load failed:', e);
+    }
+}
+
+let gcSaveInFlight: Promise<void> | null = null;
+async function saveGcQueue(): Promise<void> {
+    const showFolder = getCurrentShowFolder();
+    if (!showFolder) return;
+    // Coalesce concurrent writes — last call's snapshot wins.
+    if (gcSaveInFlight) return gcSaveInFlight;
+    gcSaveInFlight = (async () => {
+        try {
+            const fsp = await import('fs/promises');
+            const file = gcQueuePath(showFolder);
+            await fsp.mkdir(path.dirname(file), { recursive: true });
+            await fsp.writeFile(file, JSON.stringify(gcQueue, null, 2), 'utf-8');
+        } catch (e) {
+            console.warn('[cloud-gc] save failed:', e);
+        } finally {
+            gcSaveInFlight = null;
+        }
+    })();
+    return gcSaveInFlight;
+}
 
 function isPlayerIdle(): boolean {
     const p = curStatus.player;
@@ -132,6 +178,7 @@ async function runGcSweep(): Promise<void> {
         gcQueue.length = 0;
         gcQueue.push(...remaining);
         console.log(`[cloud-gc] swept ${deleted} files (${gcQueue.length} remaining)`);
+        void saveGcQueue();
     }
 }
 
@@ -254,6 +301,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // loader so that, on first run against an old folder, root-level files are moved
     // into the subdir and the loaders read the migrated copies on this same tick.
     await ensureEzplayerSubdir(showFolder);
+    await loadGcQueue(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
@@ -678,12 +726,19 @@ export async function registerContentHandlers(
         // Versioned filenames mean the new install lands at a different path; the
         // old file is orphaned. Don't delete now — playback may still be reading the
         // old bytes. Queue the path; the gc sweep will retry on each cStatus tick
-        // when the player is idle.
+        // when the player is idle. Persist so a crash doesn't leak.
         if (superseded.length > 0) {
+            let added = 0;
             for (const p of superseded) {
-                if (!gcQueue.includes(p)) gcQueue.push(p);
+                if (!gcQueue.includes(p)) {
+                    gcQueue.push(p);
+                    added += 1;
+                }
             }
-            console.log(`[cloud-install] queued ${superseded.length} files for gc (queue size ${gcQueue.length})`);
+            if (added > 0) {
+                console.log(`[cloud-install] queued ${added} files for gc (queue size ${gcQueue.length})`);
+                void saveGcQueue();
+            }
         }
     });
 
