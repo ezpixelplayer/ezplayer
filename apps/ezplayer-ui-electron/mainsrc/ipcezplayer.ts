@@ -96,6 +96,45 @@ export let curUser: EndUser | undefined = undefined;
 export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
+/** Paths of files superseded by a new cloud install. Drained by `runGcSweep` when
+ *  the player is idle — versioned filenames mean the new install never overwrites
+ *  the old one, but the old one may still be open. */
+const gcQueue: string[] = [];
+
+function isPlayerIdle(): boolean {
+    const p = curStatus.player;
+    if (!p) return true; // no status yet → safe to delete
+    return p.status === 'Stopped' && !p.now_playing;
+}
+
+async function runGcSweep(): Promise<void> {
+    if (gcQueue.length === 0) return;
+    if (!isPlayerIdle()) return;
+    const fsp = await import('fs/promises');
+    const remaining: string[] = [];
+    let deleted = 0;
+    for (const p of gcQueue) {
+        try {
+            await fsp.unlink(p);
+            deleted += 1;
+        } catch (e) {
+            const code = (e as { code?: string })?.code;
+            if (code === 'ENOENT') {
+                // already gone; drop from queue
+                deleted += 1;
+            } else {
+                // EBUSY/EPERM/etc — keep, retry next sweep
+                remaining.push(p);
+            }
+        }
+    }
+    if (deleted > 0) {
+        gcQueue.length = 0;
+        gcQueue.push(...remaining);
+        console.log(`[cloud-gc] swept ${deleted} files (${gcQueue.length} remaining)`);
+    }
+}
+
 export function getSequenceThumbnail(id: string) {
     const seq = curSequences?.find((s) => s.id === id);
     if (seq?.files?.thumb) {
@@ -567,6 +606,9 @@ export async function registerContentHandlers(
         curStatus.content = { ...(curStatus.content ?? {}), ...cStatus };
         updateWindow?.webContents?.send('playback:cstatus', curStatus.content);
         broadcastToWebSocket('cStatus', curStatus.content);
+        // Opportunistic gc — runs whenever the worker reports back, no-op when
+        // queue is empty or player isn't idle.
+        void runGcSweep();
     });
 
     onLayoutInstalled((layoutMeta) => {
@@ -610,14 +652,15 @@ export async function registerContentHandlers(
             console.error('[cloud-install] commit failed:', e);
             return;
         }
-        // After install, delete superseded files. Best-effort; missing/locked
-        // files just get logged.
-        for (const p of superseded) {
-            try {
-                await import('fs/promises').then((fsp) => fsp.unlink(p));
-            } catch (e) {
-                console.warn('[cloud-install] failed to delete superseded file', p, e);
+        // Versioned filenames mean the new install lands at a different path; the
+        // old file is orphaned. Don't delete now — playback may still be reading the
+        // old bytes. Queue the path; the gc sweep will retry on each cStatus tick
+        // when the player is idle.
+        if (superseded.length > 0) {
+            for (const p of superseded) {
+                if (!gcQueue.includes(p)) gcQueue.push(p);
             }
+            console.log(`[cloud-install] queued ${superseded.length} files for gc (queue size ${gcQueue.length})`);
         }
     });
 

@@ -650,7 +650,7 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     }
 
     // Promote: copy/move into show folder root with a stable filename.
-    const activeName = activeFilenameForKind(pf.kind, entry, correctedName);
+    const activeName = activeFilenameForKind(pf.kind, entry, correctedName, pf.file_time);
     const activePath = path.join(showFolder, activeName);
     try {
         await fsp.rename(stageFinal, activePath);
@@ -713,13 +713,18 @@ function activeFilenameForKind(
     kind: CloudFileKind,
     entry: CloudSeqManifestEntry,
     fallback: string,
+    file_time?: number,
 ): string {
-    // Active file lives in show folder root with a content-stable name keyed by vseq_id.
-    // This lets the player and other tools (xLights, etc.) find files without knowing
-    // about the cloud subsystem.
+    // Active file lives in show folder root with a name keyed by vseq_id PLUS file_time.
+    // The version suffix means a new install never overwrites a file that's currently
+    // being read by playback — it lands at a new path; the old file is orphaned and
+    // cleaned up later by the gc sweep when the player is idle.
+    // Thumbs aren't streamed by playback, so they keep an unversioned filename for
+    // simpler URL stability on the renderer side.
     const ext = inferExt(fallback) ?? defaultExt(kind);
     const base = sanitize(`${entry.title || entry.vseq_id}__${entry.vseq_id}`);
-    return `${base}${ext}`;
+    const versionSuffix = kind !== 'thumb' && file_time ? `__${file_time}` : '';
+    return `${base}${versionSuffix}${ext}`;
 }
 
 function inferExt(filename: string): string | undefined {
