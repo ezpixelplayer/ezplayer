@@ -7,9 +7,11 @@ import { Readable, Transform } from 'stream';
 import { randomUUID } from 'crypto';
 import {
     CLOUD_API_ENDPOINTS,
+    findMatchingScheduleEntry,
     type CloudConfig,
     type CloudFileEntry,
     type CloudFileKind,
+    type CloudPollScheduleEntry,
     type CloudSeqManifestEntry,
     type CloudSequenceProgress,
     type PlayerCStatusContent,
@@ -33,6 +35,17 @@ let showFolder = '';
 let existingSequences: SequenceRecord[] = [];
 let layoutMeta: NonNullable<CloudConfig['layoutMeta']> = {};
 let layoutSource: 'xlights' | 'cloud' = 'xlights';
+let pollMode: 'always' | 'scheduled' = 'always';
+let pollSchedule: CloudPollScheduleEntry[] = [];
+
+/** Returns true when content polling (manifest + sequence files + layout) is
+ *  permitted right now. Always-true when not in scheduled mode. Registration
+ *  heartbeat polls run regardless of this gate. */
+function isContentPollingAllowed(): boolean {
+    if (pollMode !== 'scheduled') return true;
+    if (pollSchedule.length === 0) return false;
+    return findMatchingScheduleEntry(pollSchedule, new Date()) !== null;
+}
 
 let registrationIntervalMs = DEFAULT_REGISTRATION_INTERVAL_MS;
 let manifestIntervalMs = DEFAULT_MANIFEST_INTERVAL_MS;
@@ -102,7 +115,12 @@ function rescheduleTimers() {
     if (!canRun()) return;
     regTimer = setInterval(() => void pollRegistration(), registrationIntervalMs);
     if (regTimer.unref) regTimer.unref();
-    manifestTimer = setInterval(() => void pollManifest(), manifestIntervalMs);
+    // Manifest timer respects the schedule. Manual `manifestNow` and `fetchLayoutNow`
+    // bypass it (user-initiated should always run). Outside-window ticks just no-op.
+    manifestTimer = setInterval(() => {
+        if (!isContentPollingAllowed()) return;
+        void pollManifest();
+    }, manifestIntervalMs);
     if (manifestTimer.unref) manifestTimer.unref();
 }
 
@@ -1173,8 +1191,12 @@ async function uploadLayout(): Promise<void> {
         });
 
         // 4) Tell the cloud the upload finished so it can finalize + run conversion.
+        // The endpoint signature types file_id and file_time as `string`; JSON.parse
+        // on the start response turns numeric file_time into a number, which dkoa's
+        // type check then rejects with "file_time should be a string". Coerce both
+        // to strings here to match the contract.
         const doneUrl = `${cloudUrl}ezpapi/player/doneuploadlayoutzip/${playerIdToken}`;
-        const donePayload = { file_id: rec.file_id, file_time: rec.file_time };
+        const donePayload = { file_id: String(rec.file_id), file_time: String(rec.file_time) };
         log('info', `layout upload doneupload POST ${doneUrl} body=${JSON.stringify(donePayload)}`);
         const doneRes = await fetchWithTimeout(doneUrl, downloadTimeoutMs, {
             method: 'POST',
@@ -1210,6 +1232,8 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             existingSequences = msg.existingSequences ?? [];
             layoutMeta = msg.layoutMeta ?? {};
             layoutSource = msg.layoutSource === 'cloud' ? 'cloud' : 'xlights';
+            pollMode = msg.pollMode === 'scheduled' ? 'scheduled' : 'always';
+            pollSchedule = msg.pollSchedule ?? [];
             seedInstalledFiles();
             applyTuning(msg.tuning);
             // If the new config is "off" (empty url/token after the assignment above),

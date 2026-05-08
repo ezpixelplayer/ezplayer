@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
     CloudConfig,
+    CloudPollScheduleEntry,
     CloudStatus,
     PlayerCStatusContent,
     SequenceRecord,
@@ -86,9 +87,11 @@ export function setCloudWorkerConfig(
     layoutMeta?: CloudConfig['layoutMeta'],
     layoutSource?: 'xlights' | 'cloud',
     tuning?: CloudWorkerTuning,
+    pollMode?: 'always' | 'scheduled',
+    pollSchedule?: CloudPollScheduleEntry[],
 ) {
     console.log(
-        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'}`,
+        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
     );
     if (!cloudUrl || !playerIdToken) {
         currentStatus = { playerIdIsRegistered: false };
@@ -104,6 +107,8 @@ export function setCloudWorkerConfig(
         existingSequences,
         layoutMeta,
         layoutSource,
+        pollMode,
+        pollSchedule,
         tuning,
     });
 }

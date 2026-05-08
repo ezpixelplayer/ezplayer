@@ -29,6 +29,9 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
             layoutSource: parsed.layoutSource === 'cloud' ? 'cloud' : 'xlights',
             // Default true on absent. Only an explicit `false` parks the worker.
             cloudEnabled: parsed.cloudEnabled === false ? false : true,
+            cloudPollMode: parsed.cloudPollMode === 'scheduled' ? 'scheduled' : 'always',
+            cloudPollSchedule: parsed.cloudPollSchedule,
+            cloudPollIntervals: parsed.cloudPollIntervals,
             layoutMeta: parsed.layoutMeta,
         };
         return currentConfig;

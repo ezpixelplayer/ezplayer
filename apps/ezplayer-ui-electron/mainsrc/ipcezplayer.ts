@@ -270,6 +270,12 @@ export async function loadShowFolder(forceRestart?: boolean) {
         curSequences,
         cloudConfig.layoutMeta,
         cloudConfig.layoutSource,
+        {
+            registrationIntervalMs: cloudConfig.cloudPollIntervals?.registrationMs,
+            manifestIntervalMs: cloudConfig.cloudPollIntervals?.manifestMs,
+        },
+        cloudConfig.cloudPollMode,
+        cloudConfig.cloudPollSchedule,
     );
 
     updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
@@ -364,6 +370,13 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
         case 'setCloudEnabled':
             applyCloudEnabled(cmd.enabled);
             break;
+        case 'setCloudPolling':
+            applyCloudPolling({
+                mode: cmd.mode,
+                schedule: cmd.schedule,
+                intervals: cmd.intervals,
+            });
+            break;
         default: {
             const _exhaustive: never = cmd;
             console.warn('[cloud-command] unknown verb', _exhaustive);
@@ -371,10 +384,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
     }
 }
 
-/** Update the persisted layout-source mode (`xlights` or `cloud`). Reconfigures the
- *  worker so it knows whether to auto-fetch layout at the head of each manifest tick. */
-export function applyLayoutSource(mode: 'xlights' | 'cloud') {
-    const cfg = updateCloudConfig({ layoutSource: mode });
+/** Push the current cloud config to the worker. Wraps the long argument list in
+ *  one place so applyXxx helpers don't need to know about every field. */
+function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
@@ -383,9 +395,44 @@ export function applyLayoutSource(mode: 'xlights' | 'cloud') {
         curSequences,
         cfg.layoutMeta,
         cfg.layoutSource,
+        {
+            registrationIntervalMs: cfg.cloudPollIntervals?.registrationMs,
+            manifestIntervalMs: cfg.cloudPollIntervals?.manifestMs,
+        },
+        cfg.cloudPollMode,
+        cfg.cloudPollSchedule,
     );
+}
+
+function broadcastCloudConfig(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
+}
+
+/** Update the persisted layout-source mode (`xlights` or `cloud`). Reconfigures the
+ *  worker so it knows whether to auto-fetch layout at the head of each manifest tick. */
+export function applyLayoutSource(mode: 'xlights' | 'cloud') {
+    const cfg = updateCloudConfig({ layoutSource: mode });
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
+}
+
+/** Update polling configuration (mode / schedule / intervals). Each field is
+ *  optional: omitting preserves the existing value (the user wants to be able
+ *  to change one knob without re-sending the others). An empty schedule array
+ *  explicitly clears the schedule; `undefined` preserves it. */
+export function applyCloudPolling(patch: {
+    mode?: 'always' | 'scheduled';
+    schedule?: import('@ezplayer/ezplayer-core').CloudPollScheduleEntry[];
+    intervals?: { registrationMs?: number; manifestMs?: number };
+}) {
+    const next: Partial<import('@ezplayer/ezplayer-core').CloudConfig> = {};
+    if (patch.mode !== undefined) next.cloudPollMode = patch.mode;
+    if (patch.schedule !== undefined) next.cloudPollSchedule = patch.schedule;
+    if (patch.intervals !== undefined) next.cloudPollIntervals = patch.intervals;
+    const cfg = updateCloudConfig(next);
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
 }
 
 /** Pause/resume the cloud worker. Pausing keeps URL/token saved but parks all polling
@@ -393,47 +440,23 @@ export function applyLayoutSource(mode: 'xlights' | 'cloud') {
  *  already short-circuits everything on either being empty. */
 export function applyCloudEnabled(enabled: boolean) {
     const cfg = updateCloudConfig({ cloudEnabled: enabled });
-    setCloudWorkerConfig(
-        enabled ? cfg.cloudServiceUrl : '',
-        enabled ? cfg.playerIdToken : '',
-        getCurrentShowFolder() ?? '',
-        curSequences,
-        cfg.layoutMeta,
-        cfg.layoutSource,
-    );
-    updateWindow?.webContents?.send('update:cloudConfig', cfg);
-    broadcastToWebSocket('cloudConfig', cfg);
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
 }
 
 /** Update the persisted player ID token and reconfigure the cloud poller. Called from
  *  the renderer (electron IPC) and from the embedded UI (koa worker → RPC). */
 export function applyPlayerIdToken(token: string) {
     const cfg = updateCloudConfig({ playerIdToken: token ?? '' });
-    setCloudWorkerConfig(
-        cfg.cloudServiceUrl,
-        cfg.playerIdToken,
-        getCurrentShowFolder() ?? '',
-        curSequences,
-        cfg.layoutMeta,
-        cfg.layoutSource,
-    );
-    updateWindow?.webContents?.send('update:cloudConfig', cfg);
-    broadcastToWebSocket('cloudConfig', cfg);
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
 }
 
 /** Update the persisted cloud service URL and reconfigure the cloud poller. */
 export function applyCloudServiceUrl(url: string) {
     const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
-    setCloudWorkerConfig(
-        cfg.cloudServiceUrl,
-        cfg.playerIdToken,
-        getCurrentShowFolder() ?? '',
-        curSequences,
-        cfg.layoutMeta,
-        cfg.layoutSource,
-    );
-    updateWindow?.webContents?.send('update:cloudConfig', cfg);
-    broadcastToWebSocket('cloudConfig', cfg);
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
 }
 
 export async function registerContentHandlers(

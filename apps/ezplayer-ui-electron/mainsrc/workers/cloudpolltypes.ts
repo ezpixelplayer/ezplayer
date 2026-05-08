@@ -1,5 +1,6 @@
 import type {
     CloudConfig,
+    CloudPollScheduleEntry,
     CloudStatus,
     PlayerCStatusContent,
     SequenceRecord,
@@ -34,6 +35,11 @@ export type CloudPollInMessage =
           /** Whose layout this folder uses. In `'cloud'` mode the worker auto-fetches
            *  layout at the head of every manifest tick (cheap when nothing's stale). */
           layoutSource?: 'xlights' | 'cloud';
+          /** Content polling: `'always'` runs on cadence; `'scheduled'` only fires
+           *  when current local time matches a window in `pollSchedule`. Registration
+           *  heartbeat ignores this gate. */
+          pollMode?: 'always' | 'scheduled';
+          pollSchedule?: CloudPollScheduleEntry[];
           tuning?: CloudWorkerTuning;
       }
     | { type: 'updateSequences'; existingSequences: SequenceRecord[] }

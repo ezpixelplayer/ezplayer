@@ -514,6 +514,16 @@ export interface VolumeScheduleEntry {
     volumeLevel: number; // 0-100
 }
 
+/** A single allowed-window for cloud content polling. Same shape as the other
+ *  schedule entries but no per-window payload — being inside the window IS the
+ *  payload (= "polling allowed"). */
+export interface CloudPollScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM
+    endTime: string; // HH:MM
+}
+
 export interface ViewerControlState {
     enabled: boolean;
     type: 'disabled' | 'remote-falcon';
@@ -569,6 +579,21 @@ export interface CloudConfig {
      *  configured URL/token but suspends polling and downloads — the user can
      *  flip back without re-entering anything. */
     cloudEnabled?: boolean;
+    /** When the worker is enabled, how aggressively it polls content. `'always'`
+     *  polls on the configured cadence. `'scheduled'` polls only when current
+     *  local time is inside any window in `cloudPollSchedule`. Registration
+     *  heartbeat polling is unaffected — it always runs when enabled. Absent
+     *  defaults to `'always'`. */
+    cloudPollMode?: 'always' | 'scheduled';
+    /** Whitelist windows for content polling under `'scheduled'` mode.
+     *  Overlapping windows just merge into a longer "on" period. */
+    cloudPollSchedule?: CloudPollScheduleEntry[];
+    /** Per-folder polling cadence overrides. Absent fields fall back to worker
+     *  defaults (which are demo-aggressive — production should set these). */
+    cloudPollIntervals?: {
+        registrationMs?: number;
+        manifestMs?: number;
+    };
     /** Last-known cloud file_id/file_time for each layout file we've successfully
      *  downloaded. Drives staleness checks so we skip redundant downloads. */
     layoutMeta?: {
@@ -641,7 +666,16 @@ export type CloudCommand =
     | { type: 'setPlayerIdToken'; token: string } // persist + reconfigure
     | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
-    | { type: 'setCloudEnabled'; enabled: boolean }; // pause/resume cloud activity
+    | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
+    | {
+          /** Update polling configuration. Any field that's omitted is preserved (so
+           *  callers can change one knob without re-sending the others). To clear the
+           *  schedule explicitly, pass an empty array — `undefined` preserves it. */
+          type: 'setCloudPolling';
+          mode?: 'always' | 'scheduled';
+          schedule?: CloudPollScheduleEntry[];
+          intervals?: { registrationMs?: number; manifestMs?: number };
+      };
 
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }

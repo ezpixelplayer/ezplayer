@@ -32,6 +32,7 @@ export type {
     PlaybackSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    CloudPollScheduleEntry,
     PlayerWebSocketSnapshot,
     PlayerWebSocketPing,
     PlayerWebSocketKick,
@@ -84,6 +85,7 @@ export {
 export {
     getActiveVolumeSchedule,
     getActiveViewerControlSchedule,
+    findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
 
 export {

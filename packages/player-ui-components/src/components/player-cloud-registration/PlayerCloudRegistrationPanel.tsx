@@ -18,6 +18,7 @@ import { Box } from '../box/Box';
 import { API_ENDPOINTS } from '../../store/api/ApiEndpoints';
 import { postSetCloudUrl, postSetPlayerIdToken } from '../../store/slices/AuthStore';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
+import { CloudPollingEditor } from './CloudPollingEditor';
 import type { AppDispatch, RootState } from '../../store/Store';
 
 declare global {
@@ -415,6 +416,10 @@ export const PlayerCloudRegistrationPanel: React.FC<PlayerCloudRegistrationPanel
                             )}
                         </Box>
                     </Box>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <CloudPollingEditor />
                 </>
             )}
         </Box>
