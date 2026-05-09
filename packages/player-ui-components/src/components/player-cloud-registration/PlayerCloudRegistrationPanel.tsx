@@ -33,19 +33,12 @@ const selectPlayerIdToken = createSelector([selectCloudConfig], (cfg) => cfg.pla
 const selectCloudServiceUrl = createSelector([selectCloudConfig], (cfg) => cfg.cloudServiceUrl);
 const selectIsRegistered = createSelector([selectCloudStatus], (s) => s.playerIdIsRegistered);
 
-interface PlayerCloudRegistrationPanelProps {
-    /** Hide the Cloud Service URL editor when true (e.g. inside a Welcome bootstrap
-     *  where the URL is implied to be the default). */
-    hideCloudUrl?: boolean;
-}
-
 /**
  * The body of the player-registration UX, factored out of `PlayerCloudRegistrationDialog`
- * so the same widget can be embedded inline (Welcome bootstrap) and as a modal dialog.
+ * so the same widget can be embedded inline and as a modal dialog. (The Welcome
+ * bootstrap uses the friendlier `PlayerCloudWelcomePanel` instead.)
  */
-export const PlayerCloudRegistrationPanel: React.FC<PlayerCloudRegistrationPanelProps> = ({
-    hideCloudUrl,
-}) => {
+export const PlayerCloudRegistrationPanel: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
 
     const playerIdToken = useSelector(selectPlayerIdToken);
@@ -381,47 +374,43 @@ export const PlayerCloudRegistrationPanel: React.FC<PlayerCloudRegistrationPanel
                 </Box>
             )}
 
-            {!hideCloudUrl && (
-                <>
-                    <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: 2 }} />
 
-                    <Box sx={{ mb: 1 }}>
-                        <Typography variant="subtitle1" sx={{ mb: 2 }}>
-                            Cloud Service Configuration
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <TextField
-                                fullWidth
-                                label="Cloud Service URL"
-                                variant="outlined"
-                                size="small"
-                                value={cloudUrlInput}
-                                onChange={(e) => setCloudUrlInput(e.target.value)}
-                                disabled={!isEditingCloudUrl}
-                                placeholder="Enter cloud service URL"
-                            />
-                            {!isEditingCloudUrl ? (
-                                <Button variant="contained" size="small" onClick={handleCloudUrlEdit}>
-                                    Edit
-                                </Button>
-                            ) : (
-                                <>
-                                    <Button variant="contained" size="small" onClick={handleCloudUrlSave}>
-                                        Save
-                                    </Button>
-                                    <Button variant="outlined" size="small" onClick={handleCloudUrlCancel}>
-                                        Cancel
-                                    </Button>
-                                </>
-                            )}
-                        </Box>
-                    </Box>
+            <Box sx={{ mb: 1 }}>
+                <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                    Cloud Service Configuration
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <TextField
+                        fullWidth
+                        label="Cloud Service URL"
+                        variant="outlined"
+                        size="small"
+                        value={cloudUrlInput}
+                        onChange={(e) => setCloudUrlInput(e.target.value)}
+                        disabled={!isEditingCloudUrl}
+                        placeholder="Enter cloud service URL"
+                    />
+                    {!isEditingCloudUrl ? (
+                        <Button variant="contained" size="small" onClick={handleCloudUrlEdit}>
+                            Edit
+                        </Button>
+                    ) : (
+                        <>
+                            <Button variant="contained" size="small" onClick={handleCloudUrlSave}>
+                                Save
+                            </Button>
+                            <Button variant="outlined" size="small" onClick={handleCloudUrlCancel}>
+                                Cancel
+                            </Button>
+                        </>
+                    )}
+                </Box>
+            </Box>
 
-                    <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: 2 }} />
 
-                    <CloudPollingEditor />
-                </>
-            )}
+            <CloudPollingEditor />
         </Box>
     );
 };
