@@ -65,23 +65,20 @@ export class CloudDataStorageAPI implements DataStorageAPI {
     async refreshAll() {
         let isregistered = false;
         let ver = 'unknown';
-        let isconnected = true; // Has net access
+        let lastError: string | undefined;
         try {
             const res = await isPlayerRegisteredCall(this.axiosInstance, this.apiUrl, this.playerIdToken);
             isregistered = res.registered;
             ver = res.version;
         } catch (e) {
             console.warn(e);
-            isconnected = false;
+            lastError = e instanceof Error ? e.message : 'cloud call failed';
         }
 
         const dispatch = this.dispatch;
         if (!dispatch) return;
 
         const token = localStorage.getItem('auth_token');
-        dispatch(authSliceActions.setCloudIsReachable(isconnected));
-        dispatch(authSliceActions.setSupportsLogin(true));
-        dispatch(authSliceActions.setSupportsToken(true));
         dispatch(authSliceActions.setUserToken(token));
         dispatch(
             cloudConfigActions.setCloudConfig({
@@ -89,11 +86,14 @@ export class CloudDataStorageAPI implements DataStorageAPI {
                 playerIdToken: this.playerIdToken,
             }),
         );
+        // `lastError` carries reachability now: undefined = reachable, string = no.
+        // Consumers (e.g. ConnectivityStatus) derive `cloudIsReachable` from this.
         dispatch(
             cloudStatusActions.setCloudStatus({
                 playerIdIsRegistered: isregistered,
                 cloudVersion: ver,
                 lastCheckedAt: Date.now(),
+                lastError,
             }),
         );
         await dispatch(fetchSequences()).unwrap();

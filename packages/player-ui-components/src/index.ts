@@ -76,7 +76,6 @@ export {
     fetchSequences,
     postSequenceData,
     setSequenceData,
-    setUpdatedSequenceData,
     setSequenceTags,
 } from './store/slices/SequenceStore';
 

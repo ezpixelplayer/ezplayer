@@ -4,16 +4,14 @@ import { UserRegisterBody } from '../api/DataStorageAPI';
 import { EZPlayerVersions } from '@ezplayer/ezplayer-core';
 
 export interface AuthState {
-    // User-auth + connectivity state. The cloud-config (URL + player token) and cloud-status
-    // (registration + cloud version) live in the `cloudConfig` and `cloudStatus` slices.
-    supportsLogin: boolean;
-    supportsToken: boolean;
+    // User-auth state. The cloud-config (URL + player token) and cloud-status
+    // (registration + version + reachability via lastError) live in the
+    // `cloudConfig` and `cloudStatus` slices.
 
     // FUTURE; some player-specific interaction is offloaded from main URL; established by cloud service
     //  This is expected only as diagnostic info, established in the API layer
     playerRemoteUrl?: string;
 
-    cloudIsReachable: boolean; // True if we're able to access the cloud
     cloudUserToken: string | null; // True if we're logged in (we think)
 
     loading: boolean;
@@ -36,10 +34,6 @@ export interface AuthState {
  */
 export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder<AuthState>) => void) {
     const initialAuthState: AuthState = {
-        supportsLogin: true,
-        supportsToken: true,
-
-        cloudIsReachable: false,
         cloudUserToken: null,
         playerRemoteUrl: undefined,
         showDirectory: undefined,
@@ -57,15 +51,6 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
         name: 'auth',
         initialState: initialAuthState,
         reducers: {
-            setSupportsLogin: (state: AuthState, action: PayloadAction<boolean>) => {
-                state.supportsLogin = action.payload;
-            },
-            setSupportsToken: (state: AuthState, action: PayloadAction<boolean>) => {
-                state.supportsToken = action.payload;
-            },
-            setCloudIsReachable: (state: AuthState, action: PayloadAction<boolean>) => {
-                state.cloudIsReachable = action.payload;
-            },
             setUserToken: (state: AuthState, action: PayloadAction<string | null>) => {
                 state.cloudUserToken = action.payload;
             },
