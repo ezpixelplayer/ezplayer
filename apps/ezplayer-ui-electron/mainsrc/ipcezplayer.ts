@@ -781,25 +781,21 @@ export async function registerContentHandlers(
                 break;
             }
             case 'nstatus': {
-                const nstatus: CombinedPlayerStatus = {
-                    ...curStatus,
-                    controller: msg.status,
-                    controller_updated: Date.now(),
-                };
-                curStatus = nstatus;
-                mainWindow?.webContents.send('playback:nstatus', msg.status);
-                broadcastToWebSocket('nStatus', msg.status);
+                // Merge so any second writer's fields on curStatus.controller (e.g.
+                // cross-source controller info) survive playback's pushes.
+                const merged = { ...(curStatus.controller ?? {}), ...msg.status };
+                curStatus = { ...curStatus, controller: merged, controller_updated: Date.now() };
+                mainWindow?.webContents.send('playback:nstatus', merged);
+                broadcastToWebSocket('nStatus', merged);
                 break;
             }
             case 'pstatus': {
-                const nstatus: CombinedPlayerStatus = {
-                    ...curStatus,
-                    player: msg.status,
-                    player_updated: Date.now(),
-                };
-                curStatus = nstatus;
-                mainWindow?.webContents.send('playback:pstatus', msg.status);
-                broadcastToWebSocket('pStatus', msg.status);
+                // Merge so any second writer's fields on curStatus.player survive
+                // playback's pushes.
+                const merged = { ...(curStatus.player ?? {}), ...msg.status };
+                curStatus = { ...curStatus, player: merged, player_updated: Date.now() };
+                mainWindow?.webContents.send('playback:pstatus', merged);
+                broadcastToWebSocket('pStatus', merged);
                 break;
             }
             case 'modelCoordinates': {
