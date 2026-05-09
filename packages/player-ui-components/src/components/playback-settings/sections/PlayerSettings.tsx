@@ -3,12 +3,12 @@ import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import { Box } from '../../box/Box';
-import { playerStatusActions } from '../../../store/slices/PlayerStatusStore';
+import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 
 export const PlayerSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
-    const settings = useSelector((s: RootState) => s.playerStatus.playbackSettings);
+    const settings = useSelector((s: RootState) => s.playbackSettings.settings);
 
     return (
         <Box>
@@ -25,7 +25,7 @@ export const PlayerSettings: React.FC = () => {
                     itemValue="id"
                     onChange={(e) =>
                         dispatch(
-                            playerStatusActions.setBackgroundSequence(
+                            playbackSettingsActions.setBackgroundSequence(
                                 (e.target as HTMLSelectElement).value as 'overlay' | 'underlay',
                             ),
                         )

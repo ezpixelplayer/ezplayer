@@ -20,7 +20,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
-import { playerStatusActions } from '../../../store/slices/PlayerStatusStore';
+import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import {
     DAY_OPTIONS,
@@ -42,7 +42,7 @@ const FRESH_ENTRY: Partial<VolumeScheduleEntry> = {
 
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
-    const settings = useSelector((s: RootState) => s.playerStatus.playbackSettings);
+    const settings = useSelector((s: RootState) => s.playbackSettings.settings);
 
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
@@ -69,7 +69,7 @@ export const AudioSettings: React.FC = () => {
                 endTime: formatTime24Hour(newEntry.endTime),
                 volumeLevel: newEntry.volumeLevel,
             };
-            dispatch(playerStatusActions.addVolumeScheduleEntry(entry));
+            dispatch(playbackSettingsActions.addVolumeScheduleEntry(entry));
             setNewEntry(FRESH_ENTRY);
             setAddOpen(false);
         }
@@ -77,7 +77,7 @@ export const AudioSettings: React.FC = () => {
 
     const confirmDelete = () => {
         if (pendingDeleteId) {
-            dispatch(playerStatusActions.removeVolumeScheduleEntry(pendingDeleteId));
+            dispatch(playbackSettingsActions.removeVolumeScheduleEntry(pendingDeleteId));
         }
         setPendingDeleteId(null);
     };
@@ -98,7 +98,7 @@ export const AudioSettings: React.FC = () => {
             <Box sx={{ px: 2 }}>
                 <Slider
                     value={settings.audioSyncAdjust}
-                    onChange={(_, value) => dispatch(playerStatusActions.setAudioSyncAdjust(value as number))}
+                    onChange={(_, value) => dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number))}
                     min={-100}
                     max={100}
                     step={1}
@@ -138,7 +138,7 @@ export const AudioSettings: React.FC = () => {
                     <Slider
                         value={settings.volumeControl.defaultVolume}
                         onChange={(_, value) =>
-                            dispatch(playerStatusActions.setDefaultVolume(value as number))
+                            dispatch(playbackSettingsActions.setDefaultVolume(value as number))
                         }
                         min={0}
                         max={100}

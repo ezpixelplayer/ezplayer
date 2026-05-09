@@ -3,7 +3,8 @@ import { configureStore } from '@reduxjs/toolkit';
 import sequenceReducer from './slices/SequenceStore';
 import playlistReducer from './slices/PlaylistStore';
 import scheduleReducer from './slices/ScheduleStore';
-import playerStatusReducer from './slices/PlayerStatusStore';
+import runtimeReducer from './slices/RuntimeStore';
+import playbackSettingsReducer from './slices/PlaybackSettingsStore';
 import authReducer from './slices/AuthStore';
 import cloudConfigReducer from './slices/CloudConfigStore';
 import cloudStatusReducer from './slices/CloudStatusStore';
@@ -15,7 +16,8 @@ export const playerReducers = {
     sequences: sequenceReducer,
     playlists: playlistReducer,
     schedule: scheduleReducer,
-    playerStatus: playerStatusReducer,
+    runtime: runtimeReducer,
+    playbackSettings: playbackSettingsReducer,
     auth: authReducer,
     cloudConfig: cloudConfigReducer,
     cloudStatus: cloudStatusReducer,

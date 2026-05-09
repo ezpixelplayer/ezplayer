@@ -20,7 +20,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
-import { playerStatusActions } from '../../../store/slices/PlayerStatusStore';
+import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import {
     DAY_OPTIONS,
@@ -42,7 +42,7 @@ const FRESH_ENTRY: Partial<ViewerControlScheduleEntry> = {
 
 export const ViewerSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
-    const settings = useSelector((s: RootState) => s.playerStatus.playbackSettings);
+    const settings = useSelector((s: RootState) => s.playbackSettings.settings);
     const playlists = useSelector((s: RootState) => s.playlists.playlists);
 
     const [addOpen, setAddOpen] = useState(false);
@@ -70,7 +70,7 @@ export const ViewerSettings: React.FC = () => {
                 endTime: formatTime24Hour(newEntry.endTime),
                 playlist: newEntry.playlist,
             };
-            dispatch(playerStatusActions.addViewerControlScheduleEntry(entry));
+            dispatch(playbackSettingsActions.addViewerControlScheduleEntry(entry));
             setNewEntry(FRESH_ENTRY);
             setAddOpen(false);
         }
@@ -78,7 +78,7 @@ export const ViewerSettings: React.FC = () => {
 
     const confirmDelete = () => {
         if (pendingDeleteId) {
-            dispatch(playerStatusActions.removeViewerControlScheduleEntry(pendingDeleteId));
+            dispatch(playbackSettingsActions.removeViewerControlScheduleEntry(pendingDeleteId));
         }
         setPendingDeleteId(null);
     };
@@ -103,8 +103,8 @@ export const ViewerSettings: React.FC = () => {
                     itemValue="id"
                     onChange={(e) => {
                         const type = (e.target as HTMLSelectElement).value as 'disabled' | 'remote-falcon';
-                        dispatch(playerStatusActions.setViewerControlType(type));
-                        dispatch(playerStatusActions.setViewerControlEnabled(type !== 'disabled'));
+                        dispatch(playbackSettingsActions.setViewerControlType(type));
+                        dispatch(playbackSettingsActions.setViewerControlEnabled(type !== 'disabled'));
                     }}
                     label="Viewer Control Type"
                     value={settings.viewerControl.type}
@@ -117,7 +117,7 @@ export const ViewerSettings: React.FC = () => {
                     size="small"
                     label="Remote Falcon Token"
                     value={settings.viewerControl.remoteFalconToken}
-                    onChange={(e) => dispatch(playerStatusActions.setRemoteFalconToken(e.target.value))}
+                    onChange={(e) => dispatch(playbackSettingsActions.setRemoteFalconToken(e.target.value))}
                     placeholder="Enter your Remote Falcon token"
                     sx={{ mb: 3 }}
                 />

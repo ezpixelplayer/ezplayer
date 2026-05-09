@@ -261,7 +261,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     const cloudConfig = useSelector((s: RootState) => s.cloudConfig);
     const cloudStatus = useSelector((s: RootState) => s.cloudStatus);
     const cStatus = useSelector(
-        (s: RootState) => s.playerStatus.playerStatus.content,
+        (s: RootState) => s.runtime.combined.content,
     );
     const showFolder = useSelector((s: RootState) => s.auth.showDirectory);
 

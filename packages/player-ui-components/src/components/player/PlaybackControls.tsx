@@ -5,13 +5,13 @@ import { PlayArrow, Pause, Stop, StopCircle, SkipNext, Delete, VolumeUp, VolumeO
 
 import { ControlButton } from './ControlButton';
 import { AppDispatch, RootState } from '../../store/Store';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
 export const PlaybackControls: React.FC = () => {
-    const pstat = useSelector((state: RootState) => state.playerStatus);
+    const runtime = useSelector((state: RootState) => state.runtime);
     const dispatch = useDispatch<AppDispatch>();
 
-    const player = pstat.playerStatus?.player;
+    const player = runtime.combined?.player;
     const isPlaying = player?.status === 'Playing';
     const isPaused = player?.status === 'Paused';
     const muted = player?.volume?.muted ?? false;

@@ -25,7 +25,7 @@ export const WelcomeScreen = () => {
         (s: RootState) => s.cloudStatus.playerIdIsRegistered,
     );
     const layoutStatus = useSelector(
-        (s: RootState) => s.playerStatus.playerStatus.content?.layout,
+        (s: RootState) => s.runtime.combined.content?.layout,
     );
 
     // ---- xLights folder path (existing behavior) -----------------------------

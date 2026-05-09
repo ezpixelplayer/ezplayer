@@ -5,16 +5,16 @@ import { useSelector, useDispatch } from 'react-redux';
 
 import { QueueCard } from '../status/QueueCard';
 import { AppDispatch, RootState } from '../../store/Store';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { PlaybackControls } from './PlaybackControls';
 
 interface QueueAndControlStackProps {}
 
 export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) => {
-    const pstat = useSelector((state: RootState) => state.playerStatus);
+    const runtime = useSelector((state: RootState) => state.runtime);
     const dispatch = useDispatch<AppDispatch>();
 
-    if (!pstat.playerStatus) {
+    if (!runtime.combined) {
         return (
             <Box display="flex" justifyContent="center" alignItems="center" height="100%">
                 <CircularProgress />
@@ -32,9 +32,9 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) =>
             {/* Queue */}
             <Grid container spacing={2}>
                 <Grid item xs={12} md={12} lg={6} xl={4}>
-                    {pstat?.playerStatus?.player?.queue && (
+                    {runtime?.combined?.player?.queue && (
                         <QueueCard
-                            queue={pstat.playerStatus.player.queue}
+                            queue={runtime.combined.player.queue}
                             onRemoveItem={async (i, _index) => {
                                 await dispatch(
                                     callImmediateCommand({

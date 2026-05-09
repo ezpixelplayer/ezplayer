@@ -6,7 +6,7 @@ import { MusicNote, Lightbulb } from '@mui/icons-material';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
@@ -200,7 +200,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const theme = useTheme();
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
-    const jukeboxSettings = useSelector((state: RootState) => state.playerStatus.playbackSettings.jukebox);
+    const jukeboxSettings = useSelector((state: RootState) => state.playbackSettings.settings.jukebox);
 
     // Media queries for responsive design
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -566,7 +566,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const dispatch = useDispatch<AppDispatch>();
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData) as SequenceItem[] | undefined;
-    const jukeboxSettings = useSelector((state: RootState) => state.playerStatus.playbackSettings.jukebox);
+    const jukeboxSettings = useSelector((state: RootState) => state.playbackSettings.settings.jukebox);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('artist');
     const [selectedPlaylist, setSelectedPlaylist] = useState('all');

@@ -16,7 +16,7 @@ import { useDispatch } from 'react-redux';
 
 import { PlaybackStatistics } from '@ezplayer/ezplayer-core';
 import { AppDispatch } from '../../store/Store';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
 export interface StatsDialogProps {
     open: boolean;

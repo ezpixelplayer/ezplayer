@@ -33,7 +33,7 @@ import {
     severityToMainColor,
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 
 // Extend Window interface to include electronAPI
@@ -90,7 +90,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
     } | null>(null);
 
     const dispatch = useDispatch<AppDispatch>();
-    const pstat = useSelector((s: RootState) => s.playerStatus);
+    const runtime = useSelector((s: RootState) => s.runtime);
 
     useEffect(() => {
         const fetchServerStatus = async () => {
@@ -109,7 +109,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
         return () => clearInterval(interval);
     }, []);
 
-    if (!pstat.playerStatus || pstat.loading) {
+    if (!runtime.combined || runtime.loading) {
         return (
             <Box display="flex" justifyContent="center" alignItems="center" height="100%">
                 <CircularProgress />
@@ -117,10 +117,10 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
         );
     }
 
-    const player = pstat.playerStatus.player;
-    const content = pstat.playerStatus.content;
-    const controller = pstat.playerStatus.controller;
-    const showName = pstat.playerStatus.show?.show_name || 'Unknown Show';
+    const player = runtime.combined.player;
+    const content = runtime.combined.content;
+    const controller = runtime.combined.controller;
+    const showName = runtime.combined.show?.show_name || 'Unknown Show';
 
     return (
         <Box>
@@ -662,7 +662,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
             </Grid>
 
             {/* Stats Dialog */}
-            <StatsDialog open={statsDialogOpen} onClose={() => setStatsDialogOpen(false)} stats={pstat.playbackStats} />
+            <StatsDialog open={statsDialogOpen} onClose={() => setStatsDialogOpen(false)} stats={runtime.playbackStats} />
         </Box>
     );
 };

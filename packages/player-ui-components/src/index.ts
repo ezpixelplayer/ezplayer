@@ -49,7 +49,8 @@ export { toRouteChildren } from './types/menuRoute';
 export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
 
 export type { AuthState } from './store/slices/AuthStore';
-export type { PlayerStatusState } from './store/slices/PlayerStatusStore';
+export type { RuntimeState } from './store/slices/RuntimeStore';
+export type { PlaybackSettingsState } from './store/slices/PlaybackSettingsStore';
 export type { PlaylistState } from './store/slices/PlaylistStore';
 export type { ScheduleState } from './store/slices/ScheduleStore';
 export type { SequenceState } from './store/slices/SequenceStore';
@@ -91,9 +92,14 @@ export {
     setNStatus,
     setPStatus,
     setPlaybackStatistics,
+    runtimeActions,
+} from './store/slices/RuntimeStore';
+
+export {
     hydratePlaybackSettings,
-    playerStatusActions,
-} from './store/slices/PlayerStatusStore';
+    savePlayerSettings,
+    playbackSettingsActions,
+} from './store/slices/PlaybackSettingsStore';
 
 export {
     authSliceActions,

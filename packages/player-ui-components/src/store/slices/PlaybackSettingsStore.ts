@@ -1,0 +1,183 @@
+import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import {
+    PlaybackSettings,
+    ViewerControlScheduleEntry,
+    VolumeScheduleEntry,
+} from '@ezplayer/ezplayer-core';
+import { DataStorageAPI } from '../api/DataStorageAPI';
+import { RootState } from '../Store';
+
+/**
+ * Playback settings slice — durable, user-editable settings (audio sync, jukebox
+ * filters, viewer-control schedule, volume schedule). Carved out of the runtime
+ * slice so the high-cadence status pushes there don't re-render components
+ * watching settings.
+ */
+export interface PlaybackSettingsState {
+    settings: PlaybackSettings;
+    settingsSaving: boolean;
+    error?: string;
+}
+
+const DEFAULT_JUKEBOX_EXCLUDED_TAGS = ['nojukebox'];
+
+function normalizeTagList(tags: unknown, fallback: string[] = []): string[] {
+    if (!Array.isArray(tags)) return fallback;
+    const normalized = tags.map((t) => (typeof t === 'string' ? t.trim().toLowerCase() : '')).filter(Boolean);
+    return Array.from(new Set(normalized));
+}
+
+function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
+    const jukebox = input?.jukebox ?? {};
+    const excludedNormalized = normalizeTagList(jukebox.excludedTags, []);
+    const includedNormalized = normalizeTagList(jukebox.includedTags, []);
+    return {
+        ...input,
+        audioSyncAdjust: input.audioSyncAdjust ?? 0,
+        backgroundSequence: input.backgroundSequence ?? 'overlay',
+        viewerControl: input.viewerControl ?? {
+            enabled: false,
+            type: 'disabled',
+            remoteFalconToken: undefined,
+            schedule: [],
+        },
+        volumeControl: input.volumeControl ?? {
+            defaultVolume: 100,
+            schedule: [],
+        },
+        jukebox: {
+            excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
+            includedTags: includedNormalized,
+        },
+    };
+}
+
+export const initialPlaybackSettingsState: PlaybackSettingsState = {
+    settingsSaving: false,
+    error: undefined,
+    settings: normalizePlaybackSettings({
+        audioSyncAdjust: 0,
+        backgroundSequence: 'overlay',
+        viewerControl: {
+            enabled: false,
+            type: 'disabled',
+            remoteFalconToken: undefined,
+            schedule: [],
+        },
+        volumeControl: {
+            defaultVolume: 100,
+            schedule: [],
+        },
+        jukebox: {
+            excludedTags: DEFAULT_JUKEBOX_EXCLUDED_TAGS,
+            includedTags: [],
+        },
+    }),
+};
+
+export const savePlayerSettings = createAsyncThunk<
+    void,
+    void,
+    { state: unknown; extra: DataStorageAPI }
+>('playbackSettings/savePlayerSettings', async (_arg, { getState, extra }) => {
+    const state = getState() as RootState;
+    const settings: PlaybackSettings = state.playbackSettings.settings;
+    await extra.setPlayerSettings(settings);
+});
+
+const playbackSettingsSlice = createSlice({
+    name: 'playbackSettings',
+    initialState: initialPlaybackSettingsState,
+    reducers: {
+        hydratePlaybackSettings(state, action: PayloadAction<PlaybackSettings>) {
+            state.settings = normalizePlaybackSettings(action.payload);
+        },
+        setAudioSyncAdjust(state, action: PayloadAction<number>) {
+            state.settings.audioSyncAdjust = action.payload;
+        },
+        setBackgroundSequence(state, action: PayloadAction<'overlay' | 'underlay'>) {
+            state.settings.backgroundSequence = action.payload;
+        },
+
+        // Jukebox management
+        setJukeboxExcludedTags(state, action: PayloadAction<string[]>) {
+            state.settings.jukebox = state.settings.jukebox ?? {};
+            const next = normalizeTagList(action.payload, []);
+            state.settings.jukebox.excludedTags = Array.from(
+                new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...next]),
+            );
+        },
+        setJukeboxIncludedTags(state, action: PayloadAction<string[]>) {
+            state.settings.jukebox = state.settings.jukebox ?? {};
+            state.settings.jukebox.includedTags = normalizeTagList(action.payload, []);
+        },
+
+        // Viewer control
+        setViewerControlEnabled(state, action: PayloadAction<boolean>) {
+            state.settings.viewerControl.enabled = action.payload;
+            if (!action.payload) {
+                state.settings.viewerControl.type = 'disabled';
+            }
+        },
+        setViewerControlType(state, action: PayloadAction<'disabled' | 'remote-falcon'>) {
+            state.settings.viewerControl.type = action.payload;
+            state.settings.viewerControl.enabled = action.payload !== 'disabled';
+        },
+        setRemoteFalconToken(state, action: PayloadAction<string>) {
+            state.settings.viewerControl.remoteFalconToken = action.payload;
+        },
+        addViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
+            state.settings.viewerControl.schedule.push(action.payload);
+        },
+        removeViewerControlScheduleEntry(state, action: PayloadAction<string>) {
+            state.settings.viewerControl.schedule = state.settings.viewerControl.schedule.filter(
+                (e) => e.id !== action.payload,
+            );
+        },
+
+        // Volume control
+        setDefaultVolume(state, action: PayloadAction<number>) {
+            state.settings.volumeControl.defaultVolume = action.payload;
+        },
+        addVolumeScheduleEntry(state, action: PayloadAction<VolumeScheduleEntry>) {
+            state.settings.volumeControl.schedule.push(action.payload);
+        },
+        removeVolumeScheduleEntry(state, action: PayloadAction<string>) {
+            state.settings.volumeControl.schedule = state.settings.volumeControl.schedule.filter(
+                (e) => e.id !== action.payload,
+            );
+        },
+    },
+    extraReducers: (builder) => {
+        builder
+            .addCase(savePlayerSettings.pending, (state) => {
+                state.settingsSaving = true;
+            })
+            .addCase(savePlayerSettings.fulfilled, (state) => {
+                state.settingsSaving = false;
+            })
+            .addCase(savePlayerSettings.rejected, (state, action) => {
+                state.settingsSaving = false;
+                state.error = action.error.message;
+            });
+    },
+});
+
+export const {
+    hydratePlaybackSettings,
+    setAudioSyncAdjust,
+    setBackgroundSequence,
+    setJukeboxExcludedTags,
+    setJukeboxIncludedTags,
+    setViewerControlEnabled,
+    setViewerControlType,
+    setRemoteFalconToken,
+    addViewerControlScheduleEntry,
+    removeViewerControlScheduleEntry,
+    setDefaultVolume,
+    addVolumeScheduleEntry,
+    removeVolumeScheduleEntry,
+} = playbackSettingsSlice.actions;
+
+export const playbackSettingsActions = playbackSettingsSlice.actions;
+export default playbackSettingsSlice.reducer;
