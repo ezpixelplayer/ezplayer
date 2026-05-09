@@ -22,6 +22,7 @@ import type {
     CloudPollOutMessage,
     CloudWorkerTuning,
 } from './cloudpolltypes';
+import { collectReferencedAssets } from '../data/layoutAssets.js';
 
 // Aggressive demo defaults; production callers should pass conservative values.
 const DEFAULT_REGISTRATION_INTERVAL_MS = 30_000;
@@ -1143,11 +1144,14 @@ async function uploadLayout(): Promise<void> {
         totalBytes: undefined,
     });
     try {
-        // 1) Build the zip in memory. XMLs only for now; asset bundling is a TODO
-        //    (must traverse XML refs for images, meshes, textures).
+        // 1) Build the zip in memory: the two xLights XMLs plus any assets they
+        //    reference (mesh OBJs, textures, preview backgrounds). The collector
+        //    only includes refs that exist on disk inside the show folder; out-of-
+        //    folder absolute paths and URLs are skipped so the zip stays portable.
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
-        for (const name of ['xlights_rgbeffects.xml', 'xlights_networks.xml']) {
+        const xmlNames = ['xlights_rgbeffects.xml', 'xlights_networks.xml'];
+        for (const name of xmlNames) {
             const p = path.join(showFolder, name);
             try {
                 const buf = await fsp.readFile(p);
@@ -1156,8 +1160,21 @@ async function uploadLayout(): Promise<void> {
                 throw new Error(`missing ${name}: ${(e as Error).message}`);
             }
         }
+        const assetRels = await collectReferencedAssets(
+            showFolder,
+            xmlNames.map((n) => path.join(showFolder, n)),
+        );
+        log('info', `bundling ${assetRels.length} referenced asset(s)`);
+        for (const rel of assetRels) {
+            try {
+                const buf = await fsp.readFile(path.join(showFolder, rel));
+                zip.file(rel, buf);
+            } catch (e) {
+                log('warn', `skipping asset ${rel}: ${(e as Error).message}`);
+            }
+        }
         const zipAb = await zip.generateAsync({ type: 'arraybuffer' });
-        log('info', `built layout zip: ${zipAb.byteLength} bytes`);
+        log('info', `built layout zip: ${zipAb.byteLength} bytes (${assetRels.length} assets + 2 xml)`);
         setLayout({
             status: 'uploading',
             direction: 'upload',
