@@ -35,6 +35,23 @@ export type MainToServerWorkerMessage =
           movingHeads?: Array<MhFixtureInfo>;
       }
     | { type: 'clearShowData' }
+    | {
+          /** Open an outbound WebSocket to the cloud bridge so a remote viewer
+           *  can subscribe to this player's live state. cloudpollparent owns
+           *  session lifecycle (TTL refresh, supersede); the server worker
+           *  just dials and registers the WS as a Conn against the
+           *  WebSocketBroadcaster so existing state-fanout works unchanged. */
+          type: 'cloudBridgeOpen';
+          wsUrl: string;
+          sessionId: string;
+      }
+    | {
+          /** Tear down the cloud bridge for this sessionId, if it matches the
+           *  currently-open one. No-op when nothing is open or sessionId is
+           *  stale (the parent already moved on). */
+          type: 'cloudBridgeClose';
+          sessionId: string;
+      }
     | { type: 'shutdown' };
 
 /**

@@ -95,6 +95,16 @@ export class WebSocketBroadcaster {
         setInterval(() => this.heartbeatSweep(), this.HEARTBEAT_MS).unref?.();
     }
 
+    /** Register an already-connected outbound WebSocket as a subscriber. Same
+     *  Conn machinery as inbound clients (per-key coalescing, backpressure,
+     *  heartbeat sweep) — the only difference is *who* dialed *whom*. Used by
+     *  the cloud bridge: server-worker dials the cloud, hands the WS here, and
+     *  the existing fanout pipeline does the rest. Returns the Conn so the
+     *  caller can correlate it (e.g. for explicit close on session change). */
+    attachClient(ws: WebSocket): void {
+        this.onConnection(ws);
+    }
+
     /** Read a single cached value */
     get<K extends keyof FullPlayerState>(k: K): FullPlayerState[K] | undefined {
         return this.state[k];

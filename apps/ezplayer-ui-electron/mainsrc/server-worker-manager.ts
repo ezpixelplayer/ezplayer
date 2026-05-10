@@ -336,6 +336,36 @@ export function broadcastToWebSocket(key: string, value: unknown) {
 }
 
 /**
+ * Open the cloud-bridge WebSocket inside the server worker. The server worker
+ * dials `wsUrl` and registers the resulting WebSocket with its broadcaster so
+ * the existing state-fanout pipeline pushes player state out to the cloud
+ * (and from there to whatever browser viewer is attached on the cloud side).
+ * Idempotent at the manager layer — the worker dedupes on sessionId.
+ */
+export function cloudBridgeOpen(wsUrl: string, sessionId: string) {
+    if (!serverWorker) return;
+    const message: MainToServerWorkerMessage = {
+        type: 'cloudBridgeOpen',
+        wsUrl,
+        sessionId,
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
+ * Tear down the cloud-bridge WebSocket for `sessionId`, if it matches the
+ * currently-open one. Stale sessionIds are silently ignored.
+ */
+export function cloudBridgeClose(sessionId: string) {
+    if (!serverWorker) return;
+    const message: MainToServerWorkerMessage = {
+        type: 'cloudBridgeClose',
+        sessionId,
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
  * Clear all cached show data in the server worker.
  * Called when the show folder changes so stale data is never served.
  */

@@ -5,6 +5,7 @@ import type {
     CloudConfig,
     CloudPollScheduleEntry,
     CloudStatus,
+    OutOfBandCommand,
     PlayerCStatusContent,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
@@ -13,6 +14,7 @@ import type {
     CloudPollOutMessage,
     CloudWorkerTuning,
 } from './cloudpolltypes';
+import { cloudBridgeOpen, cloudBridgeClose } from '../server-worker-manager.js';
 
 // cloudpollparent gets bundled into the parent file that imports it (e.g. dist/main.js),
 // so __dirname at runtime is the parent's location — not this source file's location.
@@ -32,6 +34,73 @@ let installListener: ((record: SequenceRecord, superseded: string[]) => void) | 
 let layoutInstalledListener:
     | ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void)
     | undefined;
+
+/** Active cloud-bridge session, if any. The cloud re-issues `openCloudWS` on
+ *  every checkin while a viewer is attached; we treat that as a TTL refresh,
+ *  not a re-dial. A different `sessionId` means the cloud rotated the session,
+ *  so we tear the old bridge down and dial the new one. `expiresAt` is the
+ *  deadline after which we close on our own (covers the cloud crashing or the
+ *  poll silently failing — without TTL, a stale bridge could linger). */
+interface ActiveCloudSession {
+    sessionId: string;
+    wsUrl: string;
+    expiresAt: number;
+    expiryTimer: NodeJS.Timeout;
+}
+let activeSession: ActiveCloudSession | undefined;
+
+function clearActiveSession(reason: string) {
+    if (!activeSession) return;
+    clearTimeout(activeSession.expiryTimer);
+    const { sessionId } = activeSession;
+    activeSession = undefined;
+    cloudBridgeClose(sessionId);
+    console.log(`[cloudpoll] cloud bridge closed (${reason}) sessionId=${sessionId.slice(0, 8)}…`);
+}
+
+function applyOutOfBandCommand(cmd: OutOfBandCommand) {
+    switch (cmd.type) {
+        case 'openCloudWS': {
+            const expiresAt = Date.now() + cmd.ttlSeconds * 1000;
+            if (activeSession?.sessionId === cmd.sessionId) {
+                // Same session — refresh the TTL. Bridge already up; no re-dial.
+                clearTimeout(activeSession.expiryTimer);
+                activeSession.expiresAt = expiresAt;
+                activeSession.expiryTimer = setTimeout(
+                    () => clearActiveSession('TTL expired'),
+                    cmd.ttlSeconds * 1000,
+                );
+                return;
+            }
+            // New session — close any existing bridge and dial fresh.
+            if (activeSession) clearActiveSession('superseded by new session');
+            const expiryTimer = setTimeout(
+                () => clearActiveSession('TTL expired'),
+                cmd.ttlSeconds * 1000,
+            );
+            activeSession = {
+                sessionId: cmd.sessionId,
+                wsUrl: cmd.wsUrl,
+                expiresAt,
+                expiryTimer,
+            };
+            console.log(
+                `[cloudpoll] cloud bridge open sessionId=${cmd.sessionId.slice(0, 8)}… ttl=${cmd.ttlSeconds}s`,
+            );
+            cloudBridgeOpen(cmd.wsUrl, cmd.sessionId);
+            return;
+        }
+        case 'closeCloudWS': {
+            if (!activeSession) return;
+            if (cmd.sessionId && cmd.sessionId !== activeSession.sessionId) {
+                // Stale close for a session we already replaced — ignore.
+                return;
+            }
+            clearActiveSession('cloud requested close');
+            return;
+        }
+    }
+}
 
 function ensureWorker() {
     if (worker) return worker;
@@ -66,6 +135,9 @@ function ensureWorker() {
                 console.log('[cloudpoll] layoutInstalled');
                 layoutInstalledListener?.(msg.layoutMeta);
                 break;
+            case 'outOfBandCommands':
+                for (const cmd of msg.commands) applyOutOfBandCommand(cmd);
+                break;
             case 'log':
                 console[msg.level === 'error' ? 'error' : 'log']('[cloudpoll]', msg.msg);
                 break;
@@ -96,11 +168,13 @@ export function setCloudWorkerConfig(
     // Every reconfigure is a session change (folder switch, token rotation,
     // disable). Reset registration + content state so the renderer never sees
     // the previous session's snapshot bridging the gap until the worker's
-    // first poll completes.
+    // first poll completes. Also tear down any cloud bridge — viewers tied to
+    // the previous player_token shouldn't see traffic from the new one.
     currentStatus = { playerIdIsRegistered: false };
     statusListener?.(currentStatus);
     currentCStatus = {};
     cStatusListener?.(currentCStatus);
+    clearActiveSession('config change');
     send({
         type: 'setConfig',
         cloudUrl,

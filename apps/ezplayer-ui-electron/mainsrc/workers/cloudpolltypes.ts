@@ -2,6 +2,7 @@ import type {
     CloudConfig,
     CloudPollScheduleEntry,
     CloudStatus,
+    OutOfBandCommand,
     PlayerCStatusContent,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
@@ -70,5 +71,13 @@ export type CloudPollOutMessage =
           /** Updated cloud meta — main persists this so future fetches can short-circuit
            *  when nothing has changed. */
           layoutMeta: NonNullable<CloudConfig['layoutMeta']>;
+      }
+    | {
+          /** Out-of-band commands the cloud emitted in the latest checkin response.
+           *  These are bridge-lifecycle controls (currently `openCloudWS` /
+           *  `closeCloudWS`); the parent owns session tracking and dispatch to
+           *  the server worker that actually dials the bridge. */
+          type: 'outOfBandCommands';
+          commands: OutOfBandCommand[];
       }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

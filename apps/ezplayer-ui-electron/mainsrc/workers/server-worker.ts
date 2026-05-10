@@ -5,7 +5,7 @@
 import { parentPort } from 'worker_threads';
 import Koa from 'koa';
 import bodyParser from '@koa/bodyparser';
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -190,10 +190,72 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         if (msg.movingHeads) {
             cachedMovingHeads = msg.movingHeads;
         }
+    } else if (msg.type === 'cloudBridgeOpen') {
+        openCloudBridge(msg.wsUrl, msg.sessionId);
+    } else if (msg.type === 'cloudBridgeClose') {
+        closeCloudBridge(msg.sessionId);
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
 });
+
+// -- cloud bridge -------------------------------------------------------------
+//
+// The cloud emits `openCloudWS` in a checkin response when a remote viewer is
+// attached on the cloud side. We dial that URL and hand the resulting socket
+// to the broadcaster as if it were a freshly-connected LAN client. The
+// existing per-key coalescing + backpressure + heartbeat machinery already
+// handles WAN latency; nothing here needs to know it's "the cloud."
+
+interface CloudBridge {
+    sessionId: string;
+    ws: WebSocket;
+}
+let cloudBridge: CloudBridge | undefined;
+
+function openCloudBridge(wsUrl: string, sessionId: string) {
+    if (cloudBridge?.sessionId === sessionId) {
+        // Same session, already open — caller is refreshing TTL; nothing to do.
+        return;
+    }
+    if (cloudBridge) {
+        // Different session — replace.
+        try { cloudBridge.ws.close(); } catch { /* ignore */ }
+        cloudBridge = undefined;
+    }
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (err) {
+        console.error('[server-worker] cloud bridge dial failed:', err);
+        return;
+    }
+    cloudBridge = { sessionId, ws };
+
+    ws.on('open', () => {
+        console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}…`);
+        // Hand the live socket to the broadcaster. From here it's just another
+        // Conn — first round dumps a snapshot of every cached key, subsequent
+        // updates fan out via the existing set() path. The cloud relay
+        // forwards each frame to whatever browser viewer is attached.
+        wsBroadcaster.attachClient(ws);
+    });
+    ws.on('error', (err) => {
+        console.error('[server-worker] cloud bridge error:', err);
+    });
+    ws.on('close', () => {
+        if (cloudBridge?.ws === ws) {
+            console.log('[server-worker] cloud bridge socket closed');
+            cloudBridge = undefined;
+        }
+    });
+}
+
+function closeCloudBridge(sessionId: string) {
+    if (!cloudBridge || cloudBridge.sessionId !== sessionId) return;
+    try { cloudBridge.ws.close(); } catch { /* ignore */ }
+    cloudBridge = undefined;
+}
 
 async function startServer(config: ServerWorkerData) {
     const { port, portSource, kioskPort, kioskPortSource } = config;

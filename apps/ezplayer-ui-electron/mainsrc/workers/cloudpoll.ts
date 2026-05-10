@@ -14,6 +14,8 @@ import {
     type CloudPollScheduleEntry,
     type CloudSeqManifestEntry,
     type CloudSequenceProgress,
+    type PlayerCheckinRequest,
+    type PlayerCheckinResponse,
     type PlayerCStatusContent,
     type SequenceRecord,
 } from '@ezplayer/ezplayer-core';
@@ -149,9 +151,22 @@ function recordSuccess() {
 async function pollRegistration() {
     if (regInFlight || !canRun()) return;
     regInFlight = true;
-    const url = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.IS_PLAYER_REGISTERED}${playerIdToken}`;
+    // POST /api/player/checkin/<token> — lightweight heartbeat that doubles as
+    // a command-poll for out-of-band cloud-bridge controls (openCloudWS, etc.).
+    // Body fields are best-effort hints for the show-builder Players pane;
+    // empty body would be valid too.
+    const url = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CHECKIN}${playerIdToken}`;
+    const body: PlayerCheckinRequest = {
+        now: Date.now(),
+        ...(halted ? { halted: true } : {}),
+        ...(cStatus.lastError ? { lastError: cStatus.lastError } : {}),
+    };
     try {
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+        });
         if (!res.ok) {
             post({
                 type: 'cloudStatus',
@@ -163,19 +178,21 @@ async function pollRegistration() {
             });
             return;
         }
-        const body = (await res.json()) as { registered?: boolean; version?: string };
+        const reply = (await res.json()) as PlayerCheckinResponse;
         post({
             type: 'cloudStatus',
             status: {
-                playerIdIsRegistered: !!body.registered,
-                cloudVersion: body.version,
+                playerIdIsRegistered: !!reply.registered,
                 lastCheckedAt: Date.now(),
                 lastError: undefined,
             },
         });
+        if (reply.commands && reply.commands.length > 0) {
+            post({ type: 'outOfBandCommands', commands: reply.commands });
+        }
     } catch (e) {
         const err = e as Error;
-        log('warn', `registration poll error: ${err.message}`);
+        log('warn', `checkin error: ${err.message}`);
         post({
             type: 'cloudStatus',
             status: {
