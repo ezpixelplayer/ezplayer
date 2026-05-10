@@ -1253,12 +1253,21 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             pollSchedule = msg.pollSchedule ?? [];
             seedInstalledFiles();
             applyTuning(msg.tuning);
-            // If the new config is "off" (empty url/token after the assignment above),
-            // immediately abort any in-flight transfers — pause/disconnect should be
-            // snappy, not finish the current file first.
-            if (!cloudUrl || !playerIdToken) {
-                abortAllAndReset();
+
+            // Every reconfigure is a session change (folder switch, token rotation,
+            // pause/resume). Without this, the worker would keep the previous
+            // session's cStatus (sequences, layout, files, lastManifestAt) in
+            // its module-level singleton and the next pushCStatus would resurrect
+            // the stale snapshot in the parent — even though the parent already
+            // cleared its mirror. Abort in-flight transfers from the previous
+            // session for the same reason: a download that started before a
+            // folder switch should not silently land in the new folder.
+            abortAllAndReset();
+            for (const k of Object.keys(cStatus)) {
+                delete (cStatus as Record<string, unknown>)[k];
             }
+            cStatus.files = {};
+
             stopped = false;
             halted = false;
             consecutiveFailures = 0;
@@ -1268,6 +1277,9 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
                     `playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} ` +
                     `showFolder="${showFolder}" reg=${registrationIntervalMs}ms manifest=${manifestIntervalMs}ms`,
             );
+            // Push the now-empty cStatus so the parent (and renderer) see a
+            // clean slate immediately, not on the next manifest tick.
+            pushCStatus();
             rescheduleTimers();
             void pollRegistration();
             void pollManifest();

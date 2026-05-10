@@ -376,11 +376,17 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     // -- Top-card mode + status ---------------------------------------------
     // Four mutually exclusive modes drive the icon, headline, mode chip,
     // description, and which action buttons appear.
+    //
+    // `paused` is checked BEFORE `!isRegistered`: the cloud worker's
+    // reconfigure-on-pause path resets in-memory `playerIdIsRegistered` to
+    // false (the worker can't distinguish "paused" from "disconnected" from
+    // its arg list — both arrive as empty url/token). The persisted token in
+    // cloudConfig is what tells us we're really still registered.
     type TopMode = 'unregistered' | 'paused' | 'xlights-master' | 'cloud-master';
-    const topMode: TopMode = !isRegistered
-        ? 'unregistered'
-        : !cloudActive
-          ? 'paused'
+    const topMode: TopMode = !cloudActive
+        ? 'paused'
+        : !isRegistered
+          ? 'unregistered'
           : layoutSource === 'cloud'
             ? 'cloud-master'
             : 'xlights-master';
@@ -423,7 +429,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
         if (layoutUploading) {
             activityLine = (
                 <Typography variant="body2">
-                    Uploading layout
+                    Pushing layout
                     {layout?.totalBytes ? ` (${fmtBytes(layout.totalBytes)})` : ''}…
                 </Typography>
             );
@@ -540,15 +546,19 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                 >
                                     {syncing ? 'Syncing…' : 'Sync Content Now'}
                                 </Button>
-                                <Button
-                                    startIcon={<UploadIcon />}
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={handleUploadLayout}
-                                    disabled={layoutFetching || layoutUploading}
-                                >
-                                    {layoutUploading ? 'Pushing Layout…' : 'Push Layout'}
-                                </Button>
+                                <Tooltip title="Push layout to cloud">
+                                    <span>
+                                        <Button
+                                            startIcon={<UploadIcon />}
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={handleUploadLayout}
+                                            disabled={layoutFetching || layoutUploading}
+                                        >
+                                            {layoutUploading ? 'Pushing Layout…' : 'Push Layout'}
+                                        </Button>
+                                    </span>
+                                </Tooltip>
                                 <Button
                                     startIcon={<PauseIcon />}
                                     variant="outlined"
@@ -665,15 +675,19 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                             </Button>
                         )}
                         {cloudActive && isRegistered && layoutSource === 'xlights' && (
-                            <Button
-                                startIcon={<UploadIcon />}
-                                variant="outlined"
-                                size="small"
-                                onClick={handleUploadLayout}
-                                disabled={layoutFetching || layoutUploading}
-                            >
-                                {layoutUploading ? 'Uploading…' : 'Upload Layout'}
-                            </Button>
+                            <Tooltip title="Push layout to cloud">
+                                <span>
+                                    <Button
+                                        startIcon={<UploadIcon />}
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={handleUploadLayout}
+                                        disabled={layoutFetching || layoutUploading}
+                                    >
+                                        {layoutUploading ? 'Pushing…' : 'Push Layout'}
+                                    </Button>
+                                </span>
+                            </Tooltip>
                         )}
                     </Box>
                     <Field label="Status" value={layout?.status ?? 'idle'} />

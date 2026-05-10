@@ -13,6 +13,8 @@ import {
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { createSelector } from '@reduxjs/toolkit';
 import { QRCodeSVG } from 'qrcode.react';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -36,6 +38,7 @@ const selectCloudStatus = (state: RootState) => state.cloudStatus;
 const selectPlayerIdToken = createSelector([selectCloudConfig], (cfg) => cfg.playerIdToken);
 const selectCloudServiceUrl = createSelector([selectCloudConfig], (cfg) => cfg.cloudServiceUrl);
 const selectIsRegistered = createSelector([selectCloudStatus], (s) => s.playerIdIsRegistered);
+const selectCloudActive = createSelector([selectCloudConfig], (cfg) => cfg.cloudEnabled !== false);
 
 interface PlayerCloudWelcomePanelProps {
     /** When true, also surface the per-folder polling editor inside the Advanced
@@ -62,6 +65,7 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
     const playerIdToken = useSelector(selectPlayerIdToken);
     const cloudServiceUrl = useSelector(selectCloudServiceUrl);
     const playerIdIsRegistered = useSelector(selectIsRegistered);
+    const cloudActive = useSelector(selectCloudActive);
 
     const [manualPlayerId, setManualPlayerId] = useState('');
     const [cloudUrlInput, setCloudUrlInput] = useState('');
@@ -72,9 +76,10 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
     }, [cloudServiceUrl]);
 
     // Auto-generate a Player ID on mount when none is set, so the friendly QR-and-go
-    // path lights up immediately.
+    // path lights up immediately. Skip while paused — generating a token whose
+    // registration can't possibly poll-confirm just produces a stuck spinner.
     useEffect(() => {
-        if (!playerIdToken) {
+        if (!playerIdToken && cloudActive) {
             void dispatch(postSetPlayerIdToken({ playerIdToken: uuidv4() }));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,14 +87,19 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
 
     // Fast-poll while waiting for registration. The default heartbeat is 30 s; that's
     // sluggish for a user staring at a QR code. Tick a manual poll every 2 s until the
-    // cloud confirms registration, then stop.
+    // cloud confirms registration, then stop. Skip while paused — the worker isn't
+    // running, so polling is futile and would burn CPU spinning forever.
     useEffect(() => {
-        if (playerIdIsRegistered) return;
+        if (playerIdIsRegistered || !cloudActive) return;
         const id = window.setInterval(() => {
             void dispatch(issueCloudCommand({ type: 'pollNow' }));
         }, 2000);
         return () => window.clearInterval(id);
-    }, [playerIdIsRegistered, dispatch]);
+    }, [playerIdIsRegistered, cloudActive, dispatch]);
+
+    const handleResume = () => {
+        void dispatch(issueCloudCommand({ type: 'setCloudEnabled', enabled: true }));
+    };
 
     const registrationUrl = useMemo(() => {
         if (!playerIdToken) return '';
@@ -126,7 +136,14 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
         <Box>
             {/* Status row */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-                {playerIdIsRegistered ? (
+                {!cloudActive ? (
+                    <>
+                        <PauseCircleIcon color="warning" />
+                        <Typography variant="h6" color="text.primary">
+                            Cloud Paused
+                        </Typography>
+                    </>
+                ) : playerIdIsRegistered ? (
                     <>
                         <CheckCircleIcon color="success" />
                         <Typography variant="h6" color="success.main">
@@ -143,8 +160,40 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                 )}
             </Box>
 
+            {/* Paused banner: replaces the QR/URL block — there's no point staring
+                at a code while the worker isn't polling. Resume here and the QR
+                shows up automatically (or the panel goes straight to "Registered"
+                if the player's already known to the cloud). */}
+            {!cloudActive && (
+                <Box
+                    sx={{
+                        p: 2,
+                        mb: 2,
+                        border: '1px solid',
+                        borderColor: 'warning.main',
+                        borderRadius: 1,
+                        bgcolor: 'warning.50',
+                    }}
+                >
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                        Cloud activity is paused, so registration won't poll. Resume to
+                        register or pick up where you left off — your token and URL are
+                        retained.
+                    </Typography>
+                    <Button
+                        startIcon={<PlayArrowIcon />}
+                        variant="contained"
+                        size="small"
+                        color="warning"
+                        onClick={handleResume}
+                    >
+                        Resume Cloud
+                    </Button>
+                </Box>
+            )}
+
             {/* Friendly path: QR + URL */}
-            {playerIdToken && registrationUrl && !playerIdIsRegistered && (
+            {cloudActive && playerIdToken && registrationUrl && !playerIdIsRegistered && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
                     <Box
                         sx={{

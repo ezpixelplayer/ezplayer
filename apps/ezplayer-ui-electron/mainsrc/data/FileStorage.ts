@@ -11,6 +11,7 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import * as path from 'path';
 import fsp from 'fs/promises';
+import { atomicWriteFile } from './atomicWrite.js';
 
 // sequences.json
 interface TempSeqsAPIPayload {
@@ -160,7 +161,7 @@ export async function saveSequencesAPI(folder: string, payload: SequenceRecord[]
             allSongs: npayload,
         },
     };
-    await fsp.writeFile(sf(folder, 'sequences.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'sequences.json'), JSON.stringify(userData, null, 4));
 }
 
 export async function loadPlaylistsAPI(folder: string): Promise<PlaylistRecord[]> {
@@ -181,7 +182,7 @@ export const savePlaylistsAPI = async (folder: string, payload: PlaylistRecord[]
             playlists: payload,
         },
     };
-    await fsp.writeFile(sf(folder, 'playlists.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'playlists.json'), JSON.stringify(userData, null, 4));
 };
 
 export async function loadScheduleAPI(folder: string) {
@@ -202,7 +203,7 @@ export const saveScheduleAPI = async (folder: string, payload: ScheduledPlaylist
             scheduledPlaylists: payload,
         },
     };
-    await fsp.writeFile(sf(folder, 'schedule.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'schedule.json'), JSON.stringify(userData, null, 4));
 };
 
 export async function loadShowProfileAPI(folder: string) {
@@ -219,7 +220,7 @@ export async function saveShowProfileAPI(folder: string, data: EndUserShowSettin
     const sData: TempShowAPIPayload = {
         data: { show: data },
     };
-    await fsp.writeFile(sf(folder, 'show.json'), JSON.stringify(sData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'show.json'), JSON.stringify(sData, null, 4));
 }
 
 export async function loadUserProfileAPI(folder: string) {
@@ -236,7 +237,7 @@ export async function saveUserProfileAPI(folder: string, data: EndUser) {
     const sData: TempUserAPIPayload = {
         data: { user: data },
     };
-    await fsp.writeFile(sf(folder, 'user.json'), JSON.stringify(sData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'user.json'), JSON.stringify(sData, null, 4));
 }
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {

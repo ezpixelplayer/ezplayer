@@ -29,6 +29,7 @@ import {
     loadCloudConfigFromDisk,
     updateCloudConfig,
 } from './data/CloudConfigStorage.js';
+import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
     getCurrentCloudStatus,
@@ -544,16 +545,24 @@ export async function registerContentHandlers(
             await ensureEzplayerSubdir(sf);
             // If the folder already has a cloud-config (existingInstall), obey it —
             // don't silently flip its layoutSource and don't trigger a layout fetch
-            // that would overwrite their files. Only force layoutSource='cloud' on
-            // a fresh seed.
+            // that would overwrite their files. Only seed `layoutSource: 'cloud'`
+            // on a fresh seed.
+            //
+            // Seed via a direct atomic write rather than going through the
+            // load-then-update-then-await-loadShowFolder dance: that path raced
+            // its own scheduleWrites against `loadShowFolder`'s second
+            // `loadCloudConfigFromDisk` and sometimes left the file on disk
+            // showing `layoutSource: 'xlights'` despite the user picking Cloud.
+            // Writing the seed file synchronously up front means
+            // `loadShowFolder` reads what we intended.
             if (!result.existingInstall) {
                 const seedPath = settingsPath(sf, 'cloud-config.json');
-                const existing = await loadCloudConfigFromDisk(seedPath);
-                updateCloudConfig({
-                    cloudServiceUrl: existing.cloudServiceUrl,
-                    playerIdToken: existing.playerIdToken,
-                    layoutSource: 'cloud',
-                });
+                const seed = {
+                    cloudServiceUrl: '',
+                    playerIdToken: '',
+                    layoutSource: 'cloud' as const,
+                };
+                await atomicWriteFile(seedPath, JSON.stringify(seed, null, 2));
             }
             await loadShowFolder();
             return { folder: sf, existingInstall: result.existingInstall };

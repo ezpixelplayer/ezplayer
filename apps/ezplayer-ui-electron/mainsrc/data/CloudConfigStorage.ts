@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import { atomicWriteFile } from './atomicWrite.js';
 import type { CloudConfig } from '@ezplayer/ezplayer-core';
 
 /** Default cloud service URL seeded on first run when no cloud-config.json exists.
@@ -59,7 +60,7 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
 
 async function writeCloudConfigToDisk(configPath: string, config: CloudConfig) {
     const json = JSON.stringify(config, null, 2);
-    await fs.writeFile(configPath, json, 'utf8');
+    await atomicWriteFile(configPath, json);
 }
 
 async function scheduleWrite() {
