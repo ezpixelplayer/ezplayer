@@ -1,8 +1,11 @@
 import fs from 'fs/promises';
 import type { CloudConfig } from '@ezplayer/ezplayer-core';
 
-/** Default cloud service URL seeded on first run when no cloud-config.json exists. */
-const DEFAULT_CLOUD_SERVICE_URL = 'https://ezrgbcloud-ezplay-cloud-endpoint.cloud.dbos.dev/';
+/** Default cloud service URL seeded on first run when no cloud-config.json exists.
+ *  Empty until the production cloud service launches and we ship a default; until
+ *  then, fresh installs come up with no cloud URL set and the user must enter one
+ *  via the Cloud Settings dialog before registration can run. */
+const DEFAULT_CLOUD_SERVICE_URL = '';
 
 const FRESH: CloudConfig = { cloudServiceUrl: DEFAULT_CLOUD_SERVICE_URL, playerIdToken: '' };
 const EMPTY: CloudConfig = { cloudServiceUrl: '', playerIdToken: '' };

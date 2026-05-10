@@ -5,7 +5,13 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { getMainWindow } from './main';
 
-const store = new Store<{ showFolder?: string }>();
+const store = new Store<{
+    showFolder?: string;
+    /** Welcome-screen flag: when true, the cloud-CTA card appears alongside the
+     *  xLights folder picker. Default off (cloud service hasn't launched yet).
+     *  Toggled by the `--reset-cloud` / `--reset-nocloud` CLI flags. */
+    welcomeShowCloud?: boolean;
+}>();
 let releaseLock: null | (() => Promise<void>) = null;
 let currentShowFolder: string | null = null;
 const REQUIRED_SHOW_FILES = ['xlights_rgbeffects.xml', 'xlights_networks.xml'] as const;
@@ -232,9 +238,21 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
 
         const validation = await isValidShowDirectory(showFolder);
         if (!validation.valid) {
-            // Startup now uses a dedicated welcome flow for first-time users.
-            // If a persisted/CLI folder is invalid, immediately reprompt for another
-            // folder instead of showing a separate warning/quit dialog.
+            // The persisted/CLI folder isn't a valid xLights show folder. Tell the
+            // user why and let them pick again (or quit).
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This folder is not a valid show folder.',
+                detail:
+                    (validation.error ?? 'Missing required xLights configuration files.') +
+                    (validation.missingFiles.length > 0
+                        ? `\n\nMissing: ${validation.missingFiles.join(', ')}`
+                        : ''),
+                buttons: ['Pick another folder', 'Quit'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return null;
             forcepick = true;
             continue;
         }
@@ -314,8 +332,27 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
     while (true) {
         const chosen = await promptForFolder();
         if (!chosen) return currentShowFolder; // Gave up
-        if (chosen && (await dirExists(chosen))) {
-            store.set('showFolder', chosen!);
+        if (!(await dirExists(chosen))) continue;
+
+        // Validate before persisting / locking. Without this, a junk pick from
+        // settings would silently replace the active folder and leave the app in
+        // a broken state.
+        const validation = await isValidShowDirectory(chosen);
+        if (!validation.valid) {
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This folder is not a valid show folder.',
+                detail:
+                    (validation.error ?? 'Missing required xLights configuration files.') +
+                    (validation.missingFiles.length > 0
+                        ? `\n\nMissing: ${validation.missingFiles.join(', ')}`
+                        : ''),
+                buttons: ['Pick another folder', 'Cancel'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return currentShowFolder;
+            continue;
         }
 
         if (chosen === currentShowFolder) {
@@ -326,6 +363,9 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
             const newReleaseLock = await tryLockShowFolder(chosen);
             await closeShowFolder();
             setNewShowFolder(newReleaseLock, chosen);
+            // Only persist after a successful lock — a folder we couldn't lock
+            // shouldn't be remembered as the active show folder.
+            store.set('showFolder', chosen);
             return currentShowFolder;
         } catch {
             const { response } = await dialog.showMessageBox({
@@ -353,4 +393,18 @@ export async function closeShowFolder() {
         if (releaseLock) await releaseLock();
     } catch {}
     currentShowFolder = null;
+}
+
+/** Wipe the persisted show-folder pointer (electron-store). Used by the `--reset*`
+ *  CLI flags to land the user back on the Welcome screen. */
+export function clearPersistedShowFolder() {
+    store.delete('showFolder');
+}
+
+export function getWelcomeShowCloud(): boolean {
+    return !!store.get('welcomeShowCloud');
+}
+
+export function setWelcomeShowCloud(v: boolean) {
+    store.set('welcomeShowCloud', v);
 }

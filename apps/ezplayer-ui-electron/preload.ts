@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     requestChooseCloudShowFolder: async (): Promise<string> => {
         return await ipcRenderer.invoke('ipcUIChooseCloudShowFolder');
     },
+    getWelcomeShowCloud: async (): Promise<boolean> => {
+        return await ipcRenderer.invoke('ipcGetWelcomeShowCloud');
+    },
     validateShowDirectory: async (
         showDirectory?: string,
     ): Promise<{ valid: boolean; missingFiles: string[]; inaccessibleFiles: string[]; error?: string }> => {

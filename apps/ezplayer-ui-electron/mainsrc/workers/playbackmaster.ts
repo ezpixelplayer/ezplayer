@@ -593,6 +593,8 @@ const playbackParams = {
 };
 
 let latestSettings: PlaybackSettings | undefined = undefined;
+let lastRfRemoteToken: string | undefined = undefined;
+let rfConfigInitialized = false;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
@@ -601,28 +603,36 @@ function dispatchSettings(settings: PlaybackSettings) {
         playbackParams.audioTimeAdjMs = nasa;
         ++curAudioSyncNum;
     }
-    setRFConfig(
-        {
-            remoteToken: settings.viewerControl.remoteFalconToken,
-        },
-        (next) => {
-            const settings = latestSettings;
-            if (!settings) return;
-            const rfc = getActiveViewerControlSchedule(settings.viewerControl);
-            if (!rfc) return;
-            const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
-            if (!pl) return;
-            const s = pl.items.find((seq) => seq.sequence === next.playlistIndex);
-            if (!s) return;
-            processCommand({
-                command: 'playsong',
-                immediate: false,
-                songId: s.id,
-                requestId: randomUUID(),
-                priority: 3,
-            });
-        },
-    );
+    // Only reconfigure the RF worker when the input it cares about actually
+    // changes. Settings get pushed on every auto-save (often), and each call
+    // would otherwise reset the RF worker's cached state and log.
+    const nextToken = settings.viewerControl.remoteFalconToken;
+    if (!rfConfigInitialized || nextToken !== lastRfRemoteToken) {
+        rfConfigInitialized = true;
+        lastRfRemoteToken = nextToken;
+        setRFConfig(
+            {
+                remoteToken: nextToken,
+            },
+            (next) => {
+                const settings = latestSettings;
+                if (!settings) return;
+                const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+                if (!rfc) return;
+                const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
+                if (!pl) return;
+                const s = pl.items.find((seq) => seq.sequence === next.playlistIndex);
+                if (!s) return;
+                processCommand({
+                    command: 'playsong',
+                    immediate: false,
+                    songId: s.id,
+                    requestId: randomUUID(),
+                    priority: 3,
+                });
+            },
+        );
+    }
 }
 
 ////////

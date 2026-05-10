@@ -120,6 +120,9 @@ export interface EZPElectronAPI {
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
     requestChooseCloudShowFolder: () => Promise<string>;
+    /** Welcome-screen cloud-CTA flag (electron-store, set by --reset-cloud /
+     *  --reset-nocloud). */
+    getWelcomeShowCloud: () => Promise<boolean>;
     validateShowDirectory: (showDirectory?: string) => Promise<{
         valid: boolean;
         missingFiles: string[];

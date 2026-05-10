@@ -21,6 +21,19 @@ export const WelcomeScreen = () => {
     const [isOpening, setIsOpening] = React.useState(false);
     const [stage, setStage] = React.useState<WelcomeStage>('choose');
 
+    // The cloud CTA is hidden by default (the cloud service hasn't launched and
+    // exposing endpoints in the UI without a working backend confuses testers).
+    // Enable via `electron --reset-cloud`; flip back with `--reset` or
+    // `--reset-nocloud`. Once the production cloud lands we'll flip the default.
+    const [showCloudCTA, setShowCloudCTA] = React.useState(false);
+    React.useEffect(() => {
+        let cancelled = false;
+        window.electronAPI?.getWelcomeShowCloud()
+            .then((v) => { if (!cancelled) setShowCloudCTA(!!v); })
+            .catch(() => { /* leave default off */ });
+        return () => { cancelled = true; };
+    }, []);
+
     const playerIdIsRegistered = useSelector(
         (s: RootState) => s.cloudStatus.playerIdIsRegistered,
     );
@@ -113,8 +126,9 @@ export const WelcomeScreen = () => {
                 {stage === 'choose' && (
                     <>
                         <Typography variant="body1" sx={{ mb: 3 }}>
-                            EZPlayer can run an existing xLights show folder, or it can connect to
-                            EZRGB Cloud and manage a fresh show folder for you.
+                            {showCloudCTA
+                                ? 'EZPlayer can run an existing xLights show folder, or it can connect to EZRGB Cloud and manage a fresh show folder for you.'
+                                : 'Pick an xLights show folder to get started.'}
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                             <Card sx={{ flex: '1 1 320px', minWidth: 280 }}>
@@ -130,27 +144,29 @@ export const WelcomeScreen = () => {
                                     <Typography variant="body2" color="text.secondary">
                                         Pick an existing folder containing{' '}
                                         <strong>xlights_rgbeffects.xml</strong> and{' '}
-                                        <strong>xlights_networks.xml</strong>. You can connect to the
-                                        cloud later from the Cloud tab.
+                                        <strong>xlights_networks.xml</strong>.
+                                        {showCloudCTA && ' You can connect to the cloud later from the Cloud tab.'}
                                     </Typography>
                                 </CardActionArea>
                             </Card>
-                            <Card sx={{ flex: '1 1 320px', minWidth: 280 }}>
-                                <CardActionArea
-                                    onClick={() => void openCloudBootstrap()}
-                                    disabled={isOpening}
-                                    sx={{ p: 3, height: '100%' }}
-                                >
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                                        <CloudIcon fontSize="large" color="primary" />
-                                        <Typography variant="h6">Connect to EZRGB Cloud</Typography>
-                                    </Box>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Pick an empty folder. We&rsquo;ll register this player with
-                                        the cloud and pull the show layout and sequences down.
-                                    </Typography>
-                                </CardActionArea>
-                            </Card>
+                            {showCloudCTA && (
+                                <Card sx={{ flex: '1 1 320px', minWidth: 280 }}>
+                                    <CardActionArea
+                                        onClick={() => void openCloudBootstrap()}
+                                        disabled={isOpening}
+                                        sx={{ p: 3, height: '100%' }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                                            <CloudIcon fontSize="large" color="primary" />
+                                            <Typography variant="h6">Connect to EZRGB Cloud</Typography>
+                                        </Box>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Pick an empty folder. We&rsquo;ll register this player with
+                                            the cloud and pull the show layout and sequences down.
+                                        </Typography>
+                                    </CardActionArea>
+                                </Card>
+                            )}
                         </Box>
                     </>
                 )}
