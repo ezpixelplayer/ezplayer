@@ -11,34 +11,40 @@ export function getSettingsCache(): PlaybackSettings | null {
 }
 
 export async function loadSettingsFromDisk(settingsPath: string): Promise<PlaybackSettings> {
+    const defaults: PlaybackSettings = {
+        audioSyncAdjust: 0,
+        backgroundSequence: 'overlay',
+        viewerControl: {
+            enabled: false,
+            type: 'disabled',
+            remoteFalconToken: undefined,
+            schedule: [],
+        },
+        volumeControl: {
+            defaultVolume: 100,
+            schedule: [],
+        },
+        jukebox: {
+            excludedTags: ['nojukebox'],
+            includedTags: [],
+        },
+    };
     try {
         const raw = await fs.readFile(settingsPath, 'utf8');
+        // A previous crash (or pull-the-plug) can leave a zero-byte settings file
+        // — JSON.parse on that throws SyntaxError. Treat empty / unparseable the
+        // same as "missing": fall back to defaults rather than failing the load.
+        if (raw.trim() === '') {
+            currentSettings = defaults;
+            return defaults;
+        }
         const parsed = JSON.parse(raw) as PlaybackSettings;
 
         currentSettings = parsed;
         return parsed;
     } catch (e) {
         const err = e as { code?: string };
-        if (err?.code === 'ENOENT') {
-            // Defaults if file doesn't exist
-            const defaults: PlaybackSettings = {
-                audioSyncAdjust: 0,
-                backgroundSequence: 'overlay',
-                viewerControl: {
-                    enabled: false,
-                    type: 'disabled',
-                    remoteFalconToken: undefined,
-                    schedule: [],
-                },
-                volumeControl: {
-                    defaultVolume: 100,
-                    schedule: [],
-                },
-                jukebox: {
-                    excludedTags: ['nojukebox'],
-                    includedTags: [],
-                },
-            };
+        if (err?.code === 'ENOENT' || e instanceof SyntaxError) {
             currentSettings = defaults;
             return defaults;
         }

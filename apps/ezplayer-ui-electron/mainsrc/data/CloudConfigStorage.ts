@@ -23,6 +23,13 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
     currentPath = configPath;
     try {
         const raw = await fs.readFile(configPath, 'utf8');
+        // Empty / unparseable file (e.g. crashed mid-write) is treated the same
+        // as missing: re-seed FRESH defaults so the load never fails the folder open.
+        if (raw.trim() === '') {
+            currentConfig = { ...FRESH };
+            void scheduleWrite();
+            return currentConfig;
+        }
         const parsed = JSON.parse(raw) as Partial<CloudConfig>;
         currentConfig = {
             cloudServiceUrl: parsed.cloudServiceUrl ?? '',
@@ -40,9 +47,8 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
         return currentConfig;
     } catch (e) {
         const err = e as { code?: string };
-        if (err?.code === 'ENOENT') {
-            // Seed with the default cloud URL so registration is reachable out of the box.
-            // The user can edit or clear the URL via the dialog.
+        if (err?.code === 'ENOENT' || e instanceof SyntaxError) {
+            // Missing or unparseable file → seed FRESH defaults.
             currentConfig = { ...FRESH };
             void scheduleWrite();
             return currentConfig;

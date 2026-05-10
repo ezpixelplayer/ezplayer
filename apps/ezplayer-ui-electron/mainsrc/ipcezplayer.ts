@@ -297,6 +297,14 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // from the previous show folder are never served to the frontend.
     clearShowData();
 
+    // Reset combined player status at the folder boundary. content / controller /
+    // player snapshots are folder-scoped (cloud content, controller config from
+    // this show, current playback). Without this, switching to a fresh folder
+    // would carry the old folder's cstatus/nstatus/pstatus through `update:combinedstatus`
+    // until each writer (cloud worker, playback worker) happens to push a fresh frame.
+    curStatus = {};
+    curErrors = [];
+
     // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
     // loader so that, on first run against an old folder, root-level files are moved
     // into the subdir and the loaders read the migrated copies on this same tick.

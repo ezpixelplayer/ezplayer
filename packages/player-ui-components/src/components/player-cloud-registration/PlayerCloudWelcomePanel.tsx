@@ -22,6 +22,7 @@ import { Box } from '../box/Box';
 import { API_ENDPOINTS } from '../../store/api/ApiEndpoints';
 import { postSetCloudUrl, postSetPlayerIdToken } from '../../store/slices/AuthStore';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
+import { CloudPollingIntervalEditor, CloudPollingScheduleEditor } from './CloudPollingEditor';
 import type { AppDispatch, RootState } from '../../store/Store';
 
 declare global {
@@ -36,12 +37,26 @@ const selectPlayerIdToken = createSelector([selectCloudConfig], (cfg) => cfg.pla
 const selectCloudServiceUrl = createSelector([selectCloudConfig], (cfg) => cfg.cloudServiceUrl);
 const selectIsRegistered = createSelector([selectCloudStatus], (s) => s.playerIdIsRegistered);
 
+interface PlayerCloudWelcomePanelProps {
+    /** When true, also surface the per-folder polling editor inside the Advanced
+     *  accordion. Used by the cloud-screen Register dialog (power-user context).
+     *  The first-run Welcome bootstrap leaves it off — polling tuning would be
+     *  noise during "scan and go". */
+    showPollingEditor?: boolean;
+}
+
 /**
- * Friendly variant of the player-registration panel for first-time bootstrap. Leads
- * with the QR / URL ("scan and go") and tucks manual ID entry + cloud URL editing
- * inside an Advanced accordion. Auto-generates a Player ID on mount when none is set.
+ * The canonical player-registration UX. Leads with the QR / URL ("scan and go")
+ * and tucks manual ID entry + cloud URL editing inside an Advanced accordion.
+ * Auto-generates a Player ID on mount when none is set.
+ *
+ * Used both by the first-run Welcome bootstrap (no polling editor) and by the
+ * cloud-screen Register dialog (`showPollingEditor`). `PlayerCloudRegistrationPanel`
+ * is a thin alias around this component with `showPollingEditor` enabled.
  */
-export const PlayerCloudWelcomePanel: React.FC = () => {
+export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = ({
+    showPollingEditor = false,
+}) => {
     const dispatch = useDispatch<AppDispatch>();
 
     const playerIdToken = useSelector(selectPlayerIdToken);
@@ -170,13 +185,24 @@ export const PlayerCloudWelcomePanel: React.FC = () => {
                 </Box>
             )}
 
+            {/* Polling schedule (cloud-screen Register dialog only). Surfaced as its
+                own prominent section between QR/URL and the Advanced accordion — users
+                tune the schedule far more often than the cadence in seconds. */}
+            {showPollingEditor && (
+                <>
+                    <Divider sx={{ my: 2 }} />
+                    <CloudPollingScheduleEditor />
+                </>
+            )}
+
             <Divider sx={{ my: 2 }} />
 
             {/* Advanced */}
             <Accordion disableGutters elevation={0} sx={{ bgcolor: 'transparent' }}>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                     <Typography variant="subtitle2" color="text.secondary">
-                        Advanced (manual Player ID, change Cloud URL)
+                        Advanced (Cloud URL, specific Player ID
+                        {showPollingEditor ? ', polling interval' : ''})
                     </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
@@ -255,6 +281,13 @@ export const PlayerCloudWelcomePanel: React.FC = () => {
                             Apply
                         </Button>
                     </Box>
+
+                    {showPollingEditor && (
+                        <>
+                            <Divider sx={{ my: 2 }} />
+                            <CloudPollingIntervalEditor />
+                        </>
+                    )}
                 </AccordionDetails>
             </Accordion>
         </Box>

@@ -46,31 +46,18 @@ const FRESH_WINDOW: Partial<CloudPollScheduleEntry> = {
 };
 
 /**
- * Cloud polling configuration: mode (always / scheduled), schedule windows, and
- * cadence overrides for the registration heartbeat and content manifest poll.
+ * Polling-schedule section of the cloud registration dialog: always-vs-scheduled
+ * mode plus the allowed-windows list. Surfaced as its own prominent section since
+ * users tune their schedule far more often than they touch the cadence in seconds.
  *
- * Lives inside the cloud settings dialog. Saves go through `issueCloudCommand`'s
- * `setCloudPolling` verb — partial patches are fine, undefined fields preserve.
+ * The cadence (registration + manifest poll seconds) lives in
+ * `CloudPollingIntervalEditor` and belongs in the Advanced accordion.
  */
-export const CloudPollingEditor: React.FC = () => {
+export const CloudPollingScheduleEditor: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const cfg = useSelector((s: RootState) => s.cloudConfig);
     const mode: 'always' | 'scheduled' = cfg.cloudPollMode === 'scheduled' ? 'scheduled' : 'always';
     const schedule: CloudPollScheduleEntry[] = cfg.cloudPollSchedule ?? [];
-    const regSecondsSaved = Math.round((cfg.cloudPollIntervals?.registrationMs ?? DEFAULT_REGISTRATION_SEC * 1000) / 1000);
-    const manSecondsSaved = Math.round((cfg.cloudPollIntervals?.manifestMs ?? DEFAULT_MANIFEST_SEC * 1000) / 1000);
-
-    const [regSeconds, setRegSeconds] = useState<string>(String(regSecondsSaved));
-    const [manSeconds, setManSeconds] = useState<string>(String(manSecondsSaved));
-    useEffect(() => setRegSeconds(String(regSecondsSaved)), [regSecondsSaved]);
-    useEffect(() => setManSeconds(String(manSecondsSaved)), [manSecondsSaved]);
-    const intervalsDirty =
-        Number(regSeconds) !== regSecondsSaved || Number(manSeconds) !== manSecondsSaved;
-    const intervalsValid =
-        Number.isFinite(Number(regSeconds)) &&
-        Number(regSeconds) >= 1 &&
-        Number.isFinite(Number(manSeconds)) &&
-        Number(manSeconds) >= 1;
 
     const [addOpen, setAddOpen] = useState(false);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -79,19 +66,6 @@ export const CloudPollingEditor: React.FC = () => {
     const handleModeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value === 'scheduled' ? 'scheduled' : 'always';
         void dispatch(issueCloudCommand({ type: 'setCloudPolling', mode: v }));
-    };
-
-    const handleSaveIntervals = () => {
-        if (!intervalsValid) return;
-        void dispatch(
-            issueCloudCommand({
-                type: 'setCloudPolling',
-                intervals: {
-                    registrationMs: Number(regSeconds) * 1000,
-                    manifestMs: Number(manSeconds) * 1000,
-                },
-            }),
-        );
     };
 
     const submitAddWindow = () => {
@@ -141,42 +115,12 @@ export const CloudPollingEditor: React.FC = () => {
     return (
         <Box>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Polling
+                Polling Schedule
             </Typography>
             <Typography variant="caption" sx={{ display: 'block', mb: 2, color: 'text.secondary' }}>
-                Registration heartbeat always runs while cloud is enabled. Schedule below
-                gates content polling (sequence list, downloads, layout fetch).
+                Registration heartbeat always runs while cloud is enabled. The schedule
+                below gates content polling (sequence list, downloads, layout fetch).
             </Typography>
-
-            {/* Cadence */}
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'flex-start' }}>
-                <TextField
-                    size="small"
-                    type="number"
-                    label="Registration poll (sec)"
-                    value={regSeconds}
-                    onChange={(e) => setRegSeconds(e.target.value)}
-                    inputProps={{ min: 1 }}
-                    sx={{ flex: 1 }}
-                />
-                <TextField
-                    size="small"
-                    type="number"
-                    label="Manifest poll (sec)"
-                    value={manSeconds}
-                    onChange={(e) => setManSeconds(e.target.value)}
-                    inputProps={{ min: 1 }}
-                    sx={{ flex: 1 }}
-                />
-                <Button
-                    variant="contained"
-                    size="small"
-                    onClick={handleSaveIntervals}
-                    disabled={!intervalsDirty || !intervalsValid}
-                >
-                    Save Intervals
-                </Button>
-            </Box>
 
             {/* Mode */}
             <FormControl sx={{ mb: 2 }}>
@@ -308,6 +252,79 @@ export const CloudPollingEditor: React.FC = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+        </Box>
+    );
+};
+
+/**
+ * Polling-cadence section of the cloud registration dialog: registration heartbeat
+ * and manifest-poll cadence in seconds. Belongs in the Advanced accordion — most
+ * users will leave the defaults alone.
+ */
+export const CloudPollingIntervalEditor: React.FC = () => {
+    const dispatch = useDispatch<AppDispatch>();
+    const cfg = useSelector((s: RootState) => s.cloudConfig);
+    const regSecondsSaved = Math.round((cfg.cloudPollIntervals?.registrationMs ?? DEFAULT_REGISTRATION_SEC * 1000) / 1000);
+    const manSecondsSaved = Math.round((cfg.cloudPollIntervals?.manifestMs ?? DEFAULT_MANIFEST_SEC * 1000) / 1000);
+
+    const [regSeconds, setRegSeconds] = useState<string>(String(regSecondsSaved));
+    const [manSeconds, setManSeconds] = useState<string>(String(manSecondsSaved));
+    useEffect(() => setRegSeconds(String(regSecondsSaved)), [regSecondsSaved]);
+    useEffect(() => setManSeconds(String(manSecondsSaved)), [manSecondsSaved]);
+    const intervalsDirty =
+        Number(regSeconds) !== regSecondsSaved || Number(manSeconds) !== manSecondsSaved;
+    const intervalsValid =
+        Number.isFinite(Number(regSeconds)) &&
+        Number(regSeconds) >= 1 &&
+        Number.isFinite(Number(manSeconds)) &&
+        Number(manSeconds) >= 1;
+
+    const handleSave = () => {
+        if (!intervalsValid) return;
+        void dispatch(
+            issueCloudCommand({
+                type: 'setCloudPolling',
+                intervals: {
+                    registrationMs: Number(regSeconds) * 1000,
+                    manifestMs: Number(manSeconds) * 1000,
+                },
+            }),
+        );
+    };
+
+    return (
+        <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+                Polling Interval
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                <TextField
+                    size="small"
+                    type="number"
+                    label="Registration poll (sec)"
+                    value={regSeconds}
+                    onChange={(e) => setRegSeconds(e.target.value)}
+                    inputProps={{ min: 1 }}
+                    sx={{ flex: 1 }}
+                />
+                <TextField
+                    size="small"
+                    type="number"
+                    label="Manifest poll (sec)"
+                    value={manSeconds}
+                    onChange={(e) => setManSeconds(e.target.value)}
+                    inputProps={{ min: 1 }}
+                    sx={{ flex: 1 }}
+                />
+                <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleSave}
+                    disabled={!intervalsDirty || !intervalsValid}
+                >
+                    Save Intervals
+                </Button>
+            </Box>
         </Box>
     );
 };

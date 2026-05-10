@@ -93,12 +93,14 @@ export function setCloudWorkerConfig(
     console.log(
         `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
     );
-    if (!cloudUrl || !playerIdToken) {
-        currentStatus = { playerIdIsRegistered: false };
-        statusListener?.(currentStatus);
-        currentCStatus = {};
-        cStatusListener?.(currentCStatus);
-    }
+    // Every reconfigure is a session change (folder switch, token rotation,
+    // disable). Reset registration + content state so the renderer never sees
+    // the previous session's snapshot bridging the gap until the worker's
+    // first poll completes.
+    currentStatus = { playerIdIsRegistered: false };
+    statusListener?.(currentStatus);
+    currentCStatus = {};
+    cStatusListener?.(currentCStatus);
     send({
         type: 'setConfig',
         cloudUrl,
