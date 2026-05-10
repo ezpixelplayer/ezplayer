@@ -336,31 +336,33 @@ export function broadcastToWebSocket(key: string, value: unknown) {
 }
 
 /**
- * Open the cloud-bridge WebSocket inside the server worker. The server worker
- * dials `wsUrl` and registers the resulting WebSocket with its broadcaster so
- * the existing state-fanout pipeline pushes player state out to the cloud
- * (and from there to whatever browser viewer is attached on the cloud side).
- * Idempotent at the manager layer — the worker dedupes on sessionId.
+ * Open the cloud-bridge WebSocket inside the server worker. The worker dials
+ * `wsUrl`, registers the resulting socket with its broadcaster, and arms a
+ * TTL timer to auto-close if the cloud goes silent. Same sessionId with a
+ * live socket is idempotent (refreshes TTL); a dropped socket redials.
  */
-export function cloudBridgeOpen(wsUrl: string, sessionId: string) {
+export function cloudBridgeOpen(wsUrl: string, sessionId: string, ttlSeconds: number) {
     if (!serverWorker) return;
     const message: MainToServerWorkerMessage = {
         type: 'cloudBridgeOpen',
         wsUrl,
         sessionId,
+        ttlSeconds,
     };
     serverWorker.postMessage(message);
 }
 
 /**
- * Tear down the cloud-bridge WebSocket for `sessionId`, if it matches the
- * currently-open one. Stale sessionIds are silently ignored.
+ * Tear down the cloud-bridge WebSocket. With `sessionId`, only closes if it
+ * matches the active session (stale closes are ignored). Without, closes any
+ * currently-open bridge — used on config changes where the player_token may
+ * have rotated and we don't want the previous session leaking traffic.
  */
-export function cloudBridgeClose(sessionId: string) {
+export function cloudBridgeClose(sessionId?: string) {
     if (!serverWorker) return;
     const message: MainToServerWorkerMessage = {
         type: 'cloudBridgeClose',
-        sessionId,
+        ...(sessionId !== undefined ? { sessionId } : {}),
     };
     serverWorker.postMessage(message);
 }

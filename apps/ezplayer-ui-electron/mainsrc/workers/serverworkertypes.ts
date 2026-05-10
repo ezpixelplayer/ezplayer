@@ -37,20 +37,22 @@ export type MainToServerWorkerMessage =
     | { type: 'clearShowData' }
     | {
           /** Open an outbound WebSocket to the cloud bridge so a remote viewer
-           *  can subscribe to this player's live state. cloudpollparent owns
-           *  session lifecycle (TTL refresh, supersede); the server worker
-           *  just dials and registers the WS as a Conn against the
-           *  WebSocketBroadcaster so existing state-fanout works unchanged. */
+           *  can subscribe to this player's live state. The server worker owns
+           *  session lifecycle (TTL, redial after drop, supersede); the parent
+           *  is a thin forwarder. Same sessionId with a live socket is
+           *  idempotent (refreshes TTL); same sessionId with a closed socket
+           *  redials; different sessionId supersedes. */
           type: 'cloudBridgeOpen';
           wsUrl: string;
           sessionId: string;
+          ttlSeconds: number;
       }
     | {
-          /** Tear down the cloud bridge for this sessionId, if it matches the
-           *  currently-open one. No-op when nothing is open or sessionId is
-           *  stale (the parent already moved on). */
+          /** Close the cloud bridge. `sessionId` is optional — when omitted
+           *  (e.g. a config change), close anything currently open. When
+           *  provided, only close if it matches the active session. */
           type: 'cloudBridgeClose';
-          sessionId: string;
+          sessionId?: string;
       }
     | { type: 'shutdown' };
 

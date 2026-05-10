@@ -191,7 +191,7 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
             cachedMovingHeads = msg.movingHeads;
         }
     } else if (msg.type === 'cloudBridgeOpen') {
-        openCloudBridge(msg.wsUrl, msg.sessionId);
+        openCloudBridge(msg.wsUrl, msg.sessionId, msg.ttlSeconds);
     } else if (msg.type === 'cloudBridgeClose') {
         closeCloudBridge(msg.sessionId);
     } else if (msg.type === 'shutdown') {
@@ -206,20 +206,32 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
 // to the broadcaster as if it were a freshly-connected LAN client. The
 // existing per-key coalescing + backpressure + heartbeat machinery already
 // handles WAN latency; nothing here needs to know it's "the cloud."
+//
+// Session lifecycle is owned here (not in cloudpollparent) so a transient WS
+// drop can be self-healed: the cloud will keep re-emitting `openCloudWS` with
+// the same sessionId on every checkin while a viewer is attached, and we use
+// each one to (a) refresh TTL, (b) redial if our socket has died.
 
 interface CloudBridge {
     sessionId: string;
     ws: WebSocket;
+    /** Live = handshake completed; we don't redial during the dial itself. */
+    open: boolean;
+    ttlTimer: NodeJS.Timeout;
 }
 let cloudBridge: CloudBridge | undefined;
 
-function openCloudBridge(wsUrl: string, sessionId: string) {
-    if (cloudBridge?.sessionId === sessionId) {
-        // Same session, already open — caller is refreshing TTL; nothing to do.
+function openCloudBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    // Same session + live socket: just refresh TTL (cheap path, fires on every checkin).
+    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.open) {
+        clearTimeout(cloudBridge.ttlTimer);
+        cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
         return;
     }
+    // Same session + dead socket (close fired but cloud still wants the bridge),
+    // or different session: tear down any existing bridge and dial.
     if (cloudBridge) {
-        // Different session — replace.
+        clearTimeout(cloudBridge.ttlTimer);
         try { cloudBridge.ws.close(); } catch { /* ignore */ }
         cloudBridge = undefined;
     }
@@ -230,10 +242,12 @@ function openCloudBridge(wsUrl: string, sessionId: string) {
         console.error('[server-worker] cloud bridge dial failed:', err);
         return;
     }
-    cloudBridge = { sessionId, ws };
+    const ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
+    cloudBridge = { sessionId, ws, open: false, ttlTimer };
 
     ws.on('open', () => {
-        console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}…`);
+        if (cloudBridge?.ws === ws) cloudBridge.open = true;
+        console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}… ttl=${ttlSeconds}s`);
         // Hand the live socket to the broadcaster. From here it's just another
         // Conn — first round dumps a snapshot of every cached key, subsequent
         // updates fan out via the existing set() path. The cloud relay
@@ -246,13 +260,16 @@ function openCloudBridge(wsUrl: string, sessionId: string) {
     ws.on('close', () => {
         if (cloudBridge?.ws === ws) {
             console.log('[server-worker] cloud bridge socket closed');
+            clearTimeout(cloudBridge.ttlTimer);
             cloudBridge = undefined;
         }
     });
 }
 
-function closeCloudBridge(sessionId: string) {
-    if (!cloudBridge || cloudBridge.sessionId !== sessionId) return;
+function closeCloudBridge(sessionId?: string) {
+    if (!cloudBridge) return;
+    if (sessionId !== undefined && cloudBridge.sessionId !== sessionId) return;
+    clearTimeout(cloudBridge.ttlTimer);
     try { cloudBridge.ws.close(); } catch { /* ignore */ }
     cloudBridge = undefined;
 }

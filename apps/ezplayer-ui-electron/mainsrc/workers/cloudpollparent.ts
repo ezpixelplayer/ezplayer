@@ -35,70 +35,20 @@ let layoutInstalledListener:
     | ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void)
     | undefined;
 
-/** Active cloud-bridge session, if any. The cloud re-issues `openCloudWS` on
- *  every checkin while a viewer is attached; we treat that as a TTL refresh,
- *  not a re-dial. A different `sessionId` means the cloud rotated the session,
- *  so we tear the old bridge down and dial the new one. `expiresAt` is the
- *  deadline after which we close on our own (covers the cloud crashing or the
- *  poll silently failing — without TTL, a stale bridge could linger). */
-interface ActiveCloudSession {
-    sessionId: string;
-    wsUrl: string;
-    expiresAt: number;
-    expiryTimer: NodeJS.Timeout;
-}
-let activeSession: ActiveCloudSession | undefined;
-
-function clearActiveSession(reason: string) {
-    if (!activeSession) return;
-    clearTimeout(activeSession.expiryTimer);
-    const { sessionId } = activeSession;
-    activeSession = undefined;
-    cloudBridgeClose(sessionId);
-    console.log(`[cloudpoll] cloud bridge closed (${reason}) sessionId=${sessionId.slice(0, 8)}…`);
-}
-
+/** Forward an out-of-band command from the cloud to the server worker, which
+ *  owns the actual WebSocket session (including TTL/redial state). The parent
+ *  doesn't track session lifecycle — that would split the source of truth and
+ *  let the parent short-circuit a re-dial after a transient WS drop. The
+ *  worker is in the best position to know whether its socket is alive. */
 function applyOutOfBandCommand(cmd: OutOfBandCommand) {
     switch (cmd.type) {
-        case 'openCloudWS': {
-            const expiresAt = Date.now() + cmd.ttlSeconds * 1000;
-            if (activeSession?.sessionId === cmd.sessionId) {
-                // Same session — refresh the TTL. Bridge already up; no re-dial.
-                clearTimeout(activeSession.expiryTimer);
-                activeSession.expiresAt = expiresAt;
-                activeSession.expiryTimer = setTimeout(
-                    () => clearActiveSession('TTL expired'),
-                    cmd.ttlSeconds * 1000,
-                );
-                return;
-            }
-            // New session — close any existing bridge and dial fresh.
-            if (activeSession) clearActiveSession('superseded by new session');
-            const expiryTimer = setTimeout(
-                () => clearActiveSession('TTL expired'),
-                cmd.ttlSeconds * 1000,
-            );
-            activeSession = {
-                sessionId: cmd.sessionId,
-                wsUrl: cmd.wsUrl,
-                expiresAt,
-                expiryTimer,
-            };
-            console.log(
-                `[cloudpoll] cloud bridge open sessionId=${cmd.sessionId.slice(0, 8)}… ttl=${cmd.ttlSeconds}s`,
-            );
-            cloudBridgeOpen(cmd.wsUrl, cmd.sessionId);
+        case 'openCloudWS':
+            cloudBridgeOpen(cmd.wsUrl, cmd.sessionId, cmd.ttlSeconds);
             return;
-        }
-        case 'closeCloudWS': {
-            if (!activeSession) return;
-            if (cmd.sessionId && cmd.sessionId !== activeSession.sessionId) {
-                // Stale close for a session we already replaced — ignore.
-                return;
-            }
-            clearActiveSession('cloud requested close');
+        case 'closeCloudWS':
+            // sessionId may be omitted by the cloud → "close any current bridge".
+            cloudBridgeClose(cmd.sessionId);
             return;
-        }
     }
 }
 
@@ -174,7 +124,7 @@ export function setCloudWorkerConfig(
     statusListener?.(currentStatus);
     currentCStatus = {};
     cStatusListener?.(currentCStatus);
-    clearActiveSession('config change');
+    cloudBridgeClose(); // unconditional close; player_token may have changed
     send({
         type: 'setConfig',
         cloudUrl,
