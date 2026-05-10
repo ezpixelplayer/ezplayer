@@ -3,6 +3,11 @@ import {
     Card,
     Chip,
     Collapse,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
     IconButton,
     LinearProgress,
     Stack,
@@ -11,8 +16,6 @@ import {
     TableCell,
     TableHead,
     TableRow,
-    ToggleButton,
-    ToggleButtonGroup,
     Typography,
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -25,6 +28,11 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import EditIcon from '@mui/icons-material/Edit';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import Tooltip from '@mui/material/Tooltip';
 import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
 import React, { useState } from 'react';
@@ -33,6 +41,7 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
+import { postSetPlayerIdToken } from '../../store/slices/AuthStore';
 import type {
     CloudFileEntry,
     CloudFileStatus,
@@ -314,10 +323,6 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     // matches the loader's read-side default.
     const layoutSource: 'xlights' | 'cloud' =
         cloudConfig.layoutSource === 'cloud' ? 'cloud' : 'xlights';
-    const handleSetMode = (_: unknown, value: 'xlights' | 'cloud' | null) => {
-        if (!value || value === layoutSource) return;
-        void dispatch(issueCloudCommand({ type: 'setLayoutSource', mode: value }));
-    };
 
     // Cloud worker active (false = retained settings, paused).
     const cloudActive = cloudConfig.cloudEnabled !== false;
@@ -330,6 +335,34 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     // bottom-card "Edit"). Same `PlayerCloudRegistrationDialog` is the more thorough
     // panel — manual ID entry, URL editing, generate/clear.
     const [regDialogOpen, setRegDialogOpen] = useState(false);
+    const [disconnectOpen, setDisconnectOpen] = useState(false);
+
+    // Cloud-master "sync now" pulls layout AND content. xLights-master has the
+    // user push the layout explicitly via the "Push Layout" button.
+    const handleSyncCloudMaster = async () => {
+        setSyncing(true);
+        try {
+            await dispatch(issueCloudCommand({ type: 'fetchLayoutNow' })).unwrap();
+            await dispatch(issueCloudCommand({ type: 'syncNow' })).unwrap();
+        } catch (e) {
+            console.error('[CloudPage] sync (cloud-master) failed:', e);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    // Disconnect = clear the player ID token. Cloud URL is retained so re-registering
+    // is a one-click affair. The cloud server will eventually deregister the player.
+    const handleDisconnect = async () => {
+        try {
+            await dispatch(postSetPlayerIdToken({ playerIdToken: '' })).unwrap();
+        } catch (e) {
+            console.error('[CloudPage] disconnect failed:', e);
+        } finally {
+            setDisconnectOpen(false);
+        }
+    };
+
     const isRegistered = cloudStatus.playerIdIsRegistered;
     const anyDownloading = Object.values(cStatus?.files ?? {}).some(
         (f) => f.status === 'downloading',
@@ -340,20 +373,53 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
         return acc + (files.length > 0 && files.every((f) => f.status === 'installed') ? 1 : 0);
     }, 0);
 
-    // -- Cascading summary line -----------------------------------------------
-    let summaryLine: React.ReactNode = null;
-    let activityLine: React.ReactNode = null;
-    if (!cloudActive) {
-        summaryLine = <Typography variant="h6">Cloud paused. Settings retained.</Typography>;
-    } else if (!isRegistered) {
-        summaryLine = <Typography variant="h6">Not registered.</Typography>;
-    } else {
-        const modeLabel =
-            layoutSource === 'cloud'
-                ? 'Cloud-managed: layout and sequences from cloud.'
-                : 'xLights layout, cloud sequences.';
-        summaryLine = <Typography variant="h6">{modeLabel}</Typography>;
+    // -- Top-card mode + status ---------------------------------------------
+    // Four mutually exclusive modes drive the icon, headline, mode chip,
+    // description, and which action buttons appear.
+    type TopMode = 'unregistered' | 'paused' | 'xlights-master' | 'cloud-master';
+    const topMode: TopMode = !isRegistered
+        ? 'unregistered'
+        : !cloudActive
+          ? 'paused'
+          : layoutSource === 'cloud'
+            ? 'cloud-master'
+            : 'xlights-master';
 
+    const statusIcon =
+        topMode === 'unregistered' ? (
+            <HelpOutlineIcon color="disabled" sx={{ fontSize: 36 }} />
+        ) : topMode === 'paused' ? (
+            <PauseCircleIcon color="warning" sx={{ fontSize: 36 }} />
+        ) : (
+            <CheckCircleIcon color="success" sx={{ fontSize: 36 }} />
+        );
+
+    const statusHeadline =
+        topMode === 'unregistered'
+            ? 'Not connected to cloud'
+            : topMode === 'paused'
+              ? 'Cloud paused'
+              : 'Cloud connected';
+
+    const modeChipLabel =
+        topMode === 'xlights-master' || (topMode === 'paused' && layoutSource === 'xlights')
+            ? 'xLights master'
+            : topMode === 'cloud-master' || (topMode === 'paused' && layoutSource === 'cloud')
+              ? 'Cloud master'
+              : null;
+
+    const modeDescription =
+        topMode === 'unregistered'
+            ? 'Connect this player to your EZRGB account to sync layout and sequences.'
+            : topMode === 'paused'
+              ? 'The cloud worker is paused. Settings are retained — resume to reconnect.'
+              : topMode === 'cloud-master'
+                ? 'Cloud is the source of truth for both layout and sequences. Local edits will be overwritten by cloud syncs.'
+                : 'Your xLights show folder is the source of truth for the layout. Sequences are managed via cloud.';
+
+    // Activity / freshness line shown below the headline.
+    let activityLine: React.ReactNode = null;
+    if (topMode === 'cloud-master' || topMode === 'xlights-master') {
         if (layoutUploading) {
             activityLine = (
                 <Typography variant="body2">
@@ -403,12 +469,28 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
             <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Top summary + state-driven actions. */}
                 <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
-                    <Stack spacing={1} sx={{ mb: 3 }}>
-                        {summaryLine}
-                        {activityLine}
-                    </Stack>
-                    {/* State 1: not registered → only "Register" matters. */}
-                    {cloudActive && !isRegistered && (
+                    {/* Status row: green check / pause / help icon + headline + mode chip */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                        {statusIcon}
+                        <Typography variant="h6">{statusHeadline}</Typography>
+                        {modeChipLabel && (
+                            <Chip
+                                label={modeChipLabel}
+                                size="small"
+                                color={topMode === 'paused' ? 'default' : 'primary'}
+                                variant={topMode === 'paused' ? 'outlined' : 'filled'}
+                            />
+                        )}
+                    </Box>
+
+                    {activityLine && <Box sx={{ mb: 1 }}>{activityLine}</Box>}
+
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        {modeDescription}
+                    </Typography>
+
+                    {/* Mode 1: not registered → just Register. */}
+                    {topMode === 'unregistered' && (
                         <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                             <Button
                                 startIcon={<HowToRegIcon />}
@@ -420,9 +502,11 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                             </Button>
                         </Stack>
                     )}
-                    {/* State 2: paused → only "Resume" matters. */}
-                    {!cloudActive && (
-                        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+
+                    {/* Mode 2: paused → Resume + Disconnect (mode flip while paused
+                        is intentionally hidden — resume first, then change). */}
+                    {topMode === 'paused' && (
+                        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
                             <Button
                                 startIcon={<PlayArrowIcon />}
                                 variant="contained"
@@ -431,46 +515,121 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                             >
                                 Resume Cloud
                             </Button>
+                            <Button
+                                startIcon={<LinkOffIcon />}
+                                variant="outlined"
+                                size="small"
+                                color="error"
+                                onClick={() => setDisconnectOpen(true)}
+                            >
+                                Disconnect
+                            </Button>
                         </Stack>
                     )}
-                    {/* State 3: registered + active → mode toggle, Sync Now, Pause. */}
-                    {cloudActive && isRegistered && (
-                        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                            <ToggleButtonGroup
-                                exclusive
-                                size="small"
-                                value={layoutSource}
-                                onChange={handleSetMode}
-                                sx={{
-                                    '& .MuiToggleButton-root.Mui-selected': {
-                                        color: 'primary.contrastText',
-                                        backgroundColor: 'primary.main',
-                                        '&:hover': { backgroundColor: 'primary.dark' },
-                                    },
-                                }}
-                            >
-                                <ToggleButton value="cloud">Cloud-managed</ToggleButton>
-                                <ToggleButton value="xlights">xLights-managed</ToggleButton>
-                            </ToggleButtonGroup>
-                            <Box sx={{ flexGrow: 1 }} />
-                            <Button
-                                startIcon={<SyncIcon />}
-                                variant="outlined"
-                                size="small"
-                                onClick={handleSync}
-                                disabled={syncing}
-                            >
-                                {syncing ? 'Syncing…' : 'Sync Now'}
-                            </Button>
-                            <Button
-                                startIcon={<PauseIcon />}
-                                variant="outlined"
-                                size="small"
-                                onClick={handlePause}
-                            >
-                                Pause Cloud
-                            </Button>
-                        </Stack>
+
+                    {/* Mode 3: xLights master. */}
+                    {topMode === 'xlights-master' && (
+                        <>
+                            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" sx={{ mb: 1.5 }}>
+                                <Button
+                                    startIcon={<SyncIcon />}
+                                    variant="contained"
+                                    size="small"
+                                    onClick={handleSync}
+                                    disabled={syncing}
+                                >
+                                    {syncing ? 'Syncing…' : 'Sync Content Now'}
+                                </Button>
+                                <Button
+                                    startIcon={<UploadIcon />}
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={handleUploadLayout}
+                                    disabled={layoutFetching || layoutUploading}
+                                >
+                                    {layoutUploading ? 'Pushing Layout…' : 'Push Layout'}
+                                </Button>
+                                <Button
+                                    startIcon={<PauseIcon />}
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={handlePause}
+                                >
+                                    Pause
+                                </Button>
+                            </Stack>
+                            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                                <Button
+                                    startIcon={<SwapHorizIcon />}
+                                    variant="text"
+                                    size="small"
+                                    onClick={() =>
+                                        dispatch(
+                                            issueCloudCommand({ type: 'setLayoutSource', mode: 'cloud' }),
+                                        )
+                                    }
+                                >
+                                    Switch to Cloud-managed
+                                </Button>
+                                <Button
+                                    startIcon={<LinkOffIcon />}
+                                    variant="text"
+                                    size="small"
+                                    color="error"
+                                    onClick={() => setDisconnectOpen(true)}
+                                >
+                                    Disconnect
+                                </Button>
+                            </Stack>
+                        </>
+                    )}
+
+                    {/* Mode 4: cloud master. */}
+                    {topMode === 'cloud-master' && (
+                        <>
+                            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" sx={{ mb: 1.5 }}>
+                                <Button
+                                    startIcon={<SyncIcon />}
+                                    variant="contained"
+                                    size="small"
+                                    onClick={handleSyncCloudMaster}
+                                    disabled={syncing || layoutFetching || layoutUploading}
+                                >
+                                    {syncing || layoutFetching ? 'Syncing…' : 'Sync Layout + Content'}
+                                </Button>
+                                <Button
+                                    startIcon={<PauseIcon />}
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={handlePause}
+                                >
+                                    Pause
+                                </Button>
+                            </Stack>
+                            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                                <Button
+                                    startIcon={<SwapHorizIcon />}
+                                    variant="text"
+                                    size="small"
+                                    onClick={() =>
+                                        dispatch(
+                                            issueCloudCommand({ type: 'setLayoutSource', mode: 'xlights' }),
+                                        )
+                                    }
+                                >
+                                    Switch to xLights-managed
+                                </Button>
+                                <Button
+                                    startIcon={<LinkOffIcon />}
+                                    variant="text"
+                                    size="small"
+                                    color="error"
+                                    onClick={() => setDisconnectOpen(true)}
+                                >
+                                    Disconnect
+                                </Button>
+                            </Stack>
+                        </>
                     )}
                 </Card>
 
@@ -610,6 +769,23 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                 open={regDialogOpen}
                 onClose={() => setRegDialogOpen(false)}
             />
+            <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>
+                <DialogTitle>Disconnect from cloud?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        This clears the Player ID token. The cloud server will eventually
+                        deregister this player. Your show folder and Cloud URL are
+                        retained — re-registering is one click on the Welcome / Register
+                        screen.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDisconnectOpen(false)}>Cancel</Button>
+                    <Button color="error" variant="contained" onClick={handleDisconnect}>
+                        Disconnect
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };
