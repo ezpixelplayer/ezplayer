@@ -20,4 +20,5 @@ export const PROFILE = '/profile';
 export const PLAYBACKSETTINGS = '/playbacksettings';
 export const CLOUD = '/cloud';
 export const LAYOUT_EDITOR = '/layout-editor';
+export const PLAYERS = '/players';
 export const PREVIEW_3D = '/preview-3d';
