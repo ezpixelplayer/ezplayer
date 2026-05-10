@@ -125,17 +125,6 @@ interface RecurrenceRule {
 
 export type PlaylistTags = string[];
 
-export interface UserPlayer {
-    player_token: string;
-    user_id: string | null;
-    ownership_updated: number;
-    last_checkin?: number;
-    last_sync?: number;
-    last_pstatus?: number;
-    last_cstatus?: number;
-    last_nstatus?: number;
-}
-
 export interface PlayingItem {
     type: 'Scheduled' | 'Immediate' | 'Queued';
     item: 'Song' | 'Playlist' | 'Schedule';
@@ -153,11 +142,13 @@ export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
     status:
-        | 'Playing' // Playing
-        | 'Stopping' // Graceful stop happening
-        | 'Stopped' // Stopped due to stop request
-        | 'Paused' // Paused - time is not advancing
-        | 'Suppressed'; // Time advancing, but not emitting the sound/light
+        | 'Playing' // EZP: Playing
+        | 'Stopping' // EZP: Graceful stop happening
+        | 'Stopped' // EZP: Stopped due to stop request
+        | 'Paused' // EZP: Paused - time is not advancing
+        | 'Suppressed' // EZP: Time advancing, but not emitting the sound/light
+        | 'Up' // FPP: online heartbeat (no playback semantics)
+        | 'Down'; // FPP: offline / unreachable
 
     reported_time: number;
     now_playing?: PlayingItem;
@@ -460,30 +451,6 @@ export type EZPlayerCommand =
           mute?: boolean;
       };
 
-export interface EndUser {
-    user_id: string; // UUID
-    email: string;
-    name_f: string;
-    name_l: string;
-    name_nn: string;
-    status: string; // active, pending, disabled
-    class: string; // free basic pro commercial
-    create_time?: number;
-}
-
-export interface EndUserShowSettings {
-    user_id: string; // UUID
-    updated: number;
-    show_name?: string;
-    message?: string;
-    tune_to?: string;
-    fps?: number;
-    layout_dim?: string; // '2D, 3D, Default'
-    guess_layout?: string;
-    group_mode?: string;
-    rot_y?: number; // Rotate around Y axis for effects
-}
-
 export type ScheduleDays =
     | 'all'
     | 'weekend-fri-sat'
@@ -622,8 +589,6 @@ export type FullPlayerState = {
     sequences?: SequenceRecord[];
     playlists?: PlaylistRecord[];
     schedule?: ScheduledPlaylist[];
-    user?: EndUser;
-    show?: EndUserShowSettings;
     cStatus?: PlayerCStatusContent;
     pStatus?: PlayerPStatusContent;
     nStatus?: PlayerNStatusContent;
@@ -681,6 +646,66 @@ export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
     | { type: 'cloudCommand'; cmd: CloudCommand };
+
+/// Cloud check-in (lightweight heartbeat + command pickup)
+
+/** Out-of-band commands the cloud delivers in the checkin response. These
+ *  control the cloud-bridge lifecycle (currently: should the player open a
+ *  WebSocket bridge to the cloud?). They are deliberately distinct from
+ *  `CloudCommand`, which is the in-band UI/IPC verb set delivered through the
+ *  WS/IPC layer. New out-of-band commands add a variant here plus a handler
+ *  in cloudpollparent. */
+export type OutOfBandCommand =
+    | {
+          type: 'openCloudWS';
+          /** Full ws:// or wss:// URL the player should dial. */
+          wsUrl: string;
+          /** One-shot session id the bridge will use to correlate the player and
+           *  the browser viewer. Player echoes this in its WS handshake. */
+          sessionId: string;
+          /** TTL (seconds) before this command is stale; if the player hasn't
+           *  connected within the TTL it should give up rather than racing
+           *  against a viewer that has since closed. Subsequent checkins
+           *  re-issue the command with a fresh TTL while the viewer remains. */
+          ttlSeconds: number;
+      }
+    | {
+          type: 'closeCloudWS';
+          /** sessionId matching the openCloudWS that opened it; lets the player
+           *  ignore stale closes for an already-replaced session. Optional —
+           *  absence means "close any current bridge." */
+          sessionId?: string;
+      };
+
+/** POST /api/player/checkin/:player_token — body. All fields are optional, so
+ *  an empty body is a valid command-poll. When fields are present, the cloud
+ *  records them so the show-builder Players pane can render an at-a-glance
+ *  status without the player having to push the heavier pstat/cstat/nstat
+ *  endpoints on every tick. */
+export interface PlayerCheckinRequest {
+    /** Epoch ms reported by the player at checkin time. The cloud uses this
+     *  alongside its own clock to bound skew when stamping last_checkin. */
+    now?: number;
+    currentlyPlaying?: string;
+    lastLayoutSync?: number;
+    lastContentSync?: number;
+    contentSummary?: {
+        n_sequences?: number;
+        n_playlists?: number;
+        n_schedules?: number;
+    };
+    halted?: boolean;
+    lastError?: string;
+}
+
+export interface PlayerCheckinResponse {
+    /** False when the cloud doesn't recognize this player_token — player should
+     *  treat this the same as `isregistered=false` (paint registration UI). */
+    registered: boolean;
+    /** Out-of-band commands the player should act on. Empty/omitted when
+     *  nothing is pending. */
+    commands?: OutOfBandCommand[];
+}
 
 /// Layout Edit
 

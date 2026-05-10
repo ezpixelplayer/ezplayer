@@ -277,8 +277,6 @@ async function startServer(config: ServerWorkerData) {
             sequences: wsBroadcaster.get('sequences') ?? [],
             playlists: wsBroadcaster.get('playlists') ?? [],
             schedule: wsBroadcaster.get('schedule') ?? [],
-            user: wsBroadcaster.get('user'),
-            show: wsBroadcaster.get('show'),
             pStatus: wsBroadcaster.get('pStatus'),
             cStatus: wsBroadcaster.get('cStatus'),
             nStatus: wsBroadcaster.get('nStatus'),

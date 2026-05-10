@@ -13,8 +13,6 @@ import type {
 
 import type {
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -105,18 +103,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getServerStatus() {
         return ipcRenderer.invoke('ipcGetServerStatus');
     },
-    getShowProfile() {
-        return ipcRenderer.invoke('ipcGetCloudShowProfile');
-    },
-    putShowProfile(data: EndUserShowSettings) {
-        return ipcRenderer.invoke('ipcPutCloudShowProfile', data);
-    },
-    getUserProfile() {
-        return ipcRenderer.invoke('ipcGetCloudUserProfile');
-    },
-    putUserProfile(data: Partial<EndUser>) {
-        return ipcRenderer.invoke('ipcPutCloudUserProfile', data);
-    },
     immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
     },
@@ -164,16 +150,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onScheduleUpdated: (callback: (data: ScheduledPlaylist[]) => void) => {
         ipcRenderer.on('update:schedule', (_event: any, data: ScheduledPlaylist[]) => {
-            callback(data);
-        });
-    },
-    onUserUpdated: (callback: (data: EndUser) => void) => {
-        ipcRenderer.on('update:user', (_event: any, data: EndUser) => {
-            callback(data);
-        });
-    },
-    onShowUpdated: (callback: (data: EndUserShowSettings) => void) => {
-        ipcRenderer.on('update:show', (_event: any, data: EndUserShowSettings) => {
             callback(data);
         });
     },

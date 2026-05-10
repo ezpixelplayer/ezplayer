@@ -11,16 +11,10 @@ import {
     loadPlaylistsAPI,
     loadScheduleAPI,
     loadSequencesAPI,
-    loadShowProfileAPI,
     loadStatusAPI,
-    loadUserProfileAPI,
     saveSequencesAPI,
     savePlaylistsAPI,
     saveScheduleAPI,
-    saveShowProfileAPI,
-    saveUserProfileAPI,
-    blankShowProfile,
-    blankUserProfile,
 } from './data/FileStorage.js';
 
 import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
@@ -50,8 +44,6 @@ import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/son
 import type {
     CloudCommand,
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
     FullPlayerState,
     PlaybackSettings,
     PlaylistRecord,
@@ -92,8 +84,6 @@ export let curPlaylists: PlaylistRecord[] = [];
 export let curSchedule: ScheduledPlaylist[] = [];
 export let curStatus: CombinedPlayerStatus = {};
 export let curErrors: string[] = [];
-export let curShow: EndUserShowSettings | undefined = undefined;
-export let curUser: EndUser | undefined = undefined;
 export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
@@ -315,8 +305,6 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
-    curShow = await loadShowProfileAPI(showFolder);
-    curUser = await loadUserProfileAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
     const cloudActive = cloudConfig.cloudEnabled !== false;
@@ -353,8 +341,6 @@ export async function loadShowFolder(forceRestart?: boolean) {
         'update:schedule',
         curSchedule.filter((s) => !s.deleted),
     );
-    updateWindow?.webContents?.send('update:user', curUser);
-    updateWindow?.webContents?.send('update:show', curShow);
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
     updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
@@ -372,8 +358,6 @@ export async function loadShowFolder(forceRestart?: boolean) {
         'schedule',
         curSchedule.filter((s) => !s.deleted),
     );
-    if (curUser) broadcastToWebSocket('user', curUser);
-    if (curShow) broadcastToWebSocket('show', curShow);
     broadcastToWebSocket('cStatus', curStatus.content);
     broadcastToWebSocket('nStatus', curStatus.controller);
     broadcastToWebSocket('pStatus', curStatus.player);
@@ -621,32 +605,6 @@ export async function registerContentHandlers(
         return await loadStatusAPI();
     });
 
-    ipcMain.handle('ipcGetCloudShowProfile', async (_event): Promise<EndUserShowSettings> => {
-        return Promise.resolve(curShow ?? blankShowProfile);
-    });
-    ipcMain.handle(
-        'ipcPutCloudShowProfile',
-        async (_event, data: EndUserShowSettings): Promise<EndUserShowSettings> => {
-            const showFolder = getCurrentShowFolder();
-            if (showFolder) await saveShowProfileAPI(showFolder, data);
-            curShow = data;
-            updateWindow?.webContents?.send('update:show', curShow);
-            broadcastToWebSocket('show', curShow);
-            return Promise.resolve(curShow!);
-        },
-    );
-    ipcMain.handle('ipcGetCloudUserProfile', async (_event): Promise<EndUser> => {
-        return Promise.resolve(curUser ?? blankUserProfile);
-    });
-    ipcMain.handle('ipcPutCloudUserProfile', async (_event, data: Partial<EndUser>): Promise<EndUser> => {
-        const ndata = { ...(curUser ?? blankUserProfile), ...data };
-        const showFolder = getCurrentShowFolder();
-        if (showFolder) await saveUserProfileAPI(showFolder, ndata);
-        curUser = ndata;
-        updateWindow?.webContents?.send('update:user', curUser);
-        broadcastToWebSocket('user', curUser);
-        return ndata;
-    });
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
         if (cmd.command === 'resetplayback') {
             await loadShowFolder(true);
@@ -850,8 +808,6 @@ export function getCurrentShowData(): FullPlayerState {
         sequences: curSequences.filter((seq) => !seq.deleted),
         playlists: curPlaylists.filter((pl) => !pl.deleted),
         schedule: curSchedule.filter((item) => !item.deleted),
-        user: curUser,
-        show: curShow,
         pStatus: curStatus.player,
         cStatus: curStatus.content,
         nStatus: curStatus.controller,

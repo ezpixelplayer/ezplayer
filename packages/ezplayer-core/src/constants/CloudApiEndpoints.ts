@@ -5,6 +5,10 @@
  */
 export const CLOUD_API_ENDPOINTS = {
     IS_PLAYER_REGISTERED: 'player/isregistered/',
+    /** POST ${cloudUrl}api/player/checkin/<token>  body: PlayerCheckinRequest
+     *  Lightweight heartbeat that doubles as a command-poll. Empty body is
+     *  valid (just picks up pending OutOfBandCommands). */
+    CHECKIN: 'player/checkin/',
     GET_PLAYLIST: 'player/getplaylistsforplayer/',
     UPDATE_PLAYLIST: 'player/postplaylistsforplayer',
     GET_SCHEDULE: 'player/getscheduleforplayer/',

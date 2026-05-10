@@ -1,7 +1,5 @@
 import {
     type CombinedPlayerStatus,
-    type EndUser,
-    type EndUserShowSettings,
     type PlaylistRecord,
     type ScheduledPlaylist,
     type SequenceRecord,
@@ -33,44 +31,6 @@ interface TempScheduleAPIPayload {
         scheduledPlaylists?: ScheduledPlaylist[];
     };
 }
-
-// show.json
-interface TempShowAPIPayload {
-    data: {
-        show?: EndUserShowSettings;
-    };
-}
-
-// user.json
-interface TempUserAPIPayload {
-    data: {
-        user?: EndUser;
-    };
-}
-
-export const blankShowProfile: EndUserShowSettings = {
-    show_name: '',
-    tune_to: '',
-    rot_y: 0,
-    message: '',
-    layout_dim: 'Auto',
-    fps: 0,
-    group_mode: 'Default',
-    guess_layout: 'Build',
-    user_id: '',
-    updated: new Date().getTime(),
-};
-
-export const blankUserProfile: EndUser = {
-    user_id: '',
-    email: '',
-    name_f: '',
-    name_l: '',
-    name_nn: '',
-    status: 'unregistered',
-    class: 'N/A',
-    create_time: new Date().getTime(),
-};
 
 /**
  * Log a load failure as a single line.  Missing-file (ENOENT) is expected on
@@ -205,40 +165,6 @@ export const saveScheduleAPI = async (folder: string, payload: ScheduledPlaylist
     };
     await atomicWriteFile(sf(folder, 'schedule.json'), JSON.stringify(userData, null, 4));
 };
-
-export async function loadShowProfileAPI(folder: string) {
-    try {
-        const p: TempShowAPIPayload = await JSON.parse(await fsp.readFile(sf(folder, 'show.json'), 'utf-8'));
-        return p.data.show ?? blankShowProfile;
-    } catch (e) {
-        logLoadFailure('show.json', e);
-        return blankShowProfile;
-    }
-}
-
-export async function saveShowProfileAPI(folder: string, data: EndUserShowSettings) {
-    const sData: TempShowAPIPayload = {
-        data: { show: data },
-    };
-    await atomicWriteFile(sf(folder, 'show.json'), JSON.stringify(sData, null, 4));
-}
-
-export async function loadUserProfileAPI(folder: string) {
-    try {
-        const p: TempUserAPIPayload = await JSON.parse(await fsp.readFile(sf(folder, 'user.json'), 'utf-8'));
-        return p.data.user ?? blankUserProfile;
-    } catch (e) {
-        logLoadFailure('user.json', e);
-        return blankUserProfile;
-    }
-}
-
-export async function saveUserProfileAPI(folder: string, data: EndUser) {
-    const sData: TempUserAPIPayload = {
-        data: { user: data },
-    };
-    await atomicWriteFile(sf(folder, 'user.json'), JSON.stringify(sData, null, 4));
-}
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
     return {};

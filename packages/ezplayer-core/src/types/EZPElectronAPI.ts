@@ -2,8 +2,6 @@ import type {
     CloudConfig,
     CloudStatus,
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -140,11 +138,6 @@ export interface EZPElectronAPI {
     getSchedule: () => Promise<ScheduledPlaylist[]>;
     putSchedule: (recs: ScheduledPlaylist[]) => Promise<ScheduledPlaylist[]>;
 
-    getShowProfile: () => Promise<EndUserShowSettings>;
-    putShowProfile: (data: EndUserShowSettings) => Promise<EndUserShowSettings>;
-    getUserProfile: () => Promise<EndUser>;
-    putUserProfile: (data: Partial<EndUser>) => Promise<EndUser>;
-
     getCombinedStatus: () => Promise<CombinedPlayerStatus>;
     getServerStatus: () => Promise<{
         port: number;
@@ -157,8 +150,6 @@ export interface EZPElectronAPI {
     onSequencesUpdated: (callback: (data: SequenceRecord[]) => void) => void;
     onPlaylistsUpdated: (callback: (data: PlaylistRecord[]) => void) => void;
     onScheduleUpdated: (callback: (data: ScheduledPlaylist[]) => void) => void;
-    onUserUpdated: (callback: (data: EndUser) => void) => void;
-    onShowUpdated: (callback: (data: EndUserShowSettings) => void) => void;
 
     onStatusUpdated: (callback: (data: CombinedPlayerStatus) => void) => void;
     onPlaybackSettingsUpdated: (callback: (data: PlaybackSettings) => void) => void;
