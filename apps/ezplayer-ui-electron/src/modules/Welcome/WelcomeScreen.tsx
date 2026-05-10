@@ -65,16 +65,23 @@ export const WelcomeScreen = () => {
         if (!electronAPI) return;
         setIsOpening(true);
         try {
-            const sf = await electronAPI.requestChooseCloudShowFolder();
-            if (!sf) {
+            const { folder, existingInstall } = await electronAPI.requestChooseCloudShowFolder();
+            if (!folder) {
                 // User cancelled or picker rejected; remain on choose stage.
+                return;
+            }
+            if (existingInstall) {
+                // Folder already had a cloud-config — main loaded it as-is.
+                // Don't run registration/layout bootstrap; just open the player
+                // (whose layoutSource may even be 'xlights').
+                navigate(ROUTES.PLAYER, { replace: true });
                 return;
             }
             setStage('cloud-bootstrap-register');
         } finally {
             setIsOpening(false);
         }
-    }, [isOpening]);
+    }, [isOpening, navigate]);
 
     // Once the cloud reports the player as registered, advance to layout-pull stage.
     React.useEffect(() => {

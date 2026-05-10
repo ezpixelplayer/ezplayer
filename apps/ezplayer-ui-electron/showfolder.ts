@@ -281,15 +281,25 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
     }
 }
 
+export interface PickCloudShowFolderResult {
+    /** Absolute path of the chosen folder, or null if user cancelled. */
+    folder: string | null;
+    /** True when the folder already had a `.ezplayer/cloud-config.json` — caller
+     *  should treat this as opening an existing install and NOT reseed the
+     *  layoutSource (or kick a fresh layout fetch). False for an empty/new
+     *  folder that the user explicitly accepted as a cloud-managed seed. */
+    existingInstall: boolean;
+}
+
 /** Picker for the cloud-managed bootstrap path. Prompts for any folder (does NOT
  *  require the xLights files), validates it as a cloud-eligible directory
- *  (writable), locks it, and sets it as the active folder. Caller is responsible
- *  for then seeding `cloud-config.json` with `layoutSource: 'cloud'` and calling
- *  `loadShowFolder()` so the worker picks it up. */
-export async function pickCloudShowFolder(): Promise<string | null> {
+ *  (writable), inspects existing content to decide between fresh seed vs. open-
+ *  as-existing, locks it, and sets it as the active folder. Caller seeds
+ *  `cloud-config.json` only when `existingInstall` is false. */
+export async function pickCloudShowFolder(): Promise<PickCloudShowFolderResult> {
     while (true) {
         const chosen = await promptForFolder();
-        if (!chosen) return null;
+        if (!chosen) return { folder: null, existingInstall: false };
         if (!(await dirExists(chosen))) continue;
 
         const validation = await isValidCloudShowDirectory(chosen);
@@ -302,8 +312,47 @@ export async function pickCloudShowFolder(): Promise<string | null> {
                 cancelId: 1,
                 defaultId: 0,
             });
-            if (response !== 0) return null;
+            if (response !== 0) return { folder: null, existingInstall: false };
             continue;
+        }
+
+        // Decide: fresh seed vs. existing install vs. non-cloud non-empty (warn).
+        const cloudConfigPath = path.join(chosen, '.ezplayer', 'cloud-config.json');
+        let existingInstall = false;
+        try {
+            await fsp.access(cloudConfigPath);
+            existingInstall = true;
+        } catch {
+            /* no existing cloud-config */
+        }
+
+        if (!existingInstall) {
+            // No prior cloud install on this folder. If there's any user-visible
+            // content, warn — we'd be about to overlay cloud-managed mode and a
+            // future layout fetch could overwrite their files.
+            let entries: string[] = [];
+            try {
+                entries = await fsp.readdir(chosen);
+            } catch {
+                /* fall through with empty list */
+            }
+            const visible = entries.filter((e) => !e.startsWith('.'));
+            if (visible.length > 0) {
+                const { response } = await dialog.showMessageBox({
+                    type: 'warning',
+                    message: 'This folder is not empty.',
+                    detail:
+                        `"${path.basename(chosen)}" already contains files. ` +
+                        'Connecting it as cloud-managed will fetch the layout from the cloud, ' +
+                        'which may overwrite existing files. Continue?',
+                    buttons: ['Connect Anyway', 'Pick Another Folder', 'Cancel'],
+                    cancelId: 2,
+                    defaultId: 1,
+                });
+                if (response === 2) return { folder: null, existingInstall: false };
+                if (response === 1) continue;
+                // response === 0: proceed
+            }
         }
 
         try {
@@ -313,7 +362,7 @@ export async function pickCloudShowFolder(): Promise<string | null> {
                 await closeShowFolder();
             }
             setNewShowFolder(newReleaseLock, chosen);
-            return currentShowFolder;
+            return { folder: currentShowFolder, existingInstall };
         } catch {
             const { response } = await dialog.showMessageBox({
                 type: 'warning',
@@ -323,7 +372,7 @@ export async function pickCloudShowFolder(): Promise<string | null> {
                 cancelId: 1,
                 defaultId: 0,
             });
-            if (response !== 0) return null;
+            if (response !== 0) return { folder: null, existingInstall: false };
         }
     }
 }

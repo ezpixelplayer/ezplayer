@@ -119,7 +119,11 @@ export interface EZPElectronAPI {
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
-    requestChooseCloudShowFolder: () => Promise<string>;
+    /** Cloud-managed-folder picker. Returns the chosen folder + whether the
+     *  folder was an existing cloud install (so the caller can skip
+     *  registration/layout-bootstrap). `folder === ''` means the user
+     *  cancelled. */
+    requestChooseCloudShowFolder: () => Promise<{ folder: string; existingInstall: boolean }>;
     /** Welcome-screen cloud-CTA flag (electron-store, set by --reset-cloud /
      *  --reset-nocloud). */
     getWelcomeShowCloud: () => Promise<boolean>;

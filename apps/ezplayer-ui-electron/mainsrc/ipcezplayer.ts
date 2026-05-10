@@ -527,23 +527,30 @@ export async function registerContentHandlers(
         await loadShowFolder();
         return sf!;
     });
-    ipcMain.handle('ipcUIChooseCloudShowFolder', async (_event): Promise<string> => {
-        const sf = await pickCloudShowFolder();
-        if (!sf) return '';
-        // Seed `.ezplayer/cloud-config.json` with `layoutSource: 'cloud'` BEFORE
-        // loadShowFolder runs, so the loaded config reflects cloud mode immediately.
-        await ensureEzplayerSubdir(sf);
-        const seedPath = settingsPath(sf, 'cloud-config.json');
-        const existing = await loadCloudConfigFromDisk(seedPath);
-        updateCloudConfig({
-            // Preserve any URL/token already there (e.g. from a previous bootstrap attempt).
-            cloudServiceUrl: existing.cloudServiceUrl,
-            playerIdToken: existing.playerIdToken,
-            layoutSource: 'cloud',
-        });
-        await loadShowFolder();
-        return sf;
-    });
+    ipcMain.handle(
+        'ipcUIChooseCloudShowFolder',
+        async (_event): Promise<{ folder: string; existingInstall: boolean }> => {
+            const result = await pickCloudShowFolder();
+            if (!result.folder) return { folder: '', existingInstall: false };
+            const sf = result.folder;
+            await ensureEzplayerSubdir(sf);
+            // If the folder already has a cloud-config (existingInstall), obey it —
+            // don't silently flip its layoutSource and don't trigger a layout fetch
+            // that would overwrite their files. Only force layoutSource='cloud' on
+            // a fresh seed.
+            if (!result.existingInstall) {
+                const seedPath = settingsPath(sf, 'cloud-config.json');
+                const existing = await loadCloudConfigFromDisk(seedPath);
+                updateCloudConfig({
+                    cloudServiceUrl: existing.cloudServiceUrl,
+                    playerIdToken: existing.playerIdToken,
+                    layoutSource: 'cloud',
+                });
+            }
+            await loadShowFolder();
+            return { folder: sf, existingInstall: result.existingInstall };
+        },
+    );
     ipcMain.handle('ipcValidateShowDirectory', async (_event, showDirectory?: string) => {
         return await isValidShowDirectory(showDirectory ?? getCurrentShowFolder());
     });

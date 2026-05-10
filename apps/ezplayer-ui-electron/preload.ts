@@ -46,10 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     requestChooseShowFolder: async (): Promise<string> => {
         return await ipcRenderer.invoke('ipcUIChooseShowFolder');
     },
-    /** Cloud-managed-folder picker. Picks any writable folder, seeds it with a fresh
-     *  cloud-config (`layoutSource: 'cloud'`), locks it, loads it. Returns the chosen path,
-     *  or empty string if the user cancelled. */
-    requestChooseCloudShowFolder: async (): Promise<string> => {
+    /** Cloud-managed-folder picker. Picks any writable folder, locks it, loads it.
+     *  - Fresh folder: seeds `.ezplayer/cloud-config.json` with `layoutSource: 'cloud'`.
+     *  - Already has `.ezplayer/cloud-config.json`: opens as-is (`existingInstall: true`),
+     *    no reseed, layoutSource is whatever the existing config says.
+     *  - Folder is empty `string` if the user cancelled. */
+    requestChooseCloudShowFolder: async (): Promise<{ folder: string; existingInstall: boolean }> => {
         return await ipcRenderer.invoke('ipcUIChooseCloudShowFolder');
     },
     getWelcomeShowCloud: async (): Promise<boolean> => {
