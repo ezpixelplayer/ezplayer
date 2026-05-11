@@ -2,19 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 
 /**
- * Crash-safe write: stage to a sibling temp file, fsync, then rename atomically
- * over the target. The temp file lives in the same directory so the rename is
- * a same-filesystem operation (`rename(2)` is atomic on POSIX and uses
- * `MoveFileEx(..., REPLACE_EXISTING)` on Windows, which is atomic on NTFS).
- *
- * Replaces the previous `fs.writeFile(targetPath, ...)` pattern, which opens
- * the target with `O_TRUNC`. That has two failure modes both of which we hit:
- *   - Process killed between truncate and write → file persists at 0 bytes.
- *   - Concurrent reader (e.g. `git add`) sees the file mid-truncate → reads 0
- *     bytes ("short read while indexing").
- *
- * The temp file uses the writer's pid + a random suffix so two callers writing
- * the same file won't collide on their stage paths.
+ * Crash-safe write: stage to a sibling temp file, fsync, then rename over the
+ * target. Avoids the 0-byte window of a plain `writeFile` with `O_TRUNC`.
  */
 export async function atomicWriteFile(
     targetPath: string,

@@ -642,64 +642,39 @@ export type CloudCommand =
           intervals?: { registrationMs?: number; manifestMs?: number };
       };
 
+// `playerCommand` / `settings` mirror the LAN-side HTTP endpoints over the WS
+// so cloud viewers (no HTTP route to the player) can drive playback too.
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
     | { type: 'cloudCommand'; cmd: CloudCommand }
-    /** Trigger a player command (skip/jump/etc.). Mirrors the LAN-side
-     *  `POST /api/player-command` HTTP path, but goes over the WS so a cloud
-     *  viewer (with no HTTP route to the player) can drive playback through
-     *  the bridge. */
     | { type: 'playerCommand'; cmd: EZPlayerCommand }
-    /** Apply playback settings. Mirrors `POST /api/playback-settings` for the
-     *  same reason as `playerCommand` — cloud viewers need a WS-only path. */
     | { type: 'settings'; settings: PlaybackSettings };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 
-/** Out-of-band commands the cloud delivers in the checkin response. These
- *  control the cloud-bridge lifecycle (currently: should the player open a
- *  WebSocket bridge to the cloud?). They are deliberately distinct from
- *  `CloudCommand`, which is the in-band UI/IPC verb set delivered through the
- *  WS/IPC layer. New out-of-band commands add a variant here plus a handler
- *  in cloudpollparent. */
+/** Bridge-lifecycle commands the cloud emits in the checkin response.
+ *  Distinct from `CloudCommand` (those ride the WS once a bridge exists). */
 export type OutOfBandCommand =
     | {
           type: 'openCloudWS';
-          /** Optional override URL to dial. v1: omitted by the cloud; player
-           *  synthesizes `${cloudUrl}api/player/wsBridge?…` from its own
-           *  config. Reason: a cloud server behind a load balancer / ingress
-           *  often doesn't see its own public hostname (`ctx.host` resolves
-           *  to an internal upstream IP); the player already knows where it
-           *  polled and that's the authoritative answer. Field kept for
-           *  future shard-routing where the cloud directs to a specific
-           *  node URL. */
+          /** Optional override URL. Omitted in v1; player synthesizes from
+           *  its own cloudUrl since cloud-side host detection is unreliable
+           *  behind ingress. Reserved for future shard routing. */
           wsUrl?: string;
-          /** One-shot session id the bridge will use to correlate the player and
-           *  the browser viewer. Player echoes this in its WS handshake. */
           sessionId: string;
-          /** TTL (seconds) before this command is stale; if the player hasn't
-           *  connected within the TTL it should give up rather than racing
-           *  against a viewer that has since closed. Subsequent checkins
-           *  re-issue the command with a fresh TTL while the viewer remains. */
           ttlSeconds: number;
       }
     | {
           type: 'closeCloudWS';
-          /** sessionId matching the openCloudWS that opened it; lets the player
-           *  ignore stale closes for an already-replaced session. Optional —
-           *  absence means "close any current bridge." */
+          /** Absent → close any current bridge. */
           sessionId?: string;
       };
 
-/** POST /api/player/checkin/:player_token — body. All fields are optional, so
- *  an empty body is a valid command-poll. When fields are present, the cloud
- *  records them so the show-builder Players pane can render an at-a-glance
- *  status without the player having to push the heavier pstat/cstat/nstat
- *  endpoints on every tick. */
+/** POST /api/player/checkin/:token body — all fields optional (empty body is
+ *  a valid command-poll). Present fields update last_* timestamps and feed
+ *  the show-builder Players pane. */
 export interface PlayerCheckinRequest {
-    /** Epoch ms reported by the player at checkin time. The cloud uses this
-     *  alongside its own clock to bound skew when stamping last_checkin. */
     now?: number;
     currentlyPlaying?: string;
     lastLayoutSync?: number;
@@ -714,11 +689,7 @@ export interface PlayerCheckinRequest {
 }
 
 export interface PlayerCheckinResponse {
-    /** False when the cloud doesn't recognize this player_token — player should
-     *  treat this the same as `isregistered=false` (paint registration UI). */
     registered: boolean;
-    /** Out-of-band commands the player should act on. Empty/omitted when
-     *  nothing is pending. */
     commands?: OutOfBandCommand[];
 }
 

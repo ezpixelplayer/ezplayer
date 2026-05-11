@@ -21,10 +21,7 @@ export const WelcomeScreen = () => {
     const [isOpening, setIsOpening] = React.useState(false);
     const [stage, setStage] = React.useState<WelcomeStage>('choose');
 
-    // The cloud CTA is hidden by default (the cloud service hasn't launched and
-    // exposing endpoints in the UI without a working backend confuses testers).
-    // Enable via `electron --reset-cloud`; flip back with `--reset` or
-    // `--reset-nocloud`. Once the production cloud lands we'll flip the default.
+    // Hidden until the cloud service launches; enable with `--reset-cloud`.
     const [showCloudCTA, setShowCloudCTA] = React.useState(false);
     React.useEffect(() => {
         let cancelled = false;
