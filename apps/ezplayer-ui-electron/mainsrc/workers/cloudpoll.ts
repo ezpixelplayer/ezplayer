@@ -14,6 +14,7 @@ import {
     type CloudPollScheduleEntry,
     type CloudSeqManifestEntry,
     type CloudSequenceProgress,
+    type OutOfBandCommand,
     type PlayerCheckinRequest,
     type PlayerCheckinResponse,
     type PlayerCStatusContent,
@@ -146,6 +147,18 @@ function recordSuccess() {
     }
 }
 
+/** Build the cloud-bridge WebSocket URL from our own configured cloudUrl.
+ *  Uses URL parsing so we get scheme + host + any path prefix correctly,
+ *  then swaps http→ws / https→wss. Trailing `/api/player/wsBridge?…` mirrors
+ *  the cloud-side path registered in `cloudBridge.ts`. */
+function buildBridgeWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
+    const u = new URL(cloudUrlIn);
+    u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+    // cloudUrl convention is to end with `/`; preserve any prefix path.
+    const base = u.toString().replace(/\/+$/, '');
+    return `${base}/api/player/wsBridge?player_token=${encodeURIComponent(token)}&session=${encodeURIComponent(sessionId)}`;
+}
+
 // -- registration heartbeat ----------------------------------------------------
 
 async function pollRegistration() {
@@ -188,7 +201,17 @@ async function pollRegistration() {
             },
         });
         if (reply.commands && reply.commands.length > 0) {
-            post({ type: 'outOfBandCommands', commands: reply.commands });
+            // Synthesize the bridge WS URL on our side from the cloud URL we
+            // just polled — `cloudUrl` is the authoritative answer for "where
+            // is the cloud". The cloud-server-side `ctx.host` view of itself
+            // is unreliable behind ingress/load-balancers (it reports the
+            // internal upstream IP, which ETIMEDOUTs from outside).
+            const commands = reply.commands.map<OutOfBandCommand>((cmd) =>
+                cmd.type === 'openCloudWS'
+                    ? { ...cmd, wsUrl: buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId) }
+                    : cmd,
+            );
+            post({ type: 'outOfBandCommands', commands });
         }
     } catch (e) {
         const err = e as Error;

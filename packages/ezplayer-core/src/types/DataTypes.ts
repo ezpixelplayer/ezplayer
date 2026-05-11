@@ -658,8 +658,15 @@ export type PlayerClientWebSocketMessage =
 export type OutOfBandCommand =
     | {
           type: 'openCloudWS';
-          /** Full ws:// or wss:// URL the player should dial. */
-          wsUrl: string;
+          /** Optional override URL to dial. v1: omitted by the cloud; player
+           *  synthesizes `${cloudUrl}api/player/wsBridge?…` from its own
+           *  config. Reason: a cloud server behind a load balancer / ingress
+           *  often doesn't see its own public hostname (`ctx.host` resolves
+           *  to an internal upstream IP); the player already knows where it
+           *  polled and that's the authoritative answer. Field kept for
+           *  future shard-routing where the cloud directs to a specific
+           *  node URL. */
+          wsUrl?: string;
           /** One-shot session id the bridge will use to correlate the player and
            *  the browser viewer. Player echoes this in its WS handshake. */
           sessionId: string;
