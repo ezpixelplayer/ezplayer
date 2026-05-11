@@ -49,7 +49,12 @@ export function getImageUrl(
     }
 
     if (remoteImageUrl) return remoteImageUrl;
-    if (localImagePath && id) return `${apiBase}/api/getimage/${id}`;
+    // Send id as a query param: cloud-sourced ids are `<user>|<vseq>` and
+    // DBOS Cloud's edge rejects `%7C` in URL paths with 400 before the
+    // request reaches our app. Query strings are not subject to the same
+    // character whitelist. Server-side accepts both LAN (player Koa) and
+    // cloud (cloud-endpoint proxy) at this URL shape.
+    if (localImagePath && id) return `${apiBase}/api/getimage?id=${encodeURIComponent(id)}`;
     return undefined;
 }
 

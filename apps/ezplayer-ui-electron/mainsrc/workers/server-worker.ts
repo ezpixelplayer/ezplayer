@@ -453,10 +453,13 @@ async function dispatchHttpProxy(
     pathStr: string,
     query: Record<string, string> | undefined,
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
-    // /api/getimage/:id
-    const getimage = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
-    if (getimage) {
-        const sequenceId = decodeURIComponent(getimage[1]);
+    // /api/getimage — id in path or query. Query form is preferred for cloud
+    // because DBOS Cloud's edge rejects `%7C` (composite-id pipe) in paths.
+    const getimagePath = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
+    const getimageQuery = pathStr === '/api/getimage' ? query?.id : undefined;
+    if (getimagePath || getimageQuery) {
+        const raw = getimagePath ? getimagePath[1] : getimageQuery!;
+        const sequenceId = decodeURIComponent(raw);
         const sanitized = sequenceId.replace(/[^a-zA-Z0-9\-_|]/g, '');
         if (sanitized !== sequenceId) return { status: 400 };
         const file = getSequenceThumbnailLocal(sequenceId);
@@ -558,22 +561,23 @@ async function startServer(config: ServerWorkerData) {
     webApp.use(bodyParser());
 
     // ----------------------------------------------
-    // API: GET /api/getimage/:sequenceId - serves images by sequence ID
+    // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
+    // (legacy). Cloud-sourced ids are `<user>|<vseq>`; DBOS Cloud's edge
+    // rejects `%7C` in URL paths, so the preferred caller-side form is the
+    // query-string variant. Both shapes are accepted so a new browser
+    // bundle against an old player still resolves, and vice versa.
     // ----------------------------------------------
-    router.get('/api/getimage/:sequenceId', async (ctx) => {
-        const sequenceId = ctx.params.sequenceId;
-
+    const serveGetImage = async (ctx: any, sequenceId: string | undefined) => {
         if (!sequenceId) {
             ctx.status = 400;
             ctx.body = { error: 'Sequence ID is required' };
             return;
         }
 
-        // Sanitize sequence ID to prevent path traversal. Cloud-sourced ids are
-        // composite (`<user_id>|<vseq_id>`) so `|` is allowed alongside the
-        // hyphen/underscore alphanumerics. The id is only used as a cache key — the
-        // actual file path is read from the cached SequenceRecord, not constructed
-        // from the id — so the rule just has to keep `/`, `\`, and `.` out.
+        // Sanitize sequence ID to prevent path traversal. The id is only used
+        // as a cache key — the actual file path is read from the cached
+        // SequenceRecord, not constructed from the id — so the rule just has
+        // to keep `/`, `\`, and `.` out.
         const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9\-_|]/g, '');
         if (sanitizedId !== sequenceId) {
             ctx.status = 400;
@@ -590,7 +594,6 @@ async function startServer(config: ServerWorkerData) {
                 return;
             }
 
-            // Set appropriate MIME type
             ctx.type = inferMimeType(seqfile);
             await send(ctx, path.basename(seqfile), { root: path.dirname(seqfile) });
         } catch (error) {
@@ -598,6 +601,13 @@ async function startServer(config: ServerWorkerData) {
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }
+    };
+
+    router.get('/api/getimage', async (ctx) => {
+        await serveGetImage(ctx, ctx.query.id as string | undefined);
+    });
+    router.get('/api/getimage/:sequenceId', async (ctx) => {
+        await serveGetImage(ctx, ctx.params.sequenceId);
     });
 
     // ----------------------------------------------
