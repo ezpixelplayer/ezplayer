@@ -121,7 +121,8 @@ export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper 
 
 export { initI18N } from './i18n/i18n';
 
-export { getImageUrl } from './util/imageUtils';
+export { getImageUrl, useImageUrl } from './util/imageUtils';
+export { ApiBaseProvider, useApiBase } from './util/ApiBaseProvider';
 
 export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';

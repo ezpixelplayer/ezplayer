@@ -630,6 +630,52 @@ export type PlayerWebSocketMessage =
     | PlayerWebSocketKick
     | PlayerWebSocketBridgeStatus;
 
+/** HTTP-over-WS proxy: lazy fetch of binary/large artifacts (thumbnails,
+ *  3D meshes, layout XML caches) over a dedicated WS that's separate from
+ *  the status WS so big payloads don't head-of-line block snapshots/pings.
+ *
+ *  Cloud-endpoint authenticates the upgrade then is a near-transparent
+ *  pipe — it reads `reqId` to route player→viewer responses, but doesn't
+ *  inspect status/headers/body. v1 sends the full body in one envelope;
+ *  chunked variants (`httpProxyChunk` + `httpProxyEnd`) can be added later
+ *  without breaking this shape since they're a separate `type`. */
+export type HttpProxyRequest = {
+    type: 'httpProxyRequest';
+    reqId: string;
+    method: 'GET';
+    /** Path on the player's local Koa, e.g. `/api/getimage/:id`. */
+    path: string;
+    query?: Record<string, string>;
+};
+
+export type HttpProxyResponse = {
+    type: 'httpProxyResponse';
+    reqId: string;
+    status: number;
+    headers?: Record<string, string>;
+    /** Base64-encoded body. permessage-deflate on the proxy WS recovers
+     *  most of the 33% base64 overhead for text/JSON; PNG/JPG stays as-is.
+     *  Empty string / omitted for status-only responses (204, redirects)
+     *  *and* for chunked responses — body data then arrives via subsequent
+     *  `httpProxyChunk` messages. */
+    bodyBase64?: string;
+    /** When true, body data follows in `httpProxyChunk` messages with the
+     *  same `reqId`, terminated by one with `end: true`. Used when a single
+     *  WS frame would be too large (multi-MB OBJ files, big XML caches). */
+    chunked?: boolean;
+};
+
+export type HttpProxyChunk = {
+    type: 'httpProxyChunk';
+    reqId: string;
+    /** 0-based sequence within this reqId's chunk stream. */
+    seq: number;
+    /** Base64-encoded chunk body. */
+    bodyBase64: string;
+    /** When true, this is the final chunk; no more arrive for this reqId. */
+    end?: boolean;
+};
+
 /** Verbs the renderer can ask the player's cloud worker (or the cloud app's local
  *  cloud-state manager) to perform. Modeled on `EZPlayerCommand`: a discriminated
  *  union dispatched through one umbrella API (`issueCloudCommand`) instead of a
@@ -678,6 +724,10 @@ export type OutOfBandCommand =
            *  its own cloudUrl since cloud-side host detection is unreliable
            *  behind ingress. Reserved for future shard routing. */
           wsUrl?: string;
+          /** Parallel WS for HTTP-over-WS proxy traffic (lazy fetches of
+           *  thumbnails, layout XML, 3D files). Same auth boundary as wsUrl;
+           *  player synthesizes alongside wsUrl for the same reason. */
+          proxyWsUrl?: string;
           sessionId: string;
           ttlSeconds: number;
       }

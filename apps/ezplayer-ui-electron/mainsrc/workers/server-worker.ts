@@ -223,9 +223,10 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
             cachedMovingHeads = msg.movingHeads;
         }
     } else if (msg.type === 'cloudBridgeOpen') {
-        openCloudBridge(msg.wsUrl, msg.sessionId, msg.ttlSeconds);
+        openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.sessionId, msg.ttlSeconds);
     } else if (msg.type === 'cloudBridgeClose') {
         closeCloudBridge(msg.sessionId);
+        closeCloudProxyBridge(msg.sessionId);
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
@@ -253,7 +254,12 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
-function openCloudBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+function openCloudBridge(wsUrl: string, proxyWsUrl: string | undefined, sessionId: string, ttlSeconds: number) {
+    // Dial the proxy bridge in parallel — separate WS so big HTTP-over-WS
+    // payloads (thumbnails, layout XML, OBJ files) don't head-of-line block
+    // status snapshots/pings on the main bridge.
+    if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
+
     // Same session + live socket: just refresh TTL (cheap path, fires on every checkin).
     if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.open) {
         clearTimeout(cloudBridge.ttlTimer);
@@ -304,6 +310,228 @@ function closeCloudBridge(sessionId?: string) {
     clearTimeout(cloudBridge.ttlTimer);
     try { cloudBridge.ws.close(); } catch { /* ignore */ }
     cloudBridge = undefined;
+}
+
+// -- cloud proxy bridge (HTTP-over-WS) ----------------------------------------
+//
+// Parallel to the status bridge. Cloud sends `httpProxyRequest` envelopes
+// (browser HTTP requests for thumbnails / 3D / layout XML, translated by the
+// cloud-endpoint), we dispatch via `dispatchHttpProxy` to the same handlers
+// our Koa routes use, and reply with `httpProxyResponse` envelopes. Body
+// goes as base64; permessage-deflate (default in `ws`) recovers most of the
+// 33% overhead for text/JSON, neutral on PNG/JPG.
+
+interface CloudProxyBridge {
+    sessionId: string;
+    ws: WebSocket;
+    open: boolean;
+    ttlTimer: NodeJS.Timeout;
+}
+let cloudProxyBridge: CloudProxyBridge | undefined;
+
+function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    if (cloudProxyBridge && cloudProxyBridge.sessionId === sessionId && cloudProxyBridge.open) {
+        clearTimeout(cloudProxyBridge.ttlTimer);
+        cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
+        return;
+    }
+    if (cloudProxyBridge) {
+        clearTimeout(cloudProxyBridge.ttlTimer);
+        try { cloudProxyBridge.ws.close(); } catch { /* ignore */ }
+        cloudProxyBridge = undefined;
+    }
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (err) {
+        console.error('[server-worker] cloud proxy bridge dial failed:', err);
+        return;
+    }
+    const ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
+    cloudProxyBridge = { sessionId, ws, open: false, ttlTimer };
+
+    ws.on('open', () => {
+        if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
+        console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}…`);
+    });
+    ws.on('message', (raw) => {
+        // Best-effort: parse, dispatch, reply. Errors at any layer turn into
+        // a 500 response with the same reqId so the cloud's pending-promise
+        // resolves and the browser sees a clear failure instead of timing out.
+        let reqId: string | undefined;
+        try {
+            const msg = JSON.parse(raw.toString()) as { type?: string; reqId?: string; path?: string; query?: Record<string, string> };
+            if (msg?.type !== 'httpProxyRequest' || typeof msg.reqId !== 'string') return;
+            reqId = msg.reqId;
+            void dispatchHttpProxy(msg.path ?? '', msg.query).then((res) => {
+                sendProxyResponse(ws, reqId!, res);
+            });
+        } catch (err) {
+            console.error('[server-worker] proxy message handling failed:', err);
+            if (reqId) {
+                try {
+                    ws.send(JSON.stringify({ type: 'httpProxyResponse', reqId, status: 500 }));
+                } catch { /* ignore */ }
+            }
+        }
+    });
+    ws.on('error', (err) => {
+        console.error('[server-worker] cloud proxy bridge error:', err);
+    });
+    ws.on('close', () => {
+        if (cloudProxyBridge?.ws === ws) {
+            console.log('[server-worker] cloud proxy bridge socket closed');
+            clearTimeout(cloudProxyBridge.ttlTimer);
+            cloudProxyBridge = undefined;
+        }
+    });
+}
+
+function closeCloudProxyBridge(sessionId?: string) {
+    if (!cloudProxyBridge) return;
+    if (sessionId !== undefined && cloudProxyBridge.sessionId !== sessionId) return;
+    clearTimeout(cloudProxyBridge.ttlTimer);
+    try { cloudProxyBridge.ws.close(); } catch { /* ignore */ }
+    cloudProxyBridge = undefined;
+}
+
+/** Wire a dispatch result onto the proxy WS. Bodies up to PROXY_CHUNK_SIZE
+ *  ship as a single `httpProxyResponse`; larger ones lead with `chunked: true`
+ *  and stream the body in `httpProxyChunk` frames, last marked `end: true`.
+ *  Base64 encoding makes the envelope JSON-clean; permessage-deflate on the
+ *  WS recovers the 33% overhead for compressible payloads. */
+const PROXY_CHUNK_SIZE = 512 * 1024;
+
+function sendProxyResponse(
+    ws: WebSocket,
+    reqId: string,
+    res: { status: number; headers?: Record<string, string>; body?: Buffer },
+): void {
+    const body = res.body;
+    try {
+        if (!body || body.length <= PROXY_CHUNK_SIZE) {
+            ws.send(JSON.stringify({
+                type: 'httpProxyResponse',
+                reqId,
+                status: res.status,
+                headers: res.headers,
+                bodyBase64: body && body.length > 0 ? body.toString('base64') : undefined,
+            }));
+            return;
+        }
+        // Chunked path: status+headers first, then body in PROXY_CHUNK_SIZE pieces.
+        ws.send(JSON.stringify({
+            type: 'httpProxyResponse',
+            reqId,
+            status: res.status,
+            headers: res.headers,
+            chunked: true,
+        }));
+        let seq = 0;
+        for (let off = 0; off < body.length; off += PROXY_CHUNK_SIZE) {
+            const end = off + PROXY_CHUNK_SIZE >= body.length;
+            const slice = body.subarray(off, off + PROXY_CHUNK_SIZE);
+            ws.send(JSON.stringify({
+                type: 'httpProxyChunk',
+                reqId,
+                seq,
+                bodyBase64: slice.toString('base64'),
+                ...(end ? { end: true } : {}),
+            }));
+            seq += 1;
+        }
+    } catch (err) {
+        console.error('[server-worker] proxy response send failed:', err);
+    }
+}
+
+/** Dispatch HTTP-over-WS proxy requests. Mirrors the corresponding Koa route
+ *  for each path so consumers can use the same URL shape on LAN and cloud.
+ *  Returns body as a Buffer; the WS message handler decides single-shot vs
+ *  chunked based on size. */
+async function dispatchHttpProxy(
+    pathStr: string,
+    query: Record<string, string> | undefined,
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    // /api/getimage/:id
+    const getimage = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
+    if (getimage) {
+        const sequenceId = decodeURIComponent(getimage[1]);
+        const sanitized = sequenceId.replace(/[^a-zA-Z0-9\-_|]/g, '');
+        if (sanitized !== sequenceId) return { status: 400 };
+        const file = getSequenceThumbnailLocal(sequenceId);
+        if (!file) return { status: 404 };
+        try {
+            const buf = await fsp.readFile(file);
+            return {
+                status: 200,
+                headers: { 'content-type': inferMimeType(file) },
+                body: buf,
+            };
+        } catch (err) {
+            console.error('[server-worker] proxy getimage read failed:', err);
+            return { status: 500 };
+        }
+    }
+
+    // Layout caches — read directly from the module-level vars the Koa
+    // routes also serve. JSON-stringified and returned as a Buffer for
+    // uniform chunking behavior on the wire.
+    if (pathStr === '/api/model-coordinates') return jsonResult(cachedModelCoordinates3D);
+    if (pathStr === '/api/model-coordinates-2d') return jsonResult(cachedModelCoordinates2D);
+    if (pathStr === '/api/view-objects') return jsonResult(cachedViewObjects);
+    if (pathStr === '/api/layout-settings') return jsonResult(cachedLayoutSettings);
+    if (pathStr === '/api/moving-heads') return jsonResult(cachedMovingHeads);
+
+    // /api/show-file?path=… — OBJ/MTL/textures for the 3D viewer.
+    // Same validation as the Koa route; deviations would create a path the
+    // LAN-only consumer can hit but cloud can't (or vice versa).
+    if (pathStr === '/api/show-file') {
+        return dispatchShowFile(query?.path);
+    }
+
+    return { status: 404 };
+}
+
+function jsonResult(value: unknown): { status: number; headers: Record<string, string>; body: Buffer } {
+    return {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: Buffer.from(JSON.stringify(value ?? null), 'utf8'),
+    };
+}
+
+async function dispatchShowFile(filePath: string | undefined): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+    if (!showFolder) return { status: 400 };
+    if (!filePath) return { status: 400 };
+    if (path.isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath)) return { status: 400 };
+    const segments = filePath.replace(/\\/g, '/').split('/');
+    if (segments.some((s) => s === '..')) return { status: 403 };
+    const allowedExt = new Set([
+        '.obj', '.mtl',
+        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds',
+    ]);
+    const ext = path.extname(filePath).toLowerCase();
+    if (!allowedExt.has(ext)) return { status: 403 };
+    try {
+        const resolvedShowFolder = path.resolve(showFolder);
+        const resolvedPath = path.resolve(resolvedShowFolder, filePath);
+        const inFolder =
+            resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep)
+            || resolvedPath.toLowerCase() === resolvedShowFolder.toLowerCase();
+        if (!inFolder) return { status: 403 };
+        if (!(await exists(resolvedPath))) return { status: 404 };
+        const buf = await fsp.readFile(resolvedPath);
+        return {
+            status: 200,
+            headers: { 'content-type': inferMimeType(resolvedPath) },
+            body: buf,
+        };
+    } catch (err) {
+        console.error('[server-worker] proxy show-file read failed:', err);
+        return { status: 500 };
+    }
 }
 
 async function startServer(config: ServerWorkerData) {

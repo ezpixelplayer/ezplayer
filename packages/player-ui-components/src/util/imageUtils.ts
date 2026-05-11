@@ -1,3 +1,5 @@
+import { useApiBase } from './ApiBaseProvider';
+
 // Works in Node and compiles for browser bundles
 function pathToFileURLCompat(path: string): URL {
     if (typeof process !== 'undefined' && process.versions?.node) {
@@ -21,16 +23,24 @@ function isElectronRenderer(): boolean {
 }
 
 /**
- * Utility function to get the best image URL for display.
- * - In Electron: converts local paths to file:// URLs
- * - In Web: Makes API calls to get the file
+ * Resolve the best image URL for display. Pure function so it can run outside
+ * React (e.g. inside selectors); React components should prefer `useImageUrl`,
+ * which threads `apiBase` from context.
  *
- * @param id - Sequence ID for API-based
- * @param remoteImageUrl - The artwork URL from work.artwork (may be relative or absolute)
- * @param localImagePath - The local file path or resolved thumb path
+ * - In Electron renderer: prefers `localImagePath` as `file://...`.
+ * - In any browser: prefers `remoteImageUrl`; falls back to
+ *   `${apiBase}/getimage/${id}` when a local file exists on the player.
+ *
+ * `apiBase` defaults to `/api` (LAN/Electron same-origin); the cloud SPA
+ * passes `/api/enduserspa/proxy/${player_token}` so the same relative path
+ * resolves through the cloud-endpoint's HTTP-over-WS proxy.
  */
-export function getImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
-    // In Electron renderer, prefer local file path
+export function getImageUrl(
+    id?: string,
+    remoteImageUrl?: string,
+    localImagePath?: string,
+    apiBase: string = '',
+): string | undefined {
     if (isElectronRenderer()) {
         if (localImagePath && !localImagePath.startsWith('http')) {
             return toFileUrl(localImagePath);
@@ -38,13 +48,20 @@ export function getImageUrl(id?: string, remoteImageUrl?: string, localImagePath
         return remoteImageUrl;
     }
 
-    // In web browser, could be artwork URL, or could ask our server to get it if a local file exists
     if (remoteImageUrl) return remoteImageUrl;
-
-    // There IS a local path ... but we should ask the server to handle it by ID.
-    if (localImagePath) {
-        return `/api/getimage/${id}`;
-    }
-
+    if (localImagePath && id) return `${apiBase}/api/getimage/${id}`;
     return undefined;
+}
+
+/**
+ * Hook variant: same as `getImageUrl` but reads `apiBase` from context so
+ * components don't have to thread it. Today this returns a same-origin URL
+ * the browser fetches with `<img src=…>`; the hook shape is also the natural
+ * escape hatch later for async resolution (blob URLs from WS-only delivery,
+ * fingerprint-based CDN lookups, IndexedDB cache) — at which point the
+ * return becomes `{ url, loading }` without changing call-site placement.
+ */
+export function useImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
+    const apiBase = useApiBase();
+    return getImageUrl(id, remoteImageUrl, localImagePath, apiBase);
 }

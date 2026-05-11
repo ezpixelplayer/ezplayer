@@ -43,15 +43,15 @@ let layoutInstalledListener:
 function applyOutOfBandCommand(cmd: OutOfBandCommand) {
     switch (cmd.type) {
         case 'openCloudWS':
-            // wsUrl is optional on the wire (cloud-side host detection is
-            // unreliable behind ingress/load-balancers); the worker fills it
-            // in from its own cloudUrl before posting to us. If we get here
-            // with no wsUrl, something upstream is broken — warn and skip.
+            // wsUrl/proxyWsUrl are optional on the wire (cloud-side host
+            // detection is unreliable behind ingress/load-balancers); the
+            // worker fills them in from its own cloudUrl before posting to
+            // us. If we get here with no wsUrl, something upstream is broken.
             if (!cmd.wsUrl) {
                 console.warn('[cloudpoll] openCloudWS missing wsUrl; ignoring command');
                 return;
             }
-            cloudBridgeOpen(cmd.wsUrl, cmd.sessionId, cmd.ttlSeconds);
+            cloudBridgeOpen(cmd.wsUrl, cmd.proxyWsUrl, cmd.sessionId, cmd.ttlSeconds);
             return;
         case 'closeCloudWS':
             // sessionId may be omitted by the cloud → "close any current bridge".

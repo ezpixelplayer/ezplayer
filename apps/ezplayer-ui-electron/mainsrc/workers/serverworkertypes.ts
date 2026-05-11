@@ -44,6 +44,9 @@ export type MainToServerWorkerMessage =
            *  redials; different sessionId supersedes. */
           type: 'cloudBridgeOpen';
           wsUrl: string;
+          /** Parallel WS for HTTP-over-WS proxy traffic. May be omitted if
+           *  the cloud doesn't (yet) advertise one — proxy stays disabled. */
+          proxyWsUrl?: string;
           sessionId: string;
           ttlSeconds: number;
       }

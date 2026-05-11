@@ -2,7 +2,7 @@ import { FC, useMemo } from 'react';
 import { Typography, Button, Card, useTheme, useMediaQuery } from '@mui/material';
 import { Box } from '../box/Box';
 import { MusicNote } from '@mui/icons-material';
-import { getImageUrl } from '../../util/imageUtils';
+import { useImageUrl } from '../../util/imageUtils';
 
 interface SongCardButton {
     label: string;
@@ -27,8 +27,9 @@ export const SongCard: FC<SongCardProps> = ({ id, title, artist, vendor, artwork
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-    // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [id, artwork, localImagePath]);
+    // Local image takes priority where available; on cloud the URL routes
+    // through the HTTP-over-WS proxy (apiBase from context).
+    const imageUrl = useImageUrl(id, artwork, localImagePath);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `${id}-${imageUrl}`, [id, imageUrl]);

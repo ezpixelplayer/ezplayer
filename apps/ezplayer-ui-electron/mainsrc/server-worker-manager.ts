@@ -341,11 +341,12 @@ export function broadcastToWebSocket(key: string, value: unknown) {
  * TTL timer to auto-close if the cloud goes silent. Same sessionId with a
  * live socket is idempotent (refreshes TTL); a dropped socket redials.
  */
-export function cloudBridgeOpen(wsUrl: string, sessionId: string, ttlSeconds: number) {
+export function cloudBridgeOpen(wsUrl: string, proxyWsUrl: string | undefined, sessionId: string, ttlSeconds: number) {
     if (!serverWorker) return;
     const message: MainToServerWorkerMessage = {
         type: 'cloudBridgeOpen',
         wsUrl,
+        proxyWsUrl,
         sessionId,
         ttlSeconds,
     };

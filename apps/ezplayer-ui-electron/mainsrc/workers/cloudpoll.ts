@@ -152,11 +152,20 @@ function recordSuccess() {
  *  then swaps http→ws / https→wss. Trailing `/api/player/wsBridge?…` mirrors
  *  the cloud-side path registered in `cloudBridge.ts`. */
 function buildBridgeWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
+    return buildWsUrlAt(cloudUrlIn, '/api/player/wsBridge', token, sessionId);
+}
+
+/** Parallel WS for HTTP-over-WS proxy traffic. Same auth boundary, different
+ *  path so big payloads don't share head-of-line with status snapshots. */
+function buildProxyWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
+    return buildWsUrlAt(cloudUrlIn, '/api/player/proxyBridge', token, sessionId);
+}
+
+function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId: string): string {
     const u = new URL(cloudUrlIn);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-    // cloudUrl convention is to end with `/`; preserve any prefix path.
     const base = u.toString().replace(/\/+$/, '');
-    return `${base}/api/player/wsBridge?player_token=${encodeURIComponent(token)}&session=${encodeURIComponent(sessionId)}`;
+    return `${base}${path}?player_token=${encodeURIComponent(token)}&session=${encodeURIComponent(sessionId)}`;
 }
 
 // -- registration heartbeat ----------------------------------------------------
@@ -208,7 +217,11 @@ async function pollRegistration() {
             // internal upstream IP, which ETIMEDOUTs from outside).
             const commands = reply.commands.map<OutOfBandCommand>((cmd) =>
                 cmd.type === 'openCloudWS'
-                    ? { ...cmd, wsUrl: buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId) }
+                    ? {
+                          ...cmd,
+                          wsUrl: buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          proxyWsUrl: buildProxyWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                      }
                     : cmd,
             );
             post({ type: 'outOfBandCommands', commands });

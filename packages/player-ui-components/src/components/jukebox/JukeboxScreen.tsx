@@ -12,7 +12,7 @@ import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
 import { PlaylistDropdown } from './PlaylistDropdown';
 import type { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
-import { getImageUrl } from '../../util/imageUtils';
+import { useImageUrl } from '../../util/imageUtils';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
 import { isSongAllowedForJukebox } from '../../services/jukeboxFilter';
 
@@ -86,8 +86,9 @@ function SongThumbnail({
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
 
-    // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [id, artwork, localImagePath]);
+    // Local image takes priority where available; on cloud the URL routes
+    // through the HTTP-over-WS proxy (apiBase from context).
+    const imageUrl = useImageUrl(id, artwork, localImagePath);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `thumb-${imageUrl}`, [imageUrl]);
