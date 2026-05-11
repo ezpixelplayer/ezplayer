@@ -33,6 +33,7 @@ export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/
 export { CloudPage } from './components/cloud/CloudPage';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
+export { BridgeStatusOverlay } from './components/status/BridgeStatusOverlay';
 export { Preview3D } from './components/preview-3d/Preview3D';
 export type { Preview3DProps, ViewMode, ViewPlane } from './components/preview-3d/Preview3D';
 export { Preview3DPage, PREVIEW_3D_PAGE_STORAGE_KEY } from './components/preview-3d/Preview3DPage';

@@ -156,8 +156,6 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
                                             padding="normal"
                                             sx={{
                                                 minWidth: col.minWidth ?? 120,
-                                                width: col.flex ? `${col.flex * 100}px` : 'auto',
-                                                maxWidth: col.minWidth ?? undefined,
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                                 whiteSpace: 'nowrap',
@@ -362,15 +360,16 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             field: 'actions',
             headerName: '',
             flex: 0.7,
-            minWidth: 150,
+            minWidth: 180,
+            sortable: false,
             renderCell: (params: any) => (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 0.5 }}>
                     <Button
                         aria-label="edit"
                         startIcon={<EditIcon />}
                         onClick={() => handleEditPlaylistClick(params.row.id)}
                         size="small"
-                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
                         aria-label="clone"
@@ -378,7 +377,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                         onClick={() => clonePlaylist(params.row.id)}
                         size="small"
                         color="primary"
-                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
                         aria-label="delete"
@@ -386,7 +385,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                         color="error"
                         onClick={() => handleDeleteClick(params.row.id)}
                         size="small"
-                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                 </Box>
             ),

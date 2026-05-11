@@ -20,6 +20,7 @@ import {
     setCStatus,
     setNStatus,
     setPlaybackStatistics,
+    setPlayerConnected,
     setPlaylists,
     setPStatus,
     setScheduledPlaylists,
@@ -97,12 +98,20 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
         });
 
+        // Drive the lost-connection overlay off the WS connection state.
+        // LAN has a single hop, so we map it onto `playerConnected` and leave
+        // `bridgeConnected` undefined (treated as up).
+        const unsubscribeWsConnect = wsService.onConnect(() => dispatch(setPlayerConnected(true)));
+        const unsubscribeWsDisconnect = wsService.onDisconnect(() => dispatch(setPlayerConnected(false)));
+
         // Connect will send the initial data
         wsService.connect();
 
         this.onDisconnect = async () => {
             unsubscribeSnapshot();
             unsubscribePing();
+            unsubscribeWsConnect();
+            unsubscribeWsDisconnect();
             wsService.disconnect();
         };
     }
