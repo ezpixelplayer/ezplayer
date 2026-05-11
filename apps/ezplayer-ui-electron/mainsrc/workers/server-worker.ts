@@ -146,6 +146,14 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('sendPlaybackSettings', msg.settings).catch((err) => {
             console.error('[server-worker] settings failed:', err);
         });
+    } else if (msg.type === 'updatePlaylists') {
+        void rpc.call('updatePlaylistsHandler', msg.data).catch((err) => {
+            console.error('[server-worker] updatePlaylists failed:', err);
+        });
+    } else if (msg.type === 'updateSchedule') {
+        void rpc.call('updateScheduleHandler', msg.data).catch((err) => {
+            console.error('[server-worker] updateSchedule failed:', err);
+        });
     }
 });
 

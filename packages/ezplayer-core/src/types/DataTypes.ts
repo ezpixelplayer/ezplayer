@@ -655,14 +655,17 @@ export type CloudCommand =
           intervals?: { registrationMs?: number; manifestMs?: number };
       };
 
-// `playerCommand` / `settings` mirror the LAN-side HTTP endpoints over the WS
-// so cloud viewers (no HTTP route to the player) can drive playback too.
+// `playerCommand` / `settings` / `updatePlaylists` / `updateSchedule` mirror
+// the LAN-side HTTP endpoints over the WS so cloud viewers (no HTTP route
+// to the player) can drive playback and edits too.
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
     | { type: 'cloudCommand'; cmd: CloudCommand }
     | { type: 'playerCommand'; cmd: EZPlayerCommand }
-    | { type: 'settings'; settings: PlaybackSettings };
+    | { type: 'settings'; settings: PlaybackSettings }
+    | { type: 'updatePlaylists'; data: PlaylistRecord[] }
+    | { type: 'updateSchedule'; data: ScheduledPlaylist[] };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 
