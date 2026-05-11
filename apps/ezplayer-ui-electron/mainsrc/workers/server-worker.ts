@@ -143,9 +143,22 @@ wsBroadcaster.setClientMessageHandler((msg) => {
             console.error('[server-worker] playerCommand failed:', err);
         });
     } else if (msg.type === 'settings') {
-        void rpc.call('sendPlaybackSettings', msg.settings).catch((err) => {
-            console.error('[server-worker] settings failed:', err);
-        });
+        // Mirror the POST /api/playback-settings flow: persist to disk first
+        // (so changes survive restart), then push to the live player, then
+        // re-broadcast so other clients update.
+        void (async () => {
+            try {
+                const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+                if (showFolder) {
+                    const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
+                    await rpc.call('applySettingsFromRenderer', settingsPath, msg.settings);
+                }
+                await rpc.call('sendPlaybackSettings', msg.settings);
+                wsBroadcaster.set('playbackSettings', msg.settings);
+            } catch (err) {
+                console.error('[server-worker] settings failed:', err);
+            }
+        })();
     } else if (msg.type === 'updatePlaylists') {
         void rpc.call('updatePlaylistsHandler', msg.data).catch((err) => {
             console.error('[server-worker] updatePlaylists failed:', err);
