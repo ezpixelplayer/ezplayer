@@ -128,12 +128,23 @@ const rpc = new MainThreadRPC();
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
-// Forward client → server WebSocket cloud commands to main via RPC. Main pushes
-// resulting state back to all clients via the broadcast channel.
+// Forward client → server WebSocket commands to main via RPC. Main pushes
+// resulting state back to all clients via the broadcast channel. These three
+// branches let the cloud bridge drive everything the LAN HTTP endpoints can
+// (cloud config, player commands, playback settings) without round-tripping
+// through HTTP — important since cloud viewers only have the WS path.
 wsBroadcaster.setClientMessageHandler((msg) => {
     if (msg.type === 'cloudCommand') {
         void rpc.call('cloudCommand', msg.cmd).catch((err) => {
             console.error('[server-worker] cloudCommand failed:', err);
+        });
+    } else if (msg.type === 'playerCommand') {
+        void rpc.call('sendPlayerCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] playerCommand failed:', err);
+        });
+    } else if (msg.type === 'settings') {
+        void rpc.call('sendPlaybackSettings', msg.settings).catch((err) => {
+            console.error('[server-worker] settings failed:', err);
         });
     }
 });

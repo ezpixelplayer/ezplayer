@@ -35,7 +35,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { Routes as ROUTES } from '../..';
+import { Routes as ROUTES, useRouteBase } from '../..';
 import { addTag, AppDispatch, postPlaylistData, RootState } from '../../';
 import { SortableItem } from './SortableItem';
 
@@ -464,6 +464,7 @@ export interface EditPlayListProps {
 export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListProps) {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const routeBase = useRouteBase();
     // const location = useLocation();
 
     const AVAILABLE_TAGS = useSelector((state: RootState) => state.playlists.tags || []);
@@ -620,7 +621,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             );
 
             // Navigate to playlist route
-            navigate(ROUTES.PLAYLIST);
+            navigate(`${routeBase}${ROUTES.PLAYLIST}`);
         } catch (error) {
             setHasUnsavedChanges(true);
             setSavePlaylistClicked(false);
@@ -878,7 +879,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
 
     const handleDiscardClick = () => {
         if (!hasUnsavedChanges) {
-            navigate(ROUTES.PLAYLIST);
+            navigate(`${routeBase}${ROUTES.PLAYLIST}`);
             return;
         }
 
@@ -891,7 +892,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
 
         if (pendingAction === 'discard') {
             setHasUnsavedChanges(false);
-            navigate(ROUTES.PLAYLIST);
+            navigate(`${routeBase}${ROUTES.PLAYLIST}`);
         } else if (pendingAction === 'navigate' && pendingNavigation) {
             navigate(pendingNavigation);
         }

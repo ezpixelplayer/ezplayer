@@ -72,6 +72,7 @@ export { createAppStore, playerReducers } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';
 export { playerSettingsAutoSaveMiddleware } from './store/slices/PlayerStatusMiddleware';
 export { InitialDataProvider } from './store/InitialDataProvider';
+export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {
     fetchSequences,

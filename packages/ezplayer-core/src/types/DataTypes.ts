@@ -645,7 +645,15 @@ export type CloudCommand =
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
     | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
-    | { type: 'cloudCommand'; cmd: CloudCommand };
+    | { type: 'cloudCommand'; cmd: CloudCommand }
+    /** Trigger a player command (skip/jump/etc.). Mirrors the LAN-side
+     *  `POST /api/player-command` HTTP path, but goes over the WS so a cloud
+     *  viewer (with no HTTP route to the player) can drive playback through
+     *  the bridge. */
+    | { type: 'playerCommand'; cmd: EZPlayerCommand }
+    /** Apply playback settings. Mirrors `POST /api/playback-settings` for the
+     *  same reason as `playerCommand` — cloud viewers need a WS-only path. */
+    | { type: 'settings'; settings: PlaybackSettings };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 

@@ -28,7 +28,7 @@ import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { AppDispatch, postPlaylistData, RootState, Routes as ROUTES } from '../..';
+import { AppDispatch, postPlaylistData, RootState, Routes as ROUTES, useRouteBase } from '../..';
 interface PlaylistRow {
     id: string;
     title: string;
@@ -191,6 +191,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     const [tagInputValue, setTagInputValue] = useState('');
 
     const navigate = useNavigate();
+    const routeBase = useRouteBase();
     const dispatch = useDispatch<AppDispatch>();
     const playlistRecords = useSelector((s: RootState) => s.playlists.playlists);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
@@ -273,8 +274,9 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     };
 
     const handleEditPlaylistClick = (playlistId: PlaylistRow) => {
-        // Navigate to create-edit-playlist with the playlist ID
-        navigate(`${ROUTES.CREATE_EDIT_PLAYLIST}/${playlistId}`);
+        // Navigate to create-edit-playlist with the playlist ID. `routeBase`
+        // is empty for LAN/Electron, `/p/<token>` for the cloud per-player view.
+        navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/${playlistId}`);
     };
 
     const formatDuration = (seconds: number): string => {
@@ -297,7 +299,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                     cursor: 'pointer',
                     userSelect: 'none',
                 }}
-                onDoubleClick={() => navigate(`${ROUTES.CREATE_EDIT_PLAYLIST}/${row.id}`)}
+                onDoubleClick={() => navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/${row.id}`)}
             >
                 {children}
             </Box>
@@ -395,7 +397,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
         setSearchQuery(value);
     };
     const handleCreatePlaylistClick = () => {
-        navigate(`${ROUTES.CREATE_EDIT_PLAYLIST}/-1`); // Navigate to create-edit-playlist with -1 as param
+        navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/-1`); // -1 means "new" — back-end picks a real id on save.
     };
 
     useEffect(() => {
