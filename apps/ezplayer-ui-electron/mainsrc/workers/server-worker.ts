@@ -493,7 +493,40 @@ async function dispatchHttpProxy(
         return dispatchShowFile(query?.path);
     }
 
+    // /api/frames-zstd — live channel-data frames, zstd-compressed. Owner-
+    // only diagnostic over WAN; the LAN path serves uncompressed frames too
+    // but for WAN the bandwidth saving is meaningful. Mirrors the Koa route's
+    // wire format: [frameSize u32 LE][seq u32 LE][zstd payload].
+    if (pathStr === '/api/frames-zstd') {
+        return dispatchFramesZstd();
+    }
+
     return { status: 404 };
+}
+
+function dispatchFramesZstd(): { status: number; headers?: Record<string, string>; body?: Buffer } {
+    if (!curFrameBuffer) return { status: 204 };
+    if (!zstdSimple) return { status: 503 };
+    const frameReader = new LatestFrameRingBuffer({
+        buffer: curFrameBuffer,
+        frameSize: 0,
+        slotCount: 0,
+        isWriter: false,
+    });
+    const result = frameReader.tryReadLatest();
+    if (!result) return { status: 204 };
+    if (!result.bytes) return { status: 500 };
+    const compressed = zstdSimple.compress(result.bytes, 1) as Uint8Array;
+    const totalSize = 8 + compressed.byteLength;
+    const buf = Buffer.allocUnsafe(totalSize);
+    buf.writeUInt32LE(result.frameSizeBytes, 0);
+    buf.writeUInt32LE(result.seq, 4);
+    buf.set(compressed, 8);
+    return {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+        body: buf,
+    };
 }
 
 function jsonResult(value: unknown): { status: number; headers: Record<string, string>; body: Buffer } {
