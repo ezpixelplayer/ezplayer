@@ -615,7 +615,20 @@ export type PlayerWebSocketKick = {
     reason: string;
 };
 
-export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPing | PlayerWebSocketKick;
+/** Emitted by the cloud bridge (never by the player itself) to tell viewers
+ *  whether the player↔cloud bridge socket is currently up. Cloud sends one
+ *  on viewer connect with the current state, and one to all viewers each
+ *  time the player WS connects or disconnects at the bridge. */
+export type PlayerWebSocketBridgeStatus = {
+    type: 'bridgeStatus';
+    playerConnected: boolean;
+};
+
+export type PlayerWebSocketMessage =
+    | PlayerWebSocketSnapshot
+    | PlayerWebSocketPing
+    | PlayerWebSocketKick
+    | PlayerWebSocketBridgeStatus;
 
 /** Verbs the renderer can ask the player's cloud worker (or the cloud app's local
  *  cloud-state manager) to perform. Modeled on `EZPlayerCommand`: a discriminated

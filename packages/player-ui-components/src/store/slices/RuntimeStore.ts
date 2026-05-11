@@ -25,6 +25,13 @@ export interface RuntimeState {
     loading: boolean;
     issuing: boolean;
     error?: string;
+
+    /** Browser↔cloud-endpoint WS state (cloud view only). `undefined` =
+     *  not in cloud view / not yet known; LAN apps don't update this. */
+    bridgeConnected?: boolean;
+    /** Player↔cloud-endpoint WS state, reported by the bridge. Same scope
+     *  as `bridgeConnected`. */
+    playerConnected?: boolean;
 }
 
 export const initialRuntimeState: RuntimeState = {
@@ -69,6 +76,12 @@ const runtimeSlice = createSlice({
         setPlaybackStatistics: (state: RuntimeState, action: PayloadAction<PlaybackStatistics>) => {
             state.playbackStats = action.payload;
         },
+        setBridgeConnected: (state: RuntimeState, action: PayloadAction<boolean>) => {
+            state.bridgeConnected = action.payload;
+        },
+        setPlayerConnected: (state: RuntimeState, action: PayloadAction<boolean>) => {
+            state.playerConnected = action.payload;
+        },
     },
     extraReducers: (builder: ActionReducerMapBuilder<RuntimeState>) => {
         builder
@@ -102,6 +115,8 @@ export const {
     setNStatus,
     setPStatus,
     setPlaybackStatistics,
+    setBridgeConnected,
+    setPlayerConnected,
 } = runtimeSlice.actions;
 
 export const runtimeActions = runtimeSlice.actions;

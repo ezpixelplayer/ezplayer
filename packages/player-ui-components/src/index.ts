@@ -93,6 +93,8 @@ export {
     setNStatus,
     setPStatus,
     setPlaybackStatistics,
+    setBridgeConnected,
+    setPlayerConnected,
     runtimeActions,
 } from './store/slices/RuntimeStore';
 
