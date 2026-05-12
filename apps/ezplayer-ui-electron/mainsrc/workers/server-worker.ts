@@ -223,10 +223,11 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
             cachedMovingHeads = msg.movingHeads;
         }
     } else if (msg.type === 'cloudBridgeOpen') {
-        openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.sessionId, msg.ttlSeconds);
+        openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.audioWsUrl, msg.sessionId, msg.ttlSeconds);
     } else if (msg.type === 'cloudBridgeClose') {
         closeCloudBridge(msg.sessionId);
         closeCloudProxyBridge(msg.sessionId);
+        closeCloudAudioBridge(msg.sessionId);
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
@@ -254,11 +255,18 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
-function openCloudBridge(wsUrl: string, proxyWsUrl: string | undefined, sessionId: string, ttlSeconds: number) {
-    // Dial the proxy bridge in parallel — separate WS so big HTTP-over-WS
-    // payloads (thumbnails, layout XML, OBJ files) don't head-of-line block
-    // status snapshots/pings on the main bridge.
+function openCloudBridge(
+    wsUrl: string,
+    proxyWsUrl: string | undefined,
+    audioWsUrl: string | undefined,
+    sessionId: string,
+    ttlSeconds: number,
+) {
+    // Dial the proxy + audio bridges in parallel — separate WSes so big
+    // HTTP-over-WS payloads and audio push don't head-of-line block status
+    // snapshots/pings on the main bridge.
     if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
+    if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
 
     // Same session + live socket: just refresh TTL (cheap path, fires on every checkin).
     if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.open) {
@@ -395,6 +403,112 @@ function closeCloudProxyBridge(sessionId?: string) {
     cloudProxyBridge = undefined;
 }
 
+// -- cloud audio bridge (push) ------------------------------------------------
+//
+// Pushes new audio chunks to the cloud as soon as they appear in the player's
+// audio ring. The cloud fans them out to attached listener WS sessions; the
+// player doesn't know or care how many listeners exist. Each chunk goes as a
+// single binary WS frame in the per-chunk wire format used by the HTTP /api/audio
+// route, prefixed with `serverNow` so the browser can refine clockOffset from
+// arrival timing across many chunks (not just a one-shot RTT at startup).
+
+interface CloudAudioBridge {
+    sessionId: string;
+    ws: WebSocket;
+    open: boolean;
+    ttlTimer: NodeJS.Timeout;
+    /** Interval handle for the chunk-polling pump. Cleared on close. */
+    pumpTimer?: NodeJS.Timeout;
+    /** Last audio chunk seq we forwarded. Drives `readAfter` on each pump tick. */
+    afterSeq: number;
+}
+let cloudAudioBridge: CloudAudioBridge | undefined;
+/** How often the push loop checks for new audio chunks. Chunks are typically
+ *  produced every 20–50ms; 20ms gives us at most ~one tick of latency. */
+const AUDIO_PUSH_INTERVAL_MS = 20;
+
+function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    if (cloudAudioBridge && cloudAudioBridge.sessionId === sessionId && cloudAudioBridge.open) {
+        clearTimeout(cloudAudioBridge.ttlTimer);
+        cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
+        return;
+    }
+    if (cloudAudioBridge) {
+        clearTimeout(cloudAudioBridge.ttlTimer);
+        if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
+        try { cloudAudioBridge.ws.close(); } catch { /* ignore */ }
+        cloudAudioBridge = undefined;
+    }
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (err) {
+        console.error('[server-worker] cloud audio bridge dial failed:', err);
+        return;
+    }
+    const ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
+    cloudAudioBridge = { sessionId, ws, open: false, ttlTimer, afterSeq: 0 };
+
+    ws.on('open', () => {
+        if (cloudAudioBridge?.ws !== ws) return;
+        cloudAudioBridge.open = true;
+        // Start clean — the listener can't replay history anyway; the next
+        // chunks we read are what they'll hear first.
+        cloudAudioBridge.afterSeq = curAudioRing?.latestSeq ?? 0;
+        console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}…`);
+
+        cloudAudioBridge.pumpTimer = setInterval(() => {
+            const slot = cloudAudioBridge;
+            if (!slot || !slot.open || !curAudioRing) return;
+            const chunks = curAudioRing.readAfter(slot.afterSeq);
+            if (chunks.length === 0) return;
+            const serverNow = Date.now();
+            for (const chunk of chunks) {
+                slot.afterSeq = chunk.seq;
+                // 8 (serverNow) + 8 (playAt) + 4*4 (incarnation/sampleRate/channels/sampleCount)
+                // + sampleCount*4 (Float32 payload).
+                const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+                const buf = Buffer.allocUnsafe(totalSize);
+                let off = 0;
+                buf.writeDoubleLE(serverNow, off); off += 8;
+                buf.writeDoubleLE(chunk.playAtRealTime, off); off += 8;
+                buf.writeUInt32LE(chunk.incarnation, off); off += 4;
+                buf.writeUInt32LE(chunk.sampleRate, off); off += 4;
+                buf.writeUInt32LE(chunk.channels, off); off += 4;
+                buf.writeUInt32LE(chunk.samples.length, off); off += 4;
+                const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
+                src.copy(buf, off);
+                try {
+                    slot.ws.send(buf, { binary: true });
+                } catch (err) {
+                    console.error('[server-worker] audio bridge send failed:', err);
+                    return;
+                }
+            }
+        }, AUDIO_PUSH_INTERVAL_MS);
+    });
+    ws.on('error', (err) => {
+        console.error('[server-worker] cloud audio bridge error:', err);
+    });
+    ws.on('close', () => {
+        if (cloudAudioBridge?.ws === ws) {
+            console.log('[server-worker] cloud audio bridge socket closed');
+            clearTimeout(cloudAudioBridge.ttlTimer);
+            if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
+            cloudAudioBridge = undefined;
+        }
+    });
+}
+
+function closeCloudAudioBridge(sessionId?: string) {
+    if (!cloudAudioBridge) return;
+    if (sessionId !== undefined && cloudAudioBridge.sessionId !== sessionId) return;
+    clearTimeout(cloudAudioBridge.ttlTimer);
+    if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
+    try { cloudAudioBridge.ws.close(); } catch { /* ignore */ }
+    cloudAudioBridge = undefined;
+}
+
 /** Wire a dispatch result onto the proxy WS. Bodies up to PROXY_CHUNK_SIZE
  *  ship as a single `httpProxyResponse`; larger ones lead with `chunked: true`
  *  and stream the body in `httpProxyChunk` frames, last marked `end: true`.
@@ -501,7 +615,53 @@ async function dispatchHttpProxy(
         return dispatchFramesZstd();
     }
 
+    // /api/audio?afterSeq=N — incremental audio chunks for the WAN-side
+    // browser. Mirrors the Koa route's binary chunk-pack wire format; the
+    // browser uses `useAudioStream` to schedule via Web Audio with drift
+    // correction against the player's clock (sync'd via /api/time).
+    if (pathStr === '/api/audio') {
+        const afterSeq = parseInt(query?.afterSeq ?? '0', 10) || 0;
+        return dispatchAudio(afterSeq);
+    }
+
+    // /api/time — server-clock sample for client RTT/offset estimation.
+    if (pathStr === '/api/time') {
+        return jsonResult({ now: Date.now() });
+    }
+
     return { status: 404 };
+}
+
+function dispatchAudio(afterSeq: number): { status: number; headers?: Record<string, string>; body?: Buffer } {
+    if (!curAudioRing) return { status: 204 };
+    const chunks = curAudioRing.readAfter(afterSeq);
+    if (chunks.length === 0) return { status: 204 };
+
+    // Wire format mirrors the LAN Koa route: 8-byte header (chunkCount,
+    // latestSeq) then per-chunk metadata + Float32 samples.
+    let totalSize = 8;
+    for (const chunk of chunks) {
+        totalSize += 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+    }
+    const buf = Buffer.allocUnsafe(totalSize);
+    let off = 0;
+    buf.writeUInt32LE(chunks.length, off); off += 4;
+    buf.writeUInt32LE(chunks[chunks.length - 1].seq, off); off += 4;
+    for (const chunk of chunks) {
+        buf.writeDoubleLE(chunk.playAtRealTime, off); off += 8;
+        buf.writeUInt32LE(chunk.incarnation, off); off += 4;
+        buf.writeUInt32LE(chunk.sampleRate, off); off += 4;
+        buf.writeUInt32LE(chunk.channels, off); off += 4;
+        buf.writeUInt32LE(chunk.samples.length, off); off += 4;
+        const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
+        src.copy(buf, off);
+        off += chunk.samples.byteLength;
+    }
+    return {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+        body: buf,
+    };
 }
 
 function dispatchFramesZstd(): { status: number; headers?: Record<string, string>; body?: Buffer } {

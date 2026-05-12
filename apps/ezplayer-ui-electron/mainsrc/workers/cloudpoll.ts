@@ -161,6 +161,12 @@ function buildProxyWsUrl(cloudUrlIn: string, token: string, sessionId: string): 
     return buildWsUrlAt(cloudUrlIn, '/api/player/proxyBridge', token, sessionId);
 }
 
+/** Parallel WS for live-audio push. Player pushes binary chunk frames as
+ *  they're produced; cloud-endpoint fans out to attached listeners. */
+function buildAudioWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
+    return buildWsUrlAt(cloudUrlIn, '/api/player/audioBridge', token, sessionId);
+}
+
 function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId: string): string {
     const u = new URL(cloudUrlIn);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -221,6 +227,7 @@ async function pollRegistration() {
                           ...cmd,
                           wsUrl: buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
                           proxyWsUrl: buildProxyWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          audioWsUrl: buildAudioWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
                       }
                     : cmd,
             );

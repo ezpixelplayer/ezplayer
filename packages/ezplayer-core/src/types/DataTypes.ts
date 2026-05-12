@@ -728,6 +728,11 @@ export type OutOfBandCommand =
            *  thumbnails, layout XML, 3D files). Same auth boundary as wsUrl;
            *  player synthesizes alongside wsUrl for the same reason. */
           proxyWsUrl?: string;
+          /** Parallel WS for live-audio push (player→cloud→listener). Lets
+           *  the player push each chunk the moment it's produced instead of
+           *  waiting for a poll, and keeps audio frames off the status WS
+           *  where they'd head-of-line block snapshots. */
+          audioWsUrl?: string;
           sessionId: string;
           ttlSeconds: number;
       }

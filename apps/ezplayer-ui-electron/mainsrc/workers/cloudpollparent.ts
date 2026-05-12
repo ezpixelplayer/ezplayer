@@ -51,7 +51,7 @@ function applyOutOfBandCommand(cmd: OutOfBandCommand) {
                 console.warn('[cloudpoll] openCloudWS missing wsUrl; ignoring command');
                 return;
             }
-            cloudBridgeOpen(cmd.wsUrl, cmd.proxyWsUrl, cmd.sessionId, cmd.ttlSeconds);
+            cloudBridgeOpen(cmd.wsUrl, cmd.proxyWsUrl, cmd.audioWsUrl, cmd.sessionId, cmd.ttlSeconds);
             return;
         case 'closeCloudWS':
             // sessionId may be omitted by the cloud → "close any current bridge".

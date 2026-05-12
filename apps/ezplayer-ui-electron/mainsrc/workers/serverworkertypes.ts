@@ -47,6 +47,9 @@ export type MainToServerWorkerMessage =
           /** Parallel WS for HTTP-over-WS proxy traffic. May be omitted if
            *  the cloud doesn't (yet) advertise one — proxy stays disabled. */
           proxyWsUrl?: string;
+          /** Parallel WS for live-audio push. May be omitted (audio stays
+           *  disabled) without affecting status / proxy. */
+          audioWsUrl?: string;
           sessionId: string;
           ttlSeconds: number;
       }
