@@ -757,6 +757,10 @@ export interface PlayerCheckinRequest {
     };
     halted?: boolean;
     lastError?: string;
+    /** The player's current registration-poll interval (ms). The Players pane
+     *  uses ~2× this as the "live" cutoff — beyond that it shows "unknown".
+     *  Optional; consumers fall back to a 60s default. */
+    pollIntervalMs?: number;
 }
 
 export interface PlayerCheckinResponse {

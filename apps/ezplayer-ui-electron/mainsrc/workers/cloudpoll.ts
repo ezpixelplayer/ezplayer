@@ -186,6 +186,7 @@ async function pollRegistration() {
     const url = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CHECKIN}${playerIdToken}`;
     const body: PlayerCheckinRequest = {
         now: Date.now(),
+        pollIntervalMs: registrationIntervalMs,
         ...(halted ? { halted: true } : {}),
         ...(cStatus.lastError ? { lastError: cStatus.lastError } : {}),
     };
