@@ -321,13 +321,8 @@ function closeCloudBridge(sessionId?: string) {
 }
 
 // -- cloud proxy bridge (HTTP-over-WS) ----------------------------------------
-//
-// Parallel to the status bridge. Cloud sends `httpProxyRequest` envelopes
-// (browser HTTP requests for thumbnails / 3D / layout XML, translated by the
-// cloud-endpoint), we dispatch via `dispatchHttpProxy` to the same handlers
-// our Koa routes use, and reply with `httpProxyResponse` envelopes. Body
-// goes as base64; permessage-deflate (default in `ws`) recovers most of the
-// 33% overhead for text/JSON, neutral on PNG/JPG.
+// Cloud sends `httpProxyRequest` envelopes; we dispatch via `dispatchHttpProxy`
+// and reply with `httpProxyResponse` (single-shot) or `httpProxyChunk` frames.
 
 interface CloudProxyBridge {
     sessionId: string;
@@ -404,13 +399,8 @@ function closeCloudProxyBridge(sessionId?: string) {
 }
 
 // -- cloud audio bridge (push) ------------------------------------------------
-//
-// Pushes new audio chunks to the cloud as soon as they appear in the player's
-// audio ring. The cloud fans them out to attached listener WS sessions; the
-// player doesn't know or care how many listeners exist. Each chunk goes as a
-// single binary WS frame in the per-chunk wire format used by the HTTP /api/audio
-// route, prefixed with `serverNow` so the browser can refine clockOffset from
-// arrival timing across many chunks (not just a one-shot RTT at startup).
+// Push each new audio chunk as a binary WS frame: per-chunk wire format from
+// /api/audio, prefixed with `serverNow` for browser-side clockOffset refinement.
 
 interface CloudAudioBridge {
     sessionId: string;
@@ -509,11 +499,8 @@ function closeCloudAudioBridge(sessionId?: string) {
     cloudAudioBridge = undefined;
 }
 
-/** Wire a dispatch result onto the proxy WS. Bodies up to PROXY_CHUNK_SIZE
- *  ship as a single `httpProxyResponse`; larger ones lead with `chunked: true`
- *  and stream the body in `httpProxyChunk` frames, last marked `end: true`.
- *  Base64 encoding makes the envelope JSON-clean; permessage-deflate on the
- *  WS recovers the 33% overhead for compressible payloads. */
+/** Single-shot under PROXY_CHUNK_SIZE; larger bodies stream via httpProxyChunk
+ *  frames (last marked `end: true`). */
 const PROXY_CHUNK_SIZE = 512 * 1024;
 
 function sendProxyResponse(
@@ -559,10 +546,7 @@ function sendProxyResponse(
     }
 }
 
-/** Dispatch HTTP-over-WS proxy requests. Mirrors the corresponding Koa route
- *  for each path so consumers can use the same URL shape on LAN and cloud.
- *  Returns body as a Buffer; the WS message handler decides single-shot vs
- *  chunked based on size. */
+/** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
 async function dispatchHttpProxy(
     pathStr: string,
     query: Record<string, string> | undefined,

@@ -22,19 +22,8 @@ function isElectronRenderer(): boolean {
     return Boolean((window as any).electronAPI);
 }
 
-/**
- * Resolve the best image URL for display. Pure function so it can run outside
- * React (e.g. inside selectors); React components should prefer `useImageUrl`,
- * which threads `apiBase` from context.
- *
- * - In Electron renderer: prefers `localImagePath` as `file://...`.
- * - In any browser: prefers `remoteImageUrl`; falls back to
- *   `${apiBase}/getimage/${id}` when a local file exists on the player.
- *
- * `apiBase` defaults to `/api` (LAN/Electron same-origin); the cloud SPA
- * passes `/api/enduserspa/proxy/${player_token}` so the same relative path
- * resolves through the cloud-endpoint's HTTP-over-WS proxy.
- */
+/** Resolve the best image URL for display. React components should prefer
+ *  `useImageUrl` (threads `apiBase` from context). */
 export function getImageUrl(
     id?: string,
     remoteImageUrl?: string,
@@ -49,23 +38,12 @@ export function getImageUrl(
     }
 
     if (remoteImageUrl) return remoteImageUrl;
-    // Send id as a query param: cloud-sourced ids are `<user>|<vseq>` and
-    // DBOS Cloud's edge rejects `%7C` in URL paths with 400 before the
-    // request reaches our app. Query strings are not subject to the same
-    // character whitelist. Server-side accepts both LAN (player Koa) and
-    // cloud (cloud-endpoint proxy) at this URL shape.
+    // Id in query, not path: DBOS Cloud's edge rejects `%7C` in URL paths.
     if (localImagePath && id) return `${apiBase}/api/getimage?id=${encodeURIComponent(id)}`;
     return undefined;
 }
 
-/**
- * Hook variant: same as `getImageUrl` but reads `apiBase` from context so
- * components don't have to thread it. Today this returns a same-origin URL
- * the browser fetches with `<img src=…>`; the hook shape is also the natural
- * escape hatch later for async resolution (blob URLs from WS-only delivery,
- * fingerprint-based CDN lookups, IndexedDB cache) — at which point the
- * return becomes `{ url, loading }` without changing call-site placement.
- */
+/** Hook variant of `getImageUrl` that reads `apiBase` from context. */
 export function useImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
     const apiBase = useApiBase();
     return getImageUrl(id, remoteImageUrl, localImagePath, apiBase);
