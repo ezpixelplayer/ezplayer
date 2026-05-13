@@ -6,7 +6,15 @@ import { fileURLToPath } from 'url';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
-import { closeShowFolder, ensureExclusiveFolder, hasValidConfiguredShowFolder } from './showfolder.js';
+import {
+    clearPersistedShowFolder,
+    closeShowFolder,
+    ensureExclusiveFolder,
+    getWelcomeShowCloud,
+    hasValidConfiguredShowFolder,
+    setWelcomeShowCloud,
+} from './showfolder.js';
+import { session, ipcMain } from 'electron';
 import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
@@ -224,18 +232,29 @@ let playWorker: Worker | null = null;
 app.whenReady().then(async () => {
     console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
-    if (process.argv.includes('--reset')) {
-        const userDataPath = app.getPath('userData');
-        const preserve = new Set(['logs']);
+    // Reset CLI flags — wipe persisted state and quit. Variants differ in what
+    // welcome-screen cloud-CTA value they leave persisted for the next launch.
+    //   --reset          : clear state, cloud-CTA disabled afterwards (current default)
+    //   --reset-cloud    : clear state, cloud-CTA enabled afterwards
+    //   --reset-nocloud  : clear state, cloud-CTA disabled (pinned alias for --reset
+    //                      in case --reset's default flips later)
+    const wantResetCloud = process.argv.includes('--reset-cloud');
+    const wantResetNoCloud = process.argv.includes('--reset-nocloud');
+    const wantReset = process.argv.includes('--reset') || wantResetCloud || wantResetNoCloud;
+    if (wantReset) {
         try {
-            for (const entry of fs.readdirSync(userDataPath)) {
-                if (preserve.has(entry)) continue;
-                const full = path.join(userDataPath, entry);
-                fs.rmSync(full, { recursive: true, force: true });
-            }
-            console.log(`Reset complete — cleared ${userDataPath} (preserved: ${[...preserve].join(', ')})`);
+            clearPersistedShowFolder();
+            await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
+            // Write the cloud-CTA flag AFTER clearing storage. (The flag is in
+            // electron-store, separate from localStorage, but order doesn't hurt.)
+            setWelcomeShowCloud(wantResetCloud);
+            console.log(
+                `[reset] cleared show-folder + localStorage; welcomeShowCloud=${wantResetCloud} (mode=${
+                    wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
+                })`,
+            );
         } catch (e: any) {
-            console.warn(`Reset failed:`, e.message);
+            console.warn('[reset] failed:', e.message);
         }
         app.quit();
         return;
@@ -278,6 +297,9 @@ app.whenReady().then(async () => {
 
     registerFileListHandlers();
     createWindow(showFolderSpec ?? undefined, shouldShowWelcome);
+
+    // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.
+    ipcMain.handle('ipcGetWelcomeShowCloud', async () => getWelcomeShowCloud());
 
     await registerContentHandlers(mainWindow, audioWindow, playWorker);
 

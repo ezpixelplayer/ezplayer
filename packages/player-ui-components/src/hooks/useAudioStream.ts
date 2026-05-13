@@ -14,13 +14,17 @@ export interface UseAudioStreamResult {
 
 const DEFAULT_POLL_INTERVAL = 50;
 const MAX_CONSECUTIVE_ERRORS = 5;
-const CLOCK_SYNC_SAMPLES = 3;
+const CLOCK_SYNC_SAMPLES = 6;
+/** Re-bootstrap clockOffset via /api/time every this often. Backstop for the
+ *  running-max-on-WS-arrival refinement, in case the network's one-way
+ *  asymmetry drifts (cellular handover, etc.). */
+const CLOCK_REFRESH_INTERVAL_MS = 30_000;
 
 /**
  * Estimate the offset between this client's clock and the server's clock.
  * offset = serverNow - clientNow  (positive means server is ahead).
  * Trusts the sample with the lowest RTT — it had the least scheduling noise,
- * so the "halfway" assumption is most accurate. Discards any sample with RTT > 100ms.
+ * so the "halfway" assumption is most accurate.
  */
 async function estimateClockOffset(baseUrl: string): Promise<number> {
     let bestOffset = 0;
@@ -33,7 +37,6 @@ async function estimateClockOffset(baseUrl: string): Promise<number> {
             if (!res.ok) continue;
             const { now: serverNow } = await res.json();
             const rtt = t1 - t0;
-            if (rtt > 100) continue; // too noisy to trust
             if (rtt < bestRtt) {
                 bestRtt = rtt;
                 bestOffset = serverNow - (t0 + rtt / 2);
@@ -43,6 +46,19 @@ async function estimateClockOffset(baseUrl: string): Promise<number> {
         }
     }
     return bestOffset;
+}
+
+/** If `baseUrl` is the cloud proxy prefix `/api/enduserspa/proxy/<token>` (or
+ *  an absolute URL ending in that), return the matching audio-bridge WS URL.
+ *  Otherwise `undefined` and the hook falls back to HTTP polling. */
+function deriveAudioBridgeWsUrl(baseUrl: string | undefined): string | undefined {
+    if (!baseUrl || typeof window === 'undefined') return undefined;
+    const m = baseUrl.match(/^(.*?)\/api\/enduserspa\/proxy\/([^/]+)\/?$/);
+    if (!m) return undefined;
+    const origin = m[1] || window.location.origin;
+    const token = m[2];
+    const wsOrigin = origin.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
+    return `${wsOrigin}/api/enduserspa/audioBridge/${token}`;
 }
 
 export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamResult {
@@ -56,12 +72,11 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
     const afterSeqRef = useRef(0);
     const consecutiveErrorsRef = useRef(0);
 
-    // Clock offset: add to server timestamps to get local time
-    // (serverTime + clockOffset ≈ localTime ... but we store it as serverNow - clientNow,
-    //  so to convert server→local we subtract: localTime = serverTime - clockOffset)
+    // Clock offset: serverNow - clientNow. To convert serverTime to localTime,
+    // subtract: localTime = serverTime - clockOffset.
     const clockOffsetRef = useRef(0);
 
-    // Scheduling state (mirrors RealTimeChunkPlayer logic)
+    // Scheduling state
     const incarnationRef = useRef<number | undefined>(undefined);
     const playAtNextRealTimeRef = useRef<number | undefined>(undefined);
     const playAtNextACTRef = useRef<number | undefined>(undefined);
@@ -76,7 +91,6 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
         setAudioEnabled((prev) => {
             const next = !prev;
             if (next) {
-                // Create AudioContext inside user gesture
                 if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
                     const AC = window.AudioContext || (window as any).webkitAudioContext;
                     audioCtxRef.current = new AC();
@@ -85,7 +99,6 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                 consecutiveErrorsRef.current = 0;
                 resetSchedulingState();
             } else {
-                // Close AudioContext
                 audioCtxRef.current?.close();
                 audioCtxRef.current = undefined;
                 setIsPlaying(false);
@@ -95,6 +108,64 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
         });
     }, [resetSchedulingState]);
 
+    /** Schedule one audio chunk into the AudioContext. Returns true if anything
+     *  was queued. Mutates scheduling refs. */
+    const scheduleChunk = useCallback(
+        (
+            ctx: AudioContext,
+            playAtServerTime: number,
+            incarnation: number,
+            sampleRate: number,
+            channels: number,
+            sampleCount: number,
+            floatArray: Float32Array,
+        ): boolean => {
+            const numSamples = sampleCount / channels;
+            if (numSamples <= 0) return false;
+
+            const playAtRealTime = playAtServerTime - clockOffsetRef.current;
+            const audioLenMs = (1000 * numSamples) / sampleRate;
+            const dn = Date.now();
+            const actNow = ctx.currentTime * 1000;
+
+            let startTimeMs: number;
+            if (incarnation !== incarnationRef.current || playAtRealTime !== playAtNextRealTimeRef.current) {
+                incarnationRef.current = incarnation;
+                playAtNextRealTimeRef.current = playAtRealTime;
+                startTimeMs = actNow + (playAtRealTime - dn);
+                playAtNextACTRef.current = startTimeMs;
+            } else {
+                startTimeMs = playAtNextACTRef.current!;
+            }
+
+            const idealStart = actNow + (playAtRealTime - dn);
+            if (Math.abs(startTimeMs - idealStart) > 50) {
+                startTimeMs = idealStart;
+                playAtNextRealTimeRef.current = playAtRealTime;
+                playAtNextACTRef.current = startTimeMs;
+            }
+
+            playAtNextRealTimeRef.current! += audioLenMs;
+            playAtNextACTRef.current = startTimeMs + audioLenMs;
+
+            if (playAtRealTime < dn) return false; // already past — drop
+
+            const audioBuffer = ctx.createBuffer(channels, numSamples, sampleRate);
+            for (let ch = 0; ch < channels; ch++) {
+                const channelData = audioBuffer.getChannelData(ch);
+                for (let s = 0; s < numSamples; s++) {
+                    channelData[s] = floatArray[s * channels + ch];
+                }
+            }
+            const source = ctx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(ctx.destination);
+            source.start(Math.max(0, startTimeMs / 1000));
+            return true;
+        },
+        [],
+    );
+
     useEffect(() => {
         if (!baseUrl || !audioEnabled) {
             shouldStopRef.current = true;
@@ -103,8 +174,81 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
 
         shouldStopRef.current = false;
 
+        const audioBridgeUrl = deriveAudioBridgeWsUrl(baseUrl);
+
+        // WS path: server pushes binary chunk frames; we refine clockOffset
+        // from each arrival as a running max(serverNow - browserNow).
+        if (audioBridgeUrl) {
+            const ctxAtMount = audioCtxRef.current;
+            if (!ctxAtMount) return;
+
+            let ws: WebSocket | null = null;
+            let clockRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+            // Bootstrap clockOffset via /api/time so the first few chunks land
+            // close to schedule even before the running-max has settled.
+            void estimateClockOffset(baseUrl).then((o) => {
+                clockOffsetRef.current = o;
+            });
+            clockRefreshTimer = setInterval(async () => {
+                if (shouldStopRef.current) return;
+                const o = await estimateClockOffset(baseUrl);
+                if (!shouldStopRef.current) clockOffsetRef.current = o;
+            }, CLOCK_REFRESH_INTERVAL_MS);
+
+            try {
+                ws = new WebSocket(audioBridgeUrl);
+                ws.binaryType = 'arraybuffer';
+            } catch (err) {
+                console.warn('[useAudioStream] WS dial failed:', err);
+                shouldStopRef.current = true;
+                return;
+            }
+
+            ws.onmessage = (ev) => {
+                if (shouldStopRef.current) return;
+                const ctx = audioCtxRef.current;
+                if (!ctx || ctx.state === 'closed') return;
+                const data = ev.data;
+                if (!(data instanceof ArrayBuffer) || data.byteLength < 32) return;
+
+                const view = new DataView(data);
+                const serverNow = view.getFloat64(0, true);
+                const playAtServerTime = view.getFloat64(8, true);
+                const incarnation = view.getUint32(16, true);
+                const sampleRate = view.getUint32(20, true);
+                const channels = view.getUint32(24, true);
+                const sampleCount = view.getUint32(28, true);
+                const floatArray = new Float32Array(data, 32, sampleCount);
+
+                // Refine clockOffset: serverNow - browserNow on arrival is at most
+                // clockOffset (when one-way delay is ~0). Running max approaches
+                // true clockOffset over many samples.
+                const candidate = serverNow - Date.now();
+                if (candidate > clockOffsetRef.current) {
+                    clockOffsetRef.current = candidate;
+                }
+
+                if (scheduleChunk(ctx, playAtServerTime, incarnation, sampleRate, channels, sampleCount, floatArray)) {
+                    setIsPlaying(true);
+                }
+            };
+            ws.onerror = (err) => {
+                console.warn('[useAudioStream] WS error:', err);
+            };
+            ws.onclose = () => {
+                // Don't auto-reconnect from inside the hook — user can re-toggle.
+            };
+
+            return () => {
+                shouldStopRef.current = true;
+                if (clockRefreshTimer) clearInterval(clockRefreshTimer);
+                ws?.close();
+            };
+        }
+
+        // HTTP poll fallback (LAN / no audio bridge derivable).
         const runPollLoop = async () => {
-            // Estimate clock offset before starting audio polling
             clockOffsetRef.current = await estimateClockOffset(baseUrl);
 
             while (!shouldStopRef.current) {
@@ -150,7 +294,6 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
 
                     let offset = 8;
                     let didSchedule = false;
-                    const clockOffset = clockOffsetRef.current;
 
                     for (let i = 0; i < chunkCount; i++) {
                         const playAtServerTime = view.getFloat64(offset, true); offset += 8;
@@ -158,65 +301,15 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                         const sampleRate = view.getUint32(offset, true); offset += 4;
                         const channels = view.getUint32(offset, true); offset += 4;
                         const sampleCount = view.getUint32(offset, true); offset += 4;
-
                         const floatArray = new Float32Array(data, offset, sampleCount);
                         offset += sampleCount * 4;
-
-                        const numSamples = sampleCount / channels;
-                        if (numSamples <= 0) continue;
-
-                        // Convert server timestamp to local time
-                        const playAtRealTime = playAtServerTime - clockOffset;
-
-                        const audioLenMs = (1000 * numSamples) / sampleRate;
-                        const dn = Date.now();
-                        const actNow = ctx.currentTime * 1000;
-
-                        let startTimeMs: number;
-
-                        // Fresh song/segment?
-                        if (incarnation !== incarnationRef.current || playAtRealTime !== playAtNextRealTimeRef.current) {
-                            incarnationRef.current = incarnation;
-                            playAtNextRealTimeRef.current = playAtRealTime;
-
-                            startTimeMs = actNow + (playAtRealTime - dn);
-                            playAtNextACTRef.current = startTimeMs;
-                        } else {
-                            startTimeMs = playAtNextACTRef.current!;
+                        if (scheduleChunk(ctx, playAtServerTime, incarnation, sampleRate, channels, sampleCount, floatArray)) {
+                            didSchedule = true;
                         }
-
-                        // Drift correction: snap back if >50ms off
-                        const idealStart = actNow + (playAtRealTime - dn);
-                        if (Math.abs(startTimeMs - idealStart) > 50) {
-                            startTimeMs = idealStart;
-                            playAtNextRealTimeRef.current = playAtRealTime;
-                            playAtNextACTRef.current = startTimeMs;
-                        }
-
-                        // Advance scheduling state
-                        playAtNextRealTimeRef.current! += audioLenMs;
-                        playAtNextACTRef.current = startTimeMs + audioLenMs;
-
-                        // Drop late chunks
-                        if (playAtRealTime < dn) continue;
-
-                        // Deinterleave into Web Audio buffer
-                        const audioBuffer = ctx.createBuffer(channels, numSamples, sampleRate);
-                        for (let ch = 0; ch < channels; ch++) {
-                            const channelData = audioBuffer.getChannelData(ch);
-                            for (let s = 0; s < numSamples; s++) {
-                                channelData[s] = floatArray[s * channels + ch];
-                            }
-                        }
-
-                        const source = ctx.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(ctx.destination);
-                        source.start(Math.max(0, startTimeMs / 1000));
-                        didSchedule = true;
                     }
 
                     if (didSchedule) setIsPlaying(true);
+                    continue;
                 } catch (error) {
                     consecutiveErrorsRef.current++;
                     if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
@@ -227,8 +320,6 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                     await new Promise((r) => setTimeout(r, pollIntervalMs * 5));
                     continue;
                 }
-
-                await new Promise((r) => setTimeout(r, pollIntervalMs));
             }
         };
 
@@ -237,7 +328,7 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
         return () => {
             shouldStopRef.current = true;
         };
-    }, [baseUrl, audioEnabled, pollIntervalMs]);
+    }, [baseUrl, audioEnabled, pollIntervalMs, scheduleChunk]);
 
     return { audioEnabled, toggleAudio, isPlaying };
 }

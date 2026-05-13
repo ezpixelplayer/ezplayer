@@ -12,7 +12,13 @@ import type {
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
 } from './workers/serverworkertypes.js';
-import { updatePlaylistsHandler, updateScheduleHandler, curFrameBuffer, loadShowFolder } from './ipcezplayer.js';
+import {
+    updatePlaylistsHandler,
+    updateScheduleHandler,
+    curFrameBuffer,
+    loadShowFolder,
+    dispatchCloudCommand,
+} from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
@@ -87,6 +93,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendToMainWindow: (channel: string, ...args: unknown[]) => {
         const mainWindow = getMainWindowRef?.();
         mainWindow?.webContents?.send(channel, ...args);
+    },
+    cloudCommand: async (cmd) => {
+        dispatchCloudCommand(cmd);
     },
 };
 
@@ -322,6 +331,46 @@ export function broadcastToWebSocket(key: string, value: unknown) {
         type: 'broadcast',
         key,
         value,
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
+ * Open the cloud-bridge WebSocket inside the server worker. The worker dials
+ * `wsUrl`, registers the resulting socket with its broadcaster, and arms a
+ * TTL timer to auto-close if the cloud goes silent. Same sessionId with a
+ * live socket is idempotent (refreshes TTL); a dropped socket redials.
+ */
+export function cloudBridgeOpen(
+    wsUrl: string,
+    proxyWsUrl: string | undefined,
+    audioWsUrl: string | undefined,
+    sessionId: string,
+    ttlSeconds: number,
+) {
+    if (!serverWorker) return;
+    const message: MainToServerWorkerMessage = {
+        type: 'cloudBridgeOpen',
+        wsUrl,
+        proxyWsUrl,
+        audioWsUrl,
+        sessionId,
+        ttlSeconds,
+    };
+    serverWorker.postMessage(message);
+}
+
+/**
+ * Tear down the cloud-bridge WebSocket. With `sessionId`, only closes if it
+ * matches the active session (stale closes are ignored). Without, closes any
+ * currently-open bridge — used on config changes where the player_token may
+ * have rotated and we don't want the previous session leaking traffic.
+ */
+export function cloudBridgeClose(sessionId?: string) {
+    if (!serverWorker) return;
+    const message: MainToServerWorkerMessage = {
+        type: 'cloudBridgeClose',
+        ...(sessionId !== undefined ? { sessionId } : {}),
     };
     serverWorker.postMessage(message);
 }

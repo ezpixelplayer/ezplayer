@@ -78,6 +78,13 @@ export class WebSocketBroadcaster {
 
     private conns = new Set<Conn>();
 
+    /** Handler for non-pong client messages. Set by server-worker.ts after construction. */
+    private clientMessageHandler?: (msg: PlayerClientWebSocketMessage) => void;
+
+    setClientMessageHandler(handler: (msg: PlayerClientWebSocketMessage) => void) {
+        this.clientMessageHandler = handler;
+    }
+
     // backpressure thresholds (tune)
     private readonly MAX_BUFFERED_BYTES = 8 * 1024 * 1024; // 8MB
     private readonly HEARTBEAT_MS = 5_000;
@@ -86,6 +93,16 @@ export class WebSocketBroadcaster {
     attach(wss: WebSocketServer) {
         wss.on('connection', (ws) => this.onConnection(ws));
         setInterval(() => this.heartbeatSweep(), this.HEARTBEAT_MS).unref?.();
+    }
+
+    /** Register an already-connected outbound WebSocket as a subscriber. Same
+     *  Conn machinery as inbound clients (per-key coalescing, backpressure,
+     *  heartbeat sweep) — the only difference is *who* dialed *whom*. Used by
+     *  the cloud bridge: server-worker dials the cloud, hands the WS here, and
+     *  the existing fanout pipeline does the rest. Returns the Conn so the
+     *  caller can correlate it (e.g. for explicit close on session change). */
+    attachClient(ws: WebSocket): void {
+        this.onConnection(ws);
     }
 
     /** Read a single cached value */
@@ -211,6 +228,9 @@ export class WebSocketBroadcaster {
             c.lastPongMs = Date.now();
             return;
         }
+
+        // Forward everything else to the registered handler (set by server-worker.ts).
+        this.clientMessageHandler?.(msg);
     }
 
     private heartbeatSweep() {

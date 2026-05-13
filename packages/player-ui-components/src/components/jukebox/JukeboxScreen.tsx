@@ -1,20 +1,24 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Button, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
+import { Button, IconButton, Tooltip, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import { Box } from '../box/Box';
 import { MusicNote, Lightbulb } from '@mui/icons-material';
-import { PageHeader } from '@ezplayer/shared-ui-components';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
+import { PageHeader, isElectron } from '@ezplayer/shared-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../../store/Store';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { SearchBar } from './SearchBar';
 import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
 import { PlaylistDropdown } from './PlaylistDropdown';
 import type { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
-import { getImageUrl } from '../../util/imageUtils';
+import { useImageUrl } from '../../util/imageUtils';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
 import { isSongAllowedForJukebox } from '../../services/jukeboxFilter';
+import { useAudioStream } from '../../hooks/useAudioStream';
+import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 
 interface Song {
     isMusical: boolean;
@@ -86,8 +90,9 @@ function SongThumbnail({
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
 
-    // Get the appropriate image URL (local image takes priority) - memoized to prevent unnecessary re-renders
-    const imageUrl = useMemo(() => getImageUrl(id, artwork, localImagePath), [id, artwork, localImagePath]);
+    // Local image takes priority where available; on cloud the URL routes
+    // through the HTTP-over-WS proxy (apiBase from context).
+    const imageUrl = useImageUrl(id, artwork, localImagePath);
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `thumb-${imageUrl}`, [imageUrl]);
@@ -200,7 +205,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const theme = useTheme();
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
-    const jukeboxSettings = useSelector((state: RootState) => state.playerStatus.playbackSettings.jukebox);
+    const jukeboxSettings = useSelector((state: RootState) => state.playbackSettings.settings.jukebox);
 
     // Media queries for responsive design
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -565,8 +570,13 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const dispatch = useDispatch<AppDispatch>();
+
+    // Audio stream toggle — useful for testing audio-only over the cloud
+    // bridge without pixel-frame polling competing for bandwidth.
+    const { url: frameServerUrl } = useFrameServerUrl();
+    const { audioEnabled, toggleAudio } = useAudioStream({ baseUrl: frameServerUrl });
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData) as SequenceItem[] | undefined;
-    const jukeboxSettings = useSelector((state: RootState) => state.playerStatus.playbackSettings.jukebox);
+    const jukeboxSettings = useSelector((state: RootState) => state.playbackSettings.settings.jukebox);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('artist');
     const [selectedPlaylist, setSelectedPlaylist] = useState('all');
@@ -699,7 +709,25 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
             }}
         >
             <Box sx={{ padding: 2, flexShrink: 0 }}>
-                <PageHeader heading={title} children={statusArea} />
+                <PageHeader
+                    heading={title}
+                    children={[
+                        ...statusArea,
+                        ...(!isElectron()
+                            ? [
+                                  <Tooltip key="audio-toggle" title={audioEnabled ? 'Mute audio' : 'Play audio'}>
+                                      <IconButton
+                                          size="small"
+                                          onClick={toggleAudio}
+                                          color={audioEnabled ? 'primary' : 'default'}
+                                      >
+                                          {audioEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                                      </IconButton>
+                                  </Tooltip>,
+                              ]
+                            : []),
+                    ]}
+                />
             </Box>
             <Box
                 sx={{

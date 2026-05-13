@@ -5,10 +5,32 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { getMainWindow } from './main';
 
-const store = new Store<{ showFolder?: string }>();
+const store = new Store<{
+    showFolder?: string;
+    /** Welcome-screen flag: when true, the cloud-CTA card appears alongside the
+     *  xLights folder picker. Default off (cloud service hasn't launched yet).
+     *  Toggled by the `--reset-cloud` / `--reset-nocloud` CLI flags. */
+    welcomeShowCloud?: boolean;
+}>();
 let releaseLock: null | (() => Promise<void>) = null;
 let currentShowFolder: string | null = null;
 const REQUIRED_SHOW_FILES = ['xlights_rgbeffects.xml', 'xlights_networks.xml'] as const;
+
+/**
+ * Peek at `<folder>/.ezplayer/cloud-config.json` to figure out whether the folder is
+ * cloud-managed without going through the full CloudConfigStorage module. Returns
+ * `'cloud'` only when the file exists and explicitly says so; everything else
+ * (missing file, absent field, parse failure) is treated as xLights-managed.
+ */
+async function peekLayoutSource(folder: string): Promise<'xlights' | 'cloud'> {
+    try {
+        const raw = await fsp.readFile(path.join(folder, '.ezplayer', 'cloud-config.json'), 'utf8');
+        const parsed = JSON.parse(raw) as { layoutSource?: string };
+        return parsed.layoutSource === 'cloud' ? 'cloud' : 'xlights';
+    } catch {
+        return 'xlights';
+    }
+}
 
 async function dirExists(p?: string | null) {
     if (!p) return false;
@@ -26,7 +48,11 @@ export interface ShowDirectoryValidationResult {
     error?: string;
 }
 
-export async function isValidShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
+/** xLights-managed folder validation: requires both xlights_rgbeffects.xml and
+ *  xlights_networks.xml to exist and be readable. */
+export async function isValidXLightsShowDirectory(
+    showFolder?: string | null,
+): Promise<ShowDirectoryValidationResult> {
     if (!showFolder) {
         return {
             valid: false,
@@ -72,6 +98,53 @@ export async function isValidShowDirectory(showFolder?: string | null): Promise<
                 ? 'Show folder is missing required xLights configuration files.'
                 : undefined,
     };
+}
+
+/** Cloud-managed folder validation: the folder must exist and be writable. The
+ *  layout files may not have arrived yet (mid-bootstrap), so we don't require them. */
+export async function isValidCloudShowDirectory(
+    showFolder?: string | null,
+): Promise<ShowDirectoryValidationResult> {
+    if (!showFolder) {
+        return {
+            valid: false,
+            missingFiles: [],
+            inaccessibleFiles: [],
+            error: 'No show folder selected.',
+        };
+    }
+    if (!(await dirExists(showFolder))) {
+        return {
+            valid: false,
+            missingFiles: [],
+            inaccessibleFiles: [],
+            error: 'Show folder does not exist or is not accessible.',
+        };
+    }
+    try {
+        await fsp.access(showFolder, fsp.constants.W_OK);
+    } catch {
+        return {
+            valid: false,
+            missingFiles: [],
+            inaccessibleFiles: [],
+            error: 'Show folder is not writable.',
+        };
+    }
+    return { valid: true, missingFiles: [], inaccessibleFiles: [] };
+}
+
+/** Mode-aware validation: peeks `.ezplayer/cloud-config.json` for `layoutSource`,
+ *  then dispatches to the correct check. xLights is the default for any folder
+ *  that doesn't say otherwise. */
+export async function isValidShowDirectory(
+    showFolder?: string | null,
+): Promise<ShowDirectoryValidationResult> {
+    if (!showFolder) return isValidXLightsShowDirectory(showFolder);
+    const mode = await peekLayoutSource(showFolder);
+    return mode === 'cloud'
+        ? isValidCloudShowDirectory(showFolder)
+        : isValidXLightsShowDirectory(showFolder);
 }
 
 async function promptForFolder(): Promise<string | null> {
@@ -165,9 +238,21 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
 
         const validation = await isValidShowDirectory(showFolder);
         if (!validation.valid) {
-            // Startup now uses a dedicated welcome flow for first-time users.
-            // If a persisted/CLI folder is invalid, immediately reprompt for another
-            // folder instead of showing a separate warning/quit dialog.
+            // The persisted/CLI folder isn't a valid xLights show folder. Tell the
+            // user why and let them pick again (or quit).
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This folder is not a valid show folder.',
+                detail:
+                    (validation.error ?? 'Missing required xLights configuration files.') +
+                    (validation.missingFiles.length > 0
+                        ? `\n\nMissing: ${validation.missingFiles.join(', ')}`
+                        : ''),
+                buttons: ['Pick another folder', 'Quit'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return null;
             forcepick = true;
             continue;
         }
@@ -196,12 +281,127 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
     }
 }
 
+export interface PickCloudShowFolderResult {
+    /** Absolute path of the chosen folder, or null if user cancelled. */
+    folder: string | null;
+    /** True when the folder already had a `.ezplayer/cloud-config.json` — caller
+     *  should treat this as opening an existing install and NOT reseed the
+     *  layoutSource (or kick a fresh layout fetch). False for an empty/new
+     *  folder that the user explicitly accepted as a cloud-managed seed. */
+    existingInstall: boolean;
+}
+
+/** Picker for the cloud-managed bootstrap path. Prompts for any folder (does NOT
+ *  require the xLights files), validates it as a cloud-eligible directory
+ *  (writable), inspects existing content to decide between fresh seed vs. open-
+ *  as-existing, locks it, and sets it as the active folder. Caller seeds
+ *  `cloud-config.json` only when `existingInstall` is false. */
+export async function pickCloudShowFolder(): Promise<PickCloudShowFolderResult> {
+    while (true) {
+        const chosen = await promptForFolder();
+        if (!chosen) return { folder: null, existingInstall: false };
+        if (!(await dirExists(chosen))) continue;
+
+        const validation = await isValidCloudShowDirectory(chosen);
+        if (!validation.valid) {
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This folder cannot be used as a cloud show folder.',
+                detail: validation.error ?? 'Folder is not writable.',
+                buttons: ['Pick another folder', 'Cancel'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return { folder: null, existingInstall: false };
+            continue;
+        }
+
+        // Decide: fresh seed vs. existing install vs. non-cloud non-empty (warn).
+        const cloudConfigPath = path.join(chosen, '.ezplayer', 'cloud-config.json');
+        let existingInstall = false;
+        try {
+            await fsp.access(cloudConfigPath);
+            existingInstall = true;
+        } catch {
+            /* no existing cloud-config */
+        }
+
+        if (!existingInstall) {
+            // No prior cloud install on this folder. If there's any user-visible
+            // content, warn — we'd be about to overlay cloud-managed mode and a
+            // future layout fetch could overwrite their files.
+            let entries: string[] = [];
+            try {
+                entries = await fsp.readdir(chosen);
+            } catch {
+                /* fall through with empty list */
+            }
+            const visible = entries.filter((e) => !e.startsWith('.'));
+            if (visible.length > 0) {
+                const { response } = await dialog.showMessageBox({
+                    type: 'warning',
+                    message: 'This folder is not empty.',
+                    detail:
+                        `"${path.basename(chosen)}" already contains files. ` +
+                        'Connecting it as cloud-managed will fetch the layout from the cloud, ' +
+                        'which may overwrite existing files. Continue?',
+                    buttons: ['Connect Anyway', 'Pick Another Folder', 'Cancel'],
+                    cancelId: 2,
+                    defaultId: 1,
+                });
+                if (response === 2) return { folder: null, existingInstall: false };
+                if (response === 1) continue;
+                // response === 0: proceed
+            }
+        }
+
+        try {
+            const newReleaseLock = await tryLockShowFolder(chosen);
+            store.set('showFolder', chosen);
+            if (currentShowFolder && currentShowFolder !== chosen) {
+                await closeShowFolder();
+            }
+            setNewShowFolder(newReleaseLock, chosen);
+            return { folder: currentShowFolder, existingInstall };
+        } catch {
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This show folder is already in use by another instance.',
+                detail: 'Choose “Pick another folder” to select a different show folder.',
+                buttons: ['Pick another folder', 'Cancel'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return { folder: null, existingInstall: false };
+        }
+    }
+}
+
 export async function pickAnotherShowFolder(): Promise<string | null> {
     while (true) {
         const chosen = await promptForFolder();
         if (!chosen) return currentShowFolder; // Gave up
-        if (chosen && (await dirExists(chosen))) {
-            store.set('showFolder', chosen!);
+        if (!(await dirExists(chosen))) continue;
+
+        // Validate before persisting / locking. Without this, a junk pick from
+        // settings would silently replace the active folder and leave the app in
+        // a broken state.
+        const validation = await isValidShowDirectory(chosen);
+        if (!validation.valid) {
+            const { response } = await dialog.showMessageBox({
+                type: 'warning',
+                message: 'This folder is not a valid show folder.',
+                detail:
+                    (validation.error ?? 'Missing required xLights configuration files.') +
+                    (validation.missingFiles.length > 0
+                        ? `\n\nMissing: ${validation.missingFiles.join(', ')}`
+                        : ''),
+                buttons: ['Pick another folder', 'Cancel'],
+                cancelId: 1,
+                defaultId: 0,
+            });
+            if (response !== 0) return currentShowFolder;
+            continue;
         }
 
         if (chosen === currentShowFolder) {
@@ -212,6 +412,9 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
             const newReleaseLock = await tryLockShowFolder(chosen);
             await closeShowFolder();
             setNewShowFolder(newReleaseLock, chosen);
+            // Only persist after a successful lock — a folder we couldn't lock
+            // shouldn't be remembered as the active show folder.
+            store.set('showFolder', chosen);
             return currentShowFolder;
         } catch {
             const { response } = await dialog.showMessageBox({
@@ -239,4 +442,18 @@ export async function closeShowFolder() {
         if (releaseLock) await releaseLock();
     } catch {}
     currentShowFolder = null;
+}
+
+/** Wipe the persisted show-folder pointer (electron-store). Used by the `--reset*`
+ *  CLI flags to land the user back on the Welcome screen. */
+export function clearPersistedShowFolder() {
+    store.delete('showFolder');
+}
+
+export function getWelcomeShowCloud(): boolean {
+    return !!store.get('welcomeShowCloud');
+}
+
+export function setWelcomeShowCloud(v: boolean) {
+    store.set('welcomeShowCloud', v);
 }

@@ -65,15 +65,52 @@ export function createZipAssetResolver(
         if (base && !byBasename.has(base)) byBasename.set(base, value);
     }
 
+    // Per-lookup tracing is opt-in via `globalThis.__ezResolverDebug = true` in DevTools so a
+    // developer can see every hit / miss with a stack trace pointing at the caller without
+    // production builds being noisy. Bounded by `MAX_LOOKUP_TRACE` regardless, so even with the
+    // flag on a long session can't spam the console indefinitely.
+    let traceLeft = MAX_LOOKUP_TRACE;
+
     return (path) => {
         if (!path) return null;
         const norm = normalizeAssetKey(path);
         const direct = assets.get(norm);
-        if (direct) return direct;
+        if (direct) {
+            if (isResolverDebug()) traceLookup(`hit direct: ${path} -> ${norm}`, () => traceLeft--, () => traceLeft);
+            return direct;
+        }
         const base = norm.split('/').pop();
-        if (base) return byBasename.get(base) ?? null;
+        if (base) {
+            const viaBasename = byBasename.get(base);
+            if (viaBasename) {
+                if (isResolverDebug()) traceLookup(`hit basename: ${path} -> ${base}`, () => traceLeft--, () => traceLeft);
+                return viaBasename;
+            }
+        }
+        if (isResolverDebug()) {
+            const stillTracing = traceLeft > 0;
+            traceLookup(`miss: ${path} (norm=${norm}, base=${base ?? ''})`, () => traceLeft--, () => traceLeft);
+            // Stack trace identifies the caller (HouseMesh loading manager, ImagePlane,
+            // Viewer2D background plane, etc.) when chasing a "why didn't this resolve" bug.
+            if (stillTracing) console.trace('[assetResolver] miss origin');
+        }
         return null;
     };
+}
+
+const MAX_LOOKUP_TRACE = 50;
+function isResolverDebug(): boolean {
+    return (globalThis as { __ezResolverDebug?: boolean }).__ezResolverDebug === true;
+}
+function traceLookup(msg: string, decrement: () => void, peek: () => number): void {
+    const remaining = peek();
+    if (remaining > 0) {
+        console.info(`[assetResolver] ${msg}`);
+        decrement();
+        if (peek() === 0) {
+            console.info(`[assetResolver] (further lookup logs suppressed)`);
+        }
+    }
 }
 
 /**

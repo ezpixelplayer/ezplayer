@@ -263,7 +263,7 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
             <Box
                 className={`schedule-preview ${className}`}
                 sx={{
-                    height: '100vh',
+                    height: '100%',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',

@@ -5,7 +5,7 @@
 import { parentPort } from 'worker_threads';
 import Koa from 'koa';
 import bodyParser from '@koa/bodyparser';
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -128,6 +128,48 @@ const rpc = new MainThreadRPC();
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
+// Forward client → server WebSocket commands to main via RPC. Main pushes
+// resulting state back to all clients via the broadcast channel. These three
+// branches let the cloud bridge drive everything the LAN HTTP endpoints can
+// (cloud config, player commands, playback settings) without round-tripping
+// through HTTP — important since cloud viewers only have the WS path.
+wsBroadcaster.setClientMessageHandler((msg) => {
+    if (msg.type === 'cloudCommand') {
+        void rpc.call('cloudCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] cloudCommand failed:', err);
+        });
+    } else if (msg.type === 'playerCommand') {
+        void rpc.call('sendPlayerCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] playerCommand failed:', err);
+        });
+    } else if (msg.type === 'settings') {
+        // Mirror the POST /api/playback-settings flow: persist to disk first
+        // (so changes survive restart), then push to the live player, then
+        // re-broadcast so other clients update.
+        void (async () => {
+            try {
+                const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+                if (showFolder) {
+                    const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
+                    await rpc.call('applySettingsFromRenderer', settingsPath, msg.settings);
+                }
+                await rpc.call('sendPlaybackSettings', msg.settings);
+                wsBroadcaster.set('playbackSettings', msg.settings);
+            } catch (err) {
+                console.error('[server-worker] settings failed:', err);
+            }
+        })();
+    } else if (msg.type === 'updatePlaylists') {
+        void rpc.call('updatePlaylistsHandler', msg.data).catch((err) => {
+            console.error('[server-worker] updatePlaylists failed:', err);
+        });
+    } else if (msg.type === 'updateSchedule') {
+        void rpc.call('updateScheduleHandler', msg.data).catch((err) => {
+            console.error('[server-worker] updateSchedule failed:', err);
+        });
+    }
+});
+
 // Side cache for model coordinates (pushed from main thread on show folder load)
 let cachedModelCoordinates3D: unknown = {};
 let cachedModelCoordinates2D: unknown = {};
@@ -180,10 +222,497 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         if (msg.movingHeads) {
             cachedMovingHeads = msg.movingHeads;
         }
+    } else if (msg.type === 'cloudBridgeOpen') {
+        openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.audioWsUrl, msg.sessionId, msg.ttlSeconds);
+    } else if (msg.type === 'cloudBridgeClose') {
+        closeCloudBridge(msg.sessionId);
+        closeCloudProxyBridge(msg.sessionId);
+        closeCloudAudioBridge(msg.sessionId);
     } else if (msg.type === 'shutdown') {
         process.exit(0);
     }
 });
+
+// -- cloud bridge -------------------------------------------------------------
+//
+// The cloud emits `openCloudWS` in a checkin response when a remote viewer is
+// attached on the cloud side. We dial that URL and hand the resulting socket
+// to the broadcaster as if it were a freshly-connected LAN client. The
+// existing per-key coalescing + backpressure + heartbeat machinery already
+// handles WAN latency; nothing here needs to know it's "the cloud."
+//
+// Session lifecycle is owned here (not in cloudpollparent) so a transient WS
+// drop can be self-healed: the cloud will keep re-emitting `openCloudWS` with
+// the same sessionId on every checkin while a viewer is attached, and we use
+// each one to (a) refresh TTL, (b) redial if our socket has died.
+
+interface CloudBridge {
+    sessionId: string;
+    ws: WebSocket;
+    /** Live = handshake completed; we don't redial during the dial itself. */
+    open: boolean;
+    ttlTimer: NodeJS.Timeout;
+}
+let cloudBridge: CloudBridge | undefined;
+
+function openCloudBridge(
+    wsUrl: string,
+    proxyWsUrl: string | undefined,
+    audioWsUrl: string | undefined,
+    sessionId: string,
+    ttlSeconds: number,
+) {
+    // Dial the proxy + audio bridges in parallel — separate WSes so big
+    // HTTP-over-WS payloads and audio push don't head-of-line block status
+    // snapshots/pings on the main bridge.
+    if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
+    if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
+
+    // Same session + live socket: just refresh TTL (cheap path, fires on every checkin).
+    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.open) {
+        clearTimeout(cloudBridge.ttlTimer);
+        cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
+        return;
+    }
+    // Same session + dead socket (close fired but cloud still wants the bridge),
+    // or different session: tear down any existing bridge and dial.
+    if (cloudBridge) {
+        clearTimeout(cloudBridge.ttlTimer);
+        try { cloudBridge.ws.close(); } catch { /* ignore */ }
+        cloudBridge = undefined;
+    }
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (err) {
+        console.error('[server-worker] cloud bridge dial failed:', err);
+        return;
+    }
+    const ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
+    cloudBridge = { sessionId, ws, open: false, ttlTimer };
+
+    ws.on('open', () => {
+        if (cloudBridge?.ws === ws) cloudBridge.open = true;
+        console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}… ttl=${ttlSeconds}s`);
+        // Hand the live socket to the broadcaster. From here it's just another
+        // Conn — first round dumps a snapshot of every cached key, subsequent
+        // updates fan out via the existing set() path. The cloud relay
+        // forwards each frame to whatever browser viewer is attached.
+        wsBroadcaster.attachClient(ws);
+    });
+    ws.on('error', (err) => {
+        console.error('[server-worker] cloud bridge error:', err);
+    });
+    ws.on('close', () => {
+        if (cloudBridge?.ws === ws) {
+            console.log('[server-worker] cloud bridge socket closed');
+            clearTimeout(cloudBridge.ttlTimer);
+            cloudBridge = undefined;
+        }
+    });
+}
+
+function closeCloudBridge(sessionId?: string) {
+    if (!cloudBridge) return;
+    if (sessionId !== undefined && cloudBridge.sessionId !== sessionId) return;
+    clearTimeout(cloudBridge.ttlTimer);
+    try { cloudBridge.ws.close(); } catch { /* ignore */ }
+    cloudBridge = undefined;
+}
+
+// -- cloud proxy bridge (HTTP-over-WS) ----------------------------------------
+// Cloud sends `httpProxyRequest` envelopes; we dispatch via `dispatchHttpProxy`
+// and reply with `httpProxyResponse` (single-shot) or `httpProxyChunk` frames.
+
+interface CloudProxyBridge {
+    sessionId: string;
+    ws: WebSocket;
+    open: boolean;
+    ttlTimer: NodeJS.Timeout;
+}
+let cloudProxyBridge: CloudProxyBridge | undefined;
+
+function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    if (cloudProxyBridge && cloudProxyBridge.sessionId === sessionId && cloudProxyBridge.open) {
+        clearTimeout(cloudProxyBridge.ttlTimer);
+        cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
+        return;
+    }
+    if (cloudProxyBridge) {
+        clearTimeout(cloudProxyBridge.ttlTimer);
+        try { cloudProxyBridge.ws.close(); } catch { /* ignore */ }
+        cloudProxyBridge = undefined;
+    }
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (err) {
+        console.error('[server-worker] cloud proxy bridge dial failed:', err);
+        return;
+    }
+    const ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
+    cloudProxyBridge = { sessionId, ws, open: false, ttlTimer };
+
+    ws.on('open', () => {
+        if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
+        console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}…`);
+    });
+    ws.on('message', (raw) => {
+        // Best-effort: parse, dispatch, reply. Errors at any layer turn into
+        // a 500 response with the same reqId so the cloud's pending-promise
+        // resolves and the browser sees a clear failure instead of timing out.
+        let reqId: string | undefined;
+        try {
+            const msg = JSON.parse(raw.toString()) as { type?: string; reqId?: string; path?: string; query?: Record<string, string> };
+            if (msg?.type !== 'httpProxyRequest' || typeof msg.reqId !== 'string') return;
+            reqId = msg.reqId;
+            void dispatchHttpProxy(msg.path ?? '', msg.query).then((res) => {
+                sendProxyResponse(ws, reqId!, res);
+            });
+        } catch (err) {
+            console.error('[server-worker] proxy message handling failed:', err);
+            if (reqId) {
+                try {
+                    ws.send(JSON.stringify({ type: 'httpProxyResponse', reqId, status: 500 }));
+                } catch { /* ignore */ }
+            }
+        }
+    });
+    ws.on('error', (err) => {
+        console.error('[server-worker] cloud proxy bridge error:', err);
+    });
+    ws.on('close', () => {
+        if (cloudProxyBridge?.ws === ws) {
+            console.log('[server-worker] cloud proxy bridge socket closed');
+            clearTimeout(cloudProxyBridge.ttlTimer);
+            cloudProxyBridge = undefined;
+        }
+    });
+}
+
+function closeCloudProxyBridge(sessionId?: string) {
+    if (!cloudProxyBridge) return;
+    if (sessionId !== undefined && cloudProxyBridge.sessionId !== sessionId) return;
+    clearTimeout(cloudProxyBridge.ttlTimer);
+    try { cloudProxyBridge.ws.close(); } catch { /* ignore */ }
+    cloudProxyBridge = undefined;
+}
+
+// -- cloud audio bridge (push) ------------------------------------------------
+// Push each new audio chunk as a binary WS frame: per-chunk wire format from
+// /api/audio, prefixed with `serverNow` for browser-side clockOffset refinement.
+
+interface CloudAudioBridge {
+    sessionId: string;
+    ws: WebSocket;
+    open: boolean;
+    ttlTimer: NodeJS.Timeout;
+    /** Interval handle for the chunk-polling pump. Cleared on close. */
+    pumpTimer?: NodeJS.Timeout;
+    /** Last audio chunk seq we forwarded. Drives `readAfter` on each pump tick. */
+    afterSeq: number;
+}
+let cloudAudioBridge: CloudAudioBridge | undefined;
+/** How often the push loop checks for new audio chunks. Chunks are typically
+ *  produced every 20–50ms; 20ms gives us at most ~one tick of latency. */
+const AUDIO_PUSH_INTERVAL_MS = 20;
+
+function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    if (cloudAudioBridge && cloudAudioBridge.sessionId === sessionId && cloudAudioBridge.open) {
+        clearTimeout(cloudAudioBridge.ttlTimer);
+        cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
+        return;
+    }
+    if (cloudAudioBridge) {
+        clearTimeout(cloudAudioBridge.ttlTimer);
+        if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
+        try { cloudAudioBridge.ws.close(); } catch { /* ignore */ }
+        cloudAudioBridge = undefined;
+    }
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (err) {
+        console.error('[server-worker] cloud audio bridge dial failed:', err);
+        return;
+    }
+    const ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
+    cloudAudioBridge = { sessionId, ws, open: false, ttlTimer, afterSeq: 0 };
+
+    ws.on('open', () => {
+        if (cloudAudioBridge?.ws !== ws) return;
+        cloudAudioBridge.open = true;
+        // Start clean — the listener can't replay history anyway; the next
+        // chunks we read are what they'll hear first.
+        cloudAudioBridge.afterSeq = curAudioRing?.latestSeq ?? 0;
+        console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}…`);
+
+        cloudAudioBridge.pumpTimer = setInterval(() => {
+            const slot = cloudAudioBridge;
+            if (!slot || !slot.open || !curAudioRing) return;
+            const chunks = curAudioRing.readAfter(slot.afterSeq);
+            if (chunks.length === 0) return;
+            const serverNow = Date.now();
+            for (const chunk of chunks) {
+                slot.afterSeq = chunk.seq;
+                // 8 (serverNow) + 8 (playAt) + 4*4 (incarnation/sampleRate/channels/sampleCount)
+                // + sampleCount*4 (Float32 payload).
+                const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+                const buf = Buffer.allocUnsafe(totalSize);
+                let off = 0;
+                buf.writeDoubleLE(serverNow, off); off += 8;
+                buf.writeDoubleLE(chunk.playAtRealTime, off); off += 8;
+                buf.writeUInt32LE(chunk.incarnation, off); off += 4;
+                buf.writeUInt32LE(chunk.sampleRate, off); off += 4;
+                buf.writeUInt32LE(chunk.channels, off); off += 4;
+                buf.writeUInt32LE(chunk.samples.length, off); off += 4;
+                const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
+                src.copy(buf, off);
+                try {
+                    slot.ws.send(buf, { binary: true });
+                } catch (err) {
+                    console.error('[server-worker] audio bridge send failed:', err);
+                    return;
+                }
+            }
+        }, AUDIO_PUSH_INTERVAL_MS);
+    });
+    ws.on('error', (err) => {
+        console.error('[server-worker] cloud audio bridge error:', err);
+    });
+    ws.on('close', () => {
+        if (cloudAudioBridge?.ws === ws) {
+            console.log('[server-worker] cloud audio bridge socket closed');
+            clearTimeout(cloudAudioBridge.ttlTimer);
+            if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
+            cloudAudioBridge = undefined;
+        }
+    });
+}
+
+function closeCloudAudioBridge(sessionId?: string) {
+    if (!cloudAudioBridge) return;
+    if (sessionId !== undefined && cloudAudioBridge.sessionId !== sessionId) return;
+    clearTimeout(cloudAudioBridge.ttlTimer);
+    if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
+    try { cloudAudioBridge.ws.close(); } catch { /* ignore */ }
+    cloudAudioBridge = undefined;
+}
+
+/** Single-shot under PROXY_CHUNK_SIZE; larger bodies stream via httpProxyChunk
+ *  frames (last marked `end: true`). */
+const PROXY_CHUNK_SIZE = 512 * 1024;
+
+function sendProxyResponse(
+    ws: WebSocket,
+    reqId: string,
+    res: { status: number; headers?: Record<string, string>; body?: Buffer },
+): void {
+    const body = res.body;
+    try {
+        if (!body || body.length <= PROXY_CHUNK_SIZE) {
+            ws.send(JSON.stringify({
+                type: 'httpProxyResponse',
+                reqId,
+                status: res.status,
+                headers: res.headers,
+                bodyBase64: body && body.length > 0 ? body.toString('base64') : undefined,
+            }));
+            return;
+        }
+        // Chunked path: status+headers first, then body in PROXY_CHUNK_SIZE pieces.
+        ws.send(JSON.stringify({
+            type: 'httpProxyResponse',
+            reqId,
+            status: res.status,
+            headers: res.headers,
+            chunked: true,
+        }));
+        let seq = 0;
+        for (let off = 0; off < body.length; off += PROXY_CHUNK_SIZE) {
+            const end = off + PROXY_CHUNK_SIZE >= body.length;
+            const slice = body.subarray(off, off + PROXY_CHUNK_SIZE);
+            ws.send(JSON.stringify({
+                type: 'httpProxyChunk',
+                reqId,
+                seq,
+                bodyBase64: slice.toString('base64'),
+                ...(end ? { end: true } : {}),
+            }));
+            seq += 1;
+        }
+    } catch (err) {
+        console.error('[server-worker] proxy response send failed:', err);
+    }
+}
+
+/** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
+async function dispatchHttpProxy(
+    pathStr: string,
+    query: Record<string, string> | undefined,
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    // /api/getimage — id in path or query. Query form is preferred for cloud
+    // because DBOS Cloud's edge rejects `%7C` (composite-id pipe) in paths.
+    const getimagePath = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
+    const getimageQuery = pathStr === '/api/getimage' ? query?.id : undefined;
+    if (getimagePath || getimageQuery) {
+        const raw = getimagePath ? getimagePath[1] : getimageQuery!;
+        const sequenceId = decodeURIComponent(raw);
+        const sanitized = sequenceId.replace(/[^a-zA-Z0-9\-_|]/g, '');
+        if (sanitized !== sequenceId) return { status: 400 };
+        const file = getSequenceThumbnailLocal(sequenceId);
+        if (!file) return { status: 404 };
+        try {
+            const buf = await fsp.readFile(file);
+            return {
+                status: 200,
+                headers: { 'content-type': inferMimeType(file) },
+                body: buf,
+            };
+        } catch (err) {
+            console.error('[server-worker] proxy getimage read failed:', err);
+            return { status: 500 };
+        }
+    }
+
+    // Layout caches — read directly from the module-level vars the Koa
+    // routes also serve. JSON-stringified and returned as a Buffer for
+    // uniform chunking behavior on the wire.
+    if (pathStr === '/api/model-coordinates') return jsonResult(cachedModelCoordinates3D);
+    if (pathStr === '/api/model-coordinates-2d') return jsonResult(cachedModelCoordinates2D);
+    if (pathStr === '/api/view-objects') return jsonResult(cachedViewObjects);
+    if (pathStr === '/api/layout-settings') return jsonResult(cachedLayoutSettings);
+    if (pathStr === '/api/moving-heads') return jsonResult(cachedMovingHeads);
+
+    // /api/show-file?path=… — OBJ/MTL/textures for the 3D viewer.
+    // Same validation as the Koa route; deviations would create a path the
+    // LAN-only consumer can hit but cloud can't (or vice versa).
+    if (pathStr === '/api/show-file') {
+        return dispatchShowFile(query?.path);
+    }
+
+    // /api/frames-zstd — live channel-data frames, zstd-compressed. Owner-
+    // only diagnostic over WAN; the LAN path serves uncompressed frames too
+    // but for WAN the bandwidth saving is meaningful. Mirrors the Koa route's
+    // wire format: [frameSize u32 LE][seq u32 LE][zstd payload].
+    if (pathStr === '/api/frames-zstd') {
+        return dispatchFramesZstd();
+    }
+
+    // /api/audio?afterSeq=N — incremental audio chunks for the WAN-side
+    // browser. Mirrors the Koa route's binary chunk-pack wire format; the
+    // browser uses `useAudioStream` to schedule via Web Audio with drift
+    // correction against the player's clock (sync'd via /api/time).
+    if (pathStr === '/api/audio') {
+        const afterSeq = parseInt(query?.afterSeq ?? '0', 10) || 0;
+        return dispatchAudio(afterSeq);
+    }
+
+    // /api/time — server-clock sample for client RTT/offset estimation.
+    if (pathStr === '/api/time') {
+        return jsonResult({ now: Date.now() });
+    }
+
+    return { status: 404 };
+}
+
+function dispatchAudio(afterSeq: number): { status: number; headers?: Record<string, string>; body?: Buffer } {
+    if (!curAudioRing) return { status: 204 };
+    const chunks = curAudioRing.readAfter(afterSeq);
+    if (chunks.length === 0) return { status: 204 };
+
+    // Wire format mirrors the LAN Koa route: 8-byte header (chunkCount,
+    // latestSeq) then per-chunk metadata + Float32 samples.
+    let totalSize = 8;
+    for (const chunk of chunks) {
+        totalSize += 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+    }
+    const buf = Buffer.allocUnsafe(totalSize);
+    let off = 0;
+    buf.writeUInt32LE(chunks.length, off); off += 4;
+    buf.writeUInt32LE(chunks[chunks.length - 1].seq, off); off += 4;
+    for (const chunk of chunks) {
+        buf.writeDoubleLE(chunk.playAtRealTime, off); off += 8;
+        buf.writeUInt32LE(chunk.incarnation, off); off += 4;
+        buf.writeUInt32LE(chunk.sampleRate, off); off += 4;
+        buf.writeUInt32LE(chunk.channels, off); off += 4;
+        buf.writeUInt32LE(chunk.samples.length, off); off += 4;
+        const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
+        src.copy(buf, off);
+        off += chunk.samples.byteLength;
+    }
+    return {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+        body: buf,
+    };
+}
+
+function dispatchFramesZstd(): { status: number; headers?: Record<string, string>; body?: Buffer } {
+    if (!curFrameBuffer) return { status: 204 };
+    if (!zstdSimple) return { status: 503 };
+    const frameReader = new LatestFrameRingBuffer({
+        buffer: curFrameBuffer,
+        frameSize: 0,
+        slotCount: 0,
+        isWriter: false,
+    });
+    const result = frameReader.tryReadLatest();
+    if (!result) return { status: 204 };
+    if (!result.bytes) return { status: 500 };
+    const compressed = zstdSimple.compress(result.bytes, 1) as Uint8Array;
+    const totalSize = 8 + compressed.byteLength;
+    const buf = Buffer.allocUnsafe(totalSize);
+    buf.writeUInt32LE(result.frameSizeBytes, 0);
+    buf.writeUInt32LE(result.seq, 4);
+    buf.set(compressed, 8);
+    return {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+        body: buf,
+    };
+}
+
+function jsonResult(value: unknown): { status: number; headers: Record<string, string>; body: Buffer } {
+    return {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: Buffer.from(JSON.stringify(value ?? null), 'utf8'),
+    };
+}
+
+async function dispatchShowFile(filePath: string | undefined): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+    if (!showFolder) return { status: 400 };
+    if (!filePath) return { status: 400 };
+    if (path.isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath)) return { status: 400 };
+    const segments = filePath.replace(/\\/g, '/').split('/');
+    if (segments.some((s) => s === '..')) return { status: 403 };
+    const allowedExt = new Set([
+        '.obj', '.mtl',
+        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds',
+    ]);
+    const ext = path.extname(filePath).toLowerCase();
+    if (!allowedExt.has(ext)) return { status: 403 };
+    try {
+        const resolvedShowFolder = path.resolve(showFolder);
+        const resolvedPath = path.resolve(resolvedShowFolder, filePath);
+        const inFolder =
+            resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep)
+            || resolvedPath.toLowerCase() === resolvedShowFolder.toLowerCase();
+        if (!inFolder) return { status: 403 };
+        if (!(await exists(resolvedPath))) return { status: 404 };
+        const buf = await fsp.readFile(resolvedPath);
+        return {
+            status: 200,
+            headers: { 'content-type': inferMimeType(resolvedPath) },
+            body: buf,
+        };
+    } catch (err) {
+        console.error('[server-worker] proxy show-file read failed:', err);
+        return { status: 500 };
+    }
+}
 
 async function startServer(config: ServerWorkerData) {
     const { port, portSource, kioskPort, kioskPortSource } = config;
@@ -209,19 +738,24 @@ async function startServer(config: ServerWorkerData) {
     webApp.use(bodyParser());
 
     // ----------------------------------------------
-    // API: GET /api/getimage/:sequenceId - serves images by sequence ID
+    // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
+    // (legacy). Cloud-sourced ids are `<user>|<vseq>`; DBOS Cloud's edge
+    // rejects `%7C` in URL paths, so the preferred caller-side form is the
+    // query-string variant. Both shapes are accepted so a new browser
+    // bundle against an old player still resolves, and vice versa.
     // ----------------------------------------------
-    router.get('/api/getimage/:sequenceId', async (ctx) => {
-        const sequenceId = ctx.params.sequenceId;
-
+    const serveGetImage = async (ctx: any, sequenceId: string | undefined) => {
         if (!sequenceId) {
             ctx.status = 400;
             ctx.body = { error: 'Sequence ID is required' };
             return;
         }
 
-        // Sanitize sequence ID to prevent path traversal
-        const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9-_]/g, '');
+        // Sanitize sequence ID to prevent path traversal. The id is only used
+        // as a cache key — the actual file path is read from the cached
+        // SequenceRecord, not constructed from the id — so the rule just has
+        // to keep `/`, `\`, and `.` out.
+        const sanitizedId = sequenceId.replace(/[^a-zA-Z0-9\-_|]/g, '');
         if (sanitizedId !== sequenceId) {
             ctx.status = 400;
             ctx.body = { error: 'Invalid sequence ID' };
@@ -237,7 +771,6 @@ async function startServer(config: ServerWorkerData) {
                 return;
             }
 
-            // Set appropriate MIME type
             ctx.type = inferMimeType(seqfile);
             await send(ctx, path.basename(seqfile), { root: path.dirname(seqfile) });
         } catch (error) {
@@ -245,6 +778,13 @@ async function startServer(config: ServerWorkerData) {
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }
+    };
+
+    router.get('/api/getimage', async (ctx) => {
+        await serveGetImage(ctx, ctx.query.id as string | undefined);
+    });
+    router.get('/api/getimage/:sequenceId', async (ctx) => {
+        await serveGetImage(ctx, ctx.params.sequenceId);
     });
 
     // ----------------------------------------------
@@ -263,8 +803,6 @@ async function startServer(config: ServerWorkerData) {
             sequences: wsBroadcaster.get('sequences') ?? [],
             playlists: wsBroadcaster.get('playlists') ?? [],
             schedule: wsBroadcaster.get('schedule') ?? [],
-            user: wsBroadcaster.get('user'),
-            show: wsBroadcaster.get('show'),
             pStatus: wsBroadcaster.get('pStatus'),
             cStatus: wsBroadcaster.get('cStatus'),
             nStatus: wsBroadcaster.get('nStatus'),
@@ -358,7 +896,7 @@ async function startServer(config: ServerWorkerData) {
             }
             const showFolder = wsBroadcaster.get('showFolder');
             if (showFolder) {
-                const settingsPath = path.join(showFolder, 'playbackSettings.json');
+                const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
                 await rpc.call('applySettingsFromRenderer', settingsPath, settings);
             }
             await rpc.call('sendPlaybackSettings', settings);

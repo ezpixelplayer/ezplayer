@@ -3,7 +3,7 @@ import { Box } from '../box/Box';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
 import { VolumeOff, VolumeUp, Refresh } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';
-import { callImmediateCommand } from '../../store/slices/PlayerStatusStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { AppDispatch } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
 

@@ -35,6 +35,7 @@
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/player-ui-components": "workspace:*",
         "@ezplayer/shared-ui-components": "workspace:*",
+        "@mui/icons-material": "^5.18.0",
         "@mui/material": "^5.18.0",
         "@mui/styles": "^5.16.14",
         "@mui/x-date-pickers": "5.0.0",

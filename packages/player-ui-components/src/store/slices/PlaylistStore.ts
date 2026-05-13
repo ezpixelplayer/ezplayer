@@ -9,6 +9,12 @@ export interface PlaylistState {
     error?: string;
 }
 
+/** Derive the unique tag set from a playlist list. Used in three places — keep
+ *  in one helper so the access path only lives once. */
+function tagsFromPlaylists(records: PlaylistRecord[]): string[] {
+    return [...new Set(records.flatMap((entry) => entry.tags || []))];
+}
+
 export function createPlaylistSlice(extraReducers: (builder: ActionReducerMapBuilder<PlaylistState>) => void) {
     const initialPlaylistState: PlaylistState = {
         playlists: [],
@@ -23,7 +29,7 @@ export function createPlaylistSlice(extraReducers: (builder: ActionReducerMapBui
         reducers: {
             setPlaylists: (state: PlaylistState, action: PayloadAction<PlaylistRecord[]>) => {
                 state.playlists = action.payload;
-                state.tags = [...new Set(action.payload.flatMap((entry) => entry.tags || []))];
+                state.tags = tagsFromPlaylists(action.payload);
             },
             addTag: (state: PlaylistState, action: PayloadAction<string>) => {
                 if (!state.tags.includes(action.payload)) {
@@ -61,7 +67,7 @@ const playlistSlice = createPlaylistSlice((builder) => {
         .addCase(fetchPlaylists.fulfilled, (state, action) => {
             state.loading = false;
             state.playlists = action.payload;
-            state.tags = [...new Set(action.payload.flatMap((entry) => entry.tags))];
+            state.tags = tagsFromPlaylists(action.payload);
         })
         .addCase(fetchPlaylists.rejected, (state, action) => {
             state.loading = false;
@@ -73,7 +79,7 @@ const playlistSlice = createPlaylistSlice((builder) => {
         .addCase(postPlaylistData.fulfilled, (state, action) => {
             state.loading = false;
             state.playlists = action.payload;
-            state.tags = [...new Set(action.payload.flatMap((entry) => entry.tags))];
+            state.tags = tagsFromPlaylists(action.payload);
         })
         .addCase(postPlaylistData.rejected, (state, action) => {
             state.loading = false;

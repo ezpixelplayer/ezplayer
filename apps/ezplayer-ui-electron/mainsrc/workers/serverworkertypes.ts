@@ -35,6 +35,31 @@ export type MainToServerWorkerMessage =
           movingHeads?: Array<MhFixtureInfo>;
       }
     | { type: 'clearShowData' }
+    | {
+          /** Open an outbound WebSocket to the cloud bridge so a remote viewer
+           *  can subscribe to this player's live state. The server worker owns
+           *  session lifecycle (TTL, redial after drop, supersede); the parent
+           *  is a thin forwarder. Same sessionId with a live socket is
+           *  idempotent (refreshes TTL); same sessionId with a closed socket
+           *  redials; different sessionId supersedes. */
+          type: 'cloudBridgeOpen';
+          wsUrl: string;
+          /** Parallel WS for HTTP-over-WS proxy traffic. May be omitted if
+           *  the cloud doesn't (yet) advertise one — proxy stays disabled. */
+          proxyWsUrl?: string;
+          /** Parallel WS for live-audio push. May be omitted (audio stays
+           *  disabled) without affecting status / proxy. */
+          audioWsUrl?: string;
+          sessionId: string;
+          ttlSeconds: number;
+      }
+    | {
+          /** Close the cloud bridge. `sessionId` is optional — when omitted
+           *  (e.g. a config change), close anything currently open. When
+           *  provided, only close if it matches the active session. */
+          type: 'cloudBridgeClose';
+          sessionId?: string;
+      }
     | { type: 'shutdown' };
 
 /**
@@ -47,4 +72,5 @@ export interface ServerWorkerRPCAPI {
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
+    cloudCommand(cmd: import('@ezplayer/ezplayer-core').CloudCommand): Promise<void>;
 }

@@ -1,4 +1,6 @@
 export type {
+    CloudConfig,
+    CloudStatus,
     EZPlayerVersions,
     PlaylistRecord,
     PlaylistItem,
@@ -9,7 +11,6 @@ export type {
     SequenceSettings,
     SongDetails,
     PlaylistTags,
-    UserPlayer,
     PlayerCStatusContent,
     ControllerStatus,
     PlayerNStatusContent,
@@ -19,8 +20,6 @@ export type {
     PlaybackStatistics,
     PlayingItem,
     EZPlayerCommand,
-    EndUser,
-    EndUserShowSettings,
     JSONEditChoice,
     JSONEditHeader,
     JSONEditItem,
@@ -30,12 +29,26 @@ export type {
     PlaybackSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    CloudPollScheduleEntry,
     PlayerWebSocketSnapshot,
     PlayerWebSocketPing,
     PlayerWebSocketKick,
     PlayerWebSocketMessage,
     PlayerClientWebSocketMessage,
+    OutOfBandCommand,
+    PlayerCheckinRequest,
+    PlayerCheckinResponse,
     FullPlayerState,
+    CloudFileKind,
+    CloudFileStatus,
+    CloudFileEntry,
+    CloudFileIdent,
+    CloudSequenceMeta,
+    CloudSeqManifestEntry,
+    CloudSequenceProgress,
+    CloudLayoutInfo,
+    CloudLayoutStatus,
+    CloudCommand,
 } from './types/DataTypes';
 
 export type {
@@ -51,6 +64,8 @@ export type {
     ImageInfo,
     AudioTagMetadata,
 } from './types/EZPElectronAPI';
+
+export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
@@ -70,6 +85,7 @@ export {
 export {
     getActiveVolumeSchedule,
     getActiveViewerControlSchedule,
+    findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
 
 export {

@@ -1,3 +1,5 @@
+import { useApiBase } from './ApiBaseProvider';
+
 // Works in Node and compiles for browser bundles
 function pathToFileURLCompat(path: string): URL {
     if (typeof process !== 'undefined' && process.versions?.node) {
@@ -20,17 +22,14 @@ function isElectronRenderer(): boolean {
     return Boolean((window as any).electronAPI);
 }
 
-/**
- * Utility function to get the best image URL for display.
- * - In Electron: converts local paths to file:// URLs
- * - In Web: Makes API calls to get the file
- *
- * @param id - Sequence ID for API-based
- * @param remoteImageUrl - The artwork URL from work.artwork (may be relative or absolute)
- * @param localImagePath - The local file path or resolved thumb path
- */
-export function getImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
-    // In Electron renderer, prefer local file path
+/** Resolve the best image URL for display. React components should prefer
+ *  `useImageUrl` (threads `apiBase` from context). */
+export function getImageUrl(
+    id?: string,
+    remoteImageUrl?: string,
+    localImagePath?: string,
+    apiBase: string = '',
+): string | undefined {
     if (isElectronRenderer()) {
         if (localImagePath && !localImagePath.startsWith('http')) {
             return toFileUrl(localImagePath);
@@ -38,13 +37,14 @@ export function getImageUrl(id?: string, remoteImageUrl?: string, localImagePath
         return remoteImageUrl;
     }
 
-    // In web browser, could be artwork URL, or could ask our server to get it if a local file exists
     if (remoteImageUrl) return remoteImageUrl;
-
-    // There IS a local path ... but we should ask the server to handle it by ID.
-    if (localImagePath) {
-        return `/api/getimage/${id}`;
-    }
-
+    // Id in query, not path: DBOS Cloud's edge rejects `%7C` in URL paths.
+    if (localImagePath && id) return `${apiBase}/api/getimage?id=${encodeURIComponent(id)}`;
     return undefined;
+}
+
+/** Hook variant of `getImageUrl` that reads `apiBase` from context. */
+export function useImageUrl(id?: string, remoteImageUrl?: string, localImagePath?: string): string | undefined {
+    const apiBase = useApiBase();
+    return getImageUrl(id, remoteImageUrl, localImagePath, apiBase);
 }

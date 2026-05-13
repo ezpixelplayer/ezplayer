@@ -2,16 +2,17 @@ import type {
     AudioChunk,
     AudioDevice,
     AutoUpdateStatus,
+    CloudConfig,
+    CloudStatus,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
     PlaybackSettings,
+    CloudCommand,
 } from '@ezplayer/ezplayer-core';
 
 import type {
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -42,6 +43,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     requestChooseShowFolder: async (): Promise<string> => {
         return await ipcRenderer.invoke('ipcUIChooseShowFolder');
+    },
+    /** Cloud-managed-folder picker. Picks any writable folder, locks it, loads it.
+     *  - Fresh folder: seeds `.ezplayer/cloud-config.json` with `layoutSource: 'cloud'`.
+     *  - Already has `.ezplayer/cloud-config.json`: opens as-is (`existingInstall: true`),
+     *    no reseed, layoutSource is whatever the existing config says.
+     *  - Folder is empty `string` if the user cancelled. */
+    requestChooseCloudShowFolder: async (): Promise<{ folder: string; existingInstall: boolean }> => {
+        return await ipcRenderer.invoke('ipcUIChooseCloudShowFolder');
+    },
+    getWelcomeShowCloud: async (): Promise<boolean> => {
+        return await ipcRenderer.invoke('ipcGetWelcomeShowCloud');
     },
     validateShowDirectory: async (
         showDirectory?: string,
@@ -91,23 +103,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getServerStatus() {
         return ipcRenderer.invoke('ipcGetServerStatus');
     },
-    getShowProfile() {
-        return ipcRenderer.invoke('ipcGetCloudShowProfile');
-    },
-    putShowProfile(data: EndUserShowSettings) {
-        return ipcRenderer.invoke('ipcPutCloudShowProfile', data);
-    },
-    getUserProfile() {
-        return ipcRenderer.invoke('ipcGetCloudUserProfile');
-    },
-    putUserProfile(data: Partial<EndUser>) {
-        return ipcRenderer.invoke('ipcPutCloudUserProfile', data);
-    },
     immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
     },
     setPlaybackSettings(s: PlaybackSettings): Promise<boolean> {
         return ipcRenderer.invoke('ipcSetPlaybackSettings', s);
+    },
+
+    getCloudConfig(): Promise<CloudConfig> {
+        return ipcRenderer.invoke('ipcGetCloudConfig');
+    },
+    cloudCommand(cmd: CloudCommand): Promise<void> {
+        return ipcRenderer.invoke('ipcCloudCommand', cmd);
+    },
+    setZoomFactor(factor: number): Promise<void> {
+        return ipcRenderer.invoke('ipcSetZoomFactor', factor);
+    },
+    onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => {
+        ipcRenderer.on('update:cloudConfig', (_event: any, data: CloudConfig) => {
+            callback(data);
+        });
+    },
+    getCloudStatus(): Promise<CloudStatus> {
+        return ipcRenderer.invoke('ipcGetCloudConnStatus');
+    },
+    onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => {
+        ipcRenderer.on('update:cloudStatus', (_event: any, data: CloudStatus) => {
+            callback(data);
+        });
     },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
@@ -127,16 +150,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onScheduleUpdated: (callback: (data: ScheduledPlaylist[]) => void) => {
         ipcRenderer.on('update:schedule', (_event: any, data: ScheduledPlaylist[]) => {
-            callback(data);
-        });
-    },
-    onUserUpdated: (callback: (data: EndUser) => void) => {
-        ipcRenderer.on('update:user', (_event: any, data: EndUser) => {
-            callback(data);
-        });
-    },
-    onShowUpdated: (callback: (data: EndUserShowSettings) => void) => {
-        ipcRenderer.on('update:show', (_event: any, data: EndUserShowSettings) => {
             callback(data);
         });
     },

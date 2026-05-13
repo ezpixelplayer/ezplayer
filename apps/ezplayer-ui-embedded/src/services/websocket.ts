@@ -82,6 +82,7 @@ class WebSocketService {
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private messageHandlers: Map<string, Set<MessageHandler>> = new Map();
     private connectionHandlers: Set<ConnectionHandler> = new Set();
+    private disconnectHandlers: Set<ConnectionHandler> = new Set();
     private errorHandlers: Set<ErrorHandler> = new Set();
     private isConnecting = false;
     private isConnected = false;
@@ -191,9 +192,20 @@ class WebSocketService {
                 if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
                     console.log(`🔌 WebSocket disconnected (code: ${event.code})`);
                 }
+                const wasConnected = this.isConnected;
                 this.isConnecting = false;
                 this.isConnected = false;
                 this.ws = null;
+
+                if (wasConnected) {
+                    this.disconnectHandlers.forEach((handler) => {
+                        try {
+                            handler();
+                        } catch (error) {
+                            console.error('Error in disconnect handler:', error);
+                        }
+                    });
+                }
                 const advancedPort = !this.hasConnectedSuccessfully && this.advancePortCandidate();
                 if (advancedPort) {
                     this.reconnectAttempts = 0;
@@ -266,6 +278,16 @@ class WebSocketService {
         this.connectionHandlers.add(handler);
         return () => {
             this.connectionHandlers.delete(handler);
+        };
+    }
+
+    /**
+     * Subscribe to disconnect events (only fired after a prior successful connect).
+     */
+    onDisconnect(handler: ConnectionHandler): () => void {
+        this.disconnectHandlers.add(handler);
+        return () => {
+            this.disconnectHandlers.delete(handler);
         };
     }
 

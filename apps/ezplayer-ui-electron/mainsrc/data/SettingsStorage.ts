@@ -1,44 +1,63 @@
 import fs from 'fs/promises';
+import { atomicWriteFile } from './atomicWrite.js';
 import type { PlaybackSettings } from '@ezplayer/ezplayer-core';
 
 let currentSettings: PlaybackSettings | null = null;
 let currentPath: string | null = null;
 let writeInProgress = false;
 let writeQueued = false;
+/** Last successfully-persisted JSON. Used to dedupe writes — a save thunk that
+ *  fires for every action (slider drag, broadcast round-trip) should not hit
+ *  the disk repeatedly with identical bytes. */
+let lastWrittenJson: string | null = null;
 
 export function getSettingsCache(): PlaybackSettings | null {
     return currentSettings;
 }
 
 export async function loadSettingsFromDisk(settingsPath: string): Promise<PlaybackSettings> {
+    const defaults: PlaybackSettings = {
+        audioSyncAdjust: 0,
+        backgroundSequence: 'overlay',
+        viewerControl: {
+            enabled: false,
+            type: 'disabled',
+            remoteFalconToken: undefined,
+            schedule: [],
+        },
+        volumeControl: {
+            defaultVolume: 100,
+            schedule: [],
+        },
+        jukebox: {
+            excludedTags: ['nojukebox'],
+            includedTags: [],
+        },
+    };
+    // Reset the dedupe cache for the new path. A subsequent save with content
+    // identical to disk should still be skipped, so seed it from the parsed
+    // file when we have one.
+    lastWrittenJson = null;
     try {
         const raw = await fs.readFile(settingsPath, 'utf8');
+        // A previous crash (or pull-the-plug) can leave a zero-byte settings file
+        // — JSON.parse on that throws SyntaxError. Treat empty / unparseable the
+        // same as "missing": fall back to defaults rather than failing the load.
+        if (raw.trim() === '') {
+            currentSettings = defaults;
+            return defaults;
+        }
         const parsed = JSON.parse(raw) as PlaybackSettings;
 
         currentSettings = parsed;
+        // Seed the dedupe key with the canonical serialized form of what we
+        // just loaded. If `savePlayerSettings` fires for a hydrate (which it
+        // shouldn't anymore, but defense in depth), the comparison skips.
+        lastWrittenJson = JSON.stringify(parsed, null, 2);
         return parsed;
     } catch (e) {
         const err = e as { code?: string };
-        if (err?.code === 'ENOENT') {
-            // Defaults if file doesn't exist
-            const defaults: PlaybackSettings = {
-                audioSyncAdjust: 0,
-                backgroundSequence: 'overlay',
-                viewerControl: {
-                    enabled: false,
-                    type: 'disabled',
-                    remoteFalconToken: undefined,
-                    schedule: [],
-                },
-                volumeControl: {
-                    defaultVolume: 100,
-                    schedule: [],
-                },
-                jukebox: {
-                    excludedTags: ['nojukebox'],
-                    includedTags: [],
-                },
-            };
+        if (err?.code === 'ENOENT' || e instanceof SyntaxError) {
             currentSettings = defaults;
             return defaults;
         }
@@ -48,7 +67,12 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
 
 async function writeSettingsToDisk(settingsPath: string, settings: PlaybackSettings) {
     const json = JSON.stringify(settings, null, 2);
-    await fs.writeFile(settingsPath, json, 'utf8');
+    if (json === lastWrittenJson) {
+        // Identical to the last successfully-written content — skip.
+        return;
+    }
+    await atomicWriteFile(settingsPath, json);
+    lastWrittenJson = json;
 }
 
 async function scheduleWrite() {
@@ -68,7 +92,7 @@ async function scheduleWrite() {
     try {
         await writeSettingsToDisk(curpath, snapshot);
     } catch (err) {
-        reportError(`Failed to write settings file ${curpath}`);
+        console.error(`Failed to write settings file ${curpath}`, err);
     } finally {
         writeInProgress = false;
 

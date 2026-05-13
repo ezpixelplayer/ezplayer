@@ -4,16 +4,20 @@ import { DataStorageAPI } from '../api/DataStorageAPI';
 
 export interface SequenceState {
     sequenceData?: SequenceRecord[];
-    updatedSequenceData?: SequenceRecord[];
     tags: string[];
     loading: boolean;
     error?: string;
 }
 
+/** Derive the unique tag set from a sequence list. Used in three places — keep
+ *  in one helper so the access path (`entry.settings?.tags`) only lives once. */
+function tagsFromSequences(records: SequenceRecord[]): string[] {
+    return [...new Set(records.flatMap((entry) => entry.settings?.tags || []))];
+}
+
 export function createSongSlice(extraReducers: (builder: ActionReducerMapBuilder<SequenceState>) => void) {
     const initialSongState: SequenceState = {
         sequenceData: undefined,
-        updatedSequenceData: undefined,
         tags: [],
         loading: false,
         error: undefined,
@@ -25,10 +29,7 @@ export function createSongSlice(extraReducers: (builder: ActionReducerMapBuilder
         reducers: {
             setSequenceData: (state: SequenceState, action: PayloadAction<SequenceRecord[]>) => {
                 state.sequenceData = action.payload;
-                state.tags = [...new Set(action.payload.flatMap((entry) => entry.settings?.tags || []))];
-            },
-            setUpdatedSequenceData: (state: SequenceState, action: PayloadAction<SequenceRecord[]>) => {
-                state.updatedSequenceData = action.payload;
+                state.tags = tagsFromSequences(action.payload);
             },
             setSequenceTags: (state: SequenceState, action: PayloadAction<string[]>) => {
                 state.tags = action.payload;
@@ -62,7 +63,7 @@ const sequenceSlice = createSongSlice((builder) => {
         .addCase(fetchSequences.fulfilled, (state, action) => {
             state.loading = false;
             state.sequenceData = action.payload;
-            state.tags = [...new Set(action.payload.flatMap((entry) => entry.settings?.tags || []))];
+            state.tags = tagsFromSequences(action.payload);
         })
         .addCase(fetchSequences.rejected, (state, action) => {
             state.loading = false;
@@ -73,9 +74,8 @@ const sequenceSlice = createSongSlice((builder) => {
         })
         .addCase(postSequenceData.fulfilled, (state, action) => {
             state.loading = false;
-            state.updatedSequenceData = undefined;
             state.sequenceData = action.payload;
-            state.tags = [...new Set(action.payload.flatMap((entry) => entry.settings?.tags || []))];
+            state.tags = tagsFromSequences(action.payload);
         })
         .addCase(postSequenceData.rejected, (state, action) => {
             state.loading = false;
@@ -83,5 +83,5 @@ const sequenceSlice = createSongSlice((builder) => {
         });
 });
 
-export const { setSequenceData, setUpdatedSequenceData, setSequenceTags } = sequenceSlice.actions;
+export const { setSequenceData, setSequenceTags } = sequenceSlice.actions;
 export default sequenceSlice.reducer;

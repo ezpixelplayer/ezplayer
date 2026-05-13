@@ -28,7 +28,7 @@ import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { AppDispatch, postPlaylistData, RootState, Routes as ROUTES } from '../..';
+import { AppDispatch, postPlaylistData, RootState, Routes as ROUTES, useRouteBase } from '../..';
 interface PlaylistRow {
     id: string;
     title: string;
@@ -156,8 +156,6 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
                                             padding="normal"
                                             sx={{
                                                 minWidth: col.minWidth ?? 120,
-                                                width: col.flex ? `${col.flex * 100}px` : 'auto',
-                                                maxWidth: col.minWidth ?? undefined,
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                                 whiteSpace: 'nowrap',
@@ -191,6 +189,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     const [tagInputValue, setTagInputValue] = useState('');
 
     const navigate = useNavigate();
+    const routeBase = useRouteBase();
     const dispatch = useDispatch<AppDispatch>();
     const playlistRecords = useSelector((s: RootState) => s.playlists.playlists);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
@@ -273,8 +272,9 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
     };
 
     const handleEditPlaylistClick = (playlistId: PlaylistRow) => {
-        // Navigate to create-edit-playlist with the playlist ID
-        navigate(`${ROUTES.CREATE_EDIT_PLAYLIST}/${playlistId}`);
+        // Navigate to create-edit-playlist with the playlist ID. `routeBase`
+        // is empty for LAN/Electron, `/p/<token>` for the cloud per-player view.
+        navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/${playlistId}`);
     };
 
     const formatDuration = (seconds: number): string => {
@@ -297,7 +297,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                     cursor: 'pointer',
                     userSelect: 'none',
                 }}
-                onDoubleClick={() => navigate(`${ROUTES.CREATE_EDIT_PLAYLIST}/${row.id}`)}
+                onDoubleClick={() => navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/${row.id}`)}
             >
                 {children}
             </Box>
@@ -360,15 +360,16 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             field: 'actions',
             headerName: '',
             flex: 0.7,
-            minWidth: 150,
+            minWidth: 180,
+            sortable: false,
             renderCell: (params: any) => (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 0.5 }}>
                     <Button
                         aria-label="edit"
                         startIcon={<EditIcon />}
                         onClick={() => handleEditPlaylistClick(params.row.id)}
                         size="small"
-                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
                         aria-label="clone"
@@ -376,7 +377,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                         onClick={() => clonePlaylist(params.row.id)}
                         size="small"
                         color="primary"
-                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
                         aria-label="delete"
@@ -384,7 +385,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
                         color="error"
                         onClick={() => handleDeleteClick(params.row.id)}
                         size="small"
-                        sx={{ padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                 </Box>
             ),
@@ -395,7 +396,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
         setSearchQuery(value);
     };
     const handleCreatePlaylistClick = () => {
-        navigate(`${ROUTES.CREATE_EDIT_PLAYLIST}/-1`); // Navigate to create-edit-playlist with -1 as param
+        navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/-1`); // -1 means "new" — back-end picks a real id on save.
     };
 
     useEffect(() => {

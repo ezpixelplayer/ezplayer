@@ -417,9 +417,19 @@ function createAssetLoadingManager(
         let assetPath: string | null = null;
 
         if (url.startsWith('blob:')) {
-            // MTLLoader appended a relative path onto a blob: base URL. The trailing
-            // segment is the relative file we need to resolve.
+            // Two cases:
+            //   (a) `blob:host/<UUID>` — the URL we ourselves produced and just handed to
+            //       MTLLoader / OBJLoader. The trailing segment is a Three.js / browser
+            //       blob UUID, not a relative file path. Pass through unchanged; asking
+            //       the resolver for the UUID would always miss and add console noise.
+            //   (b) `blob:host/<UUID>/<relativeFile>` — MTLLoader's `extractUrlBase`
+            //       appended a relative texture filename onto a blob: base URL when
+            //       resolving an MTL-referenced texture. Strip to that filename and let
+            //       the resolver handle it.
             const trailing = url.split('/').pop();
+            const looksLikeBareBlob =
+                !!trailing && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trailing);
+            if (looksLikeBareBlob) return url;
             if (trailing) assetPath = objDir + trailing;
         } else if (url.startsWith('http://') || url.startsWith('https://')) {
             if (frameServerUrl) {

@@ -1,4 +1,3 @@
-import { ToastMsgs } from '@ezplayer/shared-ui-components';
 import CloudIcon from '@mui/icons-material/Cloud';
 import CloudDoneIcon from '@mui/icons-material/CloudDone';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
@@ -8,42 +7,21 @@ import ForwardIcon from '@mui/icons-material/Forward';
 import PersonIcon from '@mui/icons-material/Person';
 import { Tooltip } from '@mui/material';
 import { Box } from '../box/Box';
-import { ThunkDispatch } from '@reduxjs/toolkit';
 import React from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { DataStorageAPI } from '../../store/api/DataStorageAPI';
-import { postRegisterPlayer } from '../../store/slices/AuthStore';
 import { RootState } from '../../store/Store';
 
 export const ConnectivityStatus: React.FC = () => {
-    // Get connectivity status from Redux store
-    const auth = useSelector((state: RootState) => state.auth);
-    const { cloudIsReachable, cloudUserToken, playerIdToken, playerIdIsRegistered } = auth;
-    const dispatch = useDispatch<ThunkDispatch<RootState, DataStorageAPI, any>>();
+    // Cloud reachability is derived from the cloudStatus push channel: a successful
+    // poll has cleared lastError. Before any poll completes (lastCheckedAt undefined),
+    // treat as not reachable yet.
+    const { cloudUserToken } = useSelector((state: RootState) => state.auth);
+    const { playerIdToken } = useSelector((state: RootState) => state.cloudConfig);
+    const cloudStatus = useSelector((state: RootState) => state.cloudStatus);
+    const { playerIdIsRegistered } = cloudStatus;
+    const cloudIsReachable = !!cloudStatus.lastCheckedAt && !cloudStatus.lastError;
     const navigate = useNavigate();
-
-    // Handle player registration when PersonIcon is clicked
-    const handleRegisterPlayer = async () => {
-        if (cloudUserToken && playerIdToken && !playerIdIsRegistered) {
-            try {
-                await dispatch(postRegisterPlayer({ playerId: playerIdToken })).unwrap();
-
-                ToastMsgs.showSuccessMessage('Player ID registered successfully', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2000,
-                });
-            } catch (error) {
-                console.error('Error registering player:', error);
-                ToastMsgs.showErrorMessage('Failed to register player ID', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2000,
-                });
-            }
-        }
-    };
 
     // Determine connection status and icon
     const getStatusDetails = () => {
@@ -69,9 +47,9 @@ export const ConnectivityStatus: React.FC = () => {
         if (cloudUserToken && !playerIdIsRegistered) {
             return {
                 icon: <PersonIcon sx={{ color: 'warning.main' }} />,
-                tooltip: 'Logged in but player not registered. Click to register player.',
+                tooltip: 'Logged in but player not registered. Open general settings to register.',
                 clickable: true,
-                onClick: handleRegisterPlayer,
+                onClick: () => navigate('/generalsettings'),
             };
         }
 

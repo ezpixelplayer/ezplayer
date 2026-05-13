@@ -3,40 +3,28 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     CombinedPlayerStatus,
-    EndUserShowSettings,
-    EndUser,
-    UserPlayer,
-    JSONEditSheet,
-    JSONEditState,
+    CloudCommand,
     EZPlayerCommand,
     PlaybackSettings,
     PlayerWebSocketMessage,
 } from '@ezplayer/ezplayer-core';
 
-import type {
-    DataStorageAPI,
-    UserLoginBody,
-    UserRegisterBody,
-    CloudLayoutFileUpload,
-    CloudFileUploadResponse,
-    DownloadFileResponse,
-    CloudFileDownloadResponse,
-    CloudFileUpload,
-} from '@ezplayer/player-ui-components';
+import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/player-ui-components';
 
 import {
     AppDispatch,
     authSliceActions,
+    cloudConfigActions,
+    cloudStatusActions,
     hydratePlaybackSettings,
     setCStatus,
-    setEndUser,
     setNStatus,
     setPlaybackStatistics,
+    setPlayerConnected,
     setPlaylists,
     setPStatus,
     setScheduledPlaylists,
     setSequenceData,
-    setShowProfile,
 } from '@ezplayer/player-ui-components';
 import { wsService } from '../services/websocket';
 
@@ -81,12 +69,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.schedule !== undefined) {
                 dispatch(setScheduledPlaylists(data.schedule));
             }
-            if (data.show !== undefined) {
-                dispatch(setShowProfile(data.show));
-            }
-            if (data.user !== undefined) {
-                dispatch(setEndUser(data.user));
-            }
             if (data.playbackSettings !== undefined) {
                 dispatch(hydratePlaybackSettings(data.playbackSettings));
             }
@@ -102,6 +84,12 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.playbackStatistics !== undefined) {
                 dispatch(setPlaybackStatistics(data.playbackStatistics));
             }
+            if (data.cloudConfig !== undefined) {
+                dispatch(cloudConfigActions.setCloudConfig(data.cloudConfig));
+            }
+            if (data.cloudStatus !== undefined) {
+                dispatch(cloudStatusActions.setCloudStatus(data.cloudStatus));
+            }
         });
 
         const unsubscribePing = wsService.subscribe('ping', (msg) => {
@@ -110,12 +98,20 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
         });
 
+        // Drive the lost-connection overlay off the WS connection state.
+        // LAN has a single hop, so we map it onto `playerConnected` and leave
+        // `bridgeConnected` undefined (treated as up).
+        const unsubscribeWsConnect = wsService.onConnect(() => dispatch(setPlayerConnected(true)));
+        const unsubscribeWsDisconnect = wsService.onDisconnect(() => dispatch(setPlayerConnected(false)));
+
         // Connect will send the initial data
         wsService.connect();
 
         this.onDisconnect = async () => {
             unsubscribeSnapshot();
             unsubscribePing();
+            unsubscribeWsConnect();
+            unsubscribeWsDisconnect();
             wsService.disconnect();
         };
     }
@@ -176,11 +172,8 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         }
     }
 
-    // The following methods are not used by the web app when connected locally
-    // Data is synced via WebSocket instead
-    async requestChangeServerUrl(_data: { cloudURL: string }) {
-        throw new Error('Not supported in local web mode');
-    }
+    // Cloud config writes route over the WebSocket: koa worker forwards to main, main
+    // updates the file and reconfigures the poller, status echoes back as a snapshot.
 
     async refreshAll() {
         return Promise.resolve();
@@ -250,26 +243,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return {};
     }
 
-    async getCloudShowProfile(): Promise<EndUserShowSettings> {
-        return {} as EndUserShowSettings;
-    }
-
-    async postCloudShowProfile(data: EndUserShowSettings): Promise<EndUserShowSettings> {
-        return data;
-    }
-
-    async getCloudUserProfile(): Promise<EndUser> {
-        return {} as EndUser;
-    }
-
-    async getUserPlayers(): Promise<UserPlayer[]> {
-        return [];
-    }
-
-    async postCloudUserProfile(data: Partial<EndUser>): Promise<EndUser> {
-        return data as EndUser;
-    }
-
     async requestLoginToken(_data: UserLoginBody): Promise<string> {
         throw new Error('Authentication not supported in local web mode');
     }
@@ -290,81 +263,11 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         throw new Error('Password change not supported in local web mode');
     }
 
-    async requestSetPlayerIdToken(_data: { playerIdToken?: string }): Promise<{ message: string }> {
-        return {
-            message: 'Player ID management not needed in local web mode',
-        };
+    async issueCloudCommand(cmd: CloudCommand): Promise<void> {
+        wsService.send({ type: 'cloudCommand', cmd });
     }
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {
         return { message: 'Player registration not needed in local web mode' };
-    }
-
-    async postCloudRgbUpload(): Promise<CloudFileUpload> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudNetworksUpload(): Promise<CloudFileUpload> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudZipUpload(): Promise<CloudFileUpload> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudDoneUploadLayoutFiles(_data: CloudLayoutFileUpload): Promise<CloudFileUploadResponse> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async postCloudDoneUploadZip(_fileId: string, _fileTime: string): Promise<CloudFileUploadResponse> {
-        throw new Error('File upload not supported in local web mode');
-    }
-
-    async getCloudUploadedFiles(): Promise<DownloadFileResponse> {
-        return { sequences: [] };
-    }
-
-    async getCloudSeqFile(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudMediaFile(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudXsqzFile(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudLatestNetworks(): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudLatestRgbeff(): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudLatestLayzip(): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async getCloudPreviewVideo(_fileId: string): Promise<CloudFileDownloadResponse> {
-        throw new Error('File download not implemented in local web mode');
-    }
-
-    async isPlayerRegistered(_playerId: string): Promise<boolean> {
-        return true;
-    }
-
-    async getLayoutOptions(): Promise<JSONEditSheet | null> {
-        return null;
-    }
-
-    async uploadLayoutHints(_data: any): Promise<void> {
-        throw new Error('Layout hints upload not supported in local web mode');
-    }
-
-    async getLayoutHints(): Promise<{ modelEditState: JSONEditState } | null> {
-        return null;
     }
 }

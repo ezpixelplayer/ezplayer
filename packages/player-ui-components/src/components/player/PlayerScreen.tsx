@@ -17,20 +17,20 @@ interface PlayerScreenProps {
 }
 
 const StatusCards = ({}: {}) => {
-    const playerStatus = useSelector((state: RootState) => state.playerStatus);
+    const runtime = useSelector((state: RootState) => state.runtime);
 
     return (
         <Box sx={{ px: 2, pb: 2, flexShrink: 0 }}>
             {/* Now Playing Card and Controller Status */}
             <Grid container spacing={2}>
                 <Grid item xs={12} md={12} lg={6} xl={4}>
-                    {playerStatus.playerStatus?.player ? (
-                        <NowPlayingCard player={playerStatus.playerStatus.player} compact={true} />
-                    ) : playerStatus.playerStatus?.show ? (
+                    {runtime.combined?.player ? (
+                        <NowPlayingCard player={runtime.combined.player} compact={true} />
+                    ) : runtime.combined?.show ? (
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
                                 <Typography variant="body2" color="text.secondary">
-                                    Show: {playerStatus.playerStatus.show.show_name}
+                                    Show: {runtime.combined.show.show_name}
                                 </Typography>
                                 <Typography variant="caption" display="block">
                                     Player data not available
@@ -41,9 +41,9 @@ const StatusCards = ({}: {}) => {
                 </Grid>
 
                 {/* Controller Status Summary */}
-                {playerStatus.playerStatus?.controller &&
+                {runtime.combined?.controller &&
                     (() => {
-                        const controller = playerStatus.playerStatus.controller;
+                        const controller = runtime.combined.controller;
                         const stats = getControllerStats(controller.controllers);
 
                         return (

@@ -1,7 +1,7 @@
 import type {
+    CloudConfig,
+    CloudStatus,
     CombinedPlayerStatus,
-    EndUser,
-    EndUserShowSettings,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -12,6 +12,7 @@ import type {
     EZPlayerVersions,
     EZPlayerCommand,
     PlaybackSettings,
+    CloudCommand,
 } from './DataTypes';
 
 export interface AudioDevice {
@@ -87,6 +88,22 @@ export interface EZPElectronAPI {
     // Open URL in system web browser
     openExternal: (url: string) => void;
 
+    // Cloud config: persisted in show-folder JSON, mutated through main.
+    getCloudConfig: () => Promise<CloudConfig>;
+    onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => void;
+    /** Single umbrella for player-cloud-worker verbs. Modeled on `immediatePlayerCommand`
+     *  (which uses an EZPlayerCommand discriminated union). New verbs add a variant
+     *  to `CloudCommand` and a case in main's dispatcher — no per-verb IPC plumbing. */
+    cloudCommand: (cmd: CloudCommand) => Promise<void>;
+
+    /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
+     *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */
+    setZoomFactor: (factor: number) => Promise<void>;
+
+    // Cloud status: in-memory in main, polled by the cloud worker, pushed to renderer.
+    getCloudStatus: () => Promise<CloudStatus>;
+    onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => void;
+
     // Set up / remove callbacks
     connect: () => Promise<void>;
     disconnect: () => Promise<void>;
@@ -100,6 +117,14 @@ export interface EZPElectronAPI {
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
     requestChooseShowFolder: () => Promise<string>;
+    /** Cloud-managed-folder picker. Returns the chosen folder + whether the
+     *  folder was an existing cloud install (so the caller can skip
+     *  registration/layout-bootstrap). `folder === ''` means the user
+     *  cancelled. */
+    requestChooseCloudShowFolder: () => Promise<{ folder: string; existingInstall: boolean }>;
+    /** Welcome-screen cloud-CTA flag (electron-store, set by --reset-cloud /
+     *  --reset-nocloud). */
+    getWelcomeShowCloud: () => Promise<boolean>;
     validateShowDirectory: (showDirectory?: string) => Promise<{
         valid: boolean;
         missingFiles: string[];
@@ -113,11 +138,6 @@ export interface EZPElectronAPI {
     getSchedule: () => Promise<ScheduledPlaylist[]>;
     putSchedule: (recs: ScheduledPlaylist[]) => Promise<ScheduledPlaylist[]>;
 
-    getShowProfile: () => Promise<EndUserShowSettings>;
-    putShowProfile: (data: EndUserShowSettings) => Promise<EndUserShowSettings>;
-    getUserProfile: () => Promise<EndUser>;
-    putUserProfile: (data: Partial<EndUser>) => Promise<EndUser>;
-
     getCombinedStatus: () => Promise<CombinedPlayerStatus>;
     getServerStatus: () => Promise<{
         port: number;
@@ -130,8 +150,6 @@ export interface EZPElectronAPI {
     onSequencesUpdated: (callback: (data: SequenceRecord[]) => void) => void;
     onPlaylistsUpdated: (callback: (data: PlaylistRecord[]) => void) => void;
     onScheduleUpdated: (callback: (data: ScheduledPlaylist[]) => void) => void;
-    onUserUpdated: (callback: (data: EndUser) => void) => void;
-    onShowUpdated: (callback: (data: EndUserShowSettings) => void) => void;
 
     onStatusUpdated: (callback: (data: CombinedPlayerStatus) => void) => void;
     onPlaybackSettingsUpdated: (callback: (data: PlaybackSettings) => void) => void;

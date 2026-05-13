@@ -42,6 +42,20 @@ export interface SequenceFiles {
     thumb?: string;
 }
 
+/** Identifiers for a cloud-sourced file currently installed in the show folder.
+ *  Used by the cloud content sync to detect when a sequence's bytes have gone
+ *  stale relative to the manifest. */
+export interface CloudFileIdent {
+    file_id: string;
+    file_time: number;
+}
+
+export interface CloudSequenceMeta {
+    fseq?: CloudFileIdent;
+    audio?: CloudFileIdent;
+    thumb?: CloudFileIdent;
+}
+
 export interface SequenceRecord {
     instanceId: string;
     id: string;
@@ -51,6 +65,8 @@ export interface SequenceRecord {
     files?: SequenceFiles;
     updatedAt?: number;
     deleted?: boolean;
+    /** Set on sequences installed by the cloud content worker. */
+    cloud?: CloudSequenceMeta;
 }
 
 export interface PlaylistItem {
@@ -109,17 +125,6 @@ interface RecurrenceRule {
 
 export type PlaylistTags = string[];
 
-export interface UserPlayer {
-    player_token: string;
-    user_id: string | null;
-    ownership_updated: number;
-    last_checkin?: number;
-    last_sync?: number;
-    last_pstatus?: number;
-    last_cstatus?: number;
-    last_nstatus?: number;
-}
-
 export interface PlayingItem {
     type: 'Scheduled' | 'Immediate' | 'Queued';
     item: 'Song' | 'Playlist' | 'Schedule';
@@ -137,11 +142,13 @@ export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
     status:
-        | 'Playing' // Playing
-        | 'Stopping' // Graceful stop happening
-        | 'Stopped' // Stopped due to stop request
-        | 'Paused' // Paused - time is not advancing
-        | 'Suppressed'; // Time advancing, but not emitting the sound/light
+        | 'Playing' // EZP: Playing
+        | 'Stopping' // EZP: Graceful stop happening
+        | 'Stopped' // EZP: Stopped due to stop request
+        | 'Paused' // EZP: Paused - time is not advancing
+        | 'Suppressed' // EZP: Time advancing, but not emitting the sound/light
+        | 'Up' // FPP: online heartbeat (no playback semantics)
+        | 'Down'; // FPP: offline / unreachable
 
     reported_time: number;
     now_playing?: PlayingItem;
@@ -162,6 +169,59 @@ export interface PlayerPStatusContent {
     //   TODO figure out how to make sure that gets reflected...
 }
 
+/** Manifest entry returned by the cloud's per-player sequence list endpoint
+ *  (currently /fppapi/player/getseqforplayer/:token). One per sequence the
+ *  player is entitled to. The sub-records identify each downloadable file
+ *  by an opaque file_id and a file_time used for staleness checks. */
+export interface CloudSeqManifestEntry {
+    id: string;
+    user_id: string;
+    vseq_id: string;
+    title: string;
+    artist: string;
+    /** Vendor display string. Optional; cloud may not always provide it. */
+    vendor?: string;
+    duration_ms?: number;
+    fseq?: { file_id: string; file_time: number };
+    audio?: { file_id: string; file_time: number };
+    xsqz?: { file_id: string; file_time: number };
+    pvid?: { file_id: string; file_time: number };
+    /** Direct (presigned) thumbnail URL when available. */
+    thumb?: string;
+}
+
+/** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
+ *  from the per-file entries; this struct is just identity + which files belong. */
+export interface CloudSequenceProgress {
+    vseq_id: string;
+    title: string;
+    artist: string;
+    vendor?: string;
+    /** file_ids of every file the manifest lists for this sequence (fseq/audio/thumb). */
+    fileIds: string[];
+}
+
+/** Per-file status used by the cloud content sync. */
+export type CloudFileKind = 'fseq' | 'audio' | 'thumb';
+export type CloudFileStatus =
+    | 'known' // listed in manifest, nothing started yet
+    | 'downloading' // fetch in progress
+    | 'staged' // bytes on disk under .ezplayer/cloud, not yet promoted
+    | 'installed' // active in show folder root, sequence record updated
+    | 'error'; // last attempt failed
+
+export interface CloudFileEntry {
+    vseq_id: string;
+    kind: CloudFileKind;
+    file_id: string;
+    file_time?: number;
+    filename?: string;
+    status: CloudFileStatus;
+    bytes?: number;
+    totalBytes?: number;
+    error?: string;
+}
+
 export interface PlayerCStatusContent {
     // C - Content
     n_sequences?: number;
@@ -170,6 +230,40 @@ export interface PlayerCStatusContent {
     n_playlists?: number;
     n_schedules?: number;
     schedule_sync_time?: number;
+
+    // Cloud content sync (worker-driven)
+    files?: Record<string, CloudFileEntry>; // keyed by file_id
+    sequences?: Record<string, CloudSequenceProgress>; // keyed by vseq_id
+    layout?: CloudLayoutInfo;
+    lastManifestAt?: number;
+    lastError?: string;
+    /** True when the circuit breaker has tripped after consecutive download failures. */
+    halted?: boolean;
+}
+
+export type CloudLayoutStatus =
+    | 'idle'
+    | 'fetching' // downloading zip and/or xml files
+    | 'unpacking' // extracting zip
+    | 'uploading' // packing + sending zip to cloud
+    | 'done'
+    | 'noLayout' // cloud reported no layout available
+    | 'error';
+
+export interface CloudLayoutInfo {
+    status: CloudLayoutStatus;
+    /** Whether the most recent activity was a download or upload — disambiguates
+     *  the shared `done` / `error` states for the UI. */
+    direction?: 'download' | 'upload';
+    /** Bytes transferred this fetch/upload. */
+    bytes?: number;
+    /** Total bytes for the current transfer, when known. */
+    totalBytes?: number;
+    /** Epoch ms of last successful download. */
+    lastFetchedAt?: number;
+    /** Epoch ms of last successful upload. */
+    lastUploadedAt?: number;
+    error?: string;
 }
 
 export interface ControllerStatus {
@@ -357,30 +451,6 @@ export type EZPlayerCommand =
           mute?: boolean;
       };
 
-export interface EndUser {
-    user_id: string; // UUID
-    email: string;
-    name_f: string;
-    name_l: string;
-    name_nn: string;
-    status: string; // active, pending, disabled
-    class: string; // free basic pro commercial
-    create_time?: number;
-}
-
-export interface EndUserShowSettings {
-    user_id: string; // UUID
-    updated: number;
-    show_name?: string;
-    message?: string;
-    tune_to?: string;
-    fps?: number;
-    layout_dim?: string; // '2D, 3D, Default'
-    guess_layout?: string;
-    group_mode?: string;
-    rot_y?: number; // Rotate around Y axis for effects
-}
-
 export type ScheduleDays =
     | 'all'
     | 'weekend-fri-sat'
@@ -409,6 +479,16 @@ export interface VolumeScheduleEntry {
     startTime: string; // HH:MM format
     endTime: string; // HH:MM format (can exceed 24:00)
     volumeLevel: number; // 0-100
+}
+
+/** A single allowed-window for cloud content polling. Same shape as the other
+ *  schedule entries but no per-window payload — being inside the window IS the
+ *  payload (= "polling allowed"). */
+export interface CloudPollScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM
+    endTime: string; // HH:MM
 }
 
 export interface ViewerControlState {
@@ -444,20 +524,79 @@ export interface PlaybackSettings {
     jukebox?: JukeboxSettings;
 }
 
+/** Per-file identity for the layout files we have on disk. Lets the worker decide
+ *  whether the cloud's manifest entry is newer than what we have, by both id and time. */
+export interface LayoutFileMeta {
+    file_id: string;
+    file_time: number;
+}
+
+/** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
+export interface CloudConfig {
+    cloudServiceUrl: string;
+    playerIdToken: string;
+    /**
+     * Who owns this show folder's layout. `'xlights'` (or absent) = the user manages
+     * `xlights_rgbeffects.xml` / `xlights_networks.xml` themselves; the cloud worker
+     * does not touch them. `'cloud'` = the worker downloads layout from the cloud and
+     * writes those files into the folder root.
+     */
+    layoutSource?: 'xlights' | 'cloud';
+    /** Whether the cloud worker should be active. Default true. False keeps the
+     *  configured URL/token but suspends polling and downloads — the user can
+     *  flip back without re-entering anything. */
+    cloudEnabled?: boolean;
+    /** When the worker is enabled, how aggressively it polls content. `'always'`
+     *  polls on the configured cadence. `'scheduled'` polls only when current
+     *  local time is inside any window in `cloudPollSchedule`. Registration
+     *  heartbeat polling is unaffected — it always runs when enabled. Absent
+     *  defaults to `'always'`. */
+    cloudPollMode?: 'always' | 'scheduled';
+    /** Whitelist windows for content polling under `'scheduled'` mode.
+     *  Overlapping windows just merge into a longer "on" period. */
+    cloudPollSchedule?: CloudPollScheduleEntry[];
+    /** Per-folder polling cadence overrides. Absent fields fall back to worker
+     *  defaults (which are demo-aggressive — production should set these). */
+    cloudPollIntervals?: {
+        registrationMs?: number;
+        manifestMs?: number;
+    };
+    /** Last-known cloud file_id/file_time for each layout file we've successfully
+     *  downloaded. Drives staleness checks so we skip redundant downloads. */
+    layoutMeta?: {
+        zip?: LayoutFileMeta;
+        rgbeffects?: LayoutFileMeta;
+        networks?: LayoutFileMeta;
+        lastFetchedAt?: number;
+    };
+}
+
+/** In-memory cloud connectivity status owned by node main. Pushed; never persisted. */
+export interface CloudStatus {
+    /** True if the cloud confirms this player ID is registered to a user. */
+    playerIdIsRegistered: boolean;
+    /** Reported by the cloud during the registration check. */
+    cloudVersion?: string;
+    /** Epoch ms of the last poll reply (success or graceful error). */
+    lastCheckedAt?: number;
+    /** Last error string from the polling loop. Cleared on the next success. */
+    lastError?: string;
+}
+
 /// Player full state & websocket sync
 export type FullPlayerState = {
     showFolder?: string;
     sequences?: SequenceRecord[];
     playlists?: PlaylistRecord[];
     schedule?: ScheduledPlaylist[];
-    user?: EndUser;
-    show?: EndUserShowSettings;
     cStatus?: PlayerCStatusContent;
     pStatus?: PlayerPStatusContent;
     nStatus?: PlayerNStatusContent;
     playbackSettings?: PlaybackSettings;
     playbackStatistics?: PlaybackStatistics;
     versions?: EZPlayerVersions;
+    cloudConfig?: CloudConfig;
+    cloudStatus?: CloudStatus;
 };
 
 export type PlayerWebSocketSnapshot = {
@@ -476,11 +615,158 @@ export type PlayerWebSocketKick = {
     reason: string;
 };
 
-export type PlayerWebSocketMessage = PlayerWebSocketSnapshot | PlayerWebSocketPing | PlayerWebSocketKick;
+/** Emitted by the cloud bridge (never by the player itself) to tell viewers
+ *  whether the player↔cloud bridge socket is currently up. Cloud sends one
+ *  on viewer connect with the current state, and one to all viewers each
+ *  time the player WS connects or disconnects at the bridge. */
+export type PlayerWebSocketBridgeStatus = {
+    type: 'bridgeStatus';
+    playerConnected: boolean;
+};
 
+export type PlayerWebSocketMessage =
+    | PlayerWebSocketSnapshot
+    | PlayerWebSocketPing
+    | PlayerWebSocketKick
+    | PlayerWebSocketBridgeStatus;
+
+/** HTTP-over-WS proxy: lazy fetch of binary/large artifacts (thumbnails,
+ *  3D meshes, layout XML caches) over a dedicated WS that's separate from
+ *  the status WS so big payloads don't head-of-line block snapshots/pings.
+ *
+ *  Cloud-endpoint authenticates the upgrade then is a near-transparent
+ *  pipe — it reads `reqId` to route player→viewer responses, but doesn't
+ *  inspect status/headers/body. v1 sends the full body in one envelope;
+ *  chunked variants (`httpProxyChunk` + `httpProxyEnd`) can be added later
+ *  without breaking this shape since they're a separate `type`. */
+export type HttpProxyRequest = {
+    type: 'httpProxyRequest';
+    reqId: string;
+    method: 'GET';
+    /** Path on the player's local Koa, e.g. `/api/getimage/:id`. */
+    path: string;
+    query?: Record<string, string>;
+};
+
+export type HttpProxyResponse = {
+    type: 'httpProxyResponse';
+    reqId: string;
+    status: number;
+    headers?: Record<string, string>;
+    /** Base64-encoded body. permessage-deflate on the proxy WS recovers
+     *  most of the 33% base64 overhead for text/JSON; PNG/JPG stays as-is.
+     *  Empty string / omitted for status-only responses (204, redirects)
+     *  *and* for chunked responses — body data then arrives via subsequent
+     *  `httpProxyChunk` messages. */
+    bodyBase64?: string;
+    /** When true, body data follows in `httpProxyChunk` messages with the
+     *  same `reqId`, terminated by one with `end: true`. Used when a single
+     *  WS frame would be too large (multi-MB OBJ files, big XML caches). */
+    chunked?: boolean;
+};
+
+export type HttpProxyChunk = {
+    type: 'httpProxyChunk';
+    reqId: string;
+    /** 0-based sequence within this reqId's chunk stream. */
+    seq: number;
+    /** Base64-encoded chunk body. */
+    bodyBase64: string;
+    /** When true, this is the final chunk; no more arrive for this reqId. */
+    end?: boolean;
+};
+
+/** Verbs the renderer can ask the player's cloud worker (or the cloud app's local
+ *  cloud-state manager) to perform. Modeled on `EZPlayerCommand`: a discriminated
+ *  union dispatched through one umbrella API (`issueCloudCommand`) instead of a
+ *  separate IPC/RPC/WS plumb per verb. New commands add a variant here plus a case
+ *  in main's `dispatchCloudCommand` (and, on cloud-app surfaces, a case in
+ *  `CloudDataStorageAPI.issueCloudCommand`). */
+export type CloudCommand =
+    | { type: 'syncNow' } // immediate manifest + content sync
+    | { type: 'fetchLayoutNow' } // immediate layout download
+    | { type: 'uploadLayoutNow' } // immediate layout upload
+    | { type: 'pollNow' } // immediate registration heartbeat
+    | { type: 'setPlayerIdToken'; token: string } // persist + reconfigure
+    | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
+    | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
+    | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
+    | {
+          /** Update polling configuration. Any field that's omitted is preserved (so
+           *  callers can change one knob without re-sending the others). To clear the
+           *  schedule explicitly, pass an empty array — `undefined` preserves it. */
+          type: 'setCloudPolling';
+          mode?: 'always' | 'scheduled';
+          schedule?: CloudPollScheduleEntry[];
+          intervals?: { registrationMs?: number; manifestMs?: number };
+      };
+
+// `playerCommand` / `settings` / `updatePlaylists` / `updateSchedule` mirror
+// the LAN-side HTTP endpoints over the WS so cloud viewers (no HTTP route
+// to the player) can drive playback and edits too.
 export type PlayerClientWebSocketMessage =
     | { type: 'pong'; now: number }
-    | { type: 'subscribe'; keys: (keyof FullPlayerState)[] };
+    | { type: 'subscribe'; keys: (keyof FullPlayerState)[] }
+    | { type: 'cloudCommand'; cmd: CloudCommand }
+    | { type: 'playerCommand'; cmd: EZPlayerCommand }
+    | { type: 'settings'; settings: PlaybackSettings }
+    | { type: 'updatePlaylists'; data: PlaylistRecord[] }
+    | { type: 'updateSchedule'; data: ScheduledPlaylist[] };
+
+/// Cloud check-in (lightweight heartbeat + command pickup)
+
+/** Bridge-lifecycle commands the cloud emits in the checkin response.
+ *  Distinct from `CloudCommand` (those ride the WS once a bridge exists). */
+export type OutOfBandCommand =
+    | {
+          type: 'openCloudWS';
+          /** Optional override URL. Omitted in v1; player synthesizes from
+           *  its own cloudUrl since cloud-side host detection is unreliable
+           *  behind ingress. Reserved for future shard routing. */
+          wsUrl?: string;
+          /** Parallel WS for HTTP-over-WS proxy traffic (lazy fetches of
+           *  thumbnails, layout XML, 3D files). Same auth boundary as wsUrl;
+           *  player synthesizes alongside wsUrl for the same reason. */
+          proxyWsUrl?: string;
+          /** Parallel WS for live-audio push (player→cloud→listener). Lets
+           *  the player push each chunk the moment it's produced instead of
+           *  waiting for a poll, and keeps audio frames off the status WS
+           *  where they'd head-of-line block snapshots. */
+          audioWsUrl?: string;
+          sessionId: string;
+          ttlSeconds: number;
+      }
+    | {
+          type: 'closeCloudWS';
+          /** Absent → close any current bridge. */
+          sessionId?: string;
+      };
+
+/** POST /api/player/checkin/:token body — all fields optional (empty body is
+ *  a valid command-poll). Present fields update last_* timestamps and feed
+ *  the show-builder Players pane. */
+export interface PlayerCheckinRequest {
+    now?: number;
+    currentlyPlaying?: string;
+    lastLayoutSync?: number;
+    lastContentSync?: number;
+    contentSummary?: {
+        n_sequences?: number;
+        n_playlists?: number;
+        n_schedules?: number;
+    };
+    halted?: boolean;
+    lastError?: string;
+    /** The player's current registration-poll interval (ms). The Players pane
+     *  uses ~2× this as the "live" cutoff — beyond that it shows "unknown".
+     *  Optional; consumers fall back to a 60s default. */
+    pollIntervalMs?: number;
+}
+
+export interface PlayerCheckinResponse {
+    registered: boolean;
+    commands?: OutOfBandCommand[];
+}
 
 /// Layout Edit
 

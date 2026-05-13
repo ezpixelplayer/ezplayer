@@ -5,17 +5,15 @@ import { Drawer, Divider, useTheme, useMediaQuery, Stack } from '@mui/material';
 import { Box } from '../box/Box';
 
 import { SidebarMenu } from './sidebar-menu/SidebarMenu';
+import type { MenuRoute } from '../../types/menuRoute';
 
 type SidebarProps = {
     logo?: ReactNode;
-    hidePlayer: boolean;
-    hideCloud: boolean;
-    hideLocal: boolean;
-    kioskMode?: boolean;
+    menuItems: MenuRoute[];
 };
 
-export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer, kioskMode }: SidebarProps) => {
-    const { sidebarToggle, toggleSidebar, closeSidebar } = useContext(SidebarContext);
+export const Sidebar = ({ logo, menuItems }: SidebarProps) => {
+    const { sidebarToggle, closeSidebar } = useContext(SidebarContext);
     const theme = useTheme();
     const isLg = useMediaQuery(theme.breakpoints.up('lg'));
     const handleClose = () => {
@@ -49,7 +47,7 @@ export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer, kioskMode }: S
                             />
                         </>
                     )}
-                    <SidebarMenu hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} kioskMode={kioskMode} />
+                    <SidebarMenu menuItems={menuItems} />
                 </Scrollbar>
             </Box>
             <Drawer
@@ -86,7 +84,7 @@ export const Sidebar = ({ logo, hideCloud, hideLocal, hidePlayer, kioskMode }: S
                                 />
                             </>
                         )}
-                        <SidebarMenu hideCloud={hideCloud} hideLocal={hideLocal} hidePlayer={hidePlayer} kioskMode={kioskMode} />
+                        <SidebarMenu menuItems={menuItems} />
                     </Scrollbar>
                 </Box>
             </Drawer>

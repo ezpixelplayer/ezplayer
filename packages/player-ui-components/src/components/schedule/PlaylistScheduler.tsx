@@ -2,6 +2,7 @@ import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNum
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import PreviewIcon from '@mui/icons-material/Preview';
 import { Box } from '../box/Box';
 import {
     Button,
@@ -23,6 +24,7 @@ import {
     TextField,
     ToggleButton,
     ToggleButtonGroup,
+    Tooltip,
     Typography,
     styled,
 } from '@mui/material';
@@ -46,6 +48,8 @@ interface PlaylistSchedulerProps {
     initialSchedules: ScheduledPlaylist[];
     loading?: boolean;
     scheduleType?: 'main' | 'background';
+    onScheduleTypeChange?: (value: 'main' | 'background') => void;
+    onOpenPreview?: () => void;
 }
 
 type RecurrenceOption = 'once' | 'daily' | 'selectedDays';
@@ -75,6 +79,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     initialSchedules,
     loading,
     scheduleType = 'main',
+    onScheduleTypeChange,
+    onOpenPreview,
 }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<'monthly' | 'weekly' | 'daily'>('monthly');
@@ -1193,7 +1199,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         alignItems: 'center',
                         borderBottom: 1,
                         borderColor: 'divider',
-                        flexWrap: { xs: 'wrap', sm: 'nowrap' },
+                        flexWrap: 'wrap',
                         gap: 2,
                     }}
                 >
@@ -1216,30 +1222,58 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         </IconButton>
                     </Box>
 
-                    <StyledToggleButtonGroup
-                        value={view}
-                        exclusive
-                        onChange={handleViewChange}
-                        aria-label="view selector"
-                        size="small"
+                    <Box
                         sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            flexWrap: 'wrap',
                             flex: { xs: '1 0 100%', sm: '0 0 auto' },
                             justifyContent: { xs: 'center', sm: 'flex-end' },
                         }}
                     >
-                        <StyledToggleButton value="monthly" aria-label="monthly view">
-                            <CalendarViewMonth sx={{ mr: 1 }} />
-                            Month
-                        </StyledToggleButton>
-                        <StyledToggleButton value="weekly" aria-label="weekly view">
-                            <CalendarViewWeek sx={{ mr: 1 }} />
-                            Week
-                        </StyledToggleButton>
-                        <StyledToggleButton value="daily" aria-label="daily view">
-                            <CalendarViewDay sx={{ mr: 1 }} />
-                            Day
-                        </StyledToggleButton>
-                    </StyledToggleButtonGroup>
+                        {onOpenPreview && (
+                            <Tooltip title="Open schedule preview">
+                                <IconButton size="small" onClick={onOpenPreview} aria-label="open schedule preview">
+                                    <PreviewIcon />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+
+                        {onScheduleTypeChange && (
+                            <ToggleButtonGroup
+                                value={scheduleType}
+                                exclusive
+                                size="small"
+                                color="primary"
+                                onChange={(_e, value: 'main' | 'background' | null) => {
+                                    if (value !== null) onScheduleTypeChange(value);
+                                }}
+                                aria-label="schedule layer"
+                            >
+                                <ToggleButton value="main" aria-label="foreground">FG</ToggleButton>
+                                <ToggleButton value="background" aria-label="background">BG</ToggleButton>
+                            </ToggleButtonGroup>
+                        )}
+
+                        <StyledToggleButtonGroup
+                            value={view}
+                            exclusive
+                            onChange={handleViewChange}
+                            aria-label="view selector"
+                            size="small"
+                        >
+                            <StyledToggleButton value="monthly" aria-label="monthly view">
+                                <CalendarViewMonth />
+                            </StyledToggleButton>
+                            <StyledToggleButton value="weekly" aria-label="weekly view">
+                                <CalendarViewWeek />
+                            </StyledToggleButton>
+                            <StyledToggleButton value="daily" aria-label="daily view">
+                                <CalendarViewDay />
+                            </StyledToggleButton>
+                        </StyledToggleButtonGroup>
+                    </Box>
                 </Box>
             )}
 

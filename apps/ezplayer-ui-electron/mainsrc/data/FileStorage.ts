@@ -1,7 +1,5 @@
 import {
     type CombinedPlayerStatus,
-    type EndUser,
-    type EndUserShowSettings,
     type PlaylistRecord,
     type ScheduledPlaylist,
     type SequenceRecord,
@@ -11,6 +9,7 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import * as path from 'path';
 import fsp from 'fs/promises';
+import { atomicWriteFile } from './atomicWrite.js';
 
 // sequences.json
 interface TempSeqsAPIPayload {
@@ -32,44 +31,6 @@ interface TempScheduleAPIPayload {
         scheduledPlaylists?: ScheduledPlaylist[];
     };
 }
-
-// show.json
-interface TempShowAPIPayload {
-    data: {
-        show?: EndUserShowSettings;
-    };
-}
-
-// user.json
-interface TempUserAPIPayload {
-    data: {
-        user?: EndUser;
-    };
-}
-
-export const blankShowProfile: EndUserShowSettings = {
-    show_name: '',
-    tune_to: '',
-    rot_y: 0,
-    message: '',
-    layout_dim: 'Auto',
-    fps: 0,
-    group_mode: 'Default',
-    guess_layout: 'Build',
-    user_id: '',
-    updated: new Date().getTime(),
-};
-
-export const blankUserProfile: EndUser = {
-    user_id: '',
-    email: '',
-    name_f: '',
-    name_l: '',
-    name_nn: '',
-    status: 'unregistered',
-    class: 'N/A',
-    create_time: new Date().getTime(),
-};
 
 /**
  * Log a load failure as a single line.  Missing-file (ENOENT) is expected on
@@ -106,10 +67,13 @@ function toRelative(p: string, base: string): string {
     return rel;
 }
 
+/** Resolve a show-folder JSON file to its `.ezplayer/`-prefixed location. */
+const sf = (folder: string, name: string) => path.join(folder, '.ezplayer', name);
+
 export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
     try {
         const p: TempSeqsAPIPayload = await JSON.parse(
-            await fsp.readFile(path.join(folder, 'sequences.json'), 'utf-8'),
+            await fsp.readFile(sf(folder, 'sequences.json'), 'utf-8'),
         );
         const seqs = p?.data?.allSongs ?? [];
         for (const s of seqs) {
@@ -157,13 +121,13 @@ export async function saveSequencesAPI(folder: string, payload: SequenceRecord[]
             allSongs: npayload,
         },
     };
-    await fsp.writeFile(path.join(folder, 'sequences.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'sequences.json'), JSON.stringify(userData, null, 4));
 }
 
 export async function loadPlaylistsAPI(folder: string): Promise<PlaylistRecord[]> {
     try {
         const p: TempPlaylistsPayload = await JSON.parse(
-            await fsp.readFile(path.join(folder, 'playlists.json'), 'utf-8'),
+            await fsp.readFile(sf(folder, 'playlists.json'), 'utf-8'),
         );
         return p.data.playlists ?? [];
     } catch (e) {
@@ -178,13 +142,13 @@ export const savePlaylistsAPI = async (folder: string, payload: PlaylistRecord[]
             playlists: payload,
         },
     };
-    await fsp.writeFile(path.join(folder, 'playlists.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'playlists.json'), JSON.stringify(userData, null, 4));
 };
 
 export async function loadScheduleAPI(folder: string) {
     try {
         const p: TempScheduleAPIPayload = await JSON.parse(
-            await fsp.readFile(path.join(folder, 'schedule.json'), 'utf-8'),
+            await fsp.readFile(sf(folder, 'schedule.json'), 'utf-8'),
         );
         return p.data.scheduledPlaylists ?? [];
     } catch (e) {
@@ -199,42 +163,8 @@ export const saveScheduleAPI = async (folder: string, payload: ScheduledPlaylist
             scheduledPlaylists: payload,
         },
     };
-    await fsp.writeFile(path.join(folder, 'schedule.json'), JSON.stringify(userData, null, 4), 'utf-8');
+    await atomicWriteFile(sf(folder, 'schedule.json'), JSON.stringify(userData, null, 4));
 };
-
-export async function loadShowProfileAPI(folder: string) {
-    try {
-        const p: TempShowAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'show.json'), 'utf-8'));
-        return p.data.show ?? blankShowProfile;
-    } catch (e) {
-        logLoadFailure('show.json', e);
-        return blankShowProfile;
-    }
-}
-
-export async function saveShowProfileAPI(folder: string, data: EndUserShowSettings) {
-    const sData: TempShowAPIPayload = {
-        data: { show: data },
-    };
-    await fsp.writeFile(path.join(folder, 'show.json'), JSON.stringify(sData, null, 4), 'utf-8');
-}
-
-export async function loadUserProfileAPI(folder: string) {
-    try {
-        const p: TempUserAPIPayload = await JSON.parse(await fsp.readFile(path.join(folder, 'user.json'), 'utf-8'));
-        return p.data.user ?? blankUserProfile;
-    } catch (e) {
-        logLoadFailure('user.json', e);
-        return blankUserProfile;
-    }
-}
-
-export async function saveUserProfileAPI(folder: string, data: EndUser) {
-    const sData: TempUserAPIPayload = {
-        data: { user: data },
-    };
-    await fsp.writeFile(path.join(folder, 'user.json'), JSON.stringify(sData, null, 4), 'utf-8');
-}
 
 export async function loadStatusAPI(): Promise<CombinedPlayerStatus> {
     return {};
