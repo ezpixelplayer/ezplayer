@@ -67,6 +67,20 @@ export interface SequenceRecord {
     deleted?: boolean;
     /** Set on sequences installed by the cloud content worker. */
     cloud?: CloudSequenceMeta;
+    /** Lineage to the upstream source. Lets the materializer detect
+     *  "I already have a record for this grant" and the sync layer overlay
+     *  render-state from `user_seq_render`. `'manual'` records (no upstream)
+     *  carry no `source_id`. */
+    source_kind?: 'vendor' | 'user_upload' | 'manual';
+    /** ID within the source — `vsequence_id` for vendor grants, file id for
+     *  user uploads, undefined for manual records. */
+    source_id?: string;
+    /** Computed at sync time from `user_seq_render.enabled`. `false` means
+     *  the user has suspended the sequence — clients hide it from playlists,
+     *  jukebox, etc. (same handling as `deleted`, but user-reversible). Not
+     *  persisted on the show-builder side; the source of truth is the
+     *  `user_seq_render` row. */
+    render_enabled?: boolean;
 }
 
 export interface PlaylistItem {
@@ -83,6 +97,12 @@ export interface PlaylistRecord {
     createdAt: number;
     updatedAt?: number;
     deleted?: boolean;
+    /** Suspend without delete (same Halloween-vs-Christmas pattern as
+     *  `SequenceRecord.render_enabled`). Persisted directly on the record.
+     *  `undefined` means enabled; clients hide entries with `enabled===false`
+     *  but are responsible for graceful handling if the suspended item is
+     *  currently in-flight. */
+    enabled?: boolean;
 }
 
 export type ScheduleEndPolicy = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut';
@@ -114,6 +134,8 @@ export interface ScheduledPlaylist {
     endPolicy?: ScheduleEndPolicy; // For schedules over alotted time, how to end?
     keepToScheduleWhenPreempted?: boolean; // Keep "running" when overriden
     priority?: 'high' | 'normal' | 'low';
+    /** Suspend without delete; same semantics as `PlaylistRecord.enabled`. */
+    enabled?: boolean;
 }
 
 interface RecurrenceRule {

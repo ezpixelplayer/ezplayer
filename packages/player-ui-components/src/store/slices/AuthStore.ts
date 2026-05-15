@@ -33,8 +33,14 @@ export interface AuthState {
  * reducer cases for thunks they bring along.
  */
 export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder<AuthState>) => void) {
+    // Seed token synchronously so AuthGate's first render skips the LoginPanel when we're
+    // already logged in. Otherwise the browser sees the login form for one paint and
+    // triggers autofill before InitialDataProvider's async refreshAll() sets the token.
+    const initialToken =
+        typeof window !== 'undefined' ? window.localStorage?.getItem('auth_token') ?? null : null;
+
     const initialAuthState: AuthState = {
-        cloudUserToken: null,
+        cloudUserToken: initialToken,
         playerRemoteUrl: undefined,
         showDirectory: undefined,
 
