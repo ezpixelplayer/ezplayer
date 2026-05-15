@@ -19,6 +19,10 @@ export const CLOUD_API_ENDPOINTS = {
     // prefixed with /api/ — append directly: `${cloudUrl}${endpoint}<args>`.
     /** GET ${cloudUrl}ezpapi/player/getseqforplayer/<token> -> { sequences: EzpSeqRec[] } */
     EZP_GET_SEQ_LIST: 'ezpapi/player/getseqforplayer/',
+    /** GET ${cloudUrl}ezpapi/player/getplaylistsforplayer/<token> -> { playlists: PlaylistRecord[] } */
+    EZP_GET_PLAYLISTS: 'ezpapi/player/getplaylistsforplayer/',
+    /** GET ${cloudUrl}ezpapi/player/getscheduleforplayer/<token> -> { schedule: ScheduledPlaylist[] } */
+    EZP_GET_SCHEDULE: 'ezpapi/player/getscheduleforplayer/',
     /** GET ${cloudUrl}ezpapi/player/getseqfile/<token>/<file_id> -> { url, filename } */
     EZP_GET_SEQ_FILE: 'ezpapi/player/getseqfile/',
     /** GET ${cloudUrl}ezpapi/player/getmediafile/<token>/<file_id> -> { url, filename } */

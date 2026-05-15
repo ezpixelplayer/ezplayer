@@ -18,6 +18,8 @@ import {
     type PlayerCheckinRequest,
     type PlayerCheckinResponse,
     type PlayerCStatusContent,
+    type PlaylistRecord,
+    type ScheduledPlaylist,
     type SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import type {
@@ -300,6 +302,41 @@ async function pollManifest() {
         recordFailure(err.message);
     } finally {
         manifestInFlight = false;
+    }
+    // Playlists + schedule are metadata-only; cheap, errors are non-fatal.
+    void fetchPlaylistsAndSchedule();
+}
+
+async function fetchPlaylistsAndSchedule() {
+    if (!cloudUrl || !playerIdToken) return;
+    const plUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_PLAYLISTS}${playerIdToken}`;
+    try {
+        const res = await fetch(plUrl, { method: 'GET' });
+        if (res.ok) {
+            const body = (await res.json()) as { playlists?: PlaylistRecord[] };
+            const playlists = body.playlists ?? [];
+            log('info', `cloud playlists: ${playlists.length}`);
+            parentPort?.postMessage({ type: 'cloudPlaylists', playlists } satisfies CloudPollOutMessage);
+        } else {
+            log('warn', `playlists HTTP ${res.status}`);
+        }
+    } catch (e) {
+        log('warn', `playlists fetch error: ${(e as Error).message}`);
+    }
+
+    const schUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SCHEDULE}${playerIdToken}`;
+    try {
+        const res = await fetch(schUrl, { method: 'GET' });
+        if (res.ok) {
+            const body = (await res.json()) as { schedule?: ScheduledPlaylist[] };
+            const schedule = body.schedule ?? [];
+            log('info', `cloud schedule: ${schedule.length}`);
+            parentPort?.postMessage({ type: 'cloudSchedule', schedule } satisfies CloudPollOutMessage);
+        } else {
+            log('warn', `schedule HTTP ${res.status}`);
+        }
+    } catch (e) {
+        log('warn', `schedule fetch error: ${(e as Error).message}`);
     }
 }
 

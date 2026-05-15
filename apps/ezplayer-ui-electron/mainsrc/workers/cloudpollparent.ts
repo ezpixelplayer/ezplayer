@@ -7,6 +7,8 @@ import type {
     CloudStatus,
     OutOfBandCommand,
     PlayerCStatusContent,
+    PlaylistRecord,
+    ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import type {
@@ -34,6 +36,8 @@ let installListener: ((record: SequenceRecord, superseded: string[]) => void) | 
 let layoutInstalledListener:
     | ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void)
     | undefined;
+let playlistsListener: ((playlists: PlaylistRecord[]) => void) | undefined;
+let scheduleListener: ((schedule: ScheduledPlaylist[]) => void) | undefined;
 
 /** Forward an out-of-band command from the cloud to the server worker, which
  *  owns the actual WebSocket session (including TTL/redial state). The parent
@@ -92,6 +96,14 @@ function ensureWorker() {
             case 'layoutInstalled':
                 console.log('[cloudpoll] layoutInstalled');
                 layoutInstalledListener?.(msg.layoutMeta);
+                break;
+            case 'cloudPlaylists':
+                console.log(`[cloudpoll] cloudPlaylists count=${msg.playlists.length}`);
+                playlistsListener?.(msg.playlists);
+                break;
+            case 'cloudSchedule':
+                console.log(`[cloudpoll] cloudSchedule count=${msg.schedule.length}`);
+                scheduleListener?.(msg.schedule);
                 break;
             case 'outOfBandCommands':
                 for (const cmd of msg.commands) applyOutOfBandCommand(cmd);
@@ -201,4 +213,12 @@ export function onLayoutInstalled(
     listener: (layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void,
 ) {
     layoutInstalledListener = listener;
+}
+
+export function onCloudPlaylists(listener: (playlists: PlaylistRecord[]) => void) {
+    playlistsListener = listener;
+}
+
+export function onCloudSchedule(listener: (schedule: ScheduledPlaylist[]) => void) {
+    scheduleListener = listener;
 }

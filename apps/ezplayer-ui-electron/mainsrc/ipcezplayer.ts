@@ -30,6 +30,8 @@ import {
     getCurrentCStatus,
     fetchLayoutNow,
     manifestPollNow,
+    onCloudPlaylists,
+    onCloudSchedule,
     onCloudStatus,
     onCStatus,
     onInstallSequence,
@@ -678,6 +680,20 @@ export async function registerContentHandlers(
         // restart so any in-flight playback picks up the new layout.
         console.log('[cloud-install] layout changed — reloading show folder');
         void loadShowFolder(true);
+    });
+
+    onCloudPlaylists((playlists) => {
+        // Run cloud-arrived playlists through the same merge path renderer-driven
+        // writes use — last-write-wins by `updatedAt` against the local store.
+        void updatePlaylistsHandler(playlists).catch((e) => {
+            console.error('[cloud-install] playlists merge failed:', e);
+        });
+    });
+
+    onCloudSchedule((schedule) => {
+        void updateScheduleHandler(schedule).catch((e) => {
+            console.error('[cloud-install] schedule merge failed:', e);
+        });
     });
 
     onInstallSequence(async (record, superseded) => {
