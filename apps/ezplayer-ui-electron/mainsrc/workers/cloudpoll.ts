@@ -69,6 +69,13 @@ let halted = false;
 
 const cStatus: PlayerCStatusContent = { files: {} };
 
+// Last serialized payloads we sent to the parent. We compare new fetches to these
+// and skip postMessage when identical — the parent's update path is disruptive to
+// playback even when nothing actually changed. Reset on setConfig (folder/user
+// change ⇒ different store, always push).
+let lastSentPlaylistsJson: string | undefined;
+let lastSentScheduleJson: string | undefined;
+
 /** `${file_id}|${file_time}` -> active absPath of files we've successfully landed this
  *  session. Compound key so a re-used file_id with a fresh file_time is correctly
  *  treated as a different file (the cloud may reuse ids; file_time is the source of
@@ -315,8 +322,12 @@ async function fetchPlaylistsAndSchedule() {
         if (res.ok) {
             const body = (await res.json()) as { playlists?: PlaylistRecord[] };
             const playlists = body.playlists ?? [];
-            log('info', `cloud playlists: ${playlists.length}`);
-            parentPort?.postMessage({ type: 'cloudPlaylists', playlists } satisfies CloudPollOutMessage);
+            const json = JSON.stringify(playlists);
+            if (json !== lastSentPlaylistsJson) {
+                log('info', `cloud playlists: ${playlists.length} (changed)`);
+                lastSentPlaylistsJson = json;
+                parentPort?.postMessage({ type: 'cloudPlaylists', playlists } satisfies CloudPollOutMessage);
+            }
         } else {
             log('warn', `playlists HTTP ${res.status}`);
         }
@@ -330,8 +341,12 @@ async function fetchPlaylistsAndSchedule() {
         if (res.ok) {
             const body = (await res.json()) as { schedule?: ScheduledPlaylist[] };
             const schedule = body.schedule ?? [];
-            log('info', `cloud schedule: ${schedule.length}`);
-            parentPort?.postMessage({ type: 'cloudSchedule', schedule } satisfies CloudPollOutMessage);
+            const json = JSON.stringify(schedule);
+            if (json !== lastSentScheduleJson) {
+                log('info', `cloud schedule: ${schedule.length} (changed)`);
+                lastSentScheduleJson = json;
+                parentPort?.postMessage({ type: 'cloudSchedule', schedule } satisfies CloudPollOutMessage);
+            }
         } else {
             log('warn', `schedule HTTP ${res.status}`);
         }
@@ -1365,6 +1380,8 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
                 delete (cStatus as Record<string, unknown>)[k];
             }
             cStatus.files = {};
+            lastSentPlaylistsJson = undefined;
+            lastSentScheduleJson = undefined;
 
             stopped = false;
             halted = false;
