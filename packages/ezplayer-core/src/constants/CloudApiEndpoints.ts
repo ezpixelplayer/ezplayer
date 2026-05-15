@@ -9,12 +9,6 @@ export const CLOUD_API_ENDPOINTS = {
      *  Lightweight heartbeat that doubles as a command-poll. Empty body is
      *  valid (just picks up pending OutOfBandCommands). */
     CHECKIN: 'player/checkin/',
-    GET_PLAYLIST: 'player/getplaylistsforplayer/',
-    UPDATE_PLAYLIST: 'player/postplaylistsforplayer',
-    GET_SCHEDULE: 'player/getscheduleforplayer/',
-    UPDATE_SCHEDULE: 'player/postscheduleforplayer',
-    GET_SEQUENCE: 'player/getseqforplayer/',
-    UPDATE_SEQUENCE: 'player/postseqsforplayer',
     GET_STATUS: 'player/getstat/',
 
     /** User-facing browser URL: ${cloudUrl}${REGISTER_PLAYER}<playerId> opens the

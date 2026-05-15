@@ -18,7 +18,7 @@ import type {
 
 import {
     AppDispatch,
-    CloudDataStorageAPI,
+    DataStorageAPI,
     setPlayerStatus,
     setPlaybackStatistics,
     setPlaylists,
@@ -33,9 +33,12 @@ import {
     cloudStatusActions,
 } from '@ezplayer/player-ui-components';
 
-export class ElectronDataStorageAPI extends CloudDataStorageAPI {
-    constructor(baseUrl: string) {
-        super(baseUrl);
+/**
+ * Electron renderer's `DataStorageAPI` implementation. All data and commands
+ * tunnel through `window.electronAPI` IPC to the main process.
+ */
+export class ElectronDataStorageAPI implements DataStorageAPI {
+    constructor(_baseUrl?: string) {
         window.electronAPI!.onShowFolderUpdated((data: string) => {
             if (this.dispatch) {
                 this.dispatch(authSliceActions.setShowDirectory(data));
@@ -173,36 +176,36 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
     // TODO: Pull stuff down, etc.
     dispatch?: AppDispatch = undefined;
 
-    override async getCloudSequences(): Promise<SequenceRecord[]> {
+    async getCloudSequences(): Promise<SequenceRecord[]> {
         return await window.electronAPI!.getSequences();
     }
-    override async postCloudSequences(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
+    async postCloudSequences(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
         return await window.electronAPI!.putSequences(recs);
     }
 
-    override async getCloudPlaylists(): Promise<PlaylistRecord[]> {
+    async getCloudPlaylists(): Promise<PlaylistRecord[]> {
         return await window.electronAPI!.getPlaylists();
     }
-    override async postCloudPlaylists(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
+    async postCloudPlaylists(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
         return await window.electronAPI!.putPlaylists(recs);
     }
 
-    override async getCloudSchedule(): Promise<ScheduledPlaylist[]> {
+    async getCloudSchedule(): Promise<ScheduledPlaylist[]> {
         return await window.electronAPI!.getSchedule();
     }
-    override async postCloudSchedule(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
+    async postCloudSchedule(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
         return await window.electronAPI!.putSchedule(recs);
     }
 
-    override async getCloudStatus(): Promise<CombinedPlayerStatus> {
+    async getCloudStatus(): Promise<CombinedPlayerStatus> {
         return await window.electronAPI!.getCombinedStatus();
     }
 
-    override async issuePlayerCommand(req: EZPlayerCommand) {
+    async issuePlayerCommand(req: EZPlayerCommand) {
         return await window.electronAPI!.immediatePlayerCommand(req);
     }
 
-    override async setPlayerSettings(s: PlaybackSettings) {
+    async setPlayerSettings(s: PlaybackSettings) {
         return await window.electronAPI!.setPlaybackSettings(s);
     }
 
@@ -212,12 +215,12 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
      * The slice is updated when main echoes via the existing snapshot push channels
      * (`update:cloudConfig`, etc.), not synchronously here.
      */
-    override async issueCloudCommand(cmd: CloudCommand): Promise<void> {
+    async issueCloudCommand(cmd: CloudCommand): Promise<void> {
         await window.electronAPI!.cloudCommand(cmd);
     }
 
 
-    override async connect(dispatch: AppDispatch): Promise<void> {
+    async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;
         await window.electronAPI!.connect();
         this.audioCtx = new AudioContext();
@@ -228,7 +231,7 @@ export class ElectronDataStorageAPI extends CloudDataStorageAPI {
         this.heartbeater = setInterval(() => this.compareAudioAndRealTimes(), 1000);
     }
 
-    override async disconnect(): Promise<void> {
+    async disconnect(): Promise<void> {
         if (this.heartbeater) {
             this.heartbeater = undefined;
             clearInterval(this.heartbeater);

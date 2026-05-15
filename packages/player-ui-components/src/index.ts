@@ -56,7 +56,6 @@ export type { PlaylistState } from './store/slices/PlaylistStore';
 export type { ScheduleState } from './store/slices/ScheduleStore';
 export type { SequenceState } from './store/slices/SequenceStore';
 
-export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
 export type {
     DataStorageAPI,
     UserLoginBody,
@@ -68,6 +67,9 @@ export type {
     CloudFileUpload,
     DownloadFile,
 } from './store/api/DataStorageAPI';
+export { getOrInitializePlayerId, setOrGeneratePlayerIdToken } from './store/api/DataStorageAPI';
+export { createAxiosInstance } from './store/api/cloud/axios-instance';
+export { isPlayerRegisteredCall } from './store/api/cloud/CloudAuthAPI';
 export { API_ENDPOINTS } from './store/api/ApiEndpoints';
 export { createAppStore, playerReducers } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';
