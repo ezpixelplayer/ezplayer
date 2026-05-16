@@ -714,6 +714,43 @@ async function dispatchShowFile(filePath: string | undefined): Promise<{ status:
     }
 }
 
+/** Bind `server` to `preferredPort`; on EADDRINUSE, walk up to
+ *  `preferredPort + maxAttempts - 1`. Reports actual bound port. The Server
+ *  instance is reusable after a failed listen — we don't recreate it. */
+async function listenWithFallback(
+    server: ReturnType<typeof createServer>,
+    preferredPort: number,
+    maxAttempts: number,
+    label: string,
+): Promise<number> {
+    for (let i = 0; i < maxAttempts; i++) {
+        const candidate = preferredPort + i;
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const onError = (err: NodeJS.ErrnoException) => {
+                    server.removeListener('listening', onListening);
+                    reject(err);
+                };
+                const onListening = () => {
+                    server.removeListener('error', onError);
+                    resolve();
+                };
+                server.once('error', onError);
+                server.once('listening', onListening);
+                server.listen(candidate);
+            });
+            if (candidate !== preferredPort) {
+                console.warn(`[server-worker] ${label}: preferred port ${preferredPort} unavailable, bound ${candidate}`);
+            }
+            return candidate;
+        } catch (err) {
+            const e = err as NodeJS.ErrnoException;
+            if (e.code !== 'EADDRINUSE') throw e;
+        }
+    }
+    throw new Error(`[server-worker] ${label}: no free port in ${preferredPort}..${preferredPort + maxAttempts - 1}`);
+}
+
 async function startServer(config: ServerWorkerData) {
     const { port, portSource, kioskPort, kioskPortSource } = config;
 
@@ -1292,24 +1329,34 @@ async function startServer(config: ServerWorkerData) {
         }
     });
 
-    // Start the server
-    httpServer.listen(port, () => {
-        console.log(`[server-worker] Koa server running at http://localhost:${port}`);
-        console.log(`[server-worker] WebSocket server available at ws://localhost:${port}/ws`);
+    let boundPort: number;
+    try {
+        boundPort = await listenWithFallback(httpServer, port, 10, 'Koa');
+    } catch (err) {
+        console.error('[server-worker] HTTP server bind failed:', err);
         parentPort!.postMessage({
             type: 'status',
-            status: 'listening',
+            status: 'error',
             port,
             portSource,
         } satisfies ServerWorkerToMainMessage);
-    });
+        return;
+    }
+    console.log(`[server-worker] Koa server running at http://localhost:${boundPort}`);
+    console.log(`[server-worker] WebSocket server available at ws://localhost:${boundPort}/ws`);
+    parentPort!.postMessage({
+        type: 'status',
+        status: 'listening',
+        port: boundPort,
+        portSource: boundPort === port ? portSource : `${portSource} (fallback from ${port})`,
+    } satisfies ServerWorkerToMainMessage);
 
     httpServer.on('error', (err) => {
         console.error('[server-worker] HTTP server error:', err);
         parentPort!.postMessage({
             type: 'status',
             status: 'error',
-            port,
+            port: boundPort,
             portSource,
         } satisfies ServerWorkerToMainMessage);
     });
@@ -1318,7 +1365,7 @@ async function startServer(config: ServerWorkerData) {
         parentPort!.postMessage({
             type: 'status',
             status: 'stopped',
-            port,
+            port: boundPort,
             portSource,
         } satisfies ServerWorkerToMainMessage);
     });
@@ -1396,10 +1443,15 @@ async function startServer(config: ServerWorkerData) {
 
         const kioskHttpServer = createServer(kioskApp.callback());
 
-        kioskHttpServer.listen(kioskPort, () => {
-            console.log(`[server-worker] Kiosk server running at http://localhost:${kioskPort}`);
-            console.log(`[server-worker] Kiosk WebSocket available at ws://localhost:${kioskPort}/ws`);
-        });
+        let kioskBoundPort: number;
+        try {
+            kioskBoundPort = await listenWithFallback(kioskHttpServer, kioskPort, 10, 'Kiosk');
+        } catch (err) {
+            console.error('[server-worker] Kiosk HTTP server bind failed:', err);
+            return;
+        }
+        console.log(`[server-worker] Kiosk server running at http://localhost:${kioskBoundPort}`);
+        console.log(`[server-worker] Kiosk WebSocket available at ws://localhost:${kioskBoundPort}/ws`);
 
         kioskHttpServer.on('error', (err) => {
             console.error('[server-worker] Kiosk HTTP server error:', err);
