@@ -29,6 +29,7 @@ import type {
     PlayerNStatusContent,
     PlaybackSettings,
     EZPlayerCommand,
+    VcSong,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -82,6 +83,13 @@ import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
+import {
+    sendEzvcInitiateCheck,
+    setEzvcConfig,
+    setEzvcControlEnabled,
+    setEzvcPlaylist,
+    setEzvcPlaying,
+} from './ezvcparent';
 import { randomUUID } from 'node:crypto';
 import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
@@ -379,6 +387,103 @@ function sendRemoteUpdate() {
     }
 }
 
+// ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
+// The schedule gating is shared (`getActiveViewerControlSchedule`); only the
+// backend differs. The cloud owns the mode/policy, so the suggestion is a
+// sequence id we can play directly — no index mapping needed.
+let ezvcCloudUrl: string | undefined = undefined;
+let ezvcPlayerToken: string | undefined = undefined;
+let ezvcConfigInitialized = false;
+let lastEzvcKey: string | undefined = undefined;
+let lastEzvcCheck: number = Date.now();
+
+function configureEzvc() {
+    if (!ezvcCloudUrl || !ezvcPlayerToken) return;
+    const key = `${ezvcCloudUrl}|${ezvcPlayerToken}`;
+    if (ezvcConfigInitialized && key === lastEzvcKey) return;
+    ezvcConfigInitialized = true;
+    lastEzvcKey = key;
+    setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken }, (next) => {
+        if (!next.songId) return;
+        processCommand({
+            command: 'playsong',
+            immediate: false,
+            songId: next.songId,
+            requestId: randomUUID(),
+            priority: 3,
+        });
+    });
+}
+
+function sendEzvcUpdate() {
+    const settings = latestSettings;
+    if (!settings || settings.viewerControl?.type !== 'ezplayer') return;
+    if (!ezvcCloudUrl || !ezvcPlayerToken) return;
+
+    const vcStat = getActiveViewerControlSchedule(settings.viewerControl);
+    if (!vcStat) {
+        setEzvcControlEnabled(false);
+        return;
+    }
+    setEzvcControlEnabled(true);
+
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    let now_playing: PlayingItem | undefined = undefined;
+    let upcoming: PlayingItem | undefined = undefined;
+    if (ps.curPLActions?.actions?.length) {
+        for (const pla of ps.curPLActions.actions) {
+            if (pla.end) continue;
+            if (!now_playing) {
+                now_playing = actionToPlayingItem(false, pla);
+            } else {
+                upcoming = actionToPlayingItem(false, pla);
+                break;
+            }
+        }
+    }
+    setEzvcPlaying({
+        nowPlaying: now_playing?.sequence_id ?? undefined,
+        nextScheduled: upcoming?.sequence_id ?? undefined,
+        now: now_playing
+            ? {
+                  songId: now_playing.sequence_id,
+                  title: now_playing.title,
+                  at: now_playing.at,
+                  until: now_playing.until,
+              }
+            : undefined,
+    });
+
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === vcStat?.playlist.toLowerCase());
+    if (pl) {
+        const songs: VcSong[] = [];
+        for (const i of pl.items) {
+            const s = foregroundPlayerRunState.sequencesById.get(i.id);
+            if (!s) continue;
+            songs.push({
+                id: i.id,
+                title: s.work.title,
+                artist: s.work.artist,
+                durationMs: s.work.length,
+            });
+        }
+        setEzvcPlaylist(songs);
+    }
+
+    if (now_playing) {
+        const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
+        if (diff >= 3000 && diff < 4000) {
+            sendEzvcInitiateCheck();
+        }
+    } else {
+        const dn = Date.now();
+        if (dn - lastEzvcCheck > 5000) {
+            lastEzvcCheck = dn;
+            sendEzvcInitiateCheck();
+        }
+    }
+}
+
 let lastVolCheck: number = Date.now();
 function doVolumeAdjust(dn: number) {
     if (dn - lastVolCheck < 10) return;
@@ -554,6 +659,12 @@ parentPort.on('message', async (command: PlayerCommand) => {
         case 'settings': {
             const settings = command.settings;
             dispatchSettings(settings);
+            break;
+        }
+        case 'cloudidentity': {
+            ezvcCloudUrl = command.cloudUrl || undefined;
+            ezvcPlayerToken = command.playerIdToken || undefined;
+            configureEzvc();
             break;
         }
         case 'rpc':
@@ -1445,6 +1556,7 @@ async function processQueue() {
                 doVolumeAdjust(Date.now());
                 if (curPN - lastRFUpdatePN >= 1000) {
                     sendRemoteUpdate();
+                    sendEzvcUpdate();
                     lastRFUpdatePN += 1000 * Math.floor((curPN - lastRFUpdatePN) / 1000);
                 }
             }

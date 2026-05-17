@@ -372,6 +372,14 @@ export async function loadShowFolder(forceRestart?: boolean) {
         } as PlayerCommand);
         broadcastToWebSocket('playbackSettings', settings);
     }
+    // The in-house viewer-control poller (driven by the playback worker)
+    // needs the player's cloud identity, which lives only in the main
+    // process. Push it alongside the cloud-worker config.
+    playWorker?.postMessage({
+        type: 'cloudidentity',
+        cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
+        playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
+    } as PlayerCommand);
     scheduleUpdated(forceRestart);
 }
 
@@ -445,6 +453,11 @@ function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConf
         cfg.cloudPollMode,
         cfg.cloudPollSchedule,
     );
+    playWorker?.postMessage({
+        type: 'cloudidentity',
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        playerIdToken: cloudActive ? cfg.playerIdToken : '',
+    } as PlayerCommand);
 }
 
 function broadcastCloudConfig(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
