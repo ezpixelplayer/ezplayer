@@ -1,7 +1,7 @@
 {
     "name": "@ezplayer/ezplayer-core",
     "private": true,
-    "version": "0.2.18",
+    "version": "0.2.19",
     "sideEffects": false,
     "files": [
         "dist"

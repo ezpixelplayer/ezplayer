@@ -52,6 +52,18 @@ export type {
 } from './types/DataTypes';
 
 export type {
+    VcSong,
+    VcPlayingItem,
+    VcPlayingUpdate,
+    VcScheduleEntry,
+    VcSelectionReason,
+    VcSelectionRequest,
+    VcSelectionOutcome,
+    VcPublicSong,
+    VcPublicShowState,
+} from './types/ViewerControlWire';
+
+export type {
     AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
