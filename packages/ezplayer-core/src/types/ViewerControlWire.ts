@@ -1,21 +1,17 @@
 /**
- * In-house viewer-control **wire DTOs** — the shared contract between the
- * player poller (worker thread), the cloud computations / API endpoints, and
- * the public viewer page. Lives here in `@ezplayer/ezplayer-core` (not in
- * `@ezplayer/builder-core`) on purpose: the player must never depend on
- * builder-core, which carries the cloud-only policy engine. builder-core owns
- * the *engine* (policy + runtime state); this file owns the *wire*.
+ * Viewer-control wire DTOs — the shared contract between the player poller,
+ * the cloud viewer-control API, and the public show page.
  *
  * Shapes deliberately echo the existing UI/player structures (`SongDetails`,
  * `SequenceRecord.id`, `PlayingItem`) so a viewer-control payload looks like
- * the rest of the app. Several types carry an index signature: these cross
- * three process boundaries and must grow additively without a breaking
- * version churn.
+ * the rest of the app. Several types carry an index signature: they cross
+ * process boundaries and must grow additively without a breaking version
+ * churn.
  */
 
-/** A song the player offers for viewer control. `id` is the sequence id
- *  (the engine's opaque key — equal to `SequenceRecord.id`); the rest mirrors
- *  `SongDetails` for display on the public page. */
+/** A song the player offers for viewer control. `id` is the stable song
+ *  identifier (equal to `SequenceRecord.id`); the rest mirrors `SongDetails`
+ *  for display on the public page. */
 export interface VcSong {
     id: string;
     title: string;
@@ -30,7 +26,7 @@ export interface VcSong {
 
 /** One current/upcoming entry. Modeled on `PlayingItem` (`title`, `at`,
  *  `until`, `sequence_id`) so the player can map its existing playback
- *  timeline straight onto the wire. Display-only — the engine never reads it. */
+ *  timeline straight onto the wire. Display-only. */
 export interface VcPlayingItem {
     /** Maps to `VcSong.id` (`PlayingItem.sequence_id`). */
     songId?: string;
@@ -45,15 +41,16 @@ export interface VcPlayingItem {
 
 /**
  * Argument to `POST /api/player/vc/playing`. Extensible by design: today the
- * player may send only the two opaque dedupe keys; tomorrow it can add the
- * richer `now` / `upcoming` timeline with times and durations without a wire
- * break. The engine only ever consumes `nowPlaying` / `nextScheduled` (as
- * opaque song ids); everything else is display data for the page.
+ * player may send only the two identity keys; tomorrow it can add the richer
+ * `now` / `upcoming` timeline with times and durations without a wire break.
+ * `nowPlaying` / `nextScheduled` are the canonical song-identity keys;
+ * everything else is display data for the page.
  */
 export interface VcPlayingUpdate {
-    /** Currently-playing song id — the engine's now-playing dedupe key. */
+    /** Currently-playing song id — the now-playing identity key (used for
+     *  de-duplication). */
     nowPlaying?: string;
-    /** Immediate next song id — the engine's next-up dedupe key. */
+    /** Immediate next song id — the next-up identity key. */
     nextScheduled?: string;
     /** Richer current item for the page (optional, additive). */
     now?: VcPlayingItem;
@@ -67,7 +64,7 @@ export interface VcPlayingUpdate {
 /** A summarized, viewer-safe show-schedule entry for the public page (future
  *  calendar). Deliberately loose: the player decides what the summary means
  *  (operating windows vs viewer-control windows) and the calendar UI evolves
- *  without churning this type. Engine never sees this — display data. */
+ *  without churning this type. Display data for the page. */
 export interface VcScheduleEntry {
     title?: string;
     /** Player's choice of ISO-8601 or `HH:MM`; the calendar UI interprets. */
@@ -78,10 +75,8 @@ export interface VcScheduleEntry {
     [k: string]: unknown;
 }
 
-/** Why a request/vote was refused. Intentionally mirrors builder-core's
- *  `SelectionRejectReason` — that is the engine-internal enum; this is its
- *  wire image so the viewer never has to depend on builder-core. Keep the
- *  two in sync. */
+/** Why a request/vote was refused — the closed set of refusal reasons
+ *  returned on the wire. */
 export type VcSelectionReason =
     | 'mode-off'
     | 'unknown-song'
@@ -97,7 +92,7 @@ export interface VcSelectionRequest {
     songId: string;
 }
 
-/** Result of a request/vote. Wire image of the engine's selection outcome. */
+/** Result of a request/vote. */
 export interface VcSelectionOutcome {
     accepted: boolean;
     reason?: VcSelectionReason;
@@ -107,7 +102,7 @@ export interface VcSelectionOutcome {
     voteCount?: number;
 }
 
-/** One song as the public page sees it (engine view joined with display
+/** One song as the public page sees it (live state joined with display
  *  metadata). */
 export interface VcPublicSong {
     id: string;

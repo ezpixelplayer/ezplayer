@@ -515,10 +515,9 @@ export interface CloudPollScheduleEntry {
 
 export interface ViewerControlState {
     enabled: boolean;
-    /** `'ezplayer'` = the in-house viewer control (cloud runs the engine).
-     *  It needs no token here — the poller authenticates with the player's
-     *  own cloud identity (cloudUrl + playerIdToken), same as the cloud
-     *  bridge/checkin — and reuses `schedule` for the live window. */
+    /** `'ezplayer'` = the built-in EZPlayer viewer control. Unlike
+     *  `'remote-falcon'` it needs no token here — it uses the player's
+     *  existing cloud identity — and reuses `schedule` for the live window. */
     type: 'disabled' | 'remote-falcon' | 'ezplayer';
     remoteFalconToken?: string;
     schedule: ViewerControlScheduleEntry[];
