@@ -30,7 +30,12 @@ import type {
 import { collectReferencedAssets } from '../data/layoutAssets.js';
 
 // Aggressive demo defaults; production callers should pass conservative values.
-const DEFAULT_REGISTRATION_INTERVAL_MS = 30_000;
+// 5s registration keeps the cloud-bridge open signal (viewer-control + audio
+// start) responsive — worst-case bridge/audio start ≈ one interval. Steady-state
+// cost is a lightweight checkin every 5s per player (accepted for demo;
+// override via cloud-config `cloudPollIntervals.registrationMs` in production).
+// Note: the cloud treats ~2× this as the live-freshness cutoff.
+const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
 const DEFAULT_MANIFEST_INTERVAL_MS = 60_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
