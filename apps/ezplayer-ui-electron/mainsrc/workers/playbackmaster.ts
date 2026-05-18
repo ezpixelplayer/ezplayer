@@ -483,41 +483,35 @@ function sendEzvcUpdate() {
     }
 
     // ---- two schedule feeds, independent of the request window -----------
-    // Operating hours: merge the near-term lookahead into coarse play windows.
-    // NOTE: uses PlayingItem.at/until as epoch ms (per the wire contract); if
-    // E2E shows 1970-ish times these need wall-clock conversion (follow-up).
+    // Operating hours: the scheduled show blocks (currently-playing, stacked,
+    // and upcoming). Each carries schedStart/schedEnd directly — no song-gap
+    // merging — and upcomingSchedules is populated even when nothing is
+    // playing yet, which is exactly the "show starts in an hour" case.
+    // NOTE: schedStart/schedEnd are the player's clock base, treated as epoch
+    // ms per the wire contract; if E2E shows 1970-ish, wall-clock conversion
+    // is the follow-up (request-windows below are unaffected).
+    type SchedBlock = Extract<PlaybackActions, { type: 'scheduled' }>;
+    const schedBlocks: SchedBlock[] = [];
+    const addSched = (b?: PlaybackActions) => {
+        if (b && b.type === 'scheduled') schedBlocks.push(b);
+    };
+    addSched(ps.curPLActions);
+    for (const b of ps.stackedPLActions ?? []) addSched(b);
+    for (const b of ps.upcomingSchedules ?? []) addSched(b);
+    const seenWindow = new Set<string>();
     const showWindows: VcScheduleEntry[] = [];
-    {
-        const GAP_MS = 5 * 60_000;
-        const items = now_playing ? [now_playing, ...upcomingItems] : upcomingItems;
-        let wStart: number | undefined;
-        let wEnd: number | undefined;
-        const flush = () => {
-            if (wStart !== undefined && wEnd !== undefined) {
-                showWindows.push({
-                    title: 'Show',
-                    start: new Date(wStart).toISOString(),
-                    end: new Date(wEnd).toISOString(),
-                });
-            }
-            wStart = undefined;
-            wEnd = undefined;
-        };
-        for (const it of items) {
-            if (it.at === undefined || it.until === undefined) continue;
-            if (wStart === undefined) {
-                wStart = it.at;
-                wEnd = it.until;
-            } else if (it.at - (wEnd as number) <= GAP_MS) {
-                wEnd = Math.max(wEnd as number, it.until);
-            } else {
-                flush();
-                wStart = it.at;
-                wEnd = it.until;
-            }
-        }
-        flush();
+    for (const b of schedBlocks) {
+        const key = `${b.schedStart}-${b.schedEnd}`;
+        if (seenWindow.has(key)) continue;
+        seenWindow.add(key);
+        showWindows.push({
+            title: 'Show',
+            start: new Date(b.schedStart).toISOString(),
+            end: new Date(b.schedEnd).toISOString(),
+        });
     }
+    showWindows.sort((x, y) => (x.start < y.start ? -1 : x.start > y.start ? 1 : 0));
+    if (showWindows.length > 20) showWindows.length = 20;
     // Request windows: exactly the viewer-control schedule entries.
     const reqWindows: VcScheduleEntry[] = (settings.viewerControl.schedule ?? []).map((e) => ({
         title: e.playlist,
@@ -540,7 +534,8 @@ function sendEzvcUpdate() {
                 id: i.id,
                 title: s.work.title,
                 artist: s.work.artist,
-                durationMs: s.work.length,
+                // SongDetails.length is seconds; the wire wants ms.
+                durationMs: s.work.length * 1000,
             });
         }
         setEzvcPlaylist(songs);

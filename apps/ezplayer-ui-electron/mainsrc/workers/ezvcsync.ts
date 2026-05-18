@@ -51,7 +51,7 @@ export type EzvcWorkerOutMessage =
     | { type: 'playbackUpdated'; nowPlaying?: string; nextScheduled?: string }
     | { type: 'controlUpdated'; enabled: boolean }
     | { type: 'playlistsSynced'; count: number }
-    | { type: 'scheduleSynced' }
+    | { type: 'scheduleSynced'; scheduleCount: number; requestWindowCount: number }
     | { type: 'nextSuggestion'; suggestion: EzvcNextToPlay | null };
 
 export class EzvcApiClient {
@@ -224,7 +224,11 @@ async function handleSyncSchedule(schedule: VcScheduleEntry[], requestWindows: V
         if (hash === lastScheduleHash) return;
         await c.syncSchedule(schedule, requestWindows);
         lastScheduleHash = hash;
-        send({ type: 'scheduleSynced' });
+        send({
+            type: 'scheduleSynced',
+            scheduleCount: schedule.length,
+            requestWindowCount: requestWindows.length,
+        });
     });
 }
 

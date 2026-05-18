@@ -56,6 +56,11 @@ worker.on('message', (msg: EzvcWorkerOutMessage) => {
             console.log('[ezvc] song list synced:', msg.count);
             break;
         case 'scheduleSynced':
+            console.log(
+                '[ezvc] schedule synced:',
+                `${msg.scheduleCount} show window(s),`,
+                `${msg.requestWindowCount} request window(s)`,
+            );
             break;
     }
 });
