@@ -420,12 +420,12 @@ function sendEzvcUpdate() {
     if (!settings || settings.viewerControl?.type !== 'ezplayer') return;
     if (!ezvcCloudUrl || !ezvcPlayerToken) return;
 
+    // The schedule gates only *interactive* control (request/vote + the
+    // next-pick poll). Now-playing is independent: whether the show page
+    // displays it is governed by the show-page settings (evaluated
+    // cloud-side), not by the viewer-control window — so report it always.
     const vcStat = getActiveViewerControlSchedule(settings.viewerControl);
-    if (!vcStat) {
-        setEzvcControlEnabled(false);
-        return;
-    }
-    setEzvcControlEnabled(true);
+    setEzvcControlEnabled(!!vcStat);
 
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     let now_playing: PlayingItem | undefined = undefined;
@@ -444,17 +444,20 @@ function sendEzvcUpdate() {
     setEzvcPlaying({
         nowPlaying: now_playing?.sequence_id ?? undefined,
         nextScheduled: upcoming?.sequence_id ?? undefined,
+        // Stable per song: omit the volatile at/until (recomputed every tick)
+        // so the worker's update-hash dedupe actually suppresses the per-tick
+        // resend — otherwise now-playing churns 1/sec. The skeleton page only
+        // needs the title; add throttled timing later if a progress bar wants it.
         now: now_playing
-            ? {
-                  songId: now_playing.sequence_id,
-                  title: now_playing.title,
-                  at: now_playing.at,
-                  until: now_playing.until,
-              }
+            ? { songId: now_playing.sequence_id, title: now_playing.title }
             : undefined,
     });
 
-    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === vcStat?.playlist.toLowerCase());
+    // Everything below is interactive-only and needs the active window's
+    // playlist; skip it when outside the viewer-control schedule.
+    if (!vcStat) return;
+
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === vcStat.playlist.toLowerCase());
     if (pl) {
         const songs: VcSong[] = [];
         for (const i of pl.items) {

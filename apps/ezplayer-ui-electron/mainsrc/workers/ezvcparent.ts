@@ -45,9 +45,17 @@ worker.on('message', (msg: EzvcWorkerOutMessage) => {
         case 'controlUpdated':
             console.log('[ezvc] control updated:', msg.enabled);
             break;
-        case 'playlistsSynced':
-        case 'scheduleSynced':
         case 'playbackUpdated':
+            console.log(
+                '[ezvc] now-playing sent:',
+                msg.nowPlaying ?? '(none)',
+                msg.nextScheduled ? `next=${msg.nextScheduled}` : '',
+            );
+            break;
+        case 'playlistsSynced':
+            console.log('[ezvc] song list synced:', msg.count);
+            break;
+        case 'scheduleSynced':
             break;
     }
 });

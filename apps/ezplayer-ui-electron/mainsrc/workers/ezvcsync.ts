@@ -48,9 +48,9 @@ export type EzvcWorkerOutMessage =
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string }
     | { type: 'configStatus'; ok: true }
     | { type: 'configStatus'; ok: false; error: string }
-    | { type: 'playbackUpdated' }
+    | { type: 'playbackUpdated'; nowPlaying?: string; nextScheduled?: string }
     | { type: 'controlUpdated'; enabled: boolean }
-    | { type: 'playlistsSynced' }
+    | { type: 'playlistsSynced'; count: number }
     | { type: 'scheduleSynced' }
     | { type: 'nextSuggestion'; suggestion: EzvcNextToPlay | null };
 
@@ -113,9 +113,11 @@ export class EzvcApiClient {
         return this.request('POST', this.path('playlists'), { songs });
     }
 
-    /** The cloud's `/playing` param is the whole body (`VcPlayingUpdate`). */
+    /** Cloud maps the postApi param by name, so the VcPlayingUpdate must be
+     *  wrapped under `update` (same convention as `{ show: … }` elsewhere) —
+     *  a bare body would arrive as an empty object on the cloud side. */
     updatePlaying(update: VcPlayingUpdate): Promise<unknown> {
-        return this.request('POST', this.path('playing'), update);
+        return this.request('POST', this.path('playing'), { update });
     }
 
     setEnabled(enabled: boolean): Promise<unknown> {
@@ -190,7 +192,7 @@ async function handleUpdatePlayback(update: VcPlayingUpdate) {
         if (hash === lastPlayingHash) return;
         await c.updatePlaying(update);
         lastPlayingHash = hash;
-        send({ type: 'playbackUpdated' });
+        send({ type: 'playbackUpdated', nowPlaying: update.nowPlaying, nextScheduled: update.nextScheduled });
     });
 }
 
@@ -211,7 +213,7 @@ async function handleSyncPlaylists(songs: VcSong[]) {
         if (hash === lastPlaylistHash) return;
         await c.syncPlaylists(songs);
         lastPlaylistHash = hash;
-        send({ type: 'playlistsSynced' });
+        send({ type: 'playlistsSynced', count: songs.length });
     });
 }
 

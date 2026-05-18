@@ -131,7 +131,9 @@ export function getActiveViewerControlSchedule(
     viewerControl: ViewerControlState,
     now: Date = new Date(),
 ): ViewerControlScheduleEntry | null {
-    if (!viewerControl.enabled || viewerControl.type !== 'remote-falcon') {
+    // Backend-agnostic: any enabled, non-disabled viewer-control backend
+    // (`remote-falcon` or `ezplayer`) uses the same schedule gating.
+    if (!viewerControl.enabled || viewerControl.type === 'disabled') {
         return null;
     }
 
