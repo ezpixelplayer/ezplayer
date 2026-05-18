@@ -81,8 +81,8 @@ export function setEzvcPlaylist(songs: VcSong[]) {
     send({ type: 'syncPlaylists', songs });
 }
 
-export function setEzvcSchedule(schedule: VcScheduleEntry[]) {
-    send({ type: 'syncSchedule', schedule });
+export function setEzvcSchedule(schedule: VcScheduleEntry[], requestWindows: VcScheduleEntry[]) {
+    send({ type: 'syncSchedule', schedule, requestWindows });
 }
 
 export function sendEzvcInitiateCheck() {

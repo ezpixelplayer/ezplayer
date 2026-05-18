@@ -61,10 +61,11 @@ export interface VcPlayingUpdate {
     [k: string]: unknown;
 }
 
-/** A summarized, viewer-safe show-schedule entry for the public page (future
- *  calendar). Deliberately loose: the player decides what the summary means
- *  (operating windows vs viewer-control windows) and the calendar UI evolves
- *  without churning this type. Display data for the page. */
+/** A summarized, viewer-safe schedule entry for the public page (calendar).
+ *  Used for two distinct feeds on `VcPublicShowState`: `schedule` (show
+ *  operating hours) and `requestWindows` (when the request/vote line is open).
+ *  Deliberately loose so the calendar UI can evolve without churning this
+ *  type. Display data for the page. */
 export interface VcScheduleEntry {
     title?: string;
     /** Player's choice of ISO-8601 or `HH:MM`; the calendar UI interprets. */
@@ -125,16 +126,22 @@ export interface VcPublicSong {
  *  `GET /api/show/:short_name/state` and pushed over the live WS. */
 export interface VcPublicShowState {
     showName?: string;
-    /** Effective mode: `'off'` when disabled or not live. */
+    /** Configured interaction mode — independent of whether it's open now. */
     mode: 'off' | 'request' | 'vote';
-    /** Player pushed recently and a mode is active. */
-    live: boolean;
+    /** The player is reporting to the cloud (reachable / checked in recently). */
+    online: boolean;
+    /** A sequence is playing right now. */
+    showRunning: boolean;
+    /** The request/vote line is currently accepting input. */
+    requestsOpen: boolean;
     nowPlaying?: VcPlayingItem;
     nextUp?: VcPlayingItem;
-    /** Richer near-term song lookahead, when the player supplies it. */
+    /** The planned upcoming song lineup ("what's coming"), when supplied. */
     upcoming?: VcPlayingItem[];
-    /** Show-hours summary for the page (future calendar). */
+    /** Show operating hours — when the show plays. */
     schedule?: VcScheduleEntry[];
+    /** When the request/vote line is open — distinct from operating hours. */
+    requestWindows?: VcScheduleEntry[];
     songs: VcPublicSong[];
     /** This viewer has spent their action (vote mode); page disables controls. */
     viewerHasActed: boolean;

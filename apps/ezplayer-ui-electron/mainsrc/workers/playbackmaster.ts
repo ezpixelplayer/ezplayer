@@ -30,6 +30,8 @@ import type {
     PlaybackSettings,
     EZPlayerCommand,
     VcSong,
+    VcPlayingItem,
+    VcScheduleEntry,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -89,6 +91,7 @@ import {
     setEzvcControlEnabled,
     setEzvcPlaylist,
     setEzvcPlaying,
+    setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
 import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
@@ -396,6 +399,24 @@ let ezvcPlayerToken: string | undefined = undefined;
 let ezvcConfigInitialized = false;
 let lastEzvcKey: string | undefined = undefined;
 let lastEzvcCheck: number = Date.now();
+let lastEzvcPlayingKey: string | undefined = undefined;
+
+/** ScheduleDays → JS day numbers (0=Sun .. 6=Sat) for the request-window
+ *  feed. Best-effort; the calendar UI interprets. */
+const SCHEDULE_DAYS_TO_NUMS: Record<string, number[]> = {
+    all: [0, 1, 2, 3, 4, 5, 6],
+    'weekend-fri-sat': [5, 6],
+    'weekend-sat-sun': [6, 0],
+    'weekday-mon-fri': [1, 2, 3, 4, 5],
+    'weekday-sun-thu': [0, 1, 2, 3, 4],
+    sunday: [0],
+    monday: [1],
+    tuesday: [2],
+    wednesday: [3],
+    thursday: [4],
+    friday: [5],
+    saturday: [6],
+};
 
 function configureEzvc() {
     if (!ezvcCloudUrl || !ezvcPlayerToken) return;
@@ -427,34 +448,86 @@ function sendEzvcUpdate() {
     const vcStat = getActiveViewerControlSchedule(settings.viewerControl);
     setEzvcControlEnabled(!!vcStat);
 
+    // ---- now-playing + the upcoming song lineup ("what's coming") ---------
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     let now_playing: PlayingItem | undefined = undefined;
-    let upcoming: PlayingItem | undefined = undefined;
+    const upcomingItems: PlayingItem[] = [];
     if (ps.curPLActions?.actions?.length) {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
-            if (!now_playing) {
-                now_playing = actionToPlayingItem(false, pla);
-            } else {
-                upcoming = actionToPlayingItem(false, pla);
-                break;
-            }
+            const pi = actionToPlayingItem(false, pla);
+            if (!now_playing) now_playing = pi;
+            else if (upcomingItems.length < 12) upcomingItems.push(pi);
+            else break;
         }
     }
-    setEzvcPlaying({
-        nowPlaying: now_playing?.sequence_id ?? undefined,
-        nextScheduled: upcoming?.sequence_id ?? undefined,
-        // Stable per song: omit the volatile at/until (recomputed every tick)
-        // so the worker's update-hash dedupe actually suppresses the per-tick
-        // resend — otherwise now-playing churns 1/sec. The skeleton page only
-        // needs the title; add throttled timing later if a progress bar wants it.
-        now: now_playing
-            ? { songId: now_playing.sequence_id, title: now_playing.title }
-            : undefined,
-    });
+    const toVc = (pi: PlayingItem | undefined): VcPlayingItem | undefined =>
+        pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
+    const upcomingVc = upcomingItems
+        .map((p) => toVc(p))
+        .filter((x): x is VcPlayingItem => x !== undefined);
 
-    // Everything below is interactive-only and needs the active window's
-    // playlist; skip it when outside the viewer-control schedule.
+    // Push only when the *lineup identity* changes — not when at/until drift
+    // each tick — so the worker's hash dedupe doesn't see per-second churn.
+    // Times refresh on lineup change; the page interpolates between changes.
+    const lineupKey =
+        `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
+    if (lineupKey !== lastEzvcPlayingKey) {
+        lastEzvcPlayingKey = lineupKey;
+        setEzvcPlaying({
+            nowPlaying: now_playing?.sequence_id ?? undefined,
+            nextScheduled: upcomingItems[0]?.sequence_id ?? undefined,
+            now: toVc(now_playing),
+            upcoming: upcomingVc,
+        });
+    }
+
+    // ---- two schedule feeds, independent of the request window -----------
+    // Operating hours: merge the near-term lookahead into coarse play windows.
+    // NOTE: uses PlayingItem.at/until as epoch ms (per the wire contract); if
+    // E2E shows 1970-ish times these need wall-clock conversion (follow-up).
+    const showWindows: VcScheduleEntry[] = [];
+    {
+        const GAP_MS = 5 * 60_000;
+        const items = now_playing ? [now_playing, ...upcomingItems] : upcomingItems;
+        let wStart: number | undefined;
+        let wEnd: number | undefined;
+        const flush = () => {
+            if (wStart !== undefined && wEnd !== undefined) {
+                showWindows.push({
+                    title: 'Show',
+                    start: new Date(wStart).toISOString(),
+                    end: new Date(wEnd).toISOString(),
+                });
+            }
+            wStart = undefined;
+            wEnd = undefined;
+        };
+        for (const it of items) {
+            if (it.at === undefined || it.until === undefined) continue;
+            if (wStart === undefined) {
+                wStart = it.at;
+                wEnd = it.until;
+            } else if (it.at - (wEnd as number) <= GAP_MS) {
+                wEnd = Math.max(wEnd as number, it.until);
+            } else {
+                flush();
+                wStart = it.at;
+                wEnd = it.until;
+            }
+        }
+        flush();
+    }
+    // Request windows: exactly the viewer-control schedule entries.
+    const reqWindows: VcScheduleEntry[] = (settings.viewerControl.schedule ?? []).map((e) => ({
+        title: e.playlist,
+        start: e.startTime,
+        end: e.endTime,
+        daysOfWeek: SCHEDULE_DAYS_TO_NUMS[e.days],
+    }));
+    setEzvcSchedule(showWindows, reqWindows);
+
+    // ---- interactive-only: needs the active window's playlist ------------
     if (!vcStat) return;
 
     const pl = curPlaylists?.find((p) => p.title.toLowerCase() === vcStat.playlist.toLowerCase());

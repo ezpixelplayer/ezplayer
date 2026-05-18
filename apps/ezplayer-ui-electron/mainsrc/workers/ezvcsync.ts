@@ -40,7 +40,7 @@ export type EzvcWorkerInMessage =
     | { type: 'updatePlayback'; update: VcPlayingUpdate }
     | { type: 'setControlEnabled'; enabled: boolean }
     | { type: 'syncPlaylists'; songs: VcSong[] }
-    | { type: 'syncSchedule'; schedule: VcScheduleEntry[] }
+    | { type: 'syncSchedule'; schedule: VcScheduleEntry[]; requestWindows: VcScheduleEntry[] }
     | { type: 'requestNextSuggestion' };
 
 // Worker -> Parent
@@ -124,8 +124,8 @@ export class EzvcApiClient {
         return this.request('POST', this.path('enabled'), { enabled });
     }
 
-    syncSchedule(schedule: VcScheduleEntry[]): Promise<unknown> {
-        return this.request('POST', this.path('schedule'), { schedule });
+    syncSchedule(schedule: VcScheduleEntry[], requestWindows: VcScheduleEntry[]): Promise<unknown> {
+        return this.request('POST', this.path('schedule'), { schedule, requestWindows });
     }
 
     getNext(timeoutMs?: number): Promise<EzvcNextToPlay | undefined> {
@@ -217,12 +217,12 @@ async function handleSyncPlaylists(songs: VcSong[]) {
     });
 }
 
-async function handleSyncSchedule(schedule: VcScheduleEntry[]) {
+async function handleSyncSchedule(schedule: VcScheduleEntry[], requestWindows: VcScheduleEntry[]) {
     const c = ensureClient();
     await runGuarded('syncSchedule', async () => {
-        const hash = JSON.stringify(schedule);
+        const hash = JSON.stringify([schedule, requestWindows]);
         if (hash === lastScheduleHash) return;
-        await c.syncSchedule(schedule);
+        await c.syncSchedule(schedule, requestWindows);
         lastScheduleHash = hash;
         send({ type: 'scheduleSynced' });
     });
@@ -253,7 +253,7 @@ parentPort.on('message', async (msg: EzvcWorkerInMessage) => {
                 await handleSyncPlaylists(msg.songs);
                 break;
             case 'syncSchedule':
-                await handleSyncSchedule(msg.schedule);
+                await handleSyncSchedule(msg.schedule, msg.requestWindows);
                 break;
             case 'requestNextSuggestion':
                 await handleRequestNextSuggestion();
