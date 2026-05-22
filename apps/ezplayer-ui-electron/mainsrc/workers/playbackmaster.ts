@@ -743,6 +743,17 @@ parentPort.on('message', async (command: PlayerCommand) => {
             configureEzvc();
             break;
         }
+        case 'vcResync': {
+            // Cloud has no live viewer-control state for us (it restarted).
+            // Forget the ezvc dedup keys and re-arm so the next sendEzvcUpdate
+            // re-pushes the full snapshot. `lastEzvcKey = undefined` bypasses
+            // configureEzvc's same-key guard; the re-config makes the ezvc
+            // worker clear its own per-call hashes (handleSetConfig resets them).
+            lastEzvcPlayingKey = undefined;
+            lastEzvcKey = undefined;
+            configureEzvc();
+            break;
+        }
         case 'rpc':
             rpcs.dispatchRequest(command.rpc).catch((e) => {
                 emitError(`THIS SHOULD NOT HAPPEN - RPC should SEND ERROR BACK - ${e}`);

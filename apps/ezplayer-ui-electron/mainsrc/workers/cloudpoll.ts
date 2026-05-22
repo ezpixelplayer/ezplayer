@@ -9,6 +9,7 @@ import {
     CLOUD_API_ENDPOINTS,
     findMatchingScheduleEntry,
     type CloudConfig,
+    type CloudPlayerSettings,
     type CloudFileEntry,
     type CloudFileKind,
     type CloudPollScheduleEntry,
@@ -80,6 +81,7 @@ const cStatus: PlayerCStatusContent = { files: {} };
 // change ⇒ different store, always push).
 let lastSentPlaylistsJson: string | undefined;
 let lastSentScheduleJson: string | undefined;
+let lastSentSettingsJson: string | undefined;
 
 /** `${file_id}|${file_time}` -> active absPath of files we've successfully landed this
  *  session. Compound key so a re-used file_id with a fresh file_time is correctly
@@ -317,6 +319,8 @@ async function pollManifest() {
     }
     // Playlists + schedule are metadata-only; cheap, errors are non-fatal.
     void fetchPlaylistsAndSchedule();
+    // Cloud-managed player settings — same cadence, same non-fatal handling.
+    void fetchPlayerSettings();
 }
 
 async function fetchPlaylistsAndSchedule() {
@@ -357,6 +361,31 @@ async function fetchPlaylistsAndSchedule() {
         }
     } catch (e) {
         log('warn', `schedule fetch error: ${(e as Error).message}`);
+    }
+}
+
+/** Cloud-managed player settings — three groups + their `*_updated` stamps.
+ *  Polled on the manifest tick alongside playlists/schedule; the parent does
+ *  the per-group last-write-wins. Change-detected so an unchanged poll is
+ *  silent. Errors are non-fatal (mirrors fetchPlaylistsAndSchedule). */
+async function fetchPlayerSettings() {
+    if (!cloudUrl || !playerIdToken) return;
+    const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SETTINGS}${playerIdToken}`;
+    try {
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) {
+            log('warn', `settings HTTP ${res.status}`);
+            return;
+        }
+        const settings = (await res.json()) as CloudPlayerSettings;
+        const json = JSON.stringify(settings);
+        if (json !== lastSentSettingsJson) {
+            log('info', 'cloud settings (changed)');
+            lastSentSettingsJson = json;
+            parentPort?.postMessage({ type: 'cloudSettings', settings } satisfies CloudPollOutMessage);
+        }
+    } catch (e) {
+        log('warn', `settings fetch error: ${(e as Error).message}`);
     }
 }
 
@@ -1387,6 +1416,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             cStatus.files = {};
             lastSentPlaylistsJson = undefined;
             lastSentScheduleJson = undefined;
+            lastSentSettingsJson = undefined;
 
             stopped = false;
             halted = false;

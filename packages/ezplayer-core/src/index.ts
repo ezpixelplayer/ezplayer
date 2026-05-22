@@ -27,6 +27,8 @@ export type {
     JSONEditSheet,
     JSONEditState,
     PlaybackSettings,
+    PlaybackGroupSettings,
+    CloudPlayerSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
     CloudPollScheduleEntry,

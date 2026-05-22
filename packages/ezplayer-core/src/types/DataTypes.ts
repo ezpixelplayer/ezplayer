@@ -549,6 +549,27 @@ export interface PlaybackSettings {
     jukebox?: JukeboxSettings;
 }
 
+/** The "playback" cloud-managed settings group — the part of PlaybackSettings
+ *  that isn't its own group (volume / viewer control). */
+export type PlaybackGroupSettings = Pick<
+    PlaybackSettings,
+    'audioSyncAdjust' | 'backgroundSequence' | 'jukebox'
+>;
+
+/** Cloud-managed player settings as served by `getsettingsforplayer`: three
+ *  groups, each paired with an epoch-ms `*_updated` stamp. A group/stamp pair
+ *  is `undefined` when never set in the cloud. One-way (show-builder → player);
+ *  the player adopts each group by per-group last-write-wins against a locally
+ *  persisted stamp. */
+export interface CloudPlayerSettings {
+    playback_settings?: PlaybackGroupSettings;
+    playback_settings_updated?: number;
+    volume_control?: VolumeControlState;
+    volume_control_updated?: number;
+    viewer_control_state?: ViewerControlState;
+    viewer_control_state_updated?: number;
+}
+
 /** Per-file identity for the layout files we have on disk. Lets the worker decide
  *  whether the cloud's manifest entry is newer than what we have, by both id and time. */
 export interface LayoutFileMeta {
@@ -765,6 +786,13 @@ export type OutOfBandCommand =
           type: 'closeCloudWS';
           /** Absent → close any current bridge. */
           sessionId?: string;
+      }
+    | {
+          /** The cloud has no live viewer-control state for this player's
+           *  show (e.g. it restarted). Tells the player to forget its vc/*
+           *  dedup and re-push a full snapshot so the viewer page recovers
+           *  without waiting for the next song/schedule change. */
+          type: 'vcResync';
       };
 
 /** POST /api/player/checkin/:token body — all fields optional (empty body is

@@ -30,4 +30,6 @@ export const CLOUD_API_ENDPOINTS = {
     /** GET ${cloudUrl}ezpapi/player/getlatestlayout/<token>
      *   -> { zip?, rgbeffects?, networks?: { url, filename, file_id, file_time } } */
     EZP_GET_LATEST_LAYOUT: 'ezpapi/player/getlatestlayout/',
+    /** GET ${cloudUrl}ezpapi/player/getsettingsforplayer/<token> -> CloudPlayerSettings */
+    EZP_GET_SETTINGS: 'ezpapi/player/getsettingsforplayer/',
 } as const;

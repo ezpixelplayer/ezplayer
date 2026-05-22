@@ -109,3 +109,30 @@ export function applySettingsFromRenderer(settingsFile: string, newSettings: Pla
     currentSettings = newSettings;
     void scheduleWrite();
 }
+
+/** Per-group epoch-ms stamp of the cloud `*_updated` value the player has
+ *  adopted for each settings group. Sidecar to `playbackSettings.json`; drives
+ *  the one-way cloud→player last-write-wins — a group is adopted only when the
+ *  cloud's stamp strictly exceeds the one recorded here. A local-only edit
+ *  never touches this, so it survives until a *newer* cloud save supersedes it. */
+export interface CloudSettingsMeta {
+    playback?: number;
+    volume?: number;
+    viewerControl?: number;
+}
+
+export async function loadCloudSettingsMeta(metaPath: string): Promise<CloudSettingsMeta> {
+    try {
+        const raw = await fs.readFile(metaPath, 'utf8');
+        if (raw.trim() === '') return {};
+        return JSON.parse(raw) as CloudSettingsMeta;
+    } catch (e) {
+        const err = e as { code?: string };
+        if (err?.code === 'ENOENT' || e instanceof SyntaxError) return {};
+        throw err;
+    }
+}
+
+export async function saveCloudSettingsMeta(metaPath: string, meta: CloudSettingsMeta): Promise<void> {
+    await atomicWriteFile(metaPath, JSON.stringify(meta, null, 2));
+}

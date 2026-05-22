@@ -1,5 +1,6 @@
 import type {
     CloudConfig,
+    CloudPlayerSettings,
     CloudPollScheduleEntry,
     CloudStatus,
     OutOfBandCommand,
@@ -94,5 +95,12 @@ export type CloudPollOutMessage =
            *  the server worker that actually dials the bridge. */
           type: 'outOfBandCommands';
           commands: OutOfBandCommand[];
+      }
+    | {
+          /** Cloud-managed player settings — the three groups + their
+           *  `*_updated` stamps. The parent adopts each group by per-group
+           *  last-write-wins against a locally persisted stamp. */
+          type: 'cloudSettings';
+          settings: CloudPlayerSettings;
       }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };
