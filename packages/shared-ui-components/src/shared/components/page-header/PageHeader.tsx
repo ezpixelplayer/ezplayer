@@ -1,6 +1,7 @@
 import { FC, useContext } from 'react';
 import PropTypes from 'prop-types';
-import { Typography, Box, Link, IconButton, SvgIconProps, useTheme, useMediaQuery } from '@mui/material';
+import { Typography, Link, IconButton, SvgIconProps, useTheme, useMediaQuery } from '@mui/material';
+import { Box } from '../box/Box';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import MenuTwoToneIcon from '@mui/icons-material/MenuTwoTone';

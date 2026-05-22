@@ -1,6 +1,7 @@
 import { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ListSubheader, Box, List, Button, ListItem } from '@mui/material';
+import { ListSubheader, List, Button, ListItem } from '@mui/material';
+import { Box } from '../box/Box';
 import { NavLink as RouterLink } from 'react-router-dom';
 import { SidebarContext } from '../../providers/SidebarContext';
 

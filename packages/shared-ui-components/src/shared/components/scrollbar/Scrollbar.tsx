@@ -1,6 +1,6 @@
 import { FC, ReactNode } from 'react';
 import { Scrollbars } from 'react-custom-scrollbars-2';
-import { Box } from '@mui/material';
+import { Box } from '../box/Box';
 
 interface ScrollbarProps {
     className?: string;

@@ -438,15 +438,18 @@ function configureEzvc() {
 
 function sendEzvcUpdate() {
     const settings = latestSettings;
-    if (!settings || settings.viewerControl?.type !== 'ezplayer') return;
+    if (!settings) return;
     if (!ezvcCloudUrl || !ezvcPlayerToken) return;
 
-    // The schedule gates only *interactive* control (request/vote + the
-    // next-pick poll). Now-playing is independent: whether the show page
-    // displays it is governed by the show-page settings (evaluated
-    // cloud-side), not by the viewer-control window — so report it always.
-    const vcStat = getActiveViewerControlSchedule(settings.viewerControl);
-    setEzvcControlEnabled(!!vcStat);
+    // Display (now-playing + the schedule feeds, below) is reported for any
+    // cloud-connected player — so the viewer home page has something to show
+    // even when interactive viewer control is off. Interactive control
+    // (request/vote + the next-pick poll) is separate: it runs only when this
+    // player's backend is the in-house cloud one (`type === 'ezplayer'`) and
+    // its schedule window is open.
+    const vc = settings.viewerControl;
+    const ezWindow = vc?.type === 'ezplayer' ? getActiveViewerControlSchedule(vc) : null;
+    setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
@@ -513,7 +516,9 @@ function sendEzvcUpdate() {
     showWindows.sort((x, y) => (x.start < y.start ? -1 : x.start > y.start ? 1 : 0));
     if (showWindows.length > 20) showWindows.length = 20;
     // Request windows: exactly the viewer-control schedule entries.
-    const reqWindows: VcScheduleEntry[] = (settings.viewerControl.schedule ?? []).map((e) => ({
+    const reqWindows: VcScheduleEntry[] = (
+        vc?.type === 'ezplayer' ? vc.schedule ?? [] : []
+    ).map((e) => ({
         title: e.playlist,
         start: e.startTime,
         end: e.endTime,
@@ -522,9 +527,9 @@ function sendEzvcUpdate() {
     setEzvcSchedule(showWindows, reqWindows);
 
     // ---- interactive-only: needs the active window's playlist ------------
-    if (!vcStat) return;
+    if (!ezWindow) return;
 
-    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === vcStat.playlist.toLowerCase());
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === ezWindow.playlist.toLowerCase());
     if (pl) {
         const songs: VcSong[] = [];
         for (const i of pl.items) {
