@@ -13,6 +13,8 @@ export { CreateEditPlaylist } from './components/playlist/CreateEditPlaylist';
 export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
+export { EditSongDetailsDialog } from './components/song/EditSongDetailsDialog';
+export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
 export { PlayerScreen } from './components/player/PlayerScreen';
