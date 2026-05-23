@@ -32,7 +32,8 @@ import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
 import ContrastIcon from '@mui/icons-material/Contrast';
-import LanguageIcon from '@mui/icons-material/Language';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
 
@@ -64,14 +65,14 @@ const EmbeddedSettingsPage = () => {
         {
             key: 'viewer',
             label: 'Viewer Control',
-            icon: <LanguageIcon sx={{ fontSize: 56 }} />,
+            icon: <VisibilityIcon sx={{ fontSize: 56 }} />,
             title: 'Viewer Control',
             content: <ViewerSettings />,
         },
         {
             key: 'jukebox',
             label: 'Jukebox',
-            icon: <PlayArrow sx={{ fontSize: 56 }} />,
+            icon: <LibraryMusicIcon sx={{ fontSize: 56 }} />,
             content: <JukeboxSettings />,
         },
         {
