@@ -55,6 +55,8 @@ export interface DownloadFile {
     audio?: CloudFileDownload;
     xsqz?: CloudFileDownload;
     pvid?: CloudFileDownload;
+    srcseq?: CloudFileDownload;
+    srcseq_policy?: 'never' | 'always' | 'conditional';
     thumb?: string; // URL
 }
 
