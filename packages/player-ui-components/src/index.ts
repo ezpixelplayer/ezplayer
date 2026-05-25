@@ -50,6 +50,7 @@ export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState, Layo
 export type { MenuRoute } from './types/menuRoute';
 export { toRouteChildren } from './types/menuRoute';
 export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
+export { useOrbitPreference, setOrbitPreference } from './util/orbitPreference';
 
 export type { AuthState } from './store/slices/AuthStore';
 export type { RuntimeState } from './store/slices/RuntimeStore';

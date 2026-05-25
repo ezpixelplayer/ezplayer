@@ -1,4 +1,4 @@
-import { Button, FormControl, IconButton, SelectChangeEvent, Slider, Typography } from '@mui/material';
+import { Button, FormControl, FormControlLabel, IconButton, SelectChangeEvent, Slider, Switch, Typography } from '@mui/material';
 import PaletteIcon from '@mui/icons-material/Palette';
 import React, { useEffect, useState } from 'react';
 import { Select } from '@ezplayer/shared-ui-components';
@@ -11,6 +11,7 @@ import {
     useThemeContext,
 } from '../../../theme/ThemeBase';
 import { ColorPaletteDialog } from '../../theme/ColorPaletteDialog';
+import { setOrbitPreference, useOrbitPreference } from '../../../util/orbitPreference';
 
 interface UISettingsLocal {
     theme?: string;
@@ -20,6 +21,7 @@ export const UISettings: React.FC = () => {
     const { themeName, handleThemeChange, uiScale, setUiScale } = useThemeContext();
     const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+    const preferOrbit = useOrbitPreference();
 
     // Load saved theme from localStorage on first mount.
     useEffect(() => {
@@ -106,6 +108,21 @@ export const UISettings: React.FC = () => {
                     Reset
                 </Button>
             </Box>
+
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 4, mb: 1 }}>
+                3D preview controls. Orbit mode is friendlier on trackpads and
+                touch devices; the default auto-picks based on whether your
+                device looks touch-only.
+            </Typography>
+            <FormControlLabel
+                control={
+                    <Switch
+                        checked={preferOrbit}
+                        onChange={(e) => setOrbitPreference(e.target.checked)}
+                    />
+                }
+                label="Always use orbit controls"
+            />
         </Box>
     );
 };
