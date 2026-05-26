@@ -1,8 +1,6 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
-import { Info } from '@mui/icons-material';
 import CloseIcon from '@mui/icons-material/Close';
 import {
-    Button,
     Card,
     Dialog,
     DialogContent,
@@ -11,14 +9,9 @@ import {
     Tooltip,
     Typography,
 } from '@mui/material';
-import { createSelector } from '@reduxjs/toolkit';
-import React, { useMemo, useState } from 'react';
-import { useSelector } from 'react-redux';
+import React, { useState } from 'react';
 import { Box } from '../box/Box';
-import { RootState } from '../../store/Store';
-import { AboutDialog } from './AboutDialog';
-import { LicenseDialog, LicenseEntry } from './LicenseDialog';
-import Licenses from '../../constants/licenses.json';
+import { LegalFooter } from './LegalFooter';
 
 /**
  * A tile in the SettingsDrawer gallery. Two shapes:
@@ -53,22 +46,9 @@ interface SettingsDrawerProps {
     sections: SettingsSection[];
 }
 
-const selectAuth = (s: RootState) => s.auth;
-const selectCloudStatus = (s: RootState) => s.cloudStatus;
-const selectVersionInfo = createSelector([selectAuth, selectCloudStatus], (auth, status) => ({
-    playerVersion: auth.playerVersion,
-    cloudVersion: status.cloudVersion ?? 'unknown',
-}));
-
 export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusArea, sections }) => {
     const [activeDialog, setActiveDialog] = useState<string | null>(null);
     const closeActiveDialog = () => setActiveDialog(null);
-
-    const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
-    const [licenseDialogOpen, setLicenseDialogOpen] = useState(false);
-
-    const versionInfo = useSelector(selectVersionInfo);
-    const licenseEntries: LicenseEntry[] = useMemo(() => Licenses, []);
 
     const effectiveSections = sections.filter((s) => s.available !== false);
 
@@ -150,37 +130,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
                 </Box>
             </Box>
 
-            {/* Fixed footer with About / License */}
-            <Box
-                sx={{
-                    flexShrink: 0,
-                    padding: 2,
-                    borderTop: '1px solid',
-                    borderColor: 'divider',
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: 1,
-                }}
-            >
-                <Button
-                    variant="outlined"
-                    startIcon={<Info />}
-                    onClick={() => setAboutDialogOpen(true)}
-                    size="small"
-                    sx={{ textTransform: 'none' }}
-                >
-                    About EZPlayer
-                </Button>
-                <Button
-                    variant="outlined"
-                    startIcon={<Info />}
-                    onClick={() => setLicenseDialogOpen(true)}
-                    size="small"
-                    sx={{ textTransform: 'none' }}
-                >
-                    License
-                </Button>
-            </Box>
+            <LegalFooter />
 
             {/* Section dialogs (one per content-bearing section) */}
             {effectiveSections.map((s) =>
@@ -194,19 +144,6 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
                     </SectionDialog>
                 ) : null,
             )}
-
-            <AboutDialog
-                open={aboutDialogOpen}
-                onClose={() => setAboutDialogOpen(false)}
-                playerVersion={versionInfo.playerVersion}
-                cloudVersion={versionInfo.cloudVersion}
-            />
-
-            <LicenseDialog
-                open={licenseDialogOpen}
-                onClose={() => setLicenseDialogOpen(false)}
-                licenses={licenseEntries}
-            />
         </Box>
     );
 };

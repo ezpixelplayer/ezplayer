@@ -23,6 +23,8 @@ export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
+export { LegalFooter } from './components/playback-settings/LegalFooter';
+export { TermsDialog } from './components/playback-settings/TermsDialog';
 export { ShowFolderSettings } from './components/playback-settings/sections/ShowFolderSettings';
 export { UISettings } from './components/playback-settings/sections/UISettings';
 export { ViewerSettings } from './components/playback-settings/sections/ViewerSettings';
