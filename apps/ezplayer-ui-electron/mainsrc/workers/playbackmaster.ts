@@ -37,6 +37,7 @@ import {
     AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
     getActiveVolumeSchedule,
+    getScheduleTimes,
     LatestFrameRingBuffer,
     PlayerRunState,
 } from '@ezplayer/ezplayer-core';
@@ -87,6 +88,7 @@ import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying,
 import { PlaylistSyncItem } from './rfsync';
 import {
     sendEzvcInitiateCheck,
+    setEzvcCatalog,
     setEzvcConfig,
     setEzvcControlEnabled,
     setEzvcPlaylist,
@@ -436,6 +438,32 @@ function configureEzvc() {
     });
 }
 
+// Jukebox eligibility — replicated from
+// player-ui-components/src/services/jukeboxFilter.ts (the worker can't import
+// that React package). Keep in sync: 'nojukebox' is always excluded; a song is
+// out if it has ANY excluded tag; if includedTags is non-empty it must match
+// ANY of them. Tags compared case-insensitively / trimmed.
+const JUKEBOX_ALWAYS_EXCLUDED = ['nojukebox'];
+function normalizeTagList(tags: string[] | undefined): string[] {
+    return (tags ?? []).map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0);
+}
+function songMatchesAnyTag(songTags: string[] | undefined, list: string[]): boolean {
+    if (!songTags || songTags.length === 0 || list.length === 0) return false;
+    const set = new Set(normalizeTagList(songTags));
+    return list.some((t) => set.has(t));
+}
+function isSongAllowedForJukebox(
+    songTags: string[] | undefined,
+    excludedTags: string[] | undefined,
+    includedTags: string[] | undefined,
+): boolean {
+    const excluded = Array.from(new Set([...JUKEBOX_ALWAYS_EXCLUDED, ...normalizeTagList(excludedTags)]));
+    const included = normalizeTagList(includedTags);
+    if (songMatchesAnyTag(songTags, excluded)) return false;
+    if (included.length === 0) return true;
+    return songMatchesAnyTag(songTags, included);
+}
+
 function sendEzvcUpdate() {
     const settings = latestSettings;
     if (!settings) return;
@@ -486,35 +514,28 @@ function sendEzvcUpdate() {
     }
 
     // ---- two schedule feeds, independent of the request window -----------
-    // Operating hours: the scheduled show blocks (currently-playing, stacked,
-    // and upcoming). Each carries schedStart/schedEnd directly — no song-gap
-    // merging — and upcomingSchedules is populated even when nothing is
-    // playing yet, which is exactly the "show starts in an hour" case.
-    // NOTE: schedStart/schedEnd are the player's clock base, treated as epoch
-    // ms per the wire contract; if E2E shows 1970-ish, wall-clock conversion
-    // is the follow-up (request-windows below are unaffected).
-    type SchedBlock = Extract<PlaybackActions, { type: 'scheduled' }>;
-    const schedBlocks: SchedBlock[] = [];
-    const addSched = (b?: PlaybackActions) => {
-        if (b && b.type === 'scheduled') schedBlocks.push(b);
-    };
-    addSched(ps.curPLActions);
-    for (const b of ps.stackedPLActions ?? []) addSched(b);
-    for (const b of ps.upcomingSchedules ?? []) addSched(b);
-    const seenWindow = new Set<string>();
-    const showWindows: VcScheduleEntry[] = [];
-    for (const b of schedBlocks) {
-        const key = `${b.schedStart}-${b.schedEnd}`;
-        if (seenWindow.has(key)) continue;
-        seenWindow.add(key);
-        showWindows.push({
-            title: 'Show',
-            start: new Date(b.schedStart).toISOString(),
-            end: new Date(b.schedEnd).toISOString(),
-        });
-    }
-    showWindows.sort((x, y) => (x.start < y.start ? -1 : x.start > y.start ? 1 : 0));
-    if (showWindows.length > 20) showWindows.length = 20;
+    // Operating hours come from the SHOW SCHEDULE definition (`curSchedule`) —
+    // the same per-occurrence records the player's Schedule-screen calendar
+    // renders — NOT the playback engine's near-term lookahead (which exists to
+    // drive now-playing / up-next and is horizon-bounded). Each occurrence's
+    // window is computed with `getScheduleTimes` (shared with that calendar),
+    // so a show days/weeks out still appears. Future occurrences only, soonest
+    // first, capped.
+    const nowMs = Date.now();
+    const showWindows: VcScheduleEntry[] = (curSchedule ?? [])
+        .filter((s) => s.scheduleType !== 'background' && !s.deleted && s.enabled !== false)
+        .map((s) => {
+            const { startTimeMS, endTimeMS } = getScheduleTimes(s);
+            return { s, startTimeMS, endTimeMS };
+        })
+        .filter((x) => Number.isFinite(x.endTimeMS) && x.endTimeMS >= nowMs)
+        .sort((a, b) => a.startTimeMS - b.startTimeMS)
+        .slice(0, 60)
+        .map((x) => ({
+            title: x.s.playlistTitle || x.s.title || 'Show',
+            start: new Date(x.startTimeMS).toISOString(),
+            end: new Date(x.endTimeMS).toISOString(),
+        }));
     // Request windows: exactly the viewer-control schedule entries.
     const reqWindows: VcScheduleEntry[] = (
         vc?.type === 'ezplayer' ? vc.schedule ?? [] : []
@@ -525,6 +546,27 @@ function sendEzvcUpdate() {
         daysOfWeek: SCHEDULE_DAYS_TO_NUMS[e.days],
     }));
     setEzvcSchedule(showWindows, reqWindows);
+
+    // ---- static catalog: the jukebox-filtered sequence list --------------
+    // "Songs you may hear" for the public page — the same filtering the in-app
+    // jukebox uses, independent of viewer control. Pushed for any cloud-
+    // connected player. Artwork is resolved by the cloud (per-song proxy), so
+    // we don't send local file paths here.
+    const jukebox = settings.jukebox;
+    const catalog: VcSong[] = (curSequences ?? [])
+        .filter((seq) => !seq.deleted && seq.render_enabled !== false)
+        .filter((seq) =>
+            isSongAllowedForJukebox(seq.settings?.tags, jukebox?.excludedTags, jukebox?.includedTags),
+        )
+        .map((seq) => ({
+            id: seq.id,
+            title: seq.work?.title || seq.id,
+            artist: seq.work?.artist || undefined,
+            vendor: seq.sequence?.vendor || undefined,
+            durationMs: seq.work?.length ? seq.work.length * 1000 : undefined,
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title));
+    setEzvcCatalog(catalog);
 
     // ---- interactive-only: needs the active window's playlist ------------
     if (!ezWindow) return;

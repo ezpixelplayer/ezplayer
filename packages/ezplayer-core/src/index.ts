@@ -91,6 +91,7 @@ export {
     type PlaybackStateSnapshot,
     type UpcomingPlaybackActions,
     getPlaylistDurationMS,
+    getScheduleTimes,
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,

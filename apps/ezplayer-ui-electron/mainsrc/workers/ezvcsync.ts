@@ -41,6 +41,7 @@ export type EzvcWorkerInMessage =
     | { type: 'setControlEnabled'; enabled: boolean }
     | { type: 'syncPlaylists'; songs: VcSong[] }
     | { type: 'syncSchedule'; schedule: VcScheduleEntry[]; requestWindows: VcScheduleEntry[] }
+    | { type: 'syncCatalog'; catalog: VcSong[] }
     | { type: 'requestNextSuggestion' };
 
 // Worker -> Parent
@@ -52,6 +53,7 @@ export type EzvcWorkerOutMessage =
     | { type: 'controlUpdated'; enabled: boolean }
     | { type: 'playlistsSynced'; count: number }
     | { type: 'scheduleSynced'; scheduleCount: number; requestWindowCount: number }
+    | { type: 'catalogSynced'; count: number }
     | { type: 'nextSuggestion'; suggestion: EzvcNextToPlay | null };
 
 export class EzvcApiClient {
@@ -128,6 +130,10 @@ export class EzvcApiClient {
         return this.request('POST', this.path('schedule'), { schedule, requestWindows });
     }
 
+    syncCatalog(catalog: VcSong[]): Promise<unknown> {
+        return this.request('POST', this.path('catalog'), { catalog });
+    }
+
     getNext(timeoutMs?: number): Promise<EzvcNextToPlay | undefined> {
         return this.request<EzvcNextToPlay>('GET', this.path('next'), undefined, timeoutMs);
     }
@@ -144,6 +150,7 @@ let config: EzvcConfig | null = null;
 let lastEnabled: boolean | null = null;
 let lastPlaylistHash: string | null = null;
 let lastScheduleHash: string | null = null;
+let lastCatalogHash: string | null = null;
 let lastPlayingHash: string | null = null;
 
 const inFlight: Record<string, boolean> = Object.create(null);
@@ -176,6 +183,7 @@ function handleSetConfig(newConfig: EzvcConfig) {
     lastEnabled = null;
     lastPlaylistHash = null;
     lastScheduleHash = null;
+    lastCatalogHash = null;
     lastPlayingHash = null;
     try {
         ensureClient(); // validate eagerly so bad config surfaces now
@@ -232,6 +240,17 @@ async function handleSyncSchedule(schedule: VcScheduleEntry[], requestWindows: V
     });
 }
 
+async function handleSyncCatalog(catalog: VcSong[]) {
+    const c = ensureClient();
+    await runGuarded('syncCatalog', async () => {
+        const hash = JSON.stringify(catalog);
+        if (hash === lastCatalogHash) return;
+        await c.syncCatalog(catalog);
+        lastCatalogHash = hash;
+        send({ type: 'catalogSynced', count: catalog.length });
+    });
+}
+
 async function handleRequestNextSuggestion() {
     await runGuarded('nextSuggestion', async () => {
         const c = ensureClient();
@@ -258,6 +277,9 @@ parentPort.on('message', async (msg: EzvcWorkerInMessage) => {
                 break;
             case 'syncSchedule':
                 await handleSyncSchedule(msg.schedule, msg.requestWindows);
+                break;
+            case 'syncCatalog':
+                await handleSyncCatalog(msg.catalog);
                 break;
             case 'requestNextSuggestion':
                 await handleRequestNextSuggestion();

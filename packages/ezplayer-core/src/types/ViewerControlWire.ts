@@ -16,6 +16,8 @@ export interface VcSong {
     id: string;
     title: string;
     artist?: string;
+    /** Vendor / source of the sequence (mirrors `SequenceDetails.vendor`). */
+    vendor?: string;
     /** Milliseconds. Normalized on the wire (the player converts from
      *  whatever `SongDetails.length` unit it holds). */
     durationMs?: number;
@@ -31,6 +33,12 @@ export interface VcPlayingItem {
     /** Maps to `VcSong.id` (`PlayingItem.sequence_id`). */
     songId?: string;
     title?: string;
+    /** Display artist, when the cloud resolves the playing song against the
+     *  song list. Absent for jukebox-only sequences not in the list. */
+    artist?: string;
+    /** Cover-art URL, same resolution caveat as `artist`. Often absent for
+     *  light-show sequences. */
+    artwork?: string;
     /** Epoch ms it is expected to start (mirrors `PlayingItem.at`). */
     at?: number;
     /** Epoch ms it is expected to end (mirrors `PlayingItem.until`). */
@@ -142,7 +150,12 @@ export interface VcPublicShowState {
     schedule?: VcScheduleEntry[];
     /** When the request/vote line is open — distinct from operating hours. */
     requestWindows?: VcScheduleEntry[];
+    /** Interactive request/vote offering (the active viewer-control window). */
     songs: VcPublicSong[];
+    /** Static "songs you may hear" catalog — the player's jukebox-filtered
+     *  sequence list, independent of viewer control. Display-only; `artwork` is
+     *  the cloud's per-song proxy URL (same mechanism as now-playing). */
+    catalog?: VcSong[];
     /** This viewer has spent their action (vote mode); page disables controls. */
     viewerHasActed: boolean;
     [k: string]: unknown;

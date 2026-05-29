@@ -62,6 +62,9 @@ worker.on('message', (msg: EzvcWorkerOutMessage) => {
                 `${msg.requestWindowCount} request window(s)`,
             );
             break;
+        case 'catalogSynced':
+            console.log('[ezvc] catalog synced:', msg.count);
+            break;
     }
 });
 
@@ -88,6 +91,10 @@ export function setEzvcPlaylist(songs: VcSong[]) {
 
 export function setEzvcSchedule(schedule: VcScheduleEntry[], requestWindows: VcScheduleEntry[]) {
     send({ type: 'syncSchedule', schedule, requestWindows });
+}
+
+export function setEzvcCatalog(catalog: VcSong[]) {
+    send({ type: 'syncCatalog', catalog });
 }
 
 export function sendEzvcInitiateCheck() {
