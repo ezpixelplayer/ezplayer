@@ -118,19 +118,15 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                 Polling Schedule
             </Typography>
             <Typography variant="caption" sx={{ display: 'block', mb: 2, color: 'text.secondary' }}>
-                Registration heartbeat always runs while cloud is enabled. The schedule
-                below gates content polling (sequence list, downloads, layout fetch).
+                Registration heartbeat always runs while cloud is enabled. The schedule below gates content polling
+                (sequence list, downloads, layout fetch).
             </Typography>
 
             {/* Mode */}
             <FormControl sx={{ mb: 2 }}>
                 <RadioGroup row value={mode} onChange={handleModeChange}>
                     <FormControlLabel value="always" control={<Radio />} label="Always" />
-                    <FormControlLabel
-                        value="scheduled"
-                        control={<Radio />}
-                        label="During scheduled times"
-                    />
+                    <FormControlLabel value="scheduled" control={<Radio />} label="During scheduled times" />
                 </RadioGroup>
             </FormControl>
 
@@ -142,8 +138,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
             {schedule.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     No windows defined.
-                    {mode === 'scheduled' &&
-                        ' In scheduled mode with no windows, content polling is suspended.'}
+                    {mode === 'scheduled' && ' In scheduled mode with no windows, content polling is suspended.'}
                 </Typography>
             ) : (
                 <List dense sx={{ mb: 2 }}>
@@ -155,8 +150,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                             <Chip label={getDaysDisplayName(entry.days)} size="small" />
                                             <Typography variant="body2">
-                                                {formatTime24Hour(entry.startTime)} -{' '}
-                                                {formatTime24Hour(entry.endTime)}
+                                                {formatTime24Hour(entry.startTime)} - {formatTime24Hour(entry.endTime)}
                                             </Typography>
                                         </Box>
                                     }
@@ -241,9 +235,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
             <Dialog open={pendingDeleteId !== null} onClose={() => setPendingDeleteId(null)}>
                 <DialogTitle>Remove Polling Window?</DialogTitle>
                 <DialogContent>
-                    <Typography>
-                        Outside the remaining windows, content polling will be suspended.
-                    </Typography>
+                    <Typography>Outside the remaining windows, content polling will be suspended.</Typography>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setPendingDeleteId(null)}>Cancel</Button>
@@ -264,15 +256,16 @@ export const CloudPollingScheduleEditor: React.FC = () => {
 export const CloudPollingIntervalEditor: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const cfg = useSelector((s: RootState) => s.cloudConfig);
-    const regSecondsSaved = Math.round((cfg.cloudPollIntervals?.registrationMs ?? DEFAULT_REGISTRATION_SEC * 1000) / 1000);
+    const regSecondsSaved = Math.round(
+        (cfg.cloudPollIntervals?.registrationMs ?? DEFAULT_REGISTRATION_SEC * 1000) / 1000,
+    );
     const manSecondsSaved = Math.round((cfg.cloudPollIntervals?.manifestMs ?? DEFAULT_MANIFEST_SEC * 1000) / 1000);
 
     const [regSeconds, setRegSeconds] = useState<string>(String(regSecondsSaved));
     const [manSeconds, setManSeconds] = useState<string>(String(manSecondsSaved));
     useEffect(() => setRegSeconds(String(regSecondsSaved)), [regSecondsSaved]);
     useEffect(() => setManSeconds(String(manSecondsSaved)), [manSecondsSaved]);
-    const intervalsDirty =
-        Number(regSeconds) !== regSecondsSaved || Number(manSeconds) !== manSecondsSaved;
+    const intervalsDirty = Number(regSeconds) !== regSecondsSaved || Number(manSeconds) !== manSecondsSaved;
     const intervalsValid =
         Number.isFinite(Number(regSeconds)) &&
         Number(regSeconds) >= 1 &&

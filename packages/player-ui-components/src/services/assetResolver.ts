@@ -54,9 +54,7 @@ function normalizeAssetKey(path: string): string {
  * Basename collisions across different folders resolve to the first one encountered, which is
  * acceptable for xLights layouts where filenames are typically unique within a show folder.
  */
-export function createZipAssetResolver(
-    assets: Map<string, string> | undefined,
-): AssetResolver {
+export function createZipAssetResolver(assets: Map<string, string> | undefined): AssetResolver {
     if (!assets || assets.size === 0) return () => null;
 
     const byBasename = new Map<string, string>();
@@ -76,20 +74,34 @@ export function createZipAssetResolver(
         const norm = normalizeAssetKey(path);
         const direct = assets.get(norm);
         if (direct) {
-            if (isResolverDebug()) traceLookup(`hit direct: ${path} -> ${norm}`, () => traceLeft--, () => traceLeft);
+            if (isResolverDebug())
+                traceLookup(
+                    `hit direct: ${path} -> ${norm}`,
+                    () => traceLeft--,
+                    () => traceLeft,
+                );
             return direct;
         }
         const base = norm.split('/').pop();
         if (base) {
             const viaBasename = byBasename.get(base);
             if (viaBasename) {
-                if (isResolverDebug()) traceLookup(`hit basename: ${path} -> ${base}`, () => traceLeft--, () => traceLeft);
+                if (isResolverDebug())
+                    traceLookup(
+                        `hit basename: ${path} -> ${base}`,
+                        () => traceLeft--,
+                        () => traceLeft,
+                    );
                 return viaBasename;
             }
         }
         if (isResolverDebug()) {
             const stillTracing = traceLeft > 0;
-            traceLookup(`miss: ${path} (norm=${norm}, base=${base ?? ''})`, () => traceLeft--, () => traceLeft);
+            traceLookup(
+                `miss: ${path} (norm=${norm}, base=${base ?? ''})`,
+                () => traceLeft--,
+                () => traceLeft,
+            );
             // Stack trace identifies the caller (HouseMesh loading manager, ImagePlane,
             // Viewer2D background plane, etc.) when chasing a "why didn't this resolve" bug.
             if (stillTracing) console.trace('[assetResolver] miss origin');
@@ -117,9 +129,7 @@ function traceLookup(msg: string, decrement: () => void, peek: () => number): vo
  * Try each resolver in order; return the first non-null result. Callers typically chain
  * zip-blob → show-file so the in-memory zip wins when both could supply the asset.
  */
-export function combineResolvers(
-    ...resolvers: Array<AssetResolver | null | undefined>
-): AssetResolver {
+export function combineResolvers(...resolvers: Array<AssetResolver | null | undefined>): AssetResolver {
     return (path) => {
         for (const r of resolvers) {
             if (!r) continue;

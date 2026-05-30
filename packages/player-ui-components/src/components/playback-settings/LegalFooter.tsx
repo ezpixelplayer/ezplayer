@@ -75,11 +75,7 @@ export const LegalFooter: React.FC = () => {
                 playerVersion={versionInfo.playerVersion}
                 cloudVersion={versionInfo.cloudVersion}
             />
-            <LicenseDialog
-                open={licenseOpen}
-                onClose={() => setLicenseOpen(false)}
-                licenses={licenseEntries}
-            />
+            <LicenseDialog open={licenseOpen} onClose={() => setLicenseOpen(false)} licenses={licenseEntries} />
             <TermsDialog open={termsOpen} onClose={() => setTermsOpen(false)} />
         </Box>
     );

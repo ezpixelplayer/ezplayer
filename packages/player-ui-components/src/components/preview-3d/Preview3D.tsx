@@ -32,13 +32,7 @@ import { useOrbitPreference } from '../../util/orbitPreference';
 import { ModelList } from './ModelList';
 import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
-import type {
-    Model3DData,
-    ModelMetadata,
-    SelectionState,
-    ViewObject,
-    LayoutSettings,
-} from '../../types/model3d';
+import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import type { LayoutGroupInfo, MhFixtureInfo, ViewpointInfo } from 'xllayoutcalcs';
 import { viewpointToCameraState } from './viewpointCamera';
 import { GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
@@ -75,9 +69,7 @@ interface PreviewSelectionOption {
 function filterModelDataByLayoutGroup(data: Model3DData | null, groupName: string | null): Model3DData | null {
     if (!data || !groupName) return data;
     const groupModels = new Set<string>(
-        (data.metadata?.models ?? [])
-            .filter((m) => m.layoutGroup === groupName)
-            .map((m) => m.name),
+        (data.metadata?.models ?? []).filter((m) => m.layoutGroup === groupName).map((m) => m.name),
     );
     const filteredPoints = data.points.filter((p) => {
         const name = p.metadata?.modelName;
@@ -231,11 +223,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         const groups = (layoutSettings.layoutGroups ?? [])
             .filter((g): g is LayoutGroupInfo => Boolean(g?.name))
             .map((g) => ({ value: `group:${g.name}` as const, label: g.name, groupName: g.name }));
-        return [
-            { value: 'default', label: 'Default' },
-            { value: 'all', label: 'All Models' },
-            ...groups,
-        ];
+        return [{ value: 'default', label: 'Default' }, { value: 'all', label: 'All Models' }, ...groups];
     }, [layoutSettings.layoutGroups]);
 
     const activeLayoutGroupName = React.useMemo(() => {
@@ -243,7 +231,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     }, [previewSelection]);
 
     const activeLayoutGroup = React.useMemo(
-        () => (activeLayoutGroupName ? layoutSettings.layoutGroups?.find((g) => g.name === activeLayoutGroupName) : undefined),
+        () =>
+            activeLayoutGroupName
+                ? layoutSettings.layoutGroups?.find((g) => g.name === activeLayoutGroupName)
+                : undefined,
         [layoutSettings.layoutGroups, activeLayoutGroupName],
     );
 
@@ -388,11 +379,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // second so disk-served assets are still resolvable when running against local Koa
     // (Electron / local browser). When neither yields a URL the leaves fall back to no-op.
     const assetResolver = React.useMemo<AssetResolver>(
-        () =>
-            combineResolvers(
-                createZipAssetResolver(layoutAssets),
-                createShowFileResolver(effectiveFrameServerUrl),
-            ),
+        () => combineResolvers(createZipAssetResolver(layoutAssets), createShowFileResolver(effectiveFrameServerUrl)),
         [layoutAssets, effectiveFrameServerUrl],
     );
 
@@ -542,7 +529,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             // (500ms → 1s → 2s → 4s, capped at 4s) until the server has
             // the new data ready.
             let delay = 0;
-            for (; ;) {
+            for (;;) {
                 if (cancelled) return;
                 if (delay > 0) {
                     await new Promise((r) => setTimeout(r, delay));
@@ -556,8 +543,18 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         };
 
         loadFromXml();
-        return () => { cancelled = true; };
-    }, [initialModelData, initialModelData2D, initialLayoutSettings, initialViewObjects, initialMovingHeadFixtures, showDirectory, effectiveFrameServerUrl]);
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        initialModelData,
+        initialModelData2D,
+        initialLayoutSettings,
+        initialViewObjects,
+        initialMovingHeadFixtures,
+        showDirectory,
+        effectiveFrameServerUrl,
+    ]);
 
     // Handle item selection - detect model from point metadata and select entire model
     const handleItemClick = useCallback(
@@ -637,46 +634,52 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Handle view mode change — capture the current viewer's camera state
     // before switching so it can be restored when the user toggles back.
-    const handleViewModeChange = useCallback((_event: React.MouseEvent<HTMLElement>, newMode: ViewMode | null) => {
-        if (newMode !== null) {
-            // Snapshot the outgoing viewer's camera so it can be restored later
-            if (viewMode === '3d' && getCurrentCameraState3DRef.current) {
-                const state = getCurrentCameraState3DRef.current();
-                if (state) setCameraState3D(state);
-            } else if (viewMode === '2d' && getCurrentCameraState2DRef.current) {
-                const state = getCurrentCameraState2DRef.current();
-                if (state) setCameraState2D(state);
+    const handleViewModeChange = useCallback(
+        (_event: React.MouseEvent<HTMLElement>, newMode: ViewMode | null) => {
+            if (newMode !== null) {
+                // Snapshot the outgoing viewer's camera so it can be restored later
+                if (viewMode === '3d' && getCurrentCameraState3DRef.current) {
+                    const state = getCurrentCameraState3DRef.current();
+                    if (state) setCameraState3D(state);
+                } else if (viewMode === '2d' && getCurrentCameraState2DRef.current) {
+                    const state = getCurrentCameraState2DRef.current();
+                    if (state) setCameraState2D(state);
+                }
+                setViewMode(newMode);
             }
-            setViewMode(newMode);
-        }
-    }, [viewMode]);
+        },
+        [viewMode],
+    );
 
-    const handlePreviewSelectionChange = useCallback((event: SelectChangeEvent<PreviewSelectionValue>) => {
-        const nextSelection = event.target.value as PreviewSelectionValue;
-        const currentSelectionState: SelectionViewState = {
-            mode: viewMode,
-            cameraState2D: getCurrentCameraState2DRef.current?.() ?? cameraState2D,
-            cameraState3D: getCurrentCameraState3DRef.current?.() ?? cameraState3D,
-        };
+    const handlePreviewSelectionChange = useCallback(
+        (event: SelectChangeEvent<PreviewSelectionValue>) => {
+            const nextSelection = event.target.value as PreviewSelectionValue;
+            const currentSelectionState: SelectionViewState = {
+                mode: viewMode,
+                cameraState2D: getCurrentCameraState2DRef.current?.() ?? cameraState2D,
+                cameraState3D: getCurrentCameraState3DRef.current?.() ?? cameraState3D,
+            };
 
-        // Snapshot the outgoing selection's view state; the sync-to-storage effect handles persistence.
-        setViewStateBySelection((prev) => ({ ...prev, [previewSelection]: currentSelectionState }));
+            // Snapshot the outgoing selection's view state; the sync-to-storage effect handles persistence.
+            setViewStateBySelection((prev) => ({ ...prev, [previewSelection]: currentSelectionState }));
 
-        const nextState = viewStateBySelection[nextSelection];
-        if (nextState) {
-            setViewMode(nextState.mode);
-            setCameraState2D(nextState.cameraState2D);
-            setCameraState3D(nextState.cameraState3D);
-            setShouldAutoFit(false);
-        } else {
-            setCameraState2D(null);
-            setCameraState3D(null);
-            setShouldAutoFit(true);
-        }
-        setPreviewSelection(nextSelection);
-        setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
-        setSelectedModelNames(new Set<string>());
-    }, [previewSelection, viewMode, cameraState2D, cameraState3D, viewStateBySelection]);
+            const nextState = viewStateBySelection[nextSelection];
+            if (nextState) {
+                setViewMode(nextState.mode);
+                setCameraState2D(nextState.cameraState2D);
+                setCameraState3D(nextState.cameraState3D);
+                setShouldAutoFit(false);
+            } else {
+                setCameraState2D(null);
+                setCameraState3D(null);
+                setShouldAutoFit(true);
+            }
+            setPreviewSelection(nextSelection);
+            setSelectionState({ selectedIds: new Set<string>(), hoveredId: null });
+            setSelectedModelNames(new Set<string>());
+        },
+        [previewSelection, viewMode, cameraState2D, cameraState3D, viewStateBySelection],
+    );
 
     // Handle settings button click
     const handleSettingsClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
@@ -699,7 +702,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             try {
                 const raw = localStorage.getItem(previewSettingsStorageKey);
                 if (raw) existing = JSON.parse(raw);
-            } catch { /* ignore parse errors */ }
+            } catch {
+                /* ignore parse errors */
+            }
 
             const updated = {
                 ...existing,
@@ -777,7 +782,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             try {
                 const raw = localStorage.getItem(previewSettingsStorageKey);
                 if (raw) existing = JSON.parse(raw);
-            } catch { /* ignore parse errors */ }
+            } catch {
+                /* ignore parse errors */
+            }
             localStorage.setItem(
                 previewSettingsStorageKey,
                 JSON.stringify({
@@ -939,7 +946,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         );
     }
 
-    const hasRenderablePoints = Boolean(renderedModelData && renderedModelData.points && renderedModelData.points.length > 0);
+    const hasRenderablePoints = Boolean(
+        renderedModelData && renderedModelData.points && renderedModelData.points.length > 0,
+    );
     const isEmptySelectedGroup = !hasRenderablePoints && Boolean(activeLayoutGroupName);
 
     if (!hasRenderablePoints && !isEmptySelectedGroup) {
@@ -1224,66 +1233,68 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 {`No models in preview group "${activeLayoutGroupName}". Use the Preview dropdown to switch groups.`}
                             </Typography>
                         </Box>
-                    ) : (() => {
-                        // Use ONLY house model brightness - do NOT use background image brightness
-                        // The slider value (0-200) is converted to a multiplier (0-2x)
-                        // Example: slider at 100% = 1x multiplier, slider at 200% = 2x multiplier
+                    ) : (
+                        (() => {
+                            // Use ONLY house model brightness - do NOT use background image brightness
+                            // The slider value (0-200) is converted to a multiplier (0-2x)
+                            // Example: slider at 100% = 1x multiplier, slider at 200% = 2x multiplier
 
-                        return viewMode === '3d' ? (
-                            <Viewer3D
-                                points={renderedModelData?.points ?? []}
-                                shapes={renderedModelData?.shapes}
-                                liveData={liveData}
-                                selectedIds={selectionState.selectedIds}
-                                hoveredId={selectionState.hoveredId}
-                                onPointClick={disableModelSelection ? undefined : handleItemClick}
-                                onPointHover={disableModelSelection ? undefined : handleItemHover}
-                                pointSize={pointSize}
-                                selectedModelNames={selectedModelNames}
-                                modelMetadata={renderedModelData?.metadata?.models}
-                                viewObjects={viewObjects}
-                                frameServerUrl={effectiveFrameServerUrl}
-                                assetResolver={assetResolver}
-                                movingHeadFixtures={movingHeadFixtures}
-                                backgroundBrightness={undefined}
-                                brightnessMultiplier={previewSettings.brightnessMultiplier}
-                                pixelSizeMultiplier={previewSettings.pixelSize}
-                                cameraState={cameraState3D}
-                                shouldAutoFit={shouldAutoFit}
-                                onAutoFitComplete={handleAutoFitComplete}
-                                cameraStateLoaded={cameraStateLoaded}
-                                onGetCurrentCameraState={handleGetCurrentCameraState3D}
-                                fillContainer={compact}
-                                forceOrbitControls={preferOrbitControls}
-                            />
-                        ) : (
-                            <Viewer2D
-                                points={renderedModelData2D.points}
-                                shapes={renderedModelData2D.shapes}
-                                liveData={liveData}
-                                selectedIds={selectionState.selectedIds}
-                                hoveredId={selectionState.hoveredId}
-                                onPointClick={disableModelSelection ? undefined : handleItemClick}
-                                onPointHover={disableModelSelection ? undefined : handleItemHover}
-                                viewPlane={'xy'}
-                                pointSize={pointSize}
-                                selectedModelNames={selectedModelNames}
-                                modelMetadata={renderedModelData2D.metadata?.models}
-                                layoutSettings={effectiveLayoutSettings}
-                                frameServerUrl={effectiveFrameServerUrl}
-                                assetResolver={assetResolver}
-                                movingHeadFixtures={movingHeadFixtures}
-                                backgroundBrightness={undefined}
-                                pixelSizeMultiplier={previewSettings.pixelSize}
-                                cameraState={cameraState2D}
-                                shouldAutoFit={shouldAutoFit}
-                                onAutoFitComplete={handleAutoFitComplete}
-                                cameraStateLoaded={cameraStateLoaded}
-                                onGetCurrentCameraState={handleGetCurrentCameraState2D}
-                                fillContainer={compact}
-                            />
-                        );
-                    })()}
+                            return viewMode === '3d' ? (
+                                <Viewer3D
+                                    points={renderedModelData?.points ?? []}
+                                    shapes={renderedModelData?.shapes}
+                                    liveData={liveData}
+                                    selectedIds={selectionState.selectedIds}
+                                    hoveredId={selectionState.hoveredId}
+                                    onPointClick={disableModelSelection ? undefined : handleItemClick}
+                                    onPointHover={disableModelSelection ? undefined : handleItemHover}
+                                    pointSize={pointSize}
+                                    selectedModelNames={selectedModelNames}
+                                    modelMetadata={renderedModelData?.metadata?.models}
+                                    viewObjects={viewObjects}
+                                    frameServerUrl={effectiveFrameServerUrl}
+                                    assetResolver={assetResolver}
+                                    movingHeadFixtures={movingHeadFixtures}
+                                    backgroundBrightness={undefined}
+                                    brightnessMultiplier={previewSettings.brightnessMultiplier}
+                                    pixelSizeMultiplier={previewSettings.pixelSize}
+                                    cameraState={cameraState3D}
+                                    shouldAutoFit={shouldAutoFit}
+                                    onAutoFitComplete={handleAutoFitComplete}
+                                    cameraStateLoaded={cameraStateLoaded}
+                                    onGetCurrentCameraState={handleGetCurrentCameraState3D}
+                                    fillContainer={compact}
+                                    forceOrbitControls={preferOrbitControls}
+                                />
+                            ) : (
+                                <Viewer2D
+                                    points={renderedModelData2D.points}
+                                    shapes={renderedModelData2D.shapes}
+                                    liveData={liveData}
+                                    selectedIds={selectionState.selectedIds}
+                                    hoveredId={selectionState.hoveredId}
+                                    onPointClick={disableModelSelection ? undefined : handleItemClick}
+                                    onPointHover={disableModelSelection ? undefined : handleItemHover}
+                                    viewPlane={'xy'}
+                                    pointSize={pointSize}
+                                    selectedModelNames={selectedModelNames}
+                                    modelMetadata={renderedModelData2D.metadata?.models}
+                                    layoutSettings={effectiveLayoutSettings}
+                                    frameServerUrl={effectiveFrameServerUrl}
+                                    assetResolver={assetResolver}
+                                    movingHeadFixtures={movingHeadFixtures}
+                                    backgroundBrightness={undefined}
+                                    pixelSizeMultiplier={previewSettings.pixelSize}
+                                    cameraState={cameraState2D}
+                                    shouldAutoFit={shouldAutoFit}
+                                    onAutoFitComplete={handleAutoFitComplete}
+                                    cameraStateLoaded={cameraStateLoaded}
+                                    onGetCurrentCameraState={handleGetCurrentCameraState2D}
+                                    fillContainer={compact}
+                                />
+                            );
+                        })()
+                    )}
                 </Box>
 
                 {showItemList && (

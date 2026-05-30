@@ -789,7 +789,14 @@ export class FSEQReaderAsync {
 }
 
 export function summarizeFSEQHeader(hdr: FSEQHeader): string {
-    const comp = hdr.compression === 0 ? 'none' : hdr.compression === 1 ? 'zstd' : hdr.compression === 2 ? 'zlib' : `unknown(${hdr.compression})`;
+    const comp =
+        hdr.compression === 0
+            ? 'none'
+            : hdr.compression === 1
+              ? 'zstd'
+              : hdr.compression === 2
+                ? 'zlib'
+                : `unknown(${hdr.compression})`;
     return (
         `v${hdr.majver}.${hdr.minver} ${hdr.hdr4}; ` +
         `channels=${hdr.channels} stepsize=${hdr.stepsize} ` +
@@ -803,7 +810,9 @@ export function formatFSEQHeader(hdr: FSEQHeader): string {
     const lines: string[] = [];
     lines.push(summarizeFSEQHeader(hdr));
     if (hdr.channels !== hdr.stepsize) {
-        lines.push(`  NOTE: stepsize (${hdr.stepsize}) != channels (${hdr.channels}) — frame data padded by ${hdr.stepsize - hdr.channels} byte(s)`);
+        lines.push(
+            `  NOTE: stepsize (${hdr.stepsize}) != channels (${hdr.channels}) — frame data padded by ${hdr.stepsize - hdr.channels} byte(s)`,
+        );
     }
     for (const k of Object.keys(hdr.headers)) {
         lines.push(`  extra[${k}]=${hdr.headers[k]}`);

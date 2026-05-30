@@ -164,9 +164,7 @@ const allMenuRoutes: MenuRoute[] = [
     },
 ];
 
-const menuRoutes: MenuRoute[] = isKiosk
-    ? allMenuRoutes.filter((r) => !KIOSK_HIDDEN_ROUTES.has(r.path))
-    : allMenuRoutes;
+const menuRoutes: MenuRoute[] = isKiosk ? allMenuRoutes.filter((r) => !KIOSK_HIDDEN_ROUTES.has(r.path)) : allMenuRoutes;
 
 const routes: RouteObject[] = [
     {

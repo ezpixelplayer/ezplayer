@@ -75,7 +75,8 @@ export const TimeInput: React.FC<{
     const handleTimeKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         const { key, target } = event;
         const input = target as HTMLInputElement;
-        if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab', 'Enter', 'Escape', 'Backspace', 'Delete'].includes(key)) return;
+        if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab', 'Enter', 'Escape', 'Backspace', 'Delete'].includes(key))
+            return;
         if (key === ':') return;
         if (event.ctrlKey && ['a', 'c', 'v', 'x'].includes(key.toLowerCase())) return;
         if (/^[0-9]$/.test(key)) {

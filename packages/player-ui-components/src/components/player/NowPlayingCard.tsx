@@ -152,9 +152,7 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                 )}
 
                 {/* Playback controls — only when playing or paused */}
-                {isActive && (
-                    <QueueAndControlStack />
-                )}
+                {isActive && <QueueAndControlStack />}
 
                 {/* Reload schedule button — only when stopped */}
                 {!isActive && (

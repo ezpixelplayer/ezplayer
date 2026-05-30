@@ -2,7 +2,7 @@
  * Types for communication between main thread and server worker
  */
 
-import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from "./playbacktypes";
+import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 
 export interface ServerWorkerData {
     port: number;

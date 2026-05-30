@@ -278,7 +278,11 @@ function openCloudBridge(
     // or different session: tear down any existing bridge and dial.
     if (cloudBridge) {
         clearTimeout(cloudBridge.ttlTimer);
-        try { cloudBridge.ws.close(); } catch { /* ignore */ }
+        try {
+            cloudBridge.ws.close();
+        } catch {
+            /* ignore */
+        }
         cloudBridge = undefined;
     }
     let ws: WebSocket;
@@ -316,7 +320,11 @@ function closeCloudBridge(sessionId?: string) {
     if (!cloudBridge) return;
     if (sessionId !== undefined && cloudBridge.sessionId !== sessionId) return;
     clearTimeout(cloudBridge.ttlTimer);
-    try { cloudBridge.ws.close(); } catch { /* ignore */ }
+    try {
+        cloudBridge.ws.close();
+    } catch {
+        /* ignore */
+    }
     cloudBridge = undefined;
 }
 
@@ -340,7 +348,11 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     if (cloudProxyBridge) {
         clearTimeout(cloudProxyBridge.ttlTimer);
-        try { cloudProxyBridge.ws.close(); } catch { /* ignore */ }
+        try {
+            cloudProxyBridge.ws.close();
+        } catch {
+            /* ignore */
+        }
         cloudProxyBridge = undefined;
     }
     let ws: WebSocket;
@@ -363,7 +375,12 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         // resolves and the browser sees a clear failure instead of timing out.
         let reqId: string | undefined;
         try {
-            const msg = JSON.parse(raw.toString()) as { type?: string; reqId?: string; path?: string; query?: Record<string, string> };
+            const msg = JSON.parse(raw.toString()) as {
+                type?: string;
+                reqId?: string;
+                path?: string;
+                query?: Record<string, string>;
+            };
             if (msg?.type !== 'httpProxyRequest' || typeof msg.reqId !== 'string') return;
             reqId = msg.reqId;
             void dispatchHttpProxy(msg.path ?? '', msg.query).then((res) => {
@@ -374,7 +391,9 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
             if (reqId) {
                 try {
                     ws.send(JSON.stringify({ type: 'httpProxyResponse', reqId, status: 500 }));
-                } catch { /* ignore */ }
+                } catch {
+                    /* ignore */
+                }
             }
         }
     });
@@ -394,7 +413,11 @@ function closeCloudProxyBridge(sessionId?: string) {
     if (!cloudProxyBridge) return;
     if (sessionId !== undefined && cloudProxyBridge.sessionId !== sessionId) return;
     clearTimeout(cloudProxyBridge.ttlTimer);
-    try { cloudProxyBridge.ws.close(); } catch { /* ignore */ }
+    try {
+        cloudProxyBridge.ws.close();
+    } catch {
+        /* ignore */
+    }
     cloudProxyBridge = undefined;
 }
 
@@ -426,7 +449,11 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     if (cloudAudioBridge) {
         clearTimeout(cloudAudioBridge.ttlTimer);
         if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
-        try { cloudAudioBridge.ws.close(); } catch { /* ignore */ }
+        try {
+            cloudAudioBridge.ws.close();
+        } catch {
+            /* ignore */
+        }
         cloudAudioBridge = undefined;
     }
     let ws: WebSocket;
@@ -460,12 +487,18 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
                 const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
                 const buf = Buffer.allocUnsafe(totalSize);
                 let off = 0;
-                buf.writeDoubleLE(serverNow, off); off += 8;
-                buf.writeDoubleLE(chunk.playAtRealTime, off); off += 8;
-                buf.writeUInt32LE(chunk.incarnation, off); off += 4;
-                buf.writeUInt32LE(chunk.sampleRate, off); off += 4;
-                buf.writeUInt32LE(chunk.channels, off); off += 4;
-                buf.writeUInt32LE(chunk.samples.length, off); off += 4;
+                buf.writeDoubleLE(serverNow, off);
+                off += 8;
+                buf.writeDoubleLE(chunk.playAtRealTime, off);
+                off += 8;
+                buf.writeUInt32LE(chunk.incarnation, off);
+                off += 4;
+                buf.writeUInt32LE(chunk.sampleRate, off);
+                off += 4;
+                buf.writeUInt32LE(chunk.channels, off);
+                off += 4;
+                buf.writeUInt32LE(chunk.samples.length, off);
+                off += 4;
                 const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
                 src.copy(buf, off);
                 try {
@@ -495,7 +528,11 @@ function closeCloudAudioBridge(sessionId?: string) {
     if (sessionId !== undefined && cloudAudioBridge.sessionId !== sessionId) return;
     clearTimeout(cloudAudioBridge.ttlTimer);
     if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
-    try { cloudAudioBridge.ws.close(); } catch { /* ignore */ }
+    try {
+        cloudAudioBridge.ws.close();
+    } catch {
+        /* ignore */
+    }
     cloudAudioBridge = undefined;
 }
 
@@ -511,34 +548,40 @@ function sendProxyResponse(
     const body = res.body;
     try {
         if (!body || body.length <= PROXY_CHUNK_SIZE) {
-            ws.send(JSON.stringify({
+            ws.send(
+                JSON.stringify({
+                    type: 'httpProxyResponse',
+                    reqId,
+                    status: res.status,
+                    headers: res.headers,
+                    bodyBase64: body && body.length > 0 ? body.toString('base64') : undefined,
+                }),
+            );
+            return;
+        }
+        // Chunked path: status+headers first, then body in PROXY_CHUNK_SIZE pieces.
+        ws.send(
+            JSON.stringify({
                 type: 'httpProxyResponse',
                 reqId,
                 status: res.status,
                 headers: res.headers,
-                bodyBase64: body && body.length > 0 ? body.toString('base64') : undefined,
-            }));
-            return;
-        }
-        // Chunked path: status+headers first, then body in PROXY_CHUNK_SIZE pieces.
-        ws.send(JSON.stringify({
-            type: 'httpProxyResponse',
-            reqId,
-            status: res.status,
-            headers: res.headers,
-            chunked: true,
-        }));
+                chunked: true,
+            }),
+        );
         let seq = 0;
         for (let off = 0; off < body.length; off += PROXY_CHUNK_SIZE) {
             const end = off + PROXY_CHUNK_SIZE >= body.length;
             const slice = body.subarray(off, off + PROXY_CHUNK_SIZE);
-            ws.send(JSON.stringify({
-                type: 'httpProxyChunk',
-                reqId,
-                seq,
-                bodyBase64: slice.toString('base64'),
-                ...(end ? { end: true } : {}),
-            }));
+            ws.send(
+                JSON.stringify({
+                    type: 'httpProxyChunk',
+                    reqId,
+                    seq,
+                    bodyBase64: slice.toString('base64'),
+                    ...(end ? { end: true } : {}),
+                }),
+            );
             seq += 1;
         }
     } catch (err) {
@@ -629,14 +672,21 @@ function dispatchAudio(afterSeq: number): { status: number; headers?: Record<str
     }
     const buf = Buffer.allocUnsafe(totalSize);
     let off = 0;
-    buf.writeUInt32LE(chunks.length, off); off += 4;
-    buf.writeUInt32LE(chunks[chunks.length - 1].seq, off); off += 4;
+    buf.writeUInt32LE(chunks.length, off);
+    off += 4;
+    buf.writeUInt32LE(chunks[chunks.length - 1].seq, off);
+    off += 4;
     for (const chunk of chunks) {
-        buf.writeDoubleLE(chunk.playAtRealTime, off); off += 8;
-        buf.writeUInt32LE(chunk.incarnation, off); off += 4;
-        buf.writeUInt32LE(chunk.sampleRate, off); off += 4;
-        buf.writeUInt32LE(chunk.channels, off); off += 4;
-        buf.writeUInt32LE(chunk.samples.length, off); off += 4;
+        buf.writeDoubleLE(chunk.playAtRealTime, off);
+        off += 8;
+        buf.writeUInt32LE(chunk.incarnation, off);
+        off += 4;
+        buf.writeUInt32LE(chunk.sampleRate, off);
+        off += 4;
+        buf.writeUInt32LE(chunk.channels, off);
+        off += 4;
+        buf.writeUInt32LE(chunk.samples.length, off);
+        off += 4;
         const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
         src.copy(buf, off);
         off += chunk.samples.byteLength;
@@ -681,25 +731,24 @@ function jsonResult(value: unknown): { status: number; headers: Record<string, s
     };
 }
 
-async function dispatchShowFile(filePath: string | undefined): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+async function dispatchShowFile(
+    filePath: string | undefined,
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
     const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
     if (!showFolder) return { status: 400 };
     if (!filePath) return { status: 400 };
     if (path.isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath)) return { status: 400 };
     const segments = filePath.replace(/\\/g, '/').split('/');
     if (segments.some((s) => s === '..')) return { status: 403 };
-    const allowedExt = new Set([
-        '.obj', '.mtl',
-        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds',
-    ]);
+    const allowedExt = new Set(['.obj', '.mtl', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds']);
     const ext = path.extname(filePath).toLowerCase();
     if (!allowedExt.has(ext)) return { status: 403 };
     try {
         const resolvedShowFolder = path.resolve(showFolder);
         const resolvedPath = path.resolve(resolvedShowFolder, filePath);
         const inFolder =
-            resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep)
-            || resolvedPath.toLowerCase() === resolvedShowFolder.toLowerCase();
+            resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep) ||
+            resolvedPath.toLowerCase() === resolvedShowFolder.toLowerCase();
         if (!inFolder) return { status: 403 };
         if (!(await exists(resolvedPath))) return { status: 404 };
         const buf = await fsp.readFile(resolvedPath);
@@ -740,7 +789,9 @@ async function listenWithFallback(
                 server.listen(candidate);
             });
             if (candidate !== preferredPort) {
-                console.warn(`[server-worker] ${label}: preferred port ${preferredPort} unavailable, bound ${candidate}`);
+                console.warn(
+                    `[server-worker] ${label}: preferred port ${preferredPort} unavailable, bound ${candidate}`,
+                );
             }
             return candidate;
         } catch (err) {
@@ -856,7 +907,7 @@ async function startServer(config: ServerWorkerData) {
             showFolder,
             hasShowFolder: !!showFolder,
             allStateKeys: Object.keys(state),
-            state: state
+            state: state,
         };
     });
 
@@ -1011,17 +1062,14 @@ async function startServer(config: ServerWorkerData) {
 
         // Reject path-traversal attempts
         const segments = filePath.replace(/\\/g, '/').split('/');
-        if (segments.some(s => s === '..')) {
+        if (segments.some((s) => s === '..')) {
             ctx.status = 403;
             ctx.body = { error: 'Path traversal not allowed' };
             return;
         }
 
         // Security: only serve a limited set of file types used by the 3D viewer.
-        const allowedExt = new Set([
-            '.obj', '.mtl',
-            '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds',
-        ]);
+        const allowedExt = new Set(['.obj', '.mtl', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tga', '.dds']);
         const ext = path.extname(filePath).toLowerCase();
         if (!allowedExt.has(ext)) {
             ctx.status = 403;
@@ -1034,14 +1082,16 @@ async function startServer(config: ServerWorkerData) {
             const resolvedPath = path.resolve(resolvedShowFolder, filePath);
 
             // Defense-in-depth: verify resolved path is still within show folder
-            if (!resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep)
-                && resolvedPath.toLowerCase() !== resolvedShowFolder.toLowerCase()) {
+            if (
+                !resolvedPath.toLowerCase().startsWith(resolvedShowFolder.toLowerCase() + path.sep) &&
+                resolvedPath.toLowerCase() !== resolvedShowFolder.toLowerCase()
+            ) {
                 ctx.status = 403;
                 ctx.body = { error: 'Resolved path outside show folder' };
                 return;
             }
 
-            if (!await exists(resolvedPath)) {
+            if (!(await exists(resolvedPath))) {
                 ctx.status = 404;
                 ctx.body = { error: 'File not found' };
                 return;
@@ -1223,16 +1273,23 @@ async function startServer(config: ServerWorkerData) {
         let offset = 0;
 
         // Write header
-        buf.writeUInt32LE(chunks.length, offset); offset += 4;
-        buf.writeUInt32LE(chunks[chunks.length - 1].seq, offset); offset += 4;
+        buf.writeUInt32LE(chunks.length, offset);
+        offset += 4;
+        buf.writeUInt32LE(chunks[chunks.length - 1].seq, offset);
+        offset += 4;
 
         // Write each chunk
         for (const chunk of chunks) {
-            buf.writeDoubleLE(chunk.playAtRealTime, offset); offset += 8;
-            buf.writeUInt32LE(chunk.incarnation, offset); offset += 4;
-            buf.writeUInt32LE(chunk.sampleRate, offset); offset += 4;
-            buf.writeUInt32LE(chunk.channels, offset); offset += 4;
-            buf.writeUInt32LE(chunk.samples.length, offset); offset += 4;
+            buf.writeDoubleLE(chunk.playAtRealTime, offset);
+            offset += 8;
+            buf.writeUInt32LE(chunk.incarnation, offset);
+            offset += 4;
+            buf.writeUInt32LE(chunk.sampleRate, offset);
+            offset += 4;
+            buf.writeUInt32LE(chunk.channels, offset);
+            offset += 4;
+            buf.writeUInt32LE(chunk.samples.length, offset);
+            offset += 4;
 
             // Copy Float32 audio data from SAB view into response buffer
             const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);

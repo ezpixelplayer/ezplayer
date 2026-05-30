@@ -42,11 +42,7 @@ import { Box } from '../box/Box';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
 import { postSetPlayerIdToken } from '../../store/slices/AuthStore';
-import type {
-    CloudFileEntry,
-    CloudFileStatus,
-    CloudSequenceProgress,
-} from '@ezplayer/ezplayer-core';
+import type { CloudFileEntry, CloudFileStatus, CloudSequenceProgress } from '@ezplayer/ezplayer-core';
 
 interface CloudPageProps {
     title: string;
@@ -80,10 +76,7 @@ const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => 
 
 type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error';
 
-const STATUS_COLOR: Record<
-    RolledUpStatus | CloudFileStatus,
-    'default' | 'info' | 'warning' | 'success' | 'error'
-> = {
+const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
     known: 'default',
     downloading: 'info',
     staged: 'warning',
@@ -149,10 +142,7 @@ const SequenceRow: React.FC<{
     const totalBytes = files.reduce((s, f) => s + (f.totalBytes ?? 0), 0);
     const doneBytes = files.reduce((s, f) => s + (f.bytes ?? 0), 0);
     // Per-sequence "last updated" = newest cloud file_time across the sequence's files.
-    const newestFileTime = files.reduce(
-        (acc, f) => (f.file_time && f.file_time > acc ? f.file_time : acc),
-        0,
-    );
+    const newestFileTime = files.reduce((acc, f) => (f.file_time && f.file_time > acc ? f.file_time : acc), 0);
 
     return (
         <>
@@ -190,15 +180,12 @@ const SequenceRow: React.FC<{
                                     {files.map((f) => {
                                         const pct =
                                             f.status === 'downloading' && f.totalBytes
-                                                ? Math.min(
-                                                      100,
-                                                      ((f.bytes ?? 0) / f.totalBytes) * 100,
-                                                  )
+                                                ? Math.min(100, ((f.bytes ?? 0) / f.totalBytes) * 100)
                                                 : undefined;
                                         const fullPath =
                                             f.filename && showFolder
                                                 ? `${showFolder}/${f.filename}`
-                                                : f.filename ?? '';
+                                                : (f.filename ?? '');
                                         return (
                                             <TableRow key={f.file_id}>
                                                 <TableCell>{f.kind}</TableCell>
@@ -225,10 +212,7 @@ const SequenceRow: React.FC<{
                                                     {f.status === 'downloading' ? (
                                                         pct !== undefined ? (
                                                             <Box>
-                                                                <LinearProgress
-                                                                    variant="determinate"
-                                                                    value={pct}
-                                                                />
+                                                                <LinearProgress variant="determinate" value={pct} />
                                                                 <Typography variant="caption">
                                                                     {pct.toFixed(0)}%
                                                                 </Typography>
@@ -238,9 +222,7 @@ const SequenceRow: React.FC<{
                                                         )
                                                     ) : null}
                                                 </TableCell>
-                                                <TableCell>
-                                                    {fmtBytes(f.totalBytes ?? f.bytes)}
-                                                </TableCell>
+                                                <TableCell>{fmtBytes(f.totalBytes ?? f.bytes)}</TableCell>
                                                 <TableCell>
                                                     {fullPath && (
                                                         <Tooltip title={`Copy: ${fullPath}`}>
@@ -269,19 +251,12 @@ const SequenceRow: React.FC<{
 export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     const cloudConfig = useSelector((s: RootState) => s.cloudConfig);
     const cloudStatus = useSelector((s: RootState) => s.cloudStatus);
-    const cStatus = useSelector(
-        (s: RootState) => s.runtime.combined.content,
-    );
+    const cStatus = useSelector((s: RootState) => s.runtime.combined.content);
     const showFolder = useSelector((s: RootState) => s.auth.showDirectory);
 
     // Reachability is derived from the last poll: a clean reply means we reached the cloud,
     // an error means we didn't, no checks yet means we don't know.
-    const reachableLabel =
-        cloudStatus.lastCheckedAt === undefined
-            ? '(unknown)'
-            : cloudStatus.lastError
-              ? 'no'
-              : 'yes';
+    const reachableLabel = cloudStatus.lastCheckedAt === undefined ? '(unknown)' : cloudStatus.lastError ? 'no' : 'yes';
 
     const sequencesMap = cStatus?.sequences ?? {};
     const filesMap = cStatus?.files ?? {};
@@ -321,15 +296,12 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
 
     // Mode is the persisted layoutSource. Absent / unknown defaults to xLights —
     // matches the loader's read-side default.
-    const layoutSource: 'xlights' | 'cloud' =
-        cloudConfig.layoutSource === 'cloud' ? 'cloud' : 'xlights';
+    const layoutSource: 'xlights' | 'cloud' = cloudConfig.layoutSource === 'cloud' ? 'cloud' : 'xlights';
 
     // Cloud worker active (false = retained settings, paused).
     const cloudActive = cloudConfig.cloudEnabled !== false;
-    const handlePause = () =>
-        void dispatch(issueCloudCommand({ type: 'setCloudEnabled', enabled: false }));
-    const handleResume = () =>
-        void dispatch(issueCloudCommand({ type: 'setCloudEnabled', enabled: true }));
+    const handlePause = () => void dispatch(issueCloudCommand({ type: 'setCloudEnabled', enabled: false }));
+    const handleResume = () => void dispatch(issueCloudCommand({ type: 'setCloudEnabled', enabled: true }));
 
     // Registration dialog (single instance, shared between top-card "Register" and
     // bottom-card "Edit"). Same `PlayerCloudRegistrationDialog` is the more thorough
@@ -364,9 +336,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
     };
 
     const isRegistered = cloudStatus.playerIdIsRegistered;
-    const anyDownloading = Object.values(cStatus?.files ?? {}).some(
-        (f) => f.status === 'downloading',
-    );
+    const anyDownloading = Object.values(cStatus?.files ?? {}).some((f) => f.status === 'downloading');
     const totalSeq = Object.keys(cStatus?.sequences ?? {}).length;
     const installedSeq = Object.values(cStatus?.sequences ?? {}).reduce((acc, s) => {
         const files = s.fileIds.map((id) => cStatus?.files?.[id]).filter(Boolean) as CloudFileEntry[];
@@ -559,12 +529,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                         </Button>
                                     </span>
                                 </Tooltip>
-                                <Button
-                                    startIcon={<PauseIcon />}
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={handlePause}
-                                >
+                                <Button startIcon={<PauseIcon />} variant="outlined" size="small" onClick={handlePause}>
                                     Pause
                                 </Button>
                             </Stack>
@@ -574,9 +539,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                     variant="text"
                                     size="small"
                                     onClick={() =>
-                                        dispatch(
-                                            issueCloudCommand({ type: 'setLayoutSource', mode: 'cloud' }),
-                                        )
+                                        dispatch(issueCloudCommand({ type: 'setLayoutSource', mode: 'cloud' }))
                                     }
                                 >
                                     Switch to Cloud-managed
@@ -607,12 +570,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                 >
                                     {syncing || layoutFetching ? 'Syncing…' : 'Sync Layout + Content'}
                                 </Button>
-                                <Button
-                                    startIcon={<PauseIcon />}
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={handlePause}
-                                >
+                                <Button startIcon={<PauseIcon />} variant="outlined" size="small" onClick={handlePause}>
                                     Pause
                                 </Button>
                             </Stack>
@@ -622,9 +580,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                     variant="text"
                                     size="small"
                                     onClick={() =>
-                                        dispatch(
-                                            issueCloudCommand({ type: 'setLayoutSource', mode: 'xlights' }),
-                                        )
+                                        dispatch(issueCloudCommand({ type: 'setLayoutSource', mode: 'xlights' }))
                                     }
                                 >
                                     Switch to xLights-managed
@@ -648,10 +604,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                         Cloud Status
                     </Typography>
                     <Field label="Cloud Reachable" value={reachableLabel} />
-                    <Field
-                        label="Player Registered"
-                        value={cloudStatus.playerIdIsRegistered ? 'yes' : 'no'}
-                    />
+                    <Field label="Player Registered" value={cloudStatus.playerIdIsRegistered ? 'yes' : 'no'} />
                     <Field label="Cloud Version" value={cloudStatus.cloudVersion ?? '(unknown)'} />
                     <Field label="Last Checked" value={formatTimestamp(cloudStatus.lastCheckedAt)} />
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
@@ -699,10 +652,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                         <Box sx={{ mt: 1 }}>
                             <LinearProgress
                                 variant="determinate"
-                                value={Math.min(
-                                    100,
-                                    ((layout.bytes ?? 0) / layout.totalBytes) * 100,
-                                )}
+                                value={Math.min(100, ((layout.bytes ?? 0) / layout.totalBytes) * 100)}
                             />
                             <Typography variant="caption">
                                 {fmtBytes(layout.bytes)} / {fmtBytes(layout.totalBytes)}
@@ -718,9 +668,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                         <Typography variant="h6" sx={{ color: 'primary.main' }}>
                             Cloud Content
                         </Typography>
-                        {cStatus?.halted && (
-                            <Chip label="halted" color="error" size="small" />
-                        )}
+                        {cStatus?.halted && <Chip label="halted" color="error" size="small" />}
                     </Box>
                     <Field label="Last Manifest" value={formatTimestamp(cStatus?.lastManifestAt)} />
                     <Field label="Last Error" value={cStatus?.lastError ?? '(none)'} />
@@ -779,17 +727,13 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                     <Field label="Player ID Token" value={cloudConfig.playerIdToken || '(not set)'} />
                 </Card>
             </Box>
-            <PlayerCloudRegistrationDialog
-                open={regDialogOpen}
-                onClose={() => setRegDialogOpen(false)}
-            />
+            <PlayerCloudRegistrationDialog open={regDialogOpen} onClose={() => setRegDialogOpen(false)} />
             <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>
                 <DialogTitle>Disconnect from cloud?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        This clears the Player ID token. The cloud server will eventually
-                        deregister this player. Your show folder and Cloud URL are
-                        retained — re-registering is one click on the Welcome / Register
+                        This clears the Player ID token. The cloud server will eventually deregister this player. Your
+                        show folder and Cloud URL are retained — re-registering is one click on the Welcome / Register
                         screen.
                     </DialogContentText>
                 </DialogContent>

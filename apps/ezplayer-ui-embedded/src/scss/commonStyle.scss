@@ -3,7 +3,9 @@
 
 // Override the MUI CssBaseline rigid height: 100% so the page can grow
 // beyond the viewport and the browser's native scrollbar takes over.
-html, body, #root {
+html,
+body,
+#root {
     height: auto !important;
     min-height: 100% !important;
 }

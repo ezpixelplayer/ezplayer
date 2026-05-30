@@ -71,10 +71,13 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
 
     // Uniforms are memoized so the same object is mutated imperatively in useFrame
     // rather than replaced on each render.
-    const beamUniforms = useMemo(() => ({
-        uColor: { value: new THREE.Color(1, 1, 1) },
-        uOpacity: { value: 0.6 },
-    }), []);
+    const beamUniforms = useMemo(
+        () => ({
+            uColor: { value: new THREE.Color(1, 1, 1) },
+            uOpacity: { value: 0.6 },
+        }),
+        [],
+    );
 
     const { worldPosX, worldPosY, worldPosZ } = fixture.worldTransform;
 
@@ -159,11 +162,7 @@ function MovingHeadFixture({ fixture, liveData }: MovingHeadFixtureProps) {
         if (baseRadius <= 0) return;
 
         mesh.scale.set(baseRadius, length, baseRadius);
-        mesh.position.set(
-            origin[0] + dx * length * 0.5,
-            origin[1] + dy * length * 0.5,
-            origin[2] + dz * length * 0.5,
-        );
+        mesh.position.set(origin[0] + dx * length * 0.5, origin[1] + dy * length * 0.5, origin[2] + dz * length * 0.5);
         mesh.quaternion.copy(_quat);
 
         // Include white channel (state.w) for RGBW fixtures — additive over RGB

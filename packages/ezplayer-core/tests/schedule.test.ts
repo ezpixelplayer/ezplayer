@@ -1541,9 +1541,7 @@ describe('calcschedule', () => {
         plr.stopImmediately(h + 12_000, stopLogs);
 
         // Only the queued item should be stopped; schedule resumes
-        const stops = stopLogs.filter(
-            (e) => e.eventType === 'Schedule Stopped' || e.eventType === 'Schedule Ended',
-        );
+        const stops = stopLogs.filter((e) => e.eventType === 'Schedule Stopped' || e.eventType === 'Schedule Ended');
         expect(stops.length).toBe(1);
         expect(stops[0].eventType).toBe('Schedule Stopped');
 

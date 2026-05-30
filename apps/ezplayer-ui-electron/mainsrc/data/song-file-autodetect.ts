@@ -95,7 +95,9 @@ export async function extractAudioTagMetadata(audioFilePath: string): Promise<Au
             out.imageFile = outputPath;
             out.imageGeneratedFromAudio = true;
         }
-        console.log(`[SongAutoDetect] "${audioFilePath}" -> title=${out.title ?? '(none)'}, artist=${out.artist ?? '(none)'}, image=${out.imageFile ?? '(none)'}`);
+        console.log(
+            `[SongAutoDetect] "${audioFilePath}" -> title=${out.title ?? '(none)'}, artist=${out.artist ?? '(none)'}, image=${out.imageFile ?? '(none)'}`,
+        );
     } catch (error) {
         console.warn(`[SongAutoDetect] Metadata parse failed for "${audioFilePath}": ${String(error)}`);
     }
@@ -116,9 +118,13 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         const header = await FSEQReaderAsync.readFSEQHeaderAsync(fseqFilePath);
         out.durationSecs = (header.frames * header.msperframe) / 1000;
         const keys = Object.keys(header.headers);
-        console.log(`[SongAutoDetect] FSEQ headers [${keys.join(', ')}]: ${keys.map((k) => `${k}="${header.headers[k]}"`).join(', ') || '(empty)'}`);
+        console.log(
+            `[SongAutoDetect] FSEQ headers [${keys.join(', ')}]: ${keys.map((k) => `${k}="${header.headers[k]}"`).join(', ') || '(empty)'}`,
+        );
         headerAudioName = getAudioNameFromFseqHeader(header.headers);
-        console.log(`[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s`);
+        console.log(
+            `[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s`,
+        );
     } catch (error) {
         console.warn(`[SongAutoDetect] FSEQ header read failed for "${fseqFilePath}":`, String(error));
     }
@@ -130,13 +136,15 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         }
         if (!out.audioFile) {
             const headerBase = path.parse(headerAudioName).name;
-            out.audioFile = await findWithBasename(fseqDir, headerBase, AUDIO_EXTENSIONS)
-                ?? await findWithPrefix(fseqDir, headerBase, AUDIO_EXTENSIONS);
+            out.audioFile =
+                (await findWithBasename(fseqDir, headerBase, AUDIO_EXTENSIONS)) ??
+                (await findWithPrefix(fseqDir, headerBase, AUDIO_EXTENSIONS));
         }
     }
     if (!out.audioFile) {
-        out.audioFile = await findWithBasename(fseqDir, fseqBase, AUDIO_EXTENSIONS)
-            ?? await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS);
+        out.audioFile =
+            (await findWithBasename(fseqDir, fseqBase, AUDIO_EXTENSIONS)) ??
+            (await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS));
     }
 
     if (out.audioFile) {
@@ -155,10 +163,13 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             out.imageGeneratedFromAudio = metadata.imageGeneratedFromAudio;
         }
     } else {
-        out.imageFile = await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS)
-            ?? await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS);
+        out.imageFile =
+            (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS)) ??
+            (await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS));
     }
 
-    console.log(`[SongAutoDetect] FSEQ "${fseqBase}" -> audio=${out.audioFile ?? '(none)'}, image=${out.imageFile ?? '(none)'}, title=${out.detectedTitle ?? '(none)'}, artist=${out.detectedArtist ?? '(none)'}`);
+    console.log(
+        `[SongAutoDetect] FSEQ "${fseqBase}" -> audio=${out.audioFile ?? '(none)'}, image=${out.imageFile ?? '(none)'}, title=${out.detectedTitle ?? '(none)'}, artist=${out.detectedArtist ?? '(none)'}`,
+    );
     return out;
 }

@@ -22,7 +22,7 @@ export const JukeboxSettings: React.FC = () => {
                 label="Included Tags (Optional Filter)"
                 value={settings.jukebox?.includedTags || []}
                 onChange={(next) => dispatch(playbackSettingsActions.setJukeboxIncludedTags(next))}
-                placeholder='Leave empty to allow all (except excluded). Add tags to restrict.'
+                placeholder="Leave empty to allow all (except excluded). Add tags to restrict."
                 helperText="If empty: no filtering is applied. If one or more tags are present: only songs matching at least one tag are allowed."
             />
         </Box>

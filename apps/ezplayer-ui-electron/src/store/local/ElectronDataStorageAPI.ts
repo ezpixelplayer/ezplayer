@@ -166,10 +166,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
                 status.state === 'available' || status.state === 'downloaded' || status.state === 'not-available'
                     ? ` v${status.version}`
                     : status.state === 'downloading'
-                        ? ` ${status.percent.toFixed(0)}% (${(status.bytesPerSecond / 1024).toFixed(0)} KB/s)`
-                        : status.state === 'error'
-                            ? `: ${status.message}`
-                            : '';
+                      ? ` ${status.percent.toFixed(0)}% (${(status.bytesPerSecond / 1024).toFixed(0)} KB/s)`
+                      : status.state === 'error'
+                        ? `: ${status.message}`
+                        : '';
             console.log(`[AutoUpdate] ${status.state}${detail}`);
         });
     }
@@ -218,7 +218,6 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
     async issueCloudCommand(cmd: CloudCommand): Promise<void> {
         await window.electronAPI!.cloudCommand(cmd);
     }
-
 
     async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;

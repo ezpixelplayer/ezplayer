@@ -1251,8 +1251,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 }}
                                 aria-label="schedule layer"
                             >
-                                <ToggleButton value="main" aria-label="foreground">FG</ToggleButton>
-                                <ToggleButton value="background" aria-label="background">BG</ToggleButton>
+                                <ToggleButton value="main" aria-label="foreground">
+                                    FG
+                                </ToggleButton>
+                                <ToggleButton value="background" aria-label="background">
+                                    BG
+                                </ToggleButton>
                             </ToggleButtonGroup>
                         )}
 

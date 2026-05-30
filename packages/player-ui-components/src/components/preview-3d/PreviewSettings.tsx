@@ -95,8 +95,7 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
     const popperAnchorEl = useMemo(() => {
         if (!anchorPosition) return null;
         return {
-            getBoundingClientRect: () =>
-                new DOMRect(anchorPosition.left, anchorPosition.top, 0, 0),
+            getBoundingClientRect: () => new DOMRect(anchorPosition.left, anchorPosition.top, 0, 0),
         };
     }, [anchorPosition]);
 

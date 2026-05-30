@@ -8,12 +8,7 @@ import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { VcPlayingUpdate, VcScheduleEntry, VcSong } from '@ezplayer/ezplayer-core';
-import type {
-    EzvcConfig,
-    EzvcNextToPlay,
-    EzvcWorkerInMessage,
-    EzvcWorkerOutMessage,
-} from './ezvcsync';
+import type { EzvcConfig, EzvcNextToPlay, EzvcWorkerInMessage, EzvcWorkerOutMessage } from './ezvcsync';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

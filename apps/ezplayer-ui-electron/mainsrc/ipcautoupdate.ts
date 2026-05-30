@@ -219,8 +219,10 @@ export function registerAutoUpdateHandlers(win: BrowserWindow) {
     // etc.); collapse those to a single line and drop debug noise.
     autoUpdater.logger = {
         debug: () => {},
-        info: (msg: unknown) => console.log(`[AutoUpdate] ${typeof msg === 'string' ? msg : (msg as Error)?.message ?? msg}`),
-        warn: (msg: unknown) => console.warn(`[AutoUpdate] ${typeof msg === 'string' ? msg : (msg as Error)?.message ?? msg}`),
+        info: (msg: unknown) =>
+            console.log(`[AutoUpdate] ${typeof msg === 'string' ? msg : ((msg as Error)?.message ?? msg)}`),
+        warn: (msg: unknown) =>
+            console.warn(`[AutoUpdate] ${typeof msg === 'string' ? msg : ((msg as Error)?.message ?? msg)}`),
         error: (msg: unknown) => {
             const text = msg instanceof Error ? msg.message : typeof msg === 'string' ? msg : String(msg);
             console.error(`[AutoUpdate] ${text}`);

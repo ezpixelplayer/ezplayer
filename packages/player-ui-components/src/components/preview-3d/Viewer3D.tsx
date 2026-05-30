@@ -267,9 +267,7 @@ function ClickHandler({
             const pointSizeValue = pointSize || 3.0;
 
             // Calculate threshold based on point size and camera distance
-            const cameraDistance = centerPointRef.current
-                ? camera.position.distanceTo(centerPointRef.current)
-                : 1000;
+            const cameraDistance = centerPointRef.current ? camera.position.distanceTo(centerPointRef.current) : 1000;
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
 
             // Find the closest point to the ray
@@ -454,20 +452,18 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
     const holdTimeRef = useRef(0);
 
     // Controls object registered in R3F store
-    const controlsRef = useRef<THREE.EventDispatcher<{ change: {} }> & {
-        target: THREE.Vector3;
-        update: () => void;
-        syncFromCamera: () => void;
-    }>(null!);
+    const controlsRef = useRef<
+        THREE.EventDispatcher<{ change: {} }> & {
+            target: THREE.Vector3;
+            update: () => void;
+            syncFromCamera: () => void;
+        }
+    >(null!);
 
     // Helpers — defined as plain functions over refs (stable across renders)
     const applyCameraOrientation = () => {
-        const qYaw = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0), yawRef.current,
-        );
-        const qPitch = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(1, 0, 0), pitchRef.current,
-        );
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRef.current);
+        const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchRef.current);
         camera.quaternion.copy(qYaw).multiply(qPitch);
     };
 
@@ -516,7 +512,9 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         controlsRef.current = controlsObj;
         set({ controls: controlsObj as any });
 
-        return () => { set({ controls: null as any }); };
+        return () => {
+            set({ controls: null as any });
+        };
     }, [camera, set]);
 
     // Pointer + keyboard event listeners
@@ -654,8 +652,8 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
             let dy = e.deltaY;
-            if (e.deltaMode === 1) dy *= 33;  // DOM_DELTA_LINE → approx pixels
-            if (e.deltaMode === 2) dy *= 100;  // DOM_DELTA_PAGE → approx pixels
+            if (e.deltaMode === 1) dy *= 33; // DOM_DELTA_LINE → approx pixels
+            if (e.deltaMode === 2) dy *= 100; // DOM_DELTA_PAGE → approx pixels
 
             // ctrlKey is synthetically set by browsers for trackpad pinch gestures.
             // Pinch values are already small, so use a higher multiplier.
@@ -674,7 +672,9 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
             notifyChange();
         };
 
-        const onContextMenu = (e: Event) => { e.preventDefault(); };
+        const onContextMenu = (e: Event) => {
+            e.preventDefault();
+        };
 
         // Suppress click events after a drag so ClickHandler doesn't fire
         const onClickCapture = (e: MouseEvent) => {
@@ -860,7 +860,7 @@ function SceneContent({
         const lastStateStr = JSON.stringify(lastCameraStatePropRef.current);
         if (currentStateStr !== lastStateStr) {
             hasRestoredCameraRef.current = false;
-            setRestoreTrigger(prev => prev + 1);
+            setRestoreTrigger((prev) => prev + 1);
             lastCameraStatePropRef.current = cameraState;
         }
     }, [cameraState]);
@@ -890,7 +890,7 @@ function SceneContent({
         // Wait for controls to be ready - retry with a delay if not ready
         if (!controls) {
             const retryTimeout = setTimeout(() => {
-                setRestoreTrigger(prev => prev + 1);
+                setRestoreTrigger((prev) => prev + 1);
             }, 100);
             return () => clearTimeout(retryTimeout);
         }
@@ -898,14 +898,19 @@ function SceneContent({
         const ctrl = controls as unknown as { target: THREE.Vector3; update?: () => void; syncFromCamera?: () => void };
         if (!ctrl || !ctrl.target) {
             const retryTimeout = setTimeout(() => {
-                setRestoreTrigger(prev => prev + 1);
+                setRestoreTrigger((prev) => prev + 1);
             }, 100);
             return () => clearTimeout(retryTimeout);
         }
 
         // Restore camera position and rotation
         camera.position.set(cameraState.position[0], cameraState.position[1], cameraState.position[2]);
-        camera.quaternion.set(cameraState.quaternion[0], cameraState.quaternion[1], cameraState.quaternion[2], cameraState.quaternion[3]);
+        camera.quaternion.set(
+            cameraState.quaternion[0],
+            cameraState.quaternion[1],
+            cameraState.quaternion[2],
+            cameraState.quaternion[3],
+        );
         camera.updateMatrixWorld();
 
         // Sync controller state (yaw/pitch/target) from the restored quaternion
@@ -985,30 +990,26 @@ function SceneContent({
                     const halfSize = estimatedSize / 2;
 
                     // Add corners of the bounding box for the house
-                    box.expandByPoint(new THREE.Vector3(
-                        viewObj.worldPosX - halfSize,
-                        viewObj.worldPosY - halfSize,
-                        viewObj.worldPosZ - halfSize
-                    ));
-                    box.expandByPoint(new THREE.Vector3(
-                        viewObj.worldPosX + halfSize,
-                        viewObj.worldPosY + halfSize,
-                        viewObj.worldPosZ + halfSize
-                    ));
+                    box.expandByPoint(
+                        new THREE.Vector3(
+                            viewObj.worldPosX - halfSize,
+                            viewObj.worldPosY - halfSize,
+                            viewObj.worldPosZ - halfSize,
+                        ),
+                    );
+                    box.expandByPoint(
+                        new THREE.Vector3(
+                            viewObj.worldPosX + halfSize,
+                            viewObj.worldPosY + halfSize,
+                            viewObj.worldPosZ + halfSize,
+                        ),
+                    );
 
                     // Also add the center point
-                    box.expandByPoint(new THREE.Vector3(
-                        viewObj.worldPosX,
-                        viewObj.worldPosY,
-                        viewObj.worldPosZ
-                    ));
+                    box.expandByPoint(new THREE.Vector3(viewObj.worldPosX, viewObj.worldPosY, viewObj.worldPosZ));
                 }
                 if (viewObj.displayAs === 'Image' && viewObj.active !== false) {
-                    box.expandByPoint(new THREE.Vector3(
-                        viewObj.worldPosX,
-                        viewObj.worldPosY,
-                        viewObj.worldPosZ
-                    ));
+                    box.expandByPoint(new THREE.Vector3(viewObj.worldPosX, viewObj.worldPosY, viewObj.worldPosZ));
                 }
             });
         }
@@ -1042,7 +1043,17 @@ function SceneContent({
                 onAutoFitComplete?.();
             });
         }
-    }, [points, shapes, viewObjects, camera, controls, cameraState, shouldAutoFit, onAutoFitComplete, cameraStateLoaded]);
+    }, [
+        points,
+        shapes,
+        viewObjects,
+        camera,
+        controls,
+        cameraState,
+        shouldAutoFit,
+        onAutoFitComplete,
+        cameraStateLoaded,
+    ]);
 
     // Register a getter so Preview3D can read the exact camera state on demand
     // (e.g. when the user clicks "Ok" or switches view modes).
@@ -1058,12 +1069,7 @@ function SceneContent({
             return {
                 position: [camera.position.x, camera.position.y, camera.position.z],
                 target: [orbitControls.target.x, orbitControls.target.y, orbitControls.target.z],
-                quaternion: [
-                    camera.quaternion.x,
-                    camera.quaternion.y,
-                    camera.quaternion.z,
-                    camera.quaternion.w,
-                ],
+                quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
             };
         };
 
@@ -1087,12 +1093,7 @@ function SceneContent({
                 const state: CameraState3D = {
                     position: [camera.position.x, camera.position.y, camera.position.z],
                     target: [orbitControls.target.x, orbitControls.target.y, orbitControls.target.z],
-                    quaternion: [
-                        camera.quaternion.x,
-                        camera.quaternion.y,
-                        camera.quaternion.z,
-                        camera.quaternion.w,
-                    ],
+                    quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
                 };
                 const stateStr = JSON.stringify(state);
                 const lastStr = JSON.stringify(lastCameraStateRef.current);
@@ -1164,9 +1165,10 @@ function SceneContent({
 
                     // Calculate brightness: house model XML brightness * (slider / 100)
                     // This ensures we ONLY use the house model's brightness, never background brightness
-                    const calculatedBrightness = brightnessMultiplier !== undefined
-                        ? viewObjectXmlBrightness * (brightnessMultiplier / 100)
-                        : viewObjectXmlBrightness;
+                    const calculatedBrightness =
+                        brightnessMultiplier !== undefined
+                            ? viewObjectXmlBrightness * (brightnessMultiplier / 100)
+                            : viewObjectXmlBrightness;
 
                     return (
                         <HouseMesh
@@ -1220,9 +1222,10 @@ function SceneContent({
 
                     // Calculate brightness: view object XML brightness * (slider / 100)
                     // This ensures we ONLY use the view object's brightness, never background brightness
-                    const calculatedBrightness = brightnessMultiplier !== undefined
-                        ? viewObjectXmlBrightness * (brightnessMultiplier / 100)
-                        : viewObjectXmlBrightness;
+                    const calculatedBrightness =
+                        brightnessMultiplier !== undefined
+                            ? viewObjectXmlBrightness * (brightnessMultiplier / 100)
+                            : viewObjectXmlBrightness;
 
                     return (
                         <ImagePlane
@@ -1479,7 +1482,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         }}
                     >
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
-                        {(isTouchOnly || forceOrbitControls) ? (
+                        {isTouchOnly || forceOrbitControls ? (
                             <OrbitControls
                                 makeDefault
                                 enableDamping

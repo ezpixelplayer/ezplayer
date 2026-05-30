@@ -137,9 +137,7 @@ export const AudioSettings: React.FC = () => {
                 <Box sx={{ px: 2 }}>
                     <Slider
                         value={settings.volumeControl.defaultVolume}
-                        onChange={(_, value) =>
-                            dispatch(playbackSettingsActions.setDefaultVolume(value as number))
-                        }
+                        onChange={(_, value) => dispatch(playbackSettingsActions.setDefaultVolume(value as number))}
                         min={0}
                         max={100}
                         step={1}
@@ -169,8 +167,7 @@ export const AudioSettings: React.FC = () => {
                     Volume Schedule Overrides
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Configure volume overrides for specific times. Last entry takes priority for overlapping
-                    times.
+                    Configure volume overrides for specific times. Last entry takes priority for overlapping times.
                 </Typography>
 
                 {settings.volumeControl.schedule.length > 0 && (
@@ -352,19 +349,10 @@ export const AudioSettings: React.FC = () => {
                             Are you sure you want to delete this volume override?
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                            <Button
-                                variant="outlined"
-                                onClick={() => setPendingDeleteId(null)}
-                                sx={{ minWidth: 100 }}
-                            >
+                            <Button variant="outlined" onClick={() => setPendingDeleteId(null)} sx={{ minWidth: 100 }}>
                                 Cancel
                             </Button>
-                            <Button
-                                variant="contained"
-                                color="error"
-                                onClick={confirmDelete}
-                                sx={{ minWidth: 100 }}
-                            >
+                            <Button variant="contained" color="error" onClick={confirmDelete} sx={{ minWidth: 100 }}>
                                 Delete
                             </Button>
                         </Box>

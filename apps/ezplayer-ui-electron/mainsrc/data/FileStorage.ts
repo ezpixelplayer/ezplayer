@@ -72,9 +72,7 @@ const sf = (folder: string, name: string) => path.join(folder, '.ezplayer', name
 
 export async function loadSequencesAPI(folder: string): Promise<SequenceRecord[]> {
     try {
-        const p: TempSeqsAPIPayload = await JSON.parse(
-            await fsp.readFile(sf(folder, 'sequences.json'), 'utf-8'),
-        );
+        const p: TempSeqsAPIPayload = await JSON.parse(await fsp.readFile(sf(folder, 'sequences.json'), 'utf-8'));
         const seqs = p?.data?.allSongs ?? [];
         for (const s of seqs) {
             if (s.files?.fseq) {
@@ -126,9 +124,7 @@ export async function saveSequencesAPI(folder: string, payload: SequenceRecord[]
 
 export async function loadPlaylistsAPI(folder: string): Promise<PlaylistRecord[]> {
     try {
-        const p: TempPlaylistsPayload = await JSON.parse(
-            await fsp.readFile(sf(folder, 'playlists.json'), 'utf-8'),
-        );
+        const p: TempPlaylistsPayload = await JSON.parse(await fsp.readFile(sf(folder, 'playlists.json'), 'utf-8'));
         return p.data.playlists ?? [];
     } catch (e) {
         logLoadFailure('playlists.json', e);
@@ -147,9 +143,7 @@ export const savePlaylistsAPI = async (folder: string, payload: PlaylistRecord[]
 
 export async function loadScheduleAPI(folder: string) {
     try {
-        const p: TempScheduleAPIPayload = await JSON.parse(
-            await fsp.readFile(sf(folder, 'schedule.json'), 'utf-8'),
-        );
+        const p: TempScheduleAPIPayload = await JSON.parse(await fsp.readFile(sf(folder, 'schedule.json'), 'utf-8'));
         return p.data.scheduledPlaylists ?? [];
     } catch (e) {
         logLoadFailure('schedule.json', e);

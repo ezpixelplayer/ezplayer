@@ -108,10 +108,7 @@ export const ViewerSettings: React.FC = () => {
                     itemText="name"
                     itemValue="id"
                     onChange={(e) => {
-                        const type = (e.target as HTMLSelectElement).value as
-                            | 'disabled'
-                            | 'remote-falcon'
-                            | 'ezplayer';
+                        const type = (e.target as HTMLSelectElement).value as 'disabled' | 'remote-falcon' | 'ezplayer';
                         dispatch(playbackSettingsActions.setViewerControlType(type));
                         dispatch(playbackSettingsActions.setViewerControlEnabled(type !== 'disabled'));
                     }}
@@ -307,19 +304,10 @@ export const ViewerSettings: React.FC = () => {
                             Are you sure you want to delete this schedule entry?
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                            <Button
-                                variant="outlined"
-                                onClick={() => setPendingDeleteId(null)}
-                                sx={{ minWidth: 100 }}
-                            >
+                            <Button variant="outlined" onClick={() => setPendingDeleteId(null)} sx={{ minWidth: 100 }}>
                                 Cancel
                             </Button>
-                            <Button
-                                variant="contained"
-                                color="error"
-                                onClick={confirmDelete}
-                                sx={{ minWidth: 100 }}
-                            >
+                            <Button variant="contained" color="error" onClick={confirmDelete} sx={{ minWidth: 100 }}>
                                 Delete
                             </Button>
                         </Box>
