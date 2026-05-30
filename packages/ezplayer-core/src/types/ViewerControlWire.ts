@@ -1,13 +1,6 @@
-/**
- * Viewer-control wire DTOs — the shared contract between the player poller,
- * the cloud viewer-control API, and the public show page.
- *
- * Shapes deliberately echo the existing UI/player structures (`SongDetails`,
- * `SequenceRecord.id`, `PlayingItem`) so a viewer-control payload looks like
- * the rest of the app. Several types carry an index signature: they cross
- * process boundaries and must grow additively without a breaking version
- * churn.
- */
+/** Viewer-control wire DTOs shared between player, cloud, and public page.
+ *  Index signatures on cross-process types are intentional — fields must
+ *  grow additively without a wire version bump. */
 
 /** A song the player offers for viewer control. `id` is the stable song
  *  identifier (equal to `SequenceRecord.id`); the rest mirrors `SongDetails`
