@@ -29,13 +29,13 @@ export const BridgeStatusOverlay = () => {
     const message = bridgeDown
         ? 'Reconnecting…'
         : everSawPlayer.current
-        ? 'Player is offline'
-        : 'Connecting to player…';
+          ? 'Player is offline'
+          : 'Connecting to player…';
     const detail = bridgeDown
         ? 'Lost connection to the cloud server. Data shown is stale and commands will not reach the player until the link is restored.'
         : everSawPlayer.current
-        ? 'The player has stopped responding. Data shown is the last known state; commands will queue but will not take effect until the player reconnects.'
-        : 'Waiting for the player to come online. This usually takes a few seconds after the player starts up.';
+          ? 'The player has stopped responding. Data shown is the last known state; commands will queue but will not take effect until the player reconnects.'
+          : 'Waiting for the player to come online. This usually takes a few seconds after the player starts up.';
 
     return (
         <Backdrop open sx={{ zIndex: (t) => t.zIndex.drawer + 1, color: '#fff' }}>

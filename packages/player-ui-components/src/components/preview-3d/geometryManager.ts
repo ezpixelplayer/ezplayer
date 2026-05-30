@@ -371,9 +371,10 @@ export class GeometryManager {
             // The multiplier is already validated in the constructor, so we can use it directly
             const multiplier = this.pixelSizeMultiplier;
             const modelPixelSize = modelName ? this.modelPixelSizeMap.get(modelName) : undefined;
-            const basePointSize = modelPixelSize !== undefined 
-                ? Math.max(0.1, Number(modelPixelSize) || this.pointSize)
-                : Math.max(0.1, Number(this.pointSize) || 3.0);
+            const basePointSize =
+                modelPixelSize !== undefined
+                    ? Math.max(0.1, Number(modelPixelSize) || this.pointSize)
+                    : Math.max(0.1, Number(this.pointSize) || 3.0);
             // Calculate effective point size: base size multiplied by user's pixel size multiplier
             // The UI slider shows "2x" meaning "2 times bigger", so:
             // - multiplier 1.0 = normal size (basePointSize * 1.0)

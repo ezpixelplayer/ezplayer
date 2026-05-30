@@ -123,6 +123,7 @@ EZPlayer is developed in part by [EZRGB](https://ezrgb.com/). EZRGB feels that t
 ---
 
 ## 🛠️ Building From Source (Developers)
+
 See [DEVELOPING.md](./DEVELOPING.md).
 
 ---

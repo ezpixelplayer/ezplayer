@@ -21,7 +21,7 @@ export interface UseFrameServerUrlResult {
  */
 export function useFrameServerUrl({ frameServerUrl }: UseFrameServerUrlOptions = {}): UseFrameServerUrlResult {
     const apiBase = useApiBase();
-    const [url, setUrl] = useState<string | undefined>(frameServerUrl || (apiBase || undefined));
+    const [url, setUrl] = useState<string | undefined>(frameServerUrl || apiBase || undefined);
 
     useEffect(() => {
         if (frameServerUrl) {

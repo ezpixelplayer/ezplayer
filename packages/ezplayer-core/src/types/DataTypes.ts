@@ -551,10 +551,7 @@ export interface PlaybackSettings {
 
 /** The "playback" cloud-managed settings group — the part of PlaybackSettings
  *  that isn't its own group (volume / viewer control). */
-export type PlaybackGroupSettings = Pick<
-    PlaybackSettings,
-    'audioSyncAdjust' | 'backgroundSequence' | 'jukebox'
->;
+export type PlaybackGroupSettings = Pick<PlaybackSettings, 'audioSyncAdjust' | 'backgroundSequence' | 'jukebox'>;
 
 /** Cloud-managed player settings as served by `getsettingsforplayer`: three
  *  groups, each paired with an epoch-ms `*_updated` stamp. A group/stamp pair

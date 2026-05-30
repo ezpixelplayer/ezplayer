@@ -58,8 +58,8 @@ function readSavedScale(): number {
  *  which works correctly, so we drop the slider entirely in browser. */
 export function isElectronPageZoomAvailable(): boolean {
     return Boolean(
-        (window as unknown as { electronAPI?: { setZoomFactor?: (n: number) => Promise<void> } })
-            .electronAPI?.setZoomFactor,
+        (window as unknown as { electronAPI?: { setZoomFactor?: (n: number) => Promise<void> } }).electronAPI
+            ?.setZoomFactor,
     );
 }
 
@@ -83,9 +83,7 @@ export const ThemeProviderWrapper = ({ children }: { children: ReactNode }) => {
     // Honor the saved value only when we can actually apply it. In browser
     // we ignore the stored scale (might have been set in Electron, or set
     // back when this app applied CSS zoom in browser) and pin to 1.
-    const [uiScale, setUiScaleState] = useState<number>(() =>
-        canSetUiScale ? readSavedScale() : UI_SCALE_DEFAULT,
-    );
+    const [uiScale, setUiScaleState] = useState<number>(() => (canSetUiScale ? readSavedScale() : UI_SCALE_DEFAULT));
     const theme = themeCreator(themeName);
 
     const handleThemeChange = (curTheme: string) => {

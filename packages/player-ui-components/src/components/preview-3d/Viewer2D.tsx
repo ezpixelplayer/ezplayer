@@ -299,16 +299,16 @@ function ClickHandler2D({
             const cameraDistance = camera.position.distanceTo(
                 points.length > 0
                     ? (() => {
-                        const firstPoint = points[0];
-                        switch (viewPlane) {
-                            case 'xy':
-                                return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
-                            case 'xz':
-                                return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
-                            case 'yz':
-                                return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
-                        }
-                    })()
+                          const firstPoint = points[0];
+                          switch (viewPlane) {
+                              case 'xy':
+                                  return new THREE.Vector3(firstPoint.x, firstPoint.y, 0);
+                              case 'xz':
+                                  return new THREE.Vector3(firstPoint.x, 0, firstPoint.z);
+                              case 'yz':
+                                  return new THREE.Vector3(0, firstPoint.y, firstPoint.z);
+                          }
+                      })()
                     : new THREE.Vector3(0, 0, 0),
             );
             const threshold = Math.max(pointSizeValue * 0.05, cameraDistance * 0.01);
@@ -491,7 +491,8 @@ function BackgroundImage2D({
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const { backgroundImage, backgroundBrightness: layoutBrightness, previewWidth, previewHeight } = layoutSettings;
     // Use override if provided, otherwise use layout setting
-    const backgroundBrightness = backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
+    const backgroundBrightness =
+        backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
 
     useEffect(() => {
         if (!backgroundImage) return;
@@ -628,7 +629,7 @@ function Scene2DContent({
         const lastStateStr = JSON.stringify(lastCameraStatePropRef.current);
         if (currentStateStr !== lastStateStr) {
             hasRestoredCameraRef.current = false;
-            setRestoreTrigger(prev => prev + 1);
+            setRestoreTrigger((prev) => prev + 1);
             lastCameraStatePropRef.current = cameraState;
         }
     }, [cameraState]);
@@ -658,7 +659,7 @@ function Scene2DContent({
         // Wait for controls to be ready - retry with a delay if not ready
         if (!controls) {
             const retryTimeout = setTimeout(() => {
-                setRestoreTrigger(prev => prev + 1);
+                setRestoreTrigger((prev) => prev + 1);
             }, 100);
             return () => clearTimeout(retryTimeout);
         }
@@ -666,7 +667,7 @@ function Scene2DContent({
         const mapControls = controls as unknown as { target: THREE.Vector3; update?: () => void };
         if (!mapControls || !mapControls.target) {
             const retryTimeout = setTimeout(() => {
-                setRestoreTrigger(prev => prev + 1);
+                setRestoreTrigger((prev) => prev + 1);
             }, 100);
             return () => clearTimeout(retryTimeout);
         }
@@ -917,8 +918,8 @@ function Scene2DContent({
                     isSelected={selectedIds?.has(shape.id) ?? false}
                     isHovered={hoveredId === shape.id}
                     viewPlane={viewPlane}
-                    onClick={onPointClick || (() => { })}
-                    onHover={onPointHover || (() => { })}
+                    onClick={onPointClick || (() => {})}
+                    onHover={onPointHover || (() => {})}
                 />
             ))}
 
@@ -935,11 +936,7 @@ function Scene2DContent({
             />
 
             {movingHeadFixtures && movingHeadFixtures.length > 0 && (
-                <MovingHeadMarkers2D
-                    fixtures={movingHeadFixtures}
-                    liveData={liveData}
-                    viewPlane={viewPlane}
-                />
+                <MovingHeadMarkers2D fixtures={movingHeadFixtures} liveData={liveData} viewPlane={viewPlane} />
             )}
         </>
     );

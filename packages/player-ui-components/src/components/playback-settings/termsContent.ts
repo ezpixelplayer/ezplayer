@@ -147,4 +147,3 @@ These Terms are governed by the laws of the Commonwealth of Pennsylvania, United
 16. Contact
 
 Questions about these Terms can be sent to ezplayer@ezrgb.com.`;
-

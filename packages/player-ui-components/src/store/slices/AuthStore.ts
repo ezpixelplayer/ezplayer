@@ -36,8 +36,7 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
     // Seed token synchronously so AuthGate's first render skips the LoginPanel when we're
     // already logged in. Otherwise the browser sees the login form for one paint and
     // triggers autofill before InitialDataProvider's async refreshAll() sets the token.
-    const initialToken =
-        typeof window !== 'undefined' ? window.localStorage?.getItem('auth_token') ?? null : null;
+    const initialToken = typeof window !== 'undefined' ? (window.localStorage?.getItem('auth_token') ?? null) : null;
 
     const initialAuthState: AuthState = {
         cloudUserToken: initialToken,
@@ -76,13 +75,12 @@ export function createAuthSlice(extraReducers: (builder: ActionReducerMapBuilder
     });
 }
 
-export const postSetPlayerIdToken = createAsyncThunk<
-    void,
-    { playerIdToken: string },
-    { extra: DataStorageAPI }
->('auth/postSetPlayerId', async (data, { extra }) => {
-    await extra.issueCloudCommand({ type: 'setPlayerIdToken', token: data.playerIdToken });
-});
+export const postSetPlayerIdToken = createAsyncThunk<void, { playerIdToken: string }, { extra: DataStorageAPI }>(
+    'auth/postSetPlayerId',
+    async (data, { extra }) => {
+        await extra.issueCloudCommand({ type: 'setPlayerIdToken', token: data.playerIdToken });
+    },
+);
 
 export const postSetCloudUrl = createAsyncThunk<void, { cloudUrl: string }, { extra: DataStorageAPI }>(
     'auth/postSetCloudUrl',

@@ -3,10 +3,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import type { ViewObject } from '../../types/model3d';
 import type { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import {
-    type AssetResolver,
-    createShowFileResolver,
-} from '../../services/assetResolver';
+import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -37,10 +34,7 @@ interface ImagePlaneProps {
 // Texture helpers
 // ---------------------------------------------------------------------------
 
-function downscaleTextureImage(
-    img: HTMLImageElement,
-    maxDim: number,
-): HTMLCanvasElement | HTMLImageElement {
+function downscaleTextureImage(img: HTMLImageElement, maxDim: number): HTMLCanvasElement | HTMLImageElement {
     if (img.width <= maxDim && img.height <= maxDim) return img;
 
     const scale = maxDim / Math.max(img.width, img.height);
@@ -125,11 +119,7 @@ function parseHexColor(hex: string | undefined): [number, number, number] {
  * Takes an `AssetResolver` so the same hook serves textures from local Koa
  * (`/api/show-file?path=…`) or from a layout-zip blob URL (cloud-only / FSEQ-only).
  */
-function useImageTexture(
-    imageFile: string | undefined,
-    resolver: AssetResolver,
-    whiteAsAlpha: boolean,
-) {
+function useImageTexture(imageFile: string | undefined, resolver: AssetResolver, whiteAsAlpha: boolean) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [imgWidth, setImgWidth] = useState(1);
     const [imgHeight, setImgHeight] = useState(1);
@@ -314,9 +304,15 @@ function ViewObjectImagePlane({ viewObject, frameServerUrl, assetResolver, backg
 
     const {
         imageFile,
-        worldPosX, worldPosY, worldPosZ,
-        scaleX, scaleY, scaleZ,
-        rotateX, rotateY, rotateZ,
+        worldPosX,
+        worldPosY,
+        worldPosZ,
+        scaleX,
+        scaleY,
+        scaleZ,
+        rotateX,
+        rotateY,
+        rotateZ,
         brightness: viewObjectBrightness,
         transparency,
     } = viewObject;
@@ -364,9 +360,7 @@ function ViewObjectImagePlane({ viewObject, frameServerUrl, assetResolver, backg
 export const ImagePlane = React.memo(function ImagePlane(props: ImagePlaneProps) {
     return (
         <Suspense fallback={null}>
-            {props.viewObject.imageInfo
-                ? <ModelImagePlane {...props} />
-                : <ViewObjectImagePlane {...props} />}
+            {props.viewObject.imageInfo ? <ModelImagePlane {...props} /> : <ViewObjectImagePlane {...props} />}
         </Suspense>
     );
 });

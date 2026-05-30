@@ -30,18 +30,9 @@ import type { CameraState3D } from './Viewer3D';
  */
 export function viewpointToCameraState(vp: ViewpointInfo): CameraState3D {
     // Scene rotation R = R_x · R_y · R_z (applied to vertices: Z first, then Y, then X).
-    const qX = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(1, 0, 0),
-        THREE.MathUtils.degToRad(vp.angleX),
-    );
-    const qY = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0),
-        THREE.MathUtils.degToRad(vp.angleY),
-    );
-    const qZ = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 0, 1),
-        THREE.MathUtils.degToRad(vp.angleZ),
-    );
+    const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(vp.angleX));
+    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(vp.angleY));
+    const qZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(vp.angleZ));
     const sceneRotation = new THREE.Quaternion().multiplyQuaternions(qX, qY).multiply(qZ);
     const cameraRotation = sceneRotation.clone().invert();
 

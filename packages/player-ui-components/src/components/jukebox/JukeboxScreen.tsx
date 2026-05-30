@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Button, IconButton, Tooltip, Typography, Popover, useTheme, useMediaQuery, Autocomplete, TextField } from '@mui/material';
+import {
+    Button,
+    IconButton,
+    Tooltip,
+    Typography,
+    Popover,
+    useTheme,
+    useMediaQuery,
+    Autocomplete,
+    TextField,
+} from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import { Box } from '../box/Box';
 import { MusicNote, Lightbulb } from '@mui/icons-material';

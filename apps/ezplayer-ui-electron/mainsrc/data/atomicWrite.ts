@@ -17,9 +17,7 @@ export async function atomicWriteFile(
     // normal, non-crashing runs; we can't yet explain how, so if we ever land
     // here, throw with a stack trace and leave the previous valid content on
     // disk. Better a loud failure than a silently-corrupted folder.
-    const length = typeof contents === 'string'
-        ? Buffer.byteLength(contents, encoding)
-        : contents.byteLength;
+    const length = typeof contents === 'string' ? Buffer.byteLength(contents, encoding) : contents.byteLength;
     if (length === 0) {
         const err = new Error(
             `atomicWriteFile refused to write 0 bytes to ${targetPath}. ` +
@@ -35,10 +33,7 @@ export async function atomicWriteFile(
 
     const dir = path.dirname(targetPath);
     const base = path.basename(targetPath);
-    const tmpPath = path.join(
-        dir,
-        `.${base}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.tmp`,
-    );
+    const tmpPath = path.join(dir, `.${base}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.tmp`);
 
     let handle: fs.FileHandle | undefined;
     try {

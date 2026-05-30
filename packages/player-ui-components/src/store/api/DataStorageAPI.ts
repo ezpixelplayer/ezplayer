@@ -99,7 +99,6 @@ export interface DataStorageAPI {
     connect(dispatch: AppDispatch): Promise<void>;
     disconnect(): Promise<void>;
 
-
     /** This fetches the master cloud storage list */
     getCloudSequences: () => Promise<SequenceRecord[]>;
 

@@ -39,9 +39,9 @@ Releases are automated via GitHub Actions. Pushing a version tag triggers a buil
 3. GitHub Actions builds the Electron app on **ubuntu-latest**, **windows-latest**, and **macos-latest** in parallel.
 4. `electron-builder` is configured with `"publish": [{ "provider": "github", "releaseType": "prerelease" }]`, so it automatically uploads the installers to a GitHub Release for the tag.
 5. Build artifacts per platform:
-   - **Windows** — NSIS installer (`.exe`)
-   - **macOS** — DMG disk image (universal arch)
-   - **Linux** — AppImage
+    - **Windows** — NSIS installer (`.exe`)
+    - **macOS** — DMG disk image (universal arch)
+    - **Linux** — AppImage
 
 ### Creating a release
 
@@ -49,10 +49,10 @@ Releases are automated via GitHub Actions. Pushing a version tag triggers a buil
 2. Update the version in `apps/ezplayer-ui-electron/package.json` if needed.
 3. Tag the commit and push the tag:
 
-   ```bash
-   git tag v0.1.1-prealpha
-   git push origin v0.1.1-prealpha
-   ```
+    ```bash
+    git tag v0.1.1-prealpha
+    git push origin v0.1.1-prealpha
+    ```
 
 4. GitHub Actions picks up the tag push and runs the **Build & Release EZPlayer** workflow.
 5. Once the workflow completes, a new prerelease appears on the [GitHub Releases](https://github.com/ezpixelplayer/ezplayer/releases) page with installers for all platforms.
@@ -71,23 +71,23 @@ GitHub Actions doesn't have native ARM64 Linux runners on the free tier, so Pi b
 
 1. **Raspberry Pi OS 64-bit** (Bookworm or later recommended)
 2. **Node.js 24** — install via [NodeSource](https://github.com/nodesource/distributions) or `nvm`:
-   ```bash
-   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash -
-   sudo apt-get install -y nodejs
-   ```
+    ```bash
+    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash -
+    sudo apt-get install -y nodejs
+    ```
 3. **pnpm 10**:
-   ```bash
-   corepack enable && corepack prepare pnpm@10 --activate
-   ```
+    ```bash
+    corepack enable && corepack prepare pnpm@10 --activate
+    ```
 4. **Build tools** for native addons:
-   ```bash
-   sudo apt-get install -y build-essential python3 git
-   ```
+    ```bash
+    sudo apt-get install -y build-essential python3 git
+    ```
 5. **GitHub CLI** (`gh`) for uploading release artifacts:
-   ```bash
-   sudo apt-get install -y gh
-   gh auth login
-   ```
+    ```bash
+    sudo apt-get install -y gh
+    gh auth login
+    ```
 
 ### Building on the Pi
 

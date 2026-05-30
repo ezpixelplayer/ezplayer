@@ -1,9 +1,5 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import {
-    PlaybackSettings,
-    ViewerControlScheduleEntry,
-    VolumeScheduleEntry,
-} from '@ezplayer/ezplayer-core';
+import { PlaybackSettings, ViewerControlScheduleEntry, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
 
@@ -75,15 +71,14 @@ export const initialPlaybackSettingsState: PlaybackSettingsState = {
     }),
 };
 
-export const savePlayerSettings = createAsyncThunk<
-    void,
-    void,
-    { state: unknown; extra: DataStorageAPI }
->('playbackSettings/savePlayerSettings', async (_arg, { getState, extra }) => {
-    const state = getState() as RootState;
-    const settings: PlaybackSettings = state.playbackSettings.settings;
-    await extra.setPlayerSettings(settings);
-});
+export const savePlayerSettings = createAsyncThunk<void, void, { state: unknown; extra: DataStorageAPI }>(
+    'playbackSettings/savePlayerSettings',
+    async (_arg, { getState, extra }) => {
+        const state = getState() as RootState;
+        const settings: PlaybackSettings = state.playbackSettings.settings;
+        await extra.setPlayerSettings(settings);
+    },
+);
 
 const playbackSettingsSlice = createSlice({
     name: 'playbackSettings',
@@ -103,9 +98,7 @@ const playbackSettingsSlice = createSlice({
         setJukeboxExcludedTags(state, action: PayloadAction<string[]>) {
             state.settings.jukebox = state.settings.jukebox ?? {};
             const next = normalizeTagList(action.payload, []);
-            state.settings.jukebox.excludedTags = Array.from(
-                new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...next]),
-            );
+            state.settings.jukebox.excludedTags = Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...next]));
         },
         setJukeboxIncludedTags(state, action: PayloadAction<string[]>) {
             state.settings.jukebox = state.settings.jukebox ?? {};

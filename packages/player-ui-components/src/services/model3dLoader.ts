@@ -40,9 +40,7 @@ function roleTint(role: ChannelRole): [number, number, number] {
  * Bake xllayoutcalcs `channelRoles` into a flat Float32Array the per-frame
  * loop can sum without any branching on `kind`.
  */
-function buildColorMix(
-    channelRoles: ChannelRole[] | undefined,
-): { mix: Float32Array; maxOffset: number } | undefined {
+function buildColorMix(channelRoles: ChannelRole[] | undefined): { mix: Float32Array; maxOffset: number } | undefined {
     if (!channelRoles?.length) return undefined;
     const mix = new Float32Array(channelRoles.length * 4);
     let maxOffset = 0;
@@ -62,9 +60,7 @@ function buildColorMix(
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
  * This function handles the structure returned by xllayoutcalcs getModelCoordinates
  */
-export function convertXmlCoordinatesToModel3D(
-    modelCoordinates: Record<string, GetNodeResult>,
-): Model3DData {
+export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, GetNodeResult>): Model3DData {
     const allPoints: Point3D[] = [];
     const modelMetadata: ModelMetadata[] = [];
 

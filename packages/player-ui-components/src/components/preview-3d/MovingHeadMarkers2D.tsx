@@ -77,16 +77,22 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
     // Body position projected to the view plane (slightly in front of bg at z=0.5)
     const bodyPos = useMemo((): [number, number, number] => {
         switch (viewPlane) {
-            case 'xy': return [worldPosX, worldPosY, 0.5];
-            case 'xz': return [worldPosX, worldPosZ, 0.5];
-            case 'yz': return [worldPosY, worldPosZ, 0.5];
+            case 'xy':
+                return [worldPosX, worldPosY, 0.5];
+            case 'xz':
+                return [worldPosX, worldPosZ, 0.5];
+            case 'yz':
+                return [worldPosY, worldPosZ, 0.5];
         }
     }, [worldPosX, worldPosY, worldPosZ, viewPlane]);
 
-    const beamUniforms = useMemo(() => ({
-        uColor: { value: new THREE.Color(1, 1, 1) },
-        uOpacity: { value: 0.6 },
-    }), []);
+    const beamUniforms = useMemo(
+        () => ({
+            uColor: { value: new THREE.Color(1, 1, 1) },
+            uOpacity: { value: 0.6 },
+        }),
+        [],
+    );
 
     useFrame(() => {
         const indicator = indicatorRef.current;
@@ -118,9 +124,24 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
         const [dx, dy, dz] = beam.direction;
         let ax: number, ay: number, originX: number, originY: number;
         switch (viewPlane) {
-            case 'xy': ax = dx; ay = dy; originX = worldPosX; originY = worldPosY; break;
-            case 'xz': ax = dx; ay = dz; originX = worldPosX; originY = worldPosZ; break;
-            case 'yz': ax = dy; ay = dz; originX = worldPosY; originY = worldPosZ; break;
+            case 'xy':
+                ax = dx;
+                ay = dy;
+                originX = worldPosX;
+                originY = worldPosY;
+                break;
+            case 'xz':
+                ax = dx;
+                ay = dz;
+                originX = worldPosX;
+                originY = worldPosZ;
+                break;
+            case 'yz':
+                ax = dy;
+                ay = dz;
+                originX = worldPosY;
+                originY = worldPosZ;
+                break;
         }
 
         const aLen = Math.sqrt(ax * ax + ay * ay);
@@ -138,11 +159,7 @@ function MovingHeadMarker2D({ fixture, liveData, viewPlane }: MovingHeadMarker2D
         const angle = Math.atan2(any, anx) - Math.PI / 2;
 
         // --- Direction indicator: short fixed length, always visible ---
-        indicator.position.set(
-            originX + anx * INDICATOR_LENGTH * 0.5,
-            originY + any * INDICATOR_LENGTH * 0.5,
-            0.5,
-        );
+        indicator.position.set(originX + anx * INDICATOR_LENGTH * 0.5, originY + any * INDICATOR_LENGTH * 0.5, 0.5);
         indicator.rotation.z = angle;
         indicator.visible = true;
 
@@ -242,12 +259,7 @@ export function MovingHeadMarkers2D({ fixtures, liveData, viewPlane }: MovingHea
     return (
         <>
             {fixtures.map((fixture) => (
-                <MovingHeadMarker2D
-                    key={fixture.name}
-                    fixture={fixture}
-                    liveData={liveData}
-                    viewPlane={viewPlane}
-                />
+                <MovingHeadMarker2D key={fixture.name} fixture={fixture} liveData={liveData} viewPlane={viewPlane} />
             ))}
         </>
     );

@@ -3,11 +3,7 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-    PlayerCloudWelcomePanel,
-    Routes as ROUTES,
-    issueCloudCommand,
-} from '@ezplayer/player-ui-components';
+import { PlayerCloudWelcomePanel, Routes as ROUTES, issueCloudCommand } from '@ezplayer/player-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '@ezplayer/player-ui-components';
 
@@ -25,18 +21,21 @@ export const WelcomeScreen = () => {
     const [showCloudCTA, setShowCloudCTA] = React.useState(false);
     React.useEffect(() => {
         let cancelled = false;
-        window.electronAPI?.getWelcomeShowCloud()
-            .then((v) => { if (!cancelled) setShowCloudCTA(!!v); })
-            .catch(() => { /* leave default off */ });
-        return () => { cancelled = true; };
+        window.electronAPI
+            ?.getWelcomeShowCloud()
+            .then((v) => {
+                if (!cancelled) setShowCloudCTA(!!v);
+            })
+            .catch(() => {
+                /* leave default off */
+            });
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const playerIdIsRegistered = useSelector(
-        (s: RootState) => s.cloudStatus.playerIdIsRegistered,
-    );
-    const layoutStatus = useSelector(
-        (s: RootState) => s.runtime.combined.content?.layout,
-    );
+    const playerIdIsRegistered = useSelector((s: RootState) => s.cloudStatus.playerIdIsRegistered);
+    const layoutStatus = useSelector((s: RootState) => s.runtime.combined.content?.layout);
 
     // ---- xLights folder path (existing behavior) -----------------------------
     const openFolderPicker = React.useCallback(async () => {
@@ -146,8 +145,7 @@ export const WelcomeScreen = () => {
                                         <Typography variant="h6">I have an xLights show folder</Typography>
                                     </Box>
                                     <Typography variant="body2" color="text.secondary">
-                                        Pick an existing folder containing{' '}
-                                        <strong>xlights_rgbeffects.xml</strong> and{' '}
+                                        Pick an existing folder containing <strong>xlights_rgbeffects.xml</strong> and{' '}
                                         <strong>xlights_networks.xml</strong>.
                                         {showCloudCTA && ' You can connect to the cloud later from the Cloud tab.'}
                                     </Typography>
@@ -165,8 +163,8 @@ export const WelcomeScreen = () => {
                                             <Typography variant="h6">Connect to EZRGB Cloud</Typography>
                                         </Box>
                                         <Typography variant="body2" color="text.secondary">
-                                            Pick an empty folder. We&rsquo;ll register this player with
-                                            the cloud and pull the show layout and sequences down.
+                                            Pick an empty folder. We&rsquo;ll register this player with the cloud and
+                                            pull the show layout and sequences down.
                                         </Typography>
                                     </CardActionArea>
                                 </Card>
@@ -178,16 +176,12 @@ export const WelcomeScreen = () => {
                 {stage === 'cloud-bootstrap-register' && (
                     <>
                         <Typography variant="body1" sx={{ mb: 2 }}>
-                            Register this player with EZRGB Cloud. Once registered, EZPlayer will pull
-                            your layout and sequences automatically.
+                            Register this player with EZRGB Cloud. Once registered, EZPlayer will pull your layout and
+                            sequences automatically.
                         </Typography>
                         <PlayerCloudWelcomePanel />
                         <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                            <Button
-                                variant="text"
-                                size="small"
-                                onClick={() => setStage('choose')}
-                            >
+                            <Button variant="text" size="small" onClick={() => setStage('choose')}>
                                 Back
                             </Button>
                         </Box>
@@ -199,14 +193,13 @@ export const WelcomeScreen = () => {
                         <Typography variant="h6" color="success.main" sx={{ mb: 1 }}>
                             Registered ✓
                         </Typography>
-                        {(!layoutStatus || layoutStatus.status === 'idle' ||
+                        {(!layoutStatus ||
+                            layoutStatus.status === 'idle' ||
                             layoutStatus.status === 'fetching' ||
                             layoutStatus.status === 'unpacking') && (
                             <>
                                 <Typography variant="body1" sx={{ mb: 2 }}>
-                                    {layoutStatus?.status === 'unpacking'
-                                        ? 'Unpacking layout…'
-                                        : 'Pulling layout…'}
+                                    {layoutStatus?.status === 'unpacking' ? 'Unpacking layout…' : 'Pulling layout…'}
                                 </Typography>
                                 {layoutStatus?.totalBytes ? (
                                     <Box sx={{ maxWidth: 360, mx: 'auto' }}>
@@ -214,9 +207,7 @@ export const WelcomeScreen = () => {
                                             variant="determinate"
                                             value={Math.min(
                                                 100,
-                                                ((layoutStatus.bytes ?? 0) /
-                                                    layoutStatus.totalBytes) *
-                                                    100,
+                                                ((layoutStatus.bytes ?? 0) / layoutStatus.totalBytes) * 100,
                                             )}
                                         />
                                     </Box>

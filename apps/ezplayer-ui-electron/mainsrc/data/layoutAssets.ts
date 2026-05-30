@@ -129,11 +129,7 @@ function chooseFromIndex(ref: string, index: BasenameIndex): string | null {
  *  (file at the literal location, in-folder absolute, or in-folder relative).
  *  Falls back to basename lookup in the index — this handles the very common case
  *  where xLights XML carries an absolute path from another machine. */
-async function resolveRef(
-    ref: string,
-    showFolder: string,
-    index: BasenameIndex,
-): Promise<string | null> {
+async function resolveRef(ref: string, showFolder: string, index: BasenameIndex): Promise<string | null> {
     const direct = refToShowFolderRelative(ref, showFolder);
     if (direct) {
         try {
@@ -152,11 +148,7 @@ async function resolveRef(
  *  referenced from XML brings its full visual setup with it. */
 const MTL_TEXTURE_DIRECTIVES = ['map_Kd', 'map_Ka', 'map_Ks', 'map_Ns', 'map_d', 'map_Bump', 'bump', 'disp', 'decal'];
 
-async function expandObjMtlChain(
-    showFolder: string,
-    initial: Set<string>,
-    index: BasenameIndex,
-): Promise<void> {
+async function expandObjMtlChain(showFolder: string, initial: Set<string>, index: BasenameIndex): Promise<void> {
     const objRels = Array.from(initial).filter((r) => r.toLowerCase().endsWith('.obj'));
 
     for (const objRel of objRels) {
@@ -205,10 +197,7 @@ async function expandObjMtlChain(
             }
             const mtlDir = path.posix.dirname(mtlRel);
 
-            const directiveRe = new RegExp(
-                `^\\s*(${MTL_TEXTURE_DIRECTIVES.join('|')})\\b\\s+(.+?)\\s*$`,
-                'gim',
-            );
+            const directiveRe = new RegExp(`^\\s*(${MTL_TEXTURE_DIRECTIVES.join('|')})\\b\\s+(.+?)\\s*$`, 'gim');
             let tm: RegExpExecArray | null;
             while ((tm = directiveRe.exec(mtlText)) !== null) {
                 // The argument may include MTL options (e.g. `-clamp on tex.png`).
@@ -242,10 +231,7 @@ async function expandObjMtlChain(
  * against an index of the show folder. Includes the OBJ→MTL→texture chain so
  * meshes bring their materials and textures along.
  */
-export async function collectReferencedAssets(
-    showFolder: string,
-    xmlAbsPaths: string[],
-): Promise<string[]> {
+export async function collectReferencedAssets(showFolder: string, xmlAbsPaths: string[]): Promise<string[]> {
     const index = await buildBasenameIndex(showFolder);
     const result = new Set<string>();
 

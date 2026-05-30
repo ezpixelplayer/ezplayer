@@ -36,10 +36,10 @@ export interface QueueEntry {
 
 // Layout-level settings from the xLights <settings> element
 export interface LayoutSettings {
-    backgroundImage?: string;   // Show-folder-relative path to background image
+    backgroundImage?: string; // Show-folder-relative path to background image
     backgroundBrightness?: number; // 0-100 brightness for the background image
-    previewWidth?: number;      // Layout preview canvas width in pixels
-    previewHeight?: number;     // Layout preview canvas height in pixels
+    previewWidth?: number; // Layout preview canvas width in pixels
+    previewHeight?: number; // Layout preview canvas height in pixels
     layoutGroups?: LayoutGroupInfo[];
     viewpoints?: ViewpointsResult;
 }
@@ -48,9 +48,9 @@ export interface LayoutSettings {
 export interface ViewObject {
     name: string;
     displayAs: string;
-    objFile?: string;        // Path to OBJ file (for DisplayAs="Mesh")
-    imageFile?: string;      // Path to image file (for DisplayAs="Image")
-    transparency?: number;   // 0-100, where 0=opaque, 100=fully transparent
+    objFile?: string; // Path to OBJ file (for DisplayAs="Mesh")
+    imageFile?: string; // Path to image file (for DisplayAs="Image")
+    transparency?: number; // 0-100, where 0=opaque, 100=fully transparent
     worldPosX: number;
     worldPosY: number;
     worldPosZ: number;

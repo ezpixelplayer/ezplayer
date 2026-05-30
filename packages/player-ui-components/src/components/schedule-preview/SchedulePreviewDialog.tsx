@@ -22,13 +22,7 @@ export const SchedulePreviewDialog: React.FC<SchedulePreviewDialogProps> = ({
     );
 
     return (
-        <Dialog
-            open={open}
-            onClose={onClose}
-            maxWidth="xl"
-            fullWidth
-            PaperProps={{ sx: { height: '90vh' } }}
-        >
+        <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth PaperProps={{ sx: { height: '90vh' } }}>
             <SchedulePreview title={title} statusArea={[closeButton]} />
         </Dialog>
     );

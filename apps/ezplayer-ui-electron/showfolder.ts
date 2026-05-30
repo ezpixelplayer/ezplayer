@@ -50,9 +50,7 @@ export interface ShowDirectoryValidationResult {
 
 /** xLights-managed folder validation: requires both xlights_rgbeffects.xml and
  *  xlights_networks.xml to exist and be readable. */
-export async function isValidXLightsShowDirectory(
-    showFolder?: string | null,
-): Promise<ShowDirectoryValidationResult> {
+export async function isValidXLightsShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
     if (!showFolder) {
         return {
             valid: false,
@@ -102,9 +100,7 @@ export async function isValidXLightsShowDirectory(
 
 /** Cloud-managed folder validation: the folder must exist and be writable. The
  *  layout files may not have arrived yet (mid-bootstrap), so we don't require them. */
-export async function isValidCloudShowDirectory(
-    showFolder?: string | null,
-): Promise<ShowDirectoryValidationResult> {
+export async function isValidCloudShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
     if (!showFolder) {
         return {
             valid: false,
@@ -137,14 +133,10 @@ export async function isValidCloudShowDirectory(
 /** Mode-aware validation: peeks `.ezplayer/cloud-config.json` for `layoutSource`,
  *  then dispatches to the correct check. xLights is the default for any folder
  *  that doesn't say otherwise. */
-export async function isValidShowDirectory(
-    showFolder?: string | null,
-): Promise<ShowDirectoryValidationResult> {
+export async function isValidShowDirectory(showFolder?: string | null): Promise<ShowDirectoryValidationResult> {
     if (!showFolder) return isValidXLightsShowDirectory(showFolder);
     const mode = await peekLayoutSource(showFolder);
-    return mode === 'cloud'
-        ? isValidCloudShowDirectory(showFolder)
-        : isValidXLightsShowDirectory(showFolder);
+    return mode === 'cloud' ? isValidCloudShowDirectory(showFolder) : isValidXLightsShowDirectory(showFolder);
 }
 
 async function promptForFolder(): Promise<string | null> {
@@ -245,9 +237,7 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
                 message: 'This folder is not a valid show folder.',
                 detail:
                     (validation.error ?? 'Missing required xLights configuration files.') +
-                    (validation.missingFiles.length > 0
-                        ? `\n\nMissing: ${validation.missingFiles.join(', ')}`
-                        : ''),
+                    (validation.missingFiles.length > 0 ? `\n\nMissing: ${validation.missingFiles.join(', ')}` : ''),
                 buttons: ['Pick another folder', 'Quit'],
                 cancelId: 1,
                 defaultId: 0,
@@ -393,9 +383,7 @@ export async function pickAnotherShowFolder(): Promise<string | null> {
                 message: 'This folder is not a valid show folder.',
                 detail:
                     (validation.error ?? 'Missing required xLights configuration files.') +
-                    (validation.missingFiles.length > 0
-                        ? `\n\nMissing: ${validation.missingFiles.join(', ')}`
-                        : ''),
+                    (validation.missingFiles.length > 0 ? `\n\nMissing: ${validation.missingFiles.join(', ')}` : ''),
                 buttons: ['Pick another folder', 'Cancel'],
                 cancelId: 1,
                 defaultId: 0,

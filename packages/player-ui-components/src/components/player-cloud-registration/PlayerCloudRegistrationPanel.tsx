@@ -8,6 +8,4 @@ import { PlayerCloudWelcomePanel } from './PlayerCloudWelcomePanel';
  * polling editor inside the Advanced accordion, which the first-run Welcome flow
  * suppresses to keep "scan and go" uncluttered.
  */
-export const PlayerCloudRegistrationPanel: React.FC = () => (
-    <PlayerCloudWelcomePanel showPollingEditor />
-);
+export const PlayerCloudRegistrationPanel: React.FC = () => <PlayerCloudWelcomePanel showPollingEditor />;

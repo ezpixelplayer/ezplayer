@@ -73,13 +73,13 @@ export interface FSeqFileVal {
 export interface ScatterRange {
     srcOffset: number; // byte offset within one decompressed sparse frame
     dstOffset: number; // byte offset within one dense frame (= absolute channel)
-    length: number;    // number of bytes (channels) to copy
+    length: number; // number of bytes (channels) to copy
 }
 
 export interface FileLayout {
     isSparse: boolean;
     fileStride: number; // per-frame byte stride in decompressed file data
-    denseStep: number;  // per-frame byte stride in dense output (padded to 4)
+    denseStep: number; // per-frame byte stride in dense output (padded to 4)
     scatterPlan: ScatterRange[]; // empty when isSparse=false
 }
 
@@ -89,7 +89,7 @@ interface DecompCacheKey {
     fileOffset: number;
     fileLen: number;
     compression: number;
-    decompLen: number;   // dense output size: nframes * denseStep
+    decompLen: number; // dense output size: nframes * denseStep
     nframes: number;
     fileStride: number;
     denseStep: number;

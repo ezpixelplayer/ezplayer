@@ -494,15 +494,12 @@ function sendEzvcUpdate() {
     }
     const toVc = (pi: PlayingItem | undefined): VcPlayingItem | undefined =>
         pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
-    const upcomingVc = upcomingItems
-        .map((p) => toVc(p))
-        .filter((x): x is VcPlayingItem => x !== undefined);
+    const upcomingVc = upcomingItems.map((p) => toVc(p)).filter((x): x is VcPlayingItem => x !== undefined);
 
     // Push only when the *lineup identity* changes — not when at/until drift
     // each tick — so the worker's hash dedupe doesn't see per-second churn.
     // Times refresh on lineup change; the page interpolates between changes.
-    const lineupKey =
-        `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
+    const lineupKey = `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
     if (lineupKey !== lastEzvcPlayingKey) {
         lastEzvcPlayingKey = lineupKey;
         setEzvcPlaying({
@@ -537,9 +534,7 @@ function sendEzvcUpdate() {
             end: new Date(x.endTimeMS).toISOString(),
         }));
     // Request windows: exactly the viewer-control schedule entries.
-    const reqWindows: VcScheduleEntry[] = (
-        vc?.type === 'ezplayer' ? vc.schedule ?? [] : []
-    ).map((e) => ({
+    const reqWindows: VcScheduleEntry[] = (vc?.type === 'ezplayer' ? (vc.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
         end: e.endTime,
@@ -555,9 +550,7 @@ function sendEzvcUpdate() {
     const jukebox = settings.jukebox;
     const catalog: VcSong[] = (curSequences ?? [])
         .filter((seq) => !seq.deleted && seq.render_enabled !== false)
-        .filter((seq) =>
-            isSongAllowedForJukebox(seq.settings?.tags, jukebox?.excludedTags, jukebox?.includedTags),
-        )
+        .filter((seq) => isSongAllowedForJukebox(seq.settings?.tags, jukebox?.excludedTags, jukebox?.includedTags))
         .map((seq) => ({
             id: seq.id,
             title: seq.work?.title || seq.id,
@@ -1021,10 +1014,7 @@ let lastPRSSchedUpdate: number = 0;
 // Returns a Map from lowercase filename to show-folder-relative path (forward slashes).
 // When multiple files share the same name, the shallowest one wins.
 ////////
-async function buildShowFolderIndex(
-    folder: string,
-    maxDepth = 5,
-): Promise<Map<string, string>> {
+async function buildShowFolderIndex(folder: string, maxDepth = 5): Promise<Map<string, string>> {
     const index = new Map<string, string>();
 
     async function scan(dir: string, depth: number): Promise<void> {
@@ -1221,7 +1211,9 @@ async function loadXmlCoordinates() {
 
                             const resolvedObjFile = resolveFilePathFromIndex(objFile, resolvedShow, fileIndex);
                             if (!resolvedObjFile) {
-                                emitWarning(`[loadXmlCoordinates] Could not resolve "${objFile}" for view object "${name}"`);
+                                emitWarning(
+                                    `[loadXmlCoordinates] Could not resolve "${objFile}" for view object "${name}"`,
+                                );
                                 continue;
                             }
 
@@ -1262,7 +1254,9 @@ async function loadXmlCoordinates() {
 
                             const resolvedImageFile = resolveFilePathFromIndex(imageFile, resolvedShow, fileIndex);
                             if (!resolvedImageFile) {
-                                emitWarning(`[loadXmlCoordinates] Could not resolve image "${imageFile}" for view object "${name}"`);
+                                emitWarning(
+                                    `[loadXmlCoordinates] Could not resolve image "${imageFile}" for view object "${name}"`,
+                                );
                                 continue;
                             }
 
@@ -1296,11 +1290,7 @@ async function loadXmlCoordinates() {
                 for (const [modelName, modelEntry] of gmc3d.models.entries()) {
                     const nr = modelEntry.nodeResult;
                     if (!nr.imageInfo) continue;
-                    const resolvedImageFile = resolveFilePathFromIndex(
-                        nr.imageInfo.imageFile,
-                        resolvedShow,
-                        fileIndex,
-                    );
+                    const resolvedImageFile = resolveFilePathFromIndex(nr.imageInfo.imageFile, resolvedShow, fileIndex);
                     if (!resolvedImageFile) {
                         emitWarning(
                             `[loadXmlCoordinates] Could not resolve image "${nr.imageInfo.imageFile}" for image model "${modelName}"`,
@@ -1312,9 +1302,15 @@ async function loadXmlCoordinates() {
                         displayAs: 'Image',
                         imageFile: resolvedImageFile,
                         // Identity placeholders — the renderer uses worldMatrix instead.
-                        worldPosX: 0, worldPosY: 0, worldPosZ: 0,
-                        scaleX: 1, scaleY: 1, scaleZ: 1,
-                        rotateX: 0, rotateY: 0, rotateZ: 0,
+                        worldPosX: 0,
+                        worldPosY: 0,
+                        worldPosZ: 0,
+                        scaleX: 1,
+                        scaleY: 1,
+                        scaleZ: 1,
+                        rotateX: 0,
+                        rotateY: 0,
+                        rotateZ: 0,
                         active: true,
                         startChannel: modelEntry.channelMapping.firstChannel,
                         channelsPerNode: modelEntry.channelMapping.channelsPerNode,
@@ -1326,7 +1322,9 @@ async function loadXmlCoordinates() {
                     imageModelCount++;
                 }
 
-                emitInfo(`[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images${imageModelCount ? ` incl. ${imageModelCount} image model${imageModelCount === 1 ? '' : 's'}` : ''})`);
+                emitInfo(
+                    `[loadXmlCoordinates] Loaded ${viewObjects.length} view objects (meshes + images${imageModelCount ? ` incl. ${imageModelCount} image model${imageModelCount === 1 ? '' : 's'}` : ''})`,
+                );
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing view_objects element: ${parseErr}`);
             }
@@ -1366,7 +1364,9 @@ async function loadXmlCoordinates() {
                     }
 
                     if (layoutSettings.backgroundImage) {
-                        emitInfo(`[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`);
+                        emitInfo(
+                            `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                        );
                     }
                 }
             } catch (parseErr) {
@@ -1391,7 +1391,10 @@ async function loadXmlCoordinates() {
                         backgroundAlpha: g.backgroundAlpha,
                     }));
 
-                    const names = parsedGroups.slice(0, 8).map((g) => g.name).join(', ');
+                    const names = parsedGroups
+                        .slice(0, 8)
+                        .map((g) => g.name)
+                        .join(', ');
                     emitInfo(
                         `[loadXmlCoordinates] layoutGroups parsed: ${parsedGroups.length}` +
                             (names ? `; groups=[${names}]` : ''),
@@ -1553,7 +1556,7 @@ async function processQueue() {
         if (modelChannelMax > nChannels) {
             emitInfo(
                 `[processQueue] Frame buffer extended: ${nChannels} → ${modelChannelMax} ch` +
-                ` (models use channels beyond controller range)`,
+                    ` (models use channels beyond controller range)`,
             );
             nChannels = modelChannelMax;
         }
@@ -1776,11 +1779,13 @@ async function processQueue() {
                     }
                 }
 
-                const upcomingAudio = foregroundPlayerRunState?.snapshot()?.getUpcomingItems(
-                    playbackParams.audioPrefetchTime,
-                    playbackParams.scheduleLoadTime,
-                    playbackParams.maxAudioPrefetchItems,
-                );
+                const upcomingAudio = foregroundPlayerRunState
+                    ?.snapshot()
+                    ?.getUpcomingItems(
+                        playbackParams.audioPrefetchTime,
+                        playbackParams.scheduleLoadTime,
+                        playbackParams.maxAudioPrefetchItems,
+                    );
 
                 mp3Cache.setNow(targetFrameRTC);
                 prefetchActionMedia(upcomingAudio.curPLActions);
@@ -1870,13 +1875,18 @@ async function processQueue() {
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
             // Skip audio entirely while paused
-            if (!isPaused) emitAudioDebug(
-                `Send audio time: ${audioPlayerRunTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
-            );
+            if (!isPaused)
+                emitAudioDebug(
+                    `Send audio time: ${audioPlayerRunTime} vs ${targetFrameRTC + playbackParams.sendAudioInAdvanceMs}`,
+                );
             // Take one snapshot and advance it as audioPlayerRunTime progresses
             const audioSnapshot = !isPaused ? foregroundPlayerRunState?.snapshot() : undefined;
             let aiter = 0;
-            while (!isPaused && audioSnapshot && audioPlayerRunTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs) {
+            while (
+                !isPaused &&
+                audioSnapshot &&
+                audioPlayerRunTime <= targetFrameRTC + playbackParams.sendAudioInAdvanceMs
+            ) {
                 ++aiter;
                 if (aiter > 100) {
                     emitError(`Way too many audio iterations!`);

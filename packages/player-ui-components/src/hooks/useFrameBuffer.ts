@@ -78,10 +78,15 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
                     if (response.status === 404) {
                         consecutiveErrorsRef.current++;
                         if (consecutiveErrorsRef.current === 1) {
-                            console.warn(`[useFrameBuffer] Endpoint not found: ${baseUrl}${endpoint}. Will keep retrying.`);
+                            console.warn(
+                                `[useFrameBuffer] Endpoint not found: ${baseUrl}${endpoint}. Will keep retrying.`,
+                            );
                         }
                         // Back off progressively: 160ms, 320ms, … up to ~5s
-                        const backoff = Math.min(pollIntervalMs * 10 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)), 5000);
+                        const backoff = Math.min(
+                            pollIntervalMs * 10 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)),
+                            5000,
+                        );
                         await new Promise((resolve) => setTimeout(resolve, backoff));
                         continue;
                     }
@@ -105,9 +110,14 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
                     if (!response.ok) {
                         consecutiveErrorsRef.current++;
                         if (consecutiveErrorsRef.current <= 3) {
-                            console.warn(`[useFrameBuffer] Error fetching frames: ${response.status} ${response.statusText}`);
+                            console.warn(
+                                `[useFrameBuffer] Error fetching frames: ${response.status} ${response.statusText}`,
+                            );
                         }
-                        const backoff = Math.min(pollIntervalMs * 5 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)), 5000);
+                        const backoff = Math.min(
+                            pollIntervalMs * 5 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)),
+                            5000,
+                        );
                         await new Promise((resolve) => setTimeout(resolve, backoff));
                         continue;
                     }
@@ -158,9 +168,15 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
                 } catch (error) {
                     consecutiveErrorsRef.current++;
                     if (consecutiveErrorsRef.current <= 3) {
-                        console.warn(`[useFrameBuffer] Network error:`, error instanceof Error ? error.message : String(error));
+                        console.warn(
+                            `[useFrameBuffer] Network error:`,
+                            error instanceof Error ? error.message : String(error),
+                        );
                     }
-                    const backoff = Math.min(pollIntervalMs * 5 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)), 5000);
+                    const backoff = Math.min(
+                        pollIntervalMs * 5 * Math.pow(2, Math.min(consecutiveErrorsRef.current - 1, 5)),
+                        5000,
+                    );
                     await new Promise((resolve) => setTimeout(resolve, backoff));
                     continue;
                 }

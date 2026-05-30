@@ -57,9 +57,7 @@ interface PlayerCloudWelcomePanelProps {
  * cloud-screen Register dialog (`showPollingEditor`). `PlayerCloudRegistrationPanel`
  * is a thin alias around this component with `showPollingEditor` enabled.
  */
-export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = ({
-    showPollingEditor = false,
-}) => {
+export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = ({ showPollingEditor = false }) => {
     const dispatch = useDispatch<AppDispatch>();
 
     const playerIdToken = useSelector(selectPlayerIdToken);
@@ -176,9 +174,8 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                     }}
                 >
                     <Typography variant="body2" sx={{ mb: 2 }}>
-                        Cloud activity is paused, so registration won't poll. Resume to
-                        register or pick up where you left off — your token and URL are
-                        retained.
+                        Cloud activity is paused, so registration won't poll. Resume to register or pick up where you
+                        left off — your token and URL are retained.
                     </Typography>
                     <Button
                         startIcon={<PlayArrowIcon />}

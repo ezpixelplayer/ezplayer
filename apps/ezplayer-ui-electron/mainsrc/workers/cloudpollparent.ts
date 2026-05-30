@@ -12,11 +12,7 @@ import type {
     ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import type {
-    CloudPollInMessage,
-    CloudPollOutMessage,
-    CloudWorkerTuning,
-} from './cloudpolltypes';
+import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { cloudBridgeOpen, cloudBridgeClose } from '../server-worker-manager.js';
 
 // cloudpollparent gets bundled into the parent file that imports it (e.g. dist/main.js),
@@ -34,9 +30,7 @@ let currentCStatus: PlayerCStatusContent = {};
 let statusListener: ((s: CloudStatus) => void) | undefined;
 let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
 let installListener: ((record: SequenceRecord, superseded: string[]) => void) | undefined;
-let layoutInstalledListener:
-    | ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void)
-    | undefined;
+let layoutInstalledListener: ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void) | undefined;
 let playlistsListener: ((playlists: PlaylistRecord[]) => void) | undefined;
 let scheduleListener: ((schedule: ScheduledPlaylist[]) => void) | undefined;
 let settingsListener: ((settings: CloudPlayerSettings) => void) | undefined;
@@ -96,9 +90,7 @@ function ensureWorker() {
                 cStatusListener?.(currentCStatus);
                 break;
             case 'installSequence':
-                console.log(
-                    `[cloudpoll] installSequence id=${msg.record.id} superseded=${msg.superseded.length}`,
-                );
+                console.log(`[cloudpoll] installSequence id=${msg.record.id} superseded=${msg.superseded.length}`);
                 installListener?.(msg.record, msg.superseded);
                 break;
             case 'layoutInstalled':
@@ -215,15 +207,11 @@ export function onCStatus(listener: (s: PlayerCStatusContent) => void) {
     cStatusListener = listener;
 }
 
-export function onInstallSequence(
-    listener: (record: SequenceRecord, superseded: string[]) => void,
-) {
+export function onInstallSequence(listener: (record: SequenceRecord, superseded: string[]) => void) {
     installListener = listener;
 }
 
-export function onLayoutInstalled(
-    listener: (layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void,
-) {
+export function onLayoutInstalled(listener: (layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void) {
     layoutInstalledListener = listener;
 }
 

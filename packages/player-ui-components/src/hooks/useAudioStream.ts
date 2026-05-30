@@ -271,7 +271,9 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                     if (!response.ok) {
                         consecutiveErrorsRef.current++;
                         if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-                            console.warn(`[useAudioStream] Stopping after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`);
+                            console.warn(
+                                `[useAudioStream] Stopping after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`,
+                            );
                             shouldStopRef.current = true;
                             return;
                         }
@@ -296,14 +298,29 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                     let didSchedule = false;
 
                     for (let i = 0; i < chunkCount; i++) {
-                        const playAtServerTime = view.getFloat64(offset, true); offset += 8;
-                        const incarnation = view.getUint32(offset, true); offset += 4;
-                        const sampleRate = view.getUint32(offset, true); offset += 4;
-                        const channels = view.getUint32(offset, true); offset += 4;
-                        const sampleCount = view.getUint32(offset, true); offset += 4;
+                        const playAtServerTime = view.getFloat64(offset, true);
+                        offset += 8;
+                        const incarnation = view.getUint32(offset, true);
+                        offset += 4;
+                        const sampleRate = view.getUint32(offset, true);
+                        offset += 4;
+                        const channels = view.getUint32(offset, true);
+                        offset += 4;
+                        const sampleCount = view.getUint32(offset, true);
+                        offset += 4;
                         const floatArray = new Float32Array(data, offset, sampleCount);
                         offset += sampleCount * 4;
-                        if (scheduleChunk(ctx, playAtServerTime, incarnation, sampleRate, channels, sampleCount, floatArray)) {
+                        if (
+                            scheduleChunk(
+                                ctx,
+                                playAtServerTime,
+                                incarnation,
+                                sampleRate,
+                                channels,
+                                sampleCount,
+                                floatArray,
+                            )
+                        ) {
                             didSchedule = true;
                         }
                     }
@@ -313,7 +330,9 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                 } catch (error) {
                     consecutiveErrorsRef.current++;
                     if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
-                        console.warn(`[useAudioStream] Stopping after ${MAX_CONSECUTIVE_ERRORS} consecutive network errors.`);
+                        console.warn(
+                            `[useAudioStream] Stopping after ${MAX_CONSECUTIVE_ERRORS} consecutive network errors.`,
+                        );
                         shouldStopRef.current = true;
                         return;
                     }

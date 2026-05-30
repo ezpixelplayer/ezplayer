@@ -5,10 +5,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as THREE from 'three';
 import type { ViewObject, Point3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import {
-    type AssetResolver,
-    createShowFileResolver,
-} from '../../services/assetResolver';
+import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -123,9 +120,13 @@ function optimizeMaterialTextures(materials: Record<string, THREE.Material>): vo
 
             if (img instanceof HTMLImageElement && !img.complete) {
                 // Image still loading – resize when it arrives
-                img.addEventListener('load', () => {
-                    downscaleTexture(tex, MAX_TEXTURE_SIZE);
-                }, { once: true });
+                img.addEventListener(
+                    'load',
+                    () => {
+                        downscaleTexture(tex, MAX_TEXTURE_SIZE);
+                    },
+                    { once: true },
+                );
             } else {
                 // Already decoded
                 downscaleTexture(tex, MAX_TEXTURE_SIZE);
@@ -156,9 +157,7 @@ function postProcessMeshMaterials(group: THREE.Group): void {
         const processed = materials.map((mat) => {
             // Extract the diffuse texture map from any material type
             const diffuseMap: THREE.Texture | null =
-                (mat as THREE.MeshPhongMaterial).map ??
-                (mat as THREE.MeshStandardMaterial).map ??
-                null;
+                (mat as THREE.MeshPhongMaterial).map ?? (mat as THREE.MeshStandardMaterial).map ?? null;
 
             // Set correct color space on diffuse map
             if (diffuseMap) {
@@ -282,7 +281,6 @@ function convertLineSegmentsToMeshes(
             if (uvAttr) {
                 meshGeo.setAttribute('uv', new THREE.BufferAttribute(triUVs, 2));
             }
-
         } else if (vertCount >= 3) {
             // Fallback: treat every 3 consecutive vertices as a triangle.
             // This loses some verts if not divisible by 3, but gives us geometry.
@@ -366,7 +364,9 @@ class HouseMeshErrorBoundary extends React.Component<
             errorMessage: error?.message,
             errorStack: error?.stack,
             componentStack: errorInfo.componentStack,
-            errorDetails: (error as unknown as Record<string, unknown>)?.response || (error as unknown as Record<string, unknown>)?.details,
+            errorDetails:
+                (error as unknown as Record<string, unknown>)?.response ||
+                (error as unknown as Record<string, unknown>)?.details,
         });
 
         if (error?.message?.includes('403') || error?.message?.includes('Forbidden')) {
@@ -466,7 +466,14 @@ function createAssetLoadingManager(
 // HouseMeshContent – the actual R3F component
 // ---------------------------------------------------------------------------
 
-function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData, points, backgroundBrightness }: HouseMeshProps) {
+function HouseMeshContent({
+    viewObject,
+    frameServerUrl,
+    assetResolver,
+    liveData,
+    points,
+    backgroundBrightness,
+}: HouseMeshProps) {
     // Use the caller-supplied resolver when present, otherwise fall back to a show-file resolver
     // built from `frameServerUrl` so legacy callers that haven't been updated to thread a resolver
     // through still work against local Koa hosting.
@@ -477,9 +484,15 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
 
     const {
         objFile,
-        worldPosX, worldPosY, worldPosZ,
-        scaleX, scaleY, scaleZ,
-        rotateX, rotateY, rotateZ,
+        worldPosX,
+        worldPosY,
+        worldPosZ,
+        scaleX,
+        scaleY,
+        scaleZ,
+        rotateX,
+        rotateY,
+        rotateZ,
         brightness: viewObjectBrightness,
         startChannel: viewObjectStartChannel,
         channelsPerNode: viewObjectChannelsPerNode = 3,
@@ -517,9 +530,18 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         // colorMix so the inner loop has a single code path.
         const offsetsToMix = (rOff: number, gOff: number, bOff: number): Float32Array => {
             const mix = new Float32Array(12);
-            mix[0] = rOff; mix[1] = 1; mix[2] = 0; mix[3] = 0;
-            mix[4] = gOff; mix[5] = 0; mix[6] = 1; mix[7] = 0;
-            mix[8] = bOff; mix[9] = 0; mix[10] = 0; mix[11] = 1;
+            mix[0] = rOff;
+            mix[1] = 1;
+            mix[2] = 0;
+            mix[3] = 0;
+            mix[4] = gOff;
+            mix[5] = 0;
+            mix[6] = 1;
+            mix[7] = 0;
+            mix[8] = bOff;
+            mix[9] = 0;
+            mix[10] = 0;
+            mix[11] = 1;
             return mix;
         };
 
@@ -535,11 +557,11 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         if (!points || points.length === 0) return null;
 
         const searchName = viewObjectModelName || viewObject.name;
-        const matchingPoints = points.filter(p => p.metadata?.modelName === searchName);
+        const matchingPoints = points.filter((p) => p.metadata?.modelName === searchName);
         if (matchingPoints.length === 0) return null;
 
         const channels = matchingPoints
-            .map(p => p.channel)
+            .map((p) => p.channel)
             .filter((ch): ch is number => ch !== undefined)
             .sort((a, b) => a - b);
         if (channels.length === 0) return null;
@@ -554,9 +576,15 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
             colorMix,
         };
     }, [
-        viewObjectStartChannel, viewObjectChannelsPerNode, viewObjectNodeCount,
-        viewObjectROffset, viewObjectGOffset, viewObjectBOffset,
-        viewObjectModelName, viewObject.name, points,
+        viewObjectStartChannel,
+        viewObjectChannelsPerNode,
+        viewObjectNodeCount,
+        viewObjectROffset,
+        viewObjectGOffset,
+        viewObjectBOffset,
+        viewObjectModelName,
+        viewObject.name,
+        points,
     ]);
 
     const startChannel = channelInfo?.startChannel;
@@ -662,7 +690,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
                 if (totalFaces > 0 && totalLines > 0) {
                     console.warn(
                         `[HouseMesh] OBJ has ${totalFaces} faces AND ${totalLines} line directives. ` +
-                        `Stripping line directives to prevent OBJLoader from creating LineSegments.`,
+                            `Stripping line directives to prevent OBJLoader from creating LineSegments.`,
                     );
                     objText = objText.replace(/^[lL]\s.*$/gm, '');
                 }
@@ -704,7 +732,9 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
 
                 // ---- Step 5: If OBJ only produced LineSegments, convert to Mesh ----
                 if (meshCount === 0 && lineSegCount > 0) {
-                    console.warn('[HouseMesh] OBJ has no Mesh children (only LineSegments). Converting to mesh triangles…');
+                    console.warn(
+                        '[HouseMesh] OBJ has no Mesh children (only LineSegments). Converting to mesh triangles…',
+                    );
                     loadedObj = convertLineSegmentsToMeshes(loadedObj, materialCreator);
                 }
 
@@ -740,7 +770,9 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         };
 
         loadModel();
-        return () => { aborted = true; };
+        return () => {
+            aborted = true;
+        };
     }, [objUrl, mtlUrl, effectiveResolver, frameServerUrl, objFile, viewObject.name, brightness]);
 
     // ----- Transforms -----
@@ -748,17 +780,15 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         () => new THREE.Vector3(worldPosX, worldPosY, worldPosZ),
         [worldPosX, worldPosY, worldPosZ],
     );
-    const scale = useMemo(
-        () => new THREE.Vector3(scaleX, scaleY, scaleZ),
-        [scaleX, scaleY, scaleZ],
-    );
+    const scale = useMemo(() => new THREE.Vector3(scaleX, scaleY, scaleZ), [scaleX, scaleY, scaleZ]);
     const rotation = useMemo(
-        () => new THREE.Euler(
-            (rotateX * Math.PI) / 180,
-            (rotateY * Math.PI) / 180,
-            (rotateZ * Math.PI) / 180,
-            'ZYX', // xLights uses ZYX rotation order (Z first, then Y, then X)
-        ),
+        () =>
+            new THREE.Euler(
+                (rotateX * Math.PI) / 180,
+                (rotateY * Math.PI) / 180,
+                (rotateZ * Math.PI) / 180,
+                'ZYX', // xLights uses ZYX rotation order (Z first, then Y, then X)
+            ),
         [rotateX, rotateY, rotateZ],
     );
 
@@ -799,7 +829,10 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         const latestFrame = liveData.tryReadLatest(lastFrameSeqRef.current ?? undefined);
         if (!latestFrame?.bytes) return;
 
-        let totalR = 0, totalG = 0, totalB = 0, validNodes = 0;
+        let totalR = 0,
+            totalG = 0,
+            totalB = 0,
+            validNodes = 0;
         const mix = colorMix;
         const mixLen = mix?.length ?? 0;
         // Largest offset present in the mix — used to bounds-check once per node.
@@ -812,14 +845,18 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
             const ch = startChannel + nodeIndex * channelsPerNode;
             if (mix) {
                 if (ch + maxOff >= latestFrame.bytes.length) continue;
-                let nr = 0, ng = 0, nb = 0;
+                let nr = 0,
+                    ng = 0,
+                    nb = 0;
                 for (let m = 0; m < mixLen; m += 4) {
                     const v = latestFrame.bytes[ch + mix[m]];
                     nr += v * mix[m + 1];
                     ng += v * mix[m + 2];
                     nb += v * mix[m + 3];
                 }
-                totalR += nr; totalG += ng; totalB += nb;
+                totalR += nr;
+                totalG += ng;
+                totalB += nb;
                 validNodes++;
             } else if (ch + 2 < latestFrame.bytes.length) {
                 totalR += latestFrame.bytes[ch];
@@ -837,9 +874,9 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
         }
 
         const bf = brightness !== undefined ? brightness / 100 : 1.0;
-        const finalR = Math.min(1.0, totalR / validNodes / 255.0 * bf);
-        const finalG = Math.min(1.0, totalG / validNodes / 255.0 * bf);
-        const finalB = Math.min(1.0, totalB / validNodes / 255.0 * bf);
+        const finalR = Math.min(1.0, (totalR / validNodes / 255.0) * bf);
+        const finalG = Math.min(1.0, (totalG / validNodes / 255.0) * bf);
+        const finalB = Math.min(1.0, (totalB / validNodes / 255.0) * bf);
 
         let materialUpdated = false;
 
@@ -879,14 +916,7 @@ function HouseMeshContent({ viewObject, frameServerUrl, assetResolver, liveData,
     // ----- Render -----
     if (!obj) return null;
 
-    return (
-        <primitive
-            object={obj}
-            position={position}
-            scale={scale}
-            rotation={rotation}
-        />
-    );
+    return <primitive object={obj} position={position} scale={scale} rotation={rotation} />;
 }
 
 export const HouseMesh = React.memo(function HouseMesh(props: HouseMeshProps) {
@@ -898,4 +928,3 @@ export const HouseMesh = React.memo(function HouseMesh(props: HouseMeshProps) {
         </HouseMeshErrorBoundary>
     );
 });
-

@@ -1,14 +1,6 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import CloseIcon from '@mui/icons-material/Close';
-import {
-    Card,
-    Dialog,
-    DialogContent,
-    DialogTitle,
-    IconButton,
-    Tooltip,
-    Typography,
-} from '@mui/material';
+import { Card, Dialog, DialogContent, DialogTitle, IconButton, Tooltip, Typography } from '@mui/material';
 import React, { useState } from 'react';
 import { Box } from '../box/Box';
 import { LegalFooter } from './LegalFooter';
@@ -135,11 +127,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
             {/* Section dialogs (one per content-bearing section) */}
             {effectiveSections.map((s) =>
                 'content' in s ? (
-                    <SectionDialog
-                        key={s.key}
-                        open={activeDialog === s.key}
-                        title={s.title ?? s.label}
-                    >
+                    <SectionDialog key={s.key} open={activeDialog === s.key} title={s.title ?? s.label}>
                         {s.content}
                     </SectionDialog>
                 ) : null,

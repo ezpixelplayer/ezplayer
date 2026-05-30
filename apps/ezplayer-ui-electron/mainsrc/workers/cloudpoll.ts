@@ -23,11 +23,7 @@ import {
     type ScheduledPlaylist,
     type SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import type {
-    CloudPollInMessage,
-    CloudPollOutMessage,
-    CloudWorkerTuning,
-} from './cloudpolltypes';
+import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { collectReferencedAssets } from '../data/layoutAssets.js';
 
 // Aggressive demo defaults; production callers should pass conservative values.
@@ -492,13 +488,7 @@ function sniffExt(buf: Buffer): string | undefined {
         return '.wav';
     }
     if (buf[0] === 0x4f && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) return '.ogg';
-    if (
-        buf.length >= 8 &&
-        buf[4] === 0x66 &&
-        buf[5] === 0x74 &&
-        buf[6] === 0x79 &&
-        buf[7] === 0x70
-    ) {
+    if (buf.length >= 8 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) {
         return '.m4a';
     }
     if (buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) return '.zip';
@@ -655,10 +645,7 @@ interface DownloadResult {
     installed: Partial<Record<CloudFileKind, { absPath: string; file_id: string; file_time?: number }>>;
 }
 
-async function downloadSet(
-    entry: CloudSeqManifestEntry,
-    pending: PendingFile[],
-): Promise<DownloadResult> {
+async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[]): Promise<DownloadResult> {
     const installed: DownloadResult['installed'] = {};
     for (const pf of pending) {
         if (!canRun()) return { ok: false, installed };
@@ -699,9 +686,7 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
         downloadUrl = pf.directUrl!;
     } else {
         const endpoint =
-            pf.fetchVia === 'seqfile'
-                ? CLOUD_API_ENDPOINTS.EZP_GET_SEQ_FILE
-                : CLOUD_API_ENDPOINTS.EZP_GET_MEDIA_FILE;
+            pf.fetchVia === 'seqfile' ? CLOUD_API_ENDPOINTS.EZP_GET_SEQ_FILE : CLOUD_API_ENDPOINTS.EZP_GET_MEDIA_FILE;
         const ticketUrl = `${cloudUrl}${endpoint}${playerIdToken}/${pf.file_id}`;
         const res = await fetchWithTimeout(ticketUrl, downloadTimeoutMs);
         if (!res.ok) throw new Error(`ticket HTTP ${res.status}`);
@@ -780,11 +765,7 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
         },
     });
 
-    await pipeline(
-        Readable.fromWeb(dlRes.body as never),
-        counter,
-        fs.createWriteStream(stagePart),
-    );
+    await pipeline(Readable.fromWeb(dlRes.body as never), counter, fs.createWriteStream(stagePart));
     await fsp.rename(stagePart, stageFinal);
 
     // Sniff the staged file's magic bytes. If the cloud handed back a wrong extension
@@ -914,8 +895,7 @@ function buildSequenceRecord(
     existing: SequenceRecord | undefined,
     installed: DownloadResult['installed'],
 ): SequenceRecord {
-    const length =
-        existing?.work?.length ?? (entry.duration_ms ? entry.duration_ms / 1000 : 0);
+    const length = existing?.work?.length ?? (entry.duration_ms ? entry.duration_ms / 1000 : 0);
     const next: SequenceRecord = {
         ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
         id: entry.id,
@@ -963,18 +943,10 @@ function collectSupersededPaths(
     if (installed.fseq && existing.files.fseq && existing.files.fseq !== installed.fseq.absPath) {
         out.push(existing.files.fseq);
     }
-    if (
-        installed.audio &&
-        existing.files.audio &&
-        existing.files.audio !== installed.audio.absPath
-    ) {
+    if (installed.audio && existing.files.audio && existing.files.audio !== installed.audio.absPath) {
         out.push(existing.files.audio);
     }
-    if (
-        installed.thumb &&
-        existing.files.thumb &&
-        existing.files.thumb !== installed.thumb.absPath
-    ) {
+    if (installed.thumb && existing.files.thumb && existing.files.thumb !== installed.thumb.absPath) {
         out.push(existing.files.thumb);
     }
     return out;
@@ -1065,7 +1037,12 @@ async function fetchLayout(): Promise<void> {
             matches(layoutMeta.networks, body.networks)
         ) {
             log('info', 'layout already up to date');
-            setLayout({ status: 'done', direction: 'download', lastFetchedAt: layoutMeta.lastFetchedAt, error: undefined });
+            setLayout({
+                status: 'done',
+                direction: 'download',
+                lastFetchedAt: layoutMeta.lastFetchedAt,
+                error: undefined,
+            });
             return;
         }
 
@@ -1096,11 +1073,7 @@ async function fetchLayout(): Promise<void> {
         ) {
             await downloadXmlOverlay(body.rgbeffects, 'xlights_rgbeffects.xml');
         }
-        if (
-            body.networks &&
-            body.networks.file_time > zipFileTime &&
-            !matches(layoutMeta.networks, body.networks)
-        ) {
+        if (body.networks && body.networks.file_time > zipFileTime && !matches(layoutMeta.networks, body.networks)) {
             await downloadXmlOverlay(body.networks, 'xlights_networks.xml');
         }
 

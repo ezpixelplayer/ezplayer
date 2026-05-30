@@ -458,10 +458,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                         <Grid container spacing={1}>
                                                             {ctrl.description && (
                                                                 <Grid item xs={12}>
-                                                                    <Typography
-                                                                        variant="body2"
-                                                                        color="text.secondary"
-                                                                    >
+                                                                    <Typography variant="body2" color="text.secondary">
                                                                         Description: {ctrl.description}
                                                                     </Typography>
                                                                 </Grid>
@@ -521,17 +518,18 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                                                     <Grid item xs={12}>
                                                                         <Typography variant="body2">
                                                                             Channels: {ctrl.startCh.toLocaleString()}–
-                                                                            {(ctrl.startCh + ctrl.nCh - 1).toLocaleString()}{' '}
+                                                                            {(
+                                                                                ctrl.startCh +
+                                                                                ctrl.nCh -
+                                                                                1
+                                                                            ).toLocaleString()}{' '}
                                                                             ({ctrl.nCh.toLocaleString()})
                                                                         </Typography>
                                                                     </Grid>
                                                                 )}
                                                             {ctrl.reported_time && (
                                                                 <Grid item xs={12}>
-                                                                    <Typography
-                                                                        variant="body2"
-                                                                        color="text.secondary"
-                                                                    >
+                                                                    <Typography variant="body2" color="text.secondary">
                                                                         Last Reported: {formatTime(ctrl.reported_time)}
                                                                     </Typography>
                                                                 </Grid>
@@ -662,7 +660,11 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
             </Grid>
 
             {/* Stats Dialog */}
-            <StatsDialog open={statsDialogOpen} onClose={() => setStatsDialogOpen(false)} stats={runtime.playbackStats} />
+            <StatsDialog
+                open={statsDialogOpen}
+                onClose={() => setStatsDialogOpen(false)}
+                stats={runtime.playbackStats}
+            />
         </Box>
     );
 };

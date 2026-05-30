@@ -17,12 +17,14 @@ import {
     saveScheduleAPI,
 } from './data/FileStorage.js';
 
-import { applySettingsFromRenderer, getSettingsCache, loadCloudSettingsMeta, loadSettingsFromDisk, saveCloudSettingsMeta } from './data/SettingsStorage.js';
 import {
-    getCloudConfigCache,
-    loadCloudConfigFromDisk,
-    updateCloudConfig,
-} from './data/CloudConfigStorage.js';
+    applySettingsFromRenderer,
+    getSettingsCache,
+    loadCloudSettingsMeta,
+    loadSettingsFromDisk,
+    saveCloudSettingsMeta,
+} from './data/SettingsStorage.js';
+import { getCloudConfigCache, loadCloudConfigFromDisk, updateCloudConfig } from './data/CloudConfigStorage.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
@@ -265,22 +267,31 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
     const newMeta = { ...meta };
     const adopted: string[] = [];
 
-    if (cloud.playback_settings && cloud.playback_settings_updated !== undefined &&
-        cloud.playback_settings_updated > (meta.playback ?? 0)) {
+    if (
+        cloud.playback_settings &&
+        cloud.playback_settings_updated !== undefined &&
+        cloud.playback_settings_updated > (meta.playback ?? 0)
+    ) {
         next.audioSyncAdjust = cloud.playback_settings.audioSyncAdjust;
         next.backgroundSequence = cloud.playback_settings.backgroundSequence;
         next.jukebox = cloud.playback_settings.jukebox;
         newMeta.playback = cloud.playback_settings_updated;
         adopted.push('playback');
     }
-    if (cloud.volume_control && cloud.volume_control_updated !== undefined &&
-        cloud.volume_control_updated > (meta.volume ?? 0)) {
+    if (
+        cloud.volume_control &&
+        cloud.volume_control_updated !== undefined &&
+        cloud.volume_control_updated > (meta.volume ?? 0)
+    ) {
         next.volumeControl = cloud.volume_control;
         newMeta.volume = cloud.volume_control_updated;
         adopted.push('volume');
     }
-    if (cloud.viewer_control_state && cloud.viewer_control_state_updated !== undefined &&
-        cloud.viewer_control_state_updated > (meta.viewerControl ?? 0)) {
+    if (
+        cloud.viewer_control_state &&
+        cloud.viewer_control_state_updated !== undefined &&
+        cloud.viewer_control_state_updated > (meta.viewerControl ?? 0)
+    ) {
         next.viewerControl = cloud.viewer_control_state;
         newMeta.viewerControl = cloud.viewer_control_state_updated;
         adopted.push('viewerControl');

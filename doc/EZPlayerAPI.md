@@ -482,11 +482,11 @@ Get ZSTD-compressed binary frame data for the live 3D viewer. Same semantics as 
 
 **Response Binary Format:**
 
-| Offset | Size    | Type      | Description                         |
-| ------ | ------- | --------- | ----------------------------------- |
-| 0      | 4 bytes | uint32 LE | Uncompressed frame size in bytes    |
-| 4      | 4 bytes | uint32 LE | Sequence number                     |
-| 8      | N bytes | raw       | ZSTD-compressed frame data (level 1)|
+| Offset | Size    | Type      | Description                          |
+| ------ | ------- | --------- | ------------------------------------ |
+| 0      | 4 bytes | uint32 LE | Uncompressed frame size in bytes     |
+| 4      | 4 bytes | uint32 LE | Sequence number                      |
+| 8      | N bytes | raw       | ZSTD-compressed frame data (level 1) |
 
 The 8-byte header is **not** compressed. Decompress the payload starting at offset 8 to recover the original frame bytes.
 
@@ -560,21 +560,21 @@ The response is a binary `application/octet-stream` with the following layout:
 
 **Header (8 bytes):**
 
-| Offset | Size    | Type      | Description                          |
-| ------ | ------- | --------- | ------------------------------------ |
-| 0      | 4 bytes | uint32 LE | Chunk count                          |
+| Offset | Size    | Type      | Description                                     |
+| ------ | ------- | --------- | ----------------------------------------------- |
+| 0      | 4 bytes | uint32 LE | Chunk count                                     |
 | 4      | 4 bytes | uint32 LE | Latest sequence number (use as next `afterSeq`) |
 
 **Per-chunk (repeated `chunkCount` times):**
 
-| Offset | Size             | Type      | Description                                  |
-| ------ | ---------------- | --------- | -------------------------------------------- |
-| 0      | 8 bytes          | float64 LE | `playAtRealTime` - server wall-clock time (ms) when chunk should play |
-| 8      | 4 bytes          | uint32 LE | `incarnation` - increments on song/segment boundaries |
-| 12     | 4 bytes          | uint32 LE | `sampleRate` - e.g. 48000                    |
-| 16     | 4 bytes          | uint32 LE | `channels` - number of audio channels        |
-| 20     | 4 bytes          | uint32 LE | `sampleCount` - total number of Float32 samples (all channels interleaved) |
-| 24     | sampleCount × 4  | Float32 LE | Interleaved audio sample data                |
+| Offset | Size            | Type       | Description                                                                |
+| ------ | --------------- | ---------- | -------------------------------------------------------------------------- |
+| 0      | 8 bytes         | float64 LE | `playAtRealTime` - server wall-clock time (ms) when chunk should play      |
+| 8      | 4 bytes         | uint32 LE  | `incarnation` - increments on song/segment boundaries                      |
+| 12     | 4 bytes         | uint32 LE  | `sampleRate` - e.g. 48000                                                  |
+| 16     | 4 bytes         | uint32 LE  | `channels` - number of audio channels                                      |
+| 20     | 4 bytes         | uint32 LE  | `sampleCount` - total number of Float32 samples (all channels interleaved) |
+| 24     | sampleCount × 4 | Float32 LE | Interleaved audio sample data                                              |
 
 **Response Headers:**
 
@@ -623,9 +623,15 @@ Get view objects for the 3D preview. Returns the list of view objects (meshes an
         "name": "House",
         "displayAs": "Mesh",
         "objFile": "HouseModel/house.obj",
-        "worldPosX": 0, "worldPosY": 0, "worldPosZ": 0,
-        "scaleX": 1, "scaleY": 1, "scaleZ": 1,
-        "rotateX": 0, "rotateY": 0, "rotateZ": 0,
+        "worldPosX": 0,
+        "worldPosY": 0,
+        "worldPosZ": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "scaleZ": 1,
+        "rotateX": 0,
+        "rotateY": 0,
+        "rotateZ": 0,
         "brightness": 100,
         "active": true
     },
@@ -633,9 +639,15 @@ Get view objects for the 3D preview. Returns the list of view objects (meshes an
         "name": "Background",
         "displayAs": "Image",
         "imageFile": "images/yard.png",
-        "worldPosX": 0, "worldPosY": 50, "worldPosZ": -100,
-        "scaleX": 1, "scaleY": 1, "scaleZ": 1,
-        "rotateX": 0, "rotateY": 0, "rotateZ": 0,
+        "worldPosX": 0,
+        "worldPosY": 50,
+        "worldPosZ": -100,
+        "scaleX": 1,
+        "scaleY": 1,
+        "scaleZ": 1,
+        "rotateX": 0,
+        "rotateY": 0,
+        "rotateZ": 0,
         "brightness": 100,
         "transparency": 0,
         "active": true
@@ -788,22 +800,22 @@ Get DMX moving head fixture definitions. Returns the list of `DmxMovingHead` and
 
 **Field Reference:**
 
-| Field | Description |
-| --- | --- |
-| `name` | Model name as defined in xLights |
-| `channelOffset` | 0-based start channel of this fixture in the frame buffer |
-| `numChannels` | Number of DMX channels for this fixture (from `parm1`) |
-| `definition.panMotor` | Pan motor: coarse/fine channels, range of motion (degrees), orient-zero offset, reverse flag |
-| `definition.tiltMotor` | Tilt motor: same fields as panMotor |
-| `definition.color.colorType` | One of `"RGBW"`, `"CMY"`, `"ColorWheel"`, `"None"` |
-| `definition.dimmer.channel` | 1-based dimmer channel (0 = no dimmer, fixture always full) |
-| `definition.shutter.openThreshold` | DMX value at or above which the shutter is considered open |
-| `beamParams.dmxBeamWidth` | Beam cone half-angle in degrees |
-| `beamParams.dmxBeamLength` | Beam length in model-space units (multiply by `sbl` for world length — see below) |
-| `beamParams.dmxBeamYOffset` | Y offset of beam emission point from fixture origin |
-| `beamParams.dmxBeamLimit` | Maximum world beam length cap (0 = no limit) |
+| Field                               | Description                                                                                                                                                                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                              | Model name as defined in xLights                                                                                                                                                                                 |
+| `channelOffset`                     | 0-based start channel of this fixture in the frame buffer                                                                                                                                                        |
+| `numChannels`                       | Number of DMX channels for this fixture (from `parm1`)                                                                                                                                                           |
+| `definition.panMotor`               | Pan motor: coarse/fine channels, range of motion (degrees), orient-zero offset, reverse flag                                                                                                                     |
+| `definition.tiltMotor`              | Tilt motor: same fields as panMotor                                                                                                                                                                              |
+| `definition.color.colorType`        | One of `"RGBW"`, `"CMY"`, `"ColorWheel"`, `"None"`                                                                                                                                                               |
+| `definition.dimmer.channel`         | 1-based dimmer channel (0 = no dimmer, fixture always full)                                                                                                                                                      |
+| `definition.shutter.openThreshold`  | DMX value at or above which the shutter is considered open                                                                                                                                                       |
+| `beamParams.dmxBeamWidth`           | Beam cone half-angle in degrees                                                                                                                                                                                  |
+| `beamParams.dmxBeamLength`          | Beam length in model-space units (multiply by `sbl` for world length — see below)                                                                                                                                |
+| `beamParams.dmxBeamYOffset`         | Y offset of beam emission point from fixture origin                                                                                                                                                              |
+| `beamParams.dmxBeamLimit`           | Maximum world beam length cap (0 = no limit)                                                                                                                                                                     |
 | `beamParams.meshWidth/Height/Depth` | Controlling mesh bounding box dimensions — used to compute world beam length: `sbl = max(meshWidth × \|scaleX\|, meshHeight × \|scaleY\|, meshDepth × \|scaleZ\|)`, then `worldBeamLength = dmxBeamLength × sbl` |
-| `worldTransform` | Position, rotation (degrees), and scale of the fixture in world coordinates |
+| `worldTransform`                    | Position, rotation (degrees), and scale of the fixture in world coordinates                                                                                                                                      |
 
 **Usage:**
 
@@ -869,6 +881,7 @@ WS   /proxy/ws://192.168.1.50:9090/ws
 - Status: 400 Bad Request - Invalid or missing target URL in path
 
 ---
+
 ## WebSocket API
 
 ### Connection

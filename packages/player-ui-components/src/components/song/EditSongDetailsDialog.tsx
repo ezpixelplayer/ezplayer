@@ -28,8 +28,8 @@ const FileSelectButton = ({
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
-                                        ? ['.mp3']
-                                        : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                      ? ['.mp3']
+                                      : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
                     multi: false,
@@ -131,7 +131,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     }) => {
         const resolvedTitle = metadata.title ?? metadata.detectedTitle;
         const resolvedArtist = metadata.artist ?? metadata.detectedArtist;
-        console.log(`[EditSong][Meta] Resolved metadata: title=${resolvedTitle ?? '(none)'}, artist=${resolvedArtist ?? '(none)'}`);
+        console.log(
+            `[EditSong][Meta] Resolved metadata: title=${resolvedTitle ?? '(none)'}, artist=${resolvedArtist ?? '(none)'}`,
+        );
         setFormData((prev) => ({
             ...prev,
             title: prev.title || resolvedTitle || '',
@@ -168,17 +170,25 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         setNewDurationSecs(detected.durationSecs);
                     }
                     applyDetectedMetadata(detected ?? {});
-                    console.log(`[EditSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`);
+                    console.log(
+                        `[EditSong][FSEQ] Title/Artist after auto-detect: title=${detected?.detectedTitle ?? '(none)'}, artist=${detected?.detectedArtist ?? '(none)'}`,
+                    );
                 } catch (error) {
                     console.warn('Auto-detect from FSEQ failed:', error);
                 }
             }
 
-            if (type === 'mp3' && typeof window !== 'undefined' && (window as any).electronAPI?.extractAudioTagMetadata) {
+            if (
+                type === 'mp3' &&
+                typeof window !== 'undefined' &&
+                (window as any).electronAPI?.extractAudioTagMetadata
+            ) {
                 try {
                     console.log(`[EditSong][MP3] Starting metadata extraction for: "${file}"`);
                     const metadata = await (window as any).electronAPI.extractAudioTagMetadata(file);
-                    console.log(`[EditSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`);
+                    console.log(
+                        `[EditSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
+                    );
                     applyDetectedMetadata(metadata ?? {});
                     console.log('[EditSong][MP3] Metadata applied (only empty fields are auto-filled).');
                     if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
@@ -234,9 +244,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 // Merge existing files with new files (only in Electron)
                 const updatedFiles = isElectron()
                     ? {
-                        ...prevSong.files,
-                        ...newFiles,
-                    }
+                          ...prevSong.files,
+                          ...newFiles,
+                      }
                     : prevSong.files;
 
                 const updatedSong = {
