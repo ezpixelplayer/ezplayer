@@ -28,6 +28,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { Viewer3D, type CameraState3D } from './Viewer3D';
 import { Viewer2D, type CameraState2D } from './Viewer2D';
+import { useOrbitPreference } from '../../util/orbitPreference';
 import { ModelList } from './ModelList';
 import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
@@ -164,6 +165,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     compact = false,
 }) => {
     const theme = useTheme();
+    const preferOrbitControls = useOrbitPreference();
     const embedded = mode === 'embedded';
     const disableModelSelection = embedded;
     const hideAudioControls = embedded;
@@ -1252,6 +1254,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 cameraStateLoaded={cameraStateLoaded}
                                 onGetCurrentCameraState={handleGetCurrentCameraState3D}
                                 fillContainer={compact}
+                                forceOrbitControls={preferOrbitControls}
                             />
                         ) : (
                             <Viewer2D

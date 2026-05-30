@@ -13,6 +13,8 @@ export { CreateEditPlaylist } from './components/playlist/CreateEditPlaylist';
 export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
+export { EditSongDetailsDialog } from './components/song/EditSongDetailsDialog';
+export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
 export { PlayerScreen } from './components/player/PlayerScreen';
@@ -21,6 +23,8 @@ export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
+export { LegalFooter } from './components/playback-settings/LegalFooter';
+export { TermsDialog } from './components/playback-settings/TermsDialog';
 export { ShowFolderSettings } from './components/playback-settings/sections/ShowFolderSettings';
 export { UISettings } from './components/playback-settings/sections/UISettings';
 export { ViewerSettings } from './components/playback-settings/sections/ViewerSettings';
@@ -48,6 +52,7 @@ export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState, Layo
 export type { MenuRoute } from './types/menuRoute';
 export { toRouteChildren } from './types/menuRoute';
 export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
+export { useOrbitPreference, setOrbitPreference } from './util/orbitPreference';
 
 export type { AuthState } from './store/slices/AuthStore';
 export type { RuntimeState } from './store/slices/RuntimeStore';
@@ -56,7 +61,6 @@ export type { PlaylistState } from './store/slices/PlaylistStore';
 export type { ScheduleState } from './store/slices/ScheduleStore';
 export type { SequenceState } from './store/slices/SequenceStore';
 
-export { CloudDataStorageAPI } from './store/api/cloud/CloudDataStorageAPI';
 export type {
     DataStorageAPI,
     UserLoginBody,
@@ -68,6 +72,9 @@ export type {
     CloudFileUpload,
     DownloadFile,
 } from './store/api/DataStorageAPI';
+export { getOrInitializePlayerId, setOrGeneratePlayerIdToken } from './store/api/DataStorageAPI';
+export { createAxiosInstance } from './store/api/cloud/axios-instance';
+export { isPlayerRegisteredCall } from './store/api/cloud/CloudAuthAPI';
 export { API_ENDPOINTS } from './store/api/ApiEndpoints';
 export { createAppStore, playerReducers } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';

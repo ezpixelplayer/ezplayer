@@ -9,6 +9,7 @@ import {
     CLOUD_API_ENDPOINTS,
     findMatchingScheduleEntry,
     type CloudConfig,
+    type CloudPlayerSettings,
     type CloudFileEntry,
     type CloudFileKind,
     type CloudPollScheduleEntry,
@@ -18,6 +19,8 @@ import {
     type PlayerCheckinRequest,
     type PlayerCheckinResponse,
     type PlayerCStatusContent,
+    type PlaylistRecord,
+    type ScheduledPlaylist,
     type SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import type {
@@ -28,7 +31,12 @@ import type {
 import { collectReferencedAssets } from '../data/layoutAssets.js';
 
 // Aggressive demo defaults; production callers should pass conservative values.
-const DEFAULT_REGISTRATION_INTERVAL_MS = 30_000;
+// 5s registration keeps the cloud-bridge open signal (viewer-control + audio
+// start) responsive — worst-case bridge/audio start ≈ one interval. Steady-state
+// cost is a lightweight checkin every 5s per player (accepted for demo;
+// override via cloud-config `cloudPollIntervals.registrationMs` in production).
+// Note: the cloud treats ~2× this as the live-freshness cutoff.
+const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
 const DEFAULT_MANIFEST_INTERVAL_MS = 60_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
@@ -66,6 +74,14 @@ let consecutiveFailures = 0;
 let halted = false;
 
 const cStatus: PlayerCStatusContent = { files: {} };
+
+// Last serialized payloads we sent to the parent. We compare new fetches to these
+// and skip postMessage when identical — the parent's update path is disruptive to
+// playback even when nothing actually changed. Reset on setConfig (folder/user
+// change ⇒ different store, always push).
+let lastSentPlaylistsJson: string | undefined;
+let lastSentScheduleJson: string | undefined;
+let lastSentSettingsJson: string | undefined;
 
 /** `${file_id}|${file_time}` -> active absPath of files we've successfully landed this
  *  session. Compound key so a re-used file_id with a fresh file_time is correctly
@@ -300,6 +316,76 @@ async function pollManifest() {
         recordFailure(err.message);
     } finally {
         manifestInFlight = false;
+    }
+    // Playlists + schedule are metadata-only; cheap, errors are non-fatal.
+    void fetchPlaylistsAndSchedule();
+    // Cloud-managed player settings — same cadence, same non-fatal handling.
+    void fetchPlayerSettings();
+}
+
+async function fetchPlaylistsAndSchedule() {
+    if (!cloudUrl || !playerIdToken) return;
+    const plUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_PLAYLISTS}${playerIdToken}`;
+    try {
+        const res = await fetch(plUrl, { method: 'GET' });
+        if (res.ok) {
+            const body = (await res.json()) as { playlists?: PlaylistRecord[] };
+            const playlists = body.playlists ?? [];
+            const json = JSON.stringify(playlists);
+            if (json !== lastSentPlaylistsJson) {
+                log('info', `cloud playlists: ${playlists.length} (changed)`);
+                lastSentPlaylistsJson = json;
+                parentPort?.postMessage({ type: 'cloudPlaylists', playlists } satisfies CloudPollOutMessage);
+            }
+        } else {
+            log('warn', `playlists HTTP ${res.status}`);
+        }
+    } catch (e) {
+        log('warn', `playlists fetch error: ${(e as Error).message}`);
+    }
+
+    const schUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SCHEDULE}${playerIdToken}`;
+    try {
+        const res = await fetch(schUrl, { method: 'GET' });
+        if (res.ok) {
+            const body = (await res.json()) as { schedule?: ScheduledPlaylist[] };
+            const schedule = body.schedule ?? [];
+            const json = JSON.stringify(schedule);
+            if (json !== lastSentScheduleJson) {
+                log('info', `cloud schedule: ${schedule.length} (changed)`);
+                lastSentScheduleJson = json;
+                parentPort?.postMessage({ type: 'cloudSchedule', schedule } satisfies CloudPollOutMessage);
+            }
+        } else {
+            log('warn', `schedule HTTP ${res.status}`);
+        }
+    } catch (e) {
+        log('warn', `schedule fetch error: ${(e as Error).message}`);
+    }
+}
+
+/** Cloud-managed player settings — three groups + their `*_updated` stamps.
+ *  Polled on the manifest tick alongside playlists/schedule; the parent does
+ *  the per-group last-write-wins. Change-detected so an unchanged poll is
+ *  silent. Errors are non-fatal (mirrors fetchPlaylistsAndSchedule). */
+async function fetchPlayerSettings() {
+    if (!cloudUrl || !playerIdToken) return;
+    const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SETTINGS}${playerIdToken}`;
+    try {
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) {
+            log('warn', `settings HTTP ${res.status}`);
+            return;
+        }
+        const settings = (await res.json()) as CloudPlayerSettings;
+        const json = JSON.stringify(settings);
+        if (json !== lastSentSettingsJson) {
+            log('info', 'cloud settings (changed)');
+            lastSentSettingsJson = json;
+            parentPort?.postMessage({ type: 'cloudSettings', settings } satisfies CloudPollOutMessage);
+        }
+    } catch (e) {
+        log('warn', `settings fetch error: ${(e as Error).message}`);
     }
 }
 
@@ -1328,6 +1414,9 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
                 delete (cStatus as Record<string, unknown>)[k];
             }
             cStatus.files = {};
+            lastSentPlaylistsJson = undefined;
+            lastSentScheduleJson = undefined;
+            lastSentSettingsJson = undefined;
 
             stopped = false;
             halted = false;

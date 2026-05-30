@@ -27,6 +27,8 @@ export type {
     JSONEditSheet,
     JSONEditState,
     PlaybackSettings,
+    PlaybackGroupSettings,
+    CloudPlayerSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
     CloudPollScheduleEntry,
@@ -50,6 +52,18 @@ export type {
     CloudLayoutStatus,
     CloudCommand,
 } from './types/DataTypes';
+
+export type {
+    VcSong,
+    VcPlayingItem,
+    VcPlayingUpdate,
+    VcScheduleEntry,
+    VcSelectionReason,
+    VcSelectionRequest,
+    VcSelectionOutcome,
+    VcPublicSong,
+    VcPublicShowState,
+} from './types/ViewerControlWire';
 
 export type {
     AutoDetectedSongFiles,
@@ -77,6 +91,7 @@ export {
     type PlaybackStateSnapshot,
     type UpcomingPlaybackActions,
     getPlaylistDurationMS,
+    getScheduleTimes,
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,

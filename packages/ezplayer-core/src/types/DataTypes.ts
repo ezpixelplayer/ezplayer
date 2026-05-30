@@ -67,6 +67,20 @@ export interface SequenceRecord {
     deleted?: boolean;
     /** Set on sequences installed by the cloud content worker. */
     cloud?: CloudSequenceMeta;
+    /** Lineage to the upstream source. Lets the materializer detect
+     *  "I already have a record for this grant" and the sync layer overlay
+     *  render-state from `user_seq_render`. `'manual'` records (no upstream)
+     *  carry no `source_id`. */
+    source_kind?: 'vendor' | 'user_upload' | 'manual';
+    /** ID within the source — `vsequence_id` for vendor grants, file id for
+     *  user uploads, undefined for manual records. */
+    source_id?: string;
+    /** Computed at sync time from `user_seq_render.enabled`. `false` means
+     *  the user has suspended the sequence — clients hide it from playlists,
+     *  jukebox, etc. (same handling as `deleted`, but user-reversible). Not
+     *  persisted on the show-builder side; the source of truth is the
+     *  `user_seq_render` row. */
+    render_enabled?: boolean;
 }
 
 export interface PlaylistItem {
@@ -83,6 +97,12 @@ export interface PlaylistRecord {
     createdAt: number;
     updatedAt?: number;
     deleted?: boolean;
+    /** Suspend without delete (same Halloween-vs-Christmas pattern as
+     *  `SequenceRecord.render_enabled`). Persisted directly on the record.
+     *  `undefined` means enabled; clients hide entries with `enabled===false`
+     *  but are responsible for graceful handling if the suspended item is
+     *  currently in-flight. */
+    enabled?: boolean;
 }
 
 export type ScheduleEndPolicy = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut';
@@ -114,6 +134,8 @@ export interface ScheduledPlaylist {
     endPolicy?: ScheduleEndPolicy; // For schedules over alotted time, how to end?
     keepToScheduleWhenPreempted?: boolean; // Keep "running" when overriden
     priority?: 'high' | 'normal' | 'low';
+    /** Suspend without delete; same semantics as `PlaylistRecord.enabled`. */
+    enabled?: boolean;
 }
 
 interface RecurrenceRule {
@@ -493,7 +515,10 @@ export interface CloudPollScheduleEntry {
 
 export interface ViewerControlState {
     enabled: boolean;
-    type: 'disabled' | 'remote-falcon';
+    /** `'ezplayer'` = the built-in EZPlayer viewer control. Unlike
+     *  `'remote-falcon'` it needs no token here — it uses the player's
+     *  existing cloud identity — and reuses `schedule` for the live window. */
+    type: 'disabled' | 'remote-falcon' | 'ezplayer';
     remoteFalconToken?: string;
     schedule: ViewerControlScheduleEntry[];
 }
@@ -522,6 +547,27 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
     jukebox?: JukeboxSettings;
+}
+
+/** The "playback" cloud-managed settings group — the part of PlaybackSettings
+ *  that isn't its own group (volume / viewer control). */
+export type PlaybackGroupSettings = Pick<
+    PlaybackSettings,
+    'audioSyncAdjust' | 'backgroundSequence' | 'jukebox'
+>;
+
+/** Cloud-managed player settings as served by `getsettingsforplayer`: three
+ *  groups, each paired with an epoch-ms `*_updated` stamp. A group/stamp pair
+ *  is `undefined` when never set in the cloud. One-way (show-builder → player);
+ *  the player adopts each group by per-group last-write-wins against a locally
+ *  persisted stamp. */
+export interface CloudPlayerSettings {
+    playback_settings?: PlaybackGroupSettings;
+    playback_settings_updated?: number;
+    volume_control?: VolumeControlState;
+    volume_control_updated?: number;
+    viewer_control_state?: ViewerControlState;
+    viewer_control_state_updated?: number;
 }
 
 /** Per-file identity for the layout files we have on disk. Lets the worker decide
@@ -740,6 +786,13 @@ export type OutOfBandCommand =
           type: 'closeCloudWS';
           /** Absent → close any current bridge. */
           sessionId?: string;
+      }
+    | {
+          /** The cloud has no live viewer-control state for this player's
+           *  show (e.g. it restarted). Tells the player to forget its vc/*
+           *  dedup and re-push a full snapshot so the viewer page recovers
+           *  without waiting for the next song/schedule change. */
+          type: 'vcResync';
       };
 
 /** POST /api/player/checkin/:token body — all fields optional (empty body is

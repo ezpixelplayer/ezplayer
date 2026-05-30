@@ -17,7 +17,7 @@ import {
     saveScheduleAPI,
 } from './data/FileStorage.js';
 
-import { applySettingsFromRenderer, getSettingsCache, loadSettingsFromDisk } from './data/SettingsStorage.js';
+import { applySettingsFromRenderer, getSettingsCache, loadCloudSettingsMeta, loadSettingsFromDisk, saveCloudSettingsMeta } from './data/SettingsStorage.js';
 import {
     getCloudConfigCache,
     loadCloudConfigFromDisk,
@@ -30,10 +30,14 @@ import {
     getCurrentCStatus,
     fetchLayoutNow,
     manifestPollNow,
+    onCloudPlaylists,
+    onCloudSchedule,
+    onCloudSettings,
     onCloudStatus,
     onCStatus,
     onInstallSequence,
     onLayoutInstalled,
+    onVcResync,
     pollCloudNow,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
@@ -43,6 +47,7 @@ import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/son
 
 import type {
     CloudCommand,
+    CloudPlayerSettings,
     CombinedPlayerStatus,
     FullPlayerState,
     PlaybackSettings,
@@ -243,6 +248,54 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
     return filtered;
 }
 
+/** Adopt cloud-managed player settings (one-way show-builder → player). Each
+ *  of the three groups is taken only when the cloud's `*_updated` stamp beats
+ *  the locally-recorded one — so a player-side override survives until a fresh
+ *  show-builder save supersedes it. Adopted settings are persisted, the
+ *  per-group stamps advanced, and the merged result pushed to the renderer +
+ *  playback worker. */
+export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise<void> {
+    const showFolder = getCurrentShowFolder();
+    const current = getSettingsCache();
+    if (!showFolder || !current) return;
+
+    const metaPath = settingsPath(showFolder, 'playbackSettingsCloudMeta.json');
+    const meta = await loadCloudSettingsMeta(metaPath);
+    const next: PlaybackSettings = { ...current };
+    const newMeta = { ...meta };
+    const adopted: string[] = [];
+
+    if (cloud.playback_settings && cloud.playback_settings_updated !== undefined &&
+        cloud.playback_settings_updated > (meta.playback ?? 0)) {
+        next.audioSyncAdjust = cloud.playback_settings.audioSyncAdjust;
+        next.backgroundSequence = cloud.playback_settings.backgroundSequence;
+        next.jukebox = cloud.playback_settings.jukebox;
+        newMeta.playback = cloud.playback_settings_updated;
+        adopted.push('playback');
+    }
+    if (cloud.volume_control && cloud.volume_control_updated !== undefined &&
+        cloud.volume_control_updated > (meta.volume ?? 0)) {
+        next.volumeControl = cloud.volume_control;
+        newMeta.volume = cloud.volume_control_updated;
+        adopted.push('volume');
+    }
+    if (cloud.viewer_control_state && cloud.viewer_control_state_updated !== undefined &&
+        cloud.viewer_control_state_updated > (meta.viewerControl ?? 0)) {
+        next.viewerControl = cloud.viewer_control_state;
+        newMeta.viewerControl = cloud.viewer_control_state_updated;
+        adopted.push('viewerControl');
+    }
+
+    if (adopted.length === 0) return;
+
+    applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
+    await saveCloudSettingsMeta(metaPath, newMeta);
+    updateWindow?.webContents?.send('update:playbacksettings', next);
+    broadcastToWebSocket('playbackSettings', next);
+    playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
+    console.log(`[cloud-settings] adopted from cloud: ${adopted.join(', ')}`);
+}
+
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 
@@ -370,6 +423,14 @@ export async function loadShowFolder(forceRestart?: boolean) {
         } as PlayerCommand);
         broadcastToWebSocket('playbackSettings', settings);
     }
+    // The in-house viewer-control poller (driven by the playback worker)
+    // needs the player's cloud identity, which lives only in the main
+    // process. Push it alongside the cloud-worker config.
+    playWorker?.postMessage({
+        type: 'cloudidentity',
+        cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
+        playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
+    } as PlayerCommand);
     scheduleUpdated(forceRestart);
 }
 
@@ -443,6 +504,11 @@ function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConf
         cfg.cloudPollMode,
         cfg.cloudPollSchedule,
     );
+    playWorker?.postMessage({
+        type: 'cloudidentity',
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        playerIdToken: cloudActive ? cfg.playerIdToken : '',
+    } as PlayerCommand);
 }
 
 function broadcastCloudConfig(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
@@ -678,6 +744,32 @@ export async function registerContentHandlers(
         // restart so any in-flight playback picks up the new layout.
         console.log('[cloud-install] layout changed — reloading show folder');
         void loadShowFolder(true);
+    });
+
+    onCloudPlaylists((playlists) => {
+        // Run cloud-arrived playlists through the same merge path renderer-driven
+        // writes use — last-write-wins by `updatedAt` against the local store.
+        void updatePlaylistsHandler(playlists).catch((e) => {
+            console.error('[cloud-install] playlists merge failed:', e);
+        });
+    });
+
+    onCloudSchedule((schedule) => {
+        void updateScheduleHandler(schedule).catch((e) => {
+            console.error('[cloud-install] schedule merge failed:', e);
+        });
+    });
+
+    // Cloud lost our viewer-control state (it restarted) — relay to the
+    // playback worker so the ezvc poller re-pushes a full snapshot.
+    onVcResync(() => {
+        playWorker?.postMessage({ type: 'vcResync' } as PlayerCommand);
+    });
+
+    onCloudSettings((settings) => {
+        void updateSettingsHandler(settings).catch((e) => {
+            console.error('[cloud-settings] settings adopt failed:', e);
+        });
     });
 
     onInstallSequence(async (record, superseded) => {

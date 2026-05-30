@@ -1,9 +1,12 @@
 import type {
     CloudConfig,
+    CloudPlayerSettings,
     CloudPollScheduleEntry,
     CloudStatus,
     OutOfBandCommand,
     PlayerCStatusContent,
+    PlaylistRecord,
+    ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 
@@ -73,11 +76,31 @@ export type CloudPollOutMessage =
           layoutMeta: NonNullable<CloudConfig['layoutMeta']>;
       }
     | {
+          /** Cloud-authored playlists for the player's owning user, as of the
+           *  most recent manifest tick. Flags (`deleted`, `enabled`) ride
+           *  along on each record. Parent merges into local store. */
+          type: 'cloudPlaylists';
+          playlists: PlaylistRecord[];
+      }
+    | {
+          /** Cloud-authored schedule entries. Same shape and semantics as
+           *  `cloudPlaylists`. */
+          type: 'cloudSchedule';
+          schedule: ScheduledPlaylist[];
+      }
+    | {
           /** Out-of-band commands the cloud emitted in the latest checkin response.
            *  These are bridge-lifecycle controls (currently `openCloudWS` /
            *  `closeCloudWS`); the parent owns session tracking and dispatch to
            *  the server worker that actually dials the bridge. */
           type: 'outOfBandCommands';
           commands: OutOfBandCommand[];
+      }
+    | {
+          /** Cloud-managed player settings — the three groups + their
+           *  `*_updated` stamps. The parent adopts each group by per-group
+           *  last-write-wins against a locally persisted stamp. */
+          type: 'cloudSettings';
+          settings: CloudPlayerSettings;
       }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

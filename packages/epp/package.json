@@ -37,6 +37,6 @@
         "tsup": "^8.5.0",
         "typescript": "^5.4.5",
         "vitest": "^2.1.9",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.4.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.5.tgz"
     }
 }

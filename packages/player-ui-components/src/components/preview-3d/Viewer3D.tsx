@@ -52,6 +52,10 @@ export interface Viewer3DProps {
     onGetCurrentCameraState?: (getter: () => CameraState3D | null) => void; // Callback to register a function that gets current camera state
     /** When true, omit fixed minHeight so the canvas fills a flex parent (e.g. dialog). */
     fillContainer?: boolean;
+    /** Force OrbitControls (the trackpad/touch variant) regardless of input detection.
+     *  Used by the layout-edit visual mode where click-to-select + orbit/pan/zoom
+     *  is the desired interaction model on every device. */
+    forceOrbitControls?: boolean;
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -1267,6 +1271,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     cameraStateLoaded = true,
     onGetCurrentCameraState,
     fillContainer = false,
+    forceOrbitControls = false,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -1374,6 +1379,29 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             👆 Two fingers: Pan / Zoom
                         </Typography>
                     </>
+                ) : forceOrbitControls ? (
+                    // Orbit hints must mirror the OrbitControls mouseButtons mapping
+                    // below — change them together if you remap LEFT/MIDDLE/RIGHT.
+                    <>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Left drag: Rotate
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Right drag: Pan
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Scroll / Middle drag: Zoom
+                        </Typography>
+                    </>
                 ) : (
                     <>
                         <Typography
@@ -1451,7 +1479,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                         }}
                     >
                         <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
-                        {isTouchOnly ? (
+                        {(isTouchOnly || forceOrbitControls) ? (
                             <OrbitControls
                                 makeDefault
                                 enableDamping

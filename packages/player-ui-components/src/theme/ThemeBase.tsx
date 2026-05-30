@@ -50,11 +50,28 @@ function readSavedScale(): number {
     return clampScale(n);
 }
 
+/** Native page zoom is only available in Electron via `webContents.setZoomFactor`.
+ *  In browser SPAs we previously fell back to CSS `zoom` on `<html>`, but that
+ *  breaks MUI's positioning math — `getBoundingClientRect()` under CSS `zoom`
+ *  doesn't match the rendered coordinate space, so Selects, Tabs indicators,
+ *  Popovers, etc. all drift. Cloud users have native browser zoom (Ctrl±)
+ *  which works correctly, so we drop the slider entirely in browser. */
+export function isElectronPageZoomAvailable(): boolean {
+    return Boolean(
+        (window as unknown as { electronAPI?: { setZoomFactor?: (n: number) => Promise<void> } })
+            .electronAPI?.setZoomFactor,
+    );
+}
+
 interface ThemeContextProps {
     themeName: string;
     handleThemeChange: (currentTheme: string) => void;
     uiScale: number;
     setUiScale: (s: number) => void;
+    /** True iff `setUiScale` actually does anything — false in browser SPAs
+     *  where we no longer apply CSS `zoom`. UI surfaces hide the slider when
+     *  this is false. */
+    canSetUiScale: boolean;
 }
 
 export const ThemeContext = createContext<ThemeContextProps | undefined>(undefined);
@@ -62,7 +79,13 @@ export const ThemeContext = createContext<ThemeContextProps | undefined>(undefin
 export const ThemeProviderWrapper = ({ children }: { children: ReactNode }) => {
     const curThemeName = localStorage.getItem('appTheme') || 'EZRGBTheme';
     const [themeName, setThemeName] = useState(curThemeName);
-    const [uiScale, setUiScaleState] = useState<number>(readSavedScale);
+    const canSetUiScale = isElectronPageZoomAvailable();
+    // Honor the saved value only when we can actually apply it. In browser
+    // we ignore the stored scale (might have been set in Electron, or set
+    // back when this app applied CSS zoom in browser) and pin to 1.
+    const [uiScale, setUiScaleState] = useState<number>(() =>
+        canSetUiScale ? readSavedScale() : UI_SCALE_DEFAULT,
+    );
     const theme = themeCreator(themeName);
 
     const handleThemeChange = (curTheme: string) => {
@@ -71,32 +94,32 @@ export const ThemeProviderWrapper = ({ children }: { children: ReactNode }) => {
     };
 
     const setUiScale = (s: number) => {
+        if (!canSetUiScale) return; // no-op in browser; the slider is hidden there anyway
         const next = clampScale(s);
         localStorage.setItem('appUiScale', String(next));
         setUiScaleState(next);
     };
 
-    // Apply the UI scale. In Electron, prefer `webContents.setZoomFactor` because it's
-    // native page zoom — canvas/WebGL render correctly under it (CSS `zoom` doesn't
-    // play nicely with canvas; the drawing buffer's coordinate system stays at 1×, so
-    // the focal point of any 2D/3D preview drifts off-center). In browser surfaces
-    // (embedded/cloud) we don't have that API, so fall back to `documentElement.zoom`.
+    // Apply the UI scale. Native `webContents.setZoomFactor` only — canvas/WebGL
+    // render correctly under it. The browser fallback used to apply CSS `zoom`
+    // to documentElement, but that breaks MUI positioning math (Selects, Tabs
+    // indicator, Popovers all drifted under non-1 scale). Cloud users now use
+    // browser zoom (Ctrl±) instead.
     useEffect(() => {
         const electronSetZoom = (
             window as unknown as { electronAPI?: { setZoomFactor?: (n: number) => Promise<void> } }
         ).electronAPI?.setZoomFactor;
         if (electronSetZoom) {
             void electronSetZoom(uiScale);
-            // Make sure the CSS fallback isn't compounding on top of the native zoom.
-            (document.documentElement.style as CSSStyleDeclaration & { zoom: string }).zoom = '';
-        } else {
-            (document.documentElement.style as CSSStyleDeclaration & { zoom: string }).zoom =
-                uiScale === 1 ? '' : String(uiScale);
         }
+        // Clear any leftover CSS `zoom` that an older build wrote — without this,
+        // a user who had set scale > 1 in browser before would still see the
+        // broken popper positioning until they cleared localStorage.
+        (document.documentElement.style as CSSStyleDeclaration & { zoom: string }).zoom = '';
     }, [uiScale]);
 
     return (
-        <ThemeContext.Provider value={{ themeName, handleThemeChange, uiScale, setUiScale }}>
+        <ThemeContext.Provider value={{ themeName, handleThemeChange, uiScale, setUiScale, canSetUiScale }}>
             <ThemeProvider theme={theme}>{children}</ThemeProvider>
         </ThemeContext.Provider>
     );

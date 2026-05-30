@@ -49,6 +49,11 @@ export const ViewerSettings: React.FC = () => {
     const [newEntry, setNewEntry] = useState<Partial<ViewerControlScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+    // The schedule config is backend-agnostic; `'ezplayer'` reuses the same
+    // schedule UI. Only the token field below is backend-specific.
+    const vcType = settings.viewerControl.type;
+    const showSchedule = vcType === 'remote-falcon' || vcType === 'ezplayer';
+
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
         setAddOpen(true);
@@ -98,11 +103,15 @@ export const ViewerSettings: React.FC = () => {
                     options={[
                         { id: 'disabled', name: 'Disabled' },
                         { id: 'remote-falcon', name: 'Remote Falcon' },
+                        { id: 'ezplayer', name: 'EZPlayer (built-in)' },
                     ]}
                     itemText="name"
                     itemValue="id"
                     onChange={(e) => {
-                        const type = (e.target as HTMLSelectElement).value as 'disabled' | 'remote-falcon';
+                        const type = (e.target as HTMLSelectElement).value as
+                            | 'disabled'
+                            | 'remote-falcon'
+                            | 'ezplayer';
                         dispatch(playbackSettingsActions.setViewerControlType(type));
                         dispatch(playbackSettingsActions.setViewerControlEnabled(type !== 'disabled'));
                     }}
@@ -123,7 +132,7 @@ export const ViewerSettings: React.FC = () => {
                 />
             )}
 
-            {settings.viewerControl.type === 'remote-falcon' && (
+            {showSchedule && (
                 <Box>
                     <Typography variant="subtitle2" sx={{ mb: 2 }}>
                         Schedule Configuration

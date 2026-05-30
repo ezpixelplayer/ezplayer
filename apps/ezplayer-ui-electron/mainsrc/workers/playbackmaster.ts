@@ -29,11 +29,15 @@ import type {
     PlayerNStatusContent,
     PlaybackSettings,
     EZPlayerCommand,
+    VcSong,
+    VcPlayingItem,
+    VcScheduleEntry,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
     getActiveVolumeSchedule,
+    getScheduleTimes,
     LatestFrameRingBuffer,
     PlayerRunState,
 } from '@ezplayer/ezplayer-core';
@@ -82,6 +86,15 @@ import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
+import {
+    sendEzvcInitiateCheck,
+    setEzvcCatalog,
+    setEzvcConfig,
+    setEzvcControlEnabled,
+    setEzvcPlaylist,
+    setEzvcPlaying,
+    setEzvcSchedule,
+} from './ezvcparent';
 import { randomUUID } from 'node:crypto';
 import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
@@ -379,6 +392,216 @@ function sendRemoteUpdate() {
     }
 }
 
+// ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
+// The schedule gating is shared (`getActiveViewerControlSchedule`); only the
+// backend differs. The cloud owns the mode/policy, so the suggestion is a
+// sequence id we can play directly — no index mapping needed.
+let ezvcCloudUrl: string | undefined = undefined;
+let ezvcPlayerToken: string | undefined = undefined;
+let ezvcConfigInitialized = false;
+let lastEzvcKey: string | undefined = undefined;
+let lastEzvcCheck: number = Date.now();
+let lastEzvcPlayingKey: string | undefined = undefined;
+
+/** ScheduleDays → JS day numbers (0=Sun .. 6=Sat) for the request-window
+ *  feed. Best-effort; the calendar UI interprets. */
+const SCHEDULE_DAYS_TO_NUMS: Record<string, number[]> = {
+    all: [0, 1, 2, 3, 4, 5, 6],
+    'weekend-fri-sat': [5, 6],
+    'weekend-sat-sun': [6, 0],
+    'weekday-mon-fri': [1, 2, 3, 4, 5],
+    'weekday-sun-thu': [0, 1, 2, 3, 4],
+    sunday: [0],
+    monday: [1],
+    tuesday: [2],
+    wednesday: [3],
+    thursday: [4],
+    friday: [5],
+    saturday: [6],
+};
+
+function configureEzvc() {
+    if (!ezvcCloudUrl || !ezvcPlayerToken) return;
+    const key = `${ezvcCloudUrl}|${ezvcPlayerToken}`;
+    if (ezvcConfigInitialized && key === lastEzvcKey) return;
+    ezvcConfigInitialized = true;
+    lastEzvcKey = key;
+    setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken }, (next) => {
+        if (!next.songId) return;
+        processCommand({
+            command: 'playsong',
+            immediate: false,
+            songId: next.songId,
+            requestId: randomUUID(),
+            priority: 3,
+        });
+    });
+}
+
+// Jukebox eligibility — replicated from
+// player-ui-components/src/services/jukeboxFilter.ts (the worker can't import
+// that React package). Keep in sync: 'nojukebox' is always excluded; a song is
+// out if it has ANY excluded tag; if includedTags is non-empty it must match
+// ANY of them. Tags compared case-insensitively / trimmed.
+const JUKEBOX_ALWAYS_EXCLUDED = ['nojukebox'];
+function normalizeTagList(tags: string[] | undefined): string[] {
+    return (tags ?? []).map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0);
+}
+function songMatchesAnyTag(songTags: string[] | undefined, list: string[]): boolean {
+    if (!songTags || songTags.length === 0 || list.length === 0) return false;
+    const set = new Set(normalizeTagList(songTags));
+    return list.some((t) => set.has(t));
+}
+function isSongAllowedForJukebox(
+    songTags: string[] | undefined,
+    excludedTags: string[] | undefined,
+    includedTags: string[] | undefined,
+): boolean {
+    const excluded = Array.from(new Set([...JUKEBOX_ALWAYS_EXCLUDED, ...normalizeTagList(excludedTags)]));
+    const included = normalizeTagList(includedTags);
+    if (songMatchesAnyTag(songTags, excluded)) return false;
+    if (included.length === 0) return true;
+    return songMatchesAnyTag(songTags, included);
+}
+
+function sendEzvcUpdate() {
+    const settings = latestSettings;
+    if (!settings) return;
+    if (!ezvcCloudUrl || !ezvcPlayerToken) return;
+
+    // Display (now-playing + the schedule feeds, below) is reported for any
+    // cloud-connected player — so the viewer home page has something to show
+    // even when interactive viewer control is off. Interactive control
+    // (request/vote + the next-pick poll) is separate: it runs only when this
+    // player's backend is the in-house cloud one (`type === 'ezplayer'`) and
+    // its schedule window is open.
+    const vc = settings.viewerControl;
+    const ezWindow = vc?.type === 'ezplayer' ? getActiveViewerControlSchedule(vc) : null;
+    setEzvcControlEnabled(!!ezWindow);
+
+    // ---- now-playing + the upcoming song lineup ("what's coming") ---------
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    let now_playing: PlayingItem | undefined = undefined;
+    const upcomingItems: PlayingItem[] = [];
+    if (ps.curPLActions?.actions?.length) {
+        for (const pla of ps.curPLActions.actions) {
+            if (pla.end) continue;
+            const pi = actionToPlayingItem(false, pla);
+            if (!now_playing) now_playing = pi;
+            else if (upcomingItems.length < 12) upcomingItems.push(pi);
+            else break;
+        }
+    }
+    const toVc = (pi: PlayingItem | undefined): VcPlayingItem | undefined =>
+        pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
+    const upcomingVc = upcomingItems
+        .map((p) => toVc(p))
+        .filter((x): x is VcPlayingItem => x !== undefined);
+
+    // Push only when the *lineup identity* changes — not when at/until drift
+    // each tick — so the worker's hash dedupe doesn't see per-second churn.
+    // Times refresh on lineup change; the page interpolates between changes.
+    const lineupKey =
+        `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
+    if (lineupKey !== lastEzvcPlayingKey) {
+        lastEzvcPlayingKey = lineupKey;
+        setEzvcPlaying({
+            nowPlaying: now_playing?.sequence_id ?? undefined,
+            nextScheduled: upcomingItems[0]?.sequence_id ?? undefined,
+            now: toVc(now_playing),
+            upcoming: upcomingVc,
+        });
+    }
+
+    // ---- two schedule feeds, independent of the request window -----------
+    // Operating hours come from the SHOW SCHEDULE definition (`curSchedule`) —
+    // the same per-occurrence records the player's Schedule-screen calendar
+    // renders — NOT the playback engine's near-term lookahead (which exists to
+    // drive now-playing / up-next and is horizon-bounded). Each occurrence's
+    // window is computed with `getScheduleTimes` (shared with that calendar),
+    // so a show days/weeks out still appears. Future occurrences only, soonest
+    // first, capped.
+    const nowMs = Date.now();
+    const showWindows: VcScheduleEntry[] = (curSchedule ?? [])
+        .filter((s) => s.scheduleType !== 'background' && !s.deleted && s.enabled !== false)
+        .map((s) => {
+            const { startTimeMS, endTimeMS } = getScheduleTimes(s);
+            return { s, startTimeMS, endTimeMS };
+        })
+        .filter((x) => Number.isFinite(x.endTimeMS) && x.endTimeMS >= nowMs)
+        .sort((a, b) => a.startTimeMS - b.startTimeMS)
+        .slice(0, 60)
+        .map((x) => ({
+            title: x.s.playlistTitle || x.s.title || 'Show',
+            start: new Date(x.startTimeMS).toISOString(),
+            end: new Date(x.endTimeMS).toISOString(),
+        }));
+    // Request windows: exactly the viewer-control schedule entries.
+    const reqWindows: VcScheduleEntry[] = (
+        vc?.type === 'ezplayer' ? vc.schedule ?? [] : []
+    ).map((e) => ({
+        title: e.playlist,
+        start: e.startTime,
+        end: e.endTime,
+        daysOfWeek: SCHEDULE_DAYS_TO_NUMS[e.days],
+    }));
+    setEzvcSchedule(showWindows, reqWindows);
+
+    // ---- static catalog: the jukebox-filtered sequence list --------------
+    // "Songs you may hear" for the public page — the same filtering the in-app
+    // jukebox uses, independent of viewer control. Pushed for any cloud-
+    // connected player. Artwork is resolved by the cloud (per-song proxy), so
+    // we don't send local file paths here.
+    const jukebox = settings.jukebox;
+    const catalog: VcSong[] = (curSequences ?? [])
+        .filter((seq) => !seq.deleted && seq.render_enabled !== false)
+        .filter((seq) =>
+            isSongAllowedForJukebox(seq.settings?.tags, jukebox?.excludedTags, jukebox?.includedTags),
+        )
+        .map((seq) => ({
+            id: seq.id,
+            title: seq.work?.title || seq.id,
+            artist: seq.work?.artist || undefined,
+            vendor: seq.sequence?.vendor || undefined,
+            durationMs: seq.work?.length ? seq.work.length * 1000 : undefined,
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title));
+    setEzvcCatalog(catalog);
+
+    // ---- interactive-only: needs the active window's playlist ------------
+    if (!ezWindow) return;
+
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === ezWindow.playlist.toLowerCase());
+    if (pl) {
+        const songs: VcSong[] = [];
+        for (const i of pl.items) {
+            const s = foregroundPlayerRunState.sequencesById.get(i.id);
+            if (!s) continue;
+            songs.push({
+                id: i.id,
+                title: s.work.title,
+                artist: s.work.artist,
+                // SongDetails.length is seconds; the wire wants ms.
+                durationMs: s.work.length * 1000,
+            });
+        }
+        setEzvcPlaylist(songs);
+    }
+
+    if (now_playing) {
+        const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
+        if (diff >= 3000 && diff < 4000) {
+            sendEzvcInitiateCheck();
+        }
+    } else {
+        const dn = Date.now();
+        if (dn - lastEzvcCheck > 5000) {
+            lastEzvcCheck = dn;
+            sendEzvcInitiateCheck();
+        }
+    }
+}
+
 let lastVolCheck: number = Date.now();
 function doVolumeAdjust(dn: number) {
     if (dn - lastVolCheck < 10) return;
@@ -554,6 +777,23 @@ parentPort.on('message', async (command: PlayerCommand) => {
         case 'settings': {
             const settings = command.settings;
             dispatchSettings(settings);
+            break;
+        }
+        case 'cloudidentity': {
+            ezvcCloudUrl = command.cloudUrl || undefined;
+            ezvcPlayerToken = command.playerIdToken || undefined;
+            configureEzvc();
+            break;
+        }
+        case 'vcResync': {
+            // Cloud has no live viewer-control state for us (it restarted).
+            // Forget the ezvc dedup keys and re-arm so the next sendEzvcUpdate
+            // re-pushes the full snapshot. `lastEzvcKey = undefined` bypasses
+            // configureEzvc's same-key guard; the re-config makes the ezvc
+            // worker clear its own per-call hashes (handleSetConfig resets them).
+            lastEzvcPlayingKey = undefined;
+            lastEzvcKey = undefined;
+            configureEzvc();
             break;
         }
         case 'rpc':
@@ -1445,6 +1685,7 @@ async function processQueue() {
                 doVolumeAdjust(Date.now());
                 if (curPN - lastRFUpdatePN >= 1000) {
                     sendRemoteUpdate();
+                    sendEzvcUpdate();
                     lastRFUpdatePN += 1000 * Math.floor((curPN - lastRFUpdatePN) / 1000);
                 }
             }

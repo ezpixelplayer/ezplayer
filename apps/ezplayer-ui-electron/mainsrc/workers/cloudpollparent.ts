@@ -3,10 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
     CloudConfig,
+    CloudPlayerSettings,
     CloudPollScheduleEntry,
     CloudStatus,
     OutOfBandCommand,
     PlayerCStatusContent,
+    PlaylistRecord,
+    ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import type {
@@ -34,6 +37,10 @@ let installListener: ((record: SequenceRecord, superseded: string[]) => void) | 
 let layoutInstalledListener:
     | ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void)
     | undefined;
+let playlistsListener: ((playlists: PlaylistRecord[]) => void) | undefined;
+let scheduleListener: ((schedule: ScheduledPlaylist[]) => void) | undefined;
+let settingsListener: ((settings: CloudPlayerSettings) => void) | undefined;
+let vcResyncListener: (() => void) | undefined;
 
 /** Forward an out-of-band command from the cloud to the server worker, which
  *  owns the actual WebSocket session (including TTL/redial state). The parent
@@ -56,6 +63,11 @@ function applyOutOfBandCommand(cmd: OutOfBandCommand) {
         case 'closeCloudWS':
             // sessionId may be omitted by the cloud → "close any current bridge".
             cloudBridgeClose(cmd.sessionId);
+            return;
+        case 'vcResync':
+            // Cloud lost our viewer-control state — kick the playback worker
+            // (via the registered listener) to re-push a full vc snapshot.
+            vcResyncListener?.();
             return;
     }
 }
@@ -92,6 +104,18 @@ function ensureWorker() {
             case 'layoutInstalled':
                 console.log('[cloudpoll] layoutInstalled');
                 layoutInstalledListener?.(msg.layoutMeta);
+                break;
+            case 'cloudPlaylists':
+                console.log(`[cloudpoll] cloudPlaylists count=${msg.playlists.length}`);
+                playlistsListener?.(msg.playlists);
+                break;
+            case 'cloudSchedule':
+                console.log(`[cloudpoll] cloudSchedule count=${msg.schedule.length}`);
+                scheduleListener?.(msg.schedule);
+                break;
+            case 'cloudSettings':
+                console.log('[cloudpoll] cloudSettings');
+                settingsListener?.(msg.settings);
                 break;
             case 'outOfBandCommands':
                 for (const cmd of msg.commands) applyOutOfBandCommand(cmd);
@@ -201,4 +225,22 @@ export function onLayoutInstalled(
     listener: (layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void,
 ) {
     layoutInstalledListener = listener;
+}
+
+export function onCloudPlaylists(listener: (playlists: PlaylistRecord[]) => void) {
+    playlistsListener = listener;
+}
+
+export function onCloudSchedule(listener: (schedule: ScheduledPlaylist[]) => void) {
+    scheduleListener = listener;
+}
+
+export function onCloudSettings(listener: (settings: CloudPlayerSettings) => void) {
+    settingsListener = listener;
+}
+
+/** Register a handler for the cloud's `vcResync` out-of-band command — fired
+ *  when the cloud has lost this player's viewer-control state (e.g. restart). */
+export function onVcResync(listener: () => void) {
+    vcResyncListener = listener;
 }

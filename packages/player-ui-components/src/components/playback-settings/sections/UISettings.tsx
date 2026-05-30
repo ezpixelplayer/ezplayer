@@ -1,4 +1,4 @@
-import { Button, FormControl, IconButton, SelectChangeEvent, Slider, Typography } from '@mui/material';
+import { Button, FormControl, FormControlLabel, IconButton, SelectChangeEvent, Slider, Switch, Typography } from '@mui/material';
 import PaletteIcon from '@mui/icons-material/Palette';
 import React, { useEffect, useState } from 'react';
 import { Select } from '@ezplayer/shared-ui-components';
@@ -11,15 +11,17 @@ import {
     useThemeContext,
 } from '../../../theme/ThemeBase';
 import { ColorPaletteDialog } from '../../theme/ColorPaletteDialog';
+import { setOrbitPreference, useOrbitPreference } from '../../../util/orbitPreference';
 
 interface UISettingsLocal {
     theme?: string;
 }
 
 export const UISettings: React.FC = () => {
-    const { themeName, handleThemeChange, uiScale, setUiScale } = useThemeContext();
+    const { themeName, handleThemeChange, uiScale, setUiScale, canSetUiScale } = useThemeContext();
     const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+    const preferOrbit = useOrbitPreference();
 
     // Load saved theme from localStorage on first mount.
     useEffect(() => {
@@ -78,34 +80,59 @@ export const UISettings: React.FC = () => {
             </Box>
             <ColorPaletteDialog open={colorPaletteDialogOpen} onClose={() => setColorPaletteDialogOpen(false)} />
 
+            {/* UI scale slider only renders in Electron, where
+                `webContents.setZoomFactor` does proper device-pixel zoom.
+                In browser SPAs we used to apply CSS `zoom` here, but that
+                breaks MUI Popper / Tabs indicator positioning (everything
+                that reads getBoundingClientRect drifts). Cloud users have
+                native browser zoom (Ctrl±) which doesn't have that problem. */}
+            {canSetUiScale ? (
+                <>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 4, mb: 1 }}>
+                        UI scale (helps when demoing on a video call).
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Slider
+                            value={uiScale}
+                            onChange={(_, v) => setUiScale(typeof v === 'number' ? v : v[0])}
+                            min={UI_SCALE_MIN}
+                            max={UI_SCALE_MAX}
+                            step={0.05}
+                            marks={[
+                                { value: UI_SCALE_MIN, label: `${Math.round(UI_SCALE_MIN * 100)}%` },
+                                { value: UI_SCALE_DEFAULT, label: '100%' },
+                                { value: UI_SCALE_MAX, label: `${Math.round(UI_SCALE_MAX * 100)}%` },
+                            ]}
+                            valueLabelDisplay="auto"
+                            valueLabelFormat={(v) => `${Math.round(v * 100)}%`}
+                            sx={{ flex: 1 }}
+                        />
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => setUiScale(UI_SCALE_DEFAULT)}
+                            disabled={uiScale === UI_SCALE_DEFAULT}
+                        >
+                            Reset
+                        </Button>
+                    </Box>
+                </>
+            ) : null}
+
             <Typography variant="body2" color="text.secondary" sx={{ mt: 4, mb: 1 }}>
-                UI scale (helps when demoing on a video call).
+                3D preview controls. Orbit mode is friendlier on trackpads and
+                touch devices; the default auto-picks based on whether your
+                device looks touch-only.
             </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Slider
-                    value={uiScale}
-                    onChange={(_, v) => setUiScale(typeof v === 'number' ? v : v[0])}
-                    min={UI_SCALE_MIN}
-                    max={UI_SCALE_MAX}
-                    step={0.05}
-                    marks={[
-                        { value: UI_SCALE_MIN, label: `${Math.round(UI_SCALE_MIN * 100)}%` },
-                        { value: UI_SCALE_DEFAULT, label: '100%' },
-                        { value: UI_SCALE_MAX, label: `${Math.round(UI_SCALE_MAX * 100)}%` },
-                    ]}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(v) => `${Math.round(v * 100)}%`}
-                    sx={{ flex: 1 }}
-                />
-                <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => setUiScale(UI_SCALE_DEFAULT)}
-                    disabled={uiScale === UI_SCALE_DEFAULT}
-                >
-                    Reset
-                </Button>
-            </Box>
+            <FormControlLabel
+                control={
+                    <Switch
+                        checked={preferOrbit}
+                        onChange={(e) => setOrbitPreference(e.target.checked)}
+                    />
+                }
+                label="Always use orbit controls"
+            />
         </Box>
     );
 };

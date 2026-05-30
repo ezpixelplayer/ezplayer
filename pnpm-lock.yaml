@@ -94,8 +94,8 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
       audiofile:
-        specifier: file:..\..\libs\audiofile-0.0.1.tgz
-        version: file:libs/audiofile-0.0.1.tgz
+        specifier: file:..\..\libs\audiofile-0.0.3.tgz
+        version: file:libs/audiofile-0.0.3.tgz
       axios:
         specifier: ^1.15.2
         version: 1.15.2(debug@4.4.3)
@@ -172,8 +172,8 @@ importers:
         specifier: ^8.19.0
         version: 8.19.0
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.4.tgz
-        version: file:libs/xllayoutcalcs-0.1.4.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.1.5.tgz
+        version: file:libs/xllayoutcalcs-0.1.5.tgz
       zstd-codec:
         specifier: ^0.1.5
         version: 0.1.5
@@ -334,8 +334,8 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@24.10.13)(jsdom@25.0.1)(sass@1.97.3)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.4.tgz
-        version: file:libs/xllayoutcalcs-0.1.4.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.1.5.tgz
+        version: file:libs/xllayoutcalcs-0.1.5.tgz
 
   packages/ezplayer-core:
     dependencies:
@@ -362,8 +362,8 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.10.13)(jsdom@25.0.1)(sass@1.97.3)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.4.tgz
-        version: file:libs/xllayoutcalcs-0.1.4.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.1.5.tgz
+        version: file:libs/xllayoutcalcs-0.1.5.tgz
 
   packages/icmp-ping:
     dependencies:
@@ -589,8 +589,8 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.10.13)(jsdom@25.0.1)(sass@1.97.3)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.4.tgz
-        version: file:libs/xllayoutcalcs-0.1.4.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.1.5.tgz
+        version: file:libs/xllayoutcalcs-0.1.5.tgz
 
   packages/shared-ui-components:
     dependencies:
@@ -2815,9 +2815,9 @@ packages:
     resolution: {integrity: sha512-0bDNnY/u6pPwHDMoF0FieU354oBi0a8rD9FcsLwzcGWbc8KS8KPIi7y+s13OlVY+gMWc/9xEMUgNE6Qm8ZllYQ==}
     engines: {node: '>=4'}
 
-  audiofile@file:libs/audiofile-0.0.1.tgz:
-    resolution: {integrity: sha512-asxWIieGeYYYEt+yI11NT6t2WYzMErt70YJqhpiQpUM0uIwAF3jb/WnSk784KGrMwN1DKbjIqXLTwU7Apw1k+Q==, tarball: file:libs/audiofile-0.0.1.tgz}
-    version: 0.0.1
+  audiofile@file:libs/audiofile-0.0.3.tgz:
+    resolution: {integrity: sha512-8eioNZiUCQx7rGvUJYY5vLkrmGCp3v/cxSD0NgEbRQm/5NpwbCwFIclwLSWolq/uSchvFeIMKGGWsR+rtCQv2Q==, tarball: file:libs/audiofile-0.0.3.tgz}
+    version: 0.0.3
 
   axios@1.15.2:
     resolution: {integrity: sha512-wLrXxPtcrPTsNlJmKjkPnNPK2Ihe0hn0wGSaTEiHRPxwjvJwT3hKmXF4dpqxmPO9SoNb2FsYXj/xEo0gHN+D5A==}
@@ -5867,9 +5867,9 @@ packages:
       utf-8-validate:
         optional: true
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.1.4.tgz:
-    resolution: {integrity: sha512-eJiSYcH+oZXCbG1ZYIaWIxTwZZyN+tKLyTRkOhA0+4c+8PCgNtNlMpdqPraCXmOw6hQvjBIsYTjn6j9lCdP85Q==, tarball: file:libs/xllayoutcalcs-0.1.4.tgz}
-    version: 0.1.4
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.1.5.tgz:
+    resolution: {integrity: sha512-bQXDBXDLHPm+g4fGPssvEU7upKcl7VUWm2vKZEKreHvyFe6fkAbavtZJ7ngrRulxV5QhRvLq9wQLR5DYCRHCzw==, tarball: file:libs/xllayoutcalcs-0.1.5.tgz}
+    version: 0.1.5
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -8068,7 +8068,7 @@ snapshots:
 
   attr-accept@2.2.5: {}
 
-  audiofile@file:libs/audiofile-0.0.1.tgz: {}
+  audiofile@file:libs/audiofile-0.0.3.tgz: {}
 
   axios@1.15.2(debug@4.4.3):
     dependencies:
@@ -11408,7 +11408,7 @@ snapshots:
 
   ws@8.19.0: {}
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.1.4.tgz:
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.1.5.tgz:
     dependencies:
       gl-matrix: 3.4.4
 

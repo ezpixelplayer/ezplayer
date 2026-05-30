@@ -108,7 +108,15 @@ export type PlayerCommand =
     | { type: 'frontendcmd'; cmd: EZPlayerCommand }
     | { type: 'settings'; settings: PlaybackSettings }
     | { type: 'rpc'; rpc: RPCRequest }
-    | { type: 'rpc-response'; response: RPCResponse };
+    | { type: 'rpc-response'; response: RPCResponse }
+    // The player's cloud identity, pushed from the main process so the
+    // playback worker can drive the EZPlayer viewer-control poller (which
+    // authenticates with the player's cloud creds, not an in-settings token).
+    | { type: 'cloudidentity'; cloudUrl: string; playerIdToken: string }
+    /** Cloud lost our viewer-control state (it restarted) — re-arm the ezvc
+     *  poller for a full re-push. Forwarded from `cloudpollparent` on a
+     *  `vcResync` out-of-band command. */
+    | { type: 'vcResync' };
 
 export type WorkerToMainMessage =
     | { type: 'ready' }

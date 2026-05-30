@@ -119,7 +119,7 @@ const playbackSettingsSlice = createSlice({
                 state.settings.viewerControl.type = 'disabled';
             }
         },
-        setViewerControlType(state, action: PayloadAction<'disabled' | 'remote-falcon'>) {
+        setViewerControlType(state, action: PayloadAction<'disabled' | 'remote-falcon' | 'ezplayer'>) {
             state.settings.viewerControl.type = action.payload;
             state.settings.viewerControl.enabled = action.payload !== 'disabled';
         },

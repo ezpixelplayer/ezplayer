@@ -9,12 +9,6 @@ export const CLOUD_API_ENDPOINTS = {
      *  Lightweight heartbeat that doubles as a command-poll. Empty body is
      *  valid (just picks up pending OutOfBandCommands). */
     CHECKIN: 'player/checkin/',
-    GET_PLAYLIST: 'player/getplaylistsforplayer/',
-    UPDATE_PLAYLIST: 'player/postplaylistsforplayer',
-    GET_SCHEDULE: 'player/getscheduleforplayer/',
-    UPDATE_SCHEDULE: 'player/postscheduleforplayer',
-    GET_SEQUENCE: 'player/getseqforplayer/',
-    UPDATE_SEQUENCE: 'player/postseqsforplayer',
     GET_STATUS: 'player/getstat/',
 
     /** User-facing browser URL: ${cloudUrl}${REGISTER_PLAYER}<playerId> opens the
@@ -25,6 +19,10 @@ export const CLOUD_API_ENDPOINTS = {
     // prefixed with /api/ — append directly: `${cloudUrl}${endpoint}<args>`.
     /** GET ${cloudUrl}ezpapi/player/getseqforplayer/<token> -> { sequences: EzpSeqRec[] } */
     EZP_GET_SEQ_LIST: 'ezpapi/player/getseqforplayer/',
+    /** GET ${cloudUrl}ezpapi/player/getplaylistsforplayer/<token> -> { playlists: PlaylistRecord[] } */
+    EZP_GET_PLAYLISTS: 'ezpapi/player/getplaylistsforplayer/',
+    /** GET ${cloudUrl}ezpapi/player/getscheduleforplayer/<token> -> { schedule: ScheduledPlaylist[] } */
+    EZP_GET_SCHEDULE: 'ezpapi/player/getscheduleforplayer/',
     /** GET ${cloudUrl}ezpapi/player/getseqfile/<token>/<file_id> -> { url, filename } */
     EZP_GET_SEQ_FILE: 'ezpapi/player/getseqfile/',
     /** GET ${cloudUrl}ezpapi/player/getmediafile/<token>/<file_id> -> { url, filename } */
@@ -32,4 +30,6 @@ export const CLOUD_API_ENDPOINTS = {
     /** GET ${cloudUrl}ezpapi/player/getlatestlayout/<token>
      *   -> { zip?, rgbeffects?, networks?: { url, filename, file_id, file_time } } */
     EZP_GET_LATEST_LAYOUT: 'ezpapi/player/getlatestlayout/',
+    /** GET ${cloudUrl}ezpapi/player/getsettingsforplayer/<token> -> CloudPlayerSettings */
+    EZP_GET_SETTINGS: 'ezpapi/player/getsettingsforplayer/',
 } as const;
