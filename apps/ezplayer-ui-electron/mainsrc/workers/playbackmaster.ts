@@ -438,11 +438,9 @@ function configureEzvc() {
     });
 }
 
-// Jukebox eligibility — replicated from
-// player-ui-components/src/services/jukeboxFilter.ts (the worker can't import
-// that React package). Keep in sync: 'nojukebox' is always excluded; a song is
-// out if it has ANY excluded tag; if includedTags is non-empty it must match
-// ANY of them. Tags compared case-insensitively / trimmed.
+// Jukebox eligibility — duplicate of jukeboxFilter (the worker can't pull a
+// React package). 'nojukebox' is always excluded; excluded tags veto; included
+// tags (when non-empty) are required as any-match. Tags trimmed + lowercased.
 const JUKEBOX_ALWAYS_EXCLUDED = ['nojukebox'];
 function normalizeTagList(tags: string[] | undefined): string[] {
     return (tags ?? []).map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0);
@@ -469,12 +467,8 @@ function sendEzvcUpdate() {
     if (!settings) return;
     if (!ezvcCloudUrl || !ezvcPlayerToken) return;
 
-    // Display (now-playing + the schedule feeds, below) is reported for any
-    // cloud-connected player — so the viewer home page has something to show
-    // even when interactive viewer control is off. Interactive control
-    // (request/vote + the next-pick poll) is separate: it runs only when this
-    // player's backend is the in-house cloud one (`type === 'ezplayer'`) and
-    // its schedule window is open.
+    // Display feeds report for any cloud-connected player; interactive control
+    // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
     const ezWindow = vc?.type === 'ezplayer' ? getActiveViewerControlSchedule(vc) : null;
     setEzvcControlEnabled(!!ezWindow);
@@ -496,9 +490,8 @@ function sendEzvcUpdate() {
         pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
     const upcomingVc = upcomingItems.map((p) => toVc(p)).filter((x): x is VcPlayingItem => x !== undefined);
 
-    // Push only when the *lineup identity* changes — not when at/until drift
-    // each tick — so the worker's hash dedupe doesn't see per-second churn.
-    // Times refresh on lineup change; the page interpolates between changes.
+    // Push on lineup-identity change, not per-tick timestamp drift; the page
+    // interpolates between pushes.
     const lineupKey = `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
     if (lineupKey !== lastEzvcPlayingKey) {
         lastEzvcPlayingKey = lineupKey;
@@ -510,14 +503,9 @@ function sendEzvcUpdate() {
         });
     }
 
-    // ---- two schedule feeds, independent of the request window -----------
-    // Operating hours come from the SHOW SCHEDULE definition (`curSchedule`) —
-    // the same per-occurrence records the player's Schedule-screen calendar
-    // renders — NOT the playback engine's near-term lookahead (which exists to
-    // drive now-playing / up-next and is horizon-bounded). Each occurrence's
-    // window is computed with `getScheduleTimes` (shared with that calendar),
-    // so a show days/weeks out still appears. Future occurrences only, soonest
-    // first, capped.
+    // Operating hours come from `curSchedule` (the calendar's source of truth),
+    // not the playback engine's horizon-bounded lookahead — so future
+    // occurrences days/weeks out still surface. Future-only, soonest first.
     const nowMs = Date.now();
     const showWindows: VcScheduleEntry[] = (curSchedule ?? [])
         .filter((s) => s.scheduleType !== 'background' && !s.deleted && s.enabled !== false)
@@ -542,11 +530,8 @@ function sendEzvcUpdate() {
     }));
     setEzvcSchedule(showWindows, reqWindows);
 
-    // ---- static catalog: the jukebox-filtered sequence list --------------
-    // "Songs you may hear" for the public page — the same filtering the in-app
-    // jukebox uses, independent of viewer control. Pushed for any cloud-
-    // connected player. Artwork is resolved by the cloud (per-song proxy), so
-    // we don't send local file paths here.
+    // ---- static catalog: jukebox-filtered sequences ----------------------
+    // Artwork is resolved cloud-side via per-song proxy; no local paths here.
     const jukebox = settings.jukebox;
     const catalog: VcSong[] = (curSequences ?? [])
         .filter((seq) => !seq.deleted && seq.render_enabled !== false)
