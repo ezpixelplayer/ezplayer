@@ -1,0 +1,8 @@
+# End-user talk. Public fragments only.
+name: user-talk
+title: EZPlayer — Overview
+theme: ezplayer
+fragments:
+  - shared/title-user.md
+  - shared/arch-overview.md
+  - shared/contact.md

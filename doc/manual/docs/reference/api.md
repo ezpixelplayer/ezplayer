@@ -1,3 +1,9 @@
+---
+sidebar_position: 99
+sidebar_label: API
+title: API Reference
+---
+
 # EZPlayer API Documentation
 
 ## Koa Server REST APIs
