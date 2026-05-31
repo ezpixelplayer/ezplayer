@@ -140,6 +140,19 @@ function rescheduleTimers() {
     if (manifestTimer.unref) manifestTimer.unref();
 }
 
+/** Cooling-off period after the circuit breaker trips. After this much time
+ *  the player tries again on its own — so an overnight transient (rate spike,
+ *  cloud outage) heals without requiring a user click or app restart. */
+const HALT_AUTO_CLEAR_MS = 60 * 60 * 1000;
+let autoClearTimer: NodeJS.Timeout | undefined;
+
+function cancelAutoClearTimer() {
+    if (autoClearTimer) {
+        clearTimeout(autoClearTimer);
+        autoClearTimer = undefined;
+    }
+}
+
 function recordFailure(reason: string) {
     consecutiveFailures += 1;
     cStatus.lastError = reason;
@@ -147,6 +160,21 @@ function recordFailure(reason: string) {
         halted = true;
         log('error', `circuit breaker tripped after ${consecutiveFailures} failures: ${reason}`);
         clearTimers();
+        // Schedule a one-shot auto-clear so the player self-recovers without
+        // user intervention. User-initiated sync or setConfig cancels this.
+        cancelAutoClearTimer();
+        autoClearTimer = setTimeout(() => {
+            autoClearTimer = undefined;
+            if (halted) {
+                log('info', 'circuit breaker auto-clearing after cooling-off period');
+                consecutiveFailures = 0;
+                halted = false;
+                cStatus.lastError = undefined;
+                pushCStatus();
+                rescheduleTimers();
+            }
+        }, HALT_AUTO_CLEAR_MS);
+        autoClearTimer.unref?.();
     }
     pushCStatus();
 }
@@ -156,6 +184,26 @@ function recordSuccess() {
         consecutiveFailures = 0;
         cStatus.lastError = undefined;
         pushCStatus();
+    }
+}
+
+/** A user-initiated sync (manifestNow / fetchLayoutNow) should override any
+ *  prior auto-halt: the user is explicitly asking for another attempt. Clears
+ *  the consecutive-failure counter, drops the halted flag, and re-arms the
+ *  periodic timers that the breaker had cleared. Cheap when nothing was
+ *  wrong (typical case). */
+function clearAutoHaltOnUserSync() {
+    const wasHalted = halted;
+    cancelAutoClearTimer();
+    if (consecutiveFailures !== 0 || halted) {
+        consecutiveFailures = 0;
+        halted = false;
+        cStatus.lastError = undefined;
+        pushCStatus();
+    }
+    if (wasHalted) {
+        log('info', 'user-initiated sync; clearing auto-halt');
+        rescheduleTimers();
     }
 }
 
@@ -1393,6 +1441,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             lastSentScheduleJson = undefined;
             lastSentSettingsJson = undefined;
 
+            cancelAutoClearTimer();
             stopped = false;
             halted = false;
             consecutiveFailures = 0;
@@ -1421,10 +1470,15 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             break;
         }
         case 'manifestNow': {
+            // User-initiated sync overrides any prior auto-halt and resets the
+            // failure counter — the user is explicitly asking us to try again.
+            clearAutoHaltOnUserSync();
             void pollManifest();
             break;
         }
         case 'fetchLayoutNow': {
+            // Same rationale as manifestNow — the user is asking; honor it.
+            clearAutoHaltOnUserSync();
             void fetchLayout();
             break;
         }
