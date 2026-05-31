@@ -595,7 +595,8 @@ async function dispatchHttpProxy(
     query: Record<string, string> | undefined,
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
     // /api/getimage — id in path or query. Query form is preferred for cloud
-    // because DBOS Cloud's edge rejects `%7C` (composite-id pipe) in paths.
+    // because some hosting providers' edge proxies reject `%7C` (composite-id
+    // pipe) in URL paths.
     const getimagePath = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
     const getimageQuery = pathStr === '/api/getimage' ? query?.id : undefined;
     if (getimagePath || getimageQuery) {
@@ -827,8 +828,8 @@ async function startServer(config: ServerWorkerData) {
 
     // ----------------------------------------------
     // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
-    // (legacy). Cloud-sourced ids are `<user>|<vseq>`; DBOS Cloud's edge
-    // rejects `%7C` in URL paths, so the preferred caller-side form is the
+    // (legacy). Cloud-sourced ids are `<user>|<vseq>`; some hosting edges
+    // reject `%7C` in URL paths, so the preferred caller-side form is the
     // query-string variant. Both shapes are accepted so a new browser
     // bundle against an old player still resolves, and vice versa.
     // ----------------------------------------------

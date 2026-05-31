@@ -174,7 +174,7 @@ function buildProxyWsUrl(cloudUrlIn: string, token: string, sessionId: string): 
 }
 
 /** Parallel WS for live-audio push. Player pushes binary chunk frames as
- *  they're produced; cloud-endpoint fans out to attached listeners. */
+ *  they're produced; the cloud server fans out to attached listeners. */
 function buildAudioWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/audioBridge', token, sessionId);
 }
@@ -1226,8 +1226,10 @@ async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promi
 // -- layout upload ------------------------------------------------------------
 
 interface PresignedPost {
+    /** Presigned PUT URL the client uploads the file body to. */
     url: string;
-    fields: Record<string, string>;
+    /** Always empty in current responses; reserved for future use. */
+    fields?: Record<string, string>;
 }
 
 interface StartUploadResponse {
@@ -1302,7 +1304,7 @@ async function uploadLayout(): Promise<void> {
             totalBytes: zipAb.byteLength,
         });
 
-        // 2) Ask the cloud for a presigned POST.
+        // 2) Ask the cloud for a presigned upload URL.
         const startUrl = `${cloudUrl}ezpapi/player/startuploadlayoutzip/${playerIdToken}`;
         log('info', `layout upload startupload POST ${startUrl}`);
         const startRes = await expectOk(
@@ -1312,14 +1314,14 @@ async function uploadLayout(): Promise<void> {
         const { post, rec } = (await startRes.json()) as StartUploadResponse;
         log('info', `layout upload got presigned post (file_id=${rec.file_id}, file_time=${rec.file_time})`);
 
-        // 3) Upload to S3 via the presigned form post.
-        const form = new FormData();
-        for (const [k, v] of Object.entries(post.fields ?? {})) {
-            form.append(k, v);
-        }
-        form.append('file', new Blob([zipAb]), 'layout.zip');
-        const s3Res = await fetch(post.url, { method: 'POST', body: form, signal: globalAbort.signal });
-        await expectOk(s3Res, 's3 upload');
+        // 3) Upload the zip body via the presigned PUT URL.
+        const uploadRes = await fetch(post.url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/zip' },
+            body: new Blob([zipAb]),
+            signal: globalAbort.signal,
+        });
+        await expectOk(uploadRes, 'presigned PUT upload');
         setLayout({
             status: 'uploading',
             direction: 'upload',
