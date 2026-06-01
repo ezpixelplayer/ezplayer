@@ -614,6 +614,9 @@ export interface PlayAction {
     end: boolean;
     /** The seq ID (if applicable) */
     seqId?: string;
+    /** The sequence record as captured when the owning item was populated. Resolve
+     *  files and other detail from here so playback is unaffected by later updates. */
+    seq?: SequenceRecord;
     /** Offset into the sequence (at atTime) */
     offsetMS?: number;
     /** Duration of the action - this is the amount remaining as of atTime, until another action would occur */
@@ -650,7 +653,7 @@ class PlaybackStateEntry {
         this.itemId = itemId;
         this.schedStartTime = pi.schedStart;
         this.schedEndTime = pi.schedEnd;
-        this.seqIds = [pi.preSectionIds, pi.mainSectionIds, pi.postSectionIds];
+        this.seqSections = [pi.preSection, pi.mainSection, pi.postSection];
         this.seqDurs = [pi.preSectionDurs, pi.mainSectionDurs, pi.postSectionDurs];
     }
 
@@ -669,7 +672,7 @@ class PlaybackStateEntry {
     item: PlaybackItem; // The expanded item, full instructions
     itemId: string = '';
 
-    seqIds: [string[], string[], string[]];
+    seqSections: [SequenceRecord[], SequenceRecord[], SequenceRecord[]];
     seqDurs: [number[], number[], number[]];
 
     // We make a lot of state transitions, one by one.  This means itemPart / itemCursor start at -1 and go to length
@@ -737,7 +740,7 @@ class PlaybackStateEntry {
             scheduleId: c.item.scheduleId,
             playlistId: c.item.playlistIds?.[c.itemPart],
             stackDepth: depth,
-            sequenceId: this.seqIds[c.itemPart]?.[c.itemCursor % (this.seqIds[c.itemPart].length || 1)],
+            sequenceId: this.seqSections[c.itemPart]?.[c.itemCursor % (this.seqSections[c.itemPart].length || 1)]?.id,
             entryIntoPlaylist: [c.itemPart, c.itemCursor],
             timeIntoSeqMS: c.offsetInto,
         });
@@ -748,12 +751,12 @@ class PlaybackStateEntry {
             this.addLog(depth, 'Sequence Ended', ctime, c, log);
         }
         ++c.itemCursor;
-        if (loop && c.itemCursor >= this.seqIds[c.itemPart].length) c.itemCursor = 0;
+        if (loop && c.itemCursor >= this.seqSections[c.itemPart].length) c.itemCursor = 0;
         c.offsetInto = 0;
     }
 
     endCurrentPart(depth: number, c: PlaybackCursor, ctime: number, log?: PlaybackLogDetail[]) {
-        if (c.itemPart >= 0 && c.itemPart <= 2 && this.seqIds[c.itemPart]?.length) {
+        if (c.itemPart >= 0 && c.itemPart <= 2 && this.seqSections[c.itemPart]?.length) {
             this.addLog(depth, 'Playlist Ended', ctime, c, log);
         }
         ++c.itemPart;
@@ -793,7 +796,7 @@ class PlaybackStateEntry {
         function startNextPart(ctime: number) {
             c.itemCursor = 0;
             c.offsetInto = 0;
-            if (c.itemPart <= 2 && pthis.seqIds[c.itemPart]?.length) {
+            if (c.itemPart <= 2 && pthis.seqSections[c.itemPart]?.length) {
                 pthis.addLog(depth, 'Playlist Started', ctime, c, log);
             }
         }
@@ -814,7 +817,7 @@ class PlaybackStateEntry {
             if (
                 c.itemPart >= 0 &&
                 c.itemPart <= 2 &&
-                (c.itemCursor >= this.seqIds[c.itemPart].length || c.endingPartEarly)
+                (c.itemCursor >= this.seqSections[c.itemPart].length || c.endingPartEarly)
             ) {
                 if (dbg) console.log('PSE endCurrentPart');
                 this.endCurrentPart(depth, c, curTime, log);
@@ -831,7 +834,7 @@ class PlaybackStateEntry {
             }
 
             // Do any trivial transitions, always
-            if (!this.seqIds[c.itemPart]?.length) {
+            if (!this.seqSections[c.itemPart]?.length) {
                 if (dbg) console.log('Trivial transition');
                 startNextPart(curTime);
                 this.endCurrentPart(depth, c, curTime, log);
@@ -871,7 +874,8 @@ class PlaybackStateEntry {
                     out?.push({
                         end: false,
                         atTime: curTime,
-                        seqId: c.item.preSectionIds[c.itemCursor],
+                        seqId: c.item.preSection[c.itemCursor]?.id,
+                        seq: c.item.preSection[c.itemCursor],
                         offsetMS: c.offsetInto,
                         durationMS: itime - c.offsetInto,
                     });
@@ -884,7 +888,8 @@ class PlaybackStateEntry {
                 out?.push({
                     end: false,
                     atTime: curTime,
-                    seqId: c.item.preSectionIds[c.itemCursor],
+                    seqId: c.item.preSection[c.itemCursor]?.id,
+                    seq: c.item.preSection[c.itemCursor],
                     offsetMS: c.offsetInto,
                     durationMS: itime - c.offsetInto,
                 });
@@ -911,7 +916,8 @@ class PlaybackStateEntry {
                     out?.push({
                         end: false,
                         atTime: curTime,
-                        seqId: c.item.mainSectionIds[c.itemCursor],
+                        seqId: c.item.mainSection[c.itemCursor]?.id,
+                        seq: c.item.mainSection[c.itemCursor],
                         offsetMS: c.offsetInto,
                         durationMS: itime - c.offsetInto,
                     });
@@ -952,7 +958,8 @@ class PlaybackStateEntry {
                         out?.push({
                             end: false,
                             atTime: curTime,
-                            seqId: c.item.mainSectionIds[c.itemCursor],
+                            seqId: c.item.mainSection[c.itemCursor]?.id,
+                            seq: c.item.mainSection[c.itemCursor],
                             offsetMS: c.offsetInto,
                             durationMS: shouldStartOutro,
                         });
@@ -965,7 +972,8 @@ class PlaybackStateEntry {
                             out?.push({
                                 end: false,
                                 atTime: curTime,
-                                seqId: c.item.mainSectionIds[c.itemCursor],
+                                seqId: c.item.mainSection[c.itemCursor]?.id,
+                                seq: c.item.mainSection[c.itemCursor],
                                 offsetMS: c.offsetInto,
                                 durationMS: useOutro,
                             });
@@ -988,7 +996,8 @@ class PlaybackStateEntry {
                 out?.push({
                     end: false,
                     atTime: curTime,
-                    seqId: c.item.postSectionIds[c.itemCursor],
+                    seqId: c.item.postSection[c.itemCursor]?.id,
+                    seq: c.item.postSection[c.itemCursor],
                     offsetMS: c.offsetInto,
                     durationMS: itime - c.offsetInto,
                 });
@@ -1176,13 +1185,19 @@ class PlaybackItem implements SchedulerHeapItem {
     scheduleId?: string = ''; // If this correlates to such
     playlistIds?: (string | undefined)[] = undefined; // If this correlates to such
 
-    preSectionIds: string[] = [];
+    // Each section holds the SequenceRecords for its positions, captured at populate
+    // time (the record carries its own id). Playback resolves detail (files, etc.)
+    // per position from here rather than the live master map, so an in-flight item is
+    // unaffected by later changes and each position can be reconciled on its own.
+    // Durations stay a separate array — their length drives loop math and, for
+    // shuffle, intentionally differs from the section length.
+    preSection: SequenceRecord[] = [];
     preSectionDurs: number[] = [];
     preSectionTotal: number = 0;
-    postSectionIds: string[] = [];
+    postSection: SequenceRecord[] = [];
     postSectionDurs: number[] = [];
     postSectionTotal: number = 0;
-    mainSectionIds: string[] = [];
+    mainSection: SequenceRecord[] = [];
     mainSectionDurs: number[] = [];
     mainSectionTotal: number = 0;
     mainSectionLongest: number = 0;
@@ -1370,6 +1385,17 @@ export class PlayerRunState {
         schedules: ScheduledPlaylist[],
         errs: string[],
     ) {
+        this.#setMasterData(seqs, playlists, schedules, errs);
+    }
+
+    /** Install sequence/playlist/schedule master data, replacing whatever is present.
+     *  Only the master arrays and maps are written; runtime state is not touched. */
+    #setMasterData(
+        seqs: SequenceRecord[],
+        playlists: PlaylistRecord[],
+        schedules: ScheduledPlaylist[],
+        errs: string[],
+    ) {
         this.sequences = seqs
             .filter((s) => s.deleted !== true)
             .map((s) => {
@@ -1389,8 +1415,48 @@ export class PlayerRunState {
             });
         this.schedules.sort((a, b) => getScheduleTimes(a).startTimeMS - getScheduleTimes(b).startTimeMS);
         this.schedulesById = scheduleToMap(this.schedules, errs, this.playlistsById);
+    }
 
-        // TODO CRAZ: If this is an update, go back the stack and update playing things if needed
+    /**
+     * Adopt updated sequence/playlist/schedule data into a running state. The master
+     * maps become current truth while all runtime state — stack, heap, upcoming
+     * occurrences, interactive queue, immediate item, stoppedIds — is preserved.
+     *
+     * Items already loaded carry their own captured sequence records (the per-position
+     * PlaybackItem section arrays), so in-flight playback is unaffected by the new
+     * data. Reconciling loaded occurrences to accepted changes — re-baking, dropping
+     * deleted entries, admitting new schedules — is handled per case on top of this.
+     */
+    applyDataUpdate(
+        seqs: SequenceRecord[],
+        playlists: PlaylistRecord[],
+        schedules: ScheduledPlaylist[],
+        errs: string[],
+    ) {
+        this.#setMasterData(seqs, playlists, schedules, errs);
+    }
+
+    /** File paths pinned by loaded playback items (stack, heap, upcoming), counted
+     *  from each item's captured sequence detail. Feeds old-file GC: a file present
+     *  here is still needed by something the player has loaded, even if its sequence
+     *  has since been changed or removed from the master data. */
+    referencedFileCounts(): Map<string, number> {
+        const counts = new Map<string, number>();
+        const add = (f?: string) => {
+            if (f) counts.set(f, (counts.get(f) ?? 0) + 1);
+        };
+        const addItem = (it: PlaybackItem) => {
+            for (const seq of [...it.preSection, ...it.mainSection, ...it.postSection]) {
+                add(seq.files?.fseq);
+                add(seq.files?.audio);
+                add(seq.files?.video);
+                add(seq.files?.thumb);
+            }
+        };
+        for (const e of this.stack) addItem(e.item);
+        for (const it of this.heapById.values()) addItem(it);
+        for (const it of this.upcomingOccurrences) addItem(it);
+        return counts;
     }
 
     #addToHeap(sc: PlaybackItem) {
@@ -1430,9 +1496,9 @@ export class PlayerRunState {
         sc.endPolicy = s.endPolicy;
         sc.keepToScheduleWhenPreempted = s.keepToScheduleWhenPreempted;
 
-        sc.preSectionIds = [];
+        sc.preSection = [];
         sc.preSectionTotal = 0;
-        sc.postSectionIds = [];
+        sc.postSection = [];
         sc.postSectionTotal = 0;
 
         const prepl = s.prePlaylistId ? this.playlistsById.get(s.prePlaylistId) : undefined;
@@ -1440,7 +1506,7 @@ export class PlayerRunState {
             for (let i = 0; i < prepl.items.length; ++i) {
                 const seq = this.sequencesById.get(prepl.items[i].id);
                 if (!seq) continue;
-                sc.preSectionIds.push(seq.id);
+                sc.preSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.preSectionDurs.push(it);
                 sc.preSectionTotal += it;
@@ -1451,14 +1517,14 @@ export class PlayerRunState {
             for (let i = 0; i < postl.items.length; ++i) {
                 const seq = this.sequencesById.get(postl.items[i].id);
                 if (!seq) continue;
-                sc.postSectionIds.push(seq.id);
+                sc.postSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.postSectionDurs.push(it);
                 sc.postSectionTotal += it;
             }
         }
 
-        sc.mainSectionIds = [];
+        sc.mainSection = [];
         sc.mainSectionLoop = !!(s.loop || s.shuffle);
         sc.mainSectionTotal = 0;
         sc.mainSectionLongest = 0;
@@ -1470,17 +1536,14 @@ export class PlayerRunState {
             sc.mainSectionLongest = mainTimes.longestMS;
 
             if (s.shuffle) {
-                sc.mainSectionIds = createShuffleList(
-                    mainpl,
-                    sc.schedStart,
-                    sc.schedEnd - sc.schedStart,
-                    this.sequencesById,
-                );
+                sc.mainSection = createShuffleList(mainpl, sc.schedStart, sc.schedEnd - sc.schedStart, this.sequencesById)
+                    .map((id) => this.sequencesById.get(id))
+                    .filter((seq): seq is SequenceRecord => !!seq);
             } else {
                 for (let i = 0; i < mainpl.items.length; ++i) {
                     const seq = this.sequencesById.get(mainpl.items[i].id);
                     if (!seq) continue;
-                    sc.mainSectionIds.push(seq.id);
+                    sc.mainSection.push(seq);
                     const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                     sc.mainSectionDurs.push(it);
                 }
@@ -1501,7 +1564,7 @@ export class PlayerRunState {
             sc.schedEnd = sc.schedStart + dur;
         } else if (ipc.playlistId) {
             sc.playlistIds = [undefined, ipc.playlistId, undefined];
-            sc.mainSectionIds = [];
+            sc.mainSection = [];
             sc.mainSectionLoop = false;
             sc.mainSectionTotal = 0;
             sc.mainSectionLongest = 0;
@@ -1515,21 +1578,21 @@ export class PlayerRunState {
                 for (let i = 0; i < mainpl.items.length; ++i) {
                     const seq = this.sequencesById.get(mainpl.items[i].id);
                     if (!seq) continue;
-                    sc.mainSectionIds.push(seq.id);
+                    sc.mainSection.push(seq);
                     const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                     sc.mainSectionDurs.push(it);
                 }
             }
         } else if (ipc.seqId) {
             sc.playlistIds = [undefined, undefined, undefined];
-            sc.mainSectionIds = [];
+            sc.mainSection = [];
             sc.mainSectionLoop = false;
             sc.mainSectionTotal = 0;
             sc.mainSectionLongest = 0;
 
             const seq = this.sequencesById.get(ipc.seqId);
             if (seq) {
-                sc.mainSectionIds.push(seq.id);
+                sc.mainSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.mainSectionDurs.push(it);
                 sc.mainSectionTotal = it;
@@ -1600,6 +1663,11 @@ export class PlayerRunState {
 
     get depth() {
         return this.stack.length;
+    }
+
+    /** True when there is live, imminent, or queued playback that a rebuild would disrupt. */
+    get isPlaying() {
+        return this.stack.length > 0 || !!this.immediateItem || this.interactiveQueue.length > 0;
     }
 
     // Read the schedule out...
@@ -1927,7 +1995,7 @@ export class PlayerRunState {
                 scheduleId: s.item.scheduleId,
                 itemId: s.item.itemId,
                 playlistNumber: spl,
-                playlistIds: s.seqIds[spl] ?? [],
+                playlistIds: (s.seqSections[spl] ?? []).map((x) => x.id),
                 playlistDurations: s.seqDurs[spl] ?? [],
                 seqIdx: spi,
                 offsetInto: s.offsetInto,
@@ -2147,7 +2215,7 @@ export class PlayerRunState {
 
         // If a songId was specified, only skip if it matches the current sequence
         if (songId !== undefined) {
-            const curSeqId = st.seqIds[st.itemPart]?.[st.itemCursor % (st.seqIds[st.itemPart].length || 1)];
+            const curSeqId = st.seqSections[st.itemPart]?.[st.itemCursor % (st.seqSections[st.itemPart].length || 1)]?.id;
             if (curSeqId !== songId) return;
         }
 
@@ -2208,13 +2276,13 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
-            } else if (s.mainSectionIds?.[0]) {
+            } else if (s.mainSection?.[0]) {
                 items.push({
                     type: s.itemType,
                     item: 'Song',
-                    sequence_id: s.mainSectionIds[0],
+                    sequence_id: s.mainSection[0].id,
                     request_id: s.requestId,
-                    title: this.titleForIds(s.mainSectionIds[0], undefined, undefined),
+                    title: this.titleForIds(s.mainSection[0].id, undefined, undefined),
                 } as PlayingItem);
             }
         }
@@ -2259,13 +2327,13 @@ export class PlayerRunState {
                     request_id: s.requestId,
                     title: this.titleForIds(undefined, s.playlistIds?.[1], undefined),
                 } as PlayingItem);
-            } else if (s.mainSectionIds?.[0]) {
+            } else if (s.mainSection?.[0]) {
                 items.push({
                     type: 'Immediate',
                     item: 'Song',
-                    sequence_id: s.mainSectionIds[0],
+                    sequence_id: s.mainSection[0].id,
                     request_id: s.requestId,
-                    title: this.titleForIds(s.mainSectionIds[0], undefined, undefined),
+                    title: this.titleForIds(s.mainSection[0].id, undefined, undefined),
                 } as PlayingItem);
             }
         }
