@@ -1419,14 +1419,18 @@ export class PlayerRunState {
 
     /**
      * Adopt updated sequence/playlist/schedule data into a running state. The master
-     * maps become current truth. The stack (live and suspended playback) is left
-     * untouched and keeps its captured per-position records, so what is playing is
-     * unaffected; reconciling the active stack per case is layered on top of this.
+     * maps become current truth.
      *
      * Heap and upcoming occurrences carry no cursor, so they are discarded and rebuilt
      * from the new data over [refillStart, refillEnd] (the currently loaded window).
-     * The stack and manually-stopped ids are skipped during the refill. Interactive
+     * The stack and manually-stopped ids are skipped during the refill, and interactive
      * requests whose target no longer exists are dropped.
+     *
+     * The stack keeps its captured per-position records, so what is playing is
+     * unaffected — except that an active scheduled entry whose end time moved has it
+     * accepted, and one whose schedule was deleted is wound down to end. Start-time,
+     * playlist, priority and other edits to a running schedule are left frozen; reload
+     * applies those.
      */
     applyDataUpdate(
         seqs: SequenceRecord[],
@@ -1437,6 +1441,7 @@ export class PlayerRunState {
         refillEnd: number,
     ) {
         this.#setMasterData(seqs, playlists, schedules, errs);
+        this.#reconcileActiveSchedules();
 
         this.heap = new SchedulerMinHeap<PlaybackItem>();
         this.heapById = new Map();
@@ -1449,6 +1454,29 @@ export class PlayerRunState {
         }
 
         this.addTimeRangeToSchedule(refillStart, refillEnd);
+    }
+
+    /** Reconcile active stack entries against the new schedule data. A scheduled entry
+     *  whose schedule was deleted is wound down by bringing its end to now (the entry's
+     *  endPolicy then governs how it stops); one whose end time moved has it accepted.
+     *  Start-time, playlist, priority and other edits are left frozen — reload applies
+     *  those. Safe on suspended entries too: a lowered end just takes effect on resume. */
+    #reconcileActiveSchedules() {
+        for (const entry of this.stack) {
+            if (entry.item.itemType !== 'Scheduled' || !entry.item.scheduleId) continue;
+            const sched = this.schedulesById.get(entry.item.scheduleId);
+            if (!sched) {
+                entry.item.schedEnd = Math.min(entry.item.schedEnd, this.currentTime);
+                entry.schedEndTime = entry.item.schedEnd;
+                continue;
+            }
+            const times = getScheduleTimes(sched);
+            if (times.startTimeMS !== entry.item.schedStart) continue; // start moved → reload
+            if (times.endTimeMS !== entry.item.schedEnd) {
+                entry.item.schedEnd = times.endTimeMS;
+                entry.schedEndTime = times.endTimeMS;
+            }
+        }
     }
 
     /** Whether an interactive request still points at data that exists. */

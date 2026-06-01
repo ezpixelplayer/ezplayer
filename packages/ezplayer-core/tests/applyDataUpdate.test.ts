@@ -221,4 +221,39 @@ describe('applyDataUpdate', () => {
 
         expect(plr.interactiveQueue.map((q) => q.requestId)).toEqual(['keep']);
     });
+
+    it('accepts an end-time change to the active schedule', () => {
+        const plr = runningState();
+        const top = plr.stack[plr.stack.length - 1];
+        expect(top.item.schedEnd).toBe(baseTime() + 19 * 3600_000);
+
+        const extended: ScheduledPlaylist = { ...sched, toTime: '20:00' };
+        apply(plr, [seqA, seqB, seqC], [plAB], [extended]);
+
+        expect(top.item.schedEnd).toBe(baseTime() + 20 * 3600_000);
+        expect(plr.depth).toBeGreaterThan(0); // still playing
+    });
+
+    it('winds down an active schedule that was deleted', () => {
+        const plr = runningState();
+        const top = plr.stack[plr.stack.length - 1];
+
+        apply(plr, [seqA, seqB, seqC], [plAB], []); // schedule deleted
+
+        expect(top.item.schedEnd).toBeLessThanOrEqual(plr.currentTime);
+        plr.runUntil(plr.currentTime + 3600_000); // it ends as the player advances
+        expect(plr.depth).toBe(0);
+    });
+
+    it('leaves the active schedule frozen when the start time moved', () => {
+        const plr = runningState();
+        const top = plr.stack[plr.stack.length - 1];
+
+        // Both start and end changed; because the start moved, nothing is accepted.
+        const moved: ScheduledPlaylist = { ...sched, fromTime: '17:00', toTime: '20:00' };
+        apply(plr, [seqA, seqB, seqC], [plAB], [moved]);
+
+        expect(top.item.schedStart).toBe(baseTime() + 18 * 3600_000); // unchanged
+        expect(top.item.schedEnd).toBe(baseTime() + 19 * 3600_000); // unchanged
+    });
 });
