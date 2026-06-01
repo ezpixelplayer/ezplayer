@@ -44,24 +44,49 @@ const sched: ScheduledPlaylist = {
     duration: 0,
 };
 
+// A second schedule later the same day — future relative to the running state below,
+// so it lands in upcoming rather than on the stack.
+const sched2: ScheduledPlaylist = {
+    id: 'sched2',
+    scheduleType: 'main',
+    title: 'sched2',
+    playlistId: 'plAB',
+    playlistTitle: 'plAB',
+    date: 0,
+    fromTime: '20:00',
+    toTime: '21:00',
+    duration: 0,
+};
+
 function baseTime(): number {
     const d = new Date(sched.date);
     d.setHours(0, 0, 0, 0);
     return d.getTime();
 }
 
+const DAY = 24 * 3600_000;
+
 /** Build a state already mid-playback: 10s into the 18:00 schedule, so seqA is on
- *  the active stack. Returns the run state and the moment it was advanced to. */
-function runningState(): PlayerRunState {
+ *  the active stack and any later schedule sits in upcoming. */
+function runningStateWith(schedules: ScheduledPlaylist[]): PlayerRunState {
     const bt = baseTime();
     const plr = new PlayerRunState(bt);
     const errs: string[] = [];
-    plr.setUpSequences([seqA, seqB, seqC], [plAB], [sched], errs);
+    plr.setUpSequences([seqA, seqB, seqC], [plAB], schedules, errs);
     expect(errs).toEqual([]);
-    plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000); // load the day's occurrences
+    plr.addTimeRangeToSchedule(bt, bt + DAY); // load the day's occurrences
     plr.runUntil(bt + 18 * 3600_000 + 10_000); // 10s into the schedule
     expect(plr.depth).toBeGreaterThan(0); // something is actually playing
     return plr;
+}
+
+function runningState(): PlayerRunState {
+    return runningStateWith([sched]);
+}
+
+/** Reconcile, refilling the rest of the loaded day. */
+function apply(plr: PlayerRunState, seqs: SequenceRecord[], pls: PlaylistRecord[], sch: ScheduledPlaylist[]) {
+    plr.applyDataUpdate(seqs, pls, sch, [], plr.currentTime, baseTime() + DAY);
 }
 
 describe('isPlaying', () => {
@@ -86,7 +111,7 @@ describe('applyDataUpdate', () => {
         const stackBefore = plr.stack;
         const topBefore = plr.stack[plr.stack.length - 1];
 
-        plr.applyDataUpdate([seqA, seqB, seqC], [plAB], [sched], []);
+        apply(plr, [seqA, seqB, seqC], [plAB], [sched]);
 
         expect(plr.stack).toBe(stackBefore); // same array, not rebuilt
         expect(plr.stack[plr.stack.length - 1]).toBe(topBefore); // same entry
@@ -96,20 +121,21 @@ describe('applyDataUpdate', () => {
         const plr = runningState();
         plr.interactiveQueue.push({ immediate: false, startTime: 0, seqId: 'C', requestId: 'q1' });
         plr.immediateItem = { immediate: true, startTime: 0, seqId: 'C', requestId: 'imm' };
-        plr.stoppedIds.set('someSched', 999);
+        const stopUntil = baseTime() + 19 * 3600_000; // future, so not pruned by refill
+        plr.stoppedIds.set('someSched', stopUntil);
 
-        plr.applyDataUpdate([seqA, seqB, seqC], [plAB], [sched], []);
+        apply(plr, [seqA, seqB, seqC], [plAB], [sched]);
 
         expect(plr.interactiveQueue.map((q) => q.requestId)).toEqual(['q1']);
         expect(plr.immediateItem?.requestId).toBe('imm');
-        expect(plr.stoppedIds.get('someSched')).toBe(999);
+        expect(plr.stoppedIds.get('someSched')).toBe(stopUntil);
     });
 
     it('keeps a playing sequence on its captured detail while the master map updates', () => {
         const plr = runningState();
         const editedA: SequenceRecord = { ...seqA, work: { ...seqA.work, length: 999 } };
 
-        plr.applyDataUpdate([editedA, seqB, seqC], [plAB], [sched], []);
+        apply(plr, [editedA, seqB, seqC], [plAB], [sched]);
 
         // The master map is now current truth.
         expect(plr.sequencesById.get('A')?.work.length).toBe(999);
@@ -126,7 +152,7 @@ describe('applyDataUpdate', () => {
         const plr = runningState();
 
         // seqA omitted entirely from the new data (deleted/disabled upstream).
-        plr.applyDataUpdate([seqB, seqC], [plAB], [sched], []);
+        apply(plr, [seqB, seqC], [plAB], [sched]);
 
         // Master map reflects the deletion...
         expect(plr.sequencesById.has('A')).toBe(false);
@@ -141,7 +167,7 @@ describe('applyDataUpdate', () => {
         const editedC: SequenceRecord = { ...seqC, work: { ...seqC.work, length: 42 } };
         const seqD: SequenceRecord = { id: 'D', instanceId: 'D', work: { length: 7, artist: 'd', title: 'D' } };
 
-        plr.applyDataUpdate([seqA, seqB, editedC, seqD], [plAB], [sched], []);
+        apply(plr, [seqA, seqB, editedC, seqD], [plAB], [sched]);
 
         expect(plr.sequencesById.get('C')?.work.length).toBe(42); // updated (not playing)
         expect(plr.sequencesById.has('D')).toBe(true); // newly added song present
@@ -152,9 +178,47 @@ describe('applyDataUpdate', () => {
         expect(plr.referencedFileCounts().get('a.fseq')).toBeGreaterThanOrEqual(1);
 
         // seqA deleted upstream, but it is still on the active stack.
-        plr.applyDataUpdate([seqB, seqC], [plAB], [sched], []);
+        apply(plr, [seqB, seqC], [plAB], [sched]);
 
         expect(plr.sequencesById.has('A')).toBe(false); // gone from current truth
         expect(plr.referencedFileCounts().get('a.fseq')).toBeGreaterThanOrEqual(1); // still pinned
+    });
+
+    it('admits a newly added schedule into the rebuilt upcoming', () => {
+        const plr = runningState();
+        expect(plr.upcomingById.has('sched2')).toBe(false);
+
+        apply(plr, [seqA, seqB, seqC], [plAB], [sched, sched2]);
+
+        expect(plr.upcomingById.has('sched2')).toBe(true);
+    });
+
+    it('drops a deleted future schedule from the rebuilt upcoming', () => {
+        const plr = runningStateWith([sched, sched2]);
+        expect(plr.upcomingById.has('sched2')).toBe(true);
+
+        apply(plr, [seqA, seqB, seqC], [plAB], [sched]);
+
+        expect(plr.upcomingById.has('sched2')).toBe(false);
+    });
+
+    it('rebuilds an upcoming occurrence from the edited playlist', () => {
+        const plr = runningStateWith([sched, sched2]);
+        expect(plr.upcomingById.get('sched2')?.mainSection.map((s) => s.id)).toEqual(['A', 'B']);
+
+        const plJustA: PlaylistRecord = { ...plAB, items: [{ id: 'A', sequence: 1 }] };
+        apply(plr, [seqA, seqB, seqC], [plJustA], [sched, sched2]);
+
+        expect(plr.upcomingById.get('sched2')?.mainSection.map((s) => s.id)).toEqual(['A']);
+    });
+
+    it('drops an interactive request whose target no longer exists', () => {
+        const plr = runningState();
+        plr.interactiveQueue.push({ immediate: false, startTime: 0, seqId: 'B', requestId: 'keep' });
+        plr.interactiveQueue.push({ immediate: false, startTime: 0, seqId: 'C', requestId: 'drop' });
+
+        apply(plr, [seqA, seqB], [plAB], [sched]); // seqC removed upstream
+
+        expect(plr.interactiveQueue.map((q) => q.requestId)).toEqual(['keep']);
     });
 });

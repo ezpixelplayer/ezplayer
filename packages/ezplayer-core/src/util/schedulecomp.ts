@@ -1419,21 +1419,44 @@ export class PlayerRunState {
 
     /**
      * Adopt updated sequence/playlist/schedule data into a running state. The master
-     * maps become current truth while all runtime state — stack, heap, upcoming
-     * occurrences, interactive queue, immediate item, stoppedIds — is preserved.
+     * maps become current truth. The stack (live and suspended playback) is left
+     * untouched and keeps its captured per-position records, so what is playing is
+     * unaffected; reconciling the active stack per case is layered on top of this.
      *
-     * Items already loaded carry their own captured sequence records (the per-position
-     * PlaybackItem section arrays), so in-flight playback is unaffected by the new
-     * data. Reconciling loaded occurrences to accepted changes — re-baking, dropping
-     * deleted entries, admitting new schedules — is handled per case on top of this.
+     * Heap and upcoming occurrences carry no cursor, so they are discarded and rebuilt
+     * from the new data over [refillStart, refillEnd] (the currently loaded window).
+     * The stack and manually-stopped ids are skipped during the refill. Interactive
+     * requests whose target no longer exists are dropped.
      */
     applyDataUpdate(
         seqs: SequenceRecord[],
         playlists: PlaylistRecord[],
         schedules: ScheduledPlaylist[],
         errs: string[],
+        refillStart: number,
+        refillEnd: number,
     ) {
         this.#setMasterData(seqs, playlists, schedules, errs);
+
+        this.heap = new SchedulerMinHeap<PlaybackItem>();
+        this.heapById = new Map();
+        this.upcomingOccurrences = [];
+        this.upcomingById = new Map();
+
+        this.interactiveQueue = this.interactiveQueue.filter((q) => this.#requestResolves(q));
+        if (this.immediateItem && !this.#requestResolves(this.immediateItem)) {
+            this.immediateItem = undefined;
+        }
+
+        this.addTimeRangeToSchedule(refillStart, refillEnd);
+    }
+
+    /** Whether an interactive request still points at data that exists. */
+    #requestResolves(cmd: InteractivePlayCommand): boolean {
+        if (cmd.seqId !== undefined) return this.sequencesById.has(cmd.seqId);
+        if (cmd.playlistId !== undefined) return this.playlistsById.has(cmd.playlistId);
+        if (cmd.scheduleId !== undefined) return this.schedulesById.has(cmd.scheduleId);
+        return true;
     }
 
     /** File paths pinned by loaded playback items (stack, heap, upcoming), counted

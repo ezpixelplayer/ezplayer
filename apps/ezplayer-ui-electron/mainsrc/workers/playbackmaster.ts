@@ -1721,8 +1721,24 @@ async function processQueue() {
                     backgroundPlayerRunState.runUntil(preserveBGFseqTime);
                 } else {
                     emitInfo(`New schedule installed (reconcile)`);
-                    foregroundPlayerRunState.applyDataUpdate(curSequences ?? [], curPlaylists ?? [], mainSched, errs);
-                    backgroundPlayerRunState.applyDataUpdate(curSequences ?? [], curPlaylists ?? [], bgSched, errs);
+                    // Rebuild heap/upcoming over the window already loaded ahead of now.
+                    const refillEnd = Math.max(lastPRSSchedUpdate, initializeTime);
+                    foregroundPlayerRunState.applyDataUpdate(
+                        curSequences ?? [],
+                        curPlaylists ?? [],
+                        mainSched,
+                        errs,
+                        initializeTime,
+                        refillEnd,
+                    );
+                    backgroundPlayerRunState.applyDataUpdate(
+                        curSequences ?? [],
+                        curPlaylists ?? [],
+                        bgSched,
+                        errs,
+                        initializeTime,
+                        refillEnd,
+                    );
                 }
 
                 if (errs.length) {
