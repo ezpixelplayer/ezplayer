@@ -290,6 +290,12 @@ function sendPlayerStateUpdate() {
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
+
+    const referencedFiles = new Set<string>();
+    for (const f of foregroundPlayerRunState.referencedFileCounts().keys()) referencedFiles.add(f);
+    for (const f of backgroundPlayerRunState.referencedFileCounts().keys()) referencedFiles.add(f);
+    playStatus.referencedFiles = [...referencedFiles];
+
     send({ type: 'pstatus', status: playStatus });
 }
 
@@ -724,6 +730,7 @@ parentPort.on('message', async (command: PlayerCommand) => {
             const fullRestart = folderChanged || command.forceRestart;
 
             if (fullRestart) {
+                pendingFullRebuild = true;
                 if (running) {
                     shouldRestart = true;
                     await running; // wait for loop to exit
@@ -986,6 +993,12 @@ let isStopped = false;
 // processQueue detects this, breaks out of its loop, and the handler
 // starts a fresh processQueue that reinitializes controllers & frame buffer.
 let shouldRestart = false;
+
+// Set when the next installNewSchedule() must do a full rebuild of the run states
+// (folder change or an explicit forceRestart / "reload" from the UI) rather than a
+// nondisruptive reconcile. This is the nuclear path: it discards live runtime state
+// (interactive queue, immediate item, stopped schedules, exact cursor position).
+let pendingFullRebuild = false;
 
 let mp3Cache: MP3PrefetchCache | undefined = undefined;
 let fseqCache: FSeqPrefetchCache | undefined = undefined;
@@ -1680,42 +1693,63 @@ async function processQueue() {
 
             // See if a schedule update has been passed in.  If so, do something.
             if (installNewSchedule()) {
-                emitInfo(`New schedule installed`);
                 const initializeTime = rtcConverter.computeTime(curPN); // MoC - Review
-                const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || initializeTime;
-                const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
-                foregroundPlayerRunState = new PlayerRunState(initializeTime);
-                backgroundPlayerRunState = new PlayerRunState(initializeTime);
+                const mainSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'main');
+                const bgSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'background');
                 const errs: string[] = [];
-                foregroundPlayerRunState.setUpSequences(
-                    curSequences ?? [],
-                    curPlaylists ?? [],
-                    (curSchedule ?? []).filter((s) => s.scheduleType === 'main'),
-                    errs,
-                );
-                backgroundPlayerRunState.setUpSequences(
-                    curSequences ?? [],
-                    curPlaylists ?? [],
-                    (curSchedule ?? []).filter((s) => s.scheduleType === 'background'),
-                    errs,
-                );
-                foregroundPlayerRunState.addTimeRangeToSchedule(
-                    initializeTime,
-                    initializeTime + playbackParams.scheduleLoadTime,
-                );
-                backgroundPlayerRunState.addTimeRangeToSchedule(
-                    initializeTime,
-                    initializeTime + playbackParams.scheduleLoadTime,
-                );
 
-                lastPRSSchedUpdate = initializeTime + playbackParams.scheduleLoadTime;
+                // Rebuild when forced (reload / folder change) or when nothing is
+                // playing, since there is nothing to disturb. Otherwise reconcile the
+                // update into the running state so unrelated edits don't interrupt it.
+                const playing = foregroundPlayerRunState.isPlaying || backgroundPlayerRunState.isPlaying;
+
+                if (pendingFullRebuild || !playing) {
+                    pendingFullRebuild = false;
+                    emitInfo(`New schedule installed (rebuild)`);
+                    const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || initializeTime;
+                    const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
+                    foregroundPlayerRunState = new PlayerRunState(initializeTime);
+                    backgroundPlayerRunState = new PlayerRunState(initializeTime);
+                    foregroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], mainSched, errs);
+                    backgroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], bgSched, errs);
+                    foregroundPlayerRunState.addTimeRangeToSchedule(
+                        initializeTime,
+                        initializeTime + playbackParams.scheduleLoadTime,
+                    );
+                    backgroundPlayerRunState.addTimeRangeToSchedule(
+                        initializeTime,
+                        initializeTime + playbackParams.scheduleLoadTime,
+                    );
+                    lastPRSSchedUpdate = initializeTime + playbackParams.scheduleLoadTime;
+
+                    // Make these caught up to the correct times from the last trip through...
+                    foregroundPlayerRunState.runUntil(preserveFGFseqTime);
+                    backgroundPlayerRunState.runUntil(preserveBGFseqTime);
+                } else {
+                    emitInfo(`New schedule installed (reconcile)`);
+                    // Rebuild heap/upcoming over the window already loaded ahead of now.
+                    const refillEnd = Math.max(lastPRSSchedUpdate, initializeTime);
+                    foregroundPlayerRunState.applyDataUpdate(
+                        curSequences ?? [],
+                        curPlaylists ?? [],
+                        mainSched,
+                        errs,
+                        initializeTime,
+                        refillEnd,
+                    );
+                    backgroundPlayerRunState.applyDataUpdate(
+                        curSequences ?? [],
+                        curPlaylists ?? [],
+                        bgSched,
+                        errs,
+                        initializeTime,
+                        refillEnd,
+                    );
+                }
+
                 if (errs.length) {
                     emitError(`New schedule install errors: ${errs.join('\n')}`);
                 }
-
-                // Make these caught up to the correct times from the last trip through...
-                foregroundPlayerRunState.runUntil(preserveFGFseqTime);
-                backgroundPlayerRunState.runUntil(preserveBGFseqTime);
 
                 sendPlayerStateUpdate();
             }
@@ -1748,7 +1782,7 @@ async function processQueue() {
 
                         if (action.seqId) {
                             emitAudioDebug(`Do prefetch of ${action.seqId}`);
-                            const seq = foregroundPlayerRunState.sequencesById.get(action.seqId);
+                            const seq = action.seq;
                             let saf = seq?.files?.audio;
                             if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                             if (saf) {
@@ -1800,7 +1834,7 @@ async function processQueue() {
                         if (!action.seqId) continue;
                         if (action.end) continue;
                         const actStart = action.atTime;
-                        const seq = runState.sequencesById.get(action.seqId);
+                        const seq = action.seq;
                         if (!seq) continue;
                         // Always fetch header
                         let fsf = seq.files?.fseq;
@@ -1903,7 +1937,7 @@ async function processQueue() {
 
                 let audioref: ReturnType<MP3PrefetchCache['getMp3']> | undefined = undefined;
                 try {
-                    const curAudioSeq = foregroundPlayerRunState.sequencesById.get(audioAction.seqId);
+                    const curAudioSeq = audioAction.seq;
                     let saf = curAudioSeq?.files?.audio;
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
@@ -2021,7 +2055,7 @@ async function processQueue() {
                 continue;
             }
 
-            const curForegroundSeq = foregroundPlayerRunState.sequencesById.get(foregroundAction.seqId);
+            const curForegroundSeq = foregroundAction.seq;
             let fsf = curForegroundSeq?.files?.fseq;
             if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
             if (!fsf) {
@@ -2051,7 +2085,7 @@ async function processQueue() {
             const backgroundAction = upcomingBackground.curPLActions?.actions[0];
             let bframeRef: FrameReference | undefined = undefined;
             if (backgroundAction?.seqId) {
-                const curBackgroundSeq = backgroundPlayerRunState.sequencesById.get(backgroundAction.seqId);
+                const curBackgroundSeq = backgroundAction.seq;
                 let bsf = curBackgroundSeq?.files?.fseq;
                 if (bsf && !path.isAbsolute(bsf)) bsf = path.join(showFolder!, bsf);
                 if (!bsf) {
