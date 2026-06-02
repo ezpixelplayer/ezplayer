@@ -185,6 +185,11 @@ export interface PlayerPStatusContent {
         muted?: boolean;
     };
 
+    /** Files pinned by currently-loaded playback (foreground + background), as stored
+     *  on the sequence records (may be show-relative). The main process unions this
+     *  with the current records to decide which cloud files are safe to GC. */
+    referencedFiles?: string[];
+
     // TODO: system status, storage, memory, temp, etc?
 
     // Statistics currently sent separately - PlaybackStatistics

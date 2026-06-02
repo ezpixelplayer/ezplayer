@@ -290,6 +290,12 @@ function sendPlayerStateUpdate() {
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
+
+    const referencedFiles = new Set<string>();
+    for (const f of foregroundPlayerRunState.referencedFileCounts().keys()) referencedFiles.add(f);
+    for (const f of backgroundPlayerRunState.referencedFileCounts().keys()) referencedFiles.add(f);
+    playStatus.referencedFiles = [...referencedFiles];
+
     send({ type: 'pstatus', status: playStatus });
 }
 

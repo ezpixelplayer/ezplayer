@@ -62,9 +62,6 @@ export type CloudPollOutMessage =
            *  Parent merges via the same path renderer-driven adds use. */
           type: 'installSequence';
           record: SequenceRecord;
-          /** Show-folder-relative paths of files this sequence is replacing
-           *  (so the parent / main can delete them after the merge). */
-          superseded: string[];
       }
     | {
           /** Fired after a successful layout fetch (zip unpacked + XMLs overlaid).

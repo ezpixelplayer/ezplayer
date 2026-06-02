@@ -614,8 +614,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         if (!result.ok) continue;
 
         const record = buildSequenceRecord(entry, existing, result.installed);
-        const superseded = collectSupersededPaths(existing, result.installed);
-        post({ type: 'installSequence', record, superseded });
+        post({ type: 'installSequence', record });
 
         const idx = existingSequences.findIndex((s) => s.id === record.id);
         if (idx >= 0) {
@@ -932,24 +931,6 @@ function buildSequenceRecord(
         updatedAt: Date.now(),
     };
     return next;
-}
-
-function collectSupersededPaths(
-    existing: SequenceRecord | undefined,
-    installed: DownloadResult['installed'],
-): string[] {
-    if (!existing?.files) return [];
-    const out: string[] = [];
-    if (installed.fseq && existing.files.fseq && existing.files.fseq !== installed.fseq.absPath) {
-        out.push(existing.files.fseq);
-    }
-    if (installed.audio && existing.files.audio && existing.files.audio !== installed.audio.absPath) {
-        out.push(existing.files.audio);
-    }
-    if (installed.thumb && existing.files.thumb && existing.files.thumb !== installed.thumb.absPath) {
-        out.push(existing.files.thumb);
-    }
-    return out;
 }
 
 // -- layout fetch -------------------------------------------------------------
