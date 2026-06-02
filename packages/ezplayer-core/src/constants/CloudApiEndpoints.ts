@@ -10,6 +10,15 @@ export const CLOUD_API_ENDPOINTS = {
      *  valid (just picks up pending OutOfBandCommands). */
     CHECKIN: 'player/checkin/',
     GET_STATUS: 'player/getstat/',
+    /** GET ${cloudUrl}api/player/candidateServers/<token> -> CandidateServersResponse.
+     *  Player calls this once at startup to discover which player_servers it
+     *  should probe for home-server election. */
+    CANDIDATE_SERVERS: 'player/candidateServers/',
+    /** POST ${cloudUrl}api/player/electHomeServer/<token>  body: ElectHomeServerRequest
+     *  Tells the cloud which player_server the player picked. Cloud writes
+     *  it onto the user_players row so subsequent checkins return the right
+     *  WS URL on `openCloudWS`. */
+    ELECT_HOME_SERVER: 'player/electHomeServer/',
 
     /** User-facing browser URL: ${cloudUrl}${REGISTER_PLAYER}<playerId> opens the
      *  cloud-side claim flow on a logged-in browser. */

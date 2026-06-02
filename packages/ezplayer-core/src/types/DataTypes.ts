@@ -818,6 +818,50 @@ export interface PlayerCheckinResponse {
     commands?: OutOfBandCommand[];
 }
 
+/** One candidate the cloud presents to a player at startup-time home-server
+ *  election. The player measures RTT to each candidate's `/healthz`, then
+ *  picks one and reports it back via `electHomeServer`. */
+export interface CandidateServerSummary {
+    /** Stable opaque key — what the player reports back when electing. */
+    key: string;
+    /** Public URL to use for `/healthz` probes and (once elected) for
+     *  cloud-bridge WS connections. No trailing slash. */
+    url: string;
+    /** Coarse region tag. The cloud may pre-filter the list down to one
+     *  region if the user has a preferred region pinned. */
+    region: string;
+    /** 0..1 load score. Higher = busier. Selectors should avoid >= 0.95
+     *  servers unless every candidate is over that threshold. */
+    load_hint: number;
+    /** How long since the cloud last heard from this server, in seconds.
+     *  Lower = fresher. The cloud only returns servers within its registry
+     *  prune window, so this is bounded. */
+    last_seen_ago_secs: number;
+}
+
+/** Response shape for `GET /api/player/candidateServers/:player_token`. */
+export interface CandidateServersResponse {
+    /** Currently bound key on this player's row, if any. If this is still
+     *  in `candidates`, the player should keep it unless it's drained or
+     *  the player has just become unreachable from it. */
+    current_key?: string;
+    candidates: CandidateServerSummary[];
+}
+
+/** POST body for `/api/player/electHomeServer/:player_token`. */
+export interface ElectHomeServerRequest {
+    /** A `key` from a recent `candidateServers` response. */
+    key: string;
+}
+
+/** Response shape for `POST /api/player/electHomeServer/:player_token`. */
+export interface ElectHomeServerResponse {
+    ok: true;
+    /** The public URL the cloud has on file for the chosen key — same one
+     *  the player just probed, returned for confirmation. */
+    url: string;
+}
+
 /// Layout Edit
 
 export interface JSONEditChoice {

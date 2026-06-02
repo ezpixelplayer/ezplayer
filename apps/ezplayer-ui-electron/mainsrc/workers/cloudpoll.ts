@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import {
     CLOUD_API_ENDPOINTS,
     findMatchingScheduleEntry,
+    type CandidateServersResponse,
     type CloudConfig,
     type CloudPlayerSettings,
     type CloudFileEntry,
@@ -15,6 +16,7 @@ import {
     type CloudPollScheduleEntry,
     type CloudSeqManifestEntry,
     type CloudSequenceProgress,
+    type ElectHomeServerRequest,
     type OutOfBandCommand,
     type PlayerCheckinRequest,
     type PlayerCheckinResponse,
@@ -234,6 +236,94 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
     return `${base}${path}?player_token=${encodeURIComponent(token)}&session=${encodeURIComponent(sessionId)}`;
 }
 
+// -- home-server election ------------------------------------------------------
+//
+// On startup (each setConfig) the player asks the cloud which player_servers
+// it should consider, probes their /healthz to measure RTT, and reports its
+// pick back. The cloud writes the pick onto the player row; subsequent checkin
+// responses then carry `wsUrl` on `openCloudWS` commands pointing at the
+// elected host. We do NOT re-elect on schedule — only on startup or token
+// rotation — because the elected host holds in-RAM viewer-control + vote
+// state for this show and moving mid-session would discard it.
+
+const ELECTION_PROBE_TIMEOUT_MS = 2_000;
+/** Soft cutoff: only avoid candidates that are nearly saturated. If every
+ *  candidate exceeds the cutoff, we use the full set (the player still needs
+ *  somewhere to go). */
+const ELECTION_LOAD_CUTOFF = 0.95;
+
+async function probeHealthzRttMs(serverUrl: string): Promise<number | undefined> {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), ELECTION_PROBE_TIMEOUT_MS);
+    const t0 = performance.now();
+    try {
+        const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/healthz`, { signal: ac.signal });
+        if (!res.ok) return undefined;
+        // Read+discard body so the timing reflects a full round trip including
+        // any small TLS+TCP setup, not just the headers.
+        await res.text();
+        return performance.now() - t0;
+    } catch {
+        return undefined;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function electHomeServerOnce(): Promise<void> {
+    if (!cloudUrl || !playerIdToken) return;
+    try {
+        const candUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CANDIDATE_SERVERS}${playerIdToken}`;
+        const res = await fetch(candUrl);
+        if (!res.ok) {
+            log('warn', `electHomeServer: candidateServers ${res.status}`);
+            return;
+        }
+        const body = (await res.json()) as CandidateServersResponse;
+        if (!body.candidates?.length) {
+            log('info', 'electHomeServer: no candidates available');
+            return;
+        }
+        const probed = await Promise.all(
+            body.candidates.map(async (c) => ({ ...c, rtt_ms: await probeHealthzRttMs(c.url) })),
+        );
+        const reachable = probed.filter(
+            (p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number',
+        );
+        if (reachable.length === 0) {
+            log('warn', 'electHomeServer: no candidates reachable');
+            return;
+        }
+        const underCutoff = reachable.filter((p) => p.load_hint < ELECTION_LOAD_CUTOFF);
+        const pool = underCutoff.length > 0 ? underCutoff : reachable;
+        pool.sort((a, b) => a.rtt_ms - b.rtt_ms);
+        const winner = pool[0]!;
+        if (winner.key === body.current_key) {
+            log(
+                'info',
+                `electHomeServer: keeping key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)}`,
+            );
+            return;
+        }
+        const electUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.ELECT_HOME_SERVER}${playerIdToken}`;
+        const electRes = await fetch(electUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: winner.key } satisfies ElectHomeServerRequest),
+        });
+        if (!electRes.ok) {
+            log('warn', `electHomeServer: elect ${electRes.status}`);
+            return;
+        }
+        log(
+            'info',
+            `electHomeServer: chose key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)} (was ${body.current_key ?? 'unbound'})`,
+        );
+    } catch (e) {
+        log('warn', `electHomeServer: ${(e as Error).message}`);
+    }
+}
+
 // -- registration heartbeat ----------------------------------------------------
 
 async function pollRegistration() {
@@ -286,9 +376,13 @@ async function pollRegistration() {
                 cmd.type === 'openCloudWS'
                     ? {
                           ...cmd,
-                          wsUrl: buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
-                          proxyWsUrl: buildProxyWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
-                          audioWsUrl: buildAudioWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          // Honor a server-provided URL when present (the cloud
+                          // routes us to a chosen edge host). Fall back to
+                          // synthesizing against our own cloudUrl when omitted
+                          // (legacy path; cloud serves the bridge itself).
+                          wsUrl: cmd.wsUrl ?? buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          proxyWsUrl: cmd.proxyWsUrl ?? buildProxyWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          audioWsUrl: cmd.audioWsUrl ?? buildAudioWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
                       }
                     : cmd,
             );
@@ -1455,6 +1549,10 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             // clean slate immediately, not on the next manifest tick.
             pushCStatus();
             rescheduleTimers();
+            // Fire home-server election in parallel with the first checkin.
+            // First checkin may use the legacy synthesized URL (cloud serves
+            // itself); subsequent ones will route through the elected host.
+            void electHomeServerOnce();
             void pollRegistration();
             void pollManifest();
             break;
