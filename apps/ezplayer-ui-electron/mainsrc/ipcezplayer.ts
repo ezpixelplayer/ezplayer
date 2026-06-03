@@ -37,6 +37,7 @@ import {
     onCloudSettings,
     onCloudStatus,
     onCStatus,
+    onHomeServerUrl,
     onInstallSequence,
     onLayoutInstalled,
     onVcResync,
@@ -49,7 +50,9 @@ import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/son
 
 import type {
     CloudCommand,
+    CloudConfig,
     CloudPlayerSettings,
+    CloudPollScheduleEntry,
     CombinedPlayerStatus,
     FullPlayerState,
     PlaybackSettings,
@@ -358,6 +361,11 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 
+let currentHomeServerUrl: string | undefined;
+/** Cached so the home-URL listener can resend `cloudidentity` without
+ *  rebuilding the rest from disk. */
+let lastAppliedCloudCfg: CloudConfig | undefined;
+
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
  *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
@@ -482,15 +490,28 @@ export async function loadShowFolder(forceRestart?: boolean) {
         } as PlayerCommand);
         broadcastToWebSocket('playbackSettings', settings);
     }
-    // The in-house viewer-control poller (driven by the playback worker)
-    // needs the player's cloud identity, which lives only in the main
-    // process. Push it alongside the cloud-worker config.
+    // ezvc lives in the playback worker but the cloud identity is only
+    // visible here; push it alongside the cloud-worker config.
+    lastAppliedCloudCfg = cloudConfig;
     playWorker?.postMessage({
         type: 'cloudidentity',
         cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
         playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
     scheduleUpdated(forceRestart);
+}
+
+function resendCloudIdentity(): void {
+    const cfg = lastAppliedCloudCfg;
+    if (!cfg) return;
+    const cloudActive = cfg.cloudEnabled !== false;
+    playWorker?.postMessage({
+        type: 'cloudidentity',
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        playerIdToken: cloudActive ? cfg.playerIdToken : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+    } as PlayerCommand);
 }
 
 const handlers: MainRPCAPI = {
@@ -547,7 +568,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
 
 /** Push the current cloud config to the worker. Wraps the long argument list in
  *  one place so applyXxx helpers don't need to know about every field. */
-function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
+function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
@@ -567,10 +588,11 @@ function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConf
         type: 'cloudidentity',
         cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
 }
 
-function broadcastCloudConfig(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
+function broadcastCloudConfig(cfg: CloudConfig) {
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
@@ -589,10 +611,10 @@ export function applyLayoutSource(mode: 'xlights' | 'cloud') {
  *  explicitly clears the schedule; `undefined` preserves it. */
 export function applyCloudPolling(patch: {
     mode?: 'always' | 'scheduled';
-    schedule?: import('@ezplayer/ezplayer-core').CloudPollScheduleEntry[];
+    schedule?: CloudPollScheduleEntry[];
     intervals?: { registrationMs?: number; manifestMs?: number };
 }) {
-    const next: Partial<import('@ezplayer/ezplayer-core').CloudConfig> = {};
+    const next: Partial<CloudConfig> = {};
     if (patch.mode !== undefined) next.cloudPollMode = patch.mode;
     if (patch.schedule !== undefined) next.cloudPollSchedule = patch.schedule;
     if (patch.intervals !== undefined) next.cloudPollIntervals = patch.intervals;
@@ -823,6 +845,12 @@ export async function registerContentHandlers(
     // playback worker so the ezvc poller re-pushes a full snapshot.
     onVcResync(() => {
         playWorker?.postMessage({ type: 'vcResync' } as PlayerCommand);
+    });
+
+    onHomeServerUrl((url) => {
+        if (url === currentHomeServerUrl) return;
+        currentHomeServerUrl = url;
+        resendCloudIdentity();
     });
 
     onCloudSettings((settings) => {

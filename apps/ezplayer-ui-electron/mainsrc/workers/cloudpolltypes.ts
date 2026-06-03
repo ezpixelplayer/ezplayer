@@ -100,4 +100,5 @@ export type CloudPollOutMessage =
           type: 'cloudSettings';
           settings: CloudPlayerSettings;
       }
+    | { type: 'homeServerUrl'; url: string }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

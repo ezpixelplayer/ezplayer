@@ -765,7 +765,8 @@ parentPort.on('message', async (command: PlayerCommand) => {
             break;
         }
         case 'cloudidentity': {
-            ezvcCloudUrl = command.cloudUrl || undefined;
+            // Fall back to cloudUrl when no election has happened yet.
+            ezvcCloudUrl = command.liveUrl || command.cloudUrl || undefined;
             ezvcPlayerToken = command.playerIdToken || undefined;
             configureEzvc();
             break;

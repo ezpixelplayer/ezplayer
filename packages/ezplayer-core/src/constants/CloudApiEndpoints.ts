@@ -9,7 +9,6 @@ export const CLOUD_API_ENDPOINTS = {
      *  Lightweight heartbeat that doubles as a command-poll. Empty body is
      *  valid (just picks up pending OutOfBandCommands). */
     CHECKIN: 'player/checkin/',
-    GET_STATUS: 'player/getstat/',
     /** GET ${cloudUrl}api/player/candidateServers/<token> -> CandidateServersResponse.
      *  Player calls this once at startup to discover which player_servers it
      *  should probe for home-server election. */

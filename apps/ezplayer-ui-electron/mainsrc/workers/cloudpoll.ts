@@ -237,19 +237,12 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
 }
 
 // -- home-server election ------------------------------------------------------
-//
-// On startup (each setConfig) the player asks the cloud which player_servers
-// it should consider, probes their /healthz to measure RTT, and reports its
-// pick back. The cloud writes the pick onto the player row; subsequent checkin
-// responses then carry `wsUrl` on `openCloudWS` commands pointing at the
-// elected host. We do NOT re-elect on schedule — only on startup or token
-// rotation — because the elected host holds in-RAM viewer-control + vote
-// state for this show and moving mid-session would discard it.
+// Startup-only — the elected host holds in-RAM vc state; mid-session moves
+// would discard votes/queue.
 
 const ELECTION_PROBE_TIMEOUT_MS = 2_000;
-/** Soft cutoff: only avoid candidates that are nearly saturated. If every
- *  candidate exceeds the cutoff, we use the full set (the player still needs
- *  somewhere to go). */
+/** Soft cutoff: when every candidate exceeds it, fall through to the full
+ *  set so the player still has somewhere to go. */
 const ELECTION_LOAD_CUTOFF = 0.95;
 
 async function probeHealthzRttMs(serverUrl: string): Promise<number | undefined> {
@@ -259,8 +252,7 @@ async function probeHealthzRttMs(serverUrl: string): Promise<number | undefined>
     try {
         const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/healthz`, { signal: ac.signal });
         if (!res.ok) return undefined;
-        // Read+discard body so the timing reflects a full round trip including
-        // any small TLS+TCP setup, not just the headers.
+        // Drain so RTT covers a full round-trip, not just headers.
         await res.text();
         return performance.now() - t0;
     } catch {
@@ -298,6 +290,10 @@ async function electHomeServerOnce(): Promise<void> {
         const pool = underCutoff.length > 0 ? underCutoff : reachable;
         pool.sort((a, b) => a.rtt_ms - b.rtt_ms);
         const winner = pool[0]!;
+        // Announce on every election (including "kept current") so ezvc
+        // re-targets after a worker restart.
+        post({ type: 'homeServerUrl', url: winner.url });
+
         if (winner.key === body.current_key) {
             log(
                 'info',
@@ -1530,9 +1526,6 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             // clean slate immediately, not on the next manifest tick.
             pushCStatus();
             rescheduleTimers();
-            // Fire home-server election in parallel with the first checkin.
-            // First checkin may use the legacy synthesized URL (cloud serves
-            // itself); subsequent ones will route through the elected host.
             void electHomeServerOnce();
             void pollRegistration();
             void pollManifest();
