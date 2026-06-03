@@ -37,6 +37,7 @@ import {
     onCloudSettings,
     onCloudStatus,
     onCStatus,
+    onHomeServerUrl,
     onInstallSequence,
     onLayoutInstalled,
     onVcResync,
@@ -49,7 +50,9 @@ import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/son
 
 import type {
     CloudCommand,
+    CloudConfig,
     CloudPlayerSettings,
+    CloudPollScheduleEntry,
     CombinedPlayerStatus,
     FullPlayerState,
     PlaybackSettings,
@@ -94,89 +97,137 @@ export let curErrors: string[] = [];
 export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
-/** Paths of files superseded by a new cloud install. Drained by `runGcSweep` when
- *  the player is idle — versioned filenames mean the new install never overwrites
- *  the old one, but the old one may still be open. Persisted to
- *  `<showFolder>/.ezplayer/cloud/gc-queue.json` so a crash or relaunch doesn't leak. */
-const gcQueue: string[] = [];
+/** Ledger of files the cloud has installed into the show folder. `runGcSweep` deletes
+ *  any tracked file no longer referenced by a current sequence record or by live
+ *  playback, then drops it from the ledger. Only files recorded here are ever deleted —
+ *  never anything the user installed. Persisted to
+ *  `<showFolder>/.ezplayer/cloud/installed-files.json` so it survives relaunches. */
+interface InstalledFileEntry {
+    path: string; // canonical absolute path
+    seqId?: string;
+    kind?: string;
+    fileTime?: number;
+}
+let installedFiles: InstalledFileEntry[] = [];
 
-function gcQueuePath(showFolder: string): string {
-    return path.join(showFolder, '.ezplayer', 'cloud', 'gc-queue.json');
+function installedFilesPath(showFolder: string): string {
+    return path.join(showFolder, '.ezplayer', 'cloud', 'installed-files.json');
 }
 
-async function loadGcQueue(showFolder: string): Promise<void> {
-    gcQueue.length = 0;
+/** Resolve a (possibly show-relative) record file path to a canonical absolute path. */
+function canonFile(p: string | undefined): string | undefined {
+    const showFolder = getCurrentShowFolder();
+    if (!showFolder || !p) return undefined;
+    return path.resolve(showFolder, p);
+}
+
+async function loadInstalledFiles(showFolder: string): Promise<void> {
+    installedFiles = [];
     try {
         const fsp = await import('fs/promises');
-        const raw = await fsp.readFile(gcQueuePath(showFolder), 'utf-8');
+        const raw = await fsp.readFile(installedFilesPath(showFolder), 'utf-8');
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-            for (const p of parsed) {
-                if (typeof p === 'string') gcQueue.push(p);
+            for (const e of parsed) {
+                if (e && typeof e.path === 'string') installedFiles.push(e);
             }
         }
-        if (gcQueue.length > 0) {
-            console.log(`[cloud-gc] loaded ${gcQueue.length} pending paths`);
-        }
+        if (installedFiles.length > 0) console.log(`[cloud-gc] loaded ${installedFiles.length} tracked files`);
     } catch (e) {
         const code = (e as { code?: string })?.code;
-        if (code !== 'ENOENT') console.warn('[cloud-gc] load failed:', e);
+        if (code !== 'ENOENT') console.warn('[cloud-gc] ledger load failed:', e);
     }
 }
 
-let gcSaveInFlight: Promise<void> | null = null;
-async function saveGcQueue(): Promise<void> {
+let ledgerSaveInFlight: Promise<void> | null = null;
+async function saveInstalledFiles(): Promise<void> {
     const showFolder = getCurrentShowFolder();
     if (!showFolder) return;
     // Coalesce concurrent writes — last call's snapshot wins.
-    if (gcSaveInFlight) return gcSaveInFlight;
-    gcSaveInFlight = (async () => {
+    if (ledgerSaveInFlight) return ledgerSaveInFlight;
+    ledgerSaveInFlight = (async () => {
         try {
             const fsp = await import('fs/promises');
-            const file = gcQueuePath(showFolder);
+            const file = installedFilesPath(showFolder);
             await fsp.mkdir(path.dirname(file), { recursive: true });
-            await fsp.writeFile(file, JSON.stringify(gcQueue, null, 2), 'utf-8');
+            await fsp.writeFile(file, JSON.stringify(installedFiles, null, 2), 'utf-8');
         } catch (e) {
-            console.warn('[cloud-gc] save failed:', e);
+            console.warn('[cloud-gc] ledger save failed:', e);
         } finally {
-            gcSaveInFlight = null;
+            ledgerSaveInFlight = null;
         }
     })();
-    return gcSaveInFlight;
+    return ledgerSaveInFlight;
 }
 
-function isPlayerIdle(): boolean {
-    const p = curStatus.player;
-    if (!p) return true; // no status yet → safe to delete
-    return p.status === 'Stopped' && !p.now_playing;
+/** Record the files a cloud install just promoted into the show folder root. A
+ *  re-render lands at a new versioned path, so its predecessor stops being referenced
+ *  by any record and the next sweep reclaims it — no superseded bookkeeping needed. */
+function trackInstalledFiles(record: SequenceRecord): void {
+    const kinds: ('fseq' | 'audio' | 'video' | 'thumb')[] = ['fseq', 'audio', 'video', 'thumb'];
+    const cloud = record.cloud as Record<string, { file_time?: number } | undefined> | undefined;
+    let added = 0;
+    for (const kind of kinds) {
+        const p = canonFile(record.files?.[kind]);
+        if (!p) continue;
+        if (installedFiles.some((e) => e.path === p)) continue;
+        installedFiles.push({ path: p, seqId: record.id, kind, fileTime: cloud?.[kind]?.file_time });
+        added += 1;
+    }
+    if (added > 0) {
+        console.log(`[cloud-install] tracking ${added} installed files (ledger size ${installedFiles.length})`);
+        void saveInstalledFiles();
+    }
+}
+
+/** Canonical paths still referenced by a current sequence record or by live playback
+ *  (the worker reports its pinned set on pstatus). The union is the GC keep-set. */
+function referencedFileSet(): Set<string> {
+    const keep = new Set<string>();
+    for (const s of curSequences) {
+        for (const f of [s.files?.fseq, s.files?.audio, s.files?.video, s.files?.thumb]) {
+            const p = canonFile(f);
+            if (p) keep.add(p);
+        }
+    }
+    for (const f of curStatus.player?.referencedFiles ?? []) {
+        const p = canonFile(f);
+        if (p) keep.add(p);
+    }
+    return keep;
 }
 
 async function runGcSweep(): Promise<void> {
-    if (gcQueue.length === 0) return;
-    if (!isPlayerIdle()) return;
+    if (installedFiles.length === 0) return;
+    // Wait until the worker has reported playback state at least once, so we know the
+    // live pinned set rather than assuming nothing is playing.
+    if (!curStatus.player) return;
+
+    const keep = referencedFileSet();
     const fsp = await import('fs/promises');
-    const remaining: string[] = [];
+    const remaining: InstalledFileEntry[] = [];
     let deleted = 0;
-    for (const p of gcQueue) {
+    for (const entry of installedFiles) {
+        if (keep.has(entry.path)) {
+            remaining.push(entry); // active or mid-play — keep tracking
+            continue;
+        }
         try {
-            await fsp.unlink(p);
+            await fsp.unlink(entry.path);
             deleted += 1;
         } catch (e) {
             const code = (e as { code?: string })?.code;
             if (code === 'ENOENT') {
-                // already gone; drop from queue
-                deleted += 1;
+                deleted += 1; // already gone; drop from ledger
             } else {
-                // EBUSY/EPERM/etc — keep, retry next sweep
-                remaining.push(p);
+                remaining.push(entry); // EBUSY/EPERM/etc — keep, retry next sweep
             }
         }
     }
     if (deleted > 0) {
-        gcQueue.length = 0;
-        gcQueue.push(...remaining);
-        console.log(`[cloud-gc] swept ${deleted} files (${gcQueue.length} remaining)`);
-        void saveGcQueue();
+        installedFiles = remaining;
+        console.log(`[cloud-gc] swept ${deleted} files (${installedFiles.length} tracked)`);
+        void saveInstalledFiles();
     }
 }
 
@@ -310,6 +361,11 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
 let updateWindow: BrowserWindow | null = null;
 let playWorker: Worker | null = null;
 
+let currentHomeServerUrl: string | undefined;
+/** Cached so the home-URL listener can resend `cloudidentity` without
+ *  rebuilding the rest from disk. */
+let lastAppliedCloudCfg: CloudConfig | undefined;
+
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
  *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
@@ -364,7 +420,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // loader so that, on first run against an old folder, root-level files are moved
     // into the subdir and the loaders read the migrated copies on this same tick.
     await ensureEzplayerSubdir(showFolder);
-    await loadGcQueue(showFolder);
+    await loadInstalledFiles(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
@@ -434,15 +490,28 @@ export async function loadShowFolder(forceRestart?: boolean) {
         } as PlayerCommand);
         broadcastToWebSocket('playbackSettings', settings);
     }
-    // The in-house viewer-control poller (driven by the playback worker)
-    // needs the player's cloud identity, which lives only in the main
-    // process. Push it alongside the cloud-worker config.
+    // ezvc lives in the playback worker but the cloud identity is only
+    // visible here; push it alongside the cloud-worker config.
+    lastAppliedCloudCfg = cloudConfig;
     playWorker?.postMessage({
         type: 'cloudidentity',
         cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
         playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
     scheduleUpdated(forceRestart);
+}
+
+function resendCloudIdentity(): void {
+    const cfg = lastAppliedCloudCfg;
+    if (!cfg) return;
+    const cloudActive = cfg.cloudEnabled !== false;
+    playWorker?.postMessage({
+        type: 'cloudidentity',
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        playerIdToken: cloudActive ? cfg.playerIdToken : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+    } as PlayerCommand);
 }
 
 const handlers: MainRPCAPI = {
@@ -499,7 +568,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
 
 /** Push the current cloud config to the worker. Wraps the long argument list in
  *  one place so applyXxx helpers don't need to know about every field. */
-function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
+function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
@@ -519,10 +588,11 @@ function reconfigureCloudWorker(cfg: import('@ezplayer/ezplayer-core').CloudConf
         type: 'cloudidentity',
         cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
 }
 
-function broadcastCloudConfig(cfg: import('@ezplayer/ezplayer-core').CloudConfig) {
+function broadcastCloudConfig(cfg: CloudConfig) {
     updateWindow?.webContents?.send('update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
@@ -541,10 +611,10 @@ export function applyLayoutSource(mode: 'xlights' | 'cloud') {
  *  explicitly clears the schedule; `undefined` preserves it. */
 export function applyCloudPolling(patch: {
     mode?: 'always' | 'scheduled';
-    schedule?: import('@ezplayer/ezplayer-core').CloudPollScheduleEntry[];
+    schedule?: CloudPollScheduleEntry[];
     intervals?: { registrationMs?: number; manifestMs?: number };
 }) {
-    const next: Partial<import('@ezplayer/ezplayer-core').CloudConfig> = {};
+    const next: Partial<CloudConfig> = {};
     if (patch.mode !== undefined) next.cloudPollMode = patch.mode;
     if (patch.schedule !== undefined) next.cloudPollSchedule = patch.schedule;
     if (patch.intervals !== undefined) next.cloudPollIntervals = patch.intervals;
@@ -777,13 +847,19 @@ export async function registerContentHandlers(
         playWorker?.postMessage({ type: 'vcResync' } as PlayerCommand);
     });
 
+    onHomeServerUrl((url) => {
+        if (url === currentHomeServerUrl) return;
+        currentHomeServerUrl = url;
+        resendCloudIdentity();
+    });
+
     onCloudSettings((settings) => {
         void updateSettingsHandler(settings).catch((e) => {
             console.error('[cloud-settings] settings adopt failed:', e);
         });
     });
 
-    onInstallSequence(async (record, superseded) => {
+    onInstallSequence(async (record) => {
         // If the cloud didn't provide a thumb but did give us audio, extract embedded
         // cover art the same way Add Song does. Writes a sibling image file in the show
         // folder root and stamps `cloud.thumb` so future manifest ticks don't loop.
@@ -808,23 +884,9 @@ export async function registerContentHandlers(
             console.error('[cloud-install] commit failed:', e);
             return;
         }
-        // Versioned filenames mean the new install lands at a different path; the
-        // old file is orphaned. Don't delete now — playback may still be reading the
-        // old bytes. Queue the path; the gc sweep will retry on each cStatus tick
-        // when the player is idle. Persist so a crash doesn't leak.
-        if (superseded.length > 0) {
-            let added = 0;
-            for (const p of superseded) {
-                if (!gcQueue.includes(p)) {
-                    gcQueue.push(p);
-                    added += 1;
-                }
-            }
-            if (added > 0) {
-                console.log(`[cloud-install] queued ${added} files for gc (queue size ${gcQueue.length})`);
-                void saveGcQueue();
-            }
-        }
+        // Track the newly-installed files. A re-render lands at a new versioned path,
+        // so the old file stops being referenced and the next sweep reclaims it.
+        trackInstalledFiles(record);
     });
 
     /// Connection from player worker thread

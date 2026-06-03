@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import {
     CLOUD_API_ENDPOINTS,
     findMatchingScheduleEntry,
+    type CandidateServersResponse,
     type CloudConfig,
     type CloudPlayerSettings,
     type CloudFileEntry,
@@ -15,6 +16,7 @@ import {
     type CloudPollScheduleEntry,
     type CloudSeqManifestEntry,
     type CloudSequenceProgress,
+    type ElectHomeServerRequest,
     type OutOfBandCommand,
     type PlayerCheckinRequest,
     type PlayerCheckinResponse,
@@ -140,6 +142,19 @@ function rescheduleTimers() {
     if (manifestTimer.unref) manifestTimer.unref();
 }
 
+/** Cooling-off period after the circuit breaker trips. After this much time
+ *  the player tries again on its own — so an overnight transient (rate spike,
+ *  cloud outage) heals without requiring a user click or app restart. */
+const HALT_AUTO_CLEAR_MS = 60 * 60 * 1000;
+let autoClearTimer: NodeJS.Timeout | undefined;
+
+function cancelAutoClearTimer() {
+    if (autoClearTimer) {
+        clearTimeout(autoClearTimer);
+        autoClearTimer = undefined;
+    }
+}
+
 function recordFailure(reason: string) {
     consecutiveFailures += 1;
     cStatus.lastError = reason;
@@ -147,6 +162,21 @@ function recordFailure(reason: string) {
         halted = true;
         log('error', `circuit breaker tripped after ${consecutiveFailures} failures: ${reason}`);
         clearTimers();
+        // Schedule a one-shot auto-clear so the player self-recovers without
+        // user intervention. User-initiated sync or setConfig cancels this.
+        cancelAutoClearTimer();
+        autoClearTimer = setTimeout(() => {
+            autoClearTimer = undefined;
+            if (halted) {
+                log('info', 'circuit breaker auto-clearing after cooling-off period');
+                consecutiveFailures = 0;
+                halted = false;
+                cStatus.lastError = undefined;
+                pushCStatus();
+                rescheduleTimers();
+            }
+        }, HALT_AUTO_CLEAR_MS);
+        autoClearTimer.unref?.();
     }
     pushCStatus();
 }
@@ -159,10 +189,29 @@ function recordSuccess() {
     }
 }
 
+/** A user-initiated sync (manifestNow / fetchLayoutNow) should override any
+ *  prior auto-halt: the user is explicitly asking for another attempt. Clears
+ *  the consecutive-failure counter, drops the halted flag, and re-arms the
+ *  periodic timers that the breaker had cleared. Cheap when nothing was
+ *  wrong (typical case). */
+function clearAutoHaltOnUserSync() {
+    const wasHalted = halted;
+    cancelAutoClearTimer();
+    if (consecutiveFailures !== 0 || halted) {
+        consecutiveFailures = 0;
+        halted = false;
+        cStatus.lastError = undefined;
+        pushCStatus();
+    }
+    if (wasHalted) {
+        log('info', 'user-initiated sync; clearing auto-halt');
+        rescheduleTimers();
+    }
+}
+
 /** Build the cloud-bridge WebSocket URL from our own configured cloudUrl.
  *  Uses URL parsing so we get scheme + host + any path prefix correctly,
- *  then swaps http→ws / https→wss. Trailing `/api/player/wsBridge?…` mirrors
- *  the cloud-side path registered in `cloudBridge.ts`. */
+ *  then swaps http→ws / https→wss. */
 function buildBridgeWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/wsBridge', token, sessionId);
 }
@@ -174,7 +223,7 @@ function buildProxyWsUrl(cloudUrlIn: string, token: string, sessionId: string): 
 }
 
 /** Parallel WS for live-audio push. Player pushes binary chunk frames as
- *  they're produced; cloud-endpoint fans out to attached listeners. */
+ *  they're produced; the cloud server fans out to attached listeners. */
 function buildAudioWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/audioBridge', token, sessionId);
 }
@@ -186,6 +235,90 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
     return `${base}${path}?player_token=${encodeURIComponent(token)}&session=${encodeURIComponent(sessionId)}`;
 }
 
+// -- home-server election ------------------------------------------------------
+// Startup-only — the elected host holds in-RAM vc state; mid-session moves
+// would discard votes/queue.
+
+const ELECTION_PROBE_TIMEOUT_MS = 2_000;
+/** Soft cutoff: when every candidate exceeds it, fall through to the full
+ *  set so the player still has somewhere to go. */
+const ELECTION_LOAD_CUTOFF = 0.95;
+
+async function probeHealthzRttMs(serverUrl: string): Promise<number | undefined> {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), ELECTION_PROBE_TIMEOUT_MS);
+    const t0 = performance.now();
+    try {
+        const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/healthz`, { signal: ac.signal });
+        if (!res.ok) return undefined;
+        // Drain so RTT covers a full round-trip, not just headers.
+        await res.text();
+        return performance.now() - t0;
+    } catch {
+        return undefined;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function electHomeServerOnce(): Promise<void> {
+    if (!cloudUrl || !playerIdToken) return;
+    try {
+        const candUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CANDIDATE_SERVERS}${playerIdToken}`;
+        const res = await fetch(candUrl);
+        if (!res.ok) {
+            log('warn', `electHomeServer: candidateServers ${res.status}`);
+            return;
+        }
+        const body = (await res.json()) as CandidateServersResponse;
+        if (!body.candidates?.length) {
+            log('info', 'electHomeServer: no candidates available');
+            return;
+        }
+        const probed = await Promise.all(
+            body.candidates.map(async (c) => ({ ...c, rtt_ms: await probeHealthzRttMs(c.url) })),
+        );
+        const reachable = probed.filter(
+            (p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number',
+        );
+        if (reachable.length === 0) {
+            log('warn', 'electHomeServer: no candidates reachable');
+            return;
+        }
+        const underCutoff = reachable.filter((p) => p.load_hint < ELECTION_LOAD_CUTOFF);
+        const pool = underCutoff.length > 0 ? underCutoff : reachable;
+        pool.sort((a, b) => a.rtt_ms - b.rtt_ms);
+        const winner = pool[0]!;
+        // Announce on every election (including "kept current") so ezvc
+        // re-targets after a worker restart.
+        post({ type: 'homeServerUrl', url: winner.url });
+
+        if (winner.key === body.current_key) {
+            log(
+                'info',
+                `electHomeServer: keeping key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)}`,
+            );
+            return;
+        }
+        const electUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.ELECT_HOME_SERVER}${playerIdToken}`;
+        const electRes = await fetch(electUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: winner.key } satisfies ElectHomeServerRequest),
+        });
+        if (!electRes.ok) {
+            log('warn', `electHomeServer: elect ${electRes.status}`);
+            return;
+        }
+        log(
+            'info',
+            `electHomeServer: chose key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)} (was ${body.current_key ?? 'unbound'})`,
+        );
+    } catch (e) {
+        log('warn', `electHomeServer: ${(e as Error).message}`);
+    }
+}
+
 // -- registration heartbeat ----------------------------------------------------
 
 async function pollRegistration() {
@@ -193,7 +326,7 @@ async function pollRegistration() {
     regInFlight = true;
     // POST /api/player/checkin/<token> — lightweight heartbeat that doubles as
     // a command-poll for out-of-band cloud-bridge controls (openCloudWS, etc.).
-    // Body fields are best-effort hints for the show-builder Players pane;
+    // Body fields are best-effort hints surfaced by the cloud operator UI;
     // empty body would be valid too.
     const url = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CHECKIN}${playerIdToken}`;
     const body: PlayerCheckinRequest = {
@@ -231,16 +364,20 @@ async function pollRegistration() {
         if (reply.commands && reply.commands.length > 0) {
             // Synthesize the bridge WS URL on our side from the cloud URL we
             // just polled — `cloudUrl` is the authoritative answer for "where
-            // is the cloud". The cloud-server-side `ctx.host` view of itself
-            // is unreliable behind ingress/load-balancers (it reports the
-            // internal upstream IP, which ETIMEDOUTs from outside).
+            // is the cloud". The cloud server's own view of its public URL is
+            // unreliable behind ingress/load-balancers (it reports the internal
+            // upstream address, which ETIMEDOUTs from outside).
             const commands = reply.commands.map<OutOfBandCommand>((cmd) =>
                 cmd.type === 'openCloudWS'
                     ? {
                           ...cmd,
-                          wsUrl: buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
-                          proxyWsUrl: buildProxyWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
-                          audioWsUrl: buildAudioWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          // Honor a server-provided URL when present (the cloud
+                          // routes us to a chosen edge host). Fall back to
+                          // synthesizing against our own cloudUrl when omitted
+                          // (legacy path; cloud serves the bridge itself).
+                          wsUrl: cmd.wsUrl ?? buildBridgeWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          proxyWsUrl: cmd.proxyWsUrl ?? buildProxyWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
+                          audioWsUrl: cmd.audioWsUrl ?? buildAudioWsUrl(cloudUrl, playerIdToken, cmd.sessionId),
                       }
                     : cmd,
             );
@@ -614,8 +751,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         if (!result.ok) continue;
 
         const record = buildSequenceRecord(entry, existing, result.installed);
-        const superseded = collectSupersededPaths(existing, result.installed);
-        post({ type: 'installSequence', record, superseded });
+        post({ type: 'installSequence', record });
 
         const idx = existingSequences.findIndex((s) => s.id === record.id);
         if (idx >= 0) {
@@ -934,24 +1070,6 @@ function buildSequenceRecord(
     return next;
 }
 
-function collectSupersededPaths(
-    existing: SequenceRecord | undefined,
-    installed: DownloadResult['installed'],
-): string[] {
-    if (!existing?.files) return [];
-    const out: string[] = [];
-    if (installed.fseq && existing.files.fseq && existing.files.fseq !== installed.fseq.absPath) {
-        out.push(existing.files.fseq);
-    }
-    if (installed.audio && existing.files.audio && existing.files.audio !== installed.audio.absPath) {
-        out.push(existing.files.audio);
-    }
-    if (installed.thumb && existing.files.thumb && existing.files.thumb !== installed.thumb.absPath) {
-        out.push(existing.files.thumb);
-    }
-    return out;
-}
-
 // -- layout fetch -------------------------------------------------------------
 
 function setLayout(info: Partial<import('@ezplayer/ezplayer-core').CloudLayoutInfo>) {
@@ -1226,8 +1344,10 @@ async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promi
 // -- layout upload ------------------------------------------------------------
 
 interface PresignedPost {
+    /** Presigned PUT URL the client uploads the file body to. */
     url: string;
-    fields: Record<string, string>;
+    /** Always empty in current responses; reserved for future use. */
+    fields?: Record<string, string>;
 }
 
 interface StartUploadResponse {
@@ -1235,9 +1355,10 @@ interface StartUploadResponse {
     rec: { file_id: string; file_time: string | number };
 }
 
-/** Start (XML-only) layout upload. Reads xlights_rgbeffects.xml + xlights_networks.xml
- *  from the show folder root, zips them, and uploads via the cloud's three-step
- *  presigned-POST flow. Asset bundling (images / meshes / textures) is a TODO. */
+/** Layout upload. Reads xlights_rgbeffects.xml + xlights_networks.xml from the
+ *  show folder root, bundles any referenced assets that live inside the show
+ *  folder, zips the lot, and uploads via the cloud's start → presigned PUT →
+ *  done handshake. */
 async function uploadLayout(): Promise<void> {
     if (layoutUploadInFlight) {
         log('info', 'uploadLayout skipped: already in flight');
@@ -1302,7 +1423,7 @@ async function uploadLayout(): Promise<void> {
             totalBytes: zipAb.byteLength,
         });
 
-        // 2) Ask the cloud for a presigned POST.
+        // 2) Ask the cloud for a presigned upload URL.
         const startUrl = `${cloudUrl}ezpapi/player/startuploadlayoutzip/${playerIdToken}`;
         log('info', `layout upload startupload POST ${startUrl}`);
         const startRes = await expectOk(
@@ -1310,16 +1431,16 @@ async function uploadLayout(): Promise<void> {
             'startupload',
         );
         const { post, rec } = (await startRes.json()) as StartUploadResponse;
-        log('info', `layout upload got presigned post (file_id=${rec.file_id}, file_time=${rec.file_time})`);
+        log('info', `layout upload got presigned put (file_id=${rec.file_id}, file_time=${rec.file_time})`);
 
-        // 3) Upload to S3 via the presigned form post.
-        const form = new FormData();
-        for (const [k, v] of Object.entries(post.fields ?? {})) {
-            form.append(k, v);
-        }
-        form.append('file', new Blob([zipAb]), 'layout.zip');
-        const s3Res = await fetch(post.url, { method: 'POST', body: form, signal: globalAbort.signal });
-        await expectOk(s3Res, 's3 upload');
+        // 3) Upload the zip body via the presigned PUT URL.
+        const uploadRes = await fetch(post.url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/zip' },
+            body: new Blob([zipAb]),
+            signal: globalAbort.signal,
+        });
+        await expectOk(uploadRes, 'presigned PUT upload');
         setLayout({
             status: 'uploading',
             direction: 'upload',
@@ -1328,10 +1449,9 @@ async function uploadLayout(): Promise<void> {
         });
 
         // 4) Tell the cloud the upload finished so it can finalize + run conversion.
-        // The endpoint signature types file_id and file_time as `string`; JSON.parse
-        // on the start response turns numeric file_time into a number, which dkoa's
-        // type check then rejects with "file_time should be a string". Coerce both
-        // to strings here to match the contract.
+        // The server's contract types both file_id and file_time as `string`;
+        // JSON.parse on the start response turns numeric file_time into a number,
+        // which the type check then rejects. Coerce both to strings here to match.
         const doneUrl = `${cloudUrl}ezpapi/player/doneuploadlayoutzip/${playerIdToken}`;
         const donePayload = { file_id: String(rec.file_id), file_time: String(rec.file_time) };
         log('info', `layout upload doneupload POST ${doneUrl} body=${JSON.stringify(donePayload)}`);
@@ -1391,6 +1511,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             lastSentScheduleJson = undefined;
             lastSentSettingsJson = undefined;
 
+            cancelAutoClearTimer();
             stopped = false;
             halted = false;
             consecutiveFailures = 0;
@@ -1404,6 +1525,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             // clean slate immediately, not on the next manifest tick.
             pushCStatus();
             rescheduleTimers();
+            void electHomeServerOnce();
             void pollRegistration();
             void pollManifest();
             break;
@@ -1419,10 +1541,15 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             break;
         }
         case 'manifestNow': {
+            // User-initiated sync overrides any prior auto-halt and resets the
+            // failure counter — the user is explicitly asking us to try again.
+            clearAutoHaltOnUserSync();
             void pollManifest();
             break;
         }
         case 'fetchLayoutNow': {
+            // Same rationale as manifestNow — the user is asking; honor it.
+            clearAutoHaltOnUserSync();
             void fetchLayout();
             break;
         }

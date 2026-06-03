@@ -248,6 +248,9 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
 
 interface CloudBridge {
     sessionId: string;
+    /** WS URL we dialed. Compared on re-entry so a routing change forces a
+     *  redial even when sessionId is unchanged. */
+    url: string;
     ws: WebSocket;
     /** Live = handshake completed; we don't redial during the dial itself. */
     open: boolean;
@@ -262,14 +265,10 @@ function openCloudBridge(
     sessionId: string,
     ttlSeconds: number,
 ) {
-    // Dial the proxy + audio bridges in parallel — separate WSes so big
-    // HTTP-over-WS payloads and audio push don't head-of-line block status
-    // snapshots/pings on the main bridge.
     if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
     if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
 
-    // Same session + live socket: just refresh TTL (cheap path, fires on every checkin).
-    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.open) {
+    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && cloudBridge.open) {
         clearTimeout(cloudBridge.ttlTimer);
         cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -293,7 +292,7 @@ function openCloudBridge(
         return;
     }
     const ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
-    cloudBridge = { sessionId, ws, open: false, ttlTimer };
+    cloudBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer };
 
     ws.on('open', () => {
         if (cloudBridge?.ws === ws) cloudBridge.open = true;
@@ -334,6 +333,7 @@ function closeCloudBridge(sessionId?: string) {
 
 interface CloudProxyBridge {
     sessionId: string;
+    url: string;
     ws: WebSocket;
     open: boolean;
     ttlTimer: NodeJS.Timeout;
@@ -341,7 +341,7 @@ interface CloudProxyBridge {
 let cloudProxyBridge: CloudProxyBridge | undefined;
 
 function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
-    if (cloudProxyBridge && cloudProxyBridge.sessionId === sessionId && cloudProxyBridge.open) {
+    if (cloudProxyBridge && cloudProxyBridge.sessionId === sessionId && cloudProxyBridge.url === wsUrl && cloudProxyBridge.open) {
         clearTimeout(cloudProxyBridge.ttlTimer);
         cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -363,7 +363,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         return;
     }
     const ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
-    cloudProxyBridge = { sessionId, ws, open: false, ttlTimer };
+    cloudProxyBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer };
 
     ws.on('open', () => {
         if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
@@ -427,6 +427,7 @@ function closeCloudProxyBridge(sessionId?: string) {
 
 interface CloudAudioBridge {
     sessionId: string;
+    url: string;
     ws: WebSocket;
     open: boolean;
     ttlTimer: NodeJS.Timeout;
@@ -441,7 +442,7 @@ let cloudAudioBridge: CloudAudioBridge | undefined;
 const AUDIO_PUSH_INTERVAL_MS = 20;
 
 function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
-    if (cloudAudioBridge && cloudAudioBridge.sessionId === sessionId && cloudAudioBridge.open) {
+    if (cloudAudioBridge && cloudAudioBridge.sessionId === sessionId && cloudAudioBridge.url === wsUrl && cloudAudioBridge.open) {
         clearTimeout(cloudAudioBridge.ttlTimer);
         cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -464,7 +465,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         return;
     }
     const ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
-    cloudAudioBridge = { sessionId, ws, open: false, ttlTimer, afterSeq: 0 };
+    cloudAudioBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer, afterSeq: 0 };
 
     ws.on('open', () => {
         if (cloudAudioBridge?.ws !== ws) return;
@@ -595,7 +596,8 @@ async function dispatchHttpProxy(
     query: Record<string, string> | undefined,
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
     // /api/getimage — id in path or query. Query form is preferred for cloud
-    // because DBOS Cloud's edge rejects `%7C` (composite-id pipe) in paths.
+    // because some hosting providers' edge proxies reject `%7C` (composite-id
+    // pipe) in URL paths.
     const getimagePath = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
     const getimageQuery = pathStr === '/api/getimage' ? query?.id : undefined;
     if (getimagePath || getimageQuery) {
@@ -827,8 +829,8 @@ async function startServer(config: ServerWorkerData) {
 
     // ----------------------------------------------
     // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
-    // (legacy). Cloud-sourced ids are `<user>|<vseq>`; DBOS Cloud's edge
-    // rejects `%7C` in URL paths, so the preferred caller-side form is the
+    // (legacy). Cloud-sourced ids are `<user>|<vseq>`; some hosting edges
+    // reject `%7C` in URL paths, so the preferred caller-side form is the
     // query-string variant. Both shapes are accepted so a new browser
     // bundle against an old player still resolves, and vice versa.
     // ----------------------------------------------

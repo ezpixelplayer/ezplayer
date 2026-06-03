@@ -112,7 +112,14 @@ export type PlayerCommand =
     // The player's cloud identity, pushed from the main process so the
     // playback worker can drive the EZPlayer viewer-control poller (which
     // authenticates with the player's cloud creds, not an in-settings token).
-    | { type: 'cloudidentity'; cloudUrl: string; playerIdToken: string }
+    | {
+          type: 'cloudidentity';
+          cloudUrl: string;
+          playerIdToken: string;
+          /** Home live-tier URL — when set, ezvc HTTP pushes target it
+           *  instead of `cloudUrl`. */
+          liveUrl?: string;
+      }
     /** Cloud lost our viewer-control state (it restarted) — re-arm the ezvc
      *  poller for a full re-push. Forwarded from `cloudpollparent` on a
      *  `vcResync` out-of-band command. */
