@@ -29,11 +29,12 @@ let currentCStatus: PlayerCStatusContent = {};
 
 let statusListener: ((s: CloudStatus) => void) | undefined;
 let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
-let installListener: ((record: SequenceRecord, superseded: string[]) => void) | undefined;
+let installListener: ((record: SequenceRecord) => void) | undefined;
 let layoutInstalledListener: ((layoutMeta: NonNullable<CloudConfig['layoutMeta']>) => void) | undefined;
 let playlistsListener: ((playlists: PlaylistRecord[]) => void) | undefined;
 let scheduleListener: ((schedule: ScheduledPlaylist[]) => void) | undefined;
 let settingsListener: ((settings: CloudPlayerSettings) => void) | undefined;
+let homeServerUrlListener: ((url: string) => void) | undefined;
 let vcResyncListener: (() => void) | undefined;
 
 /** Forward an out-of-band command from the cloud to the server worker, which
@@ -90,8 +91,8 @@ function ensureWorker() {
                 cStatusListener?.(currentCStatus);
                 break;
             case 'installSequence':
-                console.log(`[cloudpoll] installSequence id=${msg.record.id} superseded=${msg.superseded.length}`);
-                installListener?.(msg.record, msg.superseded);
+                console.log(`[cloudpoll] installSequence id=${msg.record.id}`);
+                installListener?.(msg.record);
                 break;
             case 'layoutInstalled':
                 console.log('[cloudpoll] layoutInstalled');
@@ -111,6 +112,10 @@ function ensureWorker() {
                 break;
             case 'outOfBandCommands':
                 for (const cmd of msg.commands) applyOutOfBandCommand(cmd);
+                break;
+            case 'homeServerUrl':
+                console.log(`[cloudpoll] homeServerUrl ${msg.url}`);
+                homeServerUrlListener?.(msg.url);
                 break;
             case 'log':
                 console[msg.level === 'error' ? 'error' : 'log']('[cloudpoll]', msg.msg);
@@ -207,7 +212,7 @@ export function onCStatus(listener: (s: PlayerCStatusContent) => void) {
     cStatusListener = listener;
 }
 
-export function onInstallSequence(listener: (record: SequenceRecord, superseded: string[]) => void) {
+export function onInstallSequence(listener: (record: SequenceRecord) => void) {
     installListener = listener;
 }
 
@@ -231,4 +236,8 @@ export function onCloudSettings(listener: (settings: CloudPlayerSettings) => voi
  *  when the cloud has lost this player's viewer-control state (e.g. restart). */
 export function onVcResync(listener: () => void) {
     vcResyncListener = listener;
+}
+
+export function onHomeServerUrl(listener: (url: string) => void) {
+    homeServerUrlListener = listener;
 }

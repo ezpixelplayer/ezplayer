@@ -3,6 +3,7 @@
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
+import type { CloudCommand } from '@ezplayer/ezplayer-core';
 
 export interface ServerWorkerData {
     port: number;
@@ -72,5 +73,5 @@ export interface ServerWorkerRPCAPI {
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
-    cloudCommand(cmd: import('@ezplayer/ezplayer-core').CloudCommand): Promise<void>;
+    cloudCommand(cmd: CloudCommand): Promise<void>;
 }

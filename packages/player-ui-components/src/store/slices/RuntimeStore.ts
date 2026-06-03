@@ -26,10 +26,10 @@ export interface RuntimeState {
     issuing: boolean;
     error?: string;
 
-    /** Browser↔cloud-endpoint WS state (cloud view only). `undefined` =
+    /** Browser↔cloud WS state (cloud view only). `undefined` =
      *  not in cloud view / not yet known; LAN apps don't update this. */
     bridgeConnected?: boolean;
-    /** Player↔cloud-endpoint WS state, reported by the bridge. Same scope
+    /** Player↔cloud WS state, reported by the bridge. Same scope
      *  as `bridgeConnected`. */
     playerConnected?: boolean;
 }
