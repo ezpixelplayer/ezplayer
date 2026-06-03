@@ -248,9 +248,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
 
 interface CloudBridge {
     sessionId: string;
-    /** WS URL we dialed. Compared on re-entry so a routing change (e.g. a
-     *  home_player_server flip from central to fly) forces a redial even
-     *  when sessionId is unchanged. */
+    /** WS URL we dialed. Compared on re-entry so a routing change forces a
+     *  redial even when sessionId is unchanged. */
     url: string;
     ws: WebSocket;
     /** Live = handshake completed; we don't redial during the dial itself. */

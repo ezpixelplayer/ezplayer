@@ -211,8 +211,7 @@ function clearAutoHaltOnUserSync() {
 
 /** Build the cloud-bridge WebSocket URL from our own configured cloudUrl.
  *  Uses URL parsing so we get scheme + host + any path prefix correctly,
- *  then swaps http→ws / https→wss. Trailing `/api/player/wsBridge?…` mirrors
- *  the cloud-side path registered in `cloudBridge.ts`. */
+ *  then swaps http→ws / https→wss. */
 function buildBridgeWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/wsBridge', token, sessionId);
 }
@@ -327,7 +326,7 @@ async function pollRegistration() {
     regInFlight = true;
     // POST /api/player/checkin/<token> — lightweight heartbeat that doubles as
     // a command-poll for out-of-band cloud-bridge controls (openCloudWS, etc.).
-    // Body fields are best-effort hints for the show-builder Players pane;
+    // Body fields are best-effort hints surfaced by the cloud operator UI;
     // empty body would be valid too.
     const url = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CHECKIN}${playerIdToken}`;
     const body: PlayerCheckinRequest = {
@@ -365,9 +364,9 @@ async function pollRegistration() {
         if (reply.commands && reply.commands.length > 0) {
             // Synthesize the bridge WS URL on our side from the cloud URL we
             // just polled — `cloudUrl` is the authoritative answer for "where
-            // is the cloud". The cloud-server-side `ctx.host` view of itself
-            // is unreliable behind ingress/load-balancers (it reports the
-            // internal upstream IP, which ETIMEDOUTs from outside).
+            // is the cloud". The cloud server's own view of its public URL is
+            // unreliable behind ingress/load-balancers (it reports the internal
+            // upstream address, which ETIMEDOUTs from outside).
             const commands = reply.commands.map<OutOfBandCommand>((cmd) =>
                 cmd.type === 'openCloudWS'
                     ? {
@@ -1356,9 +1355,10 @@ interface StartUploadResponse {
     rec: { file_id: string; file_time: string | number };
 }
 
-/** Start (XML-only) layout upload. Reads xlights_rgbeffects.xml + xlights_networks.xml
- *  from the show folder root, zips them, and uploads via the cloud's three-step
- *  presigned-POST flow. Asset bundling (images / meshes / textures) is a TODO. */
+/** Layout upload. Reads xlights_rgbeffects.xml + xlights_networks.xml from the
+ *  show folder root, bundles any referenced assets that live inside the show
+ *  folder, zips the lot, and uploads via the cloud's start → presigned PUT →
+ *  done handshake. */
 async function uploadLayout(): Promise<void> {
     if (layoutUploadInFlight) {
         log('info', 'uploadLayout skipped: already in flight');
@@ -1431,7 +1431,7 @@ async function uploadLayout(): Promise<void> {
             'startupload',
         );
         const { post, rec } = (await startRes.json()) as StartUploadResponse;
-        log('info', `layout upload got presigned post (file_id=${rec.file_id}, file_time=${rec.file_time})`);
+        log('info', `layout upload got presigned put (file_id=${rec.file_id}, file_time=${rec.file_time})`);
 
         // 3) Upload the zip body via the presigned PUT URL.
         const uploadRes = await fetch(post.url, {
@@ -1449,10 +1449,9 @@ async function uploadLayout(): Promise<void> {
         });
 
         // 4) Tell the cloud the upload finished so it can finalize + run conversion.
-        // The endpoint signature types file_id and file_time as `string`; JSON.parse
-        // on the start response turns numeric file_time into a number, which dkoa's
-        // type check then rejects with "file_time should be a string". Coerce both
-        // to strings here to match the contract.
+        // The server's contract types both file_id and file_time as `string`;
+        // JSON.parse on the start response turns numeric file_time into a number,
+        // which the type check then rejects. Coerce both to strings here to match.
         const doneUrl = `${cloudUrl}ezpapi/player/doneuploadlayoutzip/${playerIdToken}`;
         const donePayload = { file_id: String(rec.file_id), file_time: String(rec.file_time) };
         log('info', `layout upload doneupload POST ${doneUrl} body=${JSON.stringify(donePayload)}`);

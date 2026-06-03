@@ -116,7 +116,7 @@ export type PlayerCommand =
           type: 'cloudidentity';
           cloudUrl: string;
           playerIdToken: string;
-          /** Home player_server URL — when set, ezvc HTTP pushes target it
+          /** Home live-tier URL — when set, ezvc HTTP pushes target it
            *  instead of `cloudUrl`. */
           liveUrl?: string;
       }
