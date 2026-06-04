@@ -412,8 +412,9 @@ function HoverHandler({
 }
 
 // Custom FPS-style camera controller
-// Left drag: freelook (rotate in place). Right drag: orbit around raycast hit.
-// Scroll: move forward/back. Keyboard: W/S forward/back, A/D turn, Z/C strafe, Q/E up/down.
+// Left drag: freelook (rotate in place). Middle drag: strafe/pan (move in view plane).
+// Right drag: orbit around raycast hit. Scroll: move forward/back.
+// Keyboard: W/S forward/back, A/D turn, Z/C strafe, Q/E up/down.
 function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; hoveredId?: string | null }) {
     const { camera, gl, scene } = useThree();
     const { set } = useThree();
@@ -524,11 +525,16 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         const SENSITIVITY = 0.003;
         const PITCH_LIMIT = Math.PI / 2 - 0.01;
         const SCROLL_SPEED = 0.15;
+        const PAN_SPEED = 0.0015; // per-pixel pan distance, scaled by camera distance
 
         const onPointerDown = (e: PointerEvent) => {
-            if (e.button !== 0 && e.button !== 2) return;
+            if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
             // Ignore if we're already tracking a different button
             if (dragButtonRef.current !== -1) return;
+
+            // Middle button: suppress the browser's auto-scroll affordance so the
+            // drag is consumed entirely by the pan handler.
+            if (e.button === 1) e.preventDefault();
 
             isDraggingRef.current = false;
             dragButtonRef.current = e.button;
@@ -610,6 +616,25 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
                 pitchRef.current += moveDy * SENSITIVITY;
                 pitchRef.current = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitchRef.current));
                 applyCameraOrientation();
+                notifyChange();
+            } else if (dragButtonRef.current === 1) {
+                // Middle drag: strafe/pan in the camera's view plane (no rotation).
+                const moveDx = e.clientX - lastMouseRef.current.x;
+                const moveDy = e.clientY - lastMouseRef.current.y;
+                lastMouseRef.current = { x: e.clientX, y: e.clientY };
+
+                // Scale by distance so the pan feels consistent across zoom levels,
+                // mirroring how the scroll handler scales movement.
+                const dist = camera.position.length() || 100;
+                const panScale = PAN_SPEED * Math.max(dist, 100);
+
+                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+                // Drag direction follows the cursor: moving the mouse right shifts the
+                // camera left so the scene tracks the pointer (standard pan feel).
+                camera.position.addScaledVector(right, -moveDx * panScale);
+                camera.position.addScaledVector(up, moveDy * panScale);
                 notifyChange();
             } else if (dragButtonRef.current === 2 && orbitPivotRef.current && !centerAnimRef.current) {
                 // Right drag: orbit around raycast hit point
@@ -1412,6 +1437,12 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                         >
                             🖱️ Left drag: Look around
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                        >
+                            🖱️ Middle drag: Strafe / Pan
                         </Typography>
                         <Typography
                             variant="caption"
