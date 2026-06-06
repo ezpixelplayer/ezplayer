@@ -161,7 +161,12 @@ function recordFailure(reason: string) {
     if (consecutiveFailures >= failureThreshold) {
         halted = true;
         log('error', `circuit breaker tripped after ${consecutiveFailures} failures: ${reason}`);
-        clearTimers();
+        // Stop only the manifest/content poll loop (the one that's
+        // failing). KEEP the registration heartbeat alive — it's what
+        // refreshes the cloud-bridge TTL on the server side. Halting it
+        // here means the bridge silently dies in 90s and the player drops
+        // until a manual restart, regardless of how innocuous the failure.
+        if (manifestTimer) { clearInterval(manifestTimer); manifestTimer = null; }
         // Schedule a one-shot auto-clear so the player self-recovers without
         // user intervention. User-initiated sync or setConfig cancels this.
         cancelAutoClearTimer();
@@ -799,7 +804,11 @@ async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[])
                 status: 'error',
                 error: err.message,
             });
-            recordFailure(`download ${pf.kind}: ${err.message}`);
+            // Thumbs are decorative — don't let stale URLs trip the
+            // breaker before fseq/audio get a chance.
+            if (pf.kind !== 'thumb') {
+                recordFailure(`download ${pf.kind}: ${err.message}`);
+            }
             return { ok: false, installed };
         }
     }
