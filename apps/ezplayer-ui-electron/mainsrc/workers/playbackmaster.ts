@@ -803,7 +803,8 @@ const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
     sendAudioInAdvanceMs: 200,
-    sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
+    sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
+    audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
     audioPrefetchTime: 24 * 3600 * 1000,
     maxAudioPrefetchItems: 100,
@@ -1440,6 +1441,29 @@ let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
 let audioExportBuffer: SharedArrayBuffer | undefined = undefined;
 let audioExportRing: AudioChunkRingBuffer | undefined = undefined;
 
+/**
+ * Apply a complementary raised-cosine ramp to the first and last `overlapFrames`
+ * frames of an interleaved buffer, in place. Adjacent chunks share `overlapFrames`
+ * of identical audio scheduled at the same time; the rising head of one and the
+ * falling tail of the previous sum to unity, so the seam reconstructs exactly while
+ * the per-buffer resampling edge artifact is weighted to zero. Mutates `interleaved`.
+ */
+function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlapFrames: number) {
+    const totalFrames = interleaved.length / channels;
+    if (overlapFrames <= 0 || totalFrames < overlapFrames * 2) return;
+    for (let k = 0; k < overlapFrames; k++) {
+        const theta = (Math.PI * (k + 0.5)) / overlapFrames;
+        const rise = 0.5 - 0.5 * Math.cos(theta); // 0 -> 1 across the head
+        const fall = 0.5 + 0.5 * Math.cos(theta); // 1 -> 0 across the tail (rise + fall === 1)
+        const headBase = k * channels;
+        const tailBase = (totalFrames - overlapFrames + k) * channels;
+        for (let ch = 0; ch < channels; ch++) {
+            interleaved[headBase + ch] *= rise;
+            interleaved[tailBase + ch] *= fall;
+        }
+    }
+}
+
 /** Publish to the ring buffer (for web clients) then send via IPC (for Electron audio window). */
 function sendAudioChunk(
     samples: Float32Array,
@@ -1447,8 +1471,9 @@ function sendAudioChunk(
     incarnation: number,
     sampleRate: number,
     channels: number,
+    advanceSamples: number,
 ) {
-    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels);
+    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels, advanceSamples);
     const buf = samples.buffer as ArrayBuffer;
     send(
         {
@@ -1459,6 +1484,7 @@ function sendAudioChunk(
                 buffer: buf,
                 playAtRealTime,
                 incarnation,
+                advanceSamples,
             },
         },
         [buf],
@@ -1890,7 +1916,9 @@ async function processQueue() {
                 }
                 ms = Math.ceil(ms);
                 const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
-                sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1);
+                // Silence carries no overlap: advance by its full length. Transitions to/from
+                // music fade naturally against the music chunk's ramped edge.
+                sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1, quiet.length);
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -1964,23 +1992,38 @@ async function processQueue() {
                             const sampleOffset = Math.floor(
                                 (Math.floor(audioAction.offsetMS ?? 0) * sampleRate) / 1000,
                             );
-                            const msToSend = Math.min(playbackParams.sendAudioChunkMs);
-                            const nSamplesToSend = Math.floor((msToSend * audio.sampleRate) / 1000);
+                            const msToSend = playbackParams.sendAudioChunkMs; // hop
+                            const hopFrames = Math.round((msToSend * audio.sampleRate) / 1000);
+                            const overlapFrames = Math.round(
+                                (playbackParams.audioCrossfadeMs * audio.sampleRate) / 1000,
+                            );
+                            // Window = hop + overlap. The trailing overlap reads ahead into the
+                            // next hop's audio (out-of-range past end reads as 0), and is ramped
+                            // down so it crossfades with the next chunk's ramped-up head.
+                            const windowFrames = hopFrames + overlapFrames;
 
                             const chunk = buildInterleavedAudioChunkFromSegments({
                                 channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,
                                 sampleOffset,
-                                nSamples: nSamplesToSend,
+                                nSamples: windowFrames,
                                 volumeSF,
                             });
+                            applyCrossfadeRamp(chunk, channels, overlapFrames);
 
                             const playAtRealTime = Math.floor(
                                 audioPlayerRunTime + (playbackParams?.audioTimeAdjMs ?? 0),
                             );
 
                             if (audioPlayerRunTime >= targetFrameRTC) {
-                                sendAudioChunk(chunk, playAtRealTime, curAudioSyncNum, audio.sampleRate, channels);
+                                sendAudioChunk(
+                                    chunk,
+                                    playAtRealTime,
+                                    curAudioSyncNum,
+                                    audio.sampleRate,
+                                    channels,
+                                    hopFrames * channels,
+                                );
                             } else {
                                 ++playbackStats.skippedAudioChunksCumulative;
                             }

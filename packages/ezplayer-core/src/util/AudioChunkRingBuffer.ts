@@ -19,6 +19,10 @@ export type AudioChunkReadResult = {
     sampleRate: number;
     channels: number;
     samples: Float32Array; // view into the SAB slot (caller should copy if needed)
+    // Interleaved sample count to advance the playback position by (the "hop").
+    // May be less than samples.length when the chunk carries a trailing crossfade
+    // overlap. Falls back to samples.length for chunks written without it.
+    advanceSamples: number;
 };
 
 // Header Int32 indices
@@ -39,7 +43,7 @@ const SM_INCARNATION = 3;
 const SM_SAMPLE_RATE = 4;
 const SM_CHANNELS = 5;
 const SM_SAMPLE_COUNT = 6;
-// 7 reserved
+const SM_ADVANCE_SAMPLES = 7;
 
 export class AudioChunkRingBuffer {
     private readonly header: Int32Array;
@@ -103,8 +107,11 @@ export class AudioChunkRingBuffer {
         incarnation: number,
         sampleRate: number,
         channels: number,
+        advanceSamples?: number,
     ): number {
         const sampleCount = samples.length;
+        // Default the hop to the full payload when not specified (no overlap).
+        const advance = advanceSamples && advanceSamples > 0 ? advanceSamples : sampleCount;
         if (sampleCount > this.maxSamplesPerSlot) {
             throw new Error(
                 `AudioChunkRingBuffer.publish: sampleCount ${sampleCount} > maxSamplesPerSlot ${this.maxSamplesPerSlot}`,
@@ -128,6 +135,7 @@ export class AudioChunkRingBuffer {
         Atomics.store(meta, SM_SAMPLE_RATE, sampleRate);
         Atomics.store(meta, SM_CHANNELS, channels);
         Atomics.store(meta, SM_SAMPLE_COUNT, sampleCount);
+        Atomics.store(meta, SM_ADVANCE_SAMPLES, advance);
         Atomics.store(meta, SM_PLAY_AT_LO, lo);
         Atomics.store(meta, SM_PLAY_AT_HI, hi);
 
@@ -166,6 +174,8 @@ export class AudioChunkRingBuffer {
             if (slotSeq !== seq) continue; // overwritten by a newer write, skip
 
             const sampleCount = Atomics.load(meta, SM_SAMPLE_COUNT);
+            const advanceSamplesRaw = Atomics.load(meta, SM_ADVANCE_SAMPLES);
+            const advanceSamples = advanceSamplesRaw > 0 ? advanceSamplesRaw : sampleCount;
             const lo = Atomics.load(meta, SM_PLAY_AT_LO);
             const hi = Atomics.load(meta, SM_PLAY_AT_HI);
 
@@ -182,7 +192,7 @@ export class AudioChunkRingBuffer {
             const audioOffset = metaOffset + SLOT_META_BYTES;
             const samples = new Float32Array(this.buffer, audioOffset, sampleCount);
 
-            results.push({ seq, playAtRealTime, incarnation, sampleRate, channels, samples });
+            results.push({ seq, playAtRealTime, incarnation, sampleRate, channels, samples, advanceSamples });
         }
 
         return results;

@@ -27,6 +27,7 @@ import {
 } from '@ezplayer/ezplayer-core';
 import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { collectReferencedAssets } from '../data/layoutAssets.js';
+import { FSEQReaderAsync } from '@ezplayer/epp';
 
 // Aggressive demo defaults; production callers should pass conservative values.
 // 5s registration keeps the cloud-bridge open signal (viewer-control + audio
@@ -755,7 +756,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         const result = await downloadSet(entry, pending);
         if (!result.ok) continue;
 
-        const record = buildSequenceRecord(entry, existing, result.installed);
+        const record = await buildSequenceRecord(entry, existing, result.installed);
         post({ type: 'installSequence', record });
 
         const idx = existingSequences.findIndex((s) => s.id === record.id);
@@ -1035,12 +1036,28 @@ function sanitize(s: string): string {
     return s.replace(/[^a-z0-9._-]/gi, '_');
 }
 
-function buildSequenceRecord(
+async function buildSequenceRecord(
     entry: CloudSeqManifestEntry,
     existing: SequenceRecord | undefined,
     installed: DownloadResult['installed'],
-): SequenceRecord {
-    const length = existing?.work?.length ?? (entry.duration_ms ? entry.duration_ms / 1000 : 0);
+): Promise<SequenceRecord> {
+    let length = existing?.work?.length ?? (entry.duration_ms ? entry.duration_ms / 1000 : 0);
+    // The cloud sometimes hasn't computed the song length yet (duration_ms 0/missing),
+    // and the sequence manager can bypass setting it entirely. A length of 0 makes the
+    // schedule end the slot almost immediately — the song plays ~1s then stops until a
+    // restart (where FileStorage recomputes length from the fseq header). Derive it from
+    // the freshly-downloaded fseq here so the very first play is correct too.
+    if (!length || length <= 0) {
+        const fseqPath = installed.fseq?.absPath ?? existing?.files?.fseq;
+        if (fseqPath) {
+            try {
+                const fhdr = await FSEQReaderAsync.readFSEQHeaderAsync(fseqPath);
+                length = (fhdr.frames * fhdr.msperframe) / 1000;
+            } catch (e) {
+                log('warn', `fseq length compute failed for ${fseqPath}: ${(e as Error).message}`);
+            }
+        }
+    }
     const next: SequenceRecord = {
         ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
         id: entry.id,
