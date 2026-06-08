@@ -1151,11 +1151,9 @@ class PlaybackStateEntry {
     shouldAbort(depth: number, currentTime: number) {
         const pa = this.getUpcomingItems(depth, currentTime, 1_000_000, 10);
         if (pa.filter((a) => !a.end).length === 0) {
-            console.log(`No upcoming items - ${Date.now()} vs ${currentTime}`);
             return true;
         }
         if (this.item.endPolicy === 'hardcut' && currentTime >= this.item.schedEnd) {
-            console.log(`Hard cut - ${Date.now()} vs ${currentTime} vs ${this.item.schedEnd}`);
             return true;
         }
         return false;
@@ -1800,7 +1798,6 @@ export class PlayerRunState {
                 if (st.shouldAbort(this.depth, this.currentTime)) {
                     logLowIters('Aborting stack item');
 
-                    console.log(`Popped stack item ${st.item.itemType} ${st.item.itemId} is aborted.`);
                     st.stopAtTime(this.depth, this.currentTime, log);
                     this.#stackPop();
 

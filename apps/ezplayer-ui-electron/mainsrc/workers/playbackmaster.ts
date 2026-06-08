@@ -19,7 +19,6 @@ import type {
     SequenceRecord,
     PlaylistRecord,
     ScheduledPlaylist,
-    PlaybackActions,
     PlayAction,
     PlaybackLogDetail,
     PrefetchCacheStats,
@@ -806,8 +805,7 @@ const playbackParams = {
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
-    audioPrefetchTime: 24 * 3600 * 1000,
-    maxAudioPrefetchItems: 100,
+    audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
     interactiveCommandPrefetchDelay: 500,
@@ -818,6 +816,75 @@ const playbackParams = {
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
+
+type ResolvedPlay = {
+    seqId: string;
+    seq?: SequenceRecord;
+    atTime: number;
+    offsetMS: number;
+    durationMS?: number;
+};
+
+/** Prefetch confidence tiers (lower = higher priority). */
+const PREFETCH_TIER = { HAPPY: 0, BACKGROUND: 1, SPECULATIVE: 2 } as const;
+
+/**
+ * Run a fork of the player state forward over `horizon` and return the sequences it
+ * actually plays — the current play plus future starts, with preemptions resolved by
+ * the run itself. This is the prefetch "generation": the concrete near-future play
+ * list, instead of the union of every schedule/stack/queue source.
+ *
+ * `mutate` applies a hypothetical command (skip, stop) to the fork first, so the same
+ * enumerator yields the speculative "what would play if they skipped" branches.
+ */
+function enumerateResolvedPlays(
+    runState: PlayerRunState | undefined,
+    fromTime: number,
+    horizon: number,
+    schedahead: number,
+    mutate?: (snap: PlayerRunState, at: number) => void,
+): ResolvedPlay[] {
+    if (!runState) return [];
+    const plays: ResolvedPlay[] = [];
+    const seen = new Set<string>();
+    try {
+        const snap = runState.snapshot();
+        if (mutate) mutate(snap, fromTime);
+
+        // The current play started before `fromTime`, so it isn't a future log event —
+        // take it from the resolved current action.
+        const cur = snap.getUpcomingItems(horizon, schedahead, 1)?.curPLActions?.actions?.[0];
+        if (cur && !cur.end && cur.seqId && cur.seq) {
+            plays.push({
+                seqId: cur.seqId,
+                seq: cur.seq,
+                atTime: cur.atTime,
+                offsetMS: cur.offsetMS ?? 0,
+                durationMS: cur.durationMS,
+            });
+            seen.add(`${cur.seqId}@${cur.atTime}`);
+        }
+
+        // Future starts within the horizon, resolved (preemptions and all) by the run.
+        const log = snap.readOutScheduleUntil(fromTime + horizon, 200);
+        const starts = log.filter(
+            (l) => (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') && !!l.sequenceId,
+        );
+        for (let i = 0; i < starts.length; i++) {
+            const s = starts[i];
+            const key = `${s.sequenceId}@${s.eventTime}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const seq = snap.sequencesById.get(s.sequenceId!);
+            const nextTime = i + 1 < starts.length ? starts[i + 1].eventTime : fromTime + horizon;
+            const durationMS = seq?.work?.length ? seq.work.length * 1000 : nextTime - s.eventTime;
+            plays.push({ seqId: s.sequenceId!, seq, atTime: s.eventTime, offsetMS: s.timeIntoSeqMS ?? 0, durationMS });
+        }
+    } catch (e) {
+        emitError(`enumerateResolvedPlays failed: ${(e as Error).message}`);
+    }
+    return plays;
+}
 
 let latestSettings: PlaybackSettings | undefined = undefined;
 let lastRfRemoteToken: string | undefined = undefined;
@@ -1799,111 +1866,93 @@ async function processQueue() {
             const doFseqPrefetch = true;
 
             if (doAudioPrefetch) {
-                // Issue MP3 prefetches
-                function prefetchActionMedia(actions?: PlaybackActions) {
-                    if (!actions) return;
-
-                    for (const action of actions?.actions ?? []) {
-                        if (action.atTime > targetFrameRTC + playbackParams.audioPrefetchTime) break;
-                        if (action.end) continue;
-
-                        if (action.seqId) {
-                            emitAudioDebug(`Do prefetch of ${action.seqId}`);
-                            const seq = action.seq;
-                            let saf = seq?.files?.audio;
-                            if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
-                            if (saf) {
-                                emitAudioDebug(`Prefetch Audio ${saf}`);
-                                mp3Cache!.prefetchMP3({
-                                    mp3file: saf,
-                                    needByTime: action.atTime,
-                                    neededThroughTime: action.atTime + (action.durationMS ?? 600000),
-                                    expiry: targetFrameRTC + 7 * 24 * 3600_000,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                const upcomingAudio = foregroundPlayerRunState
-                    ?.snapshot()
-                    ?.getUpcomingItems(
-                        playbackParams.audioPrefetchTime,
-                        playbackParams.scheduleLoadTime,
-                        playbackParams.maxAudioPrefetchItems,
-                    );
-
                 mp3Cache.setNow(targetFrameRTC);
-                prefetchActionMedia(upcomingAudio.curPLActions);
-                upcomingAudio.stackedPLActions?.forEach((s) => prefetchActionMedia(s));
-                upcomingAudio.upcomingSchedules?.forEach((s) => prefetchActionMedia(s));
-                upcomingAudio.interactive?.forEach((s) => prefetchActionMedia(s));
-                upcomingAudio.heapSchedules?.forEach((s) => prefetchActionMedia(s));
+                mp3Cache.beginGeneration(); // new prefetch pass: items requested below are "live"
+                const audioH = playbackParams.audioPrefetchTime;
+                const sched = playbackParams.scheduleLoadTime;
+                const prefetchAudio = (plays: ResolvedPlay[], tier: number) => {
+                    for (const play of plays) {
+                        let saf = play.seq?.files?.audio;
+                        if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
+                        if (!saf) continue;
+                        mp3Cache!.prefetchMP3({
+                            mp3file: saf,
+                            needByTime: play.atTime,
+                            neededThroughTime: play.atTime + (play.durationMS ?? 600000),
+                            estDurationSec: play.durationMS ? play.durationMS / 1000 : undefined,
+                            tier,
+                            expiry: targetFrameRTC + 7 * 24 * 3600_000,
+                        });
+                    }
+                };
+                // Audio is foreground-only: happy path + speculative skip / down-stack branches.
+                prefetchAudio(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched),
+                    PREFETCH_TIER.HAPPY,
+                );
+                prefetchAudio(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched, (s, at) =>
+                        s.skipCurrentSequence(undefined, at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
+                prefetchAudio(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched, (s, at) =>
+                        s.stopImmediately(at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
                 mp3Cache.dispatch();
             }
 
             if (doFseqPrefetch) {
-                // See if there's anything coming up
-                const upcomingForeground = foregroundPlayerRunState?.getUpcomingItems(
-                    playbackParams.foregroundFseqPrefetchTime,
-                    playbackParams.scheduleLoadTime,
-                );
-                const upcomingBackground = backgroundPlayerRunState?.getUpcomingItems(
-                    playbackParams.backgroundFseqPrefetchTime,
-                    playbackParams.scheduleLoadTime,
-                );
-
-                // Issue FSEQ prefetches
-                function prefetchActionFseq(runState: PlayerRunState, actions?: PlaybackActions) {
-                    if (!actions) return;
-
-                    for (const action of actions?.actions ?? []) {
-                        if (!action.seqId) continue;
-                        if (action.end) continue;
-                        const actStart = action.atTime;
-                        const seq = action.seq;
-                        if (!seq) continue;
-                        // Always fetch header
-                        let fsf = seq.files?.fseq;
-                        if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
-                        if (fsf) {
-                            fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: actStart });
-                        }
-
-                        // Be less aggressive about fetching the frames
-                        if (actStart >= targetFrameRTC + playbackParams.foregroundFseqPrefetchTime) continue;
-                        let ourDur = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime - actStart;
-                        if (action.durationMS !== undefined) ourDur = Math.min(ourDur, action.durationMS);
-                        if (action.seqId) {
-                            emitFrameDebug(`Do fseq prefetch of ${action.seqId}`);
-                            if (fsf) {
-                                emitFrameDebug(
-                                    `Prefetch FSEQ ${fsf} @${action.offsetMS}:${ourDur}ms (${actStart} vs ${targetFrameRTC})`,
-                                );
-                                fseqCache!.prefetchSeqTimes({
-                                    fseqfile: fsf,
-                                    needByTime: actStart,
-                                    startTime: action.offsetMS ?? 0,
-                                    durationms: ourDur,
-                                });
-                            }
-                        }
-                    }
-                }
-
                 fseqCache.setNow(targetFrameRTC);
-                prefetchActionFseq(foregroundPlayerRunState, upcomingForeground.curPLActions);
-                upcomingForeground.stackedPLActions?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-                upcomingForeground.upcomingSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-                upcomingForeground.interactive?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-                upcomingForeground.heapSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-
-                prefetchActionFseq(backgroundPlayerRunState, upcomingBackground.curPLActions);
-                upcomingBackground.stackedPLActions?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-                upcomingBackground.upcomingSchedules?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-                upcomingBackground.interactive?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-                upcomingBackground.heapSchedules?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-
+                fseqCache.beginGeneration(); // new prefetch pass (covers fg + bg): requested items are "live"
+                const sched = playbackParams.scheduleLoadTime;
+                const fgH = playbackParams.foregroundFseqPrefetchTime;
+                const bgH = playbackParams.backgroundFseqPrefetchTime;
+                const frameGate = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime;
+                const prefetchFseq = (plays: ResolvedPlay[], tier: number) => {
+                    for (const play of plays) {
+                        let fsf = play.seq?.files?.fseq;
+                        if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
+                        if (!fsf) continue;
+                        // Always fetch the header.
+                        fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: play.atTime, tier });
+                        // Frames only for the imminent window.
+                        if (play.atTime >= frameGate) continue;
+                        let ourDur = frameGate - play.atTime;
+                        if (play.durationMS !== undefined) ourDur = Math.min(ourDur, play.durationMS);
+                        fseqCache!.prefetchSeqTimes({
+                            fseqfile: fsf,
+                            needByTime: play.atTime,
+                            startTime: play.offsetMS,
+                            durationms: ourDur,
+                            tier,
+                        });
+                    }
+                };
+                // Foreground happy path, then background, then speculative skip / down-stack of fg.
+                prefetchFseq(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, fgH, sched),
+                    PREFETCH_TIER.HAPPY,
+                );
+                prefetchFseq(
+                    enumerateResolvedPlays(backgroundPlayerRunState, targetFrameRTC, bgH, sched),
+                    PREFETCH_TIER.BACKGROUND,
+                );
+                prefetchFseq(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, fgH, sched, (s, at) =>
+                        s.skipCurrentSequence(undefined, at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
+                prefetchFseq(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, fgH, sched, (s, at) =>
+                        s.stopImmediately(at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
                 fseqCache.dispatch();
             }
 
