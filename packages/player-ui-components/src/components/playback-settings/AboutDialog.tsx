@@ -64,7 +64,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                             Authors
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                            Crafted by Aakanksha Thokare, EZRGB, and community contributors (see GitHub)
+                            Crafted by EZRGB, I9, and community contributors (see GitHub)
                         </Typography>
                     </Box>
 
