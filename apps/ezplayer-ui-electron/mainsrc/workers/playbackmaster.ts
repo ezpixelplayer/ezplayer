@@ -828,6 +828,11 @@ type ResolvedPlay = {
 /** Prefetch confidence tiers (lower = higher priority). */
 const PREFETCH_TIER = { HAPPY: 0, BACKGROUND: 1, SPECULATIVE: 2 } as const;
 
+// Speculative branches (skip / down-stack) only need the immediate target ready, not
+// the whole post-skip timeline — look just a few seconds ahead, never beyond the
+// committed horizon.
+const SPECULATIVE_HORIZON_MS = 5000;
+
 /**
  * Run a fork of the player state forward over `horizon` and return the sequences it
  * actually plays — the current play plus future starts, with preemptions resolved by
@@ -1886,18 +1891,19 @@ async function processQueue() {
                     }
                 };
                 // Audio is foreground-only: happy path + speculative skip / down-stack branches.
+                const specH = Math.min(audioH, SPECULATIVE_HORIZON_MS);
                 prefetchAudio(
                     enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched),
                     PREFETCH_TIER.HAPPY,
                 );
                 prefetchAudio(
-                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched, (s, at) =>
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
                         s.skipCurrentSequence(undefined, at),
                     ),
                     PREFETCH_TIER.SPECULATIVE,
                 );
                 prefetchAudio(
-                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched, (s, at) =>
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
                         s.stopImmediately(at),
                     ),
                     PREFETCH_TIER.SPECULATIVE,
@@ -1941,14 +1947,15 @@ async function processQueue() {
                     enumerateResolvedPlays(backgroundPlayerRunState, targetFrameRTC, bgH, sched),
                     PREFETCH_TIER.BACKGROUND,
                 );
+                const specH = Math.min(fgH, SPECULATIVE_HORIZON_MS);
                 prefetchFseq(
-                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, fgH, sched, (s, at) =>
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
                         s.skipCurrentSequence(undefined, at),
                     ),
                     PREFETCH_TIER.SPECULATIVE,
                 );
                 prefetchFseq(
-                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, fgH, sched, (s, at) =>
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
                         s.stopImmediately(at),
                     ),
                     PREFETCH_TIER.SPECULATIVE,

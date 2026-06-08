@@ -1067,7 +1067,6 @@ class PlaybackStateEntry {
         this.advanceToTime(this, depth, currentTime);
         // Not sure if there is anything to do
         this.suspendTime = currentTime;
-        console.log(`PSE Suspend: ${currentTime}`);
         if (this.offsetInto > 0) {
             this.addLog(depth, 'Sequence Paused', currentTime, this, logs);
         }
@@ -1075,7 +1074,6 @@ class PlaybackStateEntry {
     }
 
     advancePausedTime(depth: number, currentTime: number, _logs?: PlaybackLogDetail[]) {
-        console.log(`PSE advance paused time: ${currentTime} - ${this.suspendTime}`);
         const st = this.suspendTime ?? currentTime;
         this.suspendTime = currentTime;
         const delta = currentTime - st;
@@ -1092,7 +1090,6 @@ class PlaybackStateEntry {
 
     // This is called when the item is resumed
     resumeAtTime(depth: number, currentTime: number, logs?: PlaybackLogDetail[]) {
-        console.log(`PSE Resume: ${currentTime}`);
         this.advancePausedTime(depth, currentTime, logs);
         this.suspendTime = undefined;
         this.noteScheduleEvent(depth, this, currentTime, 'Schedule Resumed', logs);
@@ -1733,6 +1730,15 @@ export class PlayerRunState {
         let iterLimit = (limit || 1000) * 10 + 100;
         if (iterLimit < 0) iterLimit = 10000;
 
+        // Multiple legitimate transitions can happen at one instant (e.g. two schedules
+        // starting at the same time, or a just-pushed item that needs a second decision),
+        // so the clock not advancing on a single iteration is normal. But if it fails to
+        // advance for many consecutive iterations the schedule is idle/exhausted and we'd
+        // otherwise spin to the iteration cap — bail once well past any real same-instant
+        // burst. (Resets whenever the clock moves.)
+        let noClockProgress = 0;
+        const NO_PROGRESS_LIMIT = 32; // well above any real same-instant event burst; a rare overflow self-corrects next frame
+
         function logLowIters(msg: string) {
             if (iterLimit < 3) console.log(msg);
         }
@@ -1995,11 +2001,18 @@ export class PlayerRunState {
             }
 
             // Run advance
+            const prevTime = this.currentTime;
             const nextTime = Math.max(nextDecisionTime, this.currentTime);
             if (this.depth) {
                 this.#stackTop?.advanceToTime(this.#stackTop, this.depth, nextTime, undefined, undefined, log);
             }
             this.currentTime = nextTime;
+            if (nextTime > prevTime) {
+                noClockProgress = 0;
+            } else if (++noClockProgress > NO_PROGRESS_LIMIT) {
+                // Idle/exhausted: the clock can't advance and nothing is changing.
+                break;
+            }
             if (log && limit && log.length >= limit) break;
         }
 
