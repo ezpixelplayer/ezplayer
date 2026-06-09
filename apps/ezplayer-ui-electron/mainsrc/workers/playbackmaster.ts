@@ -78,6 +78,7 @@ import { performance } from 'perf_hooks';
 import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 
 import process from 'node:process';
+import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
@@ -986,6 +987,27 @@ const playbackStats: PlaybackStatistics = {
         backgroundBlendTimePeriod: 0,
     },
 };
+
+// Scale cache budgets to available RAM so we fit on smaller devices. The defaults
+// above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
+// playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
+{
+    const totalMemGB = totalmem() / 1e9;
+    if (totalMemGB < 6) {
+        playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
+        playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
+    }
+    emitInfo(
+        `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
+            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB`,
+    );
+    if (totalMemGB < 2.5) {
+        emitError(
+            `Low system memory: ${totalMemGB.toFixed(1)} GB. EZPlayer recommends at least 4 GB; ` +
+                `audio/FSEQ caches were reduced and playback may be unstable.`,
+        );
+    }
+}
 
 function resetCumulativeCounters() {
     playbackStats.iteration = 0;
