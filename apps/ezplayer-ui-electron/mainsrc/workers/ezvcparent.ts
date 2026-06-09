@@ -24,11 +24,16 @@ worker.on('exit', (code) => {
 });
 
 let suggestionCallback: ((n: EzvcNextToPlay) => void) | undefined = undefined;
+let resyncCallback: (() => void) | undefined = undefined;
 
 worker.on('message', (msg: EzvcWorkerOutMessage) => {
     switch (msg.type) {
         case 'nextSuggestion':
             if (msg.suggestion) suggestionCallback?.(msg.suggestion);
+            break;
+        case 'resyncRequired':
+            console.log('[ezvc] resync requested by worker (central epoch flipped)');
+            resyncCallback?.();
             break;
         case 'log':
             console[msg.level === 'error' ? 'error' : 'log']('[ezvc]', msg.msg);
@@ -94,4 +99,13 @@ export function setEzvcCatalog(catalog: VcSong[]) {
 
 export function sendEzvcInitiateCheck() {
     send({ type: 'requestNextSuggestion' });
+}
+
+/** Register a callback to fire when the worker detects that central's
+ *  in-RAM viewer-control state has been wiped (central process restarted).
+ *  The callback should re-push catalog/playlists/schedule/enabled using
+ *  the master's current state-of-truth — the worker has already cleared
+ *  its hash caches so those calls will actually go out. */
+export function setEzvcResyncCallback(cb: () => void) {
+    resyncCallback = cb;
 }

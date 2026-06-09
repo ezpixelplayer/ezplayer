@@ -127,6 +127,11 @@ export interface VcPublicSong {
  *  `GET /api/show/:short_name/state` and pushed over the live WS. */
 export interface VcPublicShowState {
     showName?: string;
+    /** IANA timezone identifier the show operates in (e.g.
+     *  `'America/New_York'`). When set, dated windows and `until` timestamps
+     *  on the page should be formatted in this zone so a viewer in a different
+     *  timezone still sees show-local clock times. Absent in legacy data. */
+    tz?: string;
     /** Configured interaction mode — independent of whether it's open now. */
     mode: 'off' | 'request' | 'vote';
     /** The player is reporting to the cloud (reachable / checked in recently). */

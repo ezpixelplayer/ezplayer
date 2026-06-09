@@ -91,6 +91,7 @@ import {
     setEzvcConfig,
     setEzvcControlEnabled,
     setEzvcPlaylist,
+    setEzvcResyncCallback,
     setEzvcPlaying,
     setEzvcSchedule,
 } from './ezvcparent';
@@ -434,7 +435,8 @@ function configureEzvc() {
     if (ezvcConfigInitialized && key === lastEzvcKey) return;
     ezvcConfigInitialized = true;
     lastEzvcKey = key;
-    setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken }, (next) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
         if (!next.songId) return;
         processCommand({
             command: 'playsong',
@@ -443,6 +445,12 @@ function configureEzvc() {
             requestId: randomUUID(),
             priority: 3,
         });
+    });
+    setEzvcResyncCallback(() => {
+        // Reset our own dedup so sendEzvcUpdate() pushes the full snapshot.
+        // The worker has already cleared its hash caches.
+        lastEzvcPlayingKey = undefined;
+        sendEzvcUpdate();
     });
 }
 
