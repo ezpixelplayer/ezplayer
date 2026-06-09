@@ -107,7 +107,7 @@ const EmbeddedSettingsPage = () => {
 const allMenuRoutes: MenuRoute[] = [
     {
         path: ROUTES.PLAYER,
-        element: <PlayerScreen title="Player" statusArea={getStatusArea()} />,
+        element: <PlayerScreen title="Player" statusArea={getStatusArea()} allowVolumeControl={!isKiosk} />,
         sidebar: { icon: <TableChartTwoToneIcon />, label: 'Player' },
     },
     {

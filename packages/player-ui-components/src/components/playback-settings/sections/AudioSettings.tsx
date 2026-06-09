@@ -93,41 +93,6 @@ export const AudioSettings: React.FC = () => {
     return (
         <Box>
             <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
-                Audio Sync Adjust
-            </Typography>
-            <Box sx={{ px: 2 }}>
-                <Slider
-                    value={settings.audioSyncAdjust}
-                    onChange={(_, value) => dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number))}
-                    min={-100}
-                    max={100}
-                    step={1}
-                    marks={[
-                        { value: -100, label: '-100' },
-                        { value: -50, label: '-50' },
-                        { value: 0, label: '0' },
-                        { value: 50, label: '50' },
-                        { value: 100, label: '100' },
-                    ]}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(value) => `${value}ms`}
-                    sx={{
-                        '& .MuiSlider-thumb': { width: 20, height: 20 },
-                        '& .MuiSlider-track': { height: 6 },
-                        '& .MuiSlider-rail': { height: 6 },
-                    }}
-                />
-            </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                Adjust audio synchronization. Negative values sync earlier, positive values sync later.
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                Current value: {settings.audioSyncAdjust}ms
-            </Typography>
-
-            <Divider sx={{ my: 3 }} />
-
-            <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
                 Volume Control
             </Typography>
             <Box sx={{ mb: 3 }}>
@@ -226,6 +191,41 @@ export const AudioSettings: React.FC = () => {
                     Add Volume Override
                 </Button>
             </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                Audio Sync Adjust
+            </Typography>
+            <Box sx={{ px: 2 }}>
+                <Slider
+                    value={settings.audioSyncAdjust}
+                    onChange={(_, value) => dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number))}
+                    min={-100}
+                    max={100}
+                    step={1}
+                    marks={[
+                        { value: -100, label: '-100' },
+                        { value: -50, label: '-50' },
+                        { value: 0, label: '0' },
+                        { value: 50, label: '50' },
+                        { value: 100, label: '100' },
+                    ]}
+                    valueLabelDisplay="auto"
+                    valueLabelFormat={(value) => `${value}ms`}
+                    sx={{
+                        '& .MuiSlider-thumb': { width: 20, height: 20 },
+                        '& .MuiSlider-track': { height: 6 },
+                        '& .MuiSlider-rail': { height: 6 },
+                    }}
+                />
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Adjust audio synchronization. Negative values sync earlier, positive values sync later.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
+                Current value: {settings.audioSyncAdjust}ms
+            </Typography>
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
                 <DialogTitle>
