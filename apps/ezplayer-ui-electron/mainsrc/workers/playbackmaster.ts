@@ -277,7 +277,9 @@ function sendPlayerStateUpdate() {
     if (ps.curPLActions?.actions?.length) {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
-            if (!playStatus.now_playing) {
+            // Only "now playing" if it has actually started; a not-yet-started action
+            // (within the readahead window) is upcoming, not playing.
+            if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
                 playStatus.now_playing = actionToPlayingItem(false, pla);
                 playStatus.status = isPaused ? 'Paused' : 'Playing';
             } else {
@@ -355,7 +357,8 @@ function sendRemoteUpdate() {
     if (ps.curPLActions?.actions?.length) {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
-            if (!now_playing) {
+            // Only "now playing" if it has actually started; otherwise it's upcoming.
+            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
                 now_playing = actionToPlayingItem(false, pla);
             } else {
                 upcoming = actionToPlayingItem(false, pla);
@@ -486,7 +489,8 @@ function sendEzvcUpdate() {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
             const pi = actionToPlayingItem(false, pla);
-            if (!now_playing) now_playing = pi;
+            // Only "now playing" if it has actually started; otherwise it's upcoming.
+            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) now_playing = pi;
             else if (upcomingItems.length < 12) upcomingItems.push(pi);
             else break;
         }
@@ -801,7 +805,7 @@ const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 // Playback params
 const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
-    sendAudioInAdvanceMs: 200,
+    sendAudioInAdvanceMs: 300, // audio generation lead (all consumers); modest margin for cloud/network jitter
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
