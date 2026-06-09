@@ -6,6 +6,7 @@ export interface EZPlayerVersions {
     git: { [key: string]: string };
     packages: { [pkg: string]: string };
     processes: { [proc: string]: string | undefined };
+    system?: { totalMemBytes: number };
 }
 
 export interface SongDetails {
