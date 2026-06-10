@@ -72,6 +72,17 @@ let stopped = false;
 let consecutiveFailures = 0;
 let halted = false;
 
+/** Wall-clock time the player last confirmed it had the layout the cloud
+ *  manifest advertised — either it downloaded the new layout successfully
+ *  or its persisted layoutMeta already matched. Sent on every checkin so
+ *  central / admin / extapi can show "synced through". `undefined` until
+ *  the first successful fetchLayout in this process. */
+let lastLayoutSyncAt: number | undefined;
+/** Wall-clock time the player last confirmed it had every file the cloud
+ *  manifest listed (a reconcileManifest pass with zero per-entry failures).
+ *  Sent on every checkin alongside `lastLayoutSyncAt`. */
+let lastContentSyncAt: number | undefined;
+
 const cStatus: PlayerCStatusContent = { files: {} };
 
 // Last serialized payloads we sent to the parent. We compare new fetches to these
@@ -340,6 +351,8 @@ async function pollRegistration() {
         pollIntervalMs: registrationIntervalMs,
         ...(halted ? { halted: true } : {}),
         ...(cStatus.lastError ? { lastError: cStatus.lastError } : {}),
+        ...(lastLayoutSyncAt !== undefined ? { lastLayoutSync: lastLayoutSyncAt } : {}),
+        ...(lastContentSyncAt !== undefined ? { lastContentSync: lastContentSyncAt } : {}),
     };
     try {
         const res = await fetch(url, {
@@ -747,6 +760,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
     pushCStatus();
 
     // -------- Work phase: download what's needed, sequence by sequence. --------
+    let allOk = true;
     for (const entry of manifest) {
         if (!canRun()) return;
         const existing = findExisting(entry.id);
@@ -754,7 +768,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         if (pending.length === 0) continue;
 
         const result = await downloadSet(entry, pending);
-        if (!result.ok) continue;
+        if (!result.ok) { allOk = false; continue; }
 
         const record = await buildSequenceRecord(entry, existing, result.installed);
         post({ type: 'installSequence', record });
@@ -780,6 +794,11 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             }
         }
     }
+    // We're "synced through" only when every entry the manifest listed is
+    // installed locally — either there was nothing pending (already on disk)
+    // or every pending download succeeded this pass. A single failure leaves
+    // lastContentSyncAt unchanged; the next manifest tick gets another shot.
+    if (allOk) lastContentSyncAt = Date.now();
 }
 
 interface DownloadResult {
@@ -1187,6 +1206,7 @@ async function fetchLayout(): Promise<void> {
                 lastFetchedAt: layoutMeta.lastFetchedAt,
                 error: undefined,
             });
+            lastLayoutSyncAt = Date.now();
             return;
         }
 
@@ -1235,6 +1255,7 @@ async function fetchLayout(): Promise<void> {
             lastFetchedAt: newMeta.lastFetchedAt,
             error: undefined,
         });
+        lastLayoutSyncAt = Date.now();
         log('info', `layout fetch complete (zipExtracted=${zipExtracted})`);
         post({ type: 'layoutInstalled', layoutMeta: newMeta });
     } catch (e) {
