@@ -688,6 +688,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
                 artist: entry.artist || '',
                 vendor: entry.vendor,
                 fileIds: [],
+                disabled: true,
             };
             perEntryPending.set(entry.id, []);
             continue;

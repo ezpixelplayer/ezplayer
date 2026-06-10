@@ -135,13 +135,13 @@ export const AudioSettings: React.FC = () => {
                     Configure volume overrides for specific times. Last entry takes priority for overlapping times.
                 </Typography>
 
-                {settings.volumeControl.schedule.length > 0 && (
+                {(settings.volumeControl?.schedule?.length ?? 0) > 0 && (
                     <Box sx={{ mb: 2 }}>
                         <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                            Current Volume Overrides ({settings.volumeControl.schedule.length} entries)
+                            Current Volume Overrides ({settings.volumeControl?.schedule?.length ?? 0} entries)
                         </Typography>
                         <List dense>
-                            {settings.volumeControl.schedule.map((entry, index) => (
+                            {(settings.volumeControl?.schedule ?? []).map((entry, index) => (
                                 <React.Fragment key={entry.id}>
                                     <ListItem>
                                         <ListItemText
@@ -167,7 +167,7 @@ export const AudioSettings: React.FC = () => {
                                                     />
                                                 </Box>
                                             }
-                                            secondary={`Priority: ${settings.volumeControl.schedule.length - index}`}
+                                            secondary={`Priority: ${(settings.volumeControl?.schedule?.length ?? 0) - index}`}
                                         />
                                         <ListItemSecondaryAction>
                                             <IconButton
@@ -180,7 +180,7 @@ export const AudioSettings: React.FC = () => {
                                             </IconButton>
                                         </ListItemSecondaryAction>
                                     </ListItem>
-                                    {index < settings.volumeControl.schedule.length - 1 && <Divider />}
+                                    {index < (settings.volumeControl?.schedule?.length ?? 0) - 1 && <Divider />}
                                 </React.Fragment>
                             ))}
                         </List>

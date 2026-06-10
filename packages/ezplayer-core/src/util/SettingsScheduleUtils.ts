@@ -112,8 +112,8 @@ function scheduleEntryMatchesNow<T extends BaseScheduleEntry>(entry: T, nowMinut
  * Find the applicable schedule entry at the given time.
  * Later entries in the array have higher priority.
  */
-export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(entries: T[], now: Date = new Date()): T | null {
-    if (!entries.length) return null;
+export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(entries: T[] | undefined, now: Date = new Date()): T | null {
+    if (!entries?.length) return null;
 
     const nowMinutes = getMinutesOfWeek(now);
 
@@ -144,7 +144,7 @@ export function getActiveVolumeSchedule(
     volumeControl: VolumeControlState,
     now: Date = new Date(),
 ): VolumeScheduleEntry | null {
-    if (!volumeControl.schedule.length) {
+    if (!volumeControl.schedule?.length) {
         return null;
     }
     return findMatchingScheduleEntry(volumeControl.schedule, now);

@@ -238,6 +238,8 @@ export interface CloudSequenceProgress {
     vendor?: string;
     /** file_ids of every file the manifest lists for this sequence (fseq/audio/thumb). */
     fileIds: string[];
+    /** Cloud said disabled — no files; GC sweep reclaims on next pass. */
+    disabled?: boolean;
 }
 
 /** Per-file status used by the cloud content sync. */
@@ -537,12 +539,16 @@ export interface ViewerControlState {
      *  existing cloud identity — and reuses `schedule` for the live window. */
     type: 'disabled' | 'remote-falcon' | 'ezplayer';
     remoteFalconToken?: string;
-    schedule: ViewerControlScheduleEntry[];
+    /** Optional in the type because legacy persisted shapes can lack it.
+     *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
+     *  in `SettingsScheduleUtils.ts` default to `[]`. */
+    schedule?: ViewerControlScheduleEntry[];
 }
 
 export interface VolumeControlState {
     defaultVolume: number;
-    schedule: VolumeScheduleEntry[];
+    /** Optional for the same reason as `ViewerControlState.schedule`. */
+    schedule?: VolumeScheduleEntry[];
 }
 
 export interface JukeboxSettings {
