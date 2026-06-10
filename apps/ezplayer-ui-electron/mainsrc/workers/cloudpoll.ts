@@ -447,6 +447,13 @@ async function pollManifest() {
             // fetchLayout already logs and writes to cStatus; don't fail the manifest tick.
             log('warn', `pre-manifest layout fetch error: ${(e as Error).message}`);
         }
+    } else {
+        // Local-master mode: the player IS the layout source of truth, so
+        // there's nothing to fetch and nothing to fail. By definition the
+        // layout is "synced through" right now — stamp accordingly so the
+        // sync-time check on central / admin doesn't show this player as
+        // stale just because fetchLayout was never called.
+        lastLayoutSyncAt = Date.now();
     }
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SEQ_LIST}${playerIdToken}`;
     log('info', `manifest poll ${url}`);
