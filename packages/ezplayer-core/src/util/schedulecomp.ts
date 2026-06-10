@@ -1392,7 +1392,7 @@ export class PlayerRunState {
         errs: string[],
     ) {
         this.sequences = seqs
-            .filter((s) => s.deleted !== true)
+            .filter((s) => s.deleted !== true && s.render_enabled !== false)
             .map((s) => {
                 return { ...s };
             });

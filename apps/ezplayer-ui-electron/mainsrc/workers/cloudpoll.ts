@@ -676,6 +676,23 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         const fileIds: string[] = [];
         const pending: PendingFile[] = [];
 
+        if (entry.status === 'disabled') {
+            const record = buildDisabledSequenceRecord(entry, existing);
+            post({ type: 'installSequence', record });
+            const idx = existingSequences.findIndex((s) => s.id === record.id);
+            if (idx >= 0) existingSequences[idx] = record;
+            else existingSequences.push(record);
+            newSequences[entry.vseq_id] = {
+                vseq_id: entry.vseq_id,
+                title: entry.title || '',
+                artist: entry.artist || '',
+                vendor: entry.vendor,
+                fileIds: [],
+            };
+            perEntryPending.set(entry.id, []);
+            continue;
+        }
+
         const seedFile = (
             kind: CloudFileKind,
             file_id: string,
@@ -1060,6 +1077,27 @@ function defaultExt(kind: CloudFileKind): string {
 
 function sanitize(s: string): string {
     return s.replace(/[^a-z0-9._-]/gi, '_');
+}
+
+/** Cleared `cloud` so a future re-enable doesn't short-circuit `needsDownload`
+ *  when the file has since been reaped. */
+function buildDisabledSequenceRecord(
+    entry: CloudSeqManifestEntry,
+    existing: SequenceRecord | undefined,
+): SequenceRecord {
+    return {
+        ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
+        id: entry.id,
+        work: {
+            ...(existing?.work ?? { title: '', artist: '', length: 0 }),
+            title: entry.title ?? existing?.work?.title ?? '',
+            artist: entry.artist ?? existing?.work?.artist ?? '',
+        },
+        files: {},
+        cloud: undefined,
+        render_enabled: false,
+        updatedAt: Date.now(),
+    };
 }
 
 async function buildSequenceRecord(

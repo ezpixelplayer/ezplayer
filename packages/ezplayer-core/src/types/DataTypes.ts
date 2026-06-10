@@ -216,6 +216,17 @@ export interface CloudSeqManifestEntry {
     pvid?: { file_id: string; file_time: number };
     /** Direct (presigned) thumbnail URL when available. */
     thumb?: string;
+    /** Cloud-side lifecycle marker:
+     *  - `active` (default): sync normally.
+     *  - `disabled`: cloud no longer wants this sequence on the player —
+     *    grant flipped, user toggled `user_seq_render.enabled` off, or (later)
+     *    vendor retracted. File refs MAY be omitted for disabled entries; the
+     *    player should not download them, should mark the local entry
+     *    unavailable so the playback engine drops it at bake time, and lets
+     *    its file-sweep reclaim the on-disk files once no baked state
+     *    references them.
+     *  Absent value treated as `active` for back-compat. */
+    status?: 'active' | 'disabled';
 }
 
 /** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
