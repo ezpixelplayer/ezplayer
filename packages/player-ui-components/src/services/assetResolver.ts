@@ -25,18 +25,18 @@ export type AssetResolver = (path: string) => string | null;
  * (Electron / local browser) where the show folder is served by the host. Returns a no-op
  * resolver when `frameServerUrl` is missing, so callers can pass through their optional
  * frameServerUrl prop without guarding.
+ *
+ * `frameServerUrl` may be either an absolute URL (`http://localhost:3001`, Electron) or a
+ * path-only base (`/api/enduserspa/proxy/<token>`, cloud SPA). `new URL()` rejects the latter
+ * with `TypeError: Invalid base URL`, so we build via string concatenation — the same shape
+ * `useImageUrl` uses for `/api/getimage`.
  */
 export function createShowFileResolver(frameServerUrl: string | undefined): AssetResolver {
     if (!frameServerUrl) return () => null;
+    const base = frameServerUrl.replace(/\/+$/, '');
     return (path) => {
         if (!path) return null;
-        try {
-            const url = new URL('/api/show-file', frameServerUrl);
-            url.searchParams.set('path', path);
-            return url.toString();
-        } catch {
-            return null;
-        }
+        return `${base}/api/show-file?path=${encodeURIComponent(path)}`;
     };
 }
 
