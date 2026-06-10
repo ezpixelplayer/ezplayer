@@ -5,7 +5,7 @@
         "url": "https://github.com/ezpixelplayer/ezplayer.git"
     },
     "private": true,
-    "version": "0.3.1",
+    "version": "0.4.0",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -151,7 +151,7 @@
         "react-toastify": "^10.0.6",
         "uuid": "^14.0.0",
         "ws": "^8.19.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.5.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.6.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.1.0"
     }
