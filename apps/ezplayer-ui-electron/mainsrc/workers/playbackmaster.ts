@@ -598,12 +598,17 @@ function sendEzvcUpdate() {
     }
 }
 
+// Max volume slew rate: ramp 1% per this many ms toward the target. The playback
+// loop cadence varies wildly (tight while a show runs, much slower when idle), so
+// we scale the step to elapsed time rather than moving a fixed 1% per call — that
+// way the UI never crawls when the loop is slow, while staying gentle on the ear:
+// a 200ms gap moves ~20%, a 50ms gap ~5%, and a full 0-100 swing takes ~1s.
+const VOLUME_SLEW_INTERVAL_MS = 10;
 let lastVolCheck: number = Date.now();
 function doVolumeAdjust(dn: number) {
-    if (dn - lastVolCheck < 10) return;
-    lastVolCheck = dn;
     const settings = latestSettings;
     if (!settings || !settings.volumeControl) {
+        lastVolCheck = dn; // unconfigured: keep the slew clock fresh, don't bank credit
         return;
     }
     const volsched = getActiveVolumeSchedule(settings.volumeControl);
@@ -612,9 +617,21 @@ function doVolumeAdjust(dn: number) {
         tgtvol = volsched.volumeLevel;
     }
 
-    // Change 1% at a time toward target
-    if (tgtvol > volume) ++volume;
-    if (tgtvol < volume) --volume;
+    const diff = tgtvol - volume;
+    if (diff === 0) {
+        lastVolCheck = dn; // at target: reset so a future change starts from now
+        return;
+    }
+
+    const elapsed = dn - lastVolCheck;
+    if (elapsed < VOLUME_SLEW_INTERVAL_MS) return; // throttle: at most 1% per interval
+
+    // One 1% step per whole interval elapsed, capped by the remaining distance.
+    const maxSteps = Math.floor(elapsed / VOLUME_SLEW_INTERVAL_MS);
+    const step = Math.min(Math.abs(diff), maxSteps);
+    volume += Math.sign(diff) * step;
+    // Consume only the time we used so a sub-interval remainder carries forward.
+    lastVolCheck += step * VOLUME_SLEW_INTERVAL_MS;
     volumeSF = muted ? 0 : volume / 100;
 }
 
