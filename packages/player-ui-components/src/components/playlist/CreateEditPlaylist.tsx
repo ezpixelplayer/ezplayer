@@ -58,8 +58,8 @@ interface AvailableSongsContainerProps {
     onSearchQueryChange: (query: string) => void;
     availableSortOrder: 'asc' | 'desc';
     onAvailableSortOrderChange: (order: 'asc' | 'desc') => void;
-    availableSortType: 'title' | 'artist' | null;
-    onAvailableSortTypeChange: (type: 'title' | 'artist' | null) => void;
+    availableSortType: 'title' | 'artist';
+    onAvailableSortTypeChange: (type: 'title' | 'artist') => void;
     selectedFilterTags: string[];
     onSelectedFilterTagsChange: (tags: string[]) => void;
     tagInputValue: string;
@@ -179,23 +179,12 @@ const AvailableSongsContainer = ({
                         <Grid item xs={12} sm={6} md={3} lg={3} xl={3}>
                             <Select
                                 size="small"
-                                value={availableSortType || ''}
+                                value={availableSortType}
                                 onChange={(e) => {
-                                    const value = e.target.value as 'title' | 'artist' | '';
-                                    if (value === '') {
-                                        onAvailableSortTypeChange(null);
-                                    } else {
-                                        onAvailableSortTypeChange(value);
-                                        // Default to ascending when type is selected
-                                        if (availableSortOrder === null || availableSortOrder === undefined) {
-                                            onAvailableSortOrderChange('asc');
-                                        }
-                                    }
+                                    onAvailableSortTypeChange(e.target.value as 'title' | 'artist');
                                 }}
                                 fullWidth
-                                displayEmpty
                             >
-                                <MenuItem value="">Sort by</MenuItem>
                                 <MenuItem value="title">Sort by Title</MenuItem>
                                 <MenuItem value="artist">Sort by Artist</MenuItem>
                             </Select>
@@ -206,7 +195,6 @@ const AvailableSongsContainer = ({
                                 value={availableSortOrder}
                                 onChange={(e) => onAvailableSortOrderChange(e.target.value as 'asc' | 'desc')}
                                 fullWidth
-                                disabled={!availableSortType}
                             >
                                 <MenuItem value="asc">A-Z</MenuItem>
                                 <MenuItem value="desc">Z-A</MenuItem>
@@ -265,10 +253,10 @@ interface PlaylistContainerProps {
     dragOverItemId: string | null;
     onRemoveSong: (instanceId: string) => void;
     sortOrder: 'asc' | 'desc' | null;
-    sortType: 'title' | 'artist' | null;
+    sortType: 'title' | 'artist';
     onSort: (type: 'title' | 'artist', order: 'asc' | 'desc') => void;
     setSortOrder: (order: 'asc' | 'desc' | null) => void;
-    setSortType: (type: 'title' | 'artist' | null) => void;
+    setSortType: (type: 'title' | 'artist') => void;
     onShuffle: () => void;
 }
 
@@ -319,48 +307,38 @@ const PlaylistContainer = ({
                     <Grid item xs={12} md={3}>
                         <Select
                             size="small"
-                            value={sortType || ''}
+                            value={sortType}
                             onChange={(e) => {
-                                const value = e.target.value as 'title' | 'artist' | '';
-                                if (value === '') {
-                                    setSortType(null);
-                                    setSortOrder(null);
+                                const value = e.target.value as 'title' | 'artist';
+                                setSortType(value);
+                                if (!sortOrder) {
+                                    setSortOrder('asc');
+                                    onSort(value, 'asc');
                                 } else {
-                                    setSortType(value);
-                                    // Default to ascending when type is selected
-                                    if (!sortOrder) {
-                                        setSortOrder('asc');
-                                        onSort(value, 'asc');
-                                    } else {
-                                        onSort(value, sortOrder);
-                                    }
+                                    onSort(value, sortOrder);
                                 }
                             }}
                             fullWidth
-                            displayEmpty
                         >
-                            <MenuItem value="">Sort by</MenuItem>
                             <MenuItem value="title">Sort by Title</MenuItem>
                             <MenuItem value="artist">Sort by Artist</MenuItem>
                         </Select>
                     </Grid>
-                    {sortType && (
-                        <Grid item xs={12} md={3}>
-                            <Select
-                                size="small"
-                                value={sortOrder || 'asc'}
-                                onChange={(e) => {
-                                    const value = e.target.value as 'asc' | 'desc';
-                                    setSortOrder(value);
-                                    onSort(sortType, value);
-                                }}
-                                fullWidth
-                            >
-                                <MenuItem value="asc">A-Z</MenuItem>
-                                <MenuItem value="desc">Z-A</MenuItem>
-                            </Select>
-                        </Grid>
-                    )}
+                    <Grid item xs={12} md={3}>
+                        <Select
+                            size="small"
+                            value={sortOrder || 'asc'}
+                            onChange={(e) => {
+                                const value = e.target.value as 'asc' | 'desc';
+                                setSortOrder(value);
+                                onSort(sortType, value);
+                            }}
+                            fullWidth
+                        >
+                            <MenuItem value="asc">A-Z</MenuItem>
+                            <MenuItem value="desc">Z-A</MenuItem>
+                        </Select>
+                    </Grid>
                     <Grid item xs={12} md={2}>
                         <Button
                             startIcon={<ShuffleIcon />}
@@ -483,13 +461,13 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [savePlaylistClicked, setSavePlaylistClicked] = useState(false);
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
-    const [sortType, setSortType] = useState<'title' | 'artist' | null>(null);
+    const [sortType, setSortType] = useState<'title' | 'artist'>('title');
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
     const [isNavigationDialogOpen, setIsNavigationDialogOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<'navigate' | 'discard' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [availableSortOrder, setAvailableSortOrder] = useState<'asc' | 'desc'>('asc');
-    const [availableSortType, setAvailableSortType] = useState<'title' | 'artist' | null>(null);
+    const [availableSortType, setAvailableSortType] = useState<'title' | 'artist'>('title');
     const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
 
@@ -511,7 +489,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                     playlistName !== existingPlaylist.title ||
                     JSON.stringify(selectedTags) !== JSON.stringify(existingPlaylist.tags) ||
                     JSON.stringify(playlistSongs.map((song) => song.id)) !==
-                        JSON.stringify(existingPlaylist.items.map((item) => item.id));
+                    JSON.stringify(existingPlaylist.items.map((item) => item.id));
 
                 setHasUnsavedChanges(hasChanges);
             }
@@ -670,7 +648,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             return shuffledSongs;
         });
         setSortOrder(null); // Reset sort order when shuffling
-        setSortType(null); // Reset sort type when shuffling
+        setSortType('title');
     };
 
     const handleAddSong = (id: string): void => {
@@ -712,8 +690,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             over.id === 'available'
                 ? 'available'
                 : over.id === 'playlist'
-                  ? 'playlist'
-                  : over.data.current?.containerId;
+                    ? 'playlist'
+                    : over.data.current?.containerId;
 
         // Handle reordering within playlist container
         if (sourceContainerId === 'playlist' && destinationContainerId === 'playlist') {
@@ -844,11 +822,6 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 return matchesSearch && matchesTags;
             })
             .sort((a, b) => {
-                // If no sort type is selected, don't sort (or maintain original order)
-                if (!availableSortType) {
-                    return 0;
-                }
-
                 let valueA: string;
                 let valueB: string;
 
