@@ -29,14 +29,15 @@ import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from 
 import { collectReferencedAssets } from '../data/layoutAssets.js';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
-// Aggressive demo defaults; production callers should pass conservative values.
-// 5s registration keeps the cloud-bridge open signal (viewer-control + audio
-// start) responsive — worst-case bridge/audio start ≈ one interval. Steady-state
-// cost is a lightweight checkin every 5s per player (accepted for demo;
-// override via cloud-config `cloudPollIntervals.registrationMs` in production).
-// Note: the cloud treats ~2× this as the live-freshness cutoff.
+// Default poll cadences. Registration (5s) is the checkin / bridge-open heartbeat:
+// it keeps the cloud-bridge open signal (viewer-control + audio start) responsive
+// — worst-case bridge/audio start ≈ one interval — and refreshes the bridge TTL,
+// so it stays frequent on purpose. The cloud treats ~2× it as the live-freshness
+// cutoff. Manifest (5min) is the content poll — new sequences / layout / settings
+// — deliberately infrequent to limit cloud cost; user-initiated manifestNow /
+// fetchLayoutNow bypass it. Both overridable via cloud-config `cloudPollIntervals`.
 const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
-const DEFAULT_MANIFEST_INTERVAL_MS = 60_000;
+const DEFAULT_MANIFEST_INTERVAL_MS = 300_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
 
