@@ -344,6 +344,8 @@ export interface CombinedPlayerStatus {
 
     show?: {
         show_name?: string;
+        viewer_control_enabled?: boolean;
+        viewer_control_mode?: 'disabled' | 'remote-falcon' | 'ezplayer';
     };
 }
 
@@ -588,6 +590,9 @@ export interface CloudPlayerSettings {
     volume_control_updated?: number;
     viewer_control_state?: ViewerControlState;
     viewer_control_state_updated?: number;
+    /** Show display name from `user_show_settings.show_name`. Surfaced in the
+     *  player's status pane and as the title of the cloud-served Show Status. */
+    show_name?: string;
 }
 
 /** Per-file identity for the layout files we have on disk. Lets the worker decide

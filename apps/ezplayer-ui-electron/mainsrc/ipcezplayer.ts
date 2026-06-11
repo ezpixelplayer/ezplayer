@@ -93,7 +93,32 @@ export let curSequences: SequenceRecord[] = [];
 export let curPlaylists: PlaylistRecord[] = [];
 export let curSchedule: ScheduledPlaylist[] = [];
 export let curStatus: CombinedPlayerStatus = {};
+let lastShowName: string | undefined;
 export let curErrors: string[] = [];
+
+/** Stamp show/content summary onto curStatus from current state.
+ *  Called at every broadcast site so Show Status sees fresh values. */
+function applyStatusSummary() {
+    const s = getSettingsCache();
+    curStatus.show = {
+        show_name: lastShowName,
+        viewer_control_enabled: s?.viewerControl?.enabled,
+        viewer_control_mode: s?.viewerControl?.type,
+    };
+    const files = curStatus.content?.files;
+    const nNeeding = files
+        ? Object.values(files).filter((f) => f.status !== 'installed').length
+        : undefined;
+    curStatus.content = {
+        ...(curStatus.content ?? {}),
+        n_sequences: curSequences.filter((x) => !x.deleted && x.render_enabled !== false).length,
+        n_playlists: curPlaylists.filter((x) => !x.deleted).length,
+        n_schedules: curSchedule.filter((x) => !x.deleted).length,
+        n_needing_download: nNeeding,
+        sequence_sync_time: curStatus.content?.lastManifestAt,
+        schedule_sync_time: curStatus.content?.lastManifestAt,
+    };
+}
 export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 
@@ -348,6 +373,11 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
         adopted.push('viewerControl');
     }
 
+    if (cloud.show_name && cloud.show_name !== lastShowName) {
+        lastShowName = cloud.show_name;
+        adopted.push('show_name');
+    }
+
     if (adopted.length === 0) return;
 
     applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
@@ -461,6 +491,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
         'update:schedule',
         curSchedule.filter((s) => !s.deleted),
     );
+    applyStatusSummary();
     updateWindow?.webContents?.send('update:combinedstatus', curStatus);
     updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
 
@@ -801,10 +832,12 @@ export async function registerContentHandlers(
     });
 
     onCStatus((cStatus) => {
-        // Merge the cloud worker's content view into curStatus.content so the
-        // renderer's "usual channel" (playback:cstatus / setCStatus) picks it up.
+        // Merge cloud worker's content view + restamp show/summary so Show
+        // Status sees fresh sync times every poll, not only at scheduleUpdated.
         curStatus.content = { ...(curStatus.content ?? {}), ...cStatus };
+        applyStatusSummary();
         updateWindow?.webContents?.send('playback:cstatus', curStatus.content);
+        updateWindow?.webContents?.send('update:combinedstatus', curStatus);
         broadcastToWebSocket('cStatus', curStatus.content);
         // Opportunistic gc — runs whenever the worker reports back, no-op when
         // queue is empty or player isn't idle.

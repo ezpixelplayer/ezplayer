@@ -539,7 +539,7 @@ async function fetchPlayerSettings() {
         const settings = (await res.json()) as CloudPlayerSettings;
         const json = JSON.stringify(settings);
         if (json !== lastSentSettingsJson) {
-            log('info', 'cloud settings (changed)');
+            log('info', `cloud settings (changed) show_name=${settings.show_name ?? '(missing)'}`);
             lastSentSettingsJson = json;
             parentPort?.postMessage({ type: 'cloudSettings', settings } satisfies CloudPollOutMessage);
         }
