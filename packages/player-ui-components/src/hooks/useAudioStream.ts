@@ -93,7 +93,10 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
             if (next) {
                 if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
                     const AC = window.AudioContext || (window as any).webkitAudioContext;
-                    audioCtxRef.current = new AC();
+                    // Pin to 48 kHz to match the curated/normalized source rate (clean seams
+                    // for 48 kHz audio; stray 44.1 kHz is resampled here but masked by the
+                    // per-chunk crossfade baked into the stream).
+                    audioCtxRef.current = new AC({ sampleRate: 48000 });
                 }
                 afterSeqRef.current = 0;
                 consecutiveErrorsRef.current = 0;
@@ -119,12 +122,16 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
             channels: number,
             sampleCount: number,
             floatArray: Float32Array,
+            advanceSamples: number,
         ): boolean => {
             const numSamples = sampleCount / channels;
             if (numSamples <= 0) return false;
 
+            // The buffer may carry a trailing crossfade overlap: advance by the advertised
+            // hop (advanceSamples), but still render all numSamples so adjacent chunks overlap.
+            const advanceFrames = advanceSamples > 0 ? advanceSamples / channels : numSamples;
             const playAtRealTime = playAtServerTime - clockOffsetRef.current;
-            const audioLenMs = (1000 * numSamples) / sampleRate;
+            const audioLenMs = (1000 * advanceFrames) / sampleRate;
             const dn = Date.now();
             const actNow = ctx.currentTime * 1000;
 
@@ -210,7 +217,7 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                 const ctx = audioCtxRef.current;
                 if (!ctx || ctx.state === 'closed') return;
                 const data = ev.data;
-                if (!(data instanceof ArrayBuffer) || data.byteLength < 32) return;
+                if (!(data instanceof ArrayBuffer) || data.byteLength < 36) return;
 
                 const view = new DataView(data);
                 const serverNow = view.getFloat64(0, true);
@@ -219,7 +226,8 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                 const sampleRate = view.getUint32(20, true);
                 const channels = view.getUint32(24, true);
                 const sampleCount = view.getUint32(28, true);
-                const floatArray = new Float32Array(data, 32, sampleCount);
+                const advanceSamples = view.getUint32(32, true);
+                const floatArray = new Float32Array(data, 36, sampleCount);
 
                 // Refine clockOffset: serverNow - browserNow on arrival is at most
                 // clockOffset (when one-way delay is ~0). Running max approaches
@@ -229,7 +237,18 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                     clockOffsetRef.current = candidate;
                 }
 
-                if (scheduleChunk(ctx, playAtServerTime, incarnation, sampleRate, channels, sampleCount, floatArray)) {
+                if (
+                    scheduleChunk(
+                        ctx,
+                        playAtServerTime,
+                        incarnation,
+                        sampleRate,
+                        channels,
+                        sampleCount,
+                        floatArray,
+                        advanceSamples,
+                    )
+                ) {
                     setIsPlaying(true);
                 }
             };
@@ -308,6 +327,8 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                         offset += 4;
                         const sampleCount = view.getUint32(offset, true);
                         offset += 4;
+                        const advanceSamples = view.getUint32(offset, true);
+                        offset += 4;
                         const floatArray = new Float32Array(data, offset, sampleCount);
                         offset += sampleCount * 4;
                         if (
@@ -319,6 +340,7 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                                 channels,
                                 sampleCount,
                                 floatArray,
+                                advanceSamples,
                             )
                         ) {
                             didSchedule = true;

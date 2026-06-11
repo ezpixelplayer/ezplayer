@@ -14,9 +14,11 @@ import { getControllerStats } from '../status/ControllerHelpers';
 interface PlayerScreenProps {
     title: string;
     statusArea: React.ReactNode[];
+    /** Allow live master-volume control + the volume-settings gear on the Now Playing card. */
+    allowVolumeControl?: boolean;
 }
 
-const StatusCards = ({}: {}) => {
+const StatusCards = ({ allowVolumeControl }: { allowVolumeControl?: boolean }) => {
     const runtime = useSelector((state: RootState) => state.runtime);
 
     return (
@@ -25,7 +27,11 @@ const StatusCards = ({}: {}) => {
             <Grid container spacing={2}>
                 <Grid item xs={12} md={12} lg={6} xl={4}>
                     {runtime.combined?.player ? (
-                        <NowPlayingCard player={runtime.combined.player} compact={true} />
+                        <NowPlayingCard
+                            player={runtime.combined.player}
+                            compact={true}
+                            allowVolumeControl={allowVolumeControl}
+                        />
                     ) : runtime.combined?.show ? (
                         <Card sx={{ height: '100%' }}>
                             <CardContent>
@@ -262,7 +268,7 @@ const TimelineView = ({}: {}) => {
     );
 };
 
-export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
+export const PlayerScreen = ({ title, statusArea, allowVolumeControl }: PlayerScreenProps) => {
     return (
         <Box
             sx={{
@@ -278,7 +284,7 @@ export const PlayerScreen = ({ title, statusArea }: PlayerScreenProps) => {
             </Box>
 
             {/* Now Playing Card and Controller Status */}
-            <StatusCards />
+            <StatusCards allowVolumeControl={allowVolumeControl} />
 
             {/* Timeline View */}
             <TimelineView />

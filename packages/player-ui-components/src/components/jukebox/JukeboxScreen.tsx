@@ -60,6 +60,8 @@ interface SequenceItem {
     sequence?: {
         vendor?: string;
     };
+    deleted?: boolean;
+    render_enabled?: boolean;
 }
 
 export interface JukeboxAreaProps {
@@ -224,12 +226,15 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
     // Transform sequenceData into the format needed for the jukebox
     const songs =
         sequenceData
-            ?.filter((s: SequenceItem) =>
-                isSongAllowedForJukebox({
-                    songTags: s.settings?.tags,
-                    excludedTags: jukeboxSettings?.excludedTags,
-                    includedTags: jukeboxSettings?.includedTags,
-                }),
+            ?.filter(
+                (s: SequenceItem) =>
+                    !s.deleted &&
+                    s.render_enabled !== false &&
+                    isSongAllowedForJukebox({
+                        songTags: s.settings?.tags,
+                        excludedTags: jukeboxSettings?.excludedTags,
+                        includedTags: jukeboxSettings?.includedTags,
+                    }),
             )
             .map((song: SequenceItem) => ({
                 isMusical: song.work?.music_url ? true : false,
@@ -614,12 +619,15 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
     const songs = useMemo(() => {
         const allSongs =
             sequenceData
-                ?.filter((s: SequenceItem) =>
-                    isSongAllowedForJukebox({
-                        songTags: s.settings?.tags,
-                        excludedTags: jukeboxSettings?.excludedTags,
-                        includedTags: jukeboxSettings?.includedTags,
-                    }),
+                ?.filter(
+                    (s: SequenceItem) =>
+                        !s.deleted &&
+                        s.render_enabled !== false &&
+                        isSongAllowedForJukebox({
+                            songTags: s.settings?.tags,
+                            excludedTags: jukeboxSettings?.excludedTags,
+                            includedTags: jukeboxSettings?.includedTags,
+                        }),
                 )
                 .map(
                     (song: SequenceItem): Song => ({

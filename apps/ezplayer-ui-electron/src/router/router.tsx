@@ -121,7 +121,7 @@ const ElectronSettingsPage = () => {
 const menuRoutes: MenuRoute[] = [
     {
         path: ROUTES.PLAYER,
-        element: <PlayerScreen title="Player" statusArea={getStatusArea()} />,
+        element: <PlayerScreen title="Player" statusArea={getStatusArea()} allowVolumeControl />,
         sidebar: { icon: <TableChartTwoToneIcon />, label: 'Player' },
     },
     {

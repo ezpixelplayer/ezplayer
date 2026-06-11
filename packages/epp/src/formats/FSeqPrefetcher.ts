@@ -15,6 +15,8 @@ export type PrefetchSeqMetadataRequest = {
     expiry?: number;
     fseqfile: string;
     needByTime: number;
+    /** Confidence tier (0 = happy-path/fg, 1 = background, 2 = speculative). */
+    tier?: number;
 };
 
 /**
@@ -26,6 +28,8 @@ export type PrefetchSeqFramesRequest = {
     startFrame: number;
     nFrames: number;
     needByTime: number; // For first frame
+    /** Confidence tier (0 = happy-path/fg, 1 = background, 2 = speculative). */
+    tier?: number;
 };
 
 export type DecompZStd = (
@@ -58,6 +62,8 @@ export type PrefetchSeqTime = {
     startTime: number;
     durationms: number;
     needByTime: number; // For first frame
+    /** Confidence tier (0 = happy-path/fg, 1 = background, 2 = speculative). */
+    tier?: number;
 };
 
 export interface FSeqFileKey {
@@ -331,7 +337,7 @@ export class FSeqPrefetchCache {
     prefetchSeqMetadata(req: PrefetchSeqMetadataRequest) {
         this.headerPrefetchCache.prefetch({
             key: { fseqfile: req.fseqfile },
-            priority: { neededTime: req.needByTime },
+            priority: { neededTime: req.needByTime, tier: req.tier },
             now: this.now,
             expiry: req.expiry ?? this.now + 24 * 3600 * 1000,
         });
@@ -368,7 +374,10 @@ export class FSeqPrefetchCache {
                 key: fk.dk,
                 now: this.now,
                 expiry: req.expiry ?? this.now + 24 * 3600_000,
-                priority: { neededTime: req.needByTime + hdr.ref.header.msperframe * (cframe - req.startFrame) },
+                priority: {
+                    neededTime: req.needByTime + hdr.ref.header.msperframe * (cframe - req.startFrame),
+                    tier: req.tier,
+                },
             });
             cframe = fk.hdr.chunkMap.index[fk.dk.chunknum].endFrame;
         }
@@ -394,6 +403,7 @@ export class FSeqPrefetchCache {
             startFrame: sf,
             nFrames: ef - sf,
             needByTime: req.needByTime,
+            tier: req.tier,
         });
     }
 
@@ -464,6 +474,12 @@ export class FSeqPrefetchCache {
                 `${fseq}:${frame}`,
             ),
         };
+    }
+
+    /** Start a new prefetch generation (call once per pass, before prefetching). */
+    beginGeneration() {
+        this.headerPrefetchCache.beginGeneration();
+        this.decompPrefetchCache.beginGeneration();
     }
 
     dispatch(ageout?: number) {

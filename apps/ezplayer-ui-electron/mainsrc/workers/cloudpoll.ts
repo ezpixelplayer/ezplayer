@@ -27,6 +27,7 @@ import {
 } from '@ezplayer/ezplayer-core';
 import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { collectReferencedAssets } from '../data/layoutAssets.js';
+import { FSEQReaderAsync } from '@ezplayer/epp';
 
 // Aggressive demo defaults; production callers should pass conservative values.
 // 5s registration keeps the cloud-bridge open signal (viewer-control + audio
@@ -70,6 +71,17 @@ let stopped = false;
 
 let consecutiveFailures = 0;
 let halted = false;
+
+/** Wall-clock time the player last confirmed it had the layout the cloud
+ *  manifest advertised — either it downloaded the new layout successfully
+ *  or its persisted layoutMeta already matched. Sent on every checkin so
+ *  central / admin / extapi can show "synced through". `undefined` until
+ *  the first successful fetchLayout in this process. */
+let lastLayoutSyncAt: number | undefined;
+/** Wall-clock time the player last confirmed it had every file the cloud
+ *  manifest listed (a reconcileManifest pass with zero per-entry failures).
+ *  Sent on every checkin alongside `lastLayoutSyncAt`. */
+let lastContentSyncAt: number | undefined;
 
 const cStatus: PlayerCStatusContent = { files: {} };
 
@@ -161,7 +173,12 @@ function recordFailure(reason: string) {
     if (consecutiveFailures >= failureThreshold) {
         halted = true;
         log('error', `circuit breaker tripped after ${consecutiveFailures} failures: ${reason}`);
-        clearTimers();
+        // Stop only the manifest/content poll loop (the one that's
+        // failing). KEEP the registration heartbeat alive — it's what
+        // refreshes the cloud-bridge TTL on the server side. Halting it
+        // here means the bridge silently dies in 90s and the player drops
+        // until a manual restart, regardless of how innocuous the failure.
+        if (manifestTimer) { clearInterval(manifestTimer); manifestTimer = null; }
         // Schedule a one-shot auto-clear so the player self-recovers without
         // user intervention. User-initiated sync or setConfig cancels this.
         cancelAutoClearTimer();
@@ -334,6 +351,8 @@ async function pollRegistration() {
         pollIntervalMs: registrationIntervalMs,
         ...(halted ? { halted: true } : {}),
         ...(cStatus.lastError ? { lastError: cStatus.lastError } : {}),
+        ...(lastLayoutSyncAt !== undefined ? { lastLayoutSync: lastLayoutSyncAt } : {}),
+        ...(lastContentSyncAt !== undefined ? { lastContentSync: lastContentSyncAt } : {}),
     };
     try {
         const res = await fetch(url, {
@@ -428,6 +447,13 @@ async function pollManifest() {
             // fetchLayout already logs and writes to cStatus; don't fail the manifest tick.
             log('warn', `pre-manifest layout fetch error: ${(e as Error).message}`);
         }
+    } else {
+        // Local-master mode: the player IS the layout source of truth, so
+        // there's nothing to fetch and nothing to fail. By definition the
+        // layout is "synced through" right now — stamp accordingly so the
+        // sync-time check on central / admin doesn't show this player as
+        // stale just because fetchLayout was never called.
+        lastLayoutSyncAt = Date.now();
     }
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SEQ_LIST}${playerIdToken}`;
     log('info', `manifest poll ${url}`);
@@ -513,7 +539,7 @@ async function fetchPlayerSettings() {
         const settings = (await res.json()) as CloudPlayerSettings;
         const json = JSON.stringify(settings);
         if (json !== lastSentSettingsJson) {
-            log('info', 'cloud settings (changed)');
+            log('info', `cloud settings (changed) show_name=${settings.show_name ?? '(missing)'}`);
             lastSentSettingsJson = json;
             parentPort?.postMessage({ type: 'cloudSettings', settings } satisfies CloudPollOutMessage);
         }
@@ -650,6 +676,24 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         const fileIds: string[] = [];
         const pending: PendingFile[] = [];
 
+        if (entry.status === 'disabled') {
+            const record = buildDisabledSequenceRecord(entry, existing);
+            post({ type: 'installSequence', record });
+            const idx = existingSequences.findIndex((s) => s.id === record.id);
+            if (idx >= 0) existingSequences[idx] = record;
+            else existingSequences.push(record);
+            newSequences[entry.vseq_id] = {
+                vseq_id: entry.vseq_id,
+                title: entry.title || '',
+                artist: entry.artist || '',
+                vendor: entry.vendor,
+                fileIds: [],
+                disabled: true,
+            };
+            perEntryPending.set(entry.id, []);
+            continue;
+        }
+
         const seedFile = (
             kind: CloudFileKind,
             file_id: string,
@@ -741,6 +785,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
     pushCStatus();
 
     // -------- Work phase: download what's needed, sequence by sequence. --------
+    let allOk = true;
     for (const entry of manifest) {
         if (!canRun()) return;
         const existing = findExisting(entry.id);
@@ -748,9 +793,9 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         if (pending.length === 0) continue;
 
         const result = await downloadSet(entry, pending);
-        if (!result.ok) continue;
+        if (!result.ok) { allOk = false; continue; }
 
-        const record = buildSequenceRecord(entry, existing, result.installed);
+        const record = await buildSequenceRecord(entry, existing, result.installed);
         post({ type: 'installSequence', record });
 
         const idx = existingSequences.findIndex((s) => s.id === record.id);
@@ -774,6 +819,11 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             }
         }
     }
+    // We're "synced through" only when every entry the manifest listed is
+    // installed locally — either there was nothing pending (already on disk)
+    // or every pending download succeeded this pass. A single failure leaves
+    // lastContentSyncAt unchanged; the next manifest tick gets another shot.
+    if (allOk) lastContentSyncAt = Date.now();
 }
 
 interface DownloadResult {
@@ -799,7 +849,11 @@ async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[])
                 status: 'error',
                 error: err.message,
             });
-            recordFailure(`download ${pf.kind}: ${err.message}`);
+            // Thumbs are decorative — don't let stale URLs trip the
+            // breaker before fseq/audio get a chance.
+            if (pf.kind !== 'thumb') {
+                recordFailure(`download ${pf.kind}: ${err.message}`);
+            }
             return { ok: false, installed };
         }
     }
@@ -1026,12 +1080,49 @@ function sanitize(s: string): string {
     return s.replace(/[^a-z0-9._-]/gi, '_');
 }
 
-function buildSequenceRecord(
+/** Cleared `cloud` so a future re-enable doesn't short-circuit `needsDownload`
+ *  when the file has since been reaped. */
+function buildDisabledSequenceRecord(
+    entry: CloudSeqManifestEntry,
+    existing: SequenceRecord | undefined,
+): SequenceRecord {
+    return {
+        ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
+        id: entry.id,
+        work: {
+            ...(existing?.work ?? { title: '', artist: '', length: 0 }),
+            title: entry.title ?? existing?.work?.title ?? '',
+            artist: entry.artist ?? existing?.work?.artist ?? '',
+        },
+        files: {},
+        cloud: undefined,
+        render_enabled: false,
+        updatedAt: Date.now(),
+    };
+}
+
+async function buildSequenceRecord(
     entry: CloudSeqManifestEntry,
     existing: SequenceRecord | undefined,
     installed: DownloadResult['installed'],
-): SequenceRecord {
-    const length = existing?.work?.length ?? (entry.duration_ms ? entry.duration_ms / 1000 : 0);
+): Promise<SequenceRecord> {
+    let length = existing?.work?.length ?? (entry.duration_ms ? entry.duration_ms / 1000 : 0);
+    // The cloud sometimes hasn't computed the song length yet (duration_ms 0/missing),
+    // and the sequence manager can bypass setting it entirely. A length of 0 makes the
+    // schedule end the slot almost immediately — the song plays ~1s then stops until a
+    // restart (where FileStorage recomputes length from the fseq header). Derive it from
+    // the freshly-downloaded fseq here so the very first play is correct too.
+    if (!length || length <= 0) {
+        const fseqPath = installed.fseq?.absPath ?? existing?.files?.fseq;
+        if (fseqPath) {
+            try {
+                const fhdr = await FSEQReaderAsync.readFSEQHeaderAsync(fseqPath);
+                length = (fhdr.frames * fhdr.msperframe) / 1000;
+            } catch (e) {
+                log('warn', `fseq length compute failed for ${fseqPath}: ${(e as Error).message}`);
+            }
+        }
+    }
     const next: SequenceRecord = {
         ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
         id: entry.id,
@@ -1161,6 +1252,7 @@ async function fetchLayout(): Promise<void> {
                 lastFetchedAt: layoutMeta.lastFetchedAt,
                 error: undefined,
             });
+            lastLayoutSyncAt = Date.now();
             return;
         }
 
@@ -1209,6 +1301,7 @@ async function fetchLayout(): Promise<void> {
             lastFetchedAt: newMeta.lastFetchedAt,
             error: undefined,
         });
+        lastLayoutSyncAt = Date.now();
         log('info', `layout fetch complete (zipExtracted=${zipExtracted})`);
         post({ type: 'layoutInstalled', layoutMeta: newMeta });
     } catch (e) {

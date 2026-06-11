@@ -131,6 +131,7 @@ interface CacheItem<K, V, P> {
     error?: Error;
     state: 'queued' | 'fetching' | 'ready' | 'error';
     priority: P;
+    generation: number; // the prefetch generation in which this was last (re)requested
 
     refCount: number;
     waiters: Set<Deferred<V>>;
@@ -189,6 +190,19 @@ export class PrefetchCache<K, V, P> {
     private cache = new Map<string, CacheItem<K, V, P>>();
     private activeFetches = new Set<string>();
 
+    /**
+     * Monotonic "generation" of prefetch requests. The driver bumps this once per
+     * pass (beginGeneration) before re-placing the requests that are still wanted.
+     * Items stamped with the current generation are "live" (in the current plan);
+     * older ones are "stale" and kept only as an LRU cache, below anything live.
+     */
+    private currentGeneration = 0;
+
+    /** Start a new prefetch generation. Call once per pass, before placing requests. */
+    beginGeneration(): number {
+        return ++this.currentGeneration;
+    }
+
     private static clearedStats(): CacheStatCounters {
         return {
             checkHits: 0,
@@ -226,6 +240,7 @@ export class PrefetchCache<K, V, P> {
             // Update existing item
             existing.lastPrefetchedAt = now;
             existing.lastAccessedAt = now;
+            existing.generation = this.currentGeneration; // re-requested this pass → live
             existing.expiry = Math.max(existing.expiry, request.expiry);
             if (this.options.priorityComparator(request.priority, existing.priority, now) < 0) {
                 existing.priority = request.priority;
@@ -245,6 +260,7 @@ export class PrefetchCache<K, V, P> {
                 waiters: new Set(),
                 lastPrefetchedAt: now,
                 lastAccessedAt: now,
+                generation: this.currentGeneration,
                 queuedAt: performance.now(),
                 expiry: request.expiry,
                 priority: request.priority,
@@ -427,88 +443,97 @@ export class PrefetchCache<K, V, P> {
      */
     cleanupAndDispatchRequests(now: number, notRequestedAfter: number): void {
         /*
-         * This is a blend of prefetch and LRU behavior.
-         * Sort order:
-         *   Things that must be kept first
-         *   Things (populated or not) that are coming sooner / used recently next
-         *   Things that are expired last
+         * Tiered priority. Lower tier number = kept first / dispatched first:
+         *   PINNED  in use (refCount>0) or in flight (fetching) — never dropped here
+         *   LIVE    re-requested in the current generation — sorted by the priority comparator
+         *   STALE   cached but not re-requested this generation — sorted by LRU (recency)
+         *   EXPIRED aged out / not touched in a long time — removed
+         *
+         * Budget counts COMMITTED MEMORY only: fetching (estCost, in flight) + ready
+         * (actualCost). A queued item is just an intention — it costs nothing and is
+         * freely droppable; it consumes budget only once we decide to dispatch it.
          */
+        const PINNED = 0;
+        const LIVE = 1;
+        const STALE = 2;
+        const EXPIRED = 3;
+
         interface PSortable {
             item: CacheItem<K, V, P>;
-            mustBeKept: boolean; // true if fetching or pinned
-            expired: boolean;
+            tier: number;
         }
 
         const toSort: PSortable[] = [];
         for (const [key, item] of this.cache.entries()) {
-            // Don't expire referenced items or active fetches
             if (item.refCount > 0 || this.activeFetches.has(key)) {
-                toSort.push({ item, mustBeKept: true, expired: false });
-                continue;
-            }
-
-            // Expire if not requested recently or aged out
-            if (
+                toSort.push({ item, tier: PINNED });
+            } else if (
                 (item.lastPrefetchedAt < notRequestedAfter && item.lastAccessedAt < notRequestedAfter) ||
                 item.expiry < now
             ) {
-                toSort.push({ item, mustBeKept: false, expired: true });
-                continue;
+                toSort.push({ item, tier: EXPIRED });
+            } else if (item.generation === this.currentGeneration) {
+                toSort.push({ item, tier: LIVE });
+            } else {
+                toSort.push({ item, tier: STALE });
             }
-
-            // Generic item
-            toSort.push({ item, mustBeKept: false, expired: false });
         }
 
-        //  Sort
         toSort.sort((a, b) => {
-            if (a.mustBeKept && !b.mustBeKept) return -1;
-            if (b.mustBeKept && !a.mustBeKept) return 1;
-            if (a.expired && !b.expired) return 1;
-            if (b.expired && !a.expired) return -1;
-            return this.options.priorityComparator(a.item.priority, b.item.priority, now);
+            if (a.tier !== b.tier) return a.tier - b.tier;
+            if (a.tier === LIVE) return this.options.priorityComparator(a.item.priority, b.item.priority, now);
+            if (a.tier === STALE) return b.item.lastAccessedAt - a.item.lastAccessedAt; // most-recently-used first
+            return 0;
         });
 
-        let cumulativeCost: number = 0;
+        // Running total of committed memory (fetching + ready) in priority order.
+        let committed = 0;
         for (const si of toSort) {
-            if (si.expired && !si.mustBeKept) {
-                this.removeItem(si.item.key);
+            const item = si.item;
+            const id = this.options.keyToId(item.key);
+            const pinned = si.tier === PINNED;
+
+            if (si.tier === EXPIRED && !pinned) {
+                this.removeItem(item.key);
                 this.stats.expiredItems++;
                 continue;
             }
 
-            const item = si.item;
-            const id = this.options.keyToId(item.key);
-
-            // TODO: Tally against budget and do any evictions
-            if (item.state === 'queued' || item.state === 'fetching') {
-                cumulativeCost += item.estCost;
-            }
-            if (item.state === 'ready') {
-                cumulativeCost += item.actualCost;
-            }
-
-            if (cumulativeCost > this.options.budgetLimit && !si.mustBeKept) {
-                // Kick it out
-                if (item.state === 'error' || item.state === 'ready') {
-                    this.removeItem(item.key);
-                    this.stats.evictedItems++;
-                }
+            // A queued/errored intention that's no longer in the plan: drop it. It holds
+            // no memory and will be re-requested next pass if it comes back into the plan.
+            if (si.tier === STALE && (item.state === 'queued' || item.state === 'error')) {
+                this.removeItem(item.key);
                 continue;
             }
 
-            // Prefetch candidate
-            if (
-                si.item.state === 'queued' &&
-                this.activeFetches.size < this.options.maxConcurrency &&
-                !this.activeFetches.has(id)
-            ) {
-                this.activeFetches.add(id);
-                si.item.state = 'fetching';
-                si.item.fetchingSince = performance.now();
-                const ac = new AbortController();
-                si.item.abort = ac;
-                this.fetchItem(si.item);
+            if (item.state === 'ready' || item.state === 'fetching') {
+                const cost = item.state === 'ready' ? item.actualCost : item.estCost;
+                // Over the committed-memory budget → evict the lowest-priority ready item.
+                // (Fetching items are in flight / PINNED and are left to finish.)
+                if (!pinned && item.state === 'ready' && committed + cost > this.options.budgetLimit) {
+                    this.removeItem(item.key);
+                    this.stats.evictedItems++;
+                    continue;
+                }
+                committed += cost;
+                continue;
+            }
+
+            // Live queued item: dispatch if it fits the budget and a slot is free.
+            if (item.state === 'queued') {
+                if (
+                    committed + item.estCost <= this.options.budgetLimit &&
+                    this.activeFetches.size < this.options.maxConcurrency &&
+                    !this.activeFetches.has(id)
+                ) {
+                    this.activeFetches.add(id);
+                    item.state = 'fetching';
+                    item.fetchingSince = performance.now();
+                    item.abort = new AbortController();
+                    committed += item.estCost; // now in-flight memory
+                    this.fetchItem(item);
+                }
+                // else: leave it queued (live); retried next pass.
             }
         }
     }
@@ -617,22 +642,49 @@ export class PrefetchCache<K, V, P> {
 export interface NeededTimePriority {
     neededTime: number;
     neededThroughTime?: number;
+    /** Confidence tier: lower = higher priority. 0 = happy-path (foreground), then
+     *  background, then speculative (skip/down-stack branches). Defaults to 0. */
+    tier?: number;
 }
+/**
+ * Priority for time-windowed needs. `timeOfIrrelevance` is "now". Each item has a
+ * need window [neededTime, neededThroughTime]. Relative to now we bucket as:
+ *
+ *   current (0): now is inside the window  — being used right now; most valuable
+ *   future  (1): now is before the window  — sooner need is more valuable
+ *   past    (2): now is after the window    — need elapsed/superseded; evictable
+ *
+ * Lower return value = higher priority (kept; sorted/dispatched first). When a new
+ * play supersedes an old one (both momentarily `current`), the most-recently-started
+ * wins.
+ */
 export const needTimePriorityCompare = (a: NeededTimePriority, b: NeededTimePriority, timeOfIrrelevance: number) => {
-    const nta = a.neededThroughTime ?? a.neededTime;
-    const ntb = b.neededThroughTime ?? b.neededTime;
-    if (nta >= timeOfIrrelevance && ntb >= timeOfIrrelevance) {
-        // Sooner need is higher priority
+    const now = timeOfIrrelevance;
+    // Confidence tier dominates: happy-path (0) > background (1) > speculative (2).
+    const tierA = a.tier ?? 0;
+    const tierB = b.tier ?? 0;
+    if (tierA !== tierB) return tierA - tierB;
+    const classify = (p: NeededTimePriority): number => {
+        const through = p.neededThroughTime ?? p.neededTime;
+        if (now < p.neededTime) return 1; // future: need hasn't started
+        if (now <= through) return 0; // current: now within [neededTime, neededThroughTime]
+        return 2; // past: window elapsed / superseded
+    };
+    const ca = classify(a);
+    const cb = classify(b);
+    if (ca !== cb) return ca - cb; // current < future < past
+
+    if (ca === 0) {
+        // Both current (e.g. a fresh jukebox play overlapping a superseded one):
+        // the most-recently-started is the real current play.
+        return b.neededTime - a.neededTime;
+    }
+    if (ca === 1) {
+        // Both future: sooner need is higher priority (deeper in the queue = later = less valuable).
         return a.neededTime - b.neededTime;
     }
-    if (nta >= timeOfIrrelevance && ntb < timeOfIrrelevance) {
-        // Actual need is higher priority
-        return -1;
-    }
-    if (ntb >= timeOfIrrelevance && nta < timeOfIrrelevance) {
-        // Actual need is higher priority
-        return 1;
-    }
-    // LRU
-    return ntb - nta;
+    // Both past: more-recently-needed (later end) is higher priority (LRU-ish).
+    const ta = a.neededThroughTime ?? a.neededTime;
+    const tb = b.neededThroughTime ?? b.neededTime;
+    return tb - ta;
 };

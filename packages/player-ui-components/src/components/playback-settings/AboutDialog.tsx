@@ -36,8 +36,15 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
             git: playerVersion.git,
             packages: playerVersion.packages,
             processes: playerVersion.processes,
+            system: playerVersion.system,
         };
         return JSON.stringify(ordered, null, 2);
+    }, [playerVersion]);
+
+    const formattedRam = React.useMemo(() => {
+        const bytes = playerVersion?.system?.totalMemBytes;
+        if (!bytes) return undefined;
+        return `${(bytes / 1e9).toFixed(1)} GB`;
     }, [playerVersion]);
 
     return (
@@ -64,7 +71,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                             Authors
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                            Crafted by Aakanksha Thokare, EZRGB, and community contributors (see GitHub)
+                            Crafted by EZRGB, I9, and community contributors (see GitHub)
                         </Typography>
                     </Box>
 
@@ -180,6 +187,14 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                     : 'N/A'}
                             </Typography>
                         </Box>
+                        {formattedRam && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    System RAM:
+                                </Typography>
+                                <Typography variant="body2">{formattedRam}</Typography>
+                            </Box>
+                        )}
                         <Box sx={{ mt: 1 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                                 <Typography variant="caption" color="text.secondary">

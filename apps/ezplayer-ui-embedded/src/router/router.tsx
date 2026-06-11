@@ -103,16 +103,12 @@ const EmbeddedSettingsPage = () => {
     );
 };
 
+// Order mirrors the Electron app's sidebar (apps/ezplayer-ui-electron/src/router).
 const allMenuRoutes: MenuRoute[] = [
     {
-        path: ROUTES.SHOWSTATUS,
-        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
-        sidebar: { icon: <InfoRounded />, label: 'Show Status' },
-    },
-    {
-        path: ROUTES.JUKEBOXSCR,
-        element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} />,
-        sidebar: { icon: <PlayArrow />, label: 'Jukebox' },
+        path: ROUTES.PLAYER,
+        element: <PlayerScreen title="Player" statusArea={getStatusArea()} allowVolumeControl={!isKiosk} />,
+        sidebar: { icon: <TableChartTwoToneIcon />, label: 'Player' },
     },
     {
         path: ROUTES.SONGS,
@@ -139,9 +135,14 @@ const allMenuRoutes: MenuRoute[] = [
         sidebar: { icon: <TableChartTwoToneIcon />, label: 'Schedule' },
     },
     {
-        path: ROUTES.PLAYER,
-        element: <PlayerScreen title="Player" statusArea={getStatusArea()} />,
-        sidebar: { icon: <TableChartTwoToneIcon />, label: 'Player' },
+        path: ROUTES.JUKEBOXSCR,
+        element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} />,
+        sidebar: { icon: <PlayArrow />, label: 'Jukebox' },
+    },
+    {
+        path: ROUTES.SHOWSTATUS,
+        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
+        sidebar: { icon: <InfoRounded />, label: 'Show Status' },
     },
     {
         path: ROUTES.PREVIEW_3D,
@@ -173,7 +174,7 @@ const routes: RouteObject[] = [
         children: [
             {
                 index: true,
-                element: <Navigate to={ROUTES.SHOWSTATUS} replace />,
+                element: <Navigate to={ROUTES.PLAYER} replace />,
             },
             ...toRouteChildren(menuRoutes),
         ],

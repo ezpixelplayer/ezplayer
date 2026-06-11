@@ -19,7 +19,6 @@ import type {
     SequenceRecord,
     PlaylistRecord,
     ScheduledPlaylist,
-    PlaybackActions,
     PlayAction,
     PlaybackLogDetail,
     PrefetchCacheStats,
@@ -79,6 +78,7 @@ import { performance } from 'perf_hooks';
 import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 
 import process from 'node:process';
+import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
@@ -92,6 +92,7 @@ import {
     setEzvcConfig,
     setEzvcControlEnabled,
     setEzvcPlaylist,
+    setEzvcResyncCallback,
     setEzvcPlaying,
     setEzvcSchedule,
 } from './ezvcparent';
@@ -278,7 +279,9 @@ function sendPlayerStateUpdate() {
     if (ps.curPLActions?.actions?.length) {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
-            if (!playStatus.now_playing) {
+            // Only "now playing" if it has actually started; a not-yet-started action
+            // (within the readahead window) is upcoming, not playing.
+            if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
                 playStatus.now_playing = actionToPlayingItem(false, pla);
                 playStatus.status = isPaused ? 'Paused' : 'Playing';
             } else {
@@ -356,7 +359,8 @@ function sendRemoteUpdate() {
     if (ps.curPLActions?.actions?.length) {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
-            if (!now_playing) {
+            // Only "now playing" if it has actually started; otherwise it's upcoming.
+            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
                 now_playing = actionToPlayingItem(false, pla);
             } else {
                 upcoming = actionToPlayingItem(false, pla);
@@ -432,7 +436,8 @@ function configureEzvc() {
     if (ezvcConfigInitialized && key === lastEzvcKey) return;
     ezvcConfigInitialized = true;
     lastEzvcKey = key;
-    setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken }, (next) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
         if (!next.songId) return;
         processCommand({
             command: 'playsong',
@@ -441,6 +446,12 @@ function configureEzvc() {
             requestId: randomUUID(),
             priority: 3,
         });
+    });
+    setEzvcResyncCallback(() => {
+        // Reset our own dedup so sendEzvcUpdate() pushes the full snapshot.
+        // The worker has already cleared its hash caches.
+        lastEzvcPlayingKey = undefined;
+        sendEzvcUpdate();
     });
 }
 
@@ -487,7 +498,8 @@ function sendEzvcUpdate() {
         for (const pla of ps.curPLActions.actions) {
             if (pla.end) continue;
             const pi = actionToPlayingItem(false, pla);
-            if (!now_playing) now_playing = pi;
+            // Only "now playing" if it has actually started; otherwise it's upcoming.
+            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) now_playing = pi;
             else if (upcomingItems.length < 12) upcomingItems.push(pi);
             else break;
         }
@@ -586,12 +598,17 @@ function sendEzvcUpdate() {
     }
 }
 
+// Max volume slew rate: ramp 1% per this many ms toward the target. The playback
+// loop cadence varies wildly (tight while a show runs, much slower when idle), so
+// we scale the step to elapsed time rather than moving a fixed 1% per call — that
+// way the UI never crawls when the loop is slow, while staying gentle on the ear:
+// a 200ms gap moves ~20%, a 50ms gap ~5%, and a full 0-100 swing takes ~1s.
+const VOLUME_SLEW_INTERVAL_MS = 10;
 let lastVolCheck: number = Date.now();
 function doVolumeAdjust(dn: number) {
-    if (dn - lastVolCheck < 10) return;
-    lastVolCheck = dn;
     const settings = latestSettings;
     if (!settings || !settings.volumeControl) {
+        lastVolCheck = dn; // unconfigured: keep the slew clock fresh, don't bank credit
         return;
     }
     const volsched = getActiveVolumeSchedule(settings.volumeControl);
@@ -600,9 +617,21 @@ function doVolumeAdjust(dn: number) {
         tgtvol = volsched.volumeLevel;
     }
 
-    // Change 1% at a time toward target
-    if (tgtvol > volume) ++volume;
-    if (tgtvol < volume) --volume;
+    const diff = tgtvol - volume;
+    if (diff === 0) {
+        lastVolCheck = dn; // at target: reset so a future change starts from now
+        return;
+    }
+
+    const elapsed = dn - lastVolCheck;
+    if (elapsed < VOLUME_SLEW_INTERVAL_MS) return; // throttle: at most 1% per interval
+
+    // One 1% step per whole interval elapsed, capped by the remaining distance.
+    const maxSteps = Math.floor(elapsed / VOLUME_SLEW_INTERVAL_MS);
+    const step = Math.min(Math.abs(diff), maxSteps);
+    volume += Math.sign(diff) * step;
+    // Consume only the time we used so a sub-interval remainder carries forward.
+    lastVolCheck += step * VOLUME_SLEW_INTERVAL_MS;
     volumeSF = muted ? 0 : volume / 100;
 }
 
@@ -802,11 +831,11 @@ const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 // Playback params
 const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
-    sendAudioInAdvanceMs: 200,
-    sendAudioChunkMs: 100, // Should be a multiple of 10 because of 44100kHz
+    sendAudioInAdvanceMs: 300, // audio generation lead (all consumers); modest margin for cloud/network jitter
+    sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
+    audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
-    audioPrefetchTime: 24 * 3600 * 1000,
-    maxAudioPrefetchItems: 100,
+    audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
     interactiveCommandPrefetchDelay: 500,
@@ -817,6 +846,80 @@ const playbackParams = {
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
 };
+
+type ResolvedPlay = {
+    seqId: string;
+    seq?: SequenceRecord;
+    atTime: number;
+    offsetMS: number;
+    durationMS?: number;
+};
+
+/** Prefetch confidence tiers (lower = higher priority). */
+const PREFETCH_TIER = { HAPPY: 0, BACKGROUND: 1, SPECULATIVE: 2 } as const;
+
+// Speculative branches (skip / down-stack) only need the immediate target ready, not
+// the whole post-skip timeline — look just a few seconds ahead, never beyond the
+// committed horizon.
+const SPECULATIVE_HORIZON_MS = 5000;
+
+/**
+ * Run a fork of the player state forward over `horizon` and return the sequences it
+ * actually plays — the current play plus future starts, with preemptions resolved by
+ * the run itself. This is the prefetch "generation": the concrete near-future play
+ * list, instead of the union of every schedule/stack/queue source.
+ *
+ * `mutate` applies a hypothetical command (skip, stop) to the fork first, so the same
+ * enumerator yields the speculative "what would play if they skipped" branches.
+ */
+function enumerateResolvedPlays(
+    runState: PlayerRunState | undefined,
+    fromTime: number,
+    horizon: number,
+    schedahead: number,
+    mutate?: (snap: PlayerRunState, at: number) => void,
+): ResolvedPlay[] {
+    if (!runState) return [];
+    const plays: ResolvedPlay[] = [];
+    const seen = new Set<string>();
+    try {
+        const snap = runState.snapshot();
+        if (mutate) mutate(snap, fromTime);
+
+        // The current play started before `fromTime`, so it isn't a future log event —
+        // take it from the resolved current action.
+        const cur = snap.getUpcomingItems(horizon, schedahead, 1)?.curPLActions?.actions?.[0];
+        if (cur && !cur.end && cur.seqId && cur.seq) {
+            plays.push({
+                seqId: cur.seqId,
+                seq: cur.seq,
+                atTime: cur.atTime,
+                offsetMS: cur.offsetMS ?? 0,
+                durationMS: cur.durationMS,
+            });
+            seen.add(`${cur.seqId}@${cur.atTime}`);
+        }
+
+        // Future starts within the horizon, resolved (preemptions and all) by the run.
+        const log = snap.readOutScheduleUntil(fromTime + horizon, 200);
+        const starts = log.filter(
+            (l) => (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') && !!l.sequenceId,
+        );
+        for (let i = 0; i < starts.length; i++) {
+            const s = starts[i];
+            const key = `${s.sequenceId}@${s.eventTime}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const seq = snap.sequencesById.get(s.sequenceId!);
+            const nextTime = i + 1 < starts.length ? starts[i + 1].eventTime : fromTime + horizon;
+            const durationMS = seq?.work?.length ? seq.work.length * 1000 : nextTime - s.eventTime;
+            plays.push({ seqId: s.sequenceId!, seq, atTime: s.eventTime, offsetMS: s.timeIntoSeqMS ?? 0, durationMS });
+        }
+    } catch (e) {
+        emitError(`enumerateResolvedPlays failed: ${(e as Error).message}`);
+    }
+    return plays;
+}
 
 let latestSettings: PlaybackSettings | undefined = undefined;
 let lastRfRemoteToken: string | undefined = undefined;
@@ -901,6 +1004,27 @@ const playbackStats: PlaybackStatistics = {
         backgroundBlendTimePeriod: 0,
     },
 };
+
+// Scale cache budgets to available RAM so we fit on smaller devices. The defaults
+// above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
+// playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
+{
+    const totalMemGB = totalmem() / 1e9;
+    if (totalMemGB < 6) {
+        playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
+        playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
+    }
+    emitInfo(
+        `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
+            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB`,
+    );
+    if (totalMemGB < 2.5) {
+        emitError(
+            `Low system memory: ${totalMemGB.toFixed(1)} GB. EZPlayer recommends at least 4 GB; ` +
+                `audio/FSEQ caches were reduced and playback may be unstable.`,
+        );
+    }
+}
 
 function resetCumulativeCounters() {
     playbackStats.iteration = 0;
@@ -1440,6 +1564,29 @@ let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
 let audioExportBuffer: SharedArrayBuffer | undefined = undefined;
 let audioExportRing: AudioChunkRingBuffer | undefined = undefined;
 
+/**
+ * Apply a complementary raised-cosine ramp to the first and last `overlapFrames`
+ * frames of an interleaved buffer, in place. Adjacent chunks share `overlapFrames`
+ * of identical audio scheduled at the same time; the rising head of one and the
+ * falling tail of the previous sum to unity, so the seam reconstructs exactly while
+ * the per-buffer resampling edge artifact is weighted to zero. Mutates `interleaved`.
+ */
+function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlapFrames: number) {
+    const totalFrames = interleaved.length / channels;
+    if (overlapFrames <= 0 || totalFrames < overlapFrames * 2) return;
+    for (let k = 0; k < overlapFrames; k++) {
+        const theta = (Math.PI * (k + 0.5)) / overlapFrames;
+        const rise = 0.5 - 0.5 * Math.cos(theta); // 0 -> 1 across the head
+        const fall = 0.5 + 0.5 * Math.cos(theta); // 1 -> 0 across the tail (rise + fall === 1)
+        const headBase = k * channels;
+        const tailBase = (totalFrames - overlapFrames + k) * channels;
+        for (let ch = 0; ch < channels; ch++) {
+            interleaved[headBase + ch] *= rise;
+            interleaved[tailBase + ch] *= fall;
+        }
+    }
+}
+
 /** Publish to the ring buffer (for web clients) then send via IPC (for Electron audio window). */
 function sendAudioChunk(
     samples: Float32Array,
@@ -1447,8 +1594,9 @@ function sendAudioChunk(
     incarnation: number,
     sampleRate: number,
     channels: number,
+    advanceSamples: number,
 ) {
-    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels);
+    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels, advanceSamples);
     const buf = samples.buffer as ArrayBuffer;
     send(
         {
@@ -1459,6 +1607,7 @@ function sendAudioChunk(
                 buffer: buf,
                 playAtRealTime,
                 incarnation,
+                advanceSamples,
             },
         },
         [buf],
@@ -1773,111 +1922,95 @@ async function processQueue() {
             const doFseqPrefetch = true;
 
             if (doAudioPrefetch) {
-                // Issue MP3 prefetches
-                function prefetchActionMedia(actions?: PlaybackActions) {
-                    if (!actions) return;
-
-                    for (const action of actions?.actions ?? []) {
-                        if (action.atTime > targetFrameRTC + playbackParams.audioPrefetchTime) break;
-                        if (action.end) continue;
-
-                        if (action.seqId) {
-                            emitAudioDebug(`Do prefetch of ${action.seqId}`);
-                            const seq = action.seq;
-                            let saf = seq?.files?.audio;
-                            if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
-                            if (saf) {
-                                emitAudioDebug(`Prefetch Audio ${saf}`);
-                                mp3Cache!.prefetchMP3({
-                                    mp3file: saf,
-                                    needByTime: action.atTime,
-                                    neededThroughTime: action.atTime + (action.durationMS ?? 600000),
-                                    expiry: targetFrameRTC + 7 * 24 * 3600_000,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                const upcomingAudio = foregroundPlayerRunState
-                    ?.snapshot()
-                    ?.getUpcomingItems(
-                        playbackParams.audioPrefetchTime,
-                        playbackParams.scheduleLoadTime,
-                        playbackParams.maxAudioPrefetchItems,
-                    );
-
                 mp3Cache.setNow(targetFrameRTC);
-                prefetchActionMedia(upcomingAudio.curPLActions);
-                upcomingAudio.stackedPLActions?.forEach((s) => prefetchActionMedia(s));
-                upcomingAudio.upcomingSchedules?.forEach((s) => prefetchActionMedia(s));
-                upcomingAudio.interactive?.forEach((s) => prefetchActionMedia(s));
-                upcomingAudio.heapSchedules?.forEach((s) => prefetchActionMedia(s));
+                mp3Cache.beginGeneration(); // new prefetch pass: items requested below are "live"
+                const audioH = playbackParams.audioPrefetchTime;
+                const sched = playbackParams.scheduleLoadTime;
+                const prefetchAudio = (plays: ResolvedPlay[], tier: number) => {
+                    for (const play of plays) {
+                        let saf = play.seq?.files?.audio;
+                        if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
+                        if (!saf) continue;
+                        mp3Cache!.prefetchMP3({
+                            mp3file: saf,
+                            needByTime: play.atTime,
+                            neededThroughTime: play.atTime + (play.durationMS ?? 600000),
+                            estDurationSec: play.durationMS ? play.durationMS / 1000 : undefined,
+                            tier,
+                            expiry: targetFrameRTC + 7 * 24 * 3600_000,
+                        });
+                    }
+                };
+                // Audio is foreground-only: happy path + speculative skip / down-stack branches.
+                const specH = Math.min(audioH, SPECULATIVE_HORIZON_MS);
+                prefetchAudio(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, audioH, sched),
+                    PREFETCH_TIER.HAPPY,
+                );
+                prefetchAudio(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
+                        s.skipCurrentSequence(undefined, at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
+                prefetchAudio(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
+                        s.stopImmediately(at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
                 mp3Cache.dispatch();
             }
 
             if (doFseqPrefetch) {
-                // See if there's anything coming up
-                const upcomingForeground = foregroundPlayerRunState?.getUpcomingItems(
-                    playbackParams.foregroundFseqPrefetchTime,
-                    playbackParams.scheduleLoadTime,
-                );
-                const upcomingBackground = backgroundPlayerRunState?.getUpcomingItems(
-                    playbackParams.backgroundFseqPrefetchTime,
-                    playbackParams.scheduleLoadTime,
-                );
-
-                // Issue FSEQ prefetches
-                function prefetchActionFseq(runState: PlayerRunState, actions?: PlaybackActions) {
-                    if (!actions) return;
-
-                    for (const action of actions?.actions ?? []) {
-                        if (!action.seqId) continue;
-                        if (action.end) continue;
-                        const actStart = action.atTime;
-                        const seq = action.seq;
-                        if (!seq) continue;
-                        // Always fetch header
-                        let fsf = seq.files?.fseq;
-                        if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
-                        if (fsf) {
-                            fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: actStart });
-                        }
-
-                        // Be less aggressive about fetching the frames
-                        if (actStart >= targetFrameRTC + playbackParams.foregroundFseqPrefetchTime) continue;
-                        let ourDur = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime - actStart;
-                        if (action.durationMS !== undefined) ourDur = Math.min(ourDur, action.durationMS);
-                        if (action.seqId) {
-                            emitFrameDebug(`Do fseq prefetch of ${action.seqId}`);
-                            if (fsf) {
-                                emitFrameDebug(
-                                    `Prefetch FSEQ ${fsf} @${action.offsetMS}:${ourDur}ms (${actStart} vs ${targetFrameRTC})`,
-                                );
-                                fseqCache!.prefetchSeqTimes({
-                                    fseqfile: fsf,
-                                    needByTime: actStart,
-                                    startTime: action.offsetMS ?? 0,
-                                    durationms: ourDur,
-                                });
-                            }
-                        }
-                    }
-                }
-
                 fseqCache.setNow(targetFrameRTC);
-                prefetchActionFseq(foregroundPlayerRunState, upcomingForeground.curPLActions);
-                upcomingForeground.stackedPLActions?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-                upcomingForeground.upcomingSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-                upcomingForeground.interactive?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-                upcomingForeground.heapSchedules?.forEach((s) => prefetchActionFseq(foregroundPlayerRunState, s));
-
-                prefetchActionFseq(backgroundPlayerRunState, upcomingBackground.curPLActions);
-                upcomingBackground.stackedPLActions?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-                upcomingBackground.upcomingSchedules?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-                upcomingBackground.interactive?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-                upcomingBackground.heapSchedules?.forEach((s) => prefetchActionFseq(backgroundPlayerRunState, s));
-
+                fseqCache.beginGeneration(); // new prefetch pass (covers fg + bg): requested items are "live"
+                const sched = playbackParams.scheduleLoadTime;
+                const fgH = playbackParams.foregroundFseqPrefetchTime;
+                const bgH = playbackParams.backgroundFseqPrefetchTime;
+                const frameGate = targetFrameRTC + playbackParams.foregroundFseqPrefetchTime;
+                const prefetchFseq = (plays: ResolvedPlay[], tier: number) => {
+                    for (const play of plays) {
+                        let fsf = play.seq?.files?.fseq;
+                        if (fsf && !path.isAbsolute(fsf)) fsf = path.join(showFolder!, fsf);
+                        if (!fsf) continue;
+                        // Always fetch the header.
+                        fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: play.atTime, tier });
+                        // Frames only for the imminent window.
+                        if (play.atTime >= frameGate) continue;
+                        let ourDur = frameGate - play.atTime;
+                        if (play.durationMS !== undefined) ourDur = Math.min(ourDur, play.durationMS);
+                        fseqCache!.prefetchSeqTimes({
+                            fseqfile: fsf,
+                            needByTime: play.atTime,
+                            startTime: play.offsetMS,
+                            durationms: ourDur,
+                            tier,
+                        });
+                    }
+                };
+                // Foreground happy path, then background, then speculative skip / down-stack of fg.
+                prefetchFseq(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, fgH, sched),
+                    PREFETCH_TIER.HAPPY,
+                );
+                prefetchFseq(
+                    enumerateResolvedPlays(backgroundPlayerRunState, targetFrameRTC, bgH, sched),
+                    PREFETCH_TIER.BACKGROUND,
+                );
+                const specH = Math.min(fgH, SPECULATIVE_HORIZON_MS);
+                prefetchFseq(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
+                        s.skipCurrentSequence(undefined, at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
+                prefetchFseq(
+                    enumerateResolvedPlays(foregroundPlayerRunState, targetFrameRTC, specH, sched, (s, at) =>
+                        s.stopImmediately(at),
+                    ),
+                    PREFETCH_TIER.SPECULATIVE,
+                );
                 fseqCache.dispatch();
             }
 
@@ -1890,7 +2023,9 @@ async function processQueue() {
                 }
                 ms = Math.ceil(ms);
                 const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
-                sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1);
+                // Silence carries no overlap: advance by its full length. Transitions to/from
+                // music fade naturally against the music chunk's ramped edge.
+                sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1, quiet.length);
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -1964,23 +2099,38 @@ async function processQueue() {
                             const sampleOffset = Math.floor(
                                 (Math.floor(audioAction.offsetMS ?? 0) * sampleRate) / 1000,
                             );
-                            const msToSend = Math.min(playbackParams.sendAudioChunkMs);
-                            const nSamplesToSend = Math.floor((msToSend * audio.sampleRate) / 1000);
+                            const msToSend = playbackParams.sendAudioChunkMs; // hop
+                            const hopFrames = Math.round((msToSend * audio.sampleRate) / 1000);
+                            const overlapFrames = Math.round(
+                                (playbackParams.audioCrossfadeMs * audio.sampleRate) / 1000,
+                            );
+                            // Window = hop + overlap. The trailing overlap reads ahead into the
+                            // next hop's audio (out-of-range past end reads as 0), and is ramped
+                            // down so it crossfades with the next chunk's ramped-up head.
+                            const windowFrames = hopFrames + overlapFrames;
 
                             const chunk = buildInterleavedAudioChunkFromSegments({
                                 channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,
                                 sampleOffset,
-                                nSamples: nSamplesToSend,
+                                nSamples: windowFrames,
                                 volumeSF,
                             });
+                            applyCrossfadeRamp(chunk, channels, overlapFrames);
 
                             const playAtRealTime = Math.floor(
                                 audioPlayerRunTime + (playbackParams?.audioTimeAdjMs ?? 0),
                             );
 
                             if (audioPlayerRunTime >= targetFrameRTC) {
-                                sendAudioChunk(chunk, playAtRealTime, curAudioSyncNum, audio.sampleRate, channels);
+                                sendAudioChunk(
+                                    chunk,
+                                    playAtRealTime,
+                                    curAudioSyncNum,
+                                    audio.sampleRate,
+                                    channels,
+                                    hopFrames * channels,
+                                );
                             } else {
                                 ++playbackStats.skippedAudioChunksCumulative;
                             }

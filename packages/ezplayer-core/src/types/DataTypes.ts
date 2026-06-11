@@ -6,6 +6,7 @@ export interface EZPlayerVersions {
     git: { [key: string]: string };
     packages: { [pkg: string]: string };
     processes: { [proc: string]: string | undefined };
+    system?: { totalMemBytes: number };
 }
 
 export interface SongDetails {
@@ -215,6 +216,17 @@ export interface CloudSeqManifestEntry {
     pvid?: { file_id: string; file_time: number };
     /** Direct (presigned) thumbnail URL when available. */
     thumb?: string;
+    /** Cloud-side lifecycle marker:
+     *  - `active` (default): sync normally.
+     *  - `disabled`: cloud no longer wants this sequence on the player —
+     *    grant flipped, user toggled `user_seq_render.enabled` off, or (later)
+     *    vendor retracted. File refs MAY be omitted for disabled entries; the
+     *    player should not download them, should mark the local entry
+     *    unavailable so the playback engine drops it at bake time, and lets
+     *    its file-sweep reclaim the on-disk files once no baked state
+     *    references them.
+     *  Absent value treated as `active` for back-compat. */
+    status?: 'active' | 'disabled';
 }
 
 /** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
@@ -226,6 +238,8 @@ export interface CloudSequenceProgress {
     vendor?: string;
     /** file_ids of every file the manifest lists for this sequence (fseq/audio/thumb). */
     fileIds: string[];
+    /** Cloud said disabled — no files; GC sweep reclaims on next pass. */
+    disabled?: boolean;
 }
 
 /** Per-file status used by the cloud content sync. */
@@ -330,6 +344,8 @@ export interface CombinedPlayerStatus {
 
     show?: {
         show_name?: string;
+        viewer_control_enabled?: boolean;
+        viewer_control_mode?: 'disabled' | 'remote-falcon' | 'ezplayer';
     };
 }
 
@@ -525,12 +541,16 @@ export interface ViewerControlState {
      *  existing cloud identity — and reuses `schedule` for the live window. */
     type: 'disabled' | 'remote-falcon' | 'ezplayer';
     remoteFalconToken?: string;
-    schedule: ViewerControlScheduleEntry[];
+    /** Optional in the type because legacy persisted shapes can lack it.
+     *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
+     *  in `SettingsScheduleUtils.ts` default to `[]`. */
+    schedule?: ViewerControlScheduleEntry[];
 }
 
 export interface VolumeControlState {
     defaultVolume: number;
-    schedule: VolumeScheduleEntry[];
+    /** Optional for the same reason as `ViewerControlState.schedule`. */
+    schedule?: VolumeScheduleEntry[];
 }
 
 export interface JukeboxSettings {
@@ -570,6 +590,9 @@ export interface CloudPlayerSettings {
     volume_control_updated?: number;
     viewer_control_state?: ViewerControlState;
     viewer_control_state_updated?: number;
+    /** Show display name from `user_show_settings.show_name`. Surfaced in the
+     *  player's status pane and as the title of the cloud-served Show Status. */
+    show_name?: string;
 }
 
 /** Per-file identity for the layout files we have on disk. Lets the worker decide

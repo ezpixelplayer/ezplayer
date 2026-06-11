@@ -822,6 +822,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const filteredAndSortedSongs = useMemo(() => {
         return (sequenceData || [])
             ?.filter((song) => {
+                if (song.deleted || song.render_enabled === false) return false;
                 // Text search filter for title/artist
                 const matchesSearch =
                     song.work?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||

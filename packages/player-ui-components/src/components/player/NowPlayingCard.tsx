@@ -1,16 +1,34 @@
-import { Card, CardContent, Typography, Chip, IconButton, Slider, Button } from '@mui/material';
+import {
+    Card,
+    CardContent,
+    Typography,
+    Chip,
+    IconButton,
+    Button,
+    LinearProgress,
+    Tooltip,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+} from '@mui/material';
 import { Box } from '../box/Box';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
-import { VolumeOff, VolumeUp, Refresh } from '@mui/icons-material';
+import { VolumeOff, VolumeUp, Refresh, Tune, Close } from '@mui/icons-material';
+import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { AppDispatch } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
+import { AudioSettings } from '../playback-settings/sections/AudioSettings';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
     className?: string;
     compact?: boolean;
+    /** Allow changing the player's live master volume (mute + level) and show a gear
+     *  that pops the default/scheduled volume settings. When false, the volume is a
+     *  read-only meter. */
+    allowVolumeControl?: boolean;
 }
 
 const formatTime = (timestamp?: number | string) => {
@@ -25,7 +43,12 @@ const formatTime = (timestamp?: number | string) => {
     });
 };
 
-export const NowPlayingCard = ({ player, className, compact = false }: NowPlayingCardProps) => {
+export const NowPlayingCard = ({
+    player,
+    className,
+    compact = false,
+    allowVolumeControl = false,
+}: NowPlayingCardProps) => {
     if (player.ptype !== 'EZP') {
         return null;
     }
@@ -38,6 +61,8 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
     const volume = player.volume?.level ?? 100;
     const muted = player.volume?.muted ?? false;
     const dispatch = useDispatch<AppDispatch>();
+
+    const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
 
     return (
         <Card
@@ -61,28 +86,42 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                     </Typography>
                 </Box>
 
+                {/* The level is automated toward the default/scheduled target, so it's shown
+                    read-only here — change it via the settings dialog. Mute is a live toggle
+                    (operator contexts only); the gear opens the volume settings. */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 2 }}>
-                    <IconButton
-                        size="small"
-                        onClick={async () => {
-                            if (!muted) {
-                                await dispatch(callImmediateCommand({ command: 'setvolume', mute: true })).unwrap();
-                            } else {
-                                await dispatch(callImmediateCommand({ command: 'setvolume', mute: false })).unwrap();
-                            }
-                        }}
-                    >
-                        {muted || volume == 0 ? <VolumeOff fontSize="small" /> : <VolumeUp fontSize="small" />}
-                    </IconButton>
-
-                    <Slider
-                        size="small"
-                        min={0}
-                        max={100}
-                        disabled={true}
+                    {allowVolumeControl ? (
+                        <IconButton
+                            size="small"
+                            aria-label={muted ? 'Unmute' : 'Mute'}
+                            onClick={() => dispatch(callImmediateCommand({ command: 'setvolume', mute: !muted }))}
+                        >
+                            {muted || volume === 0 ? <VolumeOff fontSize="small" /> : <VolumeUp fontSize="small" />}
+                        </IconButton>
+                    ) : muted || volume === 0 ? (
+                        <VolumeOff fontSize="small" color="disabled" />
+                    ) : (
+                        <VolumeUp fontSize="small" color="disabled" />
+                    )}
+                    <LinearProgress
+                        variant="determinate"
                         value={muted ? 0 : volume}
-                        sx={{ width: compact ? 80 : 120 }}
+                        sx={{ width: compact ? 80 : 120, height: 6, borderRadius: 3 }}
                     />
+                    <Typography variant="caption" color="text.secondary">
+                        {muted ? 0 : volume}%
+                    </Typography>
+                    {allowVolumeControl && (
+                        <Tooltip title="Volume settings">
+                            <IconButton
+                                size="small"
+                                aria-label="Open volume settings"
+                                onClick={() => setAudioSettingsOpen(true)}
+                            >
+                                <Tune fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </Box>
 
                 {/* Now Playing Section */}
@@ -168,6 +207,27 @@ export const NowPlayingCard = ({ player, className, compact = false }: NowPlayin
                         </Button>
                     </Box>
                 )}
+
+                {/* Default/scheduled volume settings, popped over the page (operator contexts). */}
+                <Dialog
+                    open={audioSettingsOpen}
+                    onClose={() => setAudioSettingsOpen(false)}
+                    maxWidth="md"
+                    fullWidth
+                    PaperProps={{ sx: { maxHeight: '90vh' } }}
+                >
+                    <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="h5">Audio</Typography>
+                        <Tooltip title="Close">
+                            <IconButton onClick={() => setAudioSettingsOpen(false)} size="small" aria-label="close">
+                                <Close />
+                            </IconButton>
+                        </Tooltip>
+                    </DialogTitle>
+                    <DialogContent dividers>
+                        <AudioSettings />
+                    </DialogContent>
+                </Dialog>
             </CardContent>
         </Card>
     );

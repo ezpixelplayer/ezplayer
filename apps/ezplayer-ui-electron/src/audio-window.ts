@@ -12,7 +12,10 @@ export class RealTimeChunkPlayer {
 
     constructor() {
         const AC = window.AudioContext || (window as any).webkitAudioContext;
-        this.audioCtx = new AC();
+        // Pin the context to 48 kHz so it matches the curated/normalized audio rate.
+        // Source PCM already at 48 kHz then needs no per-chunk resampling (clean seams);
+        // any stray 44.1 kHz content is resampled here but masked by the chunk crossfade.
+        this.audioCtx = new AC({ sampleRate: 48000 });
         this.audioCtxIncarnation++;
         this.resetSchedulingState();
     }
@@ -30,7 +33,7 @@ export class RealTimeChunkPlayer {
      * - Schedules contiguous playback via ACT timeline.
      */
     public handleChunk(msg: AudioChunk): void {
-        const { incarnation, playAtRealTime, sampleRate, channels, buffer } = msg;
+        const { incarnation, playAtRealTime, sampleRate, channels, buffer, advanceSamples } = msg;
 
         if (!this.audioCtx) return;
 
@@ -38,7 +41,11 @@ export class RealTimeChunkPlayer {
         const numSamples = floatArray.length / channels;
         if (numSamples <= 0) return;
 
-        const audioLenMs = (1000 * numSamples) / sampleRate;
+        // The buffer may carry a trailing crossfade overlap, so advance the schedule
+        // by the advertised hop (advanceSamples), not the full buffer length. All
+        // numSamples are still rendered; adjacent chunks overlap and sum.
+        const advanceFrames = advanceSamples && advanceSamples > 0 ? advanceSamples / channels : numSamples;
+        const audioLenMs = (1000 * advanceFrames) / sampleRate;
 
         const dn = Math.round(Date.now()); // real clock, ms
         const actNow = Math.round(this.audioCtx.currentTime * 1000); // audio clock, ms
