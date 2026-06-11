@@ -10,35 +10,49 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ## 🚀 Quick Start
 
-### Who Should Use EZPlayer?
+### Features
 
-We anticipate that EZPlayer will be usable in mid-2026 for 4th of July shows. In addition to the handful of shows that successfully ran the pre-alpha versions of EZPlayer in October-December 2025, there is a lab setup where ongoing work is being tested. We welcome additional early testers!
+While we will continue to add features through the 2026 season, EZPlayer is ready for 4th of July shows.
 
-Currently, EZPlayer supports a subset of what xSchedule supports:
-
-- Setup of a simple schedule of playlists of sequences
-- Execution from an xLights show folder
-- .mp3 and .fseq playback
+EZPlayer can be used completely locally, supporting:
+- A flexible schedule of playlists of sequences
+- A jukebox view of songs to choose from for immediate / queued playback
+- .mp3 and .fseq playback from an xLights show folder
 - DDP and E1.31 controllers on attached IPv4 networks
-- A jukebox view of songs to choose from
-- Live view
-- A variety of status screens
-- Remote Falcon
-- Local Web UI
-- Background sequence
-- Volume control automation
+- Live view of the show
+- Status screens
+- Remote Falcon viewer control
+- Local (LAN) Web UI
+- Background sequences, volume control automation, etc.
+
+With the (optional) EZPlayer cloud registration:
+- See the full EZPlayer UI for your show over the internet
+- A show page for your viewers
+
+For sequences from EZRGB:
+- Automatic sequence mapping, download, and installation
+- Layout sync
+
+You can also build and deploy your whole show through the cloud, directly to your EZPlayer.
 
 We are currently enhancing:
 
-- Controller status ping
-- Control panel
-- [Background blending options and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
+- Controller status
+- [Background blending, brightness options, and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
 
-It doesn't support (and won't soon support):
+Later in 2026 we will be adding:
+- Sync packets
+- Documentation of the HTTP API for integration projects
 
-- USB controllers
-- Master/Remote show designs
+On the roadmap (dates not committed):
 - HDMI video playback
+- Interactivity
+
+EZPlayer doesn't support (and won't support):
+- USB controllers
+- OS management
+- Controller capes
+- Plugins (equivalent functionality is available by using other integration methods)
 
 ### Download Prebuilt Releases
 
@@ -55,23 +69,34 @@ We currently provide builds for:
 
 Just download the installer or portable build and run it.
 
-### Running EZPlayer
+#### Signed Images
+EZPlayer images are currently not signed, and you may have to approve installation.  We're working on that.
 
-When you first run EZPlayer, you will choose your show folder. This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
+#### Raspberry Pi
+EZPlayer is tested on Raspberry Pi 5 and 4 (4GB or more required), but you currently have to compile it yourself.  We might provide images later in the year.
 
-The player opens to the "Player" screen, but there will not be much here yet. So, navigate between screens using the sidebar menu. (If no sidebar is visible, click the 3 bars in the upper right.)
+### Running EZPlayer Locally
 
-Start on the "Songs" screen. Here you can add songs, which associate the .fseq file with its .mp3 file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists. You can try playing your songs from the "Jukebox" gallery.
+When you first run EZPlayer, you will choose your show folder.  This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
 
-After adding some songs, create playlists on the "Playlists" screen. You can think of a playlist as an ordered list of songs to play, but it can also be used as a "set" of songs that are not taken in order. As we'll see later, you might want to make an "intro" playlist, a few main playlists, and an "outro" playlist.
+The player opens to the "Player" screen, but there will not be much here yet. So, navigate between screens using the sidebar menu. (If no sidebar is visible, click the 3 bars in the upper right corner.)
+
+Start on the "Songs" screen. Here you can add songs (aka "sequences").  Start by choosing the .fseq; hopefully the music and metadata will be found automatically.  If not, associate the .fseq file with its .mp3 file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists.   You can then try playing your songs from the "Jukebox" gallery.
+
+After adding some songs, create playlists on the "Playlists" screen. You can think of a playlist as an ordered list of songs to play, but it can also be used as a "set" of songs that are not taken in order.  As we'll see later, you might want to make an "intro" playlist, a few main playlists, and an "outro" playlist.
 
 After you have some playlists, visit the "Schedule" screen. Here, you can assign your playlists to play on the right days. Note that each schedule item is where you can set the "intro" and "outro" that goes with your show playlist, assign priorities, add loop/shuffle, and so forth.
 
-Return to the "Player" screen, which will give you a summary of what is going and what will happen next. But, if you want more detail about exactly how your schedule will run, try the "Schedule Preview" screen, or if you want more details about how the show is running, how the controllers are performing, etc., try "Show Status".
+Return to the "Player" screen, which will give you a summary of what is going and what will happen next. But, if you want more detail about exactly how your schedule will run, try the "Schedule Preview" button on the "Schedule" screen, or if you want more details about how the show is running, how the controllers are performing, etc., try "Show Status".
+
+If you want to connect to the cloud (for remote management, automatic sequence rendering and download, etc.), visit the "Cloud" screen.
+
+### Starting In The Cloud
+
+If you used the EZRGB website to set up your show, choose cloud setup when EZPlayer launches for the first time.  Click the link, or use the QR code to register the player via another device (such as your phone).  Your layout, sequences, schedule, and settings will download to your show folder automatically.
 
 ### Known Issues
 
-Sometimes you have to restart the player to get it to do what it is supposed to.
 EZPlayer does not do well with missing files. Don't remove anything.
 
 ### Connecting With Us
@@ -101,13 +126,13 @@ On the other hand, FPP is more of a decentralized design and can be extremely co
 
 So, we started a new one, featuring:
 
-- Node.js / Electron stack / React, for a modern UI that supports the same look both on the desktop and on the web
-- Simplicity, starting with how songs and playlists are assembled
+- Node.js / Electron stack / React, for a modern UI that supports the same look both on the desktop and on the web (local or cloud)
+- Simplicity, starting with how songs and playlists are maintained
 - Affero GPL licensing, so it is free forever
 
 ### Roadmap
 
-We have a lot of features planned for the coming years... better previews, better controller health checks, a cloud portal, and so forth. We aim to simplify the way the xLights ecosystem works, while solving long-standing problems. We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
+We have a lot of features planned for the coming years. We aim to simplify the way the xLights ecosystem works, while solving long-standing problems. We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
 
 Despite that broad scope, we want to avoid the complexity that currently plagues the xLights ecosystem, so there are a few things we do not expect we will ever implement:
 
@@ -118,7 +143,7 @@ Despite that broad scope, we want to avoid the complexity that currently plagues
 
 ### What Is The Relationship To EZRGB?
 
-EZPlayer is developed in part by [EZRGB](https://ezrgb.com/). EZRGB feels that the community should have a PC-based player that is easy to use, and will host cloud-based playback functionality for future EZPlayer releases.
+EZPlayer is developed in part by [EZRGB](https://ezrgb.com/).  EZRGB feels that the community should have a PC-based player that is easy to use, and hosts cloud functionality for the community and their commercial clients.
 
 ---
 
@@ -130,4 +155,4 @@ See [DEVELOPING.md](./DEVELOPING.md).
 
 ## Other
 
-Your various files (song lists, playlists, schedules) end up in your show folder in `.json` files. You might want to back those up.
+Your various files (song lists, playlists, schedules, and settings) end up in your show folder in `./ezplayer` in `.json` files. You might want to back those up if you spend a lot of time working on them.
