@@ -80,9 +80,9 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
         const colorMix = baked?.mix;
         const colorMixMaxOffset = baked?.maxOffset;
 
-        // Extract brightness and gamma from colorProfile
+        // Extract brightness and gamma from colorProfile.
         const brightness = modelData.colorProfile?.allBrightness ?? 1.0;
-        const gamma = modelData.colorProfile?.allGamma ?? 2.2;
+        const gamma = modelData.colorProfile?.allGamma ?? 1.0;
 
         // Extract transparency (0–100 percentage from xLights XML Transparency attribute)
         // 0 = fully opaque (default), 100 = fully transparent
