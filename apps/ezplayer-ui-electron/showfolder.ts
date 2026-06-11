@@ -8,8 +8,8 @@ import { getMainWindow } from './main';
 const store = new Store<{
     showFolder?: string;
     /** Welcome-screen flag: when true, the cloud-CTA card appears alongside the
-     *  xLights folder picker. Default off (cloud service hasn't launched yet).
-     *  Toggled by the `--reset-cloud` / `--reset-nocloud` CLI flags. */
+     *  xLights folder picker. Defaults on (unset → cloud shown); `--reset-nocloud`
+     *  pins it off for local-only first run. Toggled by the `--reset*` CLI flags. */
     welcomeShowCloud?: boolean;
 }>();
 let releaseLock: null | (() => Promise<void>) = null;
@@ -439,7 +439,8 @@ export function clearPersistedShowFolder() {
 }
 
 export function getWelcomeShowCloud(): boolean {
-    return !!store.get('welcomeShowCloud');
+    // Unset (true first run, never reset) defaults to showing the cloud choice.
+    return store.get('welcomeShowCloud') ?? true;
 }
 
 export function setWelcomeShowCloud(v: boolean) {

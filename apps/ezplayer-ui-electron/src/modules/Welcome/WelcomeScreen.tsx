@@ -17,7 +17,9 @@ export const WelcomeScreen = () => {
     const [isOpening, setIsOpening] = React.useState(false);
     const [stage, setStage] = React.useState<WelcomeStage>('choose');
 
-    // Hidden until the cloud service launches; enable with `--reset-cloud`.
+    // Shown by default; the real value is fetched from main below. Local-only
+    // installs (`--reset-nocloud`) resolve this to false. Initial false avoids
+    // flashing the cloud card before that fetch resolves on those installs.
     const [showCloudCTA, setShowCloudCTA] = React.useState(false);
     React.useEffect(() => {
         let cancelled = false;

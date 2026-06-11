@@ -234,10 +234,9 @@ app.whenReady().then(async () => {
 
     // Reset CLI flags — wipe persisted state and quit. Variants differ in what
     // welcome-screen cloud-CTA value they leave persisted for the next launch.
-    //   --reset          : clear state, cloud-CTA disabled afterwards (current default)
-    //   --reset-cloud    : clear state, cloud-CTA enabled afterwards
-    //   --reset-nocloud  : clear state, cloud-CTA disabled (pinned alias for --reset
-    //                      in case --reset's default flips later)
+    //   --reset          : clear state, cloud-CTA enabled afterwards (current default)
+    //   --reset-cloud    : clear state, cloud-CTA enabled afterwards (explicit alias of --reset)
+    //   --reset-nocloud  : clear state, cloud-CTA disabled (pin for local-only first run)
     const wantResetCloud = process.argv.includes('--reset-cloud');
     const wantResetNoCloud = process.argv.includes('--reset-nocloud');
     const wantReset = process.argv.includes('--reset') || wantResetCloud || wantResetNoCloud;
@@ -247,9 +246,11 @@ app.whenReady().then(async () => {
             await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
             // Write the cloud-CTA flag AFTER clearing storage. (The flag is in
             // electron-store, separate from localStorage, but order doesn't hurt.)
-            setWelcomeShowCloud(wantResetCloud);
+            // Cloud is the default now; only --reset-nocloud pins local-only.
+            const showCloudAfterReset = !wantResetNoCloud;
+            setWelcomeShowCloud(showCloudAfterReset);
             console.log(
-                `[reset] cleared show-folder + localStorage; welcomeShowCloud=${wantResetCloud} (mode=${
+                `[reset] cleared show-folder + localStorage; welcomeShowCloud=${showCloudAfterReset} (mode=${
                     wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
                 })`,
             );
