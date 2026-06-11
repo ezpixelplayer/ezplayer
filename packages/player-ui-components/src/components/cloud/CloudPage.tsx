@@ -74,7 +74,7 @@ const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => 
     </Box>
 );
 
-type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error';
+type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled';
 
 const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
     known: 'default',
@@ -83,9 +83,11 @@ const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' 
     pending: 'warning',
     installed: 'success',
     error: 'error',
+    disabled: 'warning',
 };
 
-function rollUpStatus(files: CloudFileEntry[]): RolledUpStatus {
+function rollUpStatus(seq: CloudSequenceProgress, files: CloudFileEntry[]): RolledUpStatus {
+    if (seq.disabled) return 'disabled';
     if (files.length === 0) return 'known';
     if (files.some((f) => f.status === 'error')) return 'error';
     if (files.some((f) => f.status === 'downloading')) return 'downloading';
@@ -138,7 +140,7 @@ const SequenceRow: React.FC<{
     showFolder?: string;
 }> = ({ seq, files, showFolder }) => {
     const [open, setOpen] = useState(false);
-    const status = rollUpStatus(files);
+    const status = rollUpStatus(seq, files);
     const totalBytes = files.reduce((s, f) => s + (f.totalBytes ?? 0), 0);
     const doneBytes = files.reduce((s, f) => s + (f.bytes ?? 0), 0);
     // Per-sequence "last updated" = newest cloud file_time across the sequence's files.

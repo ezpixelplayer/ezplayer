@@ -139,13 +139,13 @@ export const ViewerSettings: React.FC = () => {
                         times.
                     </Typography>
 
-                    {settings.viewerControl.schedule.length > 0 && (
+                    {(settings.viewerControl?.schedule?.length ?? 0) > 0 && (
                         <Box sx={{ mb: 2 }}>
                             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                Current Schedule ({settings.viewerControl.schedule.length} entries)
+                                Current Schedule ({settings.viewerControl?.schedule?.length ?? 0} entries)
                             </Typography>
                             <List dense>
-                                {settings.viewerControl.schedule.map((entry, index) => (
+                                {(settings.viewerControl?.schedule ?? []).map((entry, index) => (
                                     <React.Fragment key={entry.id}>
                                         <ListItem>
                                             <ListItemText
@@ -168,7 +168,7 @@ export const ViewerSettings: React.FC = () => {
                                                         </Typography>
                                                     </Box>
                                                 }
-                                                secondary={`Priority: ${settings.viewerControl.schedule.length - index}`}
+                                                secondary={`Priority: ${(settings.viewerControl?.schedule?.length ?? 0) - index}`}
                                             />
                                             <ListItemSecondaryAction>
                                                 <IconButton
@@ -181,7 +181,7 @@ export const ViewerSettings: React.FC = () => {
                                                 </IconButton>
                                             </ListItemSecondaryAction>
                                         </ListItem>
-                                        {index < settings.viewerControl.schedule.length - 1 && <Divider />}
+                                        {index < (settings.viewerControl?.schedule?.length ?? 0) - 1 && <Divider />}
                                     </React.Fragment>
                                 ))}
                             </List>

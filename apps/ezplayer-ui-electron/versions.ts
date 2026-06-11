@@ -1,4 +1,5 @@
 import { type EZPlayerVersions } from '@ezplayer/ezplayer-core';
+import { totalmem } from 'node:os';
 
 // Build-time version numbers
 import mainPkg from '../../package.json' assert { type: 'json' };
@@ -36,4 +37,5 @@ export const BUILD_INFO = {
 export const ezpVersions: EZPlayerVersions = {
     ...BUILD_INFO,
     processes: process.versions,
+    system: { totalMemBytes: totalmem() },
 };

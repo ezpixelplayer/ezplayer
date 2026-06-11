@@ -120,7 +120,15 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
     const player = runtime.combined.player;
     const content = runtime.combined.content;
     const controller = runtime.combined.controller;
-    const showName = runtime.combined.show?.show_name || 'Unknown Show';
+    const show = runtime.combined.show;
+    const showName = show?.show_name || 'Unknown Show';
+    const vcLabel = show?.viewer_control_enabled
+        ? show.viewer_control_mode === 'ezplayer'
+            ? 'Enabled (EZPlayer)'
+            : show.viewer_control_mode === 'remote-falcon'
+              ? 'Enabled (Remote Falcon)'
+              : 'Enabled'
+        : 'Disabled';
 
     return (
         <Box>
@@ -303,6 +311,7 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                     Schedule Sync: {formatTime(content.schedule_sync_time)}
                                 </Typography>
                                 <Typography variant="body1">Schedules: {content.n_schedules ?? '—'}</Typography>
+                                <Typography variant="body1">Viewer Control: {vcLabel}</Typography>
                             </CardContent>
                         </Card>
                     </Grid>

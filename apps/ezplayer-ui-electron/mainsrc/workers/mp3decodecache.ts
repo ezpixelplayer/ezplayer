@@ -89,6 +89,11 @@ export type PrefetchMP3Request = {
     mp3file: string;
     needByTime: number;
     neededThroughTime: number;
+    /** Estimated decoded length in seconds, if known (e.g. from the action duration).
+     *  Used to size the pending-budget estimate; falls back to a constant otherwise. */
+    estDurationSec?: number;
+    /** Confidence tier (0 = happy-path/fg, 2 = speculative skip/down-stack). */
+    tier?: number;
 };
 
 export interface MP3FileKey {
@@ -118,7 +123,8 @@ export class MP3PrefetchCache {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }
             },
-            budgetPredictor: (_key) => 1200, // 20 min worst case?
+            // Estimate pending cost from the known song length when we have it, else a ~5 min fallback.
+            budgetPredictor: (key) => this.estimateBudgetSec(this.durationHints.get(key.mp3file)),
             budgetCalculator: (_key, val) =>
                 Math.ceil(val.decompAudio.nSamples / (val.decompAudio.sampleRate ?? 1) / 5 + 1) * 5,
             keyToId: (key) => `${key.mp3file}`,
@@ -136,15 +142,29 @@ export class MP3PrefetchCache {
         this.now = now;
     }
 
+    /** Start a new prefetch generation (call once per pass, before prefetching). */
+    beginGeneration() {
+        this.mp3PrefetchCache.beginGeneration();
+    }
+
     async shutdown() {
         await this.mp3PrefetchCache.shutdown();
     }
 
+    /** Same units as budgetCalculator: round seconds up to a 5s bucket (+1). */
+    private estimateBudgetSec(durationSec?: number): number {
+        const sec = durationSec && durationSec > 0 ? durationSec : 300; // ~5 min fallback
+        return Math.ceil(sec / 5 + 1) * 5;
+    }
+
     /** Prefetch mp3 */
     prefetchMP3(req: PrefetchMP3Request) {
+        if (req.estDurationSec && req.estDurationSec > 0) {
+            this.durationHints.set(req.mp3file, req.estDurationSec);
+        }
         this.mp3PrefetchCache.prefetch({
             key: { mp3file: req.mp3file },
-            priority: { neededTime: req.needByTime, neededThroughTime: req.neededThroughTime },
+            priority: { neededTime: req.needByTime, neededThroughTime: req.neededThroughTime, tier: req.tier },
             now: this.now,
             expiry: req.expiry ?? this.now + 24 * 3600 * 1000,
         });
@@ -165,6 +185,8 @@ export class MP3PrefetchCache {
     readBufPool: ArrayBufferPool;
     mp3PrefetchCache: PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>;
     decodewc: Mp3DecodeWorkerClient;
+    /** mp3file -> estimated decoded length (sec), fed from prefetch hints. */
+    private durationHints = new Map<string, number>();
 
     getStats() {
         const readBufPool = this.readBufPool.getStats();

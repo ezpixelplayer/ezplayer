@@ -243,7 +243,7 @@ export function SongList({
     // Modify the useEffect that creates the rows data to combine local and server songs
     useEffect(() => {
         // Create nonnull array of server and local songs
-        const allSongs = sequenceData || [];
+        const allSongs = (sequenceData || []).filter((s) => !s.deleted && s.render_enabled !== false);
 
         if (!allSongs.length) {
             setRows([]);

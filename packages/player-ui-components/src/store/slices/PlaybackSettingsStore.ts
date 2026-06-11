@@ -27,19 +27,24 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
     const jukebox = input?.jukebox ?? {};
     const excludedNormalized = normalizeTagList(jukebox.excludedTags, []);
     const includedNormalized = normalizeTagList(jukebox.includedTags, []);
+    // Deep-default sub-objects: a whole-object `??` only fires when the parent
+    // is null/undefined, so `viewerControl: { enabled: true }` with `schedule`
+    // missing slips through and crashes downstream `.schedule.length` reads.
+    // Spread defaults first, then input, then explicitly re-default arrays.
     return {
         ...input,
         audioSyncAdjust: input.audioSyncAdjust ?? 0,
         backgroundSequence: input.backgroundSequence ?? 'overlay',
-        viewerControl: input.viewerControl ?? {
-            enabled: false,
-            type: 'disabled',
-            remoteFalconToken: undefined,
-            schedule: [],
+        viewerControl: {
+            ...input.viewerControl,
+            enabled: input.viewerControl?.enabled ?? false,
+            type: input.viewerControl?.type ?? 'disabled',
+            schedule: input.viewerControl?.schedule ?? [],
         },
-        volumeControl: input.volumeControl ?? {
-            defaultVolume: 100,
-            schedule: [],
+        volumeControl: {
+            ...input.volumeControl,
+            defaultVolume: input.volumeControl?.defaultVolume ?? 100,
+            schedule: input.volumeControl?.schedule ?? [],
         },
         jukebox: {
             excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
@@ -120,10 +125,10 @@ const playbackSettingsSlice = createSlice({
             state.settings.viewerControl.remoteFalconToken = action.payload;
         },
         addViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
-            state.settings.viewerControl.schedule.push(action.payload);
+            (state.settings.viewerControl.schedule ??= []).push(action.payload);
         },
         removeViewerControlScheduleEntry(state, action: PayloadAction<string>) {
-            state.settings.viewerControl.schedule = state.settings.viewerControl.schedule.filter(
+            state.settings.viewerControl.schedule = (state.settings.viewerControl.schedule ?? []).filter(
                 (e) => e.id !== action.payload,
             );
         },
@@ -133,10 +138,10 @@ const playbackSettingsSlice = createSlice({
             state.settings.volumeControl.defaultVolume = action.payload;
         },
         addVolumeScheduleEntry(state, action: PayloadAction<VolumeScheduleEntry>) {
-            state.settings.volumeControl.schedule.push(action.payload);
+            (state.settings.volumeControl.schedule ??= []).push(action.payload);
         },
         removeVolumeScheduleEntry(state, action: PayloadAction<string>) {
-            state.settings.volumeControl.schedule = state.settings.volumeControl.schedule.filter(
+            state.settings.volumeControl.schedule = (state.settings.volumeControl.schedule ?? []).filter(
                 (e) => e.id !== action.payload,
             );
         },

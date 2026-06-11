@@ -483,9 +483,9 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
             const serverNow = Date.now();
             for (const chunk of chunks) {
                 slot.afterSeq = chunk.seq;
-                // 8 (serverNow) + 8 (playAt) + 4*4 (incarnation/sampleRate/channels/sampleCount)
-                // + sampleCount*4 (Float32 payload).
-                const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+                // 8 (serverNow) + 8 (playAt) + 4*5 (incarnation/sampleRate/channels/sampleCount/
+                // advanceSamples) + sampleCount*4 (Float32 payload).
+                const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
                 const buf = Buffer.allocUnsafe(totalSize);
                 let off = 0;
                 buf.writeDoubleLE(serverNow, off);
@@ -499,6 +499,8 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
                 buf.writeUInt32LE(chunk.channels, off);
                 off += 4;
                 buf.writeUInt32LE(chunk.samples.length, off);
+                off += 4;
+                buf.writeUInt32LE(chunk.advanceSamples, off);
                 off += 4;
                 const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
                 src.copy(buf, off);
@@ -670,7 +672,7 @@ function dispatchAudio(afterSeq: number): { status: number; headers?: Record<str
     // latestSeq) then per-chunk metadata + Float32 samples.
     let totalSize = 8;
     for (const chunk of chunks) {
-        totalSize += 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+        totalSize += 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
     }
     const buf = Buffer.allocUnsafe(totalSize);
     let off = 0;
@@ -688,6 +690,8 @@ function dispatchAudio(afterSeq: number): { status: number; headers?: Record<str
         buf.writeUInt32LE(chunk.channels, off);
         off += 4;
         buf.writeUInt32LE(chunk.samples.length, off);
+        off += 4;
+        buf.writeUInt32LE(chunk.advanceSamples, off);
         off += 4;
         const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
         src.copy(buf, off);
@@ -1243,7 +1247,7 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/audio?afterSeq=N - binary audio chunk data for web client
     // Wire format: [u32 chunkCount][u32 latestSeq]
     //   per chunk: [f64 playAtRealTime][u32 incarnation][u32 sampleRate]
-    //              [u32 channels][u32 sampleCount][Float32 × sampleCount]
+    //              [u32 channels][u32 sampleCount][u32 advanceSamples][Float32 × sampleCount]
     // ----------------------------------------------
     router.get('/api/audio', async (ctx) => {
         ctx.set('Access-Control-Allow-Origin', '*');
@@ -1265,10 +1269,10 @@ async function startServer(config: ServerWorkerData) {
         // Calculate total response size
         // Header: 4 (chunkCount) + 4 (latestSeq) = 8 bytes
         // Per chunk: 8 (playAtRealTime f64) + 4 (incarnation) + 4 (sampleRate)
-        //          + 4 (channels) + 4 (sampleCount) + sampleCount*4 (Float32 data)
+        //          + 4 (channels) + 4 (sampleCount) + 4 (advanceSamples) + sampleCount*4 (Float32 data)
         let totalSize = 8;
         for (const chunk of chunks) {
-            totalSize += 8 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
+            totalSize += 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
         }
 
         const buf = Buffer.allocUnsafe(totalSize);
@@ -1291,6 +1295,8 @@ async function startServer(config: ServerWorkerData) {
             buf.writeUInt32LE(chunk.channels, offset);
             offset += 4;
             buf.writeUInt32LE(chunk.samples.length, offset);
+            offset += 4;
+            buf.writeUInt32LE(chunk.advanceSamples, offset);
             offset += 4;
 
             // Copy Float32 audio data from SAB view into response buffer

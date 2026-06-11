@@ -29,6 +29,12 @@ export interface AudioChunk {
     sampleRate: number;
     channels: number;
     buffer: ArrayBuffer;
+    // Interleaved sample count by which the consumer should advance its playback
+    // position (the "hop"). The buffer itself may contain MORE samples than this
+    // (a trailing crossfade overlap) — those are still played, but the next chunk
+    // begins `advanceSamples` later so adjacent chunks overlap and crossfade.
+    // When 0/absent, consumers fall back to advancing by the full buffer length.
+    advanceSamples?: number;
 }
 
 export interface FileSelectOptions {

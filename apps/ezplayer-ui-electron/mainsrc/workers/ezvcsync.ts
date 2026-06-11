@@ -24,14 +24,21 @@ export interface EzvcConfig {
     cloudUrl?: string;
     /** The player's registration token (cloud `:player_token`). */
     playerToken?: string;
+    /** IANA timezone the player is operating in (e.g. `'America/New_York'`).
+     *  Sent piggybacked on `/api/player/vc/enabled` so viewer pages can format
+     *  show-local times for off-zone viewers. Static for a given player. */
+    tz?: string;
     defaultTimeoutMs?: number;
 }
 
 /** What the cloud returns from `/next`. `songId` is a sequence id the player
- *  can hand straight to `processCommand('playsong')` — no index lookup. */
+ *  can hand straight to `processCommand('playsong')` — no index lookup.
+ *  `centralEpoch` is generated at central startup; when it flips, the player
+ *  knows central lost its in-RAM state and re-pushes catalog/playlists/schedule. */
 export interface EzvcNextToPlay {
     mode: 'off' | 'request' | 'vote';
     songId: string | null;
+    centralEpoch?: string;
 }
 
 // Parent -> Worker
@@ -54,16 +61,21 @@ export type EzvcWorkerOutMessage =
     | { type: 'playlistsSynced'; count: number }
     | { type: 'scheduleSynced'; scheduleCount: number; requestWindowCount: number }
     | { type: 'catalogSynced'; count: number }
-    | { type: 'nextSuggestion'; suggestion: EzvcNextToPlay | null };
+    | { type: 'nextSuggestion'; suggestion: EzvcNextToPlay | null }
+    /** Central's epoch changed (restarted) — main thread should re-push
+     *  every state it owns (catalog, playlists, schedule, enabled). */
+    | { type: 'resyncRequired' };
 
 export class EzvcApiClient {
     private readonly baseUrl: string;
     private readonly playerToken: string;
+    private readonly tz?: string;
     private readonly defaultTimeoutMs: number;
 
     constructor(config: EzvcConfig) {
         this.playerToken = config.playerToken ?? '';
         this.baseUrl = (config.cloudUrl ?? '').replace(/\/+$/, '');
+        this.tz = config.tz;
         this.defaultTimeoutMs = config.defaultTimeoutMs ?? 10_000;
 
         if (!this.baseUrl) throw new Error('cloudUrl must be provided');
@@ -123,7 +135,7 @@ export class EzvcApiClient {
     }
 
     setEnabled(enabled: boolean): Promise<unknown> {
-        return this.request('POST', this.path('enabled'), { enabled });
+        return this.request('POST', this.path('enabled'), { enabled, tz: this.tz });
     }
 
     syncSchedule(schedule: VcScheduleEntry[], requestWindows: VcScheduleEntry[]): Promise<unknown> {
@@ -152,6 +164,28 @@ let lastPlaylistHash: string | null = null;
 let lastScheduleHash: string | null = null;
 let lastCatalogHash: string | null = null;
 let lastPlayingHash: string | null = null;
+/** Last `centralEpoch` we observed in a vc/next response. Central regenerates
+ *  it on every process start; when it flips here, central lost its in-RAM
+ *  viewer-control state and we need to re-push our hash-suppressed sync calls. */
+let lastCentralEpoch: string | null = null;
+
+function checkCentralEpoch(observed: string | undefined): void {
+    if (!observed) return;
+    if (lastCentralEpoch === null) {
+        lastCentralEpoch = observed;
+        return;
+    }
+    if (lastCentralEpoch !== observed) {
+        lastCentralEpoch = observed;
+        lastEnabled = null;
+        lastPlaylistHash = null;
+        lastScheduleHash = null;
+        lastCatalogHash = null;
+        lastPlayingHash = null;
+        send({ type: 'log', level: 'info', msg: 'central epoch changed; clearing hashes and requesting resync' });
+        send({ type: 'resyncRequired' });
+    }
+}
 
 const inFlight: Record<string, boolean> = Object.create(null);
 
@@ -256,6 +290,7 @@ async function handleRequestNextSuggestion() {
         const c = ensureClient();
         const res = await c.getNext();
         if (!res) return;
+        checkCentralEpoch(res.centralEpoch);
         send({ type: 'nextSuggestion', suggestion: { mode: res.mode, songId: res.songId } });
     });
 }
