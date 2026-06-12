@@ -15,6 +15,11 @@ interface WeeklyViewProps {
     ) => React.ReactNode;
 }
 
+// Shared column template for BOTH the header row and the body time grid so the
+// day columns line up exactly. Keeping them as two independent flex rows let the
+// header (which has cell padding the body lacks) drift right of the data below.
+const GRID_COLUMNS = '80px repeat(7, minmax(120px, 1fr))';
+
 const TimeSlot = styled(Box)(({ theme }) => ({
     height: 60,
     borderBottom: `1px solid ${theme.palette.divider}`,
@@ -119,7 +124,8 @@ const WeeklyView: React.FC<WeeklyViewProps> = ({
             {/* Header row with weekdays */}
             <Box
                 sx={{
-                    display: 'flex',
+                    display: 'grid',
+                    gridTemplateColumns: GRID_COLUMNS,
                     borderBottom: 1,
                     borderColor: 'divider',
                     bgcolor: 'background.paper',
@@ -131,7 +137,6 @@ const WeeklyView: React.FC<WeeklyViewProps> = ({
                 {/* Empty cell for time column */}
                 <Box
                     sx={{
-                        width: 80,
                         borderRight: 1,
                         borderColor: 'divider',
                     }}
@@ -142,8 +147,7 @@ const WeeklyView: React.FC<WeeklyViewProps> = ({
                     <Box
                         key={`header-${day}`}
                         sx={{
-                            flex: 1,
-                            minWidth: 120,
+                            minWidth: 0,
                             p: 1,
                             textAlign: 'center',
                             borderRight: 1,
@@ -176,12 +180,11 @@ const WeeklyView: React.FC<WeeklyViewProps> = ({
                 ))}
             </Box>
 
-            {/* Time grid */}
-            <Box sx={{ display: 'flex' }}>
+            {/* Time grid — same column template as the header so columns align */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: GRID_COLUMNS }}>
                 {/* Time column */}
                 <Box
                     sx={{
-                        width: 80,
                         borderRight: 1,
                         borderColor: 'divider',
                         bgcolor: 'background.paper',
@@ -212,8 +215,7 @@ const WeeklyView: React.FC<WeeklyViewProps> = ({
                     <Box
                         key={day.toString()}
                         sx={{
-                            flex: 1,
-                            minWidth: 120,
+                            minWidth: 0,
                             borderRight: 1,
                             borderColor: 'divider',
                             position: 'relative',

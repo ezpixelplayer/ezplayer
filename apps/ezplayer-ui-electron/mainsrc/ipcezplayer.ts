@@ -24,7 +24,12 @@ import {
     loadSettingsFromDisk,
     saveCloudSettingsMeta,
 } from './data/SettingsStorage.js';
-import { getCloudConfigCache, loadCloudConfigFromDisk, updateCloudConfig } from './data/CloudConfigStorage.js';
+import {
+    DEFAULT_CLOUD_SERVICE_URL,
+    getCloudConfigCache,
+    loadCloudConfigFromDisk,
+    updateCloudConfig,
+} from './data/CloudConfigStorage.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
@@ -719,8 +724,12 @@ export async function registerContentHandlers(
             // `loadShowFolder` reads what we intended.
             if (!result.existingInstall) {
                 const seedPath = settingsPath(sf, 'cloud-config.json');
+                // Seed the production cloud URL so a fresh cloud bootstrap can
+                // register without the user hand-typing it. Once the file exists,
+                // loadCloudConfigFromDisk keeps this value (the FRESH default only
+                // applies to a missing/empty file), so '' here left the URL blank.
                 const seed = {
-                    cloudServiceUrl: '',
+                    cloudServiceUrl: DEFAULT_CLOUD_SERVICE_URL,
                     playerIdToken: '',
                     layoutSource: 'cloud' as const,
                 };
