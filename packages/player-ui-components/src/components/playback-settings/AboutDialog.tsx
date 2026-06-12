@@ -110,7 +110,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                     </Link>
                                 ) : (
                                     <Link
-                                        href="https://discord.gg/3Qwz79MN"
+                                        href="https://discord.gg/gpwxM4bR94"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         sx={{

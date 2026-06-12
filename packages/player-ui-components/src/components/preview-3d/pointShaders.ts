@@ -7,10 +7,11 @@ import * as THREE from 'three';
 import type { Point3D } from '../../types/model3d';
 
 /**
- * Default gamma correction value used when model configuration doesn't provide gamma
- * Standard sRGB gamma value for display correction
+ * Default gamma value used when model configuration doesn't provide gamma.
+ * 1.0 = no correction (identity), matching xLights: a model with no dimming
+ * curve gamma is rendered without any per-model gamma adjustment.
  */
-export const DEFAULT_GAMMA = 2.2;
+export const DEFAULT_GAMMA = 1.0;
 
 /**
  * Extract gamma value from model configuration

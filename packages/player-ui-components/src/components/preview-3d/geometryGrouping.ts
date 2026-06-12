@@ -46,7 +46,7 @@ export function groupPointsByGeometry(
             const modelName = point.metadata?.modelName as string | undefined;
             // Get brightness and gamma from point metadata (with defaults)
             const brightness = point.metadata?.brightness ?? 1.0;
-            const gamma = point.metadata?.gamma ?? 2.2;
+            const gamma = point.metadata?.gamma ?? 1.0;
             // Create unique group key: modelName + brightness + gamma
             // This ensures geometries with same rendering properties are batched together
             return `${modelName || 'unknown'}|b${brightness}|g${gamma}`;

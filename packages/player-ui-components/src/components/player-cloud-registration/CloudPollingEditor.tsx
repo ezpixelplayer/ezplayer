@@ -37,8 +37,11 @@ import {
 } from '../playback-settings/sections/sectionHelpers';
 import type { AppDispatch, RootState } from '../../store/Store';
 
-const DEFAULT_REGISTRATION_SEC = 30;
-const DEFAULT_MANIFEST_SEC = 60;
+// Mirror the cloud-poll worker defaults (cloudpoll.ts). These are the values the
+// editor shows — and persists on Save — when no override is set, so they must match
+// the worker or saving would silently change the unedited field.
+const DEFAULT_REGISTRATION_SEC = 5;
+const DEFAULT_MANIFEST_SEC = 300;
 const FRESH_WINDOW: Partial<CloudPollScheduleEntry> = {
     days: 'all',
     startTime: '00:00',

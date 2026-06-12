@@ -5,7 +5,7 @@ import type { CloudConfig } from '@ezplayer/ezplayer-core';
 /** Default cloud service URL seeded on first run when no cloud-config.json exists.
  *  Points at the production cloud service; users can override it via the Cloud
  *  Settings dialog. */
-const DEFAULT_CLOUD_SERVICE_URL = 'https://api.ezplayer.dev/';
+export const DEFAULT_CLOUD_SERVICE_URL = 'https://api.ezplayer.dev/';
 
 const FRESH: CloudConfig = { cloudServiceUrl: DEFAULT_CLOUD_SERVICE_URL, playerIdToken: '' };
 const EMPTY: CloudConfig = { cloudServiceUrl: '', playerIdToken: '' };
