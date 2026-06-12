@@ -8,6 +8,12 @@ const sidebars = {
     'intro',
     {
       type: 'category',
+      label: 'Getting Started',
+      collapsed: false,
+      items: ['getting-started/quickstart', 'getting-started/quickstartcloud'],
+    },
+    {
+      type: 'category',
       label: 'Architecture',
       collapsed: false,
       items: ['architecture/overview', 'architecture/developer'],

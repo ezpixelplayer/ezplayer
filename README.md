@@ -36,7 +36,6 @@ For sequences from EZRGB:
 You can also build and deploy your whole show through the cloud, directly to your EZPlayer.
 
 We are currently enhancing:
-
 - Controller status
 - [Background blending, brightness options, and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
 
@@ -48,7 +47,7 @@ On the roadmap (dates not committed):
 - HDMI video playback
 - Interactivity
 
-EZPlayer doesn't support (and won't support):
+EZPlayer doesn't support (and likely won't support):
 - USB controllers
 - OS management
 - Controller capes
@@ -122,7 +121,7 @@ With two established player solutions, why would anyone make a brand new one?
 
 Well, we liked the design of xSchedule but found it to be underdesigned and undermaintained, and getting the sort of simplicity and features we wanted to see in the future would have been difficult on that codebase.
 
-On the other hand, FPP is more of a decentralized design and can be extremely complex to work with.
+On the other hand, FPP is more of a decentralized design, hybrid player+OS manager+cape firmware, and as a result, can be extremely complex to work with.
 
 So, we started a new one, featuring:
 
