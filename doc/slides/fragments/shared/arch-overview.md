@@ -4,4 +4,4 @@
 
 - **EZPlayer** plays your sequenced show data
 - **Controllers** receive it and drive each channel
-- **Pixels / lights** display the result, frame by frame
+- **Pixels / lights** display the result

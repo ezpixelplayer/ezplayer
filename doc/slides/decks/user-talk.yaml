@@ -1,8 +1,30 @@
-# End-user talk. Public fragments only.
+# Generic, all-public end-user talk. Public/shared fragments only.
+# The personal deck (in the merryoncherry-private repo) reuses these same
+# shared fragments and splices personal ones between them.
 name: user-talk
 title: EZPlayer — Overview
 theme: ezplayer
 fragments:
   - shared/title-user.md
-  - shared/arch-overview.md
+  # The predecessor and why one smart computer runs the show
+  - shared/xsched-arch.md
+  # A quick screen-by-screen tour
+  - shared/demo-player.md
+  # Advanced features
+  - shared/adv-intro.md
+  - shared/adv-timings.md
+  - shared/adv-volume.md
+  - shared/adv-vc-rf.md
+  - shared/adv-background.md
+  - shared/adv-lanui.md
+  # Cloud service
+  - shared/cloud-arch.md
+  # Stuff for nerds
+  - shared/nerds-intro.md
+  - shared/agpl.md
+  - shared/tech-stack.md
+  - shared/stats.md
+  - shared/roadmap.md
+  # Close
   - shared/contact.md
+  - shared/questions.md
