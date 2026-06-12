@@ -89,7 +89,11 @@ async function startupCheck() {
         return; // Network error, offline, etc. — silently skip
     }
 
-    if (!result?.updateInfo) return;
+    // checkForUpdates() populates `updateInfo` with the feed's latest version even
+    // when we're already on it. `isUpdateAvailable` is the only field that means
+    // "a newer version exists" — gating on `updateInfo` alone re-prompted on every
+    // launch at the same version.
+    if (!result?.isUpdateAvailable) return;
 
     const version = result.updateInfo.version;
     if (isVersionSkipped(version)) return;
@@ -153,7 +157,7 @@ function startIdleWatcher() {
             return;
         }
 
-        if (!result?.updateInfo) return;
+        if (!result?.isUpdateAvailable) return;
         if (isVersionSkipped(result.updateInfo.version)) return;
 
         try {
@@ -212,7 +216,10 @@ export function registerAutoUpdateHandlers(win: BrowserWindow) {
 
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
-    autoUpdater.allowPrerelease = true;
+    // Auto-update follows the stable channel only — a prerelease never trumps the
+    // latest full release. Prereleases stay opt-in via a manual download from the
+    // GitHub releases page.
+    autoUpdater.allowPrerelease = false;
 
     // Quiet one-line logger.  electron-updater's default emits full stack
     // traces for routine 404s (missing latest.yml on disabled platforms,

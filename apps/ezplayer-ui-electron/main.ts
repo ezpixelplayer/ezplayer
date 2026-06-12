@@ -169,16 +169,29 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         mainWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
     }
 
-    // When main window is ready, show it and destroy splash
-    mainWindow.once('ready-to-show', () => {
-        splash.destroy();
-        mainWindow?.show();
-        mainWindow?.focus();
-        mainWindow?.setAlwaysOnTop(true);
-        mainWindow?.setAlwaysOnTop(false);
-
-        //setTimeout(async ()=>console.log(JSON.stringify(await getAudioOutputDevices(mainWindow!), undefined, 4)), 3000);
-    });
+    // Tear down the splash and reveal the main window. Idempotent: the
+    // alwaysOnTop (TOPMOST) splash must never outlive startup, or it sits on top
+    // of and hides modal dialogs like the auto-update prompt (~10s in). We run
+    // this on ready-to-show and, as a safety net, on a hard fallback timer in
+    // case ready-to-show never fires (e.g. the renderer failed to load).
+    let startupFinished = false;
+    let splashFallback: ReturnType<typeof setTimeout>;
+    const finishStartup = () => {
+        if (startupFinished) return;
+        startupFinished = true;
+        clearTimeout(splashFallback);
+        if (!splash.isDestroyed()) splash.destroy();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.setAlwaysOnTop(true);
+            mainWindow.setAlwaysOnTop(false);
+        }
+    };
+    mainWindow.once('ready-to-show', finishStartup);
+    // Fire well before the auto-update prompt's ~10s delay so a stuck splash
+    // cannot cover it.
+    splashFallback = setTimeout(finishStartup, 8000);
     const handleCloseRequest = async (event: ElectronEvent) => {
         if (!mainWindow) return;
         if (!isScheduleActive()) {
