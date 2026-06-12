@@ -15,7 +15,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                os: [ubuntu-latest, windows-latest, macos-latest]
+                os: [ubuntu-latest, windows-2022, macos-latest]
 
         runs-on: ${{ matrix.os }}
 
@@ -37,7 +37,7 @@ jobs:
                   echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
             - name: Set Python for node-gyp (windows)
-              if: matrix.os == 'windows-latest'
+              if: matrix.os == 'windows-2022'
               run: |
                   python --version
                   echo "PYTHON=$(where python | head -1)" >> $GITHUB_ENV
@@ -45,7 +45,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@v4
               with:
-                  node-version: 20
+                  node-version: 24
 
             - name: Set up pnpm
               uses: pnpm/action-setup@v4
