@@ -3,4 +3,4 @@
 
 # Questions?
 
-<span class="subtitle">Thanks & happy lighting/span>
+<span class="subtitle">Thanks & happy lighting</span>

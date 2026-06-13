@@ -1,7 +1,7 @@
 ## Volume control
 
-- Per-show and scheduled volume levels
-- Quiet(er) hours without manual intervention
-- Keep the neighbors happy
+- Default volume level
+- Scheduled override window by day of week + time
+- Adjusts gradually
 
 > 📷 **Screenshot (optional):** volume controls

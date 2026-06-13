@@ -1,7 +1,7 @@
 ## LAN UI
 
-- Drive the show from any phone or computer on your network
-- No remote desktop, no running back inside to the show PC
-- Check status and make changes from the driveway
+- Drive the show from any browser (phone or computer) on your network
+- Live audio and data (limited FPS)
+- More limited kiosk version
 
 > 📷 **Screenshot (optional):** LAN UI on a phone
