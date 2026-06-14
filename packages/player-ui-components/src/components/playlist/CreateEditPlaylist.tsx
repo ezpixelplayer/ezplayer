@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
+import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import SearchIcon from '@mui/icons-material/Search';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
@@ -800,7 +801,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const filteredAndSortedSongs = useMemo(() => {
         return (sequenceData || [])
             ?.filter((song) => {
-                if (song.deleted || song.render_enabled === false) return false;
+                if (!isSequencePlayable(song)) return false;
                 // Text search filter for title/artist
                 const matchesSearch =
                     song.work?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||

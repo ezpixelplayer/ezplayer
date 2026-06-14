@@ -677,7 +677,13 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         const fileIds: string[] = [];
         const pending: PendingFile[] = [];
 
-        if (entry.status === 'disabled') {
+        if (entry.status === 'disabled' || entry.status === 'pending') {
+            // Same on-record shape for both: a tombstone SequenceRecord with
+            // render_enabled=false hides it from jukebox/playlist/songs/
+            // schedule. The CloudSequenceProgress carries the distinguishing
+            // flag (`disabled` vs `pending`) so the cloud panel can label
+            // why — important for the curious operator watching a granted
+            // sequence not yet show up because render is still queued.
             const record = buildDisabledSequenceRecord(entry, existing);
             post({ type: 'installSequence', record });
             const idx = existingSequences.findIndex((s) => s.id === record.id);
@@ -689,7 +695,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
                 artist: entry.artist || '',
                 vendor: entry.vendor,
                 fileIds: [],
-                disabled: true,
+                ...(entry.status === 'disabled' ? { disabled: true } : { pending: true }),
             };
             perEntryPending.set(entry.id, []);
             continue;

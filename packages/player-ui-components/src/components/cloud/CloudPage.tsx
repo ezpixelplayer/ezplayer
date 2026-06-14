@@ -79,7 +79,7 @@ const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => 
     </Box>
 );
 
-type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled';
+type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled' | 'rendering';
 
 const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
     known: 'default',
@@ -89,9 +89,15 @@ const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' 
     installed: 'success',
     error: 'error',
     disabled: 'warning',
+    rendering: 'info',
 };
 
 function rollUpStatus(seq: CloudSequenceProgress, files: CloudFileEntry[]): RolledUpStatus {
+    // `rendering` precedes `disabled` because a pending tombstone has no
+    // file refs (files.length === 0) — without this check, an operator
+    // watching a granted-but-queued sequence would see "known" and not
+    // realize the cloud is still preparing it.
+    if (seq.pending) return 'rendering';
     if (seq.disabled) return 'disabled';
     if (files.length === 0) return 'known';
     if (files.some((f) => f.status === 'error')) return 'error';
