@@ -39,6 +39,12 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
 const DEFAULT_MANIFEST_INTERVAL_MS = 300_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
+/** Cap on the JSON-poll fetches (registration heartbeat, manifest list,
+ *  playlists, schedule, settings). Without a timeout, a hung TCP socket
+ *  parks `regInFlight` / `manifestInFlight` true forever — observed once as a
+ *  player stuck on "waiting for registration" even though the cloud had
+ *  already registered the token, fixable only by restarting the player. */
+const DEFAULT_POLL_TIMEOUT_MS = 15_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
 
 let cloudUrl = '';
@@ -356,7 +362,7 @@ async function pollRegistration() {
         ...(lastContentSyncAt !== undefined ? { lastContentSync: lastContentSyncAt } : {}),
     };
     try {
-        const res = await fetch(url, {
+        const res = await fetchWithTimeout(url, DEFAULT_POLL_TIMEOUT_MS, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
@@ -459,7 +465,7 @@ async function pollManifest() {
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SEQ_LIST}${playerIdToken}`;
     log('info', `manifest poll ${url}`);
     try {
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetchWithTimeout(url, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (!res.ok) {
             recordFailure(`manifest HTTP ${res.status}`);
             return;
@@ -487,7 +493,7 @@ async function fetchPlaylistsAndSchedule() {
     if (!cloudUrl || !playerIdToken) return;
     const plUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_PLAYLISTS}${playerIdToken}`;
     try {
-        const res = await fetch(plUrl, { method: 'GET' });
+        const res = await fetchWithTimeout(plUrl, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (res.ok) {
             const body = (await res.json()) as { playlists?: PlaylistRecord[] };
             const playlists = body.playlists ?? [];
@@ -506,7 +512,7 @@ async function fetchPlaylistsAndSchedule() {
 
     const schUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SCHEDULE}${playerIdToken}`;
     try {
-        const res = await fetch(schUrl, { method: 'GET' });
+        const res = await fetchWithTimeout(schUrl, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (res.ok) {
             const body = (await res.json()) as { schedule?: ScheduledPlaylist[] };
             const schedule = body.schedule ?? [];
@@ -532,7 +538,7 @@ async function fetchPlayerSettings() {
     if (!cloudUrl || !playerIdToken) return;
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SETTINGS}${playerIdToken}`;
     try {
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetchWithTimeout(url, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (!res.ok) {
             log('warn', `settings HTTP ${res.status}`);
             return;
