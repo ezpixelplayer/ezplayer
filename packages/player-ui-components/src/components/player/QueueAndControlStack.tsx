@@ -31,7 +31,7 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) =>
 
             {/* Queue */}
             <Grid container spacing={2}>
-                <Grid item xs={12} md={12} lg={6} xl={4}>
+                <Grid item xs={12}>
                     {runtime?.combined?.player?.queue && (
                         <QueueCard
                             queue={runtime.combined.player.queue}
