@@ -403,8 +403,17 @@ let lastAppliedCloudCfg: CloudConfig | undefined;
 
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
- *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
+ *  the playback worker, and refreshes the cloud worker's local-sequences cache.
+ *  Serialized: cloud-install events can fire several records in quick succession,
+ *  and concurrent commits would race on the same `sequences.json` (Windows
+ *  EPERM on rename, plus a merge-against-stale-curSequences silent record loss). */
+let commitChain: Promise<unknown> = Promise.resolve();
 async function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
+    const next = commitChain.then(() => commitSequenceUpdatesInner(uppl));
+    commitChain = next.catch(() => {});
+    return next;
+}
+async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
     const updList = mergeSequences(uppl, curSequences ?? []);
     if (showFolder) {

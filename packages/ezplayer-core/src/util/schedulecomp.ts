@@ -5,6 +5,7 @@ import type {
     ScheduleEndPolicy,
     SequenceRecord,
 } from '../types/DataTypes';
+import { isSequencePlayable } from './seqFilter';
 
 // Module goals:
 //   Deep understanding of the schedule - simulate a run
@@ -1392,7 +1393,7 @@ export class PlayerRunState {
         errs: string[],
     ) {
         this.sequences = seqs
-            .filter((s) => s.deleted !== true && s.render_enabled !== false)
+            .filter(isSequencePlayable)
             .map((s) => {
                 return { ...s };
             });

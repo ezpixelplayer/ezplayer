@@ -47,6 +47,11 @@ import type { CloudFileEntry, CloudFileStatus, CloudSequenceProgress } from '@ez
 interface CloudPageProps {
     title: string;
     statusArea?: React.ReactNode[];
+    /** When false, hides Register / Disconnect / Edit-token controls. Used
+     *  when the page is hosted in a context where the player token came in
+     *  externally (e.g. embedded in the URL) — those buttons would invalidate
+     *  the host's own session. Defaults to true. */
+    allowRegistration?: boolean;
 }
 
 const formatTimestamp = (ms?: number) => {
@@ -74,7 +79,7 @@ const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => 
     </Box>
 );
 
-type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled';
+type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled' | 'rendering';
 
 const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
     known: 'default',
@@ -84,9 +89,15 @@ const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' 
     installed: 'success',
     error: 'error',
     disabled: 'warning',
+    rendering: 'info',
 };
 
 function rollUpStatus(seq: CloudSequenceProgress, files: CloudFileEntry[]): RolledUpStatus {
+    // `rendering` precedes `disabled` because a pending tombstone has no
+    // file refs (files.length === 0) — without this check, an operator
+    // watching a granted-but-queued sequence would see "known" and not
+    // realize the cloud is still preparing it.
+    if (seq.pending) return 'rendering';
     if (seq.disabled) return 'disabled';
     if (files.length === 0) return 'known';
     if (files.some((f) => f.status === 'error')) return 'error';
@@ -250,7 +261,7 @@ const SequenceRow: React.FC<{
     );
 };
 
-export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
+export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRegistration = true }) => {
     const cloudConfig = useSelector((s: RootState) => s.cloudConfig);
     const cloudStatus = useSelector((s: RootState) => s.cloudStatus);
     const cStatus = useSelector((s: RootState) => s.runtime.combined.content);
@@ -467,8 +478,10 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                         {modeDescription}
                     </Typography>
 
-                    {/* Mode 1: not registered → just Register. */}
-                    {topMode === 'unregistered' && (
+                    {/* Mode 1: not registered → just Register. Hidden when
+                        the host context doesn't permit registration — that
+                        flow is for the desktop app. */}
+                    {topMode === 'unregistered' && allowRegistration && (
                         <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                             <Button
                                 startIcon={<HowToRegIcon />}
@@ -493,15 +506,17 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                             >
                                 Resume Cloud
                             </Button>
-                            <Button
-                                startIcon={<LinkOffIcon />}
-                                variant="outlined"
-                                size="small"
-                                color="error"
-                                onClick={() => setDisconnectOpen(true)}
-                            >
-                                Disconnect
-                            </Button>
+                            {allowRegistration && (
+                                <Button
+                                    startIcon={<LinkOffIcon />}
+                                    variant="outlined"
+                                    size="small"
+                                    color="error"
+                                    onClick={() => setDisconnectOpen(true)}
+                                >
+                                    Disconnect
+                                </Button>
+                            )}
                         </Stack>
                     )}
 
@@ -546,15 +561,17 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                 >
                                     Switch to Cloud-managed
                                 </Button>
-                                <Button
-                                    startIcon={<LinkOffIcon />}
-                                    variant="text"
-                                    size="small"
-                                    color="error"
-                                    onClick={() => setDisconnectOpen(true)}
-                                >
-                                    Disconnect
-                                </Button>
+                                {allowRegistration && (
+                                    <Button
+                                        startIcon={<LinkOffIcon />}
+                                        variant="text"
+                                        size="small"
+                                        color="error"
+                                        onClick={() => setDisconnectOpen(true)}
+                                    >
+                                        Disconnect
+                                    </Button>
+                                )}
                             </Stack>
                         </>
                     )}
@@ -587,15 +604,17 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                                 >
                                     Switch to xLights-managed
                                 </Button>
-                                <Button
-                                    startIcon={<LinkOffIcon />}
-                                    variant="text"
-                                    size="small"
-                                    color="error"
-                                    onClick={() => setDisconnectOpen(true)}
-                                >
-                                    Disconnect
-                                </Button>
+                                {allowRegistration && (
+                                    <Button
+                                        startIcon={<LinkOffIcon />}
+                                        variant="text"
+                                        size="small"
+                                        color="error"
+                                        onClick={() => setDisconnectOpen(true)}
+                                    >
+                                        Disconnect
+                                    </Button>
+                                )}
                             </Stack>
                         </>
                     )}
@@ -716,21 +735,25 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                             Cloud Configuration
                         </Typography>
                         <Box sx={{ flexGrow: 1 }} />
-                        <Button
-                            startIcon={<EditIcon />}
-                            variant="outlined"
-                            size="small"
-                            onClick={() => setRegDialogOpen(true)}
-                        >
-                            Edit
-                        </Button>
+                        {allowRegistration && (
+                            <Button
+                                startIcon={<EditIcon />}
+                                variant="outlined"
+                                size="small"
+                                onClick={() => setRegDialogOpen(true)}
+                            >
+                                Edit
+                            </Button>
+                        )}
                     </Box>
                     <Field label="Cloud Service URL" value={cloudConfig.cloudServiceUrl || '(not set)'} />
                     <Field label="Player ID Token" value={cloudConfig.playerIdToken || '(not set)'} />
                 </Card>
             </Box>
-            <PlayerCloudRegistrationDialog open={regDialogOpen} onClose={() => setRegDialogOpen(false)} />
-            <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>
+            {allowRegistration && (
+                <PlayerCloudRegistrationDialog open={regDialogOpen} onClose={() => setRegDialogOpen(false)} />
+            )}
+            {allowRegistration && <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>
                 <DialogTitle>Disconnect from cloud?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -745,7 +768,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea }) => {
                         Disconnect
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </Dialog>}
         </Box>
     );
 };

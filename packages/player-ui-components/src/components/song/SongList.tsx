@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 import { PageHeader, TextField } from '@ezplayer/shared-ui-components';
 
 import type { SequenceSettings } from '@ezplayer/ezplayer-core';
+import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { RootState } from '../..';
 
 import {
@@ -243,7 +244,7 @@ export function SongList({
     // Modify the useEffect that creates the rows data to combine local and server songs
     useEffect(() => {
         // Create nonnull array of server and local songs
-        const allSongs = (sequenceData || []).filter((s) => !s.deleted && s.render_enabled !== false);
+        const allSongs = (sequenceData || []).filter(isSequencePlayable);
 
         if (!allSongs.length) {
             setRows([]);
