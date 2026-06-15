@@ -1139,6 +1139,9 @@ async function buildSequenceRecord(
     const next: SequenceRecord = {
         ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
         id: entry.id,
+        // Clear tombstone flags from a prior disabled/pending pass.
+        render_enabled: true,
+        deleted: false,
         work: {
             ...(existing?.work ?? { title: '', artist: '', length: 0 }),
             title: entry.title ?? existing?.work?.title ?? '',

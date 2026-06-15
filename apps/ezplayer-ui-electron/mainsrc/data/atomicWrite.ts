@@ -1,6 +1,24 @@
 import fs from 'fs/promises';
 import path from 'path';
 
+/** Bounded retry around `fs.rename` for Windows AV-scan races. */
+async function renameWithRetry(src: string, dst: string): Promise<void> {
+    const delays = [25, 50, 100, 200, 400];
+    let lastErr: unknown;
+    for (let i = 0; i <= delays.length; i++) {
+        try {
+            await fs.rename(src, dst);
+            return;
+        } catch (err) {
+            const code = (err as { code?: string }).code;
+            if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw err;
+            lastErr = err;
+            if (i < delays.length) await new Promise((r) => setTimeout(r, delays[i]));
+        }
+    }
+    throw lastErr;
+}
+
 /**
  * Crash-safe write: stage to a sibling temp file, fsync, then rename over the
  * target. Avoids the 0-byte window of a plain `writeFile` with `O_TRUNC`.
@@ -50,7 +68,7 @@ export async function atomicWriteFile(
         await handle.close();
         handle = undefined;
 
-        await fs.rename(tmpPath, targetPath);
+        await renameWithRetry(tmpPath, targetPath);
     } catch (err) {
         // Best-effort cleanup of the temp file if anything went wrong before
         // (or during) the rename. Swallow ENOENT — the temp may not exist yet.
