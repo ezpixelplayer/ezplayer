@@ -49,9 +49,12 @@ https://github.com/ezpixelplayer/ezplayer/releases
 
 We currently provide builds for:
 
-- **Windows (x64)**
-- **macOS (dmg)**
-- **Linux (AppImage)**
+- **Windows (x64)** — `EZPlayer-Setup-*.exe`
+- **macOS (Apple Silicon)** — `EZPlayer-*-arm64.dmg` (M1/M2/M3/M4 — most Macs sold since late 2020)
+- **macOS (Intel)** — `EZPlayer-*-x64.dmg` (older Intel-based Macs)
+- **Linux (AppImage)** — `EZPlayer-*.AppImage`
+
+Not sure which Mac you have? Apple menu → **About This Mac** — if "Chip" says Apple anything (M1/M2/M3/M4), use the arm64 build; if "Processor" says Intel, use the x64 build.
 
 Just download the installer or portable build and run it.
 
