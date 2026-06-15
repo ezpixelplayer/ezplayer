@@ -108,6 +108,7 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 ![Schedule Recurring 1](../images/schedule-recurring-1.png)
 ![Schedule Recurring 2](../images/schedule-recurring-2.png)
 ![Schedule Recurring 3](../images/schedule-recurring-3.png)
+
 ---
 
 ## Show status
