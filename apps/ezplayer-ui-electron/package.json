@@ -52,6 +52,7 @@
             "icon": "src/assets/images/EZPlayerLogoTransparent.ico"
         },
         "mac": {
+            "artifactName": "${productName}-${version}-${arch}.${ext}",
             "target": [
                 {
                     "target": "dmg",
