@@ -2,7 +2,7 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Alert, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import { endOfDay, startOfDay } from 'date-fns';
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/Store';
 import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
@@ -203,6 +203,12 @@ const TimelineView = ({}: {}) => {
         [startTime, endTime],
     );
 
+    // Stale-while-revalidate so a loading flip doesn't unmount the graph.
+    type PreviewBundle = NonNullable<ReturnType<typeof generateSchedulePreview>> extends infer S
+        ? { background: S; main: S; startTime: number; endTime: number; errors: never[]; warnings: never[] }
+        : never;
+    const lastGoodPreviewRef = useRef<PreviewBundle | null>(null);
+
     const { data: previewData, error } = useMemo(() => {
         if (!sequences.length || !playlists.length || !todaysSchedules.length) {
             return { data: null, error: null as string | null };
@@ -236,6 +242,10 @@ const TimelineView = ({}: {}) => {
         previewWindow,
     ]);
 
+    if (previewData) lastGoodPreviewRef.current = previewData;
+    const renderableData = previewData ?? (isLoading ? lastGoodPreviewRef.current : null);
+    const noScheduleData = !sequences.length || !playlists.length || !todaysSchedules.length;
+
     return (
         <Box
             sx={{
@@ -252,14 +262,14 @@ const TimelineView = ({}: {}) => {
             )}
 
             <Box sx={{ height: '100%', overflow: 'hidden' }}>
-                {isLoading ? (
+                {renderableData ? (
+                    <GraphForSchedule data={renderableData} selectedStartTime={startTime} selectedEndTime={endTime} />
+                ) : isLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                         <CircularProgress />
                     </Box>
-                ) : !sequences.length || !playlists.length || !todaysSchedules.length ? (
+                ) : noScheduleData ? (
                     <Alert severity="info">No schedule data available for today.</Alert>
-                ) : previewData ? (
-                    <GraphForSchedule data={previewData} selectedStartTime={startTime} selectedEndTime={endTime} />
                 ) : (
                     <Alert severity="info">No schedule events for today.</Alert>
                 )}

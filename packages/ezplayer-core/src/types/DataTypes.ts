@@ -225,8 +225,13 @@ export interface CloudSeqManifestEntry {
      *    unavailable so the playback engine drops it at bake time, and lets
      *    its file-sweep reclaim the on-disk files once no baked state
      *    references them.
+     *  - `pending`: grant is live but the render hasn't produced a playable
+     *    file yet (still in the render queue). Identity-only payload (no file
+     *    refs). Player surfaces it on the cloud panel as "rendering" for
+     *    visibility but treats it like `disabled` for playback gating, so
+     *    the jukebox never offers a song that can't play.
      *  Absent value treated as `active` for back-compat. */
-    status?: 'active' | 'disabled';
+    status?: 'active' | 'disabled' | 'pending';
 }
 
 /** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
@@ -240,6 +245,10 @@ export interface CloudSequenceProgress {
     fileIds: string[];
     /** Cloud said disabled — no files; GC sweep reclaims on next pass. */
     disabled?: boolean;
+    /** Cloud said render hasn't produced a playable file yet (no fseq). UI
+     *  surfaces this as "rendering" so the operator can see why a granted
+     *  sequence isn't in the jukebox yet. */
+    pending?: boolean;
 }
 
 /** Per-file status used by the cloud content sync. */

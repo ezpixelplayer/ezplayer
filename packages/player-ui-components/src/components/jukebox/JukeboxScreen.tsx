@@ -24,6 +24,7 @@ import { SortDropdown } from './SortDropdown';
 import { SongCard } from './SongCard';
 import { PlaylistDropdown } from './PlaylistDropdown';
 import type { PlaylistRecord, PlaylistItem } from '@ezplayer/ezplayer-core';
+import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { useImageUrl } from '../../util/imageUtils';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
 import { isSongAllowedForJukebox } from '../../services/jukeboxFilter';
@@ -228,8 +229,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
         sequenceData
             ?.filter(
                 (s: SequenceItem) =>
-                    !s.deleted &&
-                    s.render_enabled !== false &&
+                    isSequencePlayable(s) &&
                     isSongAllowedForJukebox({
                         songTags: s.settings?.tags,
                         excludedTags: jukeboxSettings?.excludedTags,
@@ -621,8 +621,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
             sequenceData
                 ?.filter(
                     (s: SequenceItem) =>
-                        !s.deleted &&
-                        s.render_enabled !== false &&
+                        isSequencePlayable(s) &&
                         isSongAllowedForJukebox({
                             songTags: s.settings?.tags,
                             excludedTags: jukeboxSettings?.excludedTags,

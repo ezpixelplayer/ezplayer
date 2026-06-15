@@ -39,6 +39,12 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
 const DEFAULT_MANIFEST_INTERVAL_MS = 300_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
+/** Cap on the JSON-poll fetches (registration heartbeat, manifest list,
+ *  playlists, schedule, settings). Without a timeout, a hung TCP socket
+ *  parks `regInFlight` / `manifestInFlight` true forever — observed once as a
+ *  player stuck on "waiting for registration" even though the cloud had
+ *  already registered the token, fixable only by restarting the player. */
+const DEFAULT_POLL_TIMEOUT_MS = 15_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
 
 let cloudUrl = '';
@@ -356,7 +362,7 @@ async function pollRegistration() {
         ...(lastContentSyncAt !== undefined ? { lastContentSync: lastContentSyncAt } : {}),
     };
     try {
-        const res = await fetch(url, {
+        const res = await fetchWithTimeout(url, DEFAULT_POLL_TIMEOUT_MS, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
@@ -459,7 +465,7 @@ async function pollManifest() {
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SEQ_LIST}${playerIdToken}`;
     log('info', `manifest poll ${url}`);
     try {
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetchWithTimeout(url, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (!res.ok) {
             recordFailure(`manifest HTTP ${res.status}`);
             return;
@@ -487,7 +493,7 @@ async function fetchPlaylistsAndSchedule() {
     if (!cloudUrl || !playerIdToken) return;
     const plUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_PLAYLISTS}${playerIdToken}`;
     try {
-        const res = await fetch(plUrl, { method: 'GET' });
+        const res = await fetchWithTimeout(plUrl, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (res.ok) {
             const body = (await res.json()) as { playlists?: PlaylistRecord[] };
             const playlists = body.playlists ?? [];
@@ -506,7 +512,7 @@ async function fetchPlaylistsAndSchedule() {
 
     const schUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SCHEDULE}${playerIdToken}`;
     try {
-        const res = await fetch(schUrl, { method: 'GET' });
+        const res = await fetchWithTimeout(schUrl, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (res.ok) {
             const body = (await res.json()) as { schedule?: ScheduledPlaylist[] };
             const schedule = body.schedule ?? [];
@@ -532,7 +538,7 @@ async function fetchPlayerSettings() {
     if (!cloudUrl || !playerIdToken) return;
     const url = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SETTINGS}${playerIdToken}`;
     try {
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetchWithTimeout(url, DEFAULT_POLL_TIMEOUT_MS, { method: 'GET' });
         if (!res.ok) {
             log('warn', `settings HTTP ${res.status}`);
             return;
@@ -677,7 +683,13 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         const fileIds: string[] = [];
         const pending: PendingFile[] = [];
 
-        if (entry.status === 'disabled') {
+        if (entry.status === 'disabled' || entry.status === 'pending') {
+            // Same on-record shape for both: a tombstone SequenceRecord with
+            // render_enabled=false hides it from jukebox/playlist/songs/
+            // schedule. The CloudSequenceProgress carries the distinguishing
+            // flag (`disabled` vs `pending`) so the cloud panel can label
+            // why — important for the curious operator watching a granted
+            // sequence not yet show up because render is still queued.
             const record = buildDisabledSequenceRecord(entry, existing);
             post({ type: 'installSequence', record });
             const idx = existingSequences.findIndex((s) => s.id === record.id);
@@ -689,7 +701,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
                 artist: entry.artist || '',
                 vendor: entry.vendor,
                 fileIds: [],
-                disabled: true,
+                ...(entry.status === 'disabled' ? { disabled: true } : { pending: true }),
             };
             perEntryPending.set(entry.id, []);
             continue;
@@ -1127,6 +1139,9 @@ async function buildSequenceRecord(
     const next: SequenceRecord = {
         ...(existing ?? { instanceId: randomUUID(), id: entry.id, work: { title: '', artist: '', length: 0 } }),
         id: entry.id,
+        // Clear tombstone flags from a prior disabled/pending pass.
+        render_enabled: true,
+        deleted: false,
         work: {
             ...(existing?.work ?? { title: '', artist: '', length: 0 }),
             title: entry.title ?? existing?.work?.title ?? '',

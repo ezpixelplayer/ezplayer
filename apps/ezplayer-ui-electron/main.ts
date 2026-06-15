@@ -125,6 +125,8 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
             preload: path.join(__dirname, 'preload-audio.js'),
             contextIsolation: true,
             webSecurity: false,
+            // Hidden window default-throttles audio render; keep it full-priority.
+            backgroundThrottling: false,
         },
     });
 

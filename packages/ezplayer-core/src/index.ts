@@ -87,6 +87,8 @@ export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
+export { isSequencePlayable } from './util/seqFilter';
+
 export {
     type PlayAction,
     type PlaybackActions,
