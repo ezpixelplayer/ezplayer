@@ -13,7 +13,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                os: [ubuntu-latest, windows-2025, macos-latest]
+                os: [ubuntu-latest, windows-2022, macos-latest]
 
         runs-on: ${{ matrix.os }}
 
@@ -28,13 +28,13 @@ jobs:
                   python-version: '3.11'
 
             - name: Set Python for node-gyp (unix)
-              if: matrix.os != 'windows-2025'
+              if: matrix.os != 'windows-2022'
               run: |
                   python --version
                   echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
             - name: Set Python for node-gyp (windows)
-              if: matrix.os == 'windows-2025'
+              if: matrix.os == 'windows-2022'
               run: |
                   python --version
                   echo "PYTHON=$(where python | head -1)" >> $GITHUB_ENV
