@@ -23,6 +23,11 @@ import type { Event as ElectronEvent } from 'electron';
 
 import os from 'os';
 
+// Linux: Ubuntu 24.04+ AppArmor blocks unprivileged user namespaces; older distros lack SUID sandbox helper.
+if (process.platform === 'linux') {
+    app.commandLine.appendSwitch('no-sandbox');
+}
+
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
 
 app.setPath('crashDumps', dumpDir);
