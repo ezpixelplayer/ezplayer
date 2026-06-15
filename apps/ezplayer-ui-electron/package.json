@@ -67,6 +67,7 @@
                 "deb",
                 "tar.gz"
             ],
+            "executableArgs": ["--no-sandbox"],
             "icon": "src/assets/images/EZPlayerLogoTransparent.png",
             "category": "Utility"
         },
