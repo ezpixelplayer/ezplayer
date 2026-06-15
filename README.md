@@ -55,6 +55,23 @@ We currently provide builds for:
 
 Just download the installer or portable build and run it.
 
+#### Linux notes (AppImage on Ubuntu 24.04+)
+
+Recent Ubuntu releases need two one-time setup steps before the AppImage will run with full functionality:
+
+```bash
+# Required: AppImage runtime needs libfuse2, which 24.04 dropped from defaults.
+sudo apt install libfuse2t64    # libfuse2 on older Ubuntu / Debian
+```
+
+```bash
+# Required for controller ICMP ping to work as an unprivileged user.
+sudo sh -c 'echo "net.ipv4.ping_group_range = 0 2147483647" > /etc/sysctl.d/99-ezplayer-ping.conf'
+sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
+```
+
+Then `chmod +x EZPlayer-*.AppImage` and launch.
+
 ### Running EZPlayer
 
 When you first run EZPlayer, you will choose your show folder. This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
