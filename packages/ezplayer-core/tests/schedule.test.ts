@@ -34,15 +34,18 @@ import {
 ///
 // These are used in the random test
 ///
-const s1: SequenceRecord = { id: '1', instanceId: '1', work: { length: 10, artist: '1', title: '1' } };
-const s2: SequenceRecord = { id: '2', instanceId: '2', work: { length: 10, artist: '2', title: '2' } };
-const s3: SequenceRecord = { id: '3', instanceId: '3', work: { length: 10, artist: '3', title: '3' } };
-const s4: SequenceRecord = { id: '4', instanceId: '4', work: { length: 10, artist: '4', title: '4' } };
-const s5: SequenceRecord = { id: '5', instanceId: '5', work: { length: 10, artist: '5', title: '5' } };
-const s6: SequenceRecord = { id: '6', instanceId: '6', work: { length: 10, artist: '6', title: '6' } };
-const s7: SequenceRecord = { id: '7', instanceId: '7', work: { length: 10, artist: '7', title: '7' } };
-const s8: SequenceRecord = { id: '8', instanceId: '8', work: { length: 10, artist: '8', title: '8' } };
-const s9: SequenceRecord = { id: '9', instanceId: '9', work: { length: 10, artist: '9', title: '9' } };
+// Sequences carry `files.fseq` because `setUpSequences` filters the master map through
+// `isSequencePlayable` (#141), which intentionally drops sequences with no downloaded
+// fseq (they can't play yet). Real playable songs always have one; the fixtures match.
+const s1: SequenceRecord = { id: '1', instanceId: '1', work: { length: 10, artist: '1', title: '1' }, files: { fseq: 'f1' } };
+const s2: SequenceRecord = { id: '2', instanceId: '2', work: { length: 10, artist: '2', title: '2' }, files: { fseq: 'f2' } };
+const s3: SequenceRecord = { id: '3', instanceId: '3', work: { length: 10, artist: '3', title: '3' }, files: { fseq: 'f3' } };
+const s4: SequenceRecord = { id: '4', instanceId: '4', work: { length: 10, artist: '4', title: '4' }, files: { fseq: 'f4' } };
+const s5: SequenceRecord = { id: '5', instanceId: '5', work: { length: 10, artist: '5', title: '5' }, files: { fseq: 'f5' } };
+const s6: SequenceRecord = { id: '6', instanceId: '6', work: { length: 10, artist: '6', title: '6' }, files: { fseq: 'f6' } };
+const s7: SequenceRecord = { id: '7', instanceId: '7', work: { length: 10, artist: '7', title: '7' }, files: { fseq: 'f7' } };
+const s8: SequenceRecord = { id: '8', instanceId: '8', work: { length: 10, artist: '8', title: '8' }, files: { fseq: 'f8' } };
+const s9: SequenceRecord = { id: '9', instanceId: '9', work: { length: 10, artist: '9', title: '9' }, files: { fseq: 'f9' } };
 
 const all9 = [s1, s2, s3, s4, s5, s6, s7, s8, s9];
 
@@ -126,6 +129,7 @@ const rec1: SequenceRecord = {
         lead_time: 0.1,
         trail_time: -0.2,
     },
+    files: { fseq: 'f1234' },
 };
 
 const pl1: PlaylistRecord = {
@@ -1858,6 +1862,7 @@ const krs1: SequenceRecord = {
         lead_time: 0,
         trail_time: 0,
     },
+    files: { fseq: 'fkrs1' },
 };
 
 const krs2: SequenceRecord = {
@@ -1872,6 +1877,7 @@ const krs2: SequenceRecord = {
         lead_time: 0,
         trail_time: 0,
     },
+    files: { fseq: 'fkrs2' },
 };
 
 const krshow: PlaylistRecord = {
@@ -2008,6 +2014,226 @@ describe('calcschedule', () => {
         expect(pls[3].eventTime).toBe(bt + 16 * 3600 * 1000 + 20 * 60 * 1000 + 0 * 1000);
         expect(pls[3].scheduleId).toBe(krstatsched.id);
         expect(pls[3].playlistId).toBe(krstatic.id);
+    });
+
+    // PROBE: drive the jukebox interactive-queue -> playlist resume through the SAME
+    // frame-by-frame `runUntil(tft, 1, plog)` pump the real playback loop uses (via
+    // executeByFrame), rather than the single big `readOutScheduleUntil(..., 100)` sweep
+    // every other interactive test uses. If resume only works in the sweep, this diverges.
+    it('jukebox queue resumes the playlist frame-by-frame (real-loop drive)', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000; // schedule start (plof2 = s1, s2; each 10s)
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        // Frame-step into the first playlist song.
+        const phase1 = executeByFrame(plr, h + 5_000);
+        expect(phase1.sss.some((s) => s.id === s1.id)).toBe(true);
+
+        // Queue a jukebox song — arrives between frames, exactly like a real command.
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: plr.currentTime + 100,
+            seqId: s3.id,
+            requestId: 'jb',
+        });
+
+        // Keep frame-stepping to the end of the schedule window.
+        const phase2 = executeByFrame(plr, h + 60 * 60 * 1000);
+
+        // The jukebox song must play...
+        const jb = phase2.sss.find((s) => s.id === s3.id);
+        expect(jb).toBeDefined();
+        // ...and THEN the playlist must resume (s2 starts after the jukebox song).
+        const s2AfterJb = phase2.sss.find((s) => s.id === s2.id && s.d >= jb!.d);
+        expect(s2AfterJb).toBeDefined();
+    });
+
+    // The common jukebox action is the big play button => immediate:true (hard-cut the
+    // current playlist song mid-play, then resume it). Drive it frame-by-frame.
+    it('jukebox IMMEDIATE resumes the playlist frame-by-frame (real-loop drive)', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        const phase1 = executeByFrame(plr, h + 5_000); // mid s1
+        expect(phase1.sss.some((s) => s.id === s1.id)).toBe(true);
+
+        plr.addInteractiveCommand({
+            immediate: true,
+            startTime: plr.currentTime + 100,
+            seqId: s3.id,
+            requestId: 'jb',
+        });
+
+        const phase2 = executeByFrame(plr, h + 60 * 60 * 1000);
+        const jb = phase2.sss.find((s) => s.id === s3.id);
+        expect(jb).toBeDefined();
+        // s1 was hard-cut mid-play; after the jukebox song it must resume (s1 again), then s2.
+        const playlistAfter = phase2.sss.find((s) => (s.id === s1.id || s.id === s2.id) && s.d >= jb!.d);
+        expect(playlistAfter).toBeDefined();
+    });
+
+    // "After jukebox songS play" — multiple queued, then return to the playlist.
+    it('multiple queued jukebox songs then resume, frame-by-frame (real-loop drive)', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        const phase1 = executeByFrame(plr, h + 5_000);
+        expect(phase1.sss.some((s) => s.id === s1.id)).toBe(true);
+
+        plr.addInteractiveCommand({ immediate: false, startTime: plr.currentTime + 100, seqId: s3.id, requestId: 'jb1' });
+        plr.addInteractiveCommand({ immediate: false, startTime: plr.currentTime + 200, seqId: s4.id, requestId: 'jb2' });
+        plr.addInteractiveCommand({ immediate: false, startTime: plr.currentTime + 300, seqId: s5.id, requestId: 'jb3' });
+
+        const phase2 = executeByFrame(plr, h + 60 * 60 * 1000);
+        expect(phase2.sss.some((s) => s.id === s3.id)).toBe(true);
+        expect(phase2.sss.some((s) => s.id === s4.id)).toBe(true);
+        expect(phase2.sss.some((s) => s.id === s5.id)).toBe(true);
+        const lastJb = phase2.sss.find((s) => s.id === s5.id)!;
+        const resumed = phase2.sss.find((s) => (s.id === s1.id || s.id === s2.id) && s.d >= lastJb.d);
+        expect(resumed).toBeDefined();
+    });
+
+    // Realistic show: a LOOPING scheduled playlist preempted by a jukebox song, then
+    // expected to resume looping. Frame-by-frame (real-loop drive).
+    it('jukebox over a LOOPING playlist resumes the loop, frame-by-frame', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const schedLoop: ScheduledPlaylist = {
+            ...scheduleOf2,
+            id: 'schedLoop',
+            playlistId: 'plof2',
+            loop: true,
+        };
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([...all9], [plof2], [schedLoop], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        // Run a few minutes into the looping show.
+        const phase1 = executeByFrame(plr, h + 45_000); // 45s in => several loop iterations
+        expect(phase1.sss.filter((s) => s.id === s1.id || s.id === s2.id).length).toBeGreaterThan(1);
+
+        plr.addInteractiveCommand({
+            immediate: true,
+            startTime: plr.currentTime + 100,
+            seqId: s3.id,
+            requestId: 'jb',
+        });
+
+        const phase2 = executeByFrame(plr, h + 5 * 60 * 1000); // keep going 5 min
+        const jb = phase2.sss.find((s) => s.id === s3.id);
+        expect(jb).toBeDefined();
+        // The loop must keep producing playlist songs after the jukebox song.
+        const loopAfter = phase2.sss.filter((s) => (s.id === s1.id || s.id === s2.id) && s.d > jb!.d);
+        expect(loopAfter.length).toBeGreaterThan(1);
+    });
+
+    // Cloud polls call applyDataUpdate periodically; one very likely lands WHILE a jukebox
+    // song is playing over a suspended schedule. Does the schedule still resume afterward?
+    it('jukebox survives an applyDataUpdate (cloud poll) mid-song and still resumes', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        // Into s1, then immediate jukebox song.
+        executeByFrame(plr, h + 5_000);
+        plr.addInteractiveCommand({ immediate: true, startTime: plr.currentTime + 100, seqId: s3.id, requestId: 'jb' });
+
+        // Let the jukebox song actually be playing.
+        const during = executeByFrame(plr, h + 8_000);
+        expect(during.sss.some((s) => s.id === s3.id)).toBe(true);
+
+        // Cloud poll lands mid-jukebox-song: same data, refill the loaded window.
+        plr.applyDataUpdate([...all9], [plof2], [scheduleOf2], errs, plr.currentTime, bt + 24 * 3600_000);
+        expect(errs.length).toBe(0);
+
+        // Keep stepping to the end of the schedule window.
+        const after = executeByFrame(plr, h + 60 * 60 * 1000);
+        // The suspended schedule must resume (s1 continues or s2 starts) after the jukebox song.
+        const resumed = after.sss.some((s) => s.id === s1.id || s.id === s2.id);
+        expect(resumed).toBe(true);
+    });
+
+    // ODD LENGTHS: every other fixture is integer seconds => an exact multiple of the 25ms
+    // frame step, so no boundary ever lands between frames. Real songs don't oblige. Use
+    // sequences whose ms length is NOT a multiple of 25 and drive frame-by-frame: boundaries
+    // must still land at their exact engine time (no quantizing), and resume must still fire.
+    it('odd (non-frame-aligned) lengths play and resume correctly, frame-by-frame', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+
+        const oA: SequenceRecord = { id: 'oA', instanceId: 'oA', work: { length: 7.137, artist: 'a', title: 'A' }, files: { fseq: 'foA' } };
+        const oB: SequenceRecord = { id: 'oB', instanceId: 'oB', work: { length: 11.913, artist: 'b', title: 'B' }, files: { fseq: 'foB' } };
+        const oJ: SequenceRecord = { id: 'oJ', instanceId: 'oJ', work: { length: 5.333, artist: 'j', title: 'J' }, files: { fseq: 'foJ' } };
+        const plOdd: PlaylistRecord = {
+            id: 'plOdd',
+            title: 'plOdd',
+            tags: [],
+            createdAt: 0,
+            items: [
+                { id: 'oA', sequence: 1 },
+                { id: 'oB', sequence: 2 },
+            ],
+        };
+        const schedOdd: ScheduledPlaylist = { ...scheduleOf2, id: 'schedOdd', playlistId: 'plOdd' };
+
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([oA, oB, oJ], [plOdd], [schedOdd], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+
+        // Plain frame-by-frame playback first: boundaries must be exact, not snapped to 25ms.
+        const plain = executeByFrame(plr, h + 25_000);
+        const aStart = plain.sss.find((s) => s.id === 'oA');
+        const bStart = plain.sss.find((s) => s.id === 'oB');
+        expect(aStart?.d).toBe(h); // A starts at schedule start
+        expect(bStart?.d).toBe(h + 7137); // B starts at A's exact odd boundary, NOT h+7150
+        expect((bStart!.d - h) % 25).not.toBe(0); // prove the boundary is between frames
+
+        // Now the same with an immediate jukebox interruption (also odd length), then resume.
+        const plr2 = new PlayerRunState(bt);
+        plr2.setUpSequences([oA, oB, oJ], [plOdd], [schedOdd], errs);
+        plr2.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
+        executeByFrame(plr2, h + 3_000); // mid oA
+        plr2.addInteractiveCommand({ immediate: true, startTime: plr2.currentTime + 137, seqId: 'oJ', requestId: 'jb' });
+        const after = executeByFrame(plr2, h + 60 * 1000);
+        const jb = after.sss.find((s) => s.id === 'oJ');
+        expect(jb).toBeDefined();
+        // oA must resume (it was hard-cut mid-play) and then oB must still play.
+        expect(after.sss.some((s) => s.id === 'oA' && s.d >= jb!.d)).toBe(true);
+        expect(after.sss.some((s) => s.id === 'oB' && s.d >= jb!.d)).toBe(true);
     });
 
     it('should run the same way it simulates', () => {
