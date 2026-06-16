@@ -4,4 +4,4 @@
 - Blended w/ the foreground
 - Carries tune-to info, announcements, etc.
 
-> 📷 **Screenshot (optional):** background sequence
+![w:500](assets/img/background-schedule.png)

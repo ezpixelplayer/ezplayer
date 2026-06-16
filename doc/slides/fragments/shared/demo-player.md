@@ -14,9 +14,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Intro screen — pick a show folder
 
-> 📷 **Screenshot:** intro screen, choosing a show folder
+<!-- > 📷 **Screenshot:** intro screen, choosing a show folder -->
 
-![Show Folder Structure](../images/show-folder.png)
+![w:760](assets/img/show-folder.png)
 
 
 - Point EZPlayer at an existing xLights show folder
@@ -26,9 +26,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Player screen
 
-> 📷 **Screenshot:** player screen (idle)
+<!-- > 📷 **Screenshot:** player screen (idle) -->
 
-![Player Screen](../images/player.png)
+![w:760](assets/img/player.png)
 
 - The home base for playback — not much to see until a show is running
 
@@ -36,9 +36,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Songs screen — add a song
 
-> 📷 **Screenshot:** songs screen after adding a sequence
+<!-- > 📷 **Screenshot:** songs screen after adding a sequence -->
 
-![Songs](../images/songs.png)
+![w:760](assets/img/songs.png)
 
 - Add a song and EZPlayer picks up the sequence, audio, and models automatically
 
@@ -46,9 +46,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Jukebox — and it plays
 
-> 📷 **Screenshot:** jukebox screen mid-playback
+<!-- > 📷 **Screenshot:** jukebox screen mid-playback -->
 
-![Jukebox](../images/jukebox.png)
+![w:760](assets/img/jukebox.png)
 
 
 - Queue up sequences and let them run, jukebox style
@@ -57,9 +57,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## 3D preview
 
-> 📷 **Screenshot:** 3D preview of the show
+<!-- > 📷 **Screenshot:** 3D preview of the show -->
 
-![3D preview](../images/3D-preview.png)
+![w:760](assets/img/3D-preview.png)
 
 - See the show rendered live
 
@@ -67,7 +67,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Status screen
 
-> 📷 **Screenshot:** status screen
+![w:260](assets/img/status-1.png)
+![w:260](assets/img/status-2.png)
+![w:260](assets/img/status-3.png)
 
 - View of what the player and controllers are doing right now
 
@@ -75,9 +77,8 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Playlists
 
-> 📷 **Screenshot:** playlists screen
 
-![Playlists](../images/playlists.png)
+![w:760](assets/img/playlists.png)
 
 
 - Group sequences into playlists for different purposes
@@ -86,37 +87,30 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Schedule (1 of 3)
 
-> 📷 **Screenshot:** schedule — calendar / week view
 
-![Schedule Calendar](../images/schedule-calendar.png)
+![w:500](assets/img/schedule-calendar.png)
 
 ---
 
 ## Schedule (2 of 3)
 
-> 📷 **Screenshot:** schedule — editing an entry
 
-![Editing Schedule](../images/schedule-editing.png)
+![w:500](assets/img/schedule-editing.png)
 
 
 ---
 
 ## Schedule (3 of 3)
 
-> 📷 **Screenshot:** schedule — recurring rules
 
-![Schedule Recurring 1](../images/schedule-recurring-1.png)
-![Schedule Recurring 2](../images/schedule-recurring-2.png)
-![Schedule Recurring 3](../images/schedule-recurring-3.png)
+![w:500](assets/img/schedule-recurring-1.png)
+![w:500](assets/img/schedule-recurring-2.png)
+![w:500](assets/img/schedule-recurring-3.png)
 
 ---
 
 ## Show status
 
-> 📷 **Screenshot:** overall show status
-
-![Show-Status-1](../images/show-status-1.png)
-![Show-Status-2](../images/show-status-2.png)
-![Show-Status-3](../images/show-status-3.png)
+![w:760](assets/img/show-status.png)
 
 - At a glance: what's playing, what's next, and whether everything is healthy

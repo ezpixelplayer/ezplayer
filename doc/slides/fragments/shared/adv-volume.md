@@ -4,4 +4,4 @@
 - Scheduled override window by day of week + time
 - Adjusts gradually
 
-> 📷 **Screenshot (optional):** volume controls
+![w:500](assets/img/volume-control.png)

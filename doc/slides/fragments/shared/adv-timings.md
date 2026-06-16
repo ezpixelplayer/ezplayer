@@ -4,4 +4,4 @@
 - No surprises about priorities, loops, etc.
 - Tell what the shuffle will do in advance
 
-> 📷 **Screenshot (optional):** schedule timing detail
+![w:500](assets/img/schedule-timings.png)
