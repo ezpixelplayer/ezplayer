@@ -19,7 +19,16 @@ const seqB: SequenceRecord = {
     work: { length: 100, artist: 'b', title: 'B' },
     files: { fseq: 'b.fseq', audio: 'b.mp3' },
 };
-const seqC: SequenceRecord = { id: 'C', instanceId: 'C', work: { length: 100, artist: 'c', title: 'C' } };
+// seqC is "merely present" (in the library, not on the active stack) but still a real,
+// playable song — it has a downloaded fseq. `setUpSequences` filters the master map through
+// `isSequencePlayable` (#141), which intentionally excludes fseq-less sequences, so a
+// fixture meant to stay in the map (detail-adoption, queue-preservation) must carry one.
+const seqC: SequenceRecord = {
+    id: 'C',
+    instanceId: 'C',
+    work: { length: 100, artist: 'c', title: 'C' },
+    files: { fseq: 'c.fseq' },
+};
 
 const plAB: PlaylistRecord = {
     id: 'plAB',
@@ -165,7 +174,7 @@ describe('applyDataUpdate', () => {
     it('adopts new details for sequences that are not on the active stack', () => {
         const plr = runningState();
         const editedC: SequenceRecord = { ...seqC, work: { ...seqC.work, length: 42 } };
-        const seqD: SequenceRecord = { id: 'D', instanceId: 'D', work: { length: 7, artist: 'd', title: 'D' } };
+        const seqD: SequenceRecord = { id: 'D', instanceId: 'D', work: { length: 7, artist: 'd', title: 'D' }, files: { fseq: 'd.fseq' } };
 
         apply(plr, [seqA, seqB, editedC, seqD], [plAB], [sched]);
 
