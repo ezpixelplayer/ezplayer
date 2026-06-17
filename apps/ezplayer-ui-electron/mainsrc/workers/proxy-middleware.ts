@@ -38,6 +38,33 @@ function filterHeaders(raw: http.IncomingHttpHeaders): http.OutgoingHttpHeaders 
     return out;
 }
 
+/**
+ * Build forwarded request headers from `rawHeaders`, preserving the original
+ * header-name case. `req.headers` lowercases every name, which breaks devices
+ * with case-sensitive header parsing (e.g. HinksPix only honors `BLK`, not
+ * `blk`). `rawHeaders` is a flat [name, value, name, value, …] array that keeps
+ * the on-the-wire case. `host` is dropped here because the caller overrides it
+ * with the target host (avoids sending a duplicate Host header).
+ */
+function filterRawHeaders(rawHeaders: string[]): http.OutgoingHttpHeaders {
+    const out: http.OutgoingHttpHeaders = {};
+    for (let i = 0; i + 1 < rawHeaders.length; i += 2) {
+        const key = rawHeaders[i];
+        const value = rawHeaders[i + 1];
+        const lower = key.toLowerCase();
+        if (HOP_BY_HOP.has(lower) || lower === 'host') continue;
+        const existing = out[key];
+        if (existing === undefined) {
+            out[key] = value;
+        } else if (Array.isArray(existing)) {
+            existing.push(value);
+        } else {
+            out[key] = [existing as string, value];
+        }
+    }
+    return out;
+}
+
 /** Parse and validate the target URL from the proxy path. */
 function parseTargetUrl(originalUrl: string): URL | null {
     let raw = originalUrl.slice(PROXY_PREFIX.length);
@@ -70,7 +97,9 @@ export function createProxyMiddleware(): Koa.Middleware {
 
         const transport = target.protocol === 'https:' ? https : http;
 
-        const outHeaders = filterHeaders(ctx.req.headers);
+        // Preserve original header-name case (see filterRawHeaders) so
+        // case-sensitive devices behind the proxy receive headers as sent.
+        const outHeaders = filterRawHeaders(ctx.req.rawHeaders);
         outHeaders['host'] = target.host;
 
         await new Promise<void>((resolve) => {
