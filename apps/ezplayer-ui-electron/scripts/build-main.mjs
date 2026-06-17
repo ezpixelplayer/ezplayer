@@ -35,15 +35,18 @@ const GIT_TAG = (() => {
     }
 })();
 
+// Keep external ONLY what genuinely can't be bundled: electron itself, native .node
+// addons (loaded via bindings() relative to their own dir), WASM/asset-relative loaders,
+// and node builtins. Everything else (pure-JS deps) is bundled by esbuild — the
+// createRequire banner above makes their require() calls work, so we no longer depend on
+// electron-builder's pnpm collector to put them in the asar. scripts/depaudit.cjs gates
+// this: any external a bundle still references must be present in the packaged asar.
 const nodeExternals = [
-    'form-data',
     'electron',
     'electron-store',
     'electron-updater',
     'proper-lockfile',
     'url',
-    'follow-redirects',
-    'proxy-from-env',
     'mpg123-decoder',
     'mpg123-decoder-ezp',
     'bindings',
