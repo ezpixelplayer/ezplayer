@@ -39,12 +39,10 @@ function filterHeaders(raw: http.IncomingHttpHeaders): http.OutgoingHttpHeaders 
 }
 
 /**
- * Build forwarded request headers from `rawHeaders`, preserving the original
- * header-name case. `req.headers` lowercases every name, which breaks devices
- * with case-sensitive header parsing (e.g. HinksPix only honors `BLK`, not
- * `blk`). `rawHeaders` is a flat [name, value, name, value, …] array that keeps
- * the on-the-wire case. `host` is dropped here because the caller overrides it
- * with the target host (avoids sending a duplicate Host header).
+ * Build forwarded request headers preserving original header-name case.
+ * `req.headers` lowercases names, breaking case-sensitive devices (e.g. HinksPix
+ * only honors `BLK`, not `blk`); `rawHeaders` keeps the wire case. `host` is
+ * dropped — the caller sets it from the target.
  */
 function filterRawHeaders(rawHeaders: string[]): http.OutgoingHttpHeaders {
     const out: http.OutgoingHttpHeaders = {};
@@ -97,8 +95,6 @@ export function createProxyMiddleware(): Koa.Middleware {
 
         const transport = target.protocol === 'https:' ? https : http;
 
-        // Preserve original header-name case (see filterRawHeaders) so
-        // case-sensitive devices behind the proxy receive headers as sent.
         const outHeaders = filterRawHeaders(ctx.req.rawHeaders);
         outHeaders['host'] = target.host;
 
@@ -168,10 +164,8 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
             return;
         }
 
-        // Reuse the HTTP target parser so the WS path accepts the same forms as
-        // the HTTP path — notably a bare host (`/proxy/<host>/<path>`). Before,
-        // this used a raw `new URL(raw)` with no scheme defaulting, so a
-        // scheme-less target threw and the upgrade socket was silently dropped.
+        // Reuse the HTTP target parser so the WS path accepts the same target
+        // forms, including a bare host (`/proxy/<host>`).
         const target = parseTargetUrl(url);
         if (!target) {
             socket.destroy();
@@ -204,11 +198,9 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
                     }
                 });
 
-                // Close propagation. Only application-valid codes (1000, or
-                // 3000–4999) may be passed to ws.close(); reserved codes such as
-                // 1005 (no status) and 1006 (abnormal) are reported on the
-                // 'close' event but throw if handed back to close() — which would
-                // otherwise be an uncaught exception that crashes the server.
+                // ws.close() only accepts application close codes (1000, or
+                // 3000–4999); reserved codes like 1005/1006 throw, so fall back
+                // to a plain close.
                 const closeSafely = (ws: WebSocket, code: number, reason: Buffer) => {
                     if (ws.readyState !== WebSocket.OPEN) return;
                     if (code === 1000 || (code >= 3000 && code <= 4999)) {
