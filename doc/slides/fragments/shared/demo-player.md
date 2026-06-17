@@ -16,7 +16,7 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 <!-- > 📷 **Screenshot:** intro screen, choosing a show folder -->
 
-![w:760](assets/img/show-folder.png)
+![w:760](assets/img/intro.png)
 
 
 - Point EZPlayer at an existing xLights show folder

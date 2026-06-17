@@ -11,7 +11,7 @@ Get your EZRGB show playing in just a few minutes.
 
 You'll need:
 
-- EZPlayer installed (Windows, macOS, or Linux).  See [releases](https://ezrgb.com/ezplayer).
+- EZPlayer installed (Windows, macOS, or Linux). See [releases](https://ezrgb.com/ezplayer).
 - Eventually, your controllers reachable on the network, with lights wired up.
 - A **temporary folder** — storage space for your layout, sequences, and audio.
 
@@ -27,19 +27,25 @@ or scan the QR code with another device to complete registration.
 
 ![Cloud Registration Screen](/img/FirstRunCloudReg.png)
 
-
 ## 2. Wait for content
+
+![Cloud Screen](/img/cloud-screen.png)
 
 Open the **Cloud** screen and watch your content download.
 
 ## 3. Play it
 
-Use the **Jukebox** to queue sequences and let them run.  You can access the jukebox from
+![Play on jukebox](/img/jukebox.png)
+
+Use the **Jukebox** to queue sequences and let them run. You can access the jukebox from
+
 - EZPlayer UI directly
 - The EZPlayer LAN UI
 - The EZPlayer cloud
 
 ## 4. Schedule the show
+
+![Schedule](/img/schedule-calendar.png)
 
 Follow the [show scheduling instructions](./quickstart.md#4-schedule-the-show).
 

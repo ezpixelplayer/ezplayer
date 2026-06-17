@@ -11,8 +11,8 @@ Get a show running with EZPlayer in a few minutes.
 
 You'll need:
 
-- EZPlayer installed (Windows, macOS, or Linux).  See [releases](https://ezrgb.com/ezplayer).
-- An **xLights show folder** —  layout, sequences, and audio EZPlayer can read.
+- EZPlayer installed (Windows, macOS, or Linux). See [releases](https://ezrgb.com/ezplayer).
+- An **xLights show folder** — layout, sequences, and audio EZPlayer can read.
 - Eventually, your controllers reachable on the network, with lights wired up.
 
 ## 1. Point EZPlayer at your show folder
@@ -25,17 +25,25 @@ there, so there's nothing else to configure to get started.
 
 ## 2. Add a song
 
+![Add a Song](/img/add-song.png)
+
+![List of songs](/img/songs.png)
+
 Open the **Songs** screen and add a sequence, starting with the `.fseq`. In most cases, EZPlayer picks up the matching
-audio and description automatically.  If not, fill in the remaining files and details.
+audio and description automatically. If not, fill in the remaining files and details.
 
 Repeat for as many sequences as you like.
 
 ## 3. Play it
 
+![Play on jukebox](/img/jukebox.png)
+
 Use the **Jukebox** to queue sequences and let them run. Want to see it before
 it hits the real lights? The **3D preview** renders the show on screen as it plays.
 
 ## 4. Schedule the show
+
+![Schedule](/img/schedule-calendar.png)
 
 Open the **Schedule** to set when the show runs — start and stop times on a calendar.
 The show then runs on its own.
