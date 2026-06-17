@@ -139,16 +139,12 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
             return;
         }
 
-        const raw = url.slice(PROXY_PREFIX.length);
-        if (!raw) {
-            socket.destroy();
-            return;
-        }
-
-        let target: URL;
-        try {
-            target = new URL(raw);
-        } catch {
+        // Reuse the HTTP target parser so the WS path accepts the same forms as
+        // the HTTP path — notably a bare host (`/proxy/<host>/<path>`). Before,
+        // this used a raw `new URL(raw)` with no scheme defaulting, so a
+        // scheme-less target threw and the upgrade socket was silently dropped.
+        const target = parseTargetUrl(url);
+        if (!target) {
             socket.destroy();
             return;
         }
@@ -179,18 +175,22 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
                     }
                 });
 
-                // Close propagation
-                clientWs.on('close', (code, reason) => {
-                    if (targetWs.readyState === WebSocket.OPEN) {
-                        targetWs.close(code, reason);
+                // Close propagation. Only application-valid codes (1000, or
+                // 3000–4999) may be passed to ws.close(); reserved codes such as
+                // 1005 (no status) and 1006 (abnormal) are reported on the
+                // 'close' event but throw if handed back to close() — which would
+                // otherwise be an uncaught exception that crashes the server.
+                const closeSafely = (ws: WebSocket, code: number, reason: Buffer) => {
+                    if (ws.readyState !== WebSocket.OPEN) return;
+                    if (code === 1000 || (code >= 3000 && code <= 4999)) {
+                        ws.close(code, reason);
+                    } else {
+                        ws.close();
                     }
-                });
+                };
 
-                targetWs.on('close', (code, reason) => {
-                    if (clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.close(code, reason);
-                    }
-                });
+                clientWs.on('close', (code, reason) => closeSafely(targetWs, code, reason));
+                targetWs.on('close', (code, reason) => closeSafely(clientWs, code, reason));
 
                 // Error propagation
                 clientWs.on('error', () => {
