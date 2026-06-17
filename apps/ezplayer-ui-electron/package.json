@@ -85,7 +85,7 @@
         "dev:direct": "pnpm --filter @ezplayer/ui-embedded build:web && concurrently \"pnpm --filter @ezplayer/ui-embedded build:web:watch\" \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": "pnpm --filter @ezplayer/ui-embedded build && pnpm --filter @ezplayer/ui-embedded build:web && node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder && pnpm audit:deps",
+        "build": "pnpm --filter @ezplayer/ui-embedded build && pnpm --filter @ezplayer/ui-embedded build:web && node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --publish never && pnpm audit:deps",
         "audit:deps": "node scripts/depaudit.cjs",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
