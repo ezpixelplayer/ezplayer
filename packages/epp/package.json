@@ -30,12 +30,12 @@
         "zstddec": "^0.1.0"
     },
     "devDependencies": {
-        "@types/jest": "^29.5.11",
-        "@typescript-eslint/eslint-plugin": "^6.18.0",
-        "@typescript-eslint/parser": "^6.18.0",
-        "eslint": "^8.56.0",
-        "tsup": "^8.5.0",
-        "typescript": "^5.4.5",
+        "@types/jest": "^29.5.14",
+        "@typescript-eslint/eslint-plugin": "^6.21.0",
+        "@typescript-eslint/parser": "^6.21.0",
+        "eslint": "^8.57.1",
+        "tsup": "^8.5.1",
+        "typescript": "^5.9.3",
         "vitest": "^2.1.9",
         "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.6.tgz"
     }

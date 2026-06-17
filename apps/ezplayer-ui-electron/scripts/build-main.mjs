@@ -35,15 +35,18 @@ const GIT_TAG = (() => {
     }
 })();
 
+// Keep external ONLY what genuinely can't be bundled: electron itself, native .node
+// addons (loaded via bindings() relative to their own dir), WASM/asset-relative loaders,
+// and node builtins. Everything else (pure-JS deps) is bundled by esbuild — the
+// createRequire banner above makes their require() calls work, so we no longer depend on
+// electron-builder's pnpm collector to put them in the asar. scripts/depaudit.cjs gates
+// this: any external a bundle still references must be present in the packaged asar.
 const nodeExternals = [
-    'form-data',
     'electron',
     'electron-store',
     'electron-updater',
     'proper-lockfile',
     'url',
-    'follow-redirects',
-    'proxy-from-env',
     'mpg123-decoder',
     'mpg123-decoder-ezp',
     'bindings',
@@ -53,20 +56,9 @@ const nodeExternals = [
     // own dist/ at runtime — otherwise bindings walks up from the bundled
     // location and can't find the .node file.
     '@ezplayer/icmp-ping',
-    'koa',
-    '@koa/bodyparser',
-    '@koa/router',
-    '@koa/send',
-    'koa-static',
     'ws',
     'http',
     'fs/promises',
-    'debug',
-    'http-errors',
-    'http-assert',
-    'resolve-path',
-    'statuses',
-    'toidentifier',
     'express',
     'zstd-codec',
     ...builtinModules,
@@ -79,6 +71,13 @@ const common = {
     format: 'esm',
     sourcemap: true,
     external: nodeExternals,
+    // We emit ESM but bundle CJS deps (e.g. koa) that call require() for node builtins
+    // like require('node:util'). In an ESM bundle esbuild's __require shim has no real
+    // `require` to delegate to and throws "Dynamic require of X is not supported". Recreate
+    // a real require via createRequire so those builtin requires resolve at runtime.
+    banner: {
+        js: "import { createRequire as __ezpCreateRequire } from 'node:module';\nconst require = __ezpCreateRequire(import.meta.url);",
+    },
     // Build-time constants (string-literals inlined into code)
     define: {
         __BUILD_DATE__: JSON.stringify(BUILD_DATE),

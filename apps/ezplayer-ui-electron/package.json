@@ -1,11 +1,16 @@
 {
     "name": "ezplayer-ui-electron",
+    "author": {
+        "name": "EZPlayer",
+        "email": "ezplayer@ezrgb.com"
+    },
     "repository": {
         "type": "git",
         "url": "https://github.com/ezpixelplayer/ezplayer.git"
     },
     "private": true,
-    "version": "0.4.4",
+    "license": "AGPL-3.0",
+    "version": "0.5.1",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -48,18 +53,22 @@
             "icon": "src/assets/images/EZPlayerLogoTransparent.ico"
         },
         "mac": {
+            "artifactName": "${productName}-${version}-${arch}.${ext}",
             "target": [
                 {
                     "target": "dmg",
-                    "arch": "universal"
+                    "arch": ["x64", "arm64"]
                 }
             ],
             "icon": "src/assets/images/EZPlayerLogoTransparent.icns"
         },
         "linux": {
             "target": [
-                "AppImage"
+                "AppImage",
+                "deb",
+                "tar.gz"
             ],
+            "executableArgs": ["--no-sandbox"],
             "icon": "src/assets/images/EZPlayerLogoTransparent.png",
             "category": "Utility"
         },
@@ -76,7 +85,8 @@
         "dev:direct": "pnpm --filter @ezplayer/ui-embedded build:web && concurrently \"pnpm --filter @ezplayer/ui-embedded build:web:watch\" \"pnpm dev:react\" \"pnpm dev:electron\"",
         "dev:react": "vite --config vite.config.ts",
         "dev:electron": "pnpm build:tsc && pnpm build:preload && electron .",
-        "build": "pnpm --filter @ezplayer/ui-embedded build && pnpm --filter @ezplayer/ui-embedded build:web && node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder",
+        "build": "pnpm --filter @ezplayer/ui-embedded build && pnpm --filter @ezplayer/ui-embedded build:web && node-gyp rebuild && pnpm build:react && pnpm build:tsc && pnpm build:preload && electron-builder --publish never && pnpm audit:deps",
+        "audit:deps": "node scripts/depaudit.cjs",
         "build:react": "vite build --config vite.config.ts",
         "build:tsc": "tsc --noEmit && node scripts/build-main.mjs",
         "build:main": "node scripts/build-main.mjs",
@@ -89,23 +99,24 @@
         "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
     "devDependencies": {
+        "@electron/asar": "^3.4.1",
         "@types/koa": "^3.0.3",
         "@types/koa-static": "^4.0.4",
-        "@types/node": "^24.7.2",
+        "@types/node": "^24.13.2",
         "@types/proper-lockfile": "^4.1.4",
-        "@types/react": "^18.3.27",
+        "@types/react": "^18.3.31",
         "@types/react-dom": "^18.3.7",
         "@vitejs/plugin-react": "^4.7.0",
         "concurrently": "^9.2.1",
-        "dmg-builder": "^25",
-        "electron": "^40.4.0",
-        "electron-builder": "^25",
-        "electron-builder-squirrel-windows": "^25",
+        "dmg-builder": "^26.15.4",
+        "electron": "^41.7.2",
+        "electron-builder": "^26.15.4",
+        "electron-builder-squirrel-windows": "^26.15.4",
         "esbuild": "^0.25.12",
         "node-gyp": "^10.3.1",
         "typescript": "^5.9.3",
         "vite": "^5.4.21",
-        "vite-plugin-static-copy": "^3.2.0"
+        "vite-plugin-static-copy": "^3.4.0"
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
@@ -115,8 +126,7 @@
         "@ezplayer/shared-ui-components": "workspace:*",
         "@ezplayer/ui-embedded": "workspace:*",
         "@floating-ui/core": "^1.7.5",
-        "@floating-ui/react": "^0.27.17",
-        "@koa/bodyparser": "^6.1.0",
+        "@floating-ui/react": "^0.27.19",
         "@koa/router": "^15.6.0",
         "@koa/send": "^6.0.0",
         "@mui/icons-material": "^5.18.0",
@@ -126,7 +136,7 @@
         "@reduxjs/toolkit": "^2.12.0",
         "@types/ws": "^8.18.1",
         "audiofile": "file:..\\..\\libs\\audiofile-0.0.3.tgz",
-        "axios": "^1.17.0",
+        "axios": "^1.18.0",
         "bindings": "^1.5.0",
         "crc-32": "^1.2.2",
         "debug": "^4.4.3",
@@ -141,16 +151,17 @@
         "nprogress": "^0.2.0",
         "path": "^0.12.7",
         "proper-lockfile": "^4.1.2",
+        "raw-body": "^2.5.3",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "react-helmet-async": "^2.0.5",
         "react-i18next": "^15.7.4",
         "react-redux": "^9.3.0",
-        "react-router": "^6.30.3",
-        "react-router-dom": "^6.30.3",
+        "react-router": "^6.30.4",
+        "react-router-dom": "^6.30.4",
         "react-toastify": "^10.0.6",
         "uuid": "^14.0.0",
-        "ws": "^8.19.0",
+        "ws": "^8.21.0",
         "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.6.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.1.0"
