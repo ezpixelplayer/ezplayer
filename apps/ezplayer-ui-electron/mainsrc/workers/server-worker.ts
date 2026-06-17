@@ -4,7 +4,7 @@
 
 import { parentPort } from 'worker_threads';
 import Koa from 'koa';
-import bodyParser from '@koa/bodyparser';
+import getRawBody from 'raw-body';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import * as path from 'path';
@@ -29,6 +29,32 @@ import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 
 if (!parentPort) throw new Error('No parentPort in worker');
+
+// `@koa/bodyparser` used to populate this; we now do it ourselves (see `jsonBody`).
+declare module 'koa' {
+    interface Request {
+        body?: unknown;
+    }
+}
+
+// Minimal JSON body parser, replacing `@koa/bodyparser`. That package pulled in
+// `co-body`, which depends on `type-is@1`, while koa itself uses `type-is@2` — the
+// two-version split broke electron-builder's asar dependency collection (the v2 copy
+// was dropped, so the packaged app crashed with ERR_MODULE_NOT_FOUND 'type-is'). We
+// only ever receive JSON on POST routes, so this covers it: `ctx.is('json')` uses
+// koa's own type-is, and `raw-body` reads/limits the stream. Non-JSON or proxied
+// requests stream through untouched (this stays after the proxy middleware).
+const jsonBody = () => async (ctx: Koa.Context, next: Koa.Next) => {
+    if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.is('json')) {
+        const raw = await getRawBody(ctx.req, { encoding: 'utf8', limit: '10mb' });
+        try {
+            ctx.request.body = raw ? JSON.parse(raw) : {};
+        } catch {
+            ctx.throw(400, 'Invalid JSON body');
+        }
+    }
+    await next();
+};
 
 const ASSET_MIME_TYPES: Record<string, string> = {
     '.png': 'image/png',
@@ -829,7 +855,7 @@ async function startServer(config: ServerWorkerData) {
     webApp.use(createProxyMiddleware());
 
     // Add body parser middleware for JSON requests
-    webApp.use(bodyParser());
+    webApp.use(jsonBody());
 
     // ----------------------------------------------
     // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
@@ -1459,7 +1485,7 @@ async function startServer(config: ServerWorkerData) {
         kioskApp.use(createProxyMiddleware());
 
         // Body parser
-        kioskApp.use(bodyParser());
+        kioskApp.use(jsonBody());
 
         // Reuse the same API router
         kioskApp.use(router.routes());

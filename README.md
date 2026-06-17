@@ -49,11 +49,43 @@ https://github.com/ezpixelplayer/ezplayer/releases
 
 We currently provide builds for:
 
-- **Windows (x64)**
-- **macOS (dmg)**
-- **Linux (AppImage)**
+- **Windows (x64)** — `EZPlayer-Setup-*.exe`
+- **macOS (Apple Silicon)** — `EZPlayer-*-arm64.dmg` (M1/M2/M3/M4 — most Macs sold since late 2020)
+- **macOS (Intel)** — `EZPlayer-*-x64.dmg` (older Intel-based Macs)
+- **Linux (Debian/Ubuntu/Mint, recommended)** — `ezplayer-ui-electron_*_amd64.deb`
+- **Linux (AppImage)** — `EZPlayer-*.AppImage`
+- **Linux (portable tarball)** — `ezplayer-ui-electron-*.tar.gz`
+
+Not sure which Mac you have? Apple menu → **About This Mac** — if "Chip" says Apple anything (M1/M2/M3/M4), use the arm64 build; if "Processor" says Intel, use the x64 build.
 
 Just download the installer or portable build and run it.
+
+#### Linux notes
+
+On Debian/Ubuntu/Mint, the `.deb` is the simplest path:
+
+```bash
+sudo apt install ./ezplayer-ui-electron_*_amd64.deb
+```
+
+That registers a menu entry and you can launch from your application launcher or by running `ezplayer-ui-electron` from a terminal.
+
+For the AppImage on Ubuntu 24.04+, install the FUSE runtime once:
+
+```bash
+sudo apt install libfuse2t64    # libfuse2 on older Ubuntu / Debian
+```
+
+Then `chmod +x EZPlayer-*.AppImage` and launch.
+
+The portable tarball just extracts and runs — no install — useful for distros without `.deb` support.
+
+For controller ICMP ping to work as an unprivileged user (any package format), run this once:
+
+```bash
+sudo sh -c 'echo "net.ipv4.ping_group_range = 0 2147483647" > /etc/sysctl.d/99-ezplayer-ping.conf'
+sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
+```
 
 ### Running EZPlayer
 

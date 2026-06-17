@@ -188,21 +188,26 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
         serverWorker = null;
     });
 
-    // Wait for worker to send initial ready message
+    // Wait for worker to send initial ready message.
+    const w = serverWorker;
     await new Promise<void>((resolve, reject) => {
+        if (!w) {
+            reject(new Error('Server worker was not created'));
+            return;
+        }
         const timeout = setTimeout(() => {
-            serverWorker!.off('message', onMessage);
+            w.off('message', onMessage);
             reject(new Error('Server worker initialization timeout - worker did not send ready message'));
         }, 10000);
 
         const onMessage = (msg: ServerWorkerToMainMessage) => {
             if (msg.type === 'ready') {
                 clearTimeout(timeout);
-                serverWorker!.off('message', onMessage);
+                w.off('message', onMessage);
                 resolve();
             }
         };
-        serverWorker!.on('message', onMessage);
+        w.on('message', onMessage);
     });
 }
 
