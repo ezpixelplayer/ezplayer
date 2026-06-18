@@ -136,12 +136,12 @@ export const CloudPollingScheduleEditor: React.FC = () => {
             {/* Schedule list (only meaningful in scheduled mode, but always shown so the
                 user can prepare windows before flipping the switch). */}
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Allowed Windows ({schedule.length})
+                Allowed Times ({schedule.length})
             </Typography>
             {schedule.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    No windows defined.
-                    {mode === 'scheduled' && ' In scheduled mode with no windows, content polling is suspended.'}
+                    No allowed times defined.
+                    {mode === 'scheduled' && ' In scheduled mode with no allowed times, content polling is suspended.'}
                 </Typography>
             ) : (
                 <List dense sx={{ mb: 2 }}>
@@ -183,12 +183,12 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                     setAddOpen(true);
                 }}
             >
-                Add Window
+                Add Sync Time Window to Schedule
             </Button>
 
             {/* Add window dialog */}
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
-                <DialogTitle>Add Polling Window</DialogTitle>
+                <DialogTitle>Add Sync Time Window</DialogTitle>
                 <DialogContent>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1, minWidth: 420 }}>
                         <FormControl fullWidth size="small">
