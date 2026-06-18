@@ -8,9 +8,12 @@ import { AppDispatch, RootState } from '../../store/Store';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { PlaybackControls } from './PlaybackControls';
 
-interface QueueAndControlStackProps {}
+interface QueueAndControlStackProps {
+    /** Forwarded to PlaybackControls — hides End/Abort in kiosk mode. Defaults to true. */
+    allowStopControls?: boolean;
+}
 
-export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) => {
+export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({ allowStopControls = true }) => {
     const runtime = useSelector((state: RootState) => state.runtime);
     const dispatch = useDispatch<AppDispatch>();
 
@@ -26,7 +29,7 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({}) =>
         <Box sx={{ px: 2, pb: 2, flexShrink: 0 }}>
             {/* Playback control buttons */}
             <Box sx={{ mb: 2 }}>
-                <PlaybackControls />
+                <PlaybackControls allowStopControls={allowStopControls} />
             </Box>
 
             {/* Queue */}

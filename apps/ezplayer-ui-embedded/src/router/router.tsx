@@ -107,7 +107,14 @@ const EmbeddedSettingsPage = () => {
 const allMenuRoutes: MenuRoute[] = [
     {
         path: ROUTES.PLAYER,
-        element: <PlayerScreen title="Player" statusArea={getStatusArea()} allowVolumeControl={!isKiosk} />,
+        element: (
+            <PlayerScreen
+                title="Player"
+                statusArea={getStatusArea()}
+                allowVolumeControl={!isKiosk}
+                allowStopControls={!isKiosk}
+            />
+        ),
         sidebar: { icon: <TableChartTwoToneIcon />, label: 'Player' },
     },
     {
@@ -136,7 +143,7 @@ const allMenuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.JUKEBOXSCR,
-        element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} />,
+        element: <JukeboxScreen title="Jukebox" statusArea={getStatusArea()} allowStopControls={!isKiosk} />,
         sidebar: { icon: <PlayArrow />, label: 'Jukebox' },
     },
     {
