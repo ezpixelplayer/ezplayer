@@ -1046,13 +1046,13 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                         variant="caption"
                         sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                     >
-                        🖱️ Right drag: Pan
+                        🖱️ Middle drag: Pan
                     </Typography>
                     <Typography
                         variant="caption"
                         sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                     >
-                        🖱️ Scroll: Zoom
+                        🖱️ Right drag / Scroll: Zoom
                     </Typography>
                 </Box>
             )}
@@ -1114,8 +1114,11 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             screenSpacePanning={true}
                             mouseButtons={{
                                 LEFT: THREE.MOUSE.PAN,
-                                MIDDLE: THREE.MOUSE.DOLLY,
-                                RIGHT: THREE.MOUSE.PAN,
+                                // Middle also pans, for consistency with the 3D view and xLights.
+                                MIDDLE: THREE.MOUSE.PAN,
+                                // Right dollies (zoom) so a plain 2-button, no-wheel mouse can still
+                                // zoom — pan is already covered by left + middle.
+                                RIGHT: THREE.MOUSE.DOLLY,
                             }}
                         />
                         <Scene2DContent

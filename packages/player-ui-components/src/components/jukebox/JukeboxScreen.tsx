@@ -581,7 +581,16 @@ export function JukeboxFullScreen() {
     );
 }
 
-export function JukeboxScreen({ title, statusArea }: { title: string; statusArea: React.ReactNode[] }) {
+export function JukeboxScreen({
+    title,
+    statusArea,
+    allowStopControls = true,
+}: {
+    title: string;
+    statusArea: React.ReactNode[];
+    /** Allow End/Abort playback controls. False in kiosk so a public display can't stop the show. */
+    allowStopControls?: boolean;
+}) {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const dispatch = useDispatch<AppDispatch>();
@@ -754,7 +763,7 @@ export function JukeboxScreen({ title, statusArea }: { title: string; statusArea
                 }}
             >
                 {/* Playback Queue Card */}
-                <QueueAndControlStack />
+                <QueueAndControlStack allowStopControls={allowStopControls} />
 
                 {/* Search and Sort Controls */}
                 <Box

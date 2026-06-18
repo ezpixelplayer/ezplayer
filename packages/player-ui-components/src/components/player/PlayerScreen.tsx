@@ -16,9 +16,17 @@ interface PlayerScreenProps {
     statusArea: React.ReactNode[];
     /** Allow live master-volume control + the volume-settings gear on the Now Playing card. */
     allowVolumeControl?: boolean;
+    /** Allow End/Abort playback controls. False in kiosk so a public display can't stop the show. */
+    allowStopControls?: boolean;
 }
 
-const StatusCards = ({ allowVolumeControl }: { allowVolumeControl?: boolean }) => {
+const StatusCards = ({
+    allowVolumeControl,
+    allowStopControls,
+}: {
+    allowVolumeControl?: boolean;
+    allowStopControls?: boolean;
+}) => {
     const runtime = useSelector((state: RootState) => state.runtime);
 
     return (
@@ -31,6 +39,7 @@ const StatusCards = ({ allowVolumeControl }: { allowVolumeControl?: boolean }) =
                             player={runtime.combined.player}
                             compact={true}
                             allowVolumeControl={allowVolumeControl}
+                            allowStopControls={allowStopControls}
                         />
                     ) : runtime.combined?.show ? (
                         <Card sx={{ height: '100%' }}>
@@ -278,7 +287,7 @@ const TimelineView = ({}: {}) => {
     );
 };
 
-export const PlayerScreen = ({ title, statusArea, allowVolumeControl }: PlayerScreenProps) => {
+export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopControls }: PlayerScreenProps) => {
     return (
         <Box
             sx={{
@@ -294,7 +303,7 @@ export const PlayerScreen = ({ title, statusArea, allowVolumeControl }: PlayerSc
             </Box>
 
             {/* Now Playing Card and Controller Status */}
-            <StatusCards allowVolumeControl={allowVolumeControl} />
+            <StatusCards allowVolumeControl={allowVolumeControl} allowStopControls={allowStopControls} />
 
             {/* Timeline View */}
             <TimelineView />
