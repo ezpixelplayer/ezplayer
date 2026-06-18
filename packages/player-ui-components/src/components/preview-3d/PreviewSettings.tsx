@@ -32,12 +32,25 @@ const contentBoxStyle: React.CSSProperties = {
     gap: 16,
 };
 
-const pixelSizeMarks: SliderMark[] = [
-    { value: 0.5, label: '0.5x' },
-    { value: 1.0, label: '1x' },
-    { value: 2.0, label: '2x' },
-    { value: 3.0, label: '3x' },
-];
+// Pixel-size multiplier bounds. The slider is driven on a logarithmic (geometric) scale
+// so there's fine control at small sizes and it still reaches large pixels — equal slider
+// travel multiplies the size by a constant factor (…0.5 → 1 → 2 → 4 → 8 → 16). The stored
+// value stays the real multiplier; only the slider position is transformed.
+export const PIXEL_SIZE_MIN = 0.5;
+export const PIXEL_SIZE_MAX = 16;
+const PIXEL_SLIDER_RANGE = 1000; // internal linear position space for the slider
+
+const pixelToPos = (px: number): number => {
+    const clamped = Math.max(PIXEL_SIZE_MIN, Math.min(PIXEL_SIZE_MAX, px));
+    return (PIXEL_SLIDER_RANGE * Math.log(clamped / PIXEL_SIZE_MIN)) / Math.log(PIXEL_SIZE_MAX / PIXEL_SIZE_MIN);
+};
+const posToPixel = (pos: number): number =>
+    PIXEL_SIZE_MIN * Math.pow(PIXEL_SIZE_MAX / PIXEL_SIZE_MIN, pos / PIXEL_SLIDER_RANGE);
+
+const pixelSizeMarks: SliderMark[] = [0.5, 1, 2, 4, 8, 16].map((v) => ({
+    value: pixelToPos(v),
+    label: `${v}x`,
+}));
 
 const brightnessMarks: SliderMark[] = [
     { value: 0, label: '0%' },
@@ -127,9 +140,10 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
 
     const handlePixelSizeChange = useCallback(
         (_event: Event | React.SyntheticEvent, value: number | number[]) => {
-            const raw = typeof value === 'number' ? value : value[0];
-            const clamped = Math.max(0.5, Math.min(3.0, raw));
-            const next = { ...localSettingsRef.current, pixelSize: clamped };
+            // Slider operates in log "position" space; convert back to the real multiplier.
+            const pos = typeof value === 'number' ? value : value[0];
+            const pixel = Math.max(PIXEL_SIZE_MIN, Math.min(PIXEL_SIZE_MAX, posToPixel(pos)));
+            const next = { ...localSettingsRef.current, pixelSize: pixel };
             localSettingsRef.current = next;
             setLocalSettings(next);
             onSettingsChange(next);
@@ -166,7 +180,12 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                 },
             ]}
         >
-            <ClickAwayListener onClickAway={handleCancel}>
+            {/* Dismiss on a press OUTSIDE the popper, not on click/touch-end. With the default
+                ('onClick'), dragging a Slider thumb and releasing the mouse outside the popper
+                synthesizes a document-level click → the dialog closed and reverted the setting.
+                Listening on mousedown/touchstart means a drag that starts on the thumb never
+                triggers dismissal. */}
+            <ClickAwayListener onClickAway={handleCancel} mouseEvent="onMouseDown" touchEvent="onTouchStart">
                 <Paper sx={popoverPaperSx} elevation={8}>
                     <Box style={contentBoxStyle}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -186,14 +205,14 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                                 Pixel Size: {localSettings.pixelSize.toFixed(2)}x
                             </Typography>
                             <Slider
-                                value={localSettings.pixelSize}
+                                value={pixelToPos(localSettings.pixelSize)}
                                 onChange={handlePixelSizeChange}
-                                min={0.5}
-                                max={3.0}
-                                step={0.1}
+                                min={0}
+                                max={PIXEL_SLIDER_RANGE}
+                                step={1}
                                 marks={pixelSizeMarks}
                                 valueLabelDisplay="auto"
-                                valueLabelFormat={(value) => `${value.toFixed(1)}x`}
+                                valueLabelFormat={(pos) => `${posToPixel(pos).toFixed(posToPixel(pos) < 2 ? 1 : 0)}x`}
                             />
                         </Box>
 
