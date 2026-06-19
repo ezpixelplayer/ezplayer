@@ -12,5 +12,7 @@ EZPlayer runs your light show. This manual covers the basics, but also how the p
   show folder and have it running in a few minutes.
 - **[Getting Started (Cloud)](./getting-started/quickstartcloud.md)** — register EZPlayer
   and let the cloud do the rest.
+- **[Settings](./getting-started/settings.md)** — playback, audio, viewer control, cloud,
+  and UI options.
 - **[Architecture](./architecture/overview.md)** — how EZPlayer fits in your show.
 - **[Reference](./reference/api.md)** — the API and other detailed specs.

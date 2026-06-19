@@ -110,7 +110,7 @@ foreground lights and audio.
 **Background** schedules run a second playlist at the same time, blended with
 whatever is on main. Use these for always-on elements such as tune-to loops or
 ambient effects. The blend mode (**overlay** or **underlay**) is set under
-**Playback Settings**.
+**Settings → Player** — see [Settings](./settings.md#player).
 
 Background entries follow the same time-window and priority rules as main
 entries, but they never replace the foreground show — they layer on top of (or

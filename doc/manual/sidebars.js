@@ -4,27 +4,27 @@
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
-  manualSidebar: [
-    'intro',
-    {
-      type: 'category',
-      label: 'Getting Started',
-      collapsed: false,
-      items: ['getting-started/quickstart', 'getting-started/quickstartcloud'],
-    },
-    {
-      type: 'category',
-      label: 'Architecture',
-      collapsed: false,
-      items: ['architecture/overview', 'architecture/developer'],
-    },
-    {
-      type: 'category',
-      label: 'Reference',
-      collapsed: true,
-      items: ['reference/api'],
-    },
-  ],
+    manualSidebar: [
+        'intro',
+        {
+            type: 'category',
+            label: 'Getting Started',
+            collapsed: false,
+            items: ['getting-started/quickstart', 'getting-started/quickstartcloud', 'getting-started/settings'],
+        },
+        {
+            type: 'category',
+            label: 'Architecture',
+            collapsed: false,
+            items: ['architecture/overview', 'architecture/developer'],
+        },
+        {
+            type: 'category',
+            label: 'Reference',
+            collapsed: true,
+            items: ['reference/api'],
+        },
+    ],
 };
 
 export default sidebars;
