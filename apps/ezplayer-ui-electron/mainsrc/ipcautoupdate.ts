@@ -116,7 +116,22 @@ async function startupCheck() {
         // Download & Install
         try {
             await autoUpdater.downloadUpdate();
-        } catch {
+        } catch (err) {
+            // Surface the failure instead of swallowing it — a silent return here is why
+            // "Download & Install" could look like it did nothing (e.g. the release's
+            // latest.yml references an installer/blockmap that isn't attached, a sha512
+            // mismatch, or a mid-download network error).
+            const detail = err instanceof Error ? err.message : String(err);
+            sendStatus({ state: 'error', message: detail });
+            if (mainWin) {
+                await dialog.showMessageBox(mainWin, {
+                    type: 'error',
+                    buttons: ['OK'],
+                    title: 'Update Download Failed',
+                    message: `Could not download EZPlayer ${version}.`,
+                    detail,
+                });
+            }
             return;
         }
         // If a schedule is active, defer to quit-time install

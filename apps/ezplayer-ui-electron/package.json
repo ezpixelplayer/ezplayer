@@ -10,7 +10,7 @@
     },
     "private": true,
     "license": "AGPL-3.0",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -50,7 +50,8 @@
             "target": [
                 "nsis"
             ],
-            "icon": "src/assets/images/EZPlayerLogoTransparent.ico"
+            "icon": "src/assets/images/EZPlayerLogoTransparent.ico",
+            "artifactName": "${productName}-Setup-${version}.${ext}"
         },
         "mac": {
             "artifactName": "${productName}-${version}-${arch}.${ext}",
