@@ -1,3 +1,112 @@
 packages:
   - apps/*
   - packages/*
+
+# Single source of truth for cross-shared third-party versions. Anything an app
+# or workspace package consumes via `"<name>": "catalog:"` pulls from here. The
+# downstream `ezplayer-private` repo has an identical catalog so the mirrored
+# packages (player-ui-components, shared-ui-components, ezplayer-ui-electron,
+# ezplayer-ui-embedded) round-trip cleanly.
+#
+# Peer ranges in workspace packages stay as broad ranges (^6.0.0 etc.) — they
+# describe compatibility, not the installed pin. The catalog is the installed
+# pin.
+catalog:
+  # React core
+  react: ^18.3.1
+  react-dom: ^18.3.1
+
+  # React router
+  react-router: ^6.30.4
+  react-router-dom: ^6.30.4
+
+  # Redux family
+  '@reduxjs/toolkit': ^2.12.0
+  react-redux: ^9.3.0
+  redux-persist: ^6.0.0
+  redux-thunk: ^3.1.0
+  redux-mock-store: ^1.5.5
+  redux-logger: ^3.0.6
+
+  # MUI
+  '@mui/material': ^5.18.0
+  '@mui/icons-material': ^5.18.0
+  '@mui/styles': ^5.18.0
+  '@mui/system': ^5.18.0
+  '@mui/x-date-pickers': 5.0.0
+  '@mui/x-data-grid': ^6.20.4
+
+  # Emotion (MUI's underlying CSS-in-JS engine)
+  '@emotion/react': ^11.14.0
+  '@emotion/styled': ^11.14.1
+
+  # i18n
+  i18next: ^23.16.8
+  react-i18next: ^15.7.4
+
+  # 3D (Three.js + react-three-fiber + drei)
+  three: ^0.182.0
+  '@react-three/fiber': ^8.18.0
+  '@react-three/drei': ^9.122.0
+
+  # HTTP
+  axios: ^1.18.0
+
+  # Date
+  date-fns: ^2.30.0
+  dayjs: ^1.11.21
+
+  # React UI utilities
+  react-helmet-async: ^2.0.5
+  react-toastify: ^10.0.6
+  react-custom-scrollbars-2: ^4.5.0
+  react-dropzone: ^14.4.1
+  react-infinite-scroll-component: ^6.1.1
+
+  # Forms
+  formik: ^2.4.9
+
+  # General utilities
+  clsx: ^2.1.1
+  nprogress: ^0.2.0
+  prop-types: ^15.8.1
+  uuid: ^14.0.0
+  jwt-decode: ^4.0.0
+  jszip: ^3.10.1
+  qrcode: ^1.5.4
+  qrcode.react: ^4.2.0
+
+  # Build tooling
+  typescript: ^5.9.3
+  vite: ^5.4.21
+  vitest: ^2.1.9
+  tsup: ^8.5.0
+  esbuild: ^0.25.12
+  sass: ^1.101.0
+  prettier: ^3.8.4
+
+  # ESLint
+  eslint: ^9.39.4
+  '@eslint/js': ^9.39.4
+  globals: ^15.15.0
+  typescript-eslint: ^8.61.0
+  eslint-plugin-react-hooks: 5.1.0
+  eslint-plugin-react-refresh: ^0.4.26
+
+  # Vite plugins
+  '@vitejs/plugin-react': ^4.7.0
+  '@vitejs/plugin-react-swc': ^3.11.0
+  vite-plugin-svgr: ^4.5.0
+
+  # Testing
+  '@testing-library/react': ^16.3.2
+  jsdom: ^25.0.1
+
+  # Node typings
+  '@types/react': ^18.3.31
+  '@types/react-dom': ^18.3.7
+  '@types/node': ^24.13.2
+  '@types/koa': ^3.0.3
+  '@types/koa-static': ^4.0.4
+  '@types/proper-lockfile': ^4.1.4
+  '@types/ws': ^8.18.1

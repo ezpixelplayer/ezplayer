@@ -35,30 +35,30 @@
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/player-ui-components": "workspace:*",
         "@ezplayer/shared-ui-components": "workspace:*",
-        "@mui/icons-material": "^5.18.0",
-        "@mui/material": "^5.18.0",
-        "@mui/styles": "^5.18.0",
-        "@mui/x-date-pickers": "5.0.0",
-        "@reduxjs/toolkit": "^2.12.0",
-        "dayjs": "^1.11.21",
-        "nprogress": "^0.2.0",
-        "react": "^18.3.1",
-        "react-dom": "^18.3.1",
-        "react-helmet-async": "^2.0.5",
-        "react-redux": "^9.3.0",
-        "react-router-dom": "^6.30.4",
-        "react-toastify": "^10.0.6"
+        "@mui/icons-material": "catalog:",
+        "@mui/material": "catalog:",
+        "@mui/styles": "catalog:",
+        "@mui/x-date-pickers": "catalog:",
+        "@reduxjs/toolkit": "catalog:",
+        "dayjs": "catalog:",
+        "nprogress": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+        "react-helmet-async": "catalog:",
+        "react-redux": "catalog:",
+        "react-router-dom": "catalog:",
+        "react-toastify": "catalog:"
     },
     "peerDependencies": {
         "react": "^18.0.0",
         "react-dom": "^18.0.0"
     },
     "devDependencies": {
-        "@types/react": "^18.3.31",
-        "@types/react-dom": "^18.3.7",
-        "@vitejs/plugin-react": "^4.7.0",
-        "sass": "^1.101.0",
-        "typescript": "^5.9.3",
-        "vite": "^5.4.21"
+        "@types/react": "catalog:",
+        "@types/react-dom": "catalog:",
+        "@vitejs/plugin-react": "catalog:",
+        "sass": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:"
     }
 }
