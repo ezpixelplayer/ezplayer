@@ -30,7 +30,13 @@ import { Viewer3D, type CameraState3D } from './Viewer3D';
 import { Viewer2D, type CameraState2D } from './Viewer2D';
 import { useOrbitPreference } from '../../util/orbitPreference';
 import { ModelList } from './ModelList';
-import { PreviewSettings, SettingsButton, type PreviewSettingsData } from './PreviewSettings';
+import {
+    PreviewSettings,
+    SettingsButton,
+    PIXEL_SIZE_MIN,
+    PIXEL_SIZE_MAX,
+    type PreviewSettingsData,
+} from './PreviewSettings';
 import { convertXmlCoordinatesToModel3D } from '../../services/model3dLoader';
 import type { Model3DData, ModelMetadata, SelectionState, ViewObject, LayoutSettings } from '../../types/model3d';
 import type { LayoutGroupInfo, MhFixtureInfo, ViewpointInfo } from 'xllayoutcalcs';
@@ -721,7 +727,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // Handle settings change
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
         // Validate and clamp values
-        const clampedPixelSize = Math.max(0.5, Math.min(3.0, Number(newSettings.pixelSize) || 1.0));
+        const clampedPixelSize = Math.max(PIXEL_SIZE_MIN, Math.min(PIXEL_SIZE_MAX, Number(newSettings.pixelSize) || 1.0));
         const clampedMultiplier = Math.max(0, Math.min(200, Number(newSettings.brightnessMultiplier) || 100));
 
         setPreviewSettings({
@@ -759,9 +765,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         setShouldAutoFit(false);
     }, []);
 
-    // Handle save as default view — persists only the camera position/angle/zoom
-    // and 2D/3D mode. Slider values (pixel size, brightness) are NOT saved here;
-    // they are saved separately via the OK button flow.
+    // Handle save as default view — persists the full current view: camera position/angle/zoom,
+    // 2D/3D mode, AND the slider values (pixel size, brightness). "Set as Default" is expected to
+    // capture everything currently shown; OK persists the sliders too, but a user who tweaks pixel
+    // size and clicks "Set as Default" should not lose it.
     const handleSaveAsDefault = useCallback(() => {
         const currentCameraState2D = getCurrentCameraState2DRef.current?.() ?? null;
         const currentCameraState3D = getCurrentCameraState3DRef.current?.() ?? null;
@@ -792,12 +799,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     mode: viewMode,
                     cameraState2D: currentCameraState2D,
                     cameraState3D: currentCameraState3D,
+                    pixelSize: previewSettings.pixelSize,
+                    brightnessMultiplier: previewSettings.brightnessMultiplier,
                 }),
             );
         } catch (err) {
             console.error('[Preview3D] Failed to save default view:', err);
         }
-    }, [viewMode, previewSettingsStorageKey, previewSelection]);
+    }, [viewMode, previewSettings, previewSettingsStorageKey, previewSelection]);
 
     // Handle model selection from model list
     const handleModelSelect = useCallback(

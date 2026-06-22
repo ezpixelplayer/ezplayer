@@ -29,6 +29,8 @@ interface NowPlayingCardProps {
      *  that pops the default/scheduled volume settings. When false, the volume is a
      *  read-only meter. */
     allowVolumeControl?: boolean;
+    /** When false (kiosk), the playback controls hide End/Abort. Defaults to true. */
+    allowStopControls?: boolean;
 }
 
 const formatTime = (timestamp?: number | string) => {
@@ -48,6 +50,7 @@ export const NowPlayingCard = ({
     className,
     compact = false,
     allowVolumeControl = false,
+    allowStopControls = true,
 }: NowPlayingCardProps) => {
     if (player.ptype !== 'EZP') {
         return null;
@@ -191,7 +194,7 @@ export const NowPlayingCard = ({
                 )}
 
                 {/* Playback controls — only when playing or paused */}
-                {isActive && <QueueAndControlStack />}
+                {isActive && <QueueAndControlStack allowStopControls={allowStopControls} />}
 
                 {/* Reload schedule button — only when stopped */}
                 {!isActive && (

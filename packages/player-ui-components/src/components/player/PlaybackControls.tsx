@@ -7,7 +7,13 @@ import { ControlButton } from './ControlButton';
 import { AppDispatch, RootState } from '../../store/Store';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
-export const PlaybackControls: React.FC = () => {
+interface PlaybackControlsProps {
+    /** When false (kiosk mode), hide the "End" (graceful stop) and "Abort" (hard stop)
+     *  buttons so a public display can't stop the show. Defaults to true. */
+    allowStopControls?: boolean;
+}
+
+export const PlaybackControls: React.FC<PlaybackControlsProps> = ({ allowStopControls = true }) => {
     const runtime = useSelector((state: RootState) => state.runtime);
     const dispatch = useDispatch<AppDispatch>();
 
@@ -61,8 +67,10 @@ export const PlaybackControls: React.FC = () => {
                 onClick={handlePlayPause}
             />
             <ControlButton icon={SkipNext} label="Skip" onClick={handleSkip} />
-            <ControlButton icon={Stop} label="End" onClick={handleStopGraceful} />
-            <ControlButton icon={StopCircle} label="Abort" color="error" onClick={handleStopNow} />
+            {allowStopControls && <ControlButton icon={Stop} label="End" onClick={handleStopGraceful} />}
+            {allowStopControls && (
+                <ControlButton icon={StopCircle} label="Abort" color="error" onClick={handleStopNow} />
+            )}
             {/*<ControlButton icon={Delete} label="Clear Queue" color="warning" onClick={handleClearRequests} />*/}
             {/*
             <ControlButton

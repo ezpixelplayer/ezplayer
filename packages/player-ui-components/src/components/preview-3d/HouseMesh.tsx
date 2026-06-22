@@ -450,6 +450,18 @@ function createAssetLoadingManager(
             }
             // External or already-resolved URL — leave it alone.
             if (!assetPath) return url;
+        } else if (frameServerUrl && url.startsWith(`${frameServerUrl.replace(/\/+$/, '')}/api/`) && !url.includes('show-file')) {
+            // Path-only proxy base (cloud SPA `frameServerUrl`, e.g. `/api/enduserspa/proxy/<token>`):
+            // the http(s) origin check above can't fire because `new URL()` rejects a path-only base,
+            // so an MTL-referenced texture would otherwise fall through to the relative branch and get
+            // `objDir + <full-proxy-path>` (→ a mangled show-file path → 404; this is why mesh textures
+            // loaded over LAN but not over the cloud). MTLLoader appended the texture filename onto
+            // `<base>/api/`, so recover the trailing path and resolve it against the OBJ dir — mirroring
+            // the absolute-URL case above.
+            const apiBase = `${frameServerUrl.replace(/\/+$/, '')}/api/`;
+            const rest = url.slice(apiBase.length).split('?')[0];
+            if (rest) assetPath = objDir + rest;
+            if (!assetPath) return url;
         } else {
             // Relative / plain filename, e.g. "texture_1001.png"
             assetPath = objDir + url;

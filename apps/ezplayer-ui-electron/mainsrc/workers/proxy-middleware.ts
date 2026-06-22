@@ -38,6 +38,31 @@ function filterHeaders(raw: http.IncomingHttpHeaders): http.OutgoingHttpHeaders 
     return out;
 }
 
+/**
+ * Build forwarded request headers preserving original header-name case.
+ * `req.headers` lowercases names, breaking case-sensitive devices (e.g. HinksPix
+ * only honors `BLK`, not `blk`); `rawHeaders` keeps the wire case. `host` is
+ * dropped — the caller sets it from the target.
+ */
+function filterRawHeaders(rawHeaders: string[]): http.OutgoingHttpHeaders {
+    const out: http.OutgoingHttpHeaders = {};
+    for (let i = 0; i + 1 < rawHeaders.length; i += 2) {
+        const key = rawHeaders[i];
+        const value = rawHeaders[i + 1];
+        const lower = key.toLowerCase();
+        if (HOP_BY_HOP.has(lower) || lower === 'host') continue;
+        const existing = out[key];
+        if (existing === undefined) {
+            out[key] = value;
+        } else if (Array.isArray(existing)) {
+            existing.push(value);
+        } else {
+            out[key] = [existing as string, value];
+        }
+    }
+    return out;
+}
+
 /** Parse and validate the target URL from the proxy path. */
 function parseTargetUrl(originalUrl: string): URL | null {
     let raw = originalUrl.slice(PROXY_PREFIX.length);
@@ -70,7 +95,7 @@ export function createProxyMiddleware(): Koa.Middleware {
 
         const transport = target.protocol === 'https:' ? https : http;
 
-        const outHeaders = filterHeaders(ctx.req.headers);
+        const outHeaders = filterRawHeaders(ctx.req.rawHeaders);
         outHeaders['host'] = target.host;
 
         await new Promise<void>((resolve) => {
@@ -139,16 +164,10 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
             return;
         }
 
-        const raw = url.slice(PROXY_PREFIX.length);
-        if (!raw) {
-            socket.destroy();
-            return;
-        }
-
-        let target: URL;
-        try {
-            target = new URL(raw);
-        } catch {
+        // Reuse the HTTP target parser so the WS path accepts the same target
+        // forms, including a bare host (`/proxy/<host>`).
+        const target = parseTargetUrl(url);
+        if (!target) {
             socket.destroy();
             return;
         }
@@ -179,18 +198,20 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
                     }
                 });
 
-                // Close propagation
-                clientWs.on('close', (code, reason) => {
-                    if (targetWs.readyState === WebSocket.OPEN) {
-                        targetWs.close(code, reason);
+                // ws.close() only accepts application close codes (1000, or
+                // 3000–4999); reserved codes like 1005/1006 throw, so fall back
+                // to a plain close.
+                const closeSafely = (ws: WebSocket, code: number, reason: Buffer) => {
+                    if (ws.readyState !== WebSocket.OPEN) return;
+                    if (code === 1000 || (code >= 3000 && code <= 4999)) {
+                        ws.close(code, reason);
+                    } else {
+                        ws.close();
                     }
-                });
+                };
 
-                targetWs.on('close', (code, reason) => {
-                    if (clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.close(code, reason);
-                    }
-                });
+                clientWs.on('close', (code, reason) => closeSafely(targetWs, code, reason));
+                targetWs.on('close', (code, reason) => closeSafely(clientWs, code, reason));
 
                 // Error propagation
                 clientWs.on('error', () => {
