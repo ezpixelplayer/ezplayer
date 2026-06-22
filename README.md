@@ -104,7 +104,7 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 ```
 
 #### Raspberry Pi
-EZPlayer is tested on Raspberry Pi 5 and 4 (4GB or more required), but you currently have to compile it yourself.  We might provide images later in the year.
+EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required).  The Linux ARM releases work, or you can build it yourself.  Releases currently only include the application; it is not a full OS image (though that might be added later).
 
 ### Running EZPlayer
 
