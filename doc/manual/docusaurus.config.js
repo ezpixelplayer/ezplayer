@@ -79,7 +79,7 @@ const config = {
             title: 'Docs',
             items: [
               { label: 'Manual', to: '/' },
-              { label: 'Settings', to: '/getting-started/settings' },
+              { label: 'Settings', to: '/settings/overview' },
               { label: 'API Reference', to: '/reference/api' },
             ],
           },

@@ -1,7 +1,7 @@
 ---
-sidebar_position: 99
-sidebar_label: API
-title: API Reference
+sidebar_position: 3
+sidebar_label: REST Interface (HTTP API)
+title: REST Interface (HTTP API)
 ---
 
 # EZPlayer API Documentation
