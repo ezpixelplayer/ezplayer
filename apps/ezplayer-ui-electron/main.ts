@@ -3,6 +3,10 @@ import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
+
+// Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
+trustSystemCAs();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';

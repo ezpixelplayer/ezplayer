@@ -27,6 +27,10 @@ import type {
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
+import { trustSystemCAs } from '../trustSystemCAs.js';
+
+// Trust the OS cert store before this worker's TLS (cloud WS bridge).
+trustSystemCAs();
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
