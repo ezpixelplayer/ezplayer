@@ -21,12 +21,12 @@ them at runtime.
 Each song is stored as a **sequence record** in your show folder. At a high
 level it contains:
 
-| Part | Purpose |
-| --- | --- |
-| **Work** | Human-facing details: title, artist, duration, optional artwork URL |
-| **Files** | Paths to the `.fseq` sequence, optional `.mp3` audio, and optional thumbnail image |
-| **Sequence** | Vendor or source info (for example `xLights`, `Local`, or a sequence vendor name) |
-| **Settings** | Per-song playback tweaks: lead time, trail time, volume adjustment, and tags |
+| Part         | Purpose                                                                            |
+| ------------ | ---------------------------------------------------------------------------------- |
+| **Work**     | Human-facing details: title, artist, duration, optional artwork URL                |
+| **Files**    | Paths to the `.fseq` sequence, optional `.mp3` audio, and optional thumbnail image |
+| **Sequence** | Vendor or source info (for example `xLights`, `Local`, or a sequence vendor name)  |
+| **Settings** | Per-song playback tweaks: lead time, trail time, volume adjustment, and tags       |
 
 The `.fseq` file is required for playback. EZPlayer reads frame timing from it
 and drives your controllers from that data. Audio is optional for silent
@@ -58,13 +58,13 @@ From the desktop app you can also click **Add Song** to register a new sequence.
 
 ### Desktop app vs LAN UI
 
-| Capability | Desktop app | LAN / embedded UI |
-| --- | --- | --- |
-| View song list | Yes | Yes |
-| Add songs | Yes | No |
-| Edit metadata and settings | Yes | No |
-| Replace FSEQ / audio / image files | Yes (Electron only) | No |
-| Delete songs | Yes | Yes (unless kiosk mode hides it) |
+| Capability                         | Desktop app         | LAN / embedded UI                |
+| ---------------------------------- | ------------------- | -------------------------------- |
+| View song list                     | Yes                 | Yes                              |
+| Add songs                          | Yes                 | No                               |
+| Edit metadata and settings         | Yes                 | No                               |
+| Replace FSEQ / audio / image files | Yes (Electron only) | No                               |
+| Delete songs                       | Yes                 | Yes (unless kiosk mode hides it) |
 
 The LAN UI is meant for monitoring and light control from phones and tablets on
 your network. Full song management stays on the show PC.
@@ -112,7 +112,7 @@ screen (or let the cloud sync deliver them — see below).
 Open **Edit Song Details** for any song in the list. You can change:
 
 - **Title, artist, and vendor**
-- **FSEQ, MP3, and image files** (desktop app only — use *Select another file*)
+- **FSEQ, MP3, and image files** (desktop app only — use _Select another file_)
 - **Image URL** for artwork shown in the jukebox
 - **Lead time**, **trail time**, and **volume adjustment**
 - **Tags**
@@ -126,12 +126,12 @@ do not interrupt it.
 These settings fine-tune how long a song occupies the schedule timeline and when
 the next song may start. Values are in **seconds**, from **-5.0** to **5.0**.
 
-- **Positive lead time** — extra time *before* the sequence content starts (for
+- **Positive lead time** — extra time _before_ the sequence content starts (for
   example a few seconds of silence or a held look while audio ramps in).
-- **Negative lead time** — *trim* the beginning of the scheduled window (start
+- **Negative lead time** — _trim_ the beginning of the scheduled window (start
   partway into the sequence).
-- **Positive trail time** — extra time *after* the sequence content ends.
-- **Negative trail time** — *trim* the end of the scheduled window (end before
+- **Positive trail time** — extra time _after_ the sequence content ends.
+- **Negative trail time** — _trim_ the end of the scheduled window (end before
   the FSEQ finishes).
 
 The scheduler uses these values when calculating playlist length, schedule
@@ -260,13 +260,3 @@ A typical local show build looks like this:
 4. **Build playlists** — group songs into ordered lists.
 5. **Schedule** — assign playlists to date/time windows.
 6. **Test** — use the jukebox or preview to verify timing before going live.
-
-## Related pages
-
-- [Getting Started (Local)](./getting-started-local.md) — first-time setup
-- [Playlists](./playlists.md) — grouping songs for playback
-- [Simple Schedules](./simple-schedules.md) — when playlists run
-- [Jukebox](./jukebox.md) — on-demand playback
-- [Jukebox settings](../settings/jukebox.md) — tag filters for the jukebox
-- [Show Folder](../settings/show-folder.md) — choosing where songs are stored
-- [REST Interface](../reference/api.md) — remote `playsong` commands

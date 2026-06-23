@@ -19,13 +19,13 @@ full flow.
 
 Each playlist is stored as a **playlist record** in your show folder:
 
-| Field | Purpose |
-| --- | --- |
-| **id** | Unique identifier (assigned when you create the playlist) |
-| **title** | Display name shown in the Playlists screen and schedule editor |
-| **tags** | Labels for organizing and filtering playlists (separate from song tags) |
-| **items** | Ordered list of song IDs, each with a sequence position |
-| **createdAt** / **updatedAt** | Timestamps for when the playlist was created and last saved |
+| Field                         | Purpose                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| **id**                        | Unique identifier (assigned when you create the playlist)               |
+| **title**                     | Display name shown in the Playlists screen and schedule editor          |
+| **tags**                      | Labels for organizing and filtering playlists (separate from song tags) |
+| **items**                     | Ordered list of song IDs, each with a sequence position                 |
+| **createdAt** / **updatedAt** | Timestamps for when the playlist was created and last saved             |
 
 Each item in `items` references a song by its `id`. The `sequence` number is
 the play order (1, 2, 3, …). When EZPlayer plays a playlist, it walks those items
@@ -62,6 +62,8 @@ Click **Create Playlist** to start a new one.
 
 ## Creating and editing a playlist
 
+![Create Playlist](/img/create-playlist.png)
+
 The create/edit screen has two panels:
 
 ### Left: Songs List
@@ -75,9 +77,7 @@ and sort by title or artist to find what you need.
   already in the playlist.
 - **Drag** a song from this panel into the playlist on the right.
 
-Songs already in the playlist are marked and cannot be added again from this
-panel. The editor keeps **one entry per song** — you cannot place the same
-sequence twice through the UI.
+Songs already in the playlist are marked.
 
 ### Right: Playlist
 
@@ -205,13 +205,3 @@ A typical playlist build:
    screen.
 6. **Test** — run a short schedule window or step through songs on the jukebox
    before opening night.
-
-## Related pages
-
-- [Songs](./songs.md) — importing and configuring sequences
-- [Simple Schedules](./simple-schedules.md) — attaching playlists to time windows
-- [Complex Schedules](../advanced/complex-schedules/overview.md) — loop, shuffle,
-  priority, and end policies
-- [Getting Started (Local)](./getting-started-local.md) — end-to-end local setup
-- [REST Interface](../reference/api.md) — `POST /api/playlists` and show state API
-- [Show Folder](../settings/show-folder.md) — where playlist data is stored

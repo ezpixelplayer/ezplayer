@@ -15,21 +15,6 @@ windows, or offer a simple song-picker at a public display.
 
 ![Play on jukebox](/img/jukebox.png)
 
-## Where to find it
-
-You can open the jukebox from several places:
-
-| Access point | How |
-| --- | --- |
-| **Desktop app** | **Jukebox** in the main sidebar |
-| **LAN UI** | Same sidebar on any phone, tablet, or laptop on your network |
-| **EZRGB Cloud** | Remote access to the same player UI when cloud-connected |
-| **Fullscreen jukebox** | Navigate to `/jukebox` on the player (simplified carousel UI with screensaver) |
-
-The full **Jukebox** screen and the compact **JukeboxArea** carousel (used on
-the fullscreen route) both pull from the same song library and respect the same
-tag filters.
-
 ## The Jukebox screen
 
 At the top of the screen:
@@ -69,10 +54,10 @@ Below the controls, narrow the song grid:
 Each card shows artwork (or a music-note placeholder), title, artist, and
 vendor. Two actions:
 
-| Button | Behavior |
-| --- | --- |
-| **Play** | Start the song **immediately** (`playsong` with `immediate: true`). May interrupt or overlay the current sequence depending on schedule priority. |
-| **Queue** | Add the song to the interactive queue (`playsong` with `immediate: false`). Plays at the next sequence boundary. |
+| Button    | Behavior                                                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Play**  | Start the song **immediately** (`playsong` with `immediate: true`). May interrupt or overlay the current sequence depending on schedule priority. |
+| **Queue** | Add the song to the interactive queue (`playsong` with `immediate: false`). Plays at the next sequence boundary.                                  |
 
 On the **web / LAN UI** (not the desktop Electron app), a speaker icon in the
 header toggles a live **audio stream** — useful for listening over the network
@@ -142,11 +127,11 @@ resolve conflicts — see the [REST Interface](../reference/api.md).
 
 ## Jukebox vs schedule vs playlists
 
-| | Jukebox | Schedule |
-| --- | --- | --- |
-| **Plays** | Individual songs on demand | [Playlists](./playlists.md) on a timetable |
-| **Trigger** | You or a viewer click Play/Queue | Clock enters a scheduled window |
-| **After the song** | Schedule resumes if it was running | Continues through the playlist (or loops) |
+|                    | Jukebox                            | Schedule                                   |
+| ------------------ | ---------------------------------- | ------------------------------------------ |
+| **Plays**          | Individual songs on demand         | [Playlists](./playlists.md) on a timetable |
+| **Trigger**        | You or a viewer click Play/Queue   | Clock enters a scheduled window            |
+| **After the song** | Schedule resumes if it was running | Continues through the playlist (or loops)  |
 
 The jukebox **Filter by Playlist** dropdown only narrows what you see on screen.
 It does not play a whole playlist — use the schedule for that.
@@ -198,15 +183,3 @@ Use `deleterequest` with the same `requestId` to cancel a queued item, or
    night's playlist so guests only see relevant songs.
 5. **Fullscreen for kiosks** — point a tablet at `/jukebox` for a touch-friendly
    picker without the full app chrome.
-
-## Related pages
-
-- [Songs](./songs.md) — importing sequences and song tags
-- [Playlists](./playlists.md) — grouping songs (filter only on the jukebox screen)
-- [Simple Schedules](./simple-schedules.md) — automated show playback
-- [Complex Schedules](../advanced/complex-schedules/overview.md) — how jukebox
-  overrides interact with loop, shuffle, and priority
-- [Jukebox settings](../settings/jukebox.md) — excluded and included tags
-- [Viewer Control](../advanced/viewer-control.md) — remote song requests
-- [Getting Started (Local)](./getting-started-local.md) — first-time jukebox test
-- [REST Interface](../reference/api.md) — `playsong` and queue commands
