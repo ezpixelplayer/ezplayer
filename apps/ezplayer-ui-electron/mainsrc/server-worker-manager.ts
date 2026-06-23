@@ -42,6 +42,9 @@ export interface ServerStatus {
     port: number;
     portSource: string;
     status: 'listening' | 'stopped' | 'error';
+    /** Actual bound kiosk port + source, present when kiosk mode is enabled. */
+    kioskPort?: number;
+    kioskPortSource?: string;
 }
 
 let serverWorker: Worker | null = null;
@@ -145,8 +148,13 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     port: msg.port,
                     portSource: msg.portSource,
                     status: msg.status,
+                    kioskPort: msg.kioskPort,
+                    kioskPortSource: msg.kioskPortSource,
                 };
-                console.log(`[server-worker-manager] Server status: ${msg.status} on port ${msg.port}`);
+                console.log(
+                    `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
+                        (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
+                );
                 break;
             case 'request':
                 // Handle RPC request from server worker

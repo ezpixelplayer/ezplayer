@@ -17,7 +17,17 @@ export interface ServerWorkerData {
 export type ServerWorkerToMainMessage =
     | { type: 'ready' }
     | { type: 'error'; error: string }
-    | { type: 'status'; status: 'listening' | 'stopped' | 'error'; port: number; portSource: string }
+    | {
+          type: 'status';
+          status: 'listening' | 'stopped' | 'error';
+          port: number;
+          portSource: string;
+          /** Actual bound kiosk port + its source, present once the kiosk server is up
+           *  (omitted when kiosk mode is disabled). Both `port` and `kioskPort` are the
+           *  ports actually bound, including any EADDRINUSE upward fallback. */
+          kioskPort?: number;
+          kioskPortSource?: string;
+      }
     | { type: 'request'; id: string; method: string; args: unknown[] }
     | { type: 'broadcast'; key: string; value: unknown };
 

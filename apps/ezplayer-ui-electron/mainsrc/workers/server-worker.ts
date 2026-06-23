@@ -1439,11 +1439,13 @@ async function startServer(config: ServerWorkerData) {
     }
     console.log(`[server-worker] Koa server running at http://localhost:${boundPort}`);
     console.log(`[server-worker] WebSocket server available at ws://localhost:${boundPort}/ws`);
+    // Reused below so the post-kiosk status re-asserts the actual web port + source.
+    const webPortSource = boundPort === port ? portSource : `${portSource} (fallback from ${port})`;
     parentPort!.postMessage({
         type: 'status',
         status: 'listening',
         port: boundPort,
-        portSource: boundPort === port ? portSource : `${portSource} (fallback from ${port})`,
+        portSource: webPortSource,
     } satisfies ServerWorkerToMainMessage);
 
     httpServer.on('error', (err) => {
@@ -1547,6 +1549,18 @@ async function startServer(config: ServerWorkerData) {
         }
         console.log(`[server-worker] Kiosk server running at http://localhost:${kioskBoundPort}`);
         console.log(`[server-worker] Kiosk WebSocket available at ws://localhost:${kioskBoundPort}/ws`);
+
+        // Re-report status now that the kiosk port is known, including the actual web port
+        // so the renderer's Show Status page can list both bound ports.
+        parentPort!.postMessage({
+            type: 'status',
+            status: 'listening',
+            port: boundPort,
+            portSource: webPortSource,
+            kioskPort: kioskBoundPort,
+            kioskPortSource:
+                kioskBoundPort === kioskPort ? kioskPortSource : `${kioskPortSource} (fallback from ${kioskPort})`,
+        } satisfies ServerWorkerToMainMessage);
 
         kioskHttpServer.on('error', (err) => {
             console.error('[server-worker] Kiosk HTTP server error:', err);
