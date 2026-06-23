@@ -87,6 +87,8 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
         port: number;
         portSource: string;
         status: 'listening' | 'stopped' | 'error';
+        kioskPort?: number;
+        kioskPortSource?: string;
     } | null>(null);
 
     const dispatch = useDispatch<AppDispatch>();
@@ -642,7 +644,15 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                     HTTP Listener Status
                                 </Typography>
                                 <Typography variant="body1">Port: {serverStatus.port}</Typography>
-                                <Typography variant="body1">Source: {serverStatus.portSource}</Typography>
+                                <Typography variant="body1">Chosen by: {serverStatus.portSource}</Typography>
+                                {serverStatus.kioskPort !== undefined && (
+                                    <>
+                                        <Typography variant="body1">Kiosk Port: {serverStatus.kioskPort}</Typography>
+                                        <Typography variant="body1">
+                                            Kiosk chosen by: {serverStatus.kioskPortSource}
+                                        </Typography>
+                                    </>
+                                )}
                                 <Box sx={{ mt: 1 }}>
                                     <Chip
                                         label={
