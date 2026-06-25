@@ -11,9 +11,7 @@ into sets like "Christmas Favorites" or "Weeknight Show," then attach those sets
 to date and time windows.
 
 If you already have songs imported, building playlists is the next step toward
-an automated show. See
-[Getting Started (Local)](./getting-started-local.md#4-schedule-the-show) for the
-full flow.
+an automated show.
 
 ## What makes up a playlist
 

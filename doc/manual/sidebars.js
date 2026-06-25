@@ -86,6 +86,7 @@ const sidebars = {
         'reference/architecture',
         'reference/files',
         'reference/cli',
+        'reference/env-variables',
         'reference/api',
       ],
     },

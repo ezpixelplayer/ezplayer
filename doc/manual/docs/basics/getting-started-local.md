@@ -41,7 +41,20 @@ Repeat for as many sequences as you like.
 Use the **Jukebox** to queue sequences and let them run. Want to see it before
 it hits the real lights? The **3D preview** renders the show on screen as it plays.
 
-## 4. Schedule the show
+## 4. Build a playlist
+
+![Playlists](/img/playlists.png)
+
+![Create playlist](/img/create-playlist.png)
+
+Open **Playlists** and click **Create Playlist**. Drag songs from the list on
+the left into your playlist on the right, set a name, and save. Schedules play
+playlists — not individual songs — so group your sequences into at least one
+playlist before you set show times.
+
+See [Playlists](./playlists.md) for sorting, tags, and cloning.
+
+## 5. Schedule the show
 
 ![Schedule](/img/schedule-calendar.png)
 
@@ -53,16 +66,20 @@ them from the LAN UI or the HTTP API — see
 Once a schedule entry's start time arrives, EZPlayer runs it on its own. You do
 not need to press Play for each song.
 
-For how playlists, recurrence, and scheduled windows fit together, see
+For recurrence, intro/outro playlists, and scheduled windows, see
 [Simple Schedules](./simple-schedules.md). For background layers, runtime
 behavior, and previewing a schedule, see
 [Complex Schedules](../advanced/complex-schedules/overview.md).
 
-## 5. Drive it from your phone, tablet, or other computers
+## 6. Drive it from your phone, tablet, or other computers
 
 EZPlayer serves a **LAN UI**: open the player's address from any phone or laptop
 on the same network to check status and make changes — no remote desktop, no
 running back inside to the show PC.
+
+On the show PC, open **Show Status** to see **HTTP Listener Status** (port and
+whether the server is listening). See [Local Web Interface](./local-web-interface.md)
+for URLs, port configuration, and troubleshooting.
 
 ## Where to next
 
