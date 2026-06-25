@@ -414,6 +414,10 @@ function createAssetLoadingManager(
     loadingManager.resolveURL = (url: string) => {
         if (url.startsWith('data:')) return url;
 
+        // Already a resolved show-file URL — we (or the resolver) produced it, so return it
+        // untouched.
+        if (url.includes('/api/show-file?')) return url;
+
         let assetPath: string | null = null;
 
         if (url.startsWith('blob:')) {
