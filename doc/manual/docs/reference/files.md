@@ -40,6 +40,23 @@ All of EZPlayer's JSON lives under `.ezplayer/`. The content files share a commo
 envelope — the records are wrapped in a `data` object — while the settings files
 are stored as a plain object.
 
+## Where songs are stored
+
+Song files (.fseq and .mp3) should be stored directly in the show folder.
+
+Song catalog data lives in your show folder at:
+
+```
+.ezplayer/sequences.json
+```
+
+File paths inside each record are stored **relative to the show folder** (for
+example `sequences/MySong.fseq`). When EZPlayer loads the folder it resolves
+those paths to absolute locations on disk.
+
+If a stored duration looks wrong (for example left over from an old import),
+EZPlayer re-reads the FSEQ header on load and corrects it.
+
 ### `sequences.json`
 
 The song catalog. Envelope: `{ "data": { "allSongs": SequenceRecord[] } }`,

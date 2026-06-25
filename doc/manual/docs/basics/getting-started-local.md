@@ -7,13 +7,16 @@ title: Getting Started (Local)
 
 Get a show running with EZPlayer in a few minutes.
 
+This version of "Getting Started" is for people who already have xLights and a show folder.
+If you set up your show in the EZRGB cloud, [start here instead](./getting-started-cloud.md).
+
 ## Before you start
 
 You'll need:
 
 - EZPlayer installed (Windows, macOS, or Linux). See [releases](https://ezrgb.com/ezplayer).
 - An **xLights show folder** — layout, sequences, and audio EZPlayer can read.
-- Eventually, your controllers reachable on the network, with lights wired up.
+- Eventually you will need your controllers reachable on the network, with lights wired up, but you can skip this at first.
 
 ## 1. Point EZPlayer at your show folder
 
@@ -39,7 +42,7 @@ Repeat for as many sequences as you like.
 ![Play on jukebox](/img/jukebox.png)
 
 Use the **Jukebox** to queue sequences and let them run. Want to see it before
-it hits the real lights? The **3D preview** renders the show on screen as it plays.
+it hits the real lights? The **3D Preview** screen renders the show on screen as it plays.
 
 ## 4. Build a playlist
 
@@ -58,16 +61,13 @@ See [Playlists](./playlists.md) for sorting, tags, and cloning.
 
 ![Schedule](/img/schedule-calendar.png)
 
-Open the **Schedule** screen to set when your show runs. Schedules are stored
-in your show folder and take effect immediately in EZPlayer. You can also edit
-them from the LAN UI or the HTTP API — see
-[REST Interface (HTTP API)](../reference/api.md).
+Open the **Schedule** screen to set when your show runs.  Click a date to add a schedule.
+Choose a playlist, a time window, a date range (if desired), loop, shuffle, and other options.
 
-Once a schedule entry's start time arrives, EZPlayer runs it on its own. You do
-not need to press Play for each song.
+Once a schedule entry's start time arrives, EZPlayer runs it on its own.
 
-For recurrence, intro/outro playlists, and scheduled windows, see
-[Simple Schedules](./simple-schedules.md). For background layers, runtime
+For more on recurring schedules and intro/outro playlists see
+[Simple Schedules](./simple-schedules.md). For background layers, priorities, runtime
 behavior, and previewing a schedule, see
 [Complex Schedules](../advanced/complex-schedules/overview.md).
 
@@ -77,11 +77,18 @@ EZPlayer serves a **LAN UI**: open the player's address from any phone or laptop
 on the same network to check status and make changes — no remote desktop, no
 running back inside to the show PC.
 
-On the show PC, open **Show Status** to see **HTTP Listener Status** (port and
+The default port is 3000, but to confirm, open **Show Status** to see **HTTP Listener Status** (port and
 whether the server is listening). See [Local Web Interface](./local-web-interface.md)
 for URLs, port configuration, and troubleshooting.
 
+## 7. Add cloud features (optional)
+
+If you start with a local EZPlayer, you [can still connect to the cloud later](../settings/cloud.md).  Connecting your player to the cloud allows you to see status and control the show from anywhere, via the internet.  Connecting to the cloud also allows you to
+download songs directly to your show.
+
 ## Where to next
 
-- [What is EZPlayer](../introduction/what-is-ezplayer.md) — how a show reaches your lights.
-- [REST Interface (HTTP API)](../reference/api.md) — the HTTP API for integrations.
+- [Songs](../basics/songs.md), [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) - How to set up songs, playlists, and schedules.
+- [Player](../basics/player-screen.md), [Jukebox](../basics/jukebox.md), and [Preview](../basics/preview.md) - How to control and see your show.
+- [Web UI](../basics/local-web-interface.md) - How to control the show over your local network
+

@@ -6,35 +6,28 @@ title: Songs
 # Songs
 
 In EZPlayer, a **song** is a playable **sequence** — the pairing of a light
-show file (`.fseq`) with metadata and optional audio and artwork. Songs are the
+show file (`.fseq`) with metadata (title, artist, tags, etc.) and optional audio and artwork. Songs are the
 building blocks for everything else: [playlists](./playlists.md),
 [schedules](./simple-schedules.md), the [jukebox](./jukebox.md), and remote
-integrations via the [HTTP API](../reference/api.md).
-
-If you are setting up a show for the first time, start with
-[Getting Started (Local)](./getting-started-local.md#2-add-a-song). This page
-goes deeper into how songs work, what you can configure, and how EZPlayer uses
-them at runtime.
+control.
 
 ## What makes up a song
 
-Each song is stored as a **sequence record** in your show folder. At a high
-level it contains:
+Each song is stored in your show folder. At a high level it contains:
 
-| Part         | Purpose                                                                            |
-| ------------ | ---------------------------------------------------------------------------------- |
-| **Work**     | Human-facing details: title, artist, duration, optional artwork URL                |
+| Part         | Purpose |
+| ------------ | -- |
+| **Work**     | Details: title, artist, duration, optional artwork URL, tags |
 | **Files**    | Paths to the `.fseq` sequence, optional `.mp3` audio, and optional thumbnail image |
-| **Sequence** | Vendor or source info (for example `xLights`, `Local`, or a sequence vendor name)  |
-| **Settings** | Per-song playback tweaks: lead time, trail time, volume adjustment, and tags       |
+| **Sequence** | Vendor or source info |
+| **Settings** | Per-song playback tweaks: lead time, trail time, volume adjustment |
 
-The `.fseq` file is required for playback. EZPlayer reads frame timing from it
+The `.fseq` file is required for playback.  EZPlayer reads frame timing from it
 and drives your controllers from that data. Audio is optional for silent
-sequences (for example background effects), but most musical songs include a
+animation sequences, but musical songs should include a
 matching `.mp3`.
 
-Duration is normally taken from the FSEQ header (frames × milliseconds per
-frame). When you add or replace an FSEQ file, EZPlayer updates the stored
+Duration is normally taken from the file header. When you add or replace a sequence file, EZPlayer updates the stored
 length automatically.
 
 ## The Songs screen
@@ -63,11 +56,11 @@ From the desktop app you can also click **Add Song** to register a new sequence.
 | View song list                     | Yes                 | Yes                              |
 | Add songs                          | Yes                 | No                               |
 | Edit metadata and settings         | Yes                 | No                               |
-| Replace FSEQ / audio / image files | Yes (Electron only) | No                               |
-| Delete songs                       | Yes                 | Yes (unless kiosk mode hides it) |
+| Replace FSEQ / audio / image files | Yes                 | No                               |
+| Delete songs                       | Yes                 | Yes                              |
 
 The LAN UI is meant for monitoring and light control from phones and tablets on
-your network. Full song management stays on the show PC.
+your network. Full song management stays on the show PC, where the files are stored.
 
 ## Adding a song (local show)
 
@@ -85,11 +78,10 @@ your network. Full song management stays on the show PC.
 On the desktop app, choosing an FSEQ file triggers **auto-detect**:
 
 1. EZPlayer reads the FSEQ header for duration and any embedded audio filename.
-2. It searches the same folder for a matching audio file (by header name, then
-   by matching basename, then by prefix). Supported audio types include `.mp3`,
-   `.wav`, `.m4a`, `.aac`, `.flac`, `.ogg`, and `.wma`.
+2. It searches the show folder for a matching audio file (by header name, then
+   by matching basename, then by prefix). The supported audio type is `.mp3`.
 3. It looks for a matching image next to the audio or FSEQ file (`.jpg`,
-   `.png`, `.gif`, `.webp`, and others).
+   `.png`, `.gif`, `.webp`, and others), or tries to extract one from the audio file.
 4. If the audio file has ID3 tags, title and artist are filled in when those
    fields are still empty. Album art from the tags can become the thumbnail.
 
@@ -98,13 +90,13 @@ Selecting a different MP3 re-reads ID3 metadata and refreshes title, artist, and
 artwork.
 
 You can also supply an **image URL** instead of (or in addition to) a local
-image file. URLs work in both the desktop app and the browser-based LAN UI.
+image file.  Using a URL for the image will work as long as it can be reached.
 
 ### Tips for xLights users
 
 Point EZPlayer at the same **show folder** you use in xLights. Sequences and
 audio often already live side by side with matching names, so a single FSEQ
-selection is usually enough. If you export new sequences, add them on the Songs
+selection is usually enough. If you render new sequences, add them on the Songs
 screen (or let the cloud sync deliver them — see below).
 
 ## Editing a song
@@ -117,7 +109,7 @@ Open **Edit Song Details** for any song in the list. You can change:
 - **Lead time**, **trail time**, and **volume adjustment**
 - **Tags**
 
-Changes are saved to your show folder immediately and picked up by the playback
+Changes are saved to your show folder and picked up by the playback
 engine on the next data refresh. If a song is currently playing, unrelated edits
 do not interrupt it.
 
@@ -127,20 +119,21 @@ These settings fine-tune how long a song occupies the schedule timeline and when
 the next song may start. Values are in **seconds**, from **-5.0** to **5.0**.
 
 - **Positive lead time** — extra time _before_ the sequence content starts (for
-  example a few seconds of silence or a held look while audio ramps in).
+  example a few seconds of silence before the audio starts).
 - **Negative lead time** — _trim_ the beginning of the scheduled window (start
   partway into the sequence).
 - **Positive trail time** — extra time _after_ the sequence content ends.
 - **Negative trail time** — _trim_ the end of the scheduled window (end before
-  the FSEQ finishes).
+  the FSEQ finishes), useful if there is too much dead time in the audio.
 
 The scheduler uses these values when calculating playlist length, schedule
-windows, and sequence boundaries. They are most useful when audio and lights
-need to be nudged relative to each other.
+windows, and sequence boundaries.  They are most useful when the gap between songs is uneven.
 
 ### Volume adjustment
 
-Per-song **volume adjustment** ranges from **-100** to **+100**. The value is
+EZPlayer recommends normalizing your show audio.  However, if the audio level seems
+to vary from one song to the next, per-song volume adjustment is available.
+**Volume adjustment** ranges from **-100** to **+100**. The value is
 saved on each song record so you can balance sequences that were mastered at
 different levels. Show-wide loudness is controlled separately — see
 [Volume](../advanced/volume.md) for the default level and time-based overrides.
@@ -148,35 +141,21 @@ different levels. Show-wide loudness is controlled separately — see
 ### Tags
 
 Tags are free-form labels on each song (for example `christmas`, `high-energy`,
-or `nojukebox`). They appear in the Songs table and drive jukebox filtering —
+`animation`, or `nojukebox`). They appear in the Songs table and drive jukebox filtering —
 see [Jukebox settings](../settings/jukebox.md).
 
 When you type a new tag while adding or editing a song, it is added to the
-global tag list so you can reuse it on other songs.
+global tag list so you can reuse it on other songs.  (Consistency helps.)
 
 ## Deleting a song
 
-Click the delete icon and confirm. Deletion is a **soft delete**: the record is
-marked `deleted` in storage and disappears from the UI, but EZPlayer also
-**removes the song from every playlist** that referenced it.
+Click the delete icon and confirm.  The record is
+marked `deleted` and removed from every playlist that referenced it.
+However, deletion is a **soft**: files are not removed.
 
 Deleted songs no longer appear in the jukebox, playlist builder, or schedule
 picker. If you need the sequence again, add it back as a new song.
 
-## Where songs are stored
-
-Song catalog data lives in your show folder at:
-
-```
-.ezplayer/sequences.json
-```
-
-File paths inside each record are stored **relative to the show folder** (for
-example `sequences/MySong.fseq`). When EZPlayer loads the folder it resolves
-those paths to absolute locations on disk.
-
-If a stored duration looks wrong (for example left over from an old import),
-EZPlayer re-reads the FSEQ header on load and corrects it.
 
 ## Which songs are “playable”
 
@@ -190,21 +169,14 @@ Not every record in `sequences.json` appears in the Songs list. A sequence is
    or render do not show up until the file is installed.
 
 The same rule applies everywhere songs are offered: the Songs screen, jukebox,
-playlist editor, and scheduler all use this single filter.
+playlist editor, and scheduler all use this filter.
 
 ## Cloud-delivered songs
 
 When EZPlayer is registered with **EZRGB Cloud**, sequences can arrive from the
 cloud instead of (or in addition to) manual adds. The cloud worker downloads
 FSEQ, audio, and thumbnail files into your show folder and updates
-`sequences.json`.
-
-Cloud sequences carry extra metadata:
-
-- **`source_kind`** — `vendor`, `user_upload`, or `manual`
-- **`cloud`** — file identity used to detect stale downloads
-- **`render_enabled`** — mirrored from the cloud; when `false`, the song is
-  hidden until you re-enable it on the EZRGB side
+your song list.
 
 While a granted sequence is still rendering or disabled, EZPlayer keeps a
 placeholder record so the Cloud screen can show progress, but the song will not
@@ -232,31 +204,13 @@ Choosing a song sends a `playsong` command. By default it plays **immediately**
 configured under [Settings → Jukebox](../settings/jukebox.md); the default
 excluded tag `nojukebox` is always enforced.
 
-### HTTP API and integrations
+### Viewer control integrations
 
-External tools can request playback with the `playsong` command (song ID,
-`immediate` flag, and priority). Viewer-control integrations such as Remote
-Falcon and EZVC use the same song IDs. See the
-[REST Interface](../reference/api.md) for command details.
+Viewer-control integrations such as Remote
+Falcon and EZVC use the same song IDs.  See 
+[Viewer Control](../advanced/viewer-control.md) for details.
 
-### Interactive queue behavior
+## Next steps
 
-When a song is requested interactively (jukebox, API, viewer control):
-
-- **`immediate: true`** — start as soon as the prefetch delay elapses, possibly
-  overlapping audio with what is already playing.
-- **`immediate: false`** — enqueue at the next sequence boundary.
-
-Use **End song** / skip to advance, or **clear requests** to empty the queue.
-
-## Practical workflow
-
-A typical local show build looks like this:
-
-1. **Add songs** — import FSEQ files (and audio) on the Songs screen.
-2. **Tag** — mark seasonal or specialty sequences (`christmas`, `nojukebox`,
-   and so on).
-3. **Tune** — set lead/trail time or volume adjustment where needed.
-4. **Build playlists** — group songs into ordered lists.
-5. **Schedule** — assign playlists to date/time windows.
-6. **Test** — use the jukebox or preview to verify timing before going live.
+- Play your song from the [Jukebox](../basics/jukebox.md), and watch the [Preview](../basics/preview.md)
+- Add songs to [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) so they play automatically

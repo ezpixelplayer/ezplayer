@@ -6,8 +6,9 @@ title: What is EZPlayer
 
 # What is EZPlayer
 
-EZPlayer runs your light show. This manual covers the basics, but also how the
-puzzle fits together and tech details.
+EZPlayer "runs" your light show.  By "runs", we mean it organizes a set of songs/sequences into a scheduled show, inserts announcements, allows viewers to see the schedule and make selections, monitors your show to make sure it is healthy, and so on.
+
+This manual covers the basics and advanced features, but also how the puzzle fits together and some of the technical details.
 
 ## How a show reaches your lights
 
@@ -16,9 +17,9 @@ your controllers, out to the pixels.
 
 ![Simple signal path: EZPlayer to Controllers to Pixels](/diagrams/arch-simple.svg)
 
-- **EZPlayer** plays your sequenced show data.
-- **Controllers** receive that data and drive each channel.
-- **Pixels / lights** display the result, frame by frame.
+- **EZPlayer** plays your sequenced show on demand, or on a schedule.
+- **Controllers** receive that network data and drive the light strings.
+- **Pixels / lights** display the result.
 
 ## Where to go next
 
