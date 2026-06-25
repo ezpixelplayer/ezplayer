@@ -28,6 +28,10 @@ import {
 import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { collectReferencedAssets } from '../data/layoutAssets.js';
 import { FSEQReaderAsync } from '@ezplayer/epp';
+import { trustSystemCAs } from '../trustSystemCAs.js';
+
+// Trust the OS cert store before any cloud fetch in this worker.
+trustSystemCAs();
 
 // Default poll cadences. Registration (5s) is the checkin / bridge-open heartbeat:
 // it keeps the cloud-bridge open signal (viewer-control + audio start) responsive
