@@ -49,19 +49,9 @@ A chip at the top shows the current player state:
 
 ### Volume
 
-A volume meter displays the current output level (0–100%). On the **desktop
-app**, you can also:
-
-- **Mute / unmute** — live toggle (`setvolume` with `mute`)
-- Open **volume settings** (gear icon) — default volume and scheduled overrides;
-  see [Volume](../advanced/volume.md)
-
-The level bar reflects the automated ramp toward your configured target; change
-the baseline and schedule overrides through the settings dialog, not by dragging
-the bar.
-
-On the **LAN UI in kiosk mode**, volume controls are read-only so public
-displays cannot change loudness.
+A meter shows the current output level (0–100%). On the **desktop app**, you can
+mute/unmute and adjust default and scheduled volumes via the gear icon — see
+[Volume](../advanced/volume.md). In **kiosk mode**, these controls are read-only.
 
 ### Now Playing and Next Show
 
@@ -141,16 +131,7 @@ Hover or click timeline items for detail. Use the toolbar to:
   [Simulating Your Schedule](../advanced/complex-schedules/simulating-your-schedule.md).
 
 The timeline updates when your schedule, playlist, or song data changes in the
-Redux store (for example after you save a schedule entry).
-
-## Player vs other screens
-
-| Screen                 | Best for                                                          |
-| ---------------------- | ----------------------------------------------------------------- |
-| **Player**             | Day-to-day overview: now playing, controller health, today's plan |
-| **Jukebox**            | Picking and queueing individual songs on demand                   |
-| **Show Status**        | Deep diagnostics: every controller, errors, stats, queue detail   |
-| **Schedule → Preview** | Simulating arbitrary date ranges before go-live                   |
+Redux store (for example after you save a schedule entry). |
 
 ## Desktop app vs LAN UI
 
@@ -165,12 +146,3 @@ Redux store (for example after you save a schedule entry).
 The LAN UI is ideal for checking status from a phone on the same network
 without remote desktop. Kiosk mode keeps the Player screen available for a
 public-facing display while hiding management screens and destructive controls.
-
-## Typical workflow
-
-1. **Open Player** after launching EZPlayer — confirm controllers are online.
-2. **Scan the timeline** — verify today's schedule windows look correct.
-3. **Use Now Playing** during the show — see what is active and what is next.
-4. **Pause / Skip / End** from here or the jukebox when you need manual control.
-5. **Reload Schedule** after editing the calendar if playback was stopped.
-6. **Open Show Status** when something looks wrong with a specific controller.

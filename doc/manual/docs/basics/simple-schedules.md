@@ -18,14 +18,6 @@ When a window opens, the player walks through the intro playlist (if any), the
 main playlist, and the outro playlist (if any), then stops — unless you have
 enabled **loop** or **shuffle** on the main section.
 
-## Local storage
-
-Schedule entries are saved as JSON in your show folder alongside your playlists
-and sequence catalog. Changes you make in EZPlayer are written there
-immediately and picked up by the playback engine on the next schedule refresh.
-If something is already playing, unrelated edits are reconciled without
-interrupting the current song.
-
 ## Creating and editing entries
 
 ![Schedule editing](/img/schedule-editing.png)

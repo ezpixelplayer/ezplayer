@@ -205,7 +205,7 @@ which is the contract: one writer at a time.
     - `POST /api/playback-settings` — update volume / viewer control / jukebox / audio sync / blend
     - `POST /api/player-command` — transport and request control (play, stop, queue, volume, …)
 
-  See the [REST Interface (HTTP API)](./api.md) for the full surface.
+    See the [REST Interface (HTTP API)](./api.md) for the full surface.
 
 ## The folder lock
 
@@ -225,3 +225,19 @@ Live status — what is playing, controller health, statistics, version numbers 
 is computed at runtime and pushed over the API/WebSocket. It is **not** persisted
 to the show folder, so there is no status file to read on disk.
 :::
+
+## Where playlists are stored
+
+Playlist data lives in your show folder at:
+
+```
+.ezplayer/playlists.json
+```
+
+Changes you make in EZPlayer (or via the LAN UI / HTTP API) are written there
+immediately. When the playback engine reloads show data, it picks up the latest
+playlists without requiring a restart.
+
+If a playlist references a song ID that no longer exists (for example after a
+song was deleted), EZPlayer logs a validation warning. Remove the missing entry
+by editing the playlist or restore the song.

@@ -10,33 +10,6 @@ your song library and the [schedule](./simple-schedules.md): you group sequences
 into sets like "Christmas Favorites" or "Weeknight Show," then attach those sets
 to date and time windows.
 
-If you already have songs imported, building playlists is the next step toward
-an automated show.
-
-## What makes up a playlist
-
-Each playlist is stored as a **playlist record** in your show folder:
-
-| Field                         | Purpose                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| **id**                        | Unique identifier (assigned when you create the playlist)               |
-| **title**                     | Display name shown in the Playlists screen and schedule editor          |
-| **tags**                      | Labels for organizing and filtering playlists (separate from song tags) |
-| **items**                     | Ordered list of song IDs, each with a sequence position                 |
-| **createdAt** / **updatedAt** | Timestamps for when the playlist was created and last saved             |
-
-Each item in `items` references a song by its `id`. The `sequence` number is
-the play order (1, 2, 3, …). When EZPlayer plays a playlist, it walks those items
-from first to last unless a schedule entry overrides behavior with **shuffle**
-or **loop** — see [Complex Schedules](../advanced/complex-schedules/overview.md).
-
-**Duration** shown in the UI is the sum of each song's total time, including
-per-song [lead and trail time](./songs.md#lead-time-and-trail-time). That gives
-you a rough length for planning schedule windows; actual runtime can differ when
-shuffle, loop, or end policies are in play.
-
-## The Playlists screen
-
 ![Playlists](/img/playlists.png)
 
 Open **Playlists** from the main navigation. The table shows:
@@ -52,8 +25,7 @@ large library.
 **Double-click** a row to open the editor. Action buttons on each row:
 
 - **Edit** — open the create/edit screen
-- **Clone** — duplicate the playlist (EZPlayer names the copy
-  `OriginalTitle-1`, `OriginalTitle-2`, and so on)
+- **Clone** — duplicate the playlist
 - **Delete** — soft-delete after confirmation
 
 Click **Create Playlist** to start a new one.
@@ -70,7 +42,7 @@ Every **playable** song in your library — same filter as the Songs screen
 (not deleted, has an FSEQ file, not cloud-disabled). Use search, tag filters,
 and sort by title or artist to find what you need.
 
-- Click **+** on a song to add it to the playlist.
+- Click **->** on a song to add it to the playlist.
 - **Add All** adds every song that matches your current filters and is not
   already in the playlist.
 - **Drag** a song from this panel into the playlist on the right.
@@ -98,18 +70,6 @@ Click **Save Playlist** when done. A playlist must have a **name** and at least
 Use **Discard** to return to the list. If you have unsaved changes, EZPlayer
 warns you before navigating away or closing the browser tab.
 
-## Playlist tags vs song tags
-
-Playlists and songs each have their own tags:
-
-- **Song tags** — control jukebox visibility and help filter songs while building
-  playlists. See [Jukebox settings](../settings/jukebox.md).
-- **Playlist tags** — organize your playlist library and filter the Playlists
-  screen. They do not affect which songs appear in the editor's Songs List.
-
-Tag names are independent. A playlist tagged `holiday` can contain songs tagged
-`christmas` or `winter`.
-
 ## Deleting a playlist
 
 Deletion is a **soft delete**: the record is marked `deleted` in storage and
@@ -118,22 +78,6 @@ playlist will show a validation error until you pick a different playlist or
 remove the schedule entry.
 
 Deleting a playlist does **not** delete the songs in it.
-
-## Where playlists are stored
-
-Playlist data lives in your show folder at:
-
-```
-.ezplayer/playlists.json
-```
-
-Changes you make in EZPlayer (or via the LAN UI / HTTP API) are written there
-immediately. When the playback engine reloads show data, it picks up the latest
-playlists without requiring a restart.
-
-If a playlist references a song ID that no longer exists (for example after a
-song was deleted), EZPlayer logs a validation warning. Remove the missing entry
-by editing the playlist or restore the song.
 
 ## How playlists are used at runtime
 
@@ -151,26 +95,6 @@ in order, then handles the outro according to the schedule's end policy. See
 [Simple Schedules](./simple-schedules.md) and
 [Complex Schedules](../advanced/complex-schedules/overview.md) for recurrence,
 loop, shuffle, priority, and end-policy behavior.
-
-### Live edits
-
-Schedule entries read from `playlists.json` on refresh. If you edit a playlist
-while the show is running, unrelated changes are reconciled **without
-interrupting the current song**. Changes to a playlist that is actively playing
-may not reshuffle what is already in progress until the next natural boundary.
-
-### Jukebox
-
-The jukebox plays **individual songs**, not whole playlists. Use playlists for
-scheduled and automated show flow; use the jukebox for one-off requests.
-
-### HTTP API
-
-External tools can read and update playlists via `GET /api/current-show` and
-`POST /api/playlists`. The player command `playplaylist` exists in the API
-schema for requesting on-demand playlist playback; scheduled and jukebox flows
-are the main interactive paths today. See the
-[REST Interface](../reference/api.md).
 
 ## Cloud-managed playlists
 
@@ -190,16 +114,3 @@ PC.
 
 Song **files** still need to be added on the desktop app — the playlist editor
 only picks from songs already in your library.
-
-## Practical workflow
-
-A typical playlist build:
-
-1. **Import songs** on the [Songs](./songs.md) screen.
-2. **Create playlists** — group songs by theme, night, or venue section.
-3. **Tag playlists** — for example `weeknight`, `weekend`, `static`.
-4. **Check duration** — use the Duration column to size schedule windows.
-5. **Schedule** — assign intro, main, and outro playlists on the Schedule
-   screen.
-6. **Test** — run a short schedule window or step through songs on the jukebox
-   before opening night.
