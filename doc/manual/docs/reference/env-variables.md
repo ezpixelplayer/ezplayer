@@ -69,6 +69,35 @@ port in this order:
 If the preferred port is in use, the server tries up to ten consecutive ports.
 The bound port and source are shown on **HTTP Listener Status**.
 
+### Certificates and TLS
+
+EZPlayer makes outbound HTTPS calls to the EZRGB cloud from the **Node side**,
+not just the browser. On modern builds it **automatically trusts your operating
+system's certificate store**, so an OS-trusted corporate proxy or self-signed
+root that already works in your browser also works for EZPlayer's cloud calls —
+no configuration needed.
+
+When that automatic trust isn't enough (an older runtime, or a CA that isn't in
+the OS store), these **standard Node.js** variables are honored as fallbacks:
+
+| Variable                       | Description                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_EXTRA_CA_CERTS`          | Path to a PEM file of additional CA certificates to trust (for example a corporate root, or a TLS-intercepting proxy's root). The recommended way to add a CA. |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | Set to `0` to disable TLS certificate verification entirely. **Insecure — last-resort debugging only**; never leave it set on a production show machine.    |
+
+**Windows (PowerShell)**
+
+```powershell
+$env:NODE_EXTRA_CA_CERTS = "C:\certs\corp-root.pem"
+.\EZPlayer.exe
+```
+
+**Linux / macOS**
+
+```bash
+NODE_EXTRA_CA_CERTS=/etc/ssl/corp-root.pem ./EZPlayer
+```
+
 ## Build-time variables (Vite)
 
 These are read when building the **Electron renderer** or **embedded LAN UI**

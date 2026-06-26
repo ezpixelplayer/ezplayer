@@ -22,14 +22,12 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 | Flag                   | Purpose                                                         |
 | ---------------------- | --------------------------------------------------------------- |
 | `--show-folder=<path>` | Open the given show folder on launch                            |
-| `--showFolder=<path>`  | Alias of `--show-folder`                                        |
-| `--show-folder <path>` | Same as above (space-separated value)                           |
 | `--web-port=<n>`       | LAN HTTP server port (default `3000`)                           |
 | `--kiosk-port=<n>`     | Kiosk web server port (default `3001`)                          |
 | `--kiosk-port=0`       | Disable the kiosk server                                        |
 | `--reset`              | Clear persisted state, then quit (cloud welcome on next launch) |
-| `--reset-cloud`        | Same as `--reset`                                               |
 | `--reset-nocloud`      | Clear persisted state, pin local-only welcome, then quit        |
+| `--no-update-check`    | Skip the startup check for a newer EZPlayer release             |
 
 ## Show folder
 
@@ -44,11 +42,8 @@ EZPlayer.exe --show-folder=C:\Shows\MyDisplay
 ./EZPlayer --show-folder=/home/user/shows/my-display
 ```
 
-Accepted forms:
-
-- `--show-folder=C:\path\to\folder`
-- `--showFolder=C:\path\to\folder` (camelCase alias)
-- `--show-folder C:\path\to\folder` (value as the next argument)
+The preferred form is `--show-folder=<path>`. A camelCase alias (`--showFolder=`)
+and a space-separated form (`--show-folder <path>`) are also accepted.
 
 The path must **exist** as a directory. If it is valid, EZPlayer saves it as
 the persisted show folder and loads sequences, playlists, schedule, and layout
@@ -103,8 +98,9 @@ welcome flow.
 | Flag              | What is cleared                              | Next launch welcome screen            |
 | ----------------- | -------------------------------------------- | ------------------------------------- |
 | `--reset`         | Show folder pointer, renderer `localStorage` | Cloud option shown (default)          |
-| `--reset-cloud`   | Same as `--reset`                            | Cloud option shown                    |
 | `--reset-nocloud` | Same as `--reset`                            | Local/xLights only (cloud CTA hidden) |
+
+`--reset-cloud` is an alias of `--reset`.
 
 Example:
 
@@ -142,6 +138,38 @@ under `%APPDATA%\EZPlayer\logs` via Electron's `app.getPath('logs')`).
 To open DevTools in a **packaged** build, use the environment variable
 `EZP_OPEN_DEVTOOLS` instead of a CLI flag — see
 [Environment Variables](./env-variables.md).
+
+## Updates
+
+EZPlayer checks for a newer release a few seconds after launch. To suppress that
+check on locked-down or offline show machines:
+
+| Flag                | Description                              |
+| ------------------- | ---------------------------------------- |
+| `--no-update-check` | Skip the automatic startup update check. |
+
+## Certificates and TLS
+
+EZPlayer talks to the EZRGB cloud over HTTPS from the Node side. It
+**automatically trusts the operating-system certificate store**, so an
+OS-trusted corporate proxy or self-signed root that works in your browser works
+here too. To add a CA that isn't in the OS store, set the standard Node.js
+variable **`NODE_EXTRA_CA_CERTS`** (path to a PEM file). As a last-resort
+debugging step only, `NODE_TLS_REJECT_UNAUTHORIZED=0` disables verification
+entirely (insecure). See
+[Environment Variables → Certificates and TLS](./env-variables.md#certificates-and-tls).
+
+## Sandbox, GPU, and proxy
+
+These are **standard Electron/Chromium switches** (not EZPlayer-specific) that
+pass through to the underlying runtime. They are occasionally useful for
+troubleshooting startup, rendering, or networking:
+
+| Flag                       | When to use                                                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--no-sandbox`             | Applied automatically on Linux (see [Platform notes](#platform-notes)). Rarely needed elsewhere; can work around sandbox-related launch failures. |
+| `--disable-gpu`            | Force software rendering to work around GPU/driver glitches (blank window, flicker, artifacts).                                                   |
+| `--proxy-server=host:port` | Route EZPlayer's traffic through an explicit HTTP/HTTPS proxy. Pair with a trusted CA (above) if the proxy intercepts TLS.                        |
 
 ## Platform notes
 

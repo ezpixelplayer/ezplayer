@@ -10,9 +10,13 @@ your song library and the [schedule](./simple-schedules.md): you group sequences
 into sets like "Christmas Favorites" or "Weeknight Show," then attach those sets
 to date and time windows.
 
+In addition to scheduling, there are a few other uses for playlists, such as
+intro/outro and making a list of songs that viewers may select, but the concept
+is the same.
+
 ![Playlists](/img/playlists.png)
 
-Open **Playlists** from the main navigation. The table shows:
+Open **Playlists** from the main navigation bar. The table shows:
 
 - **Playlist** name
 - **Tags** on the playlist
@@ -28,7 +32,7 @@ large library.
 - **Clone** — duplicate the playlist
 - **Delete** — soft-delete after confirmation
 
-Click **Create Playlist** to start a new one.
+Click the **Create Playlist** button in the upper corner to start a new one.
 
 ## Creating and editing a playlist
 
@@ -47,7 +51,7 @@ and sort by title or artist to find what you need.
   already in the playlist.
 - **Drag** a song from this panel into the playlist on the right.
 
-Songs already in the playlist are marked.
+Songs already in the playlist are shaded.
 
 ### Right: Playlist
 
@@ -99,18 +103,18 @@ loop, shuffle, priority, and end-policy behavior.
 ## Cloud-managed playlists
 
 When EZPlayer is registered with **EZRGB Cloud**, playlists can be delivered or
-updated from the cloud alongside sequences. Cloud-arrived playlists merge into
-your local `playlists.json` through the same path as edits from the UI.
+updated from the cloud alongside sequences.  Cloud-managed playlists are merged into
+your local playlists.
 
 For cloud registration and content sync, see
 [Getting Started (Cloud)](./getting-started-cloud.md).
 
 ## Desktop app vs LAN UI
 
-Unlike song file management, **playlist create, edit, clone, and delete** are
-available in both the desktop app and the LAN UI. You can build or adjust a
-playlist from a phone or laptop on the same network without sitting at the show
-PC.
+**Playlist create, edit, clone, and delete** are
+available in both the desktop app and the [LAN UI](./local-web-interface.md). You
+can build or adjust a playlist from a phone or laptop on the same network without
+sitting at the show PC.
 
-Song **files** still need to be added on the desktop app — the playlist editor
+Song **files** currently still need to be added on the desktop app — the playlist editor
 only picks from songs already in your library.
