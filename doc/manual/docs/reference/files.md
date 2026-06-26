@@ -40,7 +40,7 @@ All of EZPlayer's JSON lives under `.ezplayer/`. The content files share a commo
 envelope — the records are wrapped in a `data` object — while the settings files
 are stored as a plain object.
 
-## Where songs are stored
+## Where songs and metadata are stored
 
 Song files (.fseq and .mp3) should be stored directly in the show folder.
 
@@ -93,6 +93,12 @@ Notes:
   on cloud- or vendor-sourced sequences.
 
 ### `playlists.json`
+
+Playlist data lives in your show folder at:
+
+```
+.ezplayer/playlists.json
+```
 
 Ordered lists of songs. Envelope:
 `{ "data": { "playlists": PlaylistRecord[] } }`, 4-space indentation.
@@ -225,19 +231,3 @@ Live status — what is playing, controller health, statistics, version numbers 
 is computed at runtime and pushed over the API/WebSocket. It is **not** persisted
 to the show folder, so there is no status file to read on disk.
 :::
-
-## Where playlists are stored
-
-Playlist data lives in your show folder at:
-
-```
-.ezplayer/playlists.json
-```
-
-Changes you make in EZPlayer (or via the LAN UI / HTTP API) are written there
-immediately. When the playback engine reloads show data, it picks up the latest
-playlists without requiring a restart.
-
-If a playlist references a song ID that no longer exists (for example after a
-song was deleted), EZPlayer logs a validation warning. Remove the missing entry
-by editing the playlist or restore the song.

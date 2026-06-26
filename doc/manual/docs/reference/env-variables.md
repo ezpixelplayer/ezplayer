@@ -8,7 +8,7 @@ title: Environment Variables
 EZPlayer reads a small set of environment variables at **runtime** (Electron main
 process) and a few **build-time** `VITE_*` variables when compiling the web UIs.
 CLI flags with the same purpose take priority over environment variables — see
-[Local Web Interface](../basics/local-web-interface.md#configuring-the-port) for
+[Local Web Interface](../basics/local-web-interface.md#configuring-the-lan-ui-port) for
 port precedence.
 
 On the desktop app, **Show Status → HTTP Listener Status** shows the effective

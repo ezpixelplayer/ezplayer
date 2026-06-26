@@ -7,9 +7,8 @@ title: Local Web Interface
 
 EZPlayer runs a built-in **HTTP server** on your show PC so phones, tablets, and
 other computers on the same network can open a web UI — no remote desktop
-required. The same server also exposes the
-[REST Interface (HTTP API)](../reference/api.md) and a **WebSocket** feed at
-`/ws` for live status and preview frames.
+required. The same server also provides the
+[REST Interface (HTTP API)](../reference/api.md) for external integration.
 
 This is the **LAN UI** (also called the embedded or web interface). It mirrors
 most of what you can do in the desktop app, with a few differences noted below.
@@ -17,7 +16,7 @@ most of what you can do in the desktop app, with a few differences noted below.
 ## Opening the LAN UI
 
 1. Make sure EZPlayer is running on the show PC.
-2. Find the machine's **local IP address** on your network (for example
+2. Find the machine's **local IP address** or **hostname** on your network (for example
    `192.168.1.50`).
 3. Open a browser on another device and go to:
 
@@ -32,13 +31,42 @@ test the web UI without a second device.
 
 From the LAN UI you can monitor the [Player](./player-screen.md) screen, use the
 [jukebox](./jukebox.md), edit [playlists](./playlists.md) and schedules, and
-check [Show Status](../advanced/show-status/details.md) — all without installing
-anything extra on the client device.
+check [Show Status](../advanced/show-status/details.md).
+
+## Special LAN UI Features
+
+On the **web / LAN UI**, a speaker icon in the header of the Jukebox and 3D preview pages
+toggles a live **audio stream** — useful for listening over the network when you are not at the show PC.
+
+## Desktop app vs LAN UI
+
+| Capability                           | Desktop app   | LAN UI                          |
+| ------------------------------------ | ------------- | ------------------------------- |
+| Player, Jukebox, Playlists, Schedule | Yes           | Yes                             |
+| Show Status (full detail)            | Yes           | Yes                             |
+| HTTP Listener Status card            | Yes           | No                              |
+| Add / edit song files                | Yes           | No                              |
+| Choose show folder                   | Yes           | No                              |
+| Cloud registration dialog            | Yes           | Limited (Cloud tile)            |
+| Kiosk mode                           | Separate port | Yes (`__EZPLAYER_MODE__=kiosk`) |
+
+Song file management and show-folder selection stay on the show PC. Everything
+else — including playlist edits, schedule changes, jukebox requests, and API
+calls — can be done from the LAN UI once the server is **Listening**.
+
+## Kiosk (public display)
+
+EZPlayer can also open a second, **kiosk** web server one port above the LAN UI port, **3001** by default.
+The kiosk has a simplified sidebar — jukebox and player only, no
+song/playlist/schedule management.
+
+In **kiosk mode** (public LAN display), **End** and **Abort** playback buttons are hidden so
+visitors cannot stop the show. Skip and Play/Pause remain available.
 
 ## HTTP Listener Status (desktop app)
 
 On the **desktop Electron app**, open **Show Status** and scroll to the
-**HTTP Listener Status** card at the bottom. This panel tells you whether the
+z**HTTP Listener Status** card at the bottom. This panel tells you whether the
 LAN server is up and which port to use when connecting from other devices.
 
 ![HTTP Listener Status on Show Status](/img/status-3.png)
@@ -48,7 +76,7 @@ The card refreshes every few seconds and shows three fields:
 | Field      | Meaning                                                                                     |
 | ---------- | ------------------------------------------------------------------------------------------- |
 | **Port**   | The TCP port the LAN HTTP server is bound to (or attempted). Use this in your browser URL.  |
-| **Source** | Where that port number came from — see [Configuring the port](#configuring-the-port) below. |
+| **Source** | Where that port number came from — see [Configuring the port](#configuring-the-lan-ui-port) below. |
 | **Status** | Whether the server is running                                                               |
 
 ### Status values
@@ -69,7 +97,7 @@ The LAN UI itself does not display this card — you use it on the show PC to
 learn which URL to give guests and integrators.
 :::
 
-## Configuring the port
+### Configuring the LAN UI port
 
 The main LAN UI port is chosen in this priority order:
 
@@ -78,41 +106,25 @@ The main LAN UI port is chosen in this priority order:
 3. **Stored preference** — remembered from a previous successful launch
 4. **Default** — `3000`
 
-Valid ports are **1024–65535**. See
+Valid ports vary by platform, but are likely in the **1024–49151** range. See
 [Environment Variables](../reference/env-variables.md) for all runtime and
 build-time variables.
 
-Examples:
+Changing the port number requires an EZPlayer restart.
 
-```bash
-# Launch with a fixed port
-EZPlayer.exe --web-port=8080
+### Configuring the Kiosk Port
 
-# Or via environment variable (Windows)
-set EZPLAYER_WEB_PORT=8080
-```
-
-After changing the port, check **HTTP Listener Status** on Show Status to
-confirm the new value and that status is **Listening**.
-
-## Kiosk port (public display)
-
-EZPlayer can also run a second, **kiosk** web server on port **3001** by default
-(a separate listener with a simplified sidebar — jukebox and player only, no
-song/playlist/schedule management). Configure it the same way:
+Configure it the same way as the LAN UI Port:
 
 | Setting       | Main LAN UI         | Kiosk                                       |
 | ------------- | ------------------- | ------------------------------------------- |
 | Default port  | 3000                | 3001                                        |
 | CLI           | `--web-port=`       | `--kiosk-port=`                             |
 | Environment   | `EZPLAYER_WEB_PORT` | `EZPLAYER_KIOSK_PORT`                       |
-| Disable kiosk | —                   | `--kiosk-port=0` or `EZPLAYER_KIOSK_PORT=0` |
 
-The **HTTP Listener Status** card on Show Status reports the **main** LAN port.
-For kiosk, use the configured kiosk port (default 3001) in the URL.
+The kiosk UI can be disabled by setting its port number to `0`.
 
-Point a tablet at `http://<show-pc-ip>:3001` for a guest-facing jukebox without
-exposing schedule editing.
+The **HTTP Listener Status** card on Show Status reports the **main** LAN port and the kiosk port.
 
 ## What the server provides
 
@@ -131,22 +143,6 @@ No authentication is built into the LAN server — anyone on your local network 
 knows the IP and port can connect. Keep the show PC on a trusted network or
 restrict access at your router if needed.
 
-## Desktop app vs LAN UI
-
-| Capability                           | Desktop app   | LAN UI                          |
-| ------------------------------------ | ------------- | ------------------------------- |
-| Player, Jukebox, Playlists, Schedule | Yes           | Yes                             |
-| Show Status (full detail)            | Yes           | Yes                             |
-| HTTP Listener Status card            | Yes           | No                              |
-| Add / edit song files                | Yes           | No                              |
-| Choose show folder                   | Yes           | No                              |
-| Cloud registration dialog            | Yes           | Limited (Cloud tile)            |
-| Kiosk mode                           | Separate port | Yes (`__EZPLAYER_MODE__=kiosk`) |
-
-Song file management and show-folder selection stay on the show PC. Everything
-else — including playlist edits, schedule changes, jukebox requests, and API
-calls — can be done from the LAN UI once the server is **Listening**.
-
 ## Troubleshooting
 
 **Cannot connect from phone or tablet**
@@ -156,7 +152,7 @@ calls — can be done from the LAN UI once the server is **Listening**.
   fell back to another port).
 - Verify the client device is on the **same network** as the show PC (same Wi‑Fi
   or VLAN).
-- Check Windows firewall allows inbound TCP on that port.
+- Check Windows firewall (or similar on other platforms) allows inbound TCP on that port.
 
 **Status shows Error**
 

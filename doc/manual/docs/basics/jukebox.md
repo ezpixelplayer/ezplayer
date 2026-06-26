@@ -7,29 +7,25 @@ title: Jukebox
 
 The **jukebox** is EZPlayer's on-demand playback screen. While the
 [schedule](./simple-schedules.md) runs your show on autopilot, the jukebox lets
-you (or your guests) pick individual [songs](./songs.md) to play right now or
-queue for later.
+you pick individual [songs](./songs.md) to queue up or to play immediately.
 
 ![Play on jukebox](/img/jukebox.png)
 
 ### Playback controls
 
-- **Play** — play the song.
+- **Play** — play the schedule.
 - **Pause / Resume** — pause live playback, or resume from a paused state.
-- **Skip** — skip the current song.
+- **Skip** — skip the current song (ending it abruptly).
 - **End** — graceful stop that waits for the current song to finish before stopping.
-- **Abort** — hard stop that cuts playback instantly, without finishing the song.
-
-In **kiosk mode** (public LAN display), **End** and **Abort** are hidden so
-visitors cannot stop the show. Skip and Play/Pause remain available.
+- **Abort** — hard stop that cuts playback immediately, without finishing the song.
 
 ### Queue
 
 When you **Queue** a song, it appears in the **Queue** list. Each entry shows
-the song title; click the **×** to remove a pending request (`deleterequest`).
+the song title; click the **×** to remove a pending request.
 
 Queued songs play at the **next sequence boundary** — after the current song
-finishes — unless you used **Play** instead.
+finishes.  Using **Play** instead of **Queue** causes the song clicked to play immediately.
 
 ### Filters and sorting
 
@@ -46,14 +42,10 @@ Below the controls, narrow the song grid:
 Each card shows artwork (or a music-note placeholder), title, artist, and
 vendor. Two actions:
 
-| Button    | Behavior                                                                                                      |
-| --------- | ------------------------------------------------------------------------------------------------------------- |
-| **Play**  | Start the song **immediately**. May interrupt or overlay the current sequence depending on schedule priority. |
-| **Queue** | Add the song to the interactive queue. Plays at the next sequence boundary.                                   |
-
-On the **web / LAN UI**, a speaker icon in the
-header toggles a live **audio stream** — useful for listening over the network
-when you are not at the show PC.
+| Button    | Behavior |
+| --------- | --- |
+| **Play**  | Start the song **immediately**. Will interrupt the current foreground sequence. |
+| **Queue** | Add the song to the interactive queue. Plays at the next sequence boundary. |
 
 ## Which songs appear
 
@@ -70,21 +62,9 @@ Remote Falcon integration — see [Jukebox settings](../settings/jukebox.md) and
 [Viewer Control](../advanced/viewer-control.md).
 
 The quickest way to hide a sequence is to add the `nojukebox` tag on the
-[Songs](./songs.md) screen.
+[Songs](./songs.md) screen.  You might want to do this for PSAs, static sequences, etc.
 
-## Jukebox vs schedule vs playlists
+## Remote Jukebox
 
-|                    | Jukebox                            | Schedule                                   |
-| ------------------ | ---------------------------------- | ------------------------------------------ |
-| **Plays**          | Individual songs on demand         | [Playlists](./playlists.md) on a timetable |
-| **Trigger**        | You or a viewer click Play/Queue   | Clock enters a scheduled window            |
-| **After the song** | Schedule resumes if it was running | Continues through the playlist (or loops)  |
-
-## Kiosk mode
-
-When the LAN UI runs in **kiosk mode** (default port 3001), several management
-screens are hidden (Songs, Playlists, Schedule, Settings, Cloud). The jukebox
-and Player screens stay available for public use.
-
-Stop controls (**End**, **Abort**) are disabled on the jukebox in kiosk mode so
-guests cannot shut down the show.
+The Jukebox is available on the [LAN UI](./local-web-interface.md), with the addition of
+a button for listening to the live audio.
