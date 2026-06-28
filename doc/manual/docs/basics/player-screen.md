@@ -28,9 +28,6 @@ The screen has three sections, top to bottom:
 | **Controller Status** | Summary of models, channels, and online/offline health              |
 | **Today's timeline**  | Simulated run-through of **today's** scheduled events               |
 
-The Player screen is the **default route** when EZPlayer starts — select
-**Player** in the sidebar anytime to return here.
-
 ## Now Playing card
 
 The Now Playing card streams live status from the playback engine.
@@ -49,9 +46,9 @@ A chip at the top shows the current player state:
 
 ### Volume
 
-A meter shows the current output level (0–100%). On the **desktop app**, you can
+A meter shows the current output level (0–100%).  You can
 mute/unmute and adjust default and scheduled volumes via the gear icon — see
-[Volume](../advanced/volume.md). In **kiosk mode**, these controls are read-only.
+[Volume](../advanced/volume.md).
 
 ### Now Playing and Next Show
 
@@ -69,21 +66,19 @@ When status is **Playing** or **Paused**, the same playback controls as the
 [jukebox](./jukebox.md) appear inline:
 
 - **Play / Pause / Resume**
-- **Skip** — end the current song (`endsong`)
-- **End** — graceful stop (`stopgraceful`)
-- **Abort** — hard stop (`stopnow`)
+- **Skip** — end the current song abruptly and proceed to the next
+- **End** — stop gracefully: after the current song, play any outro, and then stop
+- **Abort** — hard stop: immediately stop
 
-If a **queue** has pending jukebox or API requests, they appear below the
-controls. Remove an item with **×** (`deleterequest`).
-
-In **kiosk mode**, **End** and **Abort** are hidden.
+If there is a **queue** of jukebox or API requests, they appear below the
+controls. Remove an item with **×**.
 
 ### Reload Schedule
 
 When the player is **Stopped**, a **Reload Schedule** button appears instead of
 the transport controls. Click it to reread the schedule from disk and re-engage
-playback (`resetplayback`). Use this after editing schedules or when the show
-should start following the calendar again.
+playback (`resetplayback`).  Pressing this is generally not needed unless you
+have manually changed files on disk, or something has gone wrong.
 
 ## Controller Status card
 
@@ -95,34 +90,28 @@ The Controller Status card summarizes your lighting network:
   red when errors or offline units are detected, grey when no controllers are
   assigned
 
-This is a **summary** view. Expand any controller, see ping history, open the
-statistics dialog, and check LAN server status on the dedicated
-**Show Status** screen.
+This is a **summary** view. For details, see the **Show Status** screen.
 
 ## Today's timeline
 
 The lower half of the Player screen is an interactive **timeline** of today's
-schedule. EZPlayer simulates your [songs](./songs.md), [playlists](./playlists.md),
-and [schedule entries](./simple-schedules.md) from midnight through end of day
-using the same playback engine logic as the full schedule preview.
+schedule. EZPlayer shows your high-level [schedule](./simple-schedules.md) through the day
+here.  For exact details, you can [simulate] your show and get exact timings from the [Schedules](../advanced/complex-schedules/simulating-your-schedule.md) screen.
 
 ### What you see
 
 - **Main schedules** — colored by priority (high, normal, low)
 - **Background schedules** — shown in a single distinct color
-- Individual **sequence blocks** within each scheduled window
-- Schedule lifecycle events (started, ended, suspended, resumed, and others)
 
 Hover or click timeline items for detail. Use the toolbar to:
 
 - **Zoom in / zoom out** — focus on a time range
 - **Fit to screen** — show the full day
-- **Refresh** — regenerate the timeline from current schedule data
 
 ### Important notes
 
-- The timeline is a **simulation of today's plan**, not a live log of what
-  already played. Jukebox overrides and manual stops during the night may
+- The timeline is a **summary of today's plan**, not a live log of what
+  already played. Jukebox overrides and manual stops may cause differences
   differ from what was predicted at the start of the day.
 - If you have no songs, playlists, or schedule entries for today, the screen
   shows _No schedule data available for today._
@@ -130,10 +119,13 @@ Hover or click timeline items for detail. Use the toolbar to:
   custom date range, use **Schedule Preview** on the Schedule screen — see
   [Simulating Your Schedule](../advanced/complex-schedules/simulating-your-schedule.md).
 
-The timeline updates when your schedule, playlist, or song data changes in the
-Redux store (for example after you save a schedule entry). |
+The timeline updates when your schedule, playlist, or song data changes.
 
 ## Desktop app vs LAN UI
+
+The [LAN UI](./local-web-interface.md) can be used to check status from a phone or
+other machine on your network. Kiosk mode keeps the Player screen available for a
+public-facing display while hiding management screens and destructive controls.
 
 | Capability           | Desktop app | LAN UI (normal) | LAN UI (kiosk)       |
 | -------------------- | ----------- | --------------- | -------------------- |
@@ -143,6 +135,3 @@ Redux store (for example after you save a schedule entry). |
 | End / Abort controls | Yes         | Yes             | Hidden               |
 | Today's timeline     | Yes         | Yes             | Yes                  |
 
-The LAN UI is ideal for checking status from a phone on the same network
-without remote desktop. Kiosk mode keeps the Player screen available for a
-public-facing display while hiding management screens and destructive controls.
