@@ -5,6 +5,10 @@ title: Command Line Interface (CLI)
 
 # Command Line Interface (CLI)
 
+:::: note
+The CLI is subject to redesign, and is expected to stabilize in v1.0.
+::::
+
 The **desktop EZPlayer** application (Windows, macOS, Linux) accepts command-line
 flags when launched from a terminal, shortcut, or service script. Flags control
 the show folder, LAN web server ports, and first-run behavior.

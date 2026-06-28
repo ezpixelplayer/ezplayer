@@ -5,18 +5,16 @@ title: Simple Schedules
 
 # Simple Schedules
 
-Scheduling ties three layers together:
+Scheduling automates the show: [**Playlists**](./playlists.md) of [**Songs/Sequences**](./songs.md) are set to play at
+specified date and time windows.
 
-1. **Sequences** — individual songs or effects (the `.fseq` files you added in
-   [Getting Started](./getting-started-local.md#2-add-a-song)).
-2. **Playlists** — ordered lists of sequences (for example, "Christmas Songs").
-   Build these on the **Playlists** screen before you schedule them.
-3. **Scheduled playlists** — a playlist (plus optional intro and outro playlists)
-   assigned to a **date and time window**.
+When a schedule runs, the player plays through:
 
-When a window opens, the player walks through the intro playlist (if any), the
-main playlist, and the outro playlist (if any), then stops — unless you have
-enabled **loop** or **shuffle** on the main section.
+1.  The intro playlist (if any)
+2.  The main playlist (optionally applying loop or shuffle to fill the full time slot), and
+3.  The outro playlist (if any)
+
+The schedule then stops.
 
 ## Creating and editing entries
 
