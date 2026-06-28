@@ -91,7 +91,7 @@ If the preferred port is busy, EZPlayer tries the next ports in sequence (up to
 10 attempts). When that happens, **Source** may note a fallback (for example
 `Default (fallback from 3000)`) and **Port** shows the port that actually bound.
 
-:::info Desktop only
+:::info
 The HTTP Listener Status card is available in the **Electron desktop app** only.
 The LAN UI itself does not display this card — you use it on the show PC to
 learn which URL to give guests and integrators.

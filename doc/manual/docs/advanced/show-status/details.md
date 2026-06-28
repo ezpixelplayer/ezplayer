@@ -5,6 +5,6 @@ title: Details
 
 # Show Status — Details
 
-:::note Placeholder
+:::note
 This page is a placeholder. Content coming soon.
 :::

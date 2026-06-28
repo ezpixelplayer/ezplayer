@@ -5,6 +5,6 @@ title: 2D/3D Preview
 
 # 2D/3D Preview
 
-:::note Placeholder
+:::note
 This page is a placeholder. Content coming soon.
 :::

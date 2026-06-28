@@ -5,6 +5,6 @@ title: Using Full Cloud Control
 
 # Using Full Cloud Control
 
-:::note Placeholder
+:::note
 This page is a placeholder. Content coming soon.
 :::

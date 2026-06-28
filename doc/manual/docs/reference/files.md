@@ -226,7 +226,9 @@ its owner exits, so a crash does not leave the folder permanently locked.
 The `.ezplayer/` subdirectory is created automatically the first time EZPlayer
 opens a folder.
 
-:::note Runtime state is not stored here
+:::note
+Runtime state is not stored here.
+
 Live status — what is playing, controller health, statistics, version numbers —
 is computed at runtime and pushed over the API/WebSocket. It is **not** persisted
 to the show folder, so there is no status file to read on disk.

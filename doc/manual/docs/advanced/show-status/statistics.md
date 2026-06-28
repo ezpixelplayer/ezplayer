@@ -5,6 +5,6 @@ title: Statistics
 
 # Show Status — Statistics
 
-:::note Placeholder
+:::note
 This page is a placeholder. Content coming soon.
 :::

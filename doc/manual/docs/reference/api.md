@@ -8,10 +8,10 @@ title: REST Interface (HTTP API)
 
 ## Koa Server REST APIs
 
-:::: note
+:::note
 The REST API is subject to change.  Currently used internally, could be used externally if you don't mind churn.
 The goal is to finalize the shape and provide backward compatibility after the 1.0 release.
-::::
+:::
 
 ### GET /api/hello
 

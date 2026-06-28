@@ -5,6 +5,6 @@ title: Getting Sequences from EZRGB
 
 # Getting Sequences from EZRGB
 
-:::note Placeholder
+:::note
 This page is a placeholder. Content coming soon.
 :::
