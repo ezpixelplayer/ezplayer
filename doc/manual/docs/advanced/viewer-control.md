@@ -21,8 +21,9 @@ field below the type dropdown.
 
 ![Remote Falcon show page](/img/remote-falcon-1.png)
 
-During active viewer-control hours, the player uploads the current song to your
-Remote Falcon show page and polls for new requests before switching songs.
+During active viewer-control hours, the player keeps your Remote Falcon show
+page updated with what's playing and checks for viewer requests as it chooses
+the next song.
 
 ## Schedule Configuration
 
