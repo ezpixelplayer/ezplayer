@@ -5,6 +5,8 @@ title: Jukebox
 
 # Jukebox
 
+![Jukebox](/img/jukebox-settings.png)
+
 Control which songs appear on the **Jukebox** screen using tags on your
 sequences.
 

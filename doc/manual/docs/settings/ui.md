@@ -5,6 +5,8 @@ title: UI
 
 # UI
 
+![UI](/img/ui.png)
+
 Customize the look and feel of EZPlayer on this device.
 
 - **Theme** — choose from EZRGBTheme, PureLightTheme, or NebulaFighterTheme.

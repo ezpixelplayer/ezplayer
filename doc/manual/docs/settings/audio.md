@@ -5,6 +5,8 @@ title: Audio
 
 # Audio
 
+![Audio](/img/audio.png)
+
 ## Volume
 
 Volume levels and schedule overrides are documented under

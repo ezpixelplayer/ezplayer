@@ -5,6 +5,8 @@ title: Show Folder
 
 # Show Folder
 
+![Show Folder](/img/show-folder.png)
+
 _Desktop app only — not shown in the LAN UI._
 
 Point EZPlayer at the folder that holds your show data.

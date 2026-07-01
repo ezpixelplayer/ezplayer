@@ -5,6 +5,8 @@ title: Cloud
 
 # Cloud
 
+![Cloud](/img/cloud-settings.png)
+
 _Opens the Player Cloud Registration dialog instead of an inline panel._
 
 Use this tile to manage EZPlayer's connection to EZRGB Cloud. The same
@@ -41,6 +43,8 @@ Add windows with **Add Window** (days + start/end time, same day/time format as
 viewer control).
 
 ## Advanced
+
+![Cloud Advanced](/img/cloud-settings-adv.png)
 
 Expand **Advanced** for infrequently changed options:
 
