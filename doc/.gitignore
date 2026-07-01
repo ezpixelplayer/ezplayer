@@ -1,0 +1,9 @@
+# Assembled slide decks
+slides/build/
+
+# d2 -> svg is generated; the .d2 sources are the source of truth
+assets/diagrams/*.svg
+
+# Docusaurus build output / caches (its own .gitignore covers most of this)
+manual/build/
+manual/.docusaurus/

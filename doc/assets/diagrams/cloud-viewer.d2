@@ -1,0 +1,17 @@
+# The player server backs the public viewer page.
+# Shared: "Cloud service architecture" slide (viewer half).
+
+direction: right
+
+player: Local player {
+  shape: rectangle
+}
+server: Player server {
+  shape: rectangle
+}
+viewer: Viewer page\n(show info, voting, audio) {
+  shape: rectangle
+}
+
+player <-> server
+server <-> viewer
