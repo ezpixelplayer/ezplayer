@@ -1,13 +1,14 @@
 ---
 sidebar_position: 3
-title: Simulating Your Schedule
+title: Schedule Options
 ---
 
-# Simulating Your Schedule
+# Schedule Options
 
 A [simple schedule](../../basics/simple-schedules.md) just needs a playlist and a
 time window. When you open a schedule entry, a few extra options let you control
-exactly how it behaves.
+exactly how it behaves. [Schedule Preview](./schedule-preview.md) uses these same
+settings when it simulates your show.
 
 ![Schedule options](/img/schedule-timings.png)
 
@@ -46,17 +47,3 @@ Three checkboxes fine-tune the handoff:
   where the clock is now rather than where it left off.
 
 Leave these off unless you have a specific reason to change them.
-
-## Simulating before you go live
-
-Open **Schedule Preview** from the Schedule screen to see what the player will
-actually do before show night.
-
-1. Pick a **start** and **end** date/time to preview.
-2. Optionally filter to **Main** or **Background** schedules only.
-3. Click **Generate Preview**.
-
-EZPlayer builds a timeline showing each show, including how priority conflicts,
-loops, shuffles, and intro/outro timing play out. Click an item in the timeline
-to jump to its details below. This is the easiest way to catch surprises before
-the lights go on.

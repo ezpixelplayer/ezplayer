@@ -49,7 +49,8 @@ const sidebars = {
           link: { type: 'doc', id: 'advanced/complex-schedules/overview' },
           items: [
             'advanced/complex-schedules/background-schedule',
-            'advanced/complex-schedules/simulating-your-schedule',
+            'advanced/complex-schedules/schedule-options',
+            'advanced/complex-schedules/schedule-preview',
           ],
         },
         'advanced/volume',

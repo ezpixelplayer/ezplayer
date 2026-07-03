@@ -17,7 +17,7 @@ elements such as tune-to loops or ambient effects.
 In the [schedule editor](../../basics/simple-schedules.md), use the **Main /
 Background** toggle at the top to switch to a background entry. A background entry
 has the same options as a main one — time window, intro/outro, loop or shuffle,
-priority, and [end-time behavior](./simulating-your-schedule.md).
+priority, and [end-time behavior](./schedule-options.md).
 
 The key difference is that a background schedule never replaces the foreground
 show. It always plays *alongside* main, layered over or under it.

@@ -96,7 +96,7 @@ This is a **summary** view. For details, see the **Show Status** screen.
 
 The lower half of the Player screen is an interactive **timeline** of today's
 schedule. EZPlayer shows your high-level [schedule](./simple-schedules.md) through the day
-here.  For exact details, you can [simulate] your show and get exact timings from the [Schedules](../advanced/complex-schedules/simulating-your-schedule.md) screen.
+here.  For exact details, you can [simulate] your show and get exact timings from the [Schedule Preview](../advanced/complex-schedules/schedule-preview.md) screen.
 
 ### What you see
 
@@ -117,7 +117,7 @@ Hover or click timeline items for detail. Use the toolbar to:
   shows _No schedule data available for today._
 - For multi-day preview, priority conflicts, and loop/shuffle testing across a
   custom date range, use **Schedule Preview** on the Schedule screen — see
-  [Simulating Your Schedule](../advanced/complex-schedules/simulating-your-schedule.md).
+  [Schedule Preview](../advanced/complex-schedules/schedule-preview.md).
 
 The timeline updates when your schedule, playlist, or song data changes.
 
