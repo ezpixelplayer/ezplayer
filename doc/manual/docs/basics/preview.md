@@ -5,26 +5,23 @@ title: 2D/3D Preview
 
 # 2D/3D Preview
 
-The **Preview** screen renders your show **live** on a virtual copy of your
-display. As [songs](./songs.md) play — from the [jukebox](./jukebox.md), a
-[schedule](./simple-schedules.md), or an API request — the pixels light up here
-exactly as they do on your real props. It is the quickest way to check that a
-sequence looks right without standing outside.
+The **Preview** screen renders your show **live** on a model of your
+display.  As the show plays, the pixels light up here
+as they do on your real props.  This is the quickest way to check that your show data,
+including any overlays, looks right.  (You will still need to go outside to see if the
+connections are all correct, etc., but if things do not look right outside, you might
+check the preview first.)
 
 ![3D Preview](/img/3D-preview.png)
 
 ## 3D vs 2D
 
-Use the **View** toggle in the top-left to switch between two ways of looking at
-the same layout:
+Use the **View** toggle in the top-left to switch between 2D and 3D:
 
 | Mode   | What it shows                                                              |
 | ------ | ------------------------------------------------------------------------- |
-| **3D** | Your models placed in space, so you can fly around and see depth and angles |
-| **2D** | A flat, face-on view — useful for a clean, head-on look at the display     |
-
-Each mode remembers its own camera position, so you can set up a 3D angle and a
-2D framing independently and flip between them.
+| **3D** | Your models placed in 3D space, so you can fly around and see depth and angles |
+| **2D** | A flat, face-on view, for 2D displays |
 
 ## Choosing what to preview
 
@@ -41,7 +38,7 @@ The **Preview** dropdown controls which models are shown:
 ### 3D view
 
 - **Left drag** — look around
-- **Right drag** — orbit the show
+- **Right drag** — orbit the right-clicked object
 - **Middle drag** — strafe / pan
 - **Scroll** — move forward and back
 - **Keyboard** — `W`/`S` move, `A`/`D` turn, `Z`/`C` strafe, `Q`/`E` down/up
@@ -61,11 +58,9 @@ in 3D mode — click it to jump to one of those saved angles.
 
 Click the gear icon to open **Preview Settings**:
 
-- **Pixel Size** — make the pixels larger or smaller so the preview reads well at
-  any zoom level.
-- **Brightness** — scale how bright the preview looks (this only affects the
-  preview, not your real output).
-- **Reset View** — re-fit the camera so the whole layout is in frame again.
+- **Pixel Size** — make the pixels larger or smaller so the preview reads well.
+- **Brightness** — adjust how bright any background images or models are, dimming it can help the pixels stand out.
+- **Reset View** — reset the camera to its original position.
 - **Set as Default View** — remember the current camera angle, view mode, and
   slider settings as the starting point next time.
 
@@ -83,7 +78,7 @@ browser, an audio button lets you listen to the show's music alongside the
 visuals. (On the desktop app, audio plays through your normal output instead.)
 
 :::note
-The Preview is a visual aid. It shows what the sequence sends to your models;
-it does not control playback. Start, pause, or stop the show from the
-[Player screen](./player-screen.md) or the [jukebox](./jukebox.md).
+The Preview is a visual aid.  It shows what the sequence sends to your models.
+If things are different in the real world, it indicates that the models in your
+show do not match the real ones, are not cabled as modelled, etc.   
 :::
