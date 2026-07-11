@@ -5,13 +5,9 @@ title: Using Full Cloud Control
 
 # Using Full Cloud Control
 
-**Full cloud control** means running your show so that EZRGB is the main place
-you build content and check on the player, while EZPlayer at the display handles
-playback and talks to your controllers.
-
-You do not need to sit at the show computer to add songs, adjust a playlist, or
-see whether the player is online — once registered, the player stays in touch
-with EZRGB over the internet.
+**Full cloud control** means running your show with just the EZRGB website, which manages your
+layout, sequences, and show schedule, while EZPlayer handles
+playback.  (Note that in this configuration, xLights is not involved in maintaining the player's show folder.)
 
 ## Two ways to use the cloud
 
@@ -28,8 +24,8 @@ with xLights, you can still [register](./registering.md) and sync content — se
 
 On [EZRGB](https://ezrgb.com) you can:
 
-- Build or edit your **layout** (cloud-managed shows).
-- Add **sequences** and assign them to your player.
+- Build, edit, or upload your **layout**.
+- Acquire **sequences**.
 - Set up **playlists** and **schedule** entries.
 - See **player status** and send commands when you are away from the show PC.
 
@@ -47,7 +43,8 @@ cloud.
   from the player machine for local phones and laptops.
 - **Over the internet** — EZRGB talks to your registered player through the
   cloud. Use it to check status, manage content, and control playback when you
-  are not on site.
+  are not on site.  You can find the link to your player's cloud control
+  page in your account on the EZRGB website.
 
 The player must stay registered, online, and not paused for remote control to
 work. The Cloud screen in EZPlayer is where you confirm that connection on the
@@ -67,6 +64,6 @@ Even with full cloud control, EZPlayer on the show computer still:
 - Plays sequences and drives your controllers on the network.
 - Runs [schedules](../basics/simple-schedules.md) and the [jukebox](../basics/jukebox.md)
   at show time.
-- Serves the LAN UI for anyone on the same network.
+- Serves the LAN on your network.
 
 The cloud is how you **manage** the show; the player is what **runs** it.

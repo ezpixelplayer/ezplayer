@@ -8,11 +8,12 @@ title: Background Schedule
 Most show content lives on the **Main** schedule — this is what drives your
 foreground lights and audio. A **Background** schedule runs a second playlist at
 the same time, layered together with the main show. Use it for always-on
-elements such as tune-to loops or ambient effects.
+elements such as informational loops (tune-to, parking, viewer control info)
+or ambient effects.
 
 ![Background schedule](/img/background-schedule.png)
 
-## Creating one
+## Creating a Background Schedule
 
 In the [schedule editor](../../basics/simple-schedules.md), use the **Main /
 Background** toggle at the top to switch to a background entry. A background entry
@@ -23,6 +24,10 @@ The key difference is that a background schedule never replaces the foreground
 show. It always plays *alongside* main, layered over or under it.
 
 ## Overlay vs Underlay
+
+:::note
+Versions 0.6 and earlier present this setting but ignore it, opting to blend the two schedules.
+:::
 
 A single **blend mode** decides how background content combines with the
 foreground for the whole player:

@@ -41,7 +41,7 @@ is running.
 
 ## Cloud Content
 
-Lists the sequences assigned to this player and how far along each download is.
+Lists the sequences in the account assigned to this player and how far along each download is.
 Click a row to expand it and see individual files. **installed** means ready to
 play; **downloading** means in progress; **error** means something failed —
 expand the row for details.
