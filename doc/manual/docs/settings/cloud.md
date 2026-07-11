@@ -49,7 +49,7 @@ viewer control).
 Expand **Advanced** for infrequently changed options:
 
 - **Cloud Service URL** — override the default EZRGB cloud endpoint (for
-  staging or self-hosted installs).
+  development/staging or self-hosted installs).
 - **Current Player ID** — read-only view of the token for this show folder.
   **Generate New** creates a fresh ID (requires re-registration). **Clear**
   removes the current ID.

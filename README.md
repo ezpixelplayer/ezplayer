@@ -12,7 +12,7 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ### Features
 
-While we will continue to add features through the 2026 season, EZPlayer is ready for 4th of July shows.
+While we will continue to add features through the 2026 season, EZPlayer was tested on several 4th of July shows and is ready for use.
 
 EZPlayer can be used completely locally, supporting:
 - A flexible schedule of playlists of sequences
@@ -65,8 +65,10 @@ We currently provide builds for:
 - **Windows (x64)** — `EZPlayer-Setup-*.exe`
 - **macOS (Apple Silicon)** — `EZPlayer-*-arm64.dmg` (M1/M2/M3/M4 — most Macs sold since late 2020)
 - **macOS (Intel)** — `EZPlayer-*-x64.dmg` (older Intel-based Macs)
-- **Linux (Debian/Ubuntu/Mint, recommended)** — `ezplayer-ui-electron_*_amd64.deb`
-- **Linux (AppImage)** — `EZPlayer-*.AppImage`
+- **Linux x64 (Debian/Ubuntu/Mint, recommended)** — `ezplayer-ui-electron_*_amd64.deb`
+- **Linux x64 (AppImage)** — `EZPlayer-*.AppImage`
+- **Linux ARM (Raspberry Pi)** — `ezplayer-ui-electron_*_arm64.deb`
+- **Linux ARM (Raspberry Pi) (AppImage)** — `EZPlayer-*-arm64.AppImage`
 - **Linux (portable tarball)** — `ezplayer-ui-electron-*.tar.gz`
 
 Not sure which Mac you have? Apple menu → **About This Mac** — if "Chip" says Apple anything (M1/M2/M3/M4), use the arm64 build; if "Processor" says Intel, use the x64 build.
@@ -108,7 +110,7 @@ EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required).
 
 ### Running EZPlayer
 
-### Running EZPlayer Locally
+#### Running EZPlayer Locally
 
 When you first run EZPlayer, you will choose your show folder.  This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
 
@@ -124,7 +126,7 @@ Return to the "Player" screen, which will give you a summary of what is going an
 
 If you want to connect to the cloud (for remote management, automatic sequence rendering and download, etc.), visit the "Cloud" screen.
 
-### Starting In The Cloud
+#### Starting In The Cloud
 
 If you used the EZRGB website to set up your show, choose cloud setup when EZPlayer launches for the first time.  Click the link, or use the QR code to register the player via another device (such as your phone).  Your layout, sequences, schedule, and settings will download to your show folder automatically.
 

@@ -6,7 +6,7 @@ title: Viewer Control
 # Viewer Control
 
 Let viewers request songs during configured hours — either through
-**Remote Falcon** or EZPlayer's built-in viewer control.
+[**Remote Falcon**](https://remotefalcon.com) or EZPlayer's built-in viewer control.
 
 ## Viewer Control Type
 
