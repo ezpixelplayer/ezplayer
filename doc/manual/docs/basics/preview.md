@@ -14,6 +14,12 @@ check the preview first.)
 
 ![3D Preview](/img/3D-preview.png)
 
+:::note
+The Preview is a visual aid.  It shows what the sequence sends to your models.
+If things are different in the real world, it indicates that the models in your
+show do not match the real ones, are not cabled as modelled, etc.   
+:::
+
 ## 3D vs 2D
 
 Use the **View** toggle in the top-left to switch between 2D and 3D:
@@ -77,8 +83,3 @@ When you open the Preview from the [LAN UI](./local-web-interface.md) in a
 browser, an audio button lets you listen to the show's music alongside the
 visuals. (On the desktop app, audio plays through your normal output instead.)
 
-:::note
-The Preview is a visual aid.  It shows what the sequence sends to your models.
-If things are different in the real world, it indicates that the models in your
-show do not match the real ones, are not cabled as modelled, etc.   
-:::
