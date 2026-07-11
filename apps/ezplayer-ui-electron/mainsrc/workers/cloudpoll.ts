@@ -189,7 +189,10 @@ function recordFailure(reason: string) {
         // refreshes the cloud-bridge TTL on the server side. Halting it
         // here means the bridge silently dies in 90s and the player drops
         // until a manual restart, regardless of how innocuous the failure.
-        if (manifestTimer) { clearInterval(manifestTimer); manifestTimer = null; }
+        if (manifestTimer) {
+            clearInterval(manifestTimer);
+            manifestTimer = null;
+        }
         // Schedule a one-shot auto-clear so the player self-recovers without
         // user intervention. User-initiated sync or setConfig cancels this.
         cancelAutoClearTimer();
@@ -306,9 +309,7 @@ async function electHomeServerOnce(): Promise<void> {
         const probed = await Promise.all(
             body.candidates.map(async (c) => ({ ...c, rtt_ms: await probeHealthzRttMs(c.url) })),
         );
-        const reachable = probed.filter(
-            (p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number',
-        );
+        const reachable = probed.filter((p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number');
         if (reachable.length === 0) {
             log('warn', 'electHomeServer: no candidates reachable');
             return;
@@ -810,7 +811,10 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
         if (pending.length === 0) continue;
 
         const result = await downloadSet(entry, pending);
-        if (!result.ok) { allOk = false; continue; }
+        if (!result.ok) {
+            allOk = false;
+            continue;
+        }
 
         const record = await buildSequenceRecord(entry, existing, result.installed);
         post({ type: 'installSequence', record });

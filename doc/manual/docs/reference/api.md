@@ -1,6 +1,17 @@
+---
+sidebar_position: 3
+sidebar_label: REST Interface (HTTP API)
+title: REST Interface (HTTP API)
+---
+
 # EZPlayer API Documentation
 
 ## Koa Server REST APIs
+
+:::note
+The REST API is subject to change. Currently used internally, could be used externally if you don't mind churn.
+The goal is to finalize the shape and provide backward compatibility after the 1.0 release.
+:::
 
 ### GET /api/hello
 

@@ -112,7 +112,10 @@ function scheduleEntryMatchesNow<T extends BaseScheduleEntry>(entry: T, nowMinut
  * Find the applicable schedule entry at the given time.
  * Later entries in the array have higher priority.
  */
-export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(entries: T[] | undefined, now: Date = new Date()): T | null {
+export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(
+    entries: T[] | undefined,
+    now: Date = new Date(),
+): T | null {
     if (!entries?.length) return null;
 
     const nowMinutes = getMinutesOfWeek(now);

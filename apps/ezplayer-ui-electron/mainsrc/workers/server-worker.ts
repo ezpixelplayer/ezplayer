@@ -371,7 +371,12 @@ interface CloudProxyBridge {
 let cloudProxyBridge: CloudProxyBridge | undefined;
 
 function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
-    if (cloudProxyBridge && cloudProxyBridge.sessionId === sessionId && cloudProxyBridge.url === wsUrl && cloudProxyBridge.open) {
+    if (
+        cloudProxyBridge &&
+        cloudProxyBridge.sessionId === sessionId &&
+        cloudProxyBridge.url === wsUrl &&
+        cloudProxyBridge.open
+    ) {
         clearTimeout(cloudProxyBridge.ttlTimer);
         cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -472,7 +477,12 @@ let cloudAudioBridge: CloudAudioBridge | undefined;
 const AUDIO_PUSH_INTERVAL_MS = 20;
 
 function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
-    if (cloudAudioBridge && cloudAudioBridge.sessionId === sessionId && cloudAudioBridge.url === wsUrl && cloudAudioBridge.open) {
+    if (
+        cloudAudioBridge &&
+        cloudAudioBridge.sessionId === sessionId &&
+        cloudAudioBridge.url === wsUrl &&
+        cloudAudioBridge.open
+    ) {
         clearTimeout(cloudAudioBridge.ttlTimer);
         cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
         return;

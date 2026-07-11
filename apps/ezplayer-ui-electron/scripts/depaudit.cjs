@@ -68,7 +68,10 @@ if (!asarPath) {
 // Packages physically present in the asar's node_modules.
 const asarPkgs = new Set();
 for (const entry of asar.listPackage(asarPath, {})) {
-    const m = entry.split('\\').join('/').match(/node_modules\/((?:@[^/]+\/)?[^/]+)/);
+    const m = entry
+        .split('\\')
+        .join('/')
+        .match(/node_modules\/((?:@[^/]+\/)?[^/]+)/);
     if (m) asarPkgs.add(m[1]);
 }
 
@@ -105,4 +108,6 @@ if (missing.length) {
     );
     process.exit(1);
 }
-console.log(`[depaudit] OK — every external bundle reference is a builtin or present in ${path.relative('.', asarPath)}.`);
+console.log(
+    `[depaudit] OK — every external bundle reference is a builtin or present in ${path.relative('.', asarPath)}.`,
+);
