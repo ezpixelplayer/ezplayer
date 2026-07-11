@@ -70,8 +70,8 @@ as usual. Your player ID and settings are kept while paused.
 What happens next depends on how your show folder is set up:
 
 - **Cloud-managed show** — EZPlayer downloads your layout from EZRGB, then keeps
-  sequences, playlists, and schedule in sync. Watch progress on the **Cloud**
-  screen in the sidebar.
+  sequences, playlists, and schedule in sync. Watch progress on the
+  [Cloud screen](./status-control-ui.md).
 - **xLights show folder** — your local layout stays in charge; the cloud mainly
   syncs sequences and other content. You can push layout updates to the cloud from the
   Cloud screen.
