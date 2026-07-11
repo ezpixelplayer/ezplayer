@@ -40,7 +40,7 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ![w:760](assets/img/songs.png)
 
-- Add a song and EZPlayer picks up the sequence, audio, and models automatically
+- Add a song and EZPlayer picks up the sequence, audio, artwork, and tags automatically
 
 ---
 

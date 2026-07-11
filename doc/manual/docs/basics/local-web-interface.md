@@ -66,7 +66,7 @@ visitors cannot stop the show. Skip and Play/Pause remain available.
 ## HTTP Listener Status (desktop app)
 
 On the **desktop Electron app**, open **Show Status** and scroll to the
-z**HTTP Listener Status** card at the bottom. This panel tells you whether the
+**HTTP Listener Status** card at the bottom. This panel tells you whether the
 LAN server is up and which port to use when connecting from other devices.
 
 ![HTTP Listener Status on Show Status](/img/status-3.png)

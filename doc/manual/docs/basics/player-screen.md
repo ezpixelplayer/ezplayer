@@ -96,7 +96,7 @@ This is a **summary** view. For details, see the **Show Status** screen.
 
 The lower half of the Player screen is an interactive **timeline** of today's
 schedule. EZPlayer shows your high-level [schedule](./simple-schedules.md) through the day
-here.  For exact details, you can [simulate] your show and get exact timings from the [Schedule Preview](../advanced/complex-schedules/schedule-preview.md) screen.
+here.  For exact details, you can simulate your show and get exact timings from the [Schedule Preview](../advanced/complex-schedules/schedule-preview.md) screen.
 
 ### What you see
 
@@ -111,7 +111,7 @@ Hover or click timeline items for detail. Use the toolbar to:
 ### Important notes
 
 - The timeline is a **summary of today's plan**, not a live log of what
-  already played. Jukebox overrides and manual stops may cause differences
+  already played. Jukebox overrides and manual stops may cause the show to
   differ from what was predicted at the start of the day.
 - If you have no songs, playlists, or schedule entries for today, the screen
   shows _No schedule data available for today._

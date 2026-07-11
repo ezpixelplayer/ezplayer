@@ -151,7 +151,7 @@ global tag list so you can reuse it on other songs.  (Consistency helps.)
 
 Click the delete icon and confirm.  The record is
 marked `deleted` and removed from every playlist that referenced it.
-However, deletion is a **soft**: files are not removed.
+However, deletion is a **soft delete**: files are not removed.
 
 Deleted songs no longer appear in the jukebox, playlist builder, or schedule
 picker. If you need the sequence again, add it back as a new song.

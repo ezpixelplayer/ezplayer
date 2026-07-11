@@ -30,7 +30,7 @@ Use the **Main** / **Background** toggle at the top to switch which kind of
 schedule you are editing (see
 [Background Schedule](../advanced/complex-schedules/background-schedule.md)).
 
-![FG-BG Toggle BUtton](/img/fg-bg-toggle.png)
+![FG-BG Toggle Button](/img/fg-bg-toggle.png)
 
 **Recurrence** lets one entry repeat:
 
