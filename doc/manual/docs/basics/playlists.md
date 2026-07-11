@@ -103,7 +103,7 @@ loop, shuffle, priority, and end-policy behavior.
 ## Cloud-managed playlists
 
 When EZPlayer is registered with **EZRGB Cloud**, playlists can be delivered or
-updated from the cloud alongside sequences.  Cloud-managed playlists are merged into
+updated from the cloud alongside sequences. Cloud-managed playlists are merged into
 your local playlists.
 
 For cloud registration and content sync, see

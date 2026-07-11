@@ -46,7 +46,7 @@ A chip at the top shows the current player state:
 
 ### Volume
 
-A meter shows the current output level (0–100%).  You can
+A meter shows the current output level (0–100%). You can
 mute/unmute and adjust default and scheduled volumes via the gear icon — see
 [Volume](../advanced/volume.md).
 
@@ -77,7 +77,7 @@ controls. Remove an item with **×**.
 
 When the player is **Stopped**, a **Reload Schedule** button appears instead of
 the transport controls. Click it to reread the schedule from disk and re-engage
-playback (`resetplayback`).  Pressing this is generally not needed unless you
+playback (`resetplayback`). Pressing this is generally not needed unless you
 have manually changed files on disk, or something has gone wrong.
 
 ## Controller Status card
@@ -96,7 +96,7 @@ This is a **summary** view. For details, see the **Show Status** screen.
 
 The lower half of the Player screen is an interactive **timeline** of today's
 schedule. EZPlayer shows your high-level [schedule](./simple-schedules.md) through the day
-here.  For exact details, you can simulate your show and get exact timings from the [Schedule Preview](../advanced/complex-schedules/schedule-preview.md) screen.
+here. For exact details, you can simulate your show and get exact timings from the [Schedule Preview](../advanced/complex-schedules/schedule-preview.md) screen.
 
 ### What you see
 
@@ -134,4 +134,3 @@ public-facing display while hiding management screens and destructive controls.
 | Volume settings gear | Yes         | Yes             | No                   |
 | End / Abort controls | Yes         | Yes             | Hidden               |
 | Today's timeline     | Yes         | Yes             | Yes                  |
-

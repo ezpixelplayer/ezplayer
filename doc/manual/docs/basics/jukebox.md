@@ -25,7 +25,7 @@ When you **Queue** a song, it appears in the **Queue** list. Each entry shows
 the song title; click the **×** to remove a pending request.
 
 Queued songs play at the **next sequence boundary** — after the current song
-finishes.  Using **Play** instead of **Queue** causes the song clicked to play immediately.
+finishes. Using **Play** instead of **Queue** causes the song clicked to play immediately.
 
 ### Filters and sorting
 
@@ -42,10 +42,10 @@ Below the controls, narrow the song grid:
 Each card shows artwork (or a music-note placeholder), title, artist, and
 vendor. Two actions:
 
-| Button    | Behavior |
-| --------- | --- |
+| Button    | Behavior                                                                        |
+| --------- | ------------------------------------------------------------------------------- |
 | **Play**  | Start the song **immediately**. Will interrupt the current foreground sequence. |
-| **Queue** | Add the song to the interactive queue. Plays at the next sequence boundary. |
+| **Queue** | Add the song to the interactive queue. Plays at the next sequence boundary.     |
 
 ## Which songs appear
 
@@ -62,7 +62,7 @@ Remote Falcon integration — see [Jukebox settings](../settings/jukebox.md) and
 [Viewer Control](../advanced/viewer-control.md).
 
 The quickest way to hide a sequence is to add the `nojukebox` tag on the
-[Songs](./songs.md) screen.  You might want to do this for PSAs, static sequences, etc.
+[Songs](./songs.md) screen. You might want to do this for PSAs, static sequences, etc.
 
 ## Remote Jukebox
 

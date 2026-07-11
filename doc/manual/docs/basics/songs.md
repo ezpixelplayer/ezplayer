@@ -15,14 +15,14 @@ control.
 
 Each song is stored in your show folder. At a high level it contains:
 
-| Part         | Purpose |
-| ------------ | -- |
-| **Work**     | Details: title, artist, duration, optional artwork URL, tags |
+| Part         | Purpose                                                                            |
+| ------------ | ---------------------------------------------------------------------------------- |
+| **Work**     | Details: title, artist, duration, optional artwork URL, tags                       |
 | **Files**    | Paths to the `.fseq` sequence, optional `.mp3` audio, and optional thumbnail image |
-| **Sequence** | Vendor or source info |
-| **Settings** | Per-song playback tweaks: lead time, trail time, volume adjustment |
+| **Sequence** | Vendor or source info                                                              |
+| **Settings** | Per-song playback tweaks: lead time, trail time, volume adjustment                 |
 
-The `.fseq` file is required for playback.  EZPlayer reads frame timing from it
+The `.fseq` file is required for playback. EZPlayer reads frame timing from it
 and drives your controllers from that data. Audio is optional for silent
 animation sequences, but musical songs should include a
 matching `.mp3`.
@@ -51,13 +51,13 @@ From the desktop app you can also click **Add Song** to register a new sequence.
 
 ### Desktop app vs LAN UI
 
-| Capability                         | Desktop app         | LAN / embedded UI                |
-| ---------------------------------- | ------------------- | -------------------------------- |
-| View song list                     | Yes                 | Yes                              |
-| Add songs                          | Yes                 | No                               |
-| Edit metadata and settings         | Yes                 | No                               |
-| Replace FSEQ / audio / image files | Yes                 | No                               |
-| Delete songs                       | Yes                 | Yes                              |
+| Capability                         | Desktop app | LAN / embedded UI |
+| ---------------------------------- | ----------- | ----------------- |
+| View song list                     | Yes         | Yes               |
+| Add songs                          | Yes         | No                |
+| Edit metadata and settings         | Yes         | No                |
+| Replace FSEQ / audio / image files | Yes         | No                |
+| Delete songs                       | Yes         | Yes               |
 
 The LAN UI is meant for monitoring and light control from phones and tablets on
 your network. Full song management stays on the show PC, where the files are stored.
@@ -90,7 +90,7 @@ Selecting a different MP3 re-reads ID3 metadata and refreshes title, artist, and
 artwork.
 
 You can also supply an **image URL** instead of (or in addition to) a local
-image file.  Using a URL for the image will work as long as it can be reached.
+image file. Using a URL for the image will work as long as it can be reached.
 
 ### Tips for xLights users
 
@@ -127,11 +127,11 @@ the next song may start. Values are in **seconds**, from **-5.0** to **5.0**.
   the FSEQ finishes), useful if there is too much dead time in the audio.
 
 The scheduler uses these values when calculating playlist length, schedule
-windows, and sequence boundaries.  They are most useful when the gap between songs is uneven.
+windows, and sequence boundaries. They are most useful when the gap between songs is uneven.
 
 ### Volume adjustment
 
-EZPlayer recommends normalizing your show audio.  However, if the audio level seems
+EZPlayer recommends normalizing your show audio. However, if the audio level seems
 to vary from one song to the next, per-song volume adjustment is available.
 **Volume adjustment** ranges from **-100** to **+100**. The value is
 saved on each song record so you can balance sequences that were mastered at
@@ -145,17 +145,16 @@ Tags are free-form labels on each song (for example `christmas`, `high-energy`,
 see [Jukebox settings](../settings/jukebox.md).
 
 When you type a new tag while adding or editing a song, it is added to the
-global tag list so you can reuse it on other songs.  (Consistency helps.)
+global tag list so you can reuse it on other songs. (Consistency helps.)
 
 ## Deleting a song
 
-Click the delete icon and confirm.  The record is
+Click the delete icon and confirm. The record is
 marked `deleted` and removed from every playlist that referenced it.
 However, deletion is a **soft delete**: files are not removed.
 
 Deleted songs no longer appear in the jukebox, playlist builder, or schedule
 picker. If you need the sequence again, add it back as a new song.
-
 
 ## Which songs are “playable”
 
@@ -207,7 +206,7 @@ excluded tag `nojukebox` is always enforced.
 ### Viewer control integrations
 
 Viewer-control integrations such as Remote
-Falcon and EZVC use the same song IDs.  See 
+Falcon and EZVC use the same song IDs. See
 [Viewer Control](../advanced/viewer-control.md) for details.
 
 ## Next steps

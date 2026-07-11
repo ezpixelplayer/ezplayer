@@ -59,7 +59,7 @@ See [Playlists](./playlists.md) for sorting, tags, and cloning.
 
 ![Schedule](/img/schedule-calendar.png)
 
-Open the **Schedule** screen to set when your show runs.  Click a date to add a schedule.
+Open the **Schedule** screen to set when your show runs. Click a date to add a schedule.
 Choose a playlist, a time window, a date range (if desired), loop, shuffle, and other options.
 
 Once a schedule entry's start time arrives, EZPlayer runs it on its own.

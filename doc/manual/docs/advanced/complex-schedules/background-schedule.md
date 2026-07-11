@@ -21,7 +21,7 @@ has the same options as a main one — time window, intro/outro, loop or shuffle
 priority, and [end-time behavior](./schedule-options.md).
 
 The key difference is that a background schedule never replaces the foreground
-show. It always plays *alongside* main, layered over or under it.
+show. It always plays _alongside_ main, layered over or under it.
 
 ## Overlay vs Underlay
 

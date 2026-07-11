@@ -6,28 +6,28 @@ title: 2D/3D Preview
 # 2D/3D Preview
 
 The **Preview** screen renders your show **live** on a model of your
-display.  As the show plays, the pixels light up here
-as they do on your real props.  This is the quickest way to check that your show data,
-including any overlays, looks right.  (You will still need to go outside to see if the
+display. As the show plays, the pixels light up here
+as they do on your real props. This is the quickest way to check that your show data,
+including any overlays, looks right. (You will still need to go outside to see if the
 connections are all correct, etc., but if things do not look right outside, you might
 check the preview first.)
 
 ![3D Preview](/img/3D-preview.png)
 
 :::note
-The Preview is a visual aid.  It shows what the sequence sends to your models.
+The Preview is a visual aid. It shows what the sequence sends to your models.
 If things are different in the real world, it indicates that the models in your
-show do not match the real ones, are not cabled as modelled, etc.   
+show do not match the real ones, are not cabled as modelled, etc.  
 :::
 
 ## 3D vs 2D
 
 Use the **View** toggle in the top-left to switch between 2D and 3D:
 
-| Mode   | What it shows                                                              |
-| ------ | ------------------------------------------------------------------------- |
+| Mode   | What it shows                                                                  |
+| ------ | ------------------------------------------------------------------------------ |
 | **3D** | Your models placed in 3D space, so you can fly around and see depth and angles |
-| **2D** | A flat, face-on view, for 2D displays |
+| **2D** | A flat, face-on view, for 2D displays                                          |
 
 ## Choosing what to preview
 
@@ -82,4 +82,3 @@ highlight.
 When you open the Preview from the [LAN UI](./local-web-interface.md) in a
 browser, an audio button lets you listen to the show's music alongside the
 visuals. (On the desktop app, audio plays through your normal output instead.)
-

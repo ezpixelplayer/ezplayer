@@ -6,7 +6,7 @@ title: What is EZPlayer
 
 # What is EZPlayer
 
-EZPlayer "runs" your light show.  By "runs", we mean it organizes a set of songs/sequences into a scheduled show, inserts announcements, allows viewers to see the schedule and make selections, monitors your show to make sure it is healthy, and so on.
+EZPlayer "runs" your light show. By "runs", we mean it organizes a set of songs/sequences into a scheduled show, inserts announcements, allows viewers to see the schedule and make selections, monitors your show to make sure it is healthy, and so on.
 
 This manual covers the basics and advanced features, but also how the puzzle fits together and some of the technical details.
 

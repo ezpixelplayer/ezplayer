@@ -73,11 +73,11 @@ LAN server is up and which port to use when connecting from other devices.
 
 The card refreshes every few seconds and shows three fields:
 
-| Field      | Meaning                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| **Port**   | The TCP port the LAN HTTP server is bound to (or attempted). Use this in your browser URL.  |
+| Field      | Meaning                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| **Port**   | The TCP port the LAN HTTP server is bound to (or attempted). Use this in your browser URL.         |
 | **Source** | Where that port number came from — see [Configuring the port](#configuring-the-lan-ui-port) below. |
-| **Status** | Whether the server is running                                                               |
+| **Status** | Whether the server is running                                                                      |
 
 ### Status values
 
@@ -116,11 +116,11 @@ Changing the port number requires an EZPlayer restart.
 
 Configure it the same way as the LAN UI Port:
 
-| Setting       | Main LAN UI         | Kiosk                                       |
-| ------------- | ------------------- | ------------------------------------------- |
-| Default port  | 3000                | 3001                                        |
-| CLI           | `--web-port=`       | `--kiosk-port=`                             |
-| Environment   | `EZPLAYER_WEB_PORT` | `EZPLAYER_KIOSK_PORT`                       |
+| Setting      | Main LAN UI         | Kiosk                 |
+| ------------ | ------------------- | --------------------- |
+| Default port | 3000                | 3001                  |
+| CLI          | `--web-port=`       | `--kiosk-port=`       |
+| Environment  | `EZPLAYER_WEB_PORT` | `EZPLAYER_KIOSK_PORT` |
 
 The kiosk UI can be disabled by setting its port number to `0`.
 

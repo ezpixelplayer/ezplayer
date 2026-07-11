@@ -30,11 +30,13 @@ doc/
 Slide decks are built by composing reusable markdown pieces into your favorite format (PDF, html, etc.).
 
 This allows:
+
 - Simple editing, version controlled, effective across all uses
 - Decks for casual user presentations, or within developer presentations, sharing as possible
 - A mix of personal slides ("About The Presenter") with the shared slides
 
 ### Slide Decks
+
 A **deck** is a manifest: an ordered list of **fragments**, each named by a
 **logical root** (`shared/…`, `dev/…`, and — in a personal repo — `personal/…`).
 `roots.yaml` is the only file that knows where those roots physically live, so

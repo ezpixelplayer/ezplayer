@@ -61,7 +61,7 @@ See [Playlists](./playlists.md) for sorting, tags, and cloning.
 
 ![Schedule](/img/schedule-calendar.png)
 
-Open the **Schedule** screen to set when your show runs.  Click a date to add a schedule.
+Open the **Schedule** screen to set when your show runs. Click a date to add a schedule.
 Choose a playlist, a time window, a date range (if desired), loop, shuffle, and other options.
 
 Once a schedule entry's start time arrives, EZPlayer runs it on its own.
@@ -83,7 +83,7 @@ for URLs, port configuration, and troubleshooting.
 
 ## 7. Add cloud features (optional)
 
-If you start with a local EZPlayer, you [can still connect to the cloud later](../settings/cloud.md).  Connecting your player to the cloud allows you to see status and control the show from anywhere, via the internet.  Connecting to the cloud also allows you to
+If you start with a local EZPlayer, you [can still connect to the cloud later](../settings/cloud.md). Connecting your player to the cloud allows you to see status and control the show from anywhere, via the internet. Connecting to the cloud also allows you to
 download songs directly to your show.
 
 ## Where to next
@@ -91,4 +91,3 @@ download songs directly to your show.
 - [Songs](../basics/songs.md), [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) - How to set up songs, playlists, and schedules.
 - [Player](../basics/player-screen.md), [Jukebox](../basics/jukebox.md), and [Preview](../basics/preview.md) - How to control and see your show.
 - [Web UI](../basics/local-web-interface.md) - How to control the show over your local network
-

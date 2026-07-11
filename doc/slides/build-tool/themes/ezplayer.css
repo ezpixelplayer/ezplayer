@@ -14,7 +14,10 @@ section {
     background: var(--ezp-bg);
     color: var(--ezp-fg);
     font-family:
-        'Segoe UI', system-ui, -apple-system, sans-serif;
+        'Segoe UI',
+        system-ui,
+        -apple-system,
+        sans-serif;
     padding: 56px 64px;
 }
 

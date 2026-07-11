@@ -12,14 +12,7 @@
 // Pipeline: compile d2 -> stage asset namespaces -> concat fragments -> run marp.
 // See roots.yaml for how logical roots map to physical (and cross-repo) paths.
 
-import {
-    readFileSync,
-    writeFileSync,
-    rmSync,
-    cpSync,
-    mkdirSync,
-    existsSync,
-} from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, cpSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, resolve, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -123,16 +116,7 @@ function runMarp(deckMd) {
     const marpBin = require.resolve('@marp-team/marp-cli/marp-cli.js');
     const themesDir = resolve(rootsDir, roots?.themes?.dir ?? './themes');
     const htmlOut = join(outDir, `${manifest.name}.html`);
-    const args = [
-        marpBin,
-        deckMd,
-        '-o',
-        htmlOut,
-        '--html',
-        '--allow-local-files',
-        '--theme-set',
-        themesDir,
-    ];
+    const args = [marpBin, deckMd, '-o', htmlOut, '--html', '--allow-local-files', '--theme-set', themesDir];
     const targets = [{ flag: null, out: htmlOut }];
     if (flags.pdf) {
         // run a second pass for pdf so both artifacts land in outDir

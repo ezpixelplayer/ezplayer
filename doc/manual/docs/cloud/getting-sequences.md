@@ -24,7 +24,7 @@ may wait until the next allowed window. See [Cloud settings](../settings/cloud.m
 ## On EZRGB
 
 Use the EZRGB website to add sequences to your show, using the same account as
-the player.  Check that the sequences are active (you may choose to disable
+the player. Check that the sequences are active (you may choose to disable
 sequences that you do not want in your show, perhaps due to the season).
 
 ## On EZPlayer

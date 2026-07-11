@@ -95,8 +95,8 @@ export const ShowFolderSettings: React.FC = () => {
                 />
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 3, mb: 1 }}>
-                Or start fresh with a cloud-managed show: pick an empty folder and pair it with
-                your EZPlayer cloud account.
+                Or start fresh with a cloud-managed show: pick an empty folder and pair it with your EZPlayer cloud
+                account.
             </Typography>
             <Button
                 variant="outlined"

@@ -7,7 +7,7 @@ title: Using Full Cloud Control
 
 **Full cloud control** means running your show with just the EZRGB website, which manages your
 layout, sequences, and show schedule, while EZPlayer handles
-playback.  (Note that in this configuration, xLights is not involved in maintaining the player's show folder.)
+playback. (Note that in this configuration, xLights is not involved in maintaining the player's show folder.)
 
 ## Two ways to use the cloud
 
@@ -43,7 +43,7 @@ cloud.
   from the player machine for local phones and laptops.
 - **Over the internet** — EZRGB talks to your registered player through the
   cloud. Use it to check status, manage content, and control playback when you
-  are not on site.  You can find the link to your player's cloud control
+  are not on site. You can find the link to your player's cloud control
   page in your account on the EZRGB website.
 
 The player must stay registered, online, and not paused for remote control to

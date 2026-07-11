@@ -170,7 +170,7 @@ pass through to the underlying runtime. They are occasionally useful for
 troubleshooting startup, rendering, or networking:
 
 | Flag                       | When to use                                                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-sandbox`             | Applied automatically on Linux (see [Platform notes](#platform-notes)). Rarely needed elsewhere; can work around sandbox-related launch failures. |
 | `--disable-gpu`            | Force software rendering to work around GPU/driver glitches (blank window, flicker, artifacts).                                                   |
 | `--proxy-server=host:port` | Route EZPlayer's traffic through an explicit HTTP/HTTPS proxy. Pair with a trusted CA (above) if the proxy intercepts TLS.                        |

@@ -7,6 +7,7 @@ title: Registering
 
 Registration links an EZPlayer show folder to your [EZRGB](https://ezrgb.com) account.
 Once connected, the player can:
+
 1. Download your sequences from the cloud
 2. Sync your layout with the cloud service
 3. Show up in your EZRGB dashboard for remote status and control over the internet
@@ -50,9 +51,9 @@ Finish associating the player on the EZRGB website by either:
 
 1. **Scanning the QR code** with a phone or tablet that can open a browser.
 2. **Open the registration link** — click it in EZPlayer (desktop app) or copy
-  it into a browser.
+   it into a browser.
 
-Follow the prompts on the EZRGB site to claim this player.  If you have not logged in to your EZRGB account,
+Follow the prompts on the EZRGB site to claim this player. If you have not logged in to your EZRGB account,
 you will be asked to do so.
 
 When registration succeeds, the status changes to **Player ID Registered** with

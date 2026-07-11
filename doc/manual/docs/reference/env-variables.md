@@ -80,10 +80,10 @@ no configuration needed.
 When that automatic trust isn't enough (an older runtime, or a CA that isn't in
 the OS store), these **standard Node.js** variables are honored as fallbacks:
 
-| Variable                       | Description                                                                                                                                                |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Variable                       | Description                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NODE_EXTRA_CA_CERTS`          | Path to a PEM file of additional CA certificates to trust (for example a corporate root, or a TLS-intercepting proxy's root). The recommended way to add a CA. |
-| `NODE_TLS_REJECT_UNAUTHORIZED` | Set to `0` to disable TLS certificate verification entirely. **Insecure — last-resort debugging only**; never leave it set on a production show machine.    |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | Set to `0` to disable TLS certificate verification entirely. **Insecure — last-resort debugging only**; never leave it set on a production show machine.       |
 
 **Windows (PowerShell)**
 

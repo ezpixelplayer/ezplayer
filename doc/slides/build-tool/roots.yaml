@@ -9,15 +9,15 @@
 
 # Fragment roots: a manifest entry "shared/intro.md" -> <shared root>/intro.md
 fragments:
-  shared: ../fragments/shared
-  dev: ../fragments/dev
+    shared: ../fragments/shared
+    dev: ../fragments/dev
 
 # Asset namespaces: each is copied into the build dir under its own name,
 # so /assets and /mocassets coexist no matter which repo they came from.
 # Fragments reference them relatively, e.g. ![](assets/diagrams/arch-simple.svg)
 assets:
-  assets: ../../assets
+    assets: ../../assets
 
 # Where marp themes (CSS with `/* @theme <name> */`) are registered from.
 themes:
-  dir: ./themes
+    dir: ./themes

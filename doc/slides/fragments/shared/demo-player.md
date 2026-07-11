@@ -18,7 +18,6 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ![w:760](assets/img/intro.png)
 
-
 - Point EZPlayer at an existing xLights show folder
 - Everything else is discovered from there
 
@@ -50,7 +49,6 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ![w:760](assets/img/jukebox.png)
 
-
 - Queue up sequences and let them run, jukebox style
 
 ---
@@ -77,9 +75,7 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Playlists
 
-
 ![w:760](assets/img/playlists.png)
-
 
 - Group sequences into playlists for different purposes
 
@@ -87,21 +83,17 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ## Schedule (1 of 3)
 
-
 ![w:500](assets/img/schedule-calendar.png)
 
 ---
 
 ## Schedule (2 of 3)
 
-
 ![w:500](assets/img/schedule-editing.png)
-
 
 ---
 
 ## Schedule (3 of 3)
-
 
 ![w:500](assets/img/schedule-recurring-1.png)
 ![w:500](assets/img/schedule-recurring-2.png)

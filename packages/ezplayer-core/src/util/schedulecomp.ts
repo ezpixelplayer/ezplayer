@@ -1392,11 +1392,9 @@ export class PlayerRunState {
         schedules: ScheduledPlaylist[],
         errs: string[],
     ) {
-        this.sequences = seqs
-            .filter(isSequencePlayable)
-            .map((s) => {
-                return { ...s };
-            });
+        this.sequences = seqs.filter(isSequencePlayable).map((s) => {
+            return { ...s };
+        });
         this.sequencesById = seqsToMap(this.sequences, errs);
         this.playlists = playlists
             .filter((p) => p.deleted !== true)
@@ -1583,7 +1581,12 @@ export class PlayerRunState {
             sc.mainSectionLongest = mainTimes.longestMS;
 
             if (s.shuffle) {
-                sc.mainSection = createShuffleList(mainpl, sc.schedStart, sc.schedEnd - sc.schedStart, this.sequencesById)
+                sc.mainSection = createShuffleList(
+                    mainpl,
+                    sc.schedStart,
+                    sc.schedEnd - sc.schedStart,
+                    this.sequencesById,
+                )
                     .map((id) => this.sequencesById.get(id))
                     .filter((seq): seq is SequenceRecord => !!seq);
             } else {
@@ -2277,7 +2280,8 @@ export class PlayerRunState {
 
         // If a songId was specified, only skip if it matches the current sequence
         if (songId !== undefined) {
-            const curSeqId = st.seqSections[st.itemPart]?.[st.itemCursor % (st.seqSections[st.itemPart].length || 1)]?.id;
+            const curSeqId =
+                st.seqSections[st.itemPart]?.[st.itemCursor % (st.seqSections[st.itemPart].length || 1)]?.id;
             if (curSeqId !== songId) return;
         }
 

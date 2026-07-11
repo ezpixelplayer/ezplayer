@@ -15,6 +15,7 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 While we will continue to add features through the 2026 season, EZPlayer was tested on several 4th of July shows and is ready for use.
 
 EZPlayer can be used completely locally, supporting:
+
 - A flexible schedule of playlists of sequences
 - A jukebox view of songs to choose from for immediate / queued playback
 - .mp3 and .fseq playback from an xLights show folder
@@ -26,28 +27,34 @@ EZPlayer can be used completely locally, supporting:
 - Background sequences, volume control automation, etc.
 
 With the (optional) EZPlayer cloud registration:
+
 - See the full EZPlayer UI for your show over the internet
 - A show page for your viewers
 
 For sequences from EZRGB:
+
 - Automatic sequence mapping, download, and installation
 - Layout sync
 
 You can also build and deploy your whole show through the cloud, directly to your EZPlayer.
 
 We are currently enhancing:
+
 - Controller status
 - [Background blending, brightness options, and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
 
 Later in 2026 we will be adding:
+
 - Sync packets
 - Documentation of the HTTP API for integration projects
 
 On the roadmap (dates not committed):
+
 - HDMI video playback
 - Interactivity
 
 EZPlayer doesn't support (and likely won't support):
+
 - USB controllers
 - OS management
 - Controller capes
@@ -76,7 +83,8 @@ Not sure which Mac you have? Apple menu → **About This Mac** — if "Chip" say
 Just download the installer or portable build and run it.
 
 #### Signed Images
-EZPlayer images are currently not signed, and you may have to approve installation.  We're working on that.
+
+EZPlayer images are currently not signed, and you may have to approve installation. We're working on that.
 
 #### Linux notes
 
@@ -106,19 +114,20 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 ```
 
 #### Raspberry Pi
-EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required).  The Linux ARM releases work, or you can build it yourself.  Releases currently only include the application; it is not a full OS image (though that might be added later).
+
+EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required). The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that might be added later).
 
 ### Running EZPlayer
 
 #### Running EZPlayer Locally
 
-When you first run EZPlayer, you will choose your show folder.  This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
+When you first run EZPlayer, you will choose your show folder. This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
 
 The player opens to the "Player" screen, but there will not be much here yet. So, navigate between screens using the sidebar menu. (If no sidebar is visible, click the 3 bars in the upper right corner.)
 
-Start on the "Songs" screen. Here you can add songs (aka "sequences").  Start by choosing the .fseq; hopefully the music and metadata will be found automatically.  If not, associate the .fseq file with its .mp3 file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists.   You can then try playing your songs from the "Jukebox" gallery.
+Start on the "Songs" screen. Here you can add songs (aka "sequences"). Start by choosing the .fseq; hopefully the music and metadata will be found automatically. If not, associate the .fseq file with its .mp3 file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists. You can then try playing your songs from the "Jukebox" gallery.
 
-After adding some songs, create playlists on the "Playlists" screen. You can think of a playlist as an ordered list of songs to play, but it can also be used as a "set" of songs that are not taken in order.  As we'll see later, you might want to make an "intro" playlist, a few main playlists, and an "outro" playlist.
+After adding some songs, create playlists on the "Playlists" screen. You can think of a playlist as an ordered list of songs to play, but it can also be used as a "set" of songs that are not taken in order. As we'll see later, you might want to make an "intro" playlist, a few main playlists, and an "outro" playlist.
 
 After you have some playlists, visit the "Schedule" screen. Here, you can assign your playlists to play on the right days. Note that each schedule item is where you can set the "intro" and "outro" that goes with your show playlist, assign priorities, add loop/shuffle, and so forth.
 
@@ -128,7 +137,7 @@ If you want to connect to the cloud (for remote management, automatic sequence r
 
 #### Starting In The Cloud
 
-If you used the EZRGB website to set up your show, choose cloud setup when EZPlayer launches for the first time.  Click the link, or use the QR code to register the player via another device (such as your phone).  Your layout, sequences, schedule, and settings will download to your show folder automatically.
+If you used the EZRGB website to set up your show, choose cloud setup when EZPlayer launches for the first time. Click the link, or use the QR code to register the player via another device (such as your phone). Your layout, sequences, schedule, and settings will download to your show folder automatically.
 
 ### Known Issues
 
@@ -178,7 +187,7 @@ Despite that broad scope, we want to avoid the complexity that currently plagues
 
 ### What Is The Relationship To EZRGB?
 
-EZPlayer is developed in part by [EZRGB](https://ezrgb.com/).  EZRGB feels that the community should have a PC-based player that is easy to use, and hosts cloud functionality for the community and their commercial clients.
+EZPlayer is developed in part by [EZRGB](https://ezrgb.com/). EZRGB feels that the community should have a PC-based player that is easy to use, and hosts cloud functionality for the community and their commercial clients.
 
 ---
 
