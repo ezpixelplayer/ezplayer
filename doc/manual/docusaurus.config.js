@@ -13,7 +13,7 @@ const config = {
         v4: true,
     },
 
-    url: 'https://ezpixelplayer.github.io',
+    url: 'https://docs.ezplayer.dev',
     baseUrl: '/',
 
     organizationName: 'ezpixelplayer',
