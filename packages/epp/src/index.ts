@@ -32,6 +32,8 @@ export { ArrayBufferPool, BufferPool } from './util/BufferRecycler';
 
 export { XMLConstants, getAttrDef, getBoolAttrDef, getIntAttrDef, getNumAttrDef, getElementByTag, newDocument } from './util/XMLUtil';
 
+export { isAssetPathAbsolute, resolveShowAssetPath } from './util/ShowAssetPath';
+
 export {
     AwaitRequest,
     BudgetCalculator,
