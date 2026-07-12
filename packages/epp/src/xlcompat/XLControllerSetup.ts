@@ -3,6 +3,7 @@ import { E131Sender } from '../dataplane/protocols/E131';
 import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
+import type { ModelParseOptions } from 'xllayoutcalcs';
 import { ControllerRec, readControllersAndModels } from './XLXmlUtil';
 
 export interface ControllerState {
@@ -12,9 +13,9 @@ export interface ControllerState {
     sender?: Sender;
 }
 
-export async function readControllersFromXlights(showdir: string) {
+export async function readControllersFromXlights(showdir: string, options?: ModelParseOptions) {
     const ctrls: ControllerState[] = [];
-    const { controllers: xcontrollers, models: osmodels } = await readControllersAndModels(showdir);
+    const { controllers: xcontrollers, models: osmodels } = await readControllersAndModels(showdir, options);
 
     function makeErrorState(exc: ControllerRec, sum: string, skipped: boolean) {
         return {
