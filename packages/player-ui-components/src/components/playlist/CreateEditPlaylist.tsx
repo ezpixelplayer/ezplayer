@@ -14,6 +14,7 @@ import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import SearchIcon from '@mui/icons-material/Search';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
+import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import {
     Autocomplete,
     Button,
@@ -325,7 +326,7 @@ const PlaylistContainer = ({
                             <MenuItem value="artist">Sort by Artist</MenuItem>
                         </Select>
                     </Grid>
-                    <Grid item xs={12} md={3}>
+                    <Grid item xs={12} md={2}>
                         <Select
                             size="small"
                             value={sortOrder || 'asc'}
@@ -342,6 +343,17 @@ const PlaylistContainer = ({
                     </Grid>
                     <Grid item xs={12} md={2}>
                         <Button
+                            startIcon={<SortByAlphaIcon />}
+                            onClick={() => onSort(sortType, sortOrder || 'asc')}
+                            variant="outlined"
+                            size="small"
+                            fullWidth
+                        >
+                            Sort
+                        </Button>
+                    </Grid>
+                    <Grid item xs={12} md={2}>
+                        <Button
                             startIcon={<ShuffleIcon />}
                             onClick={onShuffle}
                             variant="outlined"
@@ -351,7 +363,7 @@ const PlaylistContainer = ({
                             Shuffle
                         </Button>
                     </Grid>
-                    <Grid item xs={12} md={6}>
+                    <Grid item xs={12} md={3}>
                         <Box
                             sx={{
                                 display: 'flex',
