@@ -53,6 +53,7 @@ import {
     CacheStats,
     loadXmlFile,
     getNumAttrDef,
+    resolveShowAssetPath,
 } from '@ezplayer/epp';
 
 import {
@@ -1171,31 +1172,11 @@ async function buildShowFolderIndex(folder: string, maxDepth = 5): Promise<Map<s
     return index;
 }
 
-/**
- * Resolve a file path from the XML to a show-folder-relative path.
- * If the path is already relative, normalises slashes and returns it.
- * If absolute and inside the show folder, strips the prefix.
- * Otherwise looks up the basename in the pre-built file index.
- */
-function resolveFilePathFromIndex(
-    filePath: string,
-    resolvedShow: string,
-    fileIndex: Map<string, string>,
-): string | undefined {
-    if (!path.isAbsolute(filePath)) {
-        return filePath.replace(/\\/g, '/');
-    }
-    const resolvedFile = path.resolve(filePath);
-    if (
-        resolvedFile.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase()) ||
-        resolvedFile.toLowerCase() === resolvedShow.toLowerCase()
-    ) {
-        return path.relative(resolvedShow, resolvedFile).replace(/\\/g, '/');
-    }
-    // Fall back to index lookup by basename
-    const basename = path.basename(filePath);
-    return fileIndex.get(basename.toLowerCase());
-}
+// Resolve a file path from the XML to a show-folder-relative path.
+// resolveShowAssetPath (epp) handles foreign-platform absolute paths too —
+// a layout authored on Windows and copied to a Linux player carries C:\...
+// refs that POSIX path.isAbsolute doesn't recognize as absolute.
+const resolveFilePathFromIndex = resolveShowAssetPath;
 
 ////////
 // Load XML coordinates independently (can be called before processQueue)
