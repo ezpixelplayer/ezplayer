@@ -727,7 +727,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // Handle settings change
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
         // Validate and clamp values
-        const clampedPixelSize = Math.max(PIXEL_SIZE_MIN, Math.min(PIXEL_SIZE_MAX, Number(newSettings.pixelSize) || 1.0));
+        const clampedPixelSize = Math.max(
+            PIXEL_SIZE_MIN,
+            Math.min(PIXEL_SIZE_MAX, Number(newSettings.pixelSize) || 1.0),
+        );
         const clampedMultiplier = Math.max(0, Math.min(200, Number(newSettings.brightnessMultiplier) || 100));
 
         setPreviewSettings({

@@ -111,9 +111,7 @@ function applyStatusSummary() {
         viewer_control_mode: s?.viewerControl?.type,
     };
     const files = curStatus.content?.files;
-    const nNeeding = files
-        ? Object.values(files).filter((f) => f.status !== 'installed').length
-        : undefined;
+    const nNeeding = files ? Object.values(files).filter((f) => f.status !== 'installed').length : undefined;
     curStatus.content = {
         ...(curStatus.content ?? {}),
         n_sequences: curSequences.filter((x) => !x.deleted && x.render_enabled !== false).length,

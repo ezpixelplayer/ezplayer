@@ -502,7 +502,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                     playlistName !== existingPlaylist.title ||
                     JSON.stringify(selectedTags) !== JSON.stringify(existingPlaylist.tags) ||
                     JSON.stringify(playlistSongs.map((song) => song.id)) !==
-                    JSON.stringify(existingPlaylist.items.map((item) => item.id));
+                        JSON.stringify(existingPlaylist.items.map((item) => item.id));
 
                 setHasUnsavedChanges(hasChanges);
             }
@@ -703,8 +703,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             over.id === 'available'
                 ? 'available'
                 : over.id === 'playlist'
-                    ? 'playlist'
-                    : over.data.current?.containerId;
+                  ? 'playlist'
+                  : over.data.current?.containerId;
 
         // Handle reordering within playlist container
         if (sourceContainerId === 'playlist' && destinationContainerId === 'playlist') {

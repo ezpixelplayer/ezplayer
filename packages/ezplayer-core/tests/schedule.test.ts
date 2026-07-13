@@ -37,15 +37,60 @@ import {
 // Sequences carry `files.fseq` because `setUpSequences` filters the master map through
 // `isSequencePlayable` (#141), which intentionally drops sequences with no downloaded
 // fseq (they can't play yet). Real playable songs always have one; the fixtures match.
-const s1: SequenceRecord = { id: '1', instanceId: '1', work: { length: 10, artist: '1', title: '1' }, files: { fseq: 'f1' } };
-const s2: SequenceRecord = { id: '2', instanceId: '2', work: { length: 10, artist: '2', title: '2' }, files: { fseq: 'f2' } };
-const s3: SequenceRecord = { id: '3', instanceId: '3', work: { length: 10, artist: '3', title: '3' }, files: { fseq: 'f3' } };
-const s4: SequenceRecord = { id: '4', instanceId: '4', work: { length: 10, artist: '4', title: '4' }, files: { fseq: 'f4' } };
-const s5: SequenceRecord = { id: '5', instanceId: '5', work: { length: 10, artist: '5', title: '5' }, files: { fseq: 'f5' } };
-const s6: SequenceRecord = { id: '6', instanceId: '6', work: { length: 10, artist: '6', title: '6' }, files: { fseq: 'f6' } };
-const s7: SequenceRecord = { id: '7', instanceId: '7', work: { length: 10, artist: '7', title: '7' }, files: { fseq: 'f7' } };
-const s8: SequenceRecord = { id: '8', instanceId: '8', work: { length: 10, artist: '8', title: '8' }, files: { fseq: 'f8' } };
-const s9: SequenceRecord = { id: '9', instanceId: '9', work: { length: 10, artist: '9', title: '9' }, files: { fseq: 'f9' } };
+const s1: SequenceRecord = {
+    id: '1',
+    instanceId: '1',
+    work: { length: 10, artist: '1', title: '1' },
+    files: { fseq: 'f1' },
+};
+const s2: SequenceRecord = {
+    id: '2',
+    instanceId: '2',
+    work: { length: 10, artist: '2', title: '2' },
+    files: { fseq: 'f2' },
+};
+const s3: SequenceRecord = {
+    id: '3',
+    instanceId: '3',
+    work: { length: 10, artist: '3', title: '3' },
+    files: { fseq: 'f3' },
+};
+const s4: SequenceRecord = {
+    id: '4',
+    instanceId: '4',
+    work: { length: 10, artist: '4', title: '4' },
+    files: { fseq: 'f4' },
+};
+const s5: SequenceRecord = {
+    id: '5',
+    instanceId: '5',
+    work: { length: 10, artist: '5', title: '5' },
+    files: { fseq: 'f5' },
+};
+const s6: SequenceRecord = {
+    id: '6',
+    instanceId: '6',
+    work: { length: 10, artist: '6', title: '6' },
+    files: { fseq: 'f6' },
+};
+const s7: SequenceRecord = {
+    id: '7',
+    instanceId: '7',
+    work: { length: 10, artist: '7', title: '7' },
+    files: { fseq: 'f7' },
+};
+const s8: SequenceRecord = {
+    id: '8',
+    instanceId: '8',
+    work: { length: 10, artist: '8', title: '8' },
+    files: { fseq: 'f8' },
+};
+const s9: SequenceRecord = {
+    id: '9',
+    instanceId: '9',
+    work: { length: 10, artist: '9', title: '9' },
+    files: { fseq: 'f9' },
+};
 
 const all9 = [s1, s2, s3, s4, s5, s6, s7, s8, s9];
 
@@ -2100,9 +2145,24 @@ describe('calcschedule', () => {
         const phase1 = executeByFrame(plr, h + 5_000);
         expect(phase1.sss.some((s) => s.id === s1.id)).toBe(true);
 
-        plr.addInteractiveCommand({ immediate: false, startTime: plr.currentTime + 100, seqId: s3.id, requestId: 'jb1' });
-        plr.addInteractiveCommand({ immediate: false, startTime: plr.currentTime + 200, seqId: s4.id, requestId: 'jb2' });
-        plr.addInteractiveCommand({ immediate: false, startTime: plr.currentTime + 300, seqId: s5.id, requestId: 'jb3' });
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: plr.currentTime + 100,
+            seqId: s3.id,
+            requestId: 'jb1',
+        });
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: plr.currentTime + 200,
+            seqId: s4.id,
+            requestId: 'jb2',
+        });
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: plr.currentTime + 300,
+            seqId: s5.id,
+            requestId: 'jb3',
+        });
 
         const phase2 = executeByFrame(plr, h + 60 * 60 * 1000);
         expect(phase2.sss.some((s) => s.id === s3.id)).toBe(true);
@@ -2194,9 +2254,24 @@ describe('calcschedule', () => {
         const bt = bdate.getTime();
         const h = bt + 18 * 3600 * 1000;
 
-        const oA: SequenceRecord = { id: 'oA', instanceId: 'oA', work: { length: 7.137, artist: 'a', title: 'A' }, files: { fseq: 'foA' } };
-        const oB: SequenceRecord = { id: 'oB', instanceId: 'oB', work: { length: 11.913, artist: 'b', title: 'B' }, files: { fseq: 'foB' } };
-        const oJ: SequenceRecord = { id: 'oJ', instanceId: 'oJ', work: { length: 5.333, artist: 'j', title: 'J' }, files: { fseq: 'foJ' } };
+        const oA: SequenceRecord = {
+            id: 'oA',
+            instanceId: 'oA',
+            work: { length: 7.137, artist: 'a', title: 'A' },
+            files: { fseq: 'foA' },
+        };
+        const oB: SequenceRecord = {
+            id: 'oB',
+            instanceId: 'oB',
+            work: { length: 11.913, artist: 'b', title: 'B' },
+            files: { fseq: 'foB' },
+        };
+        const oJ: SequenceRecord = {
+            id: 'oJ',
+            instanceId: 'oJ',
+            work: { length: 5.333, artist: 'j', title: 'J' },
+            files: { fseq: 'foJ' },
+        };
         const plOdd: PlaylistRecord = {
             id: 'plOdd',
             title: 'plOdd',
@@ -2227,7 +2302,12 @@ describe('calcschedule', () => {
         plr2.setUpSequences([oA, oB, oJ], [plOdd], [schedOdd], errs);
         plr2.addTimeRangeToSchedule(bt, bt + 24 * 3600_000);
         executeByFrame(plr2, h + 3_000); // mid oA
-        plr2.addInteractiveCommand({ immediate: true, startTime: plr2.currentTime + 137, seqId: 'oJ', requestId: 'jb' });
+        plr2.addInteractiveCommand({
+            immediate: true,
+            startTime: plr2.currentTime + 137,
+            seqId: 'oJ',
+            requestId: 'jb',
+        });
         const after = executeByFrame(plr2, h + 60 * 1000);
         const jb = after.sss.find((s) => s.id === 'oJ');
         expect(jb).toBeDefined();

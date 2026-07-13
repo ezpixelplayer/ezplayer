@@ -454,7 +454,11 @@ function createAssetLoadingManager(
             }
             // External or already-resolved URL — leave it alone.
             if (!assetPath) return url;
-        } else if (frameServerUrl && url.startsWith(`${frameServerUrl.replace(/\/+$/, '')}/api/`) && !url.includes('show-file')) {
+        } else if (
+            frameServerUrl &&
+            url.startsWith(`${frameServerUrl.replace(/\/+$/, '')}/api/`) &&
+            !url.includes('show-file')
+        ) {
             // Path-only proxy base (cloud SPA `frameServerUrl`, e.g. `/api/enduserspa/proxy/<token>`):
             // the http(s) origin check above can't fire because `new URL()` rejects a path-only base,
             // so an MTL-referenced texture would otherwise fall through to the relative branch and get

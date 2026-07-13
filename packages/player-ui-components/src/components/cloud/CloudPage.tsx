@@ -753,22 +753,24 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
             {allowRegistration && (
                 <PlayerCloudRegistrationDialog open={regDialogOpen} onClose={() => setRegDialogOpen(false)} />
             )}
-            {allowRegistration && <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>
-                <DialogTitle>Disconnect from cloud?</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        This clears the Player ID token. The cloud server will eventually deregister this player. Your
-                        show folder and Cloud URL are retained — re-registering is one click on the Welcome / Register
-                        screen.
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDisconnectOpen(false)}>Cancel</Button>
-                    <Button color="error" variant="contained" onClick={handleDisconnect}>
-                        Disconnect
-                    </Button>
-                </DialogActions>
-            </Dialog>}
+            {allowRegistration && (
+                <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>
+                    <DialogTitle>Disconnect from cloud?</DialogTitle>
+                    <DialogContent>
+                        <DialogContentText>
+                            This clears the Player ID token. The cloud server will eventually deregister this player.
+                            Your show folder and Cloud URL are retained — re-registering is one click on the Welcome /
+                            Register screen.
+                        </DialogContentText>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setDisconnectOpen(false)}>Cancel</Button>
+                        <Button color="error" variant="contained" onClick={handleDisconnect}>
+                            Disconnect
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            )}
         </Box>
     );
 };

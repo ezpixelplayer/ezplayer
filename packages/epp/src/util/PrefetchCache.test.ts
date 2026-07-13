@@ -41,10 +41,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
 
     /** One player loop iteration: bump the generation, (re)place the plays that the
      *  forward-run would produce this pass, then dispatch + settle. */
-    async frame(
-        now: number,
-        reqs: { key: string; neededTime: number; neededThroughTime?: number; tier?: number }[],
-    ) {
+    async frame(now: number, reqs: { key: string; neededTime: number; neededThroughTime?: number; tier?: number }[]) {
         this.beginGeneration();
         for (const r of reqs) {
             this.prefetch({
