@@ -367,8 +367,8 @@ importers:
         specifier: ^8.21.0
         version: 8.21.0
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.6.tgz
-        version: file:libs/xllayoutcalcs-0.1.6.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.2.0.tgz
+        version: file:libs/xllayoutcalcs-0.2.0.tgz
       zstd-codec:
         specifier: ^0.1.5
         version: 0.1.5
@@ -532,8 +532,8 @@ importers:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(sass@1.101.0)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.6.tgz
-        version: file:libs/xllayoutcalcs-0.1.6.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.2.0.tgz
+        version: file:libs/xllayoutcalcs-0.2.0.tgz
 
   packages/ezplayer-core:
     dependencies:
@@ -560,8 +560,8 @@ importers:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(sass@1.101.0)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.6.tgz
-        version: file:libs/xllayoutcalcs-0.1.6.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.2.0.tgz
+        version: file:libs/xllayoutcalcs-0.2.0.tgz
 
   packages/icmp-ping:
     dependencies:
@@ -787,8 +787,8 @@ importers:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(sass@1.101.0)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.1.6.tgz
-        version: file:libs/xllayoutcalcs-0.1.6.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.2.0.tgz
+        version: file:libs/xllayoutcalcs-0.2.0.tgz
 
   packages/shared-ui-components:
     dependencies:
@@ -5844,9 +5844,9 @@ packages:
       utf-8-validate:
         optional: true
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.1.6.tgz:
-    resolution: {integrity: sha512-A6n44/UUitsLFSmEGgycZxc24cs8r3CT1XYqkXgW3qp0NFMDD2A+jnZDISY/OEuOPcAJ6mnAN5NY7vy7xzgKTA==, tarball: file:libs/xllayoutcalcs-0.1.6.tgz}
-    version: 0.1.6
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.2.0.tgz:
+    resolution: {integrity: sha512-6XiKoobSejHDLRp914IGeFUs7dXDPh5x0kYDMaFqjbZobaJh5Gi3tsthEY4vRKc3jFp8nTrIdRrEeiUUfc35iQ==, tarball: file:libs/xllayoutcalcs-0.2.0.tgz}
+    version: 0.2.0
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -11015,7 +11015,7 @@ snapshots:
 
   ws@8.21.0: {}
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.1.6.tgz:
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.2.0.tgz:
     dependencies:
       gl-matrix: 3.4.4
 

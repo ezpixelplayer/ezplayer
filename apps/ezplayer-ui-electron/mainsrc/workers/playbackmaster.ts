@@ -52,7 +52,6 @@ import {
     FrameReference,
     CacheStats,
     loadXmlFile,
-    getNumAttrDef,
     resolveShowAssetPath,
 } from '@ezplayer/epp';
 
@@ -60,7 +59,9 @@ import {
     getAllLayoutGroups,
     getAllModelCoordinates,
     getAllMovingHeads,
+    getAllViewObjects,
     getAllViewpoints,
+    getLayoutSettings,
     GetNodeResult,
     type MhFixtureInfo,
     type ModelParseOptions,
@@ -1194,7 +1195,7 @@ async function loadXmlCoordinates() {
     let xnet;
     try {
         xrgb = await loadXmlFile(xmlPath);
-        migrateToFormat(xrgb, 'x2026_2');
+        migrateToFormat(xrgb, 'x2026_3');
         xnet = await loadXmlFile(netPath);
     } catch (err) {
         emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
@@ -1283,105 +1284,62 @@ async function loadXmlCoordinates() {
 
             // Parse view_objects (meshes like house models)
             try {
-                const xviewObjects = getElementByTag(xrgb.documentElement, 'view_objects');
                 viewObjects = [];
 
-                if (xviewObjects) {
-                    for (let iv = 0; iv < xviewObjects.childNodes.length; ++iv) {
-                        const n = xviewObjects.childNodes[iv];
-                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                        const viewObj = n as Element;
-                        if (viewObj.tagName !== 'view_object') continue;
-
-                        const name = getAttrDef(viewObj, 'name', '');
-                        const displayAs = getAttrDef(viewObj, 'DisplayAs', '');
-                        const objFile = getAttrDef(viewObj, 'ObjFile', '');
-                        const active = getBoolAttrDef(viewObj, 'Active', true);
-
-                        // Process Mesh objects with OBJ files
-                        if (displayAs === 'Mesh' && objFile && active) {
-                            // Parse transform attributes
-                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
-                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
-                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
-                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
-                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
-                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
-                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
-                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
-                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
-
-                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
-
-                            const resolvedObjFile = resolveFilePathFromIndex(objFile, resolvedShow, fileIndex);
-                            if (!resolvedObjFile) {
-                                emitWarning(
-                                    `[loadXmlCoordinates] Could not resolve "${objFile}" for view object "${name}"`,
-                                );
-                                continue;
-                            }
-
-                            viewObjects.push({
-                                name,
-                                displayAs,
-                                objFile: resolvedObjFile,
-                                worldPosX,
-                                worldPosY,
-                                worldPosZ,
-                                scaleX,
-                                scaleY,
-                                scaleZ,
-                                rotateX,
-                                rotateY,
-                                rotateZ,
-                                brightness,
-                                active,
-                            });
-                        } else if (displayAs === 'Image' && active) {
-                            // Process Image view objects (textured planes)
-                            const imageFile = getAttrDef(viewObj, 'Image', '');
-                            if (!imageFile) continue;
-
-                            const transparency = parseFloat(getAttrDef(viewObj, 'Transparency', '0'));
-
-                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
-                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
-                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
-                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
-                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
-                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
-                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
-                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
-                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
-
-                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
-
-                            const resolvedImageFile = resolveFilePathFromIndex(imageFile, resolvedShow, fileIndex);
-                            if (!resolvedImageFile) {
-                                emitWarning(
-                                    `[loadXmlCoordinates] Could not resolve image "${imageFile}" for view object "${name}"`,
-                                );
-                                continue;
-                            }
-
-                            viewObjects.push({
-                                name,
-                                displayAs,
-                                imageFile: resolvedImageFile,
-                                worldPosX,
-                                worldPosY,
-                                worldPosZ,
-                                scaleX,
-                                scaleY,
-                                scaleZ,
-                                rotateX,
-                                rotateY,
-                                rotateZ,
-                                brightness,
-                                transparency: isNaN(transparency) ? 0 : transparency,
-                                active,
-                            });
+                for (const vo of getAllViewObjects(xrgb)) {
+                    // Process Mesh objects with OBJ files
+                    if (vo.displayAs === 'Mesh' && vo.objFile && vo.active) {
+                        const resolvedObjFile = resolveFilePathFromIndex(vo.objFile, resolvedShow, fileIndex);
+                        if (!resolvedObjFile) {
+                            emitWarning(
+                                `[loadXmlCoordinates] Could not resolve "${vo.objFile}" for view object "${vo.name}"`,
+                            );
+                            continue;
                         }
+
+                        viewObjects.push({
+                            name: vo.name,
+                            displayAs: vo.displayAs,
+                            objFile: resolvedObjFile,
+                            worldPosX: vo.worldPosX,
+                            worldPosY: vo.worldPosY,
+                            worldPosZ: vo.worldPosZ,
+                            scaleX: vo.scaleX,
+                            scaleY: vo.scaleY,
+                            scaleZ: vo.scaleZ,
+                            rotateX: vo.rotateX,
+                            rotateY: vo.rotateY,
+                            rotateZ: vo.rotateZ,
+                            brightness: vo.brightness,
+                            active: vo.active,
+                        });
+                    } else if (vo.displayAs === 'Image' && vo.imageFile && vo.active) {
+                        // Process Image view objects (textured planes)
+                        const resolvedImageFile = resolveFilePathFromIndex(vo.imageFile, resolvedShow, fileIndex);
+                        if (!resolvedImageFile) {
+                            emitWarning(
+                                `[loadXmlCoordinates] Could not resolve image "${vo.imageFile}" for view object "${vo.name}"`,
+                            );
+                            continue;
+                        }
+
+                        viewObjects.push({
+                            name: vo.name,
+                            displayAs: vo.displayAs,
+                            imageFile: resolvedImageFile,
+                            worldPosX: vo.worldPosX,
+                            worldPosY: vo.worldPosY,
+                            worldPosZ: vo.worldPosZ,
+                            scaleX: vo.scaleX,
+                            scaleY: vo.scaleY,
+                            scaleZ: vo.scaleZ,
+                            rotateX: vo.rotateX,
+                            rotateY: vo.rotateY,
+                            rotateZ: vo.rotateZ,
+                            brightness: vo.brightness,
+                            transparency: vo.transparency,
+                            active: vo.active,
+                        });
                     }
                 }
 
@@ -1435,43 +1393,32 @@ async function loadXmlCoordinates() {
 
             // Parse layout <settings> element (backgroundImage, previewWidth, etc.)
             try {
-                const xsettings = getElementByTag(xrgb.documentElement, 'settings');
+                const parsedSettings = getLayoutSettings(xrgb);
 
-                if (xsettings) {
-                    for (let is = 0; is < xsettings.childNodes.length; ++is) {
-                        const n = xsettings.childNodes[is];
-                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                        const el = n as Element;
-                        const val = getAttrDef(el, 'value', '');
-                        if (!val) continue;
-
-                        switch (el.tagName) {
-                            case 'backgroundImage': {
-                                const resolved = resolveFilePathFromIndex(val, resolvedShow, fileIndex);
-                                if (resolved) {
-                                    layoutSettings.backgroundImage = resolved;
-                                } else {
-                                    emitWarning(`[loadXmlCoordinates] Could not resolve backgroundImage "${val}"`);
-                                }
-                                break;
-                            }
-                            case 'backgroundBrightness':
-                                layoutSettings.backgroundBrightness = parseInt(val, 10);
-                                break;
-                            case 'previewWidth':
-                                layoutSettings.previewWidth = parseInt(val, 10);
-                                break;
-                            case 'previewHeight':
-                                layoutSettings.previewHeight = parseInt(val, 10);
-                                break;
-                        }
-                    }
-
-                    if (layoutSettings.backgroundImage) {
-                        emitInfo(
-                            `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                if (parsedSettings.backgroundImage) {
+                    const resolved = resolveFilePathFromIndex(parsedSettings.backgroundImage, resolvedShow, fileIndex);
+                    if (resolved) {
+                        layoutSettings.backgroundImage = resolved;
+                    } else {
+                        emitWarning(
+                            `[loadXmlCoordinates] Could not resolve backgroundImage "${parsedSettings.backgroundImage}"`,
                         );
                     }
+                }
+                if (parsedSettings.backgroundBrightness !== undefined) {
+                    layoutSettings.backgroundBrightness = parsedSettings.backgroundBrightness;
+                }
+                if (parsedSettings.previewWidth !== undefined) {
+                    layoutSettings.previewWidth = parsedSettings.previewWidth;
+                }
+                if (parsedSettings.previewHeight !== undefined) {
+                    layoutSettings.previewHeight = parsedSettings.previewHeight;
+                }
+
+                if (layoutSettings.backgroundImage) {
+                    emitInfo(
+                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                    );
                 }
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing settings element: ${parseErr}`);
@@ -1634,7 +1581,12 @@ async function processQueue() {
     sender.emitWarning = emitWarning;
 
     try {
-        const { controllers, models } = await readControllersFromXlights(showFolder!);
+        const { controllers, models } = await readControllersFromXlights(showFolder!, {
+            warnUnusedAttrs: false,
+            // Surface library-side skips (unknown model types, unresolvable
+            // start channels) in the player's warning log instead of console.
+            logger: (msg) => emitWarning(msg),
+        });
 
         // Load XML coordinates if not already loaded
         if (!modelCoordinates || modelCoordinates.size === 0) {
