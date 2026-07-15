@@ -271,6 +271,53 @@ export async function ensureExclusiveFolder(): Promise<string | null> {
     }
 }
 
+export interface HeadlessFolderError {
+    error: string;
+    /** 2 = missing/invalid folder, 3 = folder locked by another instance */
+    exitCode: 2 | 3;
+}
+
+/** Headless counterpart of ensureExclusiveFolder(): same CLI/persisted
+ *  resolution and locking, but every dialog becomes an error return, and the
+ *  resolved folder is deliberately NOT persisted — a headless run must never
+ *  rewrite the interactive install's configured show folder. */
+export async function ensureExclusiveFolderHeadless(): Promise<{ folder: string } | HeadlessFolderError> {
+    if (currentShowFolder) return { folder: currentShowFolder };
+
+    const cli = parseCliForShowFolder(process.argv);
+    let candidate: string | undefined;
+    if (cli !== undefined) {
+        // An explicit CLI folder that is missing is an error, not a fallthrough.
+        if (!(await dirExists(cli))) {
+            return { error: `Show folder does not exist or is not accessible: ${cli}`, exitCode: 2 };
+        }
+        candidate = cli;
+    } else {
+        const persisted = store.get('showFolder');
+        if (!(await dirExists(persisted))) {
+            return { error: 'No show folder configured. Pass --show-folder=<xLights show folder>.', exitCode: 2 };
+        }
+        candidate = persisted;
+    }
+
+    const validation = await isValidShowDirectory(candidate);
+    if (!validation.valid) {
+        const details = validation.missingFiles.length > 0 ? ` Missing: ${validation.missingFiles.join(', ')}` : '';
+        return {
+            error: `Not a valid show folder: ${candidate}. ${validation.error ?? ''}${details}`,
+            exitCode: 2,
+        };
+    }
+
+    try {
+        const newReleaseLock = await tryLockShowFolder(candidate!);
+        setNewShowFolder(newReleaseLock, candidate!);
+        return { folder: candidate! };
+    } catch {
+        return { error: `Show folder is already in use by another instance: ${candidate}`, exitCode: 3 };
+    }
+}
+
 export interface PickCloudShowFolderResult {
     /** Absolute path of the chosen folder, or null if user cancelled. */
     folder: string | null;

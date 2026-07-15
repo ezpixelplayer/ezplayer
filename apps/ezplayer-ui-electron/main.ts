@@ -1,3 +1,6 @@
+// earlycli MUST stay the first import: its module body applies --user-data-dir
+// before showfolder/webport/ipcautoupdate construct their electron-stores.
+import { cliUsage, getUnknownVerb, isHeadless } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
@@ -8,12 +11,13 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
+import { isScheduleActive, loadShowFolder, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import {
     clearPersistedShowFolder,
     closeShowFolder,
     ensureExclusiveFolder,
+    ensureExclusiveFolderHeadless,
     getWelcomeShowCloud,
     hasValidConfiguredShowFolder,
     setWelcomeShowCloud,
@@ -253,6 +257,85 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
 
 let playWorker: Worker | null = null;
 
+async function startPlaybackWorker(): Promise<Worker> {
+    const worker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
+        workerData: {
+            name: 'main',
+            logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
+        } satisfies PlaybackWorkerData,
+    });
+    await new Promise<void>((resolve) => {
+        const onMessage = (msg: any) => {
+            if (msg.type === 'ready') {
+                worker.off('message', onMessage);
+                resolve();
+            }
+        };
+        worker.on('message', onMessage);
+    });
+    return worker;
+}
+
+/** The `headless` verb: full player (playback, server, cloud, output, web/cloud
+ *  audio) with zero BrowserWindows. Anything that would have raised a dialog is
+ *  a fail-fast stderr message + exit code instead. */
+async function startHeadless() {
+    const resolved = await ensureExclusiveFolderHeadless();
+    if ('error' in resolved) {
+        console.error(`EZPlayer headless: ${resolved.error}`);
+        // app.exit, not app.quit: quit() always exits 0, and nothing (workers,
+        // folder lock) has been acquired yet that would need before-quit cleanup.
+        app.exit(resolved.exitCode);
+        return;
+    }
+    console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
+
+    // persist:false — a headless run's CLI ports are for this run only, never
+    // written into the interactive install's preferences.
+    const portInfo = getWebPort({ persist: false });
+    const kioskPortInfo = getKioskPort({ persist: false });
+
+    playWorker = await startPlaybackWorker();
+
+    registerFileListHandlers();
+    await registerContentHandlers(null, null, playWorker);
+
+    // Signals are the only way out of a windowless run. Mirror the windowed
+    // exit-confirm's cleanup path: stop playback, then app.quit() so
+    // 'before-quit' shuts down workers and releases the show-folder lock.
+    const shutdown = (signal: NodeJS.Signals) => {
+        if (isQuitting) return;
+        isQuitting = true;
+        console.log(`EZPlayer headless: ${signal} received, shutting down`);
+        void stopPlayerPlayback()
+            .catch((err) => console.error(`Failed to stop player playback: ${err}`))
+            .finally(() => app.quit());
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
+    try {
+        await setUpServerWorker({
+            port: portInfo.port,
+            portSource: portInfo.source,
+            playWorker,
+            mainWindow: null,
+            getMainWindow,
+            distDir: __dirname,
+            kioskPort: kioskPortInfo?.port,
+            kioskPortSource: kioskPortInfo?.source,
+        });
+    } catch (e) {
+        console.error(e);
+    }
+
+    // With no renderer, nothing sends ipcUIConnect — load the show content
+    // (sequences/playlists/schedule → playback worker, caches → server worker)
+    // ourselves.
+    await loadShowFolder();
+    console.log(`EZPlayer headless: ready on web port ${portInfo.port}`);
+}
+
 app.whenReady().then(async () => {
     console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
@@ -285,6 +368,18 @@ app.whenReady().then(async () => {
         return;
     }
 
+    const unknownVerb = getUnknownVerb();
+    if (unknownVerb) {
+        console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
+        app.exit(64);
+        return;
+    }
+
+    if (isHeadless()) {
+        await startHeadless();
+        return;
+    }
+
     const shouldShowWelcome = !(await hasValidConfiguredShowFolder());
     let showFolderSpec: string | null = null;
     if (!shouldShowWelcome) {
@@ -304,21 +399,7 @@ app.whenReady().then(async () => {
     const kioskPort = kioskPortInfo?.port;
     const kioskPortSource = kioskPortInfo?.source;
 
-    playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
-        workerData: {
-            name: 'main',
-            logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
-        } satisfies PlaybackWorkerData,
-    });
-    await new Promise<void>((resolve) => {
-        const onMessage = (msg: any) => {
-            if (msg.type === 'ready') {
-                playWorker!.off('message', onMessage);
-                resolve();
-            }
-        };
-        playWorker!.on('message', onMessage);
-    });
+    playWorker = await startPlaybackWorker();
 
     registerFileListHandlers();
     createWindow(showFolderSpec ?? undefined, shouldShowWelcome);

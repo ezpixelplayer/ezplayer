@@ -9,9 +9,17 @@ title: Command Line Interface (CLI)
 The CLI is subject to redesign, and is expected to stabilize in v1.0.
 :::
 
-The **desktop EZPlayer** application (Windows, macOS, Linux) accepts command-line
-flags when launched from a terminal, shortcut, or service script. Flags control
-the show folder, LAN web server ports, and first-run behavior.
+The **desktop EZPlayer** application (Windows, macOS, Linux) accepts an optional
+**verb** followed by command-line flags when launched from a terminal, shortcut,
+or service script:
+
+```text
+EZPlayer.exe [<verb>] [--flags...]
+```
+
+With no verb, EZPlayer starts the windowed player as always. Verbs select an
+alternate mode — currently the only verb is [`headless`](#headless-mode). Flags
+control the show folder, LAN web server ports, and first-run behavior.
 
 CLI arguments take **priority over** [environment variables](./env-variables.md)
 when both configure the same setting (for example `--web-port=` beats
@@ -23,12 +31,14 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 
 ## Quick reference
 
-| Flag                   | Purpose                                                         |
+| Verb / Flag            | Purpose                                                         |
 | ---------------------- | --------------------------------------------------------------- |
+| `headless`             | Run the full player with no windows ([details](#headless-mode)) |
 | `--show-folder=<path>` | Open the given show folder on launch                            |
 | `--web-port=<n>`       | LAN HTTP server port (default `3000`)                           |
 | `--kiosk-port=<n>`     | Kiosk web server port (default `3001`)                          |
 | `--kiosk-port=0`       | Disable the kiosk server                                        |
+| `--user-data-dir=<p>`  | Isolate all persisted app state to the given directory          |
 | `--reset`              | Clear persisted state, then quit (cloud welcome on next launch) |
 | `--reset-nocloud`      | Clear persisted state, pin local-only welcome, then quit        |
 | `--no-update-check`    | Skip the startup check for a newer EZPlayer release             |
@@ -59,6 +69,45 @@ offers to pick another folder.
 
 Only **one EZPlayer instance** can lock a given show folder at a time. A second
 instance using the same folder is prompted to choose a different path or quit.
+
+## Headless mode
+
+The `headless` verb runs the **full player with no windows**: scheduled and
+API-driven playback, light output, the LAN web/API server, kiosk server, and
+cloud connectivity all behave exactly as in the windowed app. Audio is still
+decoded and streamed to the web UI and cloud listeners; it is simply not played
+out on the machine's local speakers (no hidden audio window is created).
+
+```bash
+EZPlayer.exe headless --show-folder=D:\Shows\2025 --web-port=3000
+```
+
+Anything that would normally raise a dialog fails fast instead:
+
+| Exit code | Meaning                                                             |
+| --------- | ------------------------------------------------------------------- |
+| `2`       | No show folder configured, or the folder is missing/invalid         |
+| `3`       | The show folder is locked by another EZPlayer instance              |
+| `64`      | Unrecognized verb                                                   |
+
+A headless run **never modifies persisted preferences** — the show folder and
+ports passed on the command line apply to that run only, so it can coexist with
+an interactive install on the same machine. To fully isolate state (e.g. for
+automated testing, or a second independent player), add `--user-data-dir=`:
+
+```bash
+EZPlayer.exe headless --show-folder=C:\Shows\Test --web-port=8090 ^
+    --kiosk-port=0 --user-data-dir=C:\Temp\ezp-test-profile
+```
+
+Stop a headless player with `Ctrl-C` (SIGINT) or SIGTERM; it stops playback,
+releases the show-folder lock, and exits cleanly. `EZPLAYER_HEADLESS=1` in the
+environment is equivalent to the verb for service scripts that cannot alter
+arguments.
+
+On headless Linux boxes (no X server), run under `xvfb-run -a` or pass
+`--disable-gpu`; Electron still needs a display stack to boot even though no
+window is shown.
 
 ## LAN and kiosk ports
 
