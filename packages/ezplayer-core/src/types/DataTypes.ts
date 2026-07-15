@@ -489,6 +489,7 @@ export type EZPlayerCommand =
           immediate: boolean;
           priority: number; // Allows precedence over RF, lower is higher priority
           requestId: string; // To identify, for canceling
+          loop?: boolean; // Repeat the playlist until stopped
       }
     | {
           command: 'deleterequest';

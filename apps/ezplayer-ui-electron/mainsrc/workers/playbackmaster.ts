@@ -724,6 +724,32 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'suppressoutput':
             break;
         case 'playplaylist':
+            {
+                emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
+                const pl = curPlaylists?.find((p) => p.id === cmd.playlistId);
+                if (!pl) {
+                    emitError(`Unable to identify playlist ${cmd.playlistId}`);
+                    return false;
+                }
+                const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
+                foregroundPlayerRunState.addInteractiveCommand({
+                    immediate: cmd.immediate,
+                    requestId: cmd.requestId,
+                    startTime,
+                    playlistId: cmd.playlistId,
+                    loop: cmd.loop,
+                });
+
+                if (cmd.immediate) {
+                    audioPlayerRunTime = Math.min(audioPlayerRunTime, startTime); // Possibly overlap audio
+                }
+
+                emitInfo(`Enqueue playlist: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                sendPlayerStateUpdate();
+                if (!running) {
+                    running = processQueue(); // kick off first song
+                }
+            }
             break;
         case 'reloadcontrollers':
             break;
