@@ -55,6 +55,26 @@ export const postSequenceData = createAsyncThunk<SequenceRecord[], SequenceRecor
     },
 );
 
+/** True when the connected backing store can receive file uploads (web/LAN
+ *  file-management API). Electron's renderer works with local paths instead. */
+export function canUploadShowFiles(extra: DataStorageAPI): boolean {
+    return typeof extra.uploadShowFile === 'function';
+}
+
+/** Upload files into the player's show folder (dialog-free remote add-song
+ *  flow). No-op entries are allowed so callers can pass optional files. */
+export const uploadShowFiles = createAsyncThunk<void, Array<{ name: string; data: Blob } | undefined>, { extra: DataStorageAPI }>(
+    'sequences/uploadShowFiles',
+    async (files, { extra }) => {
+        if (!extra.uploadShowFile) {
+            throw new Error('This player connection does not support file upload');
+        }
+        for (const f of files) {
+            if (f) await extra.uploadShowFile(f.name, f.data);
+        }
+    },
+);
+
 const sequenceSlice = createSongSlice((builder) => {
     builder
         .addCase(fetchSequences.pending, (state) => {

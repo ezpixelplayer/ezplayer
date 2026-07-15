@@ -184,7 +184,51 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
     }
 
     async postCloudSequences(data: SequenceRecord[]): Promise<SequenceRecord[]> {
-        return data;
+        const response = await fetch(`${this.apiUrl}sequences`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to update sequences: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        return result.sequences || [];
+    }
+
+    /** Push a file's bytes into the show folder via the file-management API.
+     *  Chunked (FPP-style PATCH) above 16MB so big fseqs don't ride one request. */
+    async uploadShowFile(fileName: string, data: Blob): Promise<void> {
+        const ext = fileName.toLowerCase().split('.').pop() ?? '';
+        const dir = ext === 'fseq' ? 'sequences' : ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'].includes(ext) ? 'music' : 'uploads';
+
+        const CHUNK = 8 * 1024 * 1024;
+        if (data.size <= CHUNK * 2) {
+            const res = await fetch(`${this.apiUrl}file/${dir}/${encodeURIComponent(fileName)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: data,
+            });
+            if (!res.ok) throw new Error(`Upload of ${fileName} failed: ${res.statusText}`);
+            return;
+        }
+        for (let off = 0; off < data.size; off += CHUNK) {
+            const res = await fetch(`${this.apiUrl}file/${dir}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/offset+octet-stream',
+                    'Upload-Name': fileName,
+                    'Upload-Offset': String(off),
+                    'Upload-Length': String(data.size),
+                },
+                body: data.slice(off, Math.min(off + CHUNK, data.size)),
+            });
+            if (!res.ok) throw new Error(`Chunk upload of ${fileName} failed: ${res.statusText}`);
+        }
     }
 
     async getCloudPlaylists(): Promise<PlaylistRecord[]> {

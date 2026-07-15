@@ -6,7 +6,7 @@ import { Box } from '../box/Box';
 import { FileButton, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '../..';
+import { AppDispatch, postSequenceData, RootState, setSequenceTags, uploadShowFiles } from '../..';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
@@ -138,6 +138,16 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     tags: newSongData.tags,
                 },
             };
+
+            // The picked Files live on THIS machine — push their bytes into the
+            // player's show folder first, then register the record referencing
+            // the show-relative names.
+            await dispatch(
+                uploadShowFiles([
+                    fseqFile ? { name: fseqFile.name, data: fseqFile } : undefined,
+                    mp3File ? { name: mp3File.name, data: mp3File } : undefined,
+                ]),
+            ).unwrap();
 
             // Submit to redux
             await dispatch(postSequenceData([newSong])).unwrap();

@@ -123,4 +123,9 @@ export interface DataStorageAPI {
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
+
+    /** Upload a file's bytes into the player's show folder (web/LAN backends
+     *  with the file-management API). Absent on backends where files are
+     *  already local (Electron renderer uses native dialogs + paths). */
+    uploadShowFile?: (fileName: string, data: Blob) => Promise<void>;
 }

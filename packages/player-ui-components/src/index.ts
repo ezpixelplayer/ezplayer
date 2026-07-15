@@ -83,10 +83,12 @@ export { InitialDataProvider } from './store/InitialDataProvider';
 export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {
+    canUploadShowFiles,
     fetchSequences,
     postSequenceData,
     setSequenceData,
     setSequenceTags,
+    uploadShowFiles,
 } from './store/slices/SequenceStore';
 
 export { setPlaylists, fetchPlaylists, postPlaylistData, addTag } from './store/slices/PlaylistStore';
