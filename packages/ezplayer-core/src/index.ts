@@ -5,6 +5,7 @@ export type {
     PlaylistRecord,
     PlaylistItem,
     ScheduledPlaylist,
+    ScheduleEndPolicy,
     SequenceDetails,
     SequenceFiles,
     SequenceRecord,

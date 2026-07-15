@@ -213,9 +213,16 @@ Set volume:
 
 ---
 
-### POST /api/playlists
+### POST /api/ezp/playlists
 
 Update playlists. Accepts an array of playlist records. Updates `updatedAt` timestamp automatically.
+
+:::note Moved from `POST /api/playlists`
+The bare `/api/playlists` path now belongs to the [FPP-compatible API](./fpp-compat.md)
+(`GET` lists names, `POST` creates one playlist from FPP JSON). EZPlayer's
+native bulk replace/merge moved here. The internal API had no external
+consumers pre-1.0.
+:::
 
 **Request:**
 
@@ -275,9 +282,14 @@ Note: The response includes only non-deleted playlists (`deleted !== true`).
 
 ---
 
-### POST /api/schedules
+### POST /api/ezp/schedules
 
 Update schedules. Accepts an array of scheduled playlist records. Updates `updatedAt` timestamp automatically.
+
+:::note Moved from `POST /api/schedules`
+Relocated alongside `/api/ezp/playlists`; the singular `/api/schedule` path
+serves the [FPP-compatible schedule](./fpp-compat.md).
+:::
 
 **Request:**
 

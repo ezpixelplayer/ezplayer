@@ -907,6 +907,9 @@ async function startServer(config: ServerWorkerData) {
         sendPlayerCommand: async (cmd) => {
             await rpc.call('sendPlayerCommand', cmd);
         },
+        updatePlaylists: async (recs) => await rpc.call('updatePlaylistsHandler', recs),
+        updateSchedule: async (recs) => await rpc.call('updateScheduleHandler', recs),
+        putSequences: async (recs) => await rpc.call('putSequences', recs),
         appVersion: config.appVersion ?? '0.0.0',
     });
 
@@ -1019,7 +1022,9 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     // API: POST /api/playlists
     // ----------------------------------------------
-    router.post('/api/playlists', async (ctx) => {
+    // EZP-native bulk replace/merge. Moved from /api/playlists so the FPP-compat
+    // create-one endpoint can own that path (see fppcompat/fpp-api.ts).
+    router.post('/api/ezp/playlists', async (ctx) => {
         try {
             const playlists = ctx.request.body;
             if (!Array.isArray(playlists)) {
@@ -1039,7 +1044,9 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     // API: POST /api/schedules
     // ----------------------------------------------
-    router.post('/api/schedules', async (ctx) => {
+    // EZP-native bulk replace/merge. Moved from /api/schedules alongside the
+    // /api/ezp/playlists relocation (FPP owns GET/POST /api/schedule, singular).
+    router.post('/api/ezp/schedules', async (ctx) => {
         try {
             const schedules = ctx.request.body;
             if (!Array.isArray(schedules)) {

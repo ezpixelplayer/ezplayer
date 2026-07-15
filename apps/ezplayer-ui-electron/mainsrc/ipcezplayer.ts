@@ -450,12 +450,18 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             }
         }
         if (!ups?.work?.length && ups.files?.fseq) {
-            const fseq = new FSEQReaderAsync(ups.files.fseq);
-            await fseq.open();
-            const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
-            const nframes = fseq.header!.frames;
-            ups.work.length = (frameTime * nframes) / 1000;
-            await fseq.close();
+            // Best-effort: a corrupt/unreadable fseq shouldn't fail the whole
+            // upsert — the record lands with length 0 and can be fixed later.
+            try {
+                const fseq = new FSEQReaderAsync(ups.files.fseq);
+                await fseq.open();
+                const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
+                const nframes = fseq.header!.frames;
+                ups.work.length = (frameTime * nframes) / 1000;
+                await fseq.close();
+            } catch (e) {
+                console.warn(`[sequences] could not read FSEQ header for ${ups.files.fseq}:`, e);
+            }
         }
     }
     return await commitSequenceUpdates(uppl);

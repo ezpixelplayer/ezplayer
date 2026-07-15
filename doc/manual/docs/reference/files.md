@@ -106,7 +106,7 @@ Ordered lists of songs. Envelope:
 Each `PlaylistRecord` has `id`, `title`, `tags`, an ordered `items` array
 (each `{ id, sequence }` referencing a song), and `createdAt` / `updatedAt`.
 Deletes are **soft** (`deleted: true`). See the
-[`POST /api/playlists`](./api.md) body for the full field list.
+[`POST /api/ezp/playlists`](./api.md) body for the full field list.
 
 ### `schedule.json`
 
@@ -118,7 +118,7 @@ Each `ScheduledPlaylist` ties a `playlistId` (plus optional `prePlaylistId` /
 runtime knobs documented under
 [Complex Schedules](../advanced/complex-schedules/overview.md): `scheduleType`
 (`main` | `background`), `priority`, `loop`, `shuffle`, `endPolicy`,
-`recurrenceRule`, and so on. See the [`POST /api/schedules`](./api.md) body for
+`recurrenceRule`, and so on. See the [`POST /api/ezp/schedules`](./api.md) body for
 the full field list.
 
 ### `playbackSettings.json`
@@ -206,8 +206,8 @@ which is the contract: one writer at a time.
 - **Live changes** — to change a running show, call the HTTP API instead of
   touching the files. It updates the in-memory state and persists it through the
   same atomic path:
-    - `POST /api/playlists` — replace playlists
-    - `POST /api/schedules` — replace the schedule
+    - `POST /api/ezp/playlists` — replace playlists
+    - `POST /api/ezp/schedules` — replace the schedule
     - `POST /api/playback-settings` — update volume / viewer control / jukebox / audio sync / blend
     - `POST /api/player-command` — transport and request control (play, stop, queue, volume, …)
 

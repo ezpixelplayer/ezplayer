@@ -193,7 +193,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async postCloudPlaylists(data: PlaylistRecord[]): Promise<PlaylistRecord[]> {
         try {
-            const response = await fetch(`${this.apiUrl}playlists`, {
+            const response = await fetch(`${this.apiUrl}ezp/playlists`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -219,7 +219,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async postCloudSchedule(data: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
         try {
-            const response = await fetch(`${this.apiUrl}schedules`, {
+            const response = await fetch(`${this.apiUrl}ezp/schedules`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
