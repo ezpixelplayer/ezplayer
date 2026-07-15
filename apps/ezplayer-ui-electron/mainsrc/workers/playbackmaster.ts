@@ -607,6 +607,15 @@ function sendEzvcUpdate() {
 // a 200ms gap moves ~20%, a 50ms gap ~5%, and a full 0-100 swing takes ~1s.
 const VOLUME_SLEW_INTERVAL_MS = 10;
 let lastVolCheck: number = Date.now();
+
+/** Manual volume set (setvolume command from UI/API/FPP-compat). Holds against
+ *  the settings-driven target until either new settings arrive or a volume
+ *  schedule entry (re)activates — scheduled volume wins at its boundary, but a
+ *  manual set DURING a scheduled window sticks for that window. Without this,
+ *  the slew loop walks every setvolume straight back to defaultVolume. */
+let interactiveVolume: number | undefined = undefined;
+let lastActiveVolSchedId: string | undefined = undefined;
+
 function doVolumeAdjust(dn: number) {
     const settings = latestSettings;
     if (!settings || !settings.volumeControl) {
@@ -614,8 +623,12 @@ function doVolumeAdjust(dn: number) {
         return;
     }
     const volsched = getActiveVolumeSchedule(settings.volumeControl);
-    let tgtvol = settings.volumeControl.defaultVolume ?? 100;
-    if (volsched) {
+    if (volsched?.id !== lastActiveVolSchedId) {
+        lastActiveVolSchedId = volsched?.id;
+        if (volsched) interactiveVolume = undefined; // schedule boundary overrides a manual set
+    }
+    let tgtvol = interactiveVolume ?? settings.volumeControl.defaultVolume ?? 100;
+    if (volsched && interactiveVolume === undefined) {
         tgtvol = volsched.volumeLevel;
     }
 
@@ -687,11 +700,13 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'setvolume': {
             if (cmd?.volume !== undefined) {
                 volume = cmd.volume;
+                interactiveVolume = cmd.volume; // hold against the settings slew target
             }
             if (cmd.mute !== undefined) {
                 muted = cmd.mute;
             }
             volumeSF = muted ? 0 : volume / 100;
+            sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
         case 'pause': {
@@ -955,6 +970,7 @@ let rfConfigInitialized = false;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
+    interactiveVolume = undefined; // explicit settings change reclaims volume control
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;

@@ -430,6 +430,9 @@ importers:
       vite-plugin-static-copy:
         specifier: ^3.4.0
         version: 3.4.0(vite@5.4.21(@types/node@24.13.2)(sass@1.101.0))
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0)
 
   apps/ezplayer-ui-embedded:
     dependencies:
@@ -7798,6 +7801,14 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@24.13.2)(sass@1.101.0))':
+    dependencies:
+      '@vitest/spy': 2.1.9
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 5.4.21(@types/node@24.13.2)(sass@1.101.0)
+
   '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.9.3)(sass@1.101.0))':
     dependencies:
       '@vitest/spy': 2.1.9
@@ -10836,6 +10847,24 @@ snapshots:
       '@egjs/hammerjs': 2.0.17
       component-emitter: 1.3.1
 
+  vite-node@2.1.9(@types/node@24.13.2)(sass@1.101.0):
+    dependencies:
+      cac: 6.7.14
+      debug: 4.4.3
+      es-module-lexer: 1.7.0
+      pathe: 1.1.2
+      vite: 5.4.21(@types/node@24.13.2)(sass@1.101.0)
+    transitivePeerDependencies:
+      - '@types/node'
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+
   vite-node@2.1.9(@types/node@25.9.3)(sass@1.101.0):
     dependencies:
       cac: 6.7.14
@@ -10892,6 +10921,42 @@ snapshots:
       '@types/node': 25.9.3
       fsevents: 2.3.3
       sass: 1.101.0
+
+  vitest@2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0):
+    dependencies:
+      '@vitest/expect': 2.1.9
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@24.13.2)(sass@1.101.0))
+      '@vitest/pretty-format': 2.1.9
+      '@vitest/runner': 2.1.9
+      '@vitest/snapshot': 2.1.9
+      '@vitest/spy': 2.1.9
+      '@vitest/utils': 2.1.9
+      chai: 5.3.3
+      debug: 4.4.3
+      expect-type: 1.3.0
+      magic-string: 0.30.21
+      pathe: 1.1.2
+      std-env: 3.10.0
+      tinybench: 2.9.0
+      tinyexec: 0.3.2
+      tinypool: 1.1.1
+      tinyrainbow: 1.2.0
+      vite: 5.4.21(@types/node@24.13.2)(sass@1.101.0)
+      vite-node: 2.1.9(@types/node@24.13.2)(sass@1.101.0)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 24.13.2
+      jsdom: 25.0.1
+    transitivePeerDependencies:
+      - less
+      - lightningcss
+      - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
 
   vitest@2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(sass@1.101.0):
     dependencies:

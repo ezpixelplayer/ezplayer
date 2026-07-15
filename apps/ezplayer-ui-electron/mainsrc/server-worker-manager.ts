@@ -21,6 +21,7 @@ import {
     putSequencesWithDurations,
 } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
+import { ezpVersions } from '../versions.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
 
@@ -269,6 +270,7 @@ function initializeServerWorker(port: number, portSource: string, mainWindow: Br
             indexPath,
             kioskPort: kioskPortRef,
             kioskPortSource: kioskPortSourceRef,
+            appVersion: ezpVersions.version,
         },
     };
 

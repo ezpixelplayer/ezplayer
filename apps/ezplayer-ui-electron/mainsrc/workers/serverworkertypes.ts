@@ -12,6 +12,8 @@ export interface ServerWorkerData {
     indexPath?: string;
     kioskPort?: number;
     kioskPortSource?: string;
+    /** EZPlayer app version, for the FPP-compat identity endpoints. */
+    appVersion?: string;
 }
 
 export type ServerWorkerToMainMessage =

@@ -14,7 +14,15 @@ import Router from '@koa/router';
 import { send } from '@koa/send';
 import serve from 'koa-static';
 import { fileURLToPath } from 'url';
-import type { EZPlayerCommand, FullPlayerState, PlaybackSettings, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type {
+    EZPlayerCommand,
+    FullPlayerState,
+    PlaybackSettings,
+    PlayerPStatusContent,
+    PlaylistRecord,
+    ScheduledPlaylist,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
@@ -26,6 +34,7 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import { createFileApiRouter, registerSequenceApiRoutes, type FileApiDeps } from './file-api.js';
+import { registerFppCompatRoutes } from './fppcompat/fpp-api.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
@@ -886,6 +895,20 @@ async function startServer(config: ServerWorkerData) {
 
     // EZP-native sequence registration/autodetect (JSON bodies, shared router).
     registerSequenceApiRoutes(router, fileApiDeps);
+
+    // FPP-compat surface (status/info/version/commands/volume) — same paths a
+    // real FPP serves, translated onto the cached state + command bridge.
+    registerFppCompatRoutes(router, {
+        getShowFolder: () => wsBroadcaster.get('showFolder') as string | undefined,
+        getPStatus: () => wsBroadcaster.get('pStatus') as PlayerPStatusContent | undefined,
+        getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+        getPlaylists: () => wsBroadcaster.get('playlists') as PlaylistRecord[] | undefined,
+        getSchedule: () => wsBroadcaster.get('schedule') as ScheduledPlaylist[] | undefined,
+        sendPlayerCommand: async (cmd) => {
+            await rpc.call('sendPlayerCommand', cmd);
+        },
+        appVersion: config.appVersion ?? '0.0.0',
+    });
 
     // ----------------------------------------------
     // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
