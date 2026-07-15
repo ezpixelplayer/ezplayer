@@ -25,6 +25,7 @@ import type {
     ServerWorkerRPCAPI,
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
+import { createFileApiRouter, registerSequenceApiRoutes, type FileApiDeps } from './file-api.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
@@ -868,8 +869,23 @@ async function startServer(config: ServerWorkerData) {
     // Proxy middleware must be before bodyParser so it can stream raw request bodies
     webApp.use(createProxyMiddleware());
 
+    // File-transfer routes stream raw bodies, so they also sit before jsonBody().
+    // Deliberately NOT mounted on the kiosk app: the public jukebox port gets no
+    // file upload/download/delete surface.
+    const fileApiDeps: FileApiDeps = {
+        getShowFolder: () => wsBroadcaster.get('showFolder') as string | undefined,
+        getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+        putSequences: async (recs) => await rpc.call('putSequences', recs),
+    };
+    const fileApiRouter = createFileApiRouter(fileApiDeps);
+    webApp.use(fileApiRouter.routes());
+    webApp.use(fileApiRouter.allowedMethods());
+
     // Add body parser middleware for JSON requests
     webApp.use(jsonBody());
+
+    // EZP-native sequence registration/autodetect (JSON bodies, shared router).
+    registerSequenceApiRoutes(router, fileApiDeps);
 
     // ----------------------------------------------
     // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId

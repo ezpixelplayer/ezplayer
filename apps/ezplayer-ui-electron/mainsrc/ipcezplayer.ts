@@ -2,6 +2,7 @@
 import { fileURLToPath } from 'url';
 
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 import { BrowserWindow, ipcMain } from 'electron';
 
@@ -426,6 +427,40 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     return filtered;
 }
 
+/** Sequence upsert with path fix-up and FSEQ-duration fill-in — shared by the
+ *  renderer IPC (ipcPutCloudSequences) and the server worker's
+ *  POST /api/sequences RPC. API clients send show-relative file names and may
+ *  omit ids; renderer records arrive absolute and fully formed. */
+export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
+    const showFolder = getCurrentShowFolder();
+    const uppl = recs.map((r) => {
+        return { ...r, updatedAt: Date.now() };
+    });
+    for (const ups of uppl) {
+        if (!ups.id) ups.id = crypto.randomUUID();
+        if (!ups.instanceId) ups.instanceId = crypto.randomUUID();
+        if (!ups.work) {
+            const base = ups.files?.fseq ? path.basename(ups.files.fseq, path.extname(ups.files.fseq)) : '';
+            ups.work = { title: base, artist: '', length: 0 };
+        }
+        if (ups.files && showFolder) {
+            for (const key of ['fseq', 'audio', 'thumb'] as const) {
+                const p = ups.files[key];
+                if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
+            }
+        }
+        if (!ups?.work?.length && ups.files?.fseq) {
+            const fseq = new FSEQReaderAsync(ups.files.fseq);
+            await fseq.open();
+            const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
+            const nframes = fseq.header!.frames;
+            ups.work.length = (frameTime * nframes) / 1000;
+            await fseq.close();
+        }
+    }
+    return await commitSequenceUpdates(uppl);
+}
+
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
 function scheduleUpdated(forceRestart?: boolean) {
@@ -755,22 +790,8 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcPutCloudSequences', async (_event, recs: SequenceRecord[]): Promise<SequenceRecord[]> => {
         // TODO Cloud sync if that makes sense...
-        // TODO calculate any times if needed
         // TODO calculate any effect on the schedule
-        const uppl = recs.map((r) => {
-            return { ...r, updatedAt: Date.now() };
-        });
-        for (const ups of uppl) {
-            if (!ups?.work?.length && ups.files?.fseq) {
-                const fseq = new FSEQReaderAsync(ups.files.fseq);
-                await fseq.open();
-                const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
-                const nframes = fseq.header!.frames;
-                ups.work.length = (frameTime * nframes) / 1000;
-                await fseq.close();
-            }
-        }
-        return await commitSequenceUpdates(uppl);
+        return await putSequencesWithDurations(recs);
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {

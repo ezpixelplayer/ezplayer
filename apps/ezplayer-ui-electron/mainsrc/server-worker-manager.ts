@@ -18,6 +18,7 @@ import {
     curFrameBuffer,
     loadShowFolder,
     dispatchCloudCommand,
+    putSequencesWithDurations,
 } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
@@ -65,6 +66,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     updateScheduleHandler: async (schedules: unknown[]) => {
         return await updateScheduleHandler(schedules as any[]);
+    },
+    putSequences: async (recs: unknown[]) => {
+        return await putSequencesWithDurations(recs as any[]);
     },
     applySettingsFromRenderer: (settingsPath: string, settings: unknown) => {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);

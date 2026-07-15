@@ -336,6 +336,74 @@ Note: The response includes only non-deleted schedules (`deleted !== true`).
 
 ---
 
+### File management (FPP-shaped)
+
+Remote file operations on the show folder. Paths and response shapes follow the
+[FPP](https://github.com/FalconChristmas/fpp) file API so FPP-ecosystem tools
+work unchanged. EZPlayer show folders are flat, so every logical directory maps
+to the show folder root with an extension filter:
+
+| `:dirName`  | Contents                                              |
+| ----------- | ----------------------------------------------------- |
+| `sequences` | `*.fseq`                                              |
+| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma`          |
+| `videos`    | `*.mp4 *.mkv *.avi *.mov *.mpg *.mpeg`                |
+| `images`    | `*.gif *.jpg *.jpeg *.png *.webp *.bmp`               |
+| `uploads`   | everything (minus protected/dot files)                |
+
+| Method   | Path                        | Purpose                                                                                      |
+| -------- | --------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/files/:dirName`       | List: `{status:"ok", files:[{name,mtime,sizeBytes,sizeHuman,playtimeSeconds}]}`; `?nameOnly=1` returns a plain name array |
+| `GET`    | `/api/file/:dirName/:name`  | Download (attachment); `?play=1` streams inline with a media content type                     |
+| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body                                        |
+| `POST`   | `/api/file/:dirName`        | Chunked-upload init; returns an id (plain text)                                               |
+| `PATCH`  | `/api/file/:dirName`        | Upload one chunk; headers `Upload-Name`, `Upload-Offset`, `Upload-Length` (raw body = chunk)  |
+| `DELETE` | `/api/file/:dirName/:name`  | Delete a file                                                                                 |
+| `GET`    | `/api/media`                | Music + video file names (array)                                                              |
+| `GET`    | `/api/sequence`             | Sequence base names, no `.fseq` extension (array)                                             |
+| `GET`    | `/api/sequence/:name`       | Download `<name>.fseq`                                                                        |
+| `POST`   | `/api/sequence/:name`       | Upload `<name>.fseq` (raw body) → `{"Status":"OK","Message":""}`                              |
+
+Uploads are **raw request bodies** (not multipart). Chunked uploads assemble in
+`.ezplayer/tmp-uploads/` and move into place atomically on completion, so a
+file never appears half-written. Upload size cap: 2 GB by default
+(`EZPLAYER_MAX_UPLOAD_MB` overrides).
+
+Safety: names must be plain basenames (no subdirectories, no traversal, no
+dotfiles); `xlights_rgbeffects.xml`, `xlights_networks.xml`, and everything
+under `.ezplayer/` cannot be modified or deleted through this API. These
+routes are served on the main web port only — the kiosk port has no file
+API.
+
+---
+
+### POST /api/sequences
+
+Register (upsert) sequences from files already in the show folder — the
+API-driven equivalent of the desktop "Add Sequence" flow. Body is an array of
+`SequenceRecord`s; `files.*` may be show-relative names (they are resolved
+against the show folder), `id`/`instanceId` are generated when omitted, and a
+missing `work.length` is filled from the FSEQ header.
+
+**Request:**
+
+```json
+[{ "files": { "fseq": "MySong.fseq", "audio": "MySong.mp3" }, "work": { "title": "My Song", "artist": "Artist", "length": 0 } }]
+```
+
+**Response:** `{ "success": true, "sequences": [ ...updated records... ] }`
+
+---
+
+### POST /api/sequences/autodetect
+
+Given `{ "fseq": "<name in show folder>" }`, look for a matching audio file
+(FSEQ header hints, then basename/prefix matching) and extract tag metadata.
+Returns `{ audioFile?, imageFile?, detectedTitle?, detectedArtist?, durationSecs? }`
+with show-relative file names.
+
+---
+
 ### POST /api/playback-settings
 
 Update playback settings. Updates playback configuration settings including audio sync, background sequence mode, viewer control, and volume control.
