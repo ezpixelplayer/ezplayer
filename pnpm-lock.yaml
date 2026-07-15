@@ -588,6 +588,24 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/integration-tests:
+    devDependencies:
+      '@ezplayer/epp':
+        specifier: workspace:*
+        version: link:../epp
+      '@ezplayer/epp-moc-controller':
+        specifier: file:..\..\libs\ezplayer-epp-moc-controller-0.0.1-dev.1.tgz
+        version: file:libs/ezplayer-epp-moc-controller-0.0.1-dev.1.tgz
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.2
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0)
+
   packages/player-ui-components:
     dependencies:
       '@dnd-kit/core':
@@ -1674,6 +1692,11 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@ezplayer/epp-moc-controller@file:libs/ezplayer-epp-moc-controller-0.0.1-dev.1.tgz':
+    resolution: {integrity: sha512-jk+H4LkMMKD6IAQdCpXAY+iV5L4nSxwKIdTvOVD4iW0cRuHm4jUfkq1U9lEx2qMUyr4aAv7xwZb9aU0VYG7ZMA==, tarball: file:libs/ezplayer-epp-moc-controller-0.0.1-dev.1.tgz}
+    version: 0.0.1-dev.1
+    hasBin: true
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -6605,6 +6628,8 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@ezplayer/epp-moc-controller@file:libs/ezplayer-epp-moc-controller-0.0.1-dev.1.tgz': {}
 
   '@floating-ui/core@1.7.5':
     dependencies:

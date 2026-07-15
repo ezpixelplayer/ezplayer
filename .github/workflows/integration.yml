@@ -1,0 +1,46 @@
+name: Integration Tests
+
+# Full-stack tests: build the app, launch headless EZPlayer instances, drive
+# them over the FPP-compat API, and verify DDP output at a mock controller.
+# Heavier than the unit workflow (full install incl. node-gyp, app build,
+# Electron download), so nightly + on-demand rather than per-PR.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 8 * * *' # daily, 08:17 UTC
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter './packages/*' build
+
+      - name: Build app main process
+        run: pnpm --filter ezplayer-ui-electron build:tsc
+
+      - name: Run integration tests
+        # Electron needs a display stack even windowless.
+        run: xvfb-run -a pnpm --filter @ezplayer/integration-tests test
+
+      - name: Upload EZPlayer logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ezplayer-logs
+          path: /tmp/ezp-udd-*/ezplayer.log
+          if-no-files-found: ignore

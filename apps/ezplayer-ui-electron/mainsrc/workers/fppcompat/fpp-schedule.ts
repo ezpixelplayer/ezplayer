@@ -178,7 +178,11 @@ export function fppScheduleToRecords(
         const from = startDate > today ? startDate : today;
         const to = endDate < horizon ? endDate : horizon;
         if (to < from) {
-            warnings.push(`schedule entry ${i}: date range entirely in the past, skipped`);
+            warnings.push(
+                endDate < today
+                    ? `schedule entry ${i}: date range entirely in the past, skipped`
+                    : `schedule entry ${i}: starts beyond the ${MATERIALIZE_DAYS}-day materialization horizon, skipped — re-POST closer to ${entry.startDate}`,
+            );
             return;
         }
         if (endDate > horizon) {

@@ -103,7 +103,13 @@ export function buildFppStatus(src: FppStatusSources, identity: FppIdentity, now
     let repeatMode = '0';
 
     if (np) {
-        const pl = findPlaylist(src.playlists, np.playlist_id);
+        // Scheduled items carry a schedule_id but no playlist_id — resolve the
+        // playlist through the schedule record.
+        let playlistId = np.playlist_id;
+        if (!playlistId && np.schedule_id) {
+            playlistId = src.schedule?.find((s) => s.id === np.schedule_id)?.playlistId;
+        }
+        const pl = findPlaylist(src.playlists, playlistId);
         const seq = findSequence(src.sequences, np.sequence_id);
         const seqIdx = pl && np.sequence_id ? pl.items.findIndex((i) => i.id === np.sequence_id) : -1;
         currentPlaylist = {
@@ -116,15 +122,21 @@ export function buildFppStatus(src: FppStatusSources, identity: FppIdentity, now
         currentSequence = seq?.files?.fseq ? path.basename(seq.files.fseq) : '';
         currentSong = seq?.files?.audio ? path.basename(seq.files.audio) : '';
 
-        // pstatus pushes are event-driven, so `reported_time` is the moment of
-        // the last event, not "now". While playing, elapsed advances on the
-        // wall clock; while paused, it freezes at the pause-time push.
-        const clock = status === FPP_STATUS.PAUSED ? (p?.reported_time ?? now) : now;
-        if (np.at !== undefined) {
-            secondsPlayed = Math.max(0, (clock - np.at) / 1000);
-        }
+        // While playing, the clock is wall time (pstatus pushes are event-driven
+        // and go stale); while paused, the engine clock, which freezes exactly
+        // at the pause point.
+        const clock = status === FPP_STATUS.PAUSED ? (p?.engine_time ?? p?.reported_time ?? now) : now;
         if (np.until !== undefined) {
             secondsRemaining = Math.max(0, (np.until - clock) / 1000);
+        }
+        // `until` is the honest anchor: the engine readout re-clamps `at` to its
+        // current time on every push, so elapsed is derived from the end
+        // (duration - remaining) whenever the item's duration is known.
+        const durationSec = seq?.work?.length;
+        if (durationSec && np.until !== undefined) {
+            secondsPlayed = Math.min(durationSec, Math.max(0, durationSec - secondsRemaining));
+        } else if (np.at !== undefined) {
+            secondsPlayed = Math.max(0, (clock - np.at) / 1000);
         }
         const sched = np.schedule_id ? src.schedule?.find((s) => s.id === np.schedule_id) : undefined;
         repeatMode = sched?.loop ? '1' : '0';

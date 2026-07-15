@@ -278,16 +278,24 @@ function sendPlayerStateUpdate() {
             muted,
         },
     };
+    // Engine clock at status time — freezes during pause, unlike reported_time,
+    // so elapsed-time consumers (FPP-compat status) can stay exact while paused.
+    playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
+        const group = ps.curPLActions;
+        const groupIds =
+            group.type === 'interactive'
+                ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
+                : { schedule_id: group.scheduleId };
+        for (const pla of group.actions) {
             if (pla.end) continue;
             // Only "now playing" if it has actually started; a not-yet-started action
             // (within the readahead window) is upcoming, not playing.
             if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                playStatus.now_playing = actionToPlayingItem(false, pla);
+                playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
                 playStatus.status = isPaused ? 'Paused' : 'Playing';
             } else {
-                playStatus.upcoming!.push(actionToPlayingItem(false, pla));
+                playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
             }
         }
     }
@@ -657,7 +665,10 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-                const seq = curSequences?.find((s) => s.id === cmd.songId);
+                // A play command can arrive between a schedupdate message and its
+                // install in the loop — the pending data is strictly newer.
+                const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
+                const seq = liveSequences?.find((s) => s.id === cmd.songId);
                 if (!seq) {
                     emitError(`Unable to identify sequence ${cmd.songId}`);
                     return false;
@@ -741,7 +752,9 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playplaylist':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
-                const pl = curPlaylists?.find((p) => p.id === cmd.playlistId);
+                // Same schedupdate race as playsong: prefer pending data.
+                const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
+                const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
                 if (!pl) {
                     emitError(`Unable to identify playlist ${cmd.playlistId}`);
                     return false;
@@ -1119,6 +1132,11 @@ const playbackStatsAgg: OverallFrameSendStats = {
 ///////
 // Clockkeeping
 const rtcConverter = new ClockConverter('mrtc', 0, performance.now());
+// Seed immediately: computeTime() returns the constructor base (0!) until the
+// first poll-interval sample lands. processQueue latches its frame clock from
+// computeTime at entry, so a show folder that loads within the first poll tick
+// (headless startup does) froze playback at epoch 0 without this.
+rtcConverter.addSample(Date.now(), performance.now());
 
 const _pollTimes = setInterval(async () => {
     const pn = performance.now();
@@ -1747,6 +1765,17 @@ async function processQueue() {
             ++iteration;
 
             const curPN = performance.now();
+
+            // Safety net: never let the frame clock fall unrecoverably behind
+            // real time (a mis-latched clock base would otherwise leave the
+            // idle path crawling forward 200ms per iteration from epoch 0).
+            const wallRTC = rtcConverter.computeTime(curPN);
+            if (targetFrameRTC < wallRTC - 5000) {
+                emitWarning(
+                    `Frame clock ${((wallRTC - targetFrameRTC) / 1000).toFixed(1)}s behind real time — resyncing`,
+                );
+                targetFrameRTC = wallRTC;
+            }
 
             if (curPN - lastStatsUpdatePN >= 1000 && iteration % 4 === 0) {
                 function toCacheStat(s: CacheStats): PrefetchCacheStats {

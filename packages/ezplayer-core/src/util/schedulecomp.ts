@@ -2092,6 +2092,7 @@ export class PlayerRunState {
                   requestId: item.itemId,
                   startTime: item.schedStart,
                   scheduleId: item.scheduleId,
+                  playlistId: item.playlistIds?.[1],
                   actions: st.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
               };
     }
