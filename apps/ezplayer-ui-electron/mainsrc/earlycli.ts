@@ -10,12 +10,19 @@ import * as path from 'path';
 const KNOWN_VERBS = ['headless'] as const;
 export type CliVerb = (typeof KNOWN_VERBS)[number];
 
-// argv[0] is the executable; in dev (unpackaged) argv[1] is the app path.
-const args = process.argv.slice(app.isPackaged ? 1 : 2);
+// The verb is the first non-flag argument after the executable (and, in dev,
+// after the app path). Chromium switches can precede the app path.
+function firstPositional(argv: string[]): string | undefined {
+    let i = 1; // skip executable
+    while (i < argv.length && argv[i].startsWith('-')) i++;
+    if (!app.isPackaged && i < argv.length) i++; // skip the app path
+    while (i < argv.length && argv[i].startsWith('-')) i++;
+    return argv[i];
+}
 
 let verb: CliVerb | null = null;
 let unknownVerb: string | null = null;
-const first = args[0];
+const first = firstPositional(process.argv);
 if (first && !first.startsWith('-')) {
     if ((KNOWN_VERBS as readonly string[]).includes(first)) {
         verb = first as CliVerb;
