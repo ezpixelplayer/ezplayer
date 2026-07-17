@@ -10,7 +10,7 @@
  */
 
 import * as crypto from 'crypto';
-import * as path from 'path';
+import { fileBaseName } from '../pathnames.js';
 import type { EZPlayerCommand, PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
 
 export interface FppCommandDeps {
@@ -45,7 +45,7 @@ function resolvePlayable(
     if (pl) return { playlistId: pl.id };
     const seq = sequences?.find((s) => {
         if (s.deleted || s.render_enabled === false) return false;
-        const fseqBase = s.files?.fseq ? path.basename(s.files.fseq).toLowerCase().replace(/\.fseq$/, '') : undefined;
+        const fseqBase = s.files?.fseq ? fileBaseName(s.files.fseq).toLowerCase().replace(/\.fseq$/, '') : undefined;
         return fseqBase === base || s.work?.title?.toLowerCase() === base;
     });
     if (seq) return { songId: seq.id };

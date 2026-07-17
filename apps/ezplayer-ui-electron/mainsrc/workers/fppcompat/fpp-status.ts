@@ -5,7 +5,7 @@
  * MM:SS. Integrators depend on these shapes — do not "fix" them.
  */
 
-import * as path from 'path';
+import { fileBaseName } from '../pathnames.js';
 import type { PlayerPStatusContent, PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '@ezplayer/ezplayer-core';
 
 /** FPP PlaylistStatus enum (src/playlist/Playlist.h). */
@@ -113,8 +113,8 @@ export function buildFppStatus(src: FppStatusSources, identity: FppIdentity, now
             index: String(seqIdx >= 0 ? seqIdx + 1 : 1),
             count: String(pl ? pl.items.length : 1),
         };
-        currentSequence = seq?.files?.fseq ? path.basename(seq.files.fseq) : '';
-        currentSong = seq?.files?.audio ? path.basename(seq.files.audio) : '';
+        currentSequence = seq?.files?.fseq ? fileBaseName(seq.files.fseq) : '';
+        currentSong = seq?.files?.audio ? fileBaseName(seq.files.audio) : '';
 
         // While playing, the clock is wall time (pstatus pushes are event-driven
         // and go stale); while paused, the engine clock, which freezes exactly

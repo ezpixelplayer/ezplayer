@@ -3,7 +3,7 @@
  * live in doc/manual/docs/reference/fpp-compat.md.
  */
 
-import * as path from 'path';
+import { fileBaseName } from '../pathnames.js';
 import * as crypto from 'crypto';
 import type { PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
 
@@ -47,9 +47,7 @@ export function findSequenceByName(sequences: SequenceRecord[] | undefined, name
     const base = name.toLowerCase().replace(/\.fseq$/, '');
     return sequences?.find((s) => {
         if (s.deleted) return false;
-        const fseqBase = s.files?.fseq
-            ? path.basename(s.files.fseq).toLowerCase().replace(/\.fseq$/, '')
-            : undefined;
+        const fseqBase = s.files?.fseq ? fileBaseName(s.files.fseq).toLowerCase().replace(/\.fseq$/, '') : undefined;
         return fseqBase === base || s.work?.title?.toLowerCase() === base;
     });
 }
@@ -134,10 +132,10 @@ export function recordToFppPlaylist(pl: PlaylistRecord, sequences: SequenceRecor
             type: seq.files?.audio ? 'both' : 'sequence',
             enabled: 1,
             playOnce: 0,
-            sequenceName: seq.files?.fseq ? path.basename(seq.files.fseq) : `${seq.work?.title ?? item.id}.fseq`,
+            sequenceName: seq.files?.fseq ? fileBaseName(seq.files.fseq) : `${seq.work?.title ?? item.id}.fseq`,
             duration,
         };
-        if (seq.files?.audio) entry.mediaName = path.basename(seq.files.audio);
+        if (seq.files?.audio) entry.mediaName = fileBaseName(seq.files.audio);
         mainPlaylist.push(entry);
     }
     return {

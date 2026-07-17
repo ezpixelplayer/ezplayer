@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import fsp from 'fs/promises';
 import * as crypto from 'crypto';
 import type { EZPlayerCommand, PlayerPStatusContent, PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '@ezplayer/ezplayer-core';
+import { fileBaseName } from '../pathnames.js';
 import { buildFppStatus, buildFppdVersion, buildSystemInfo, type FppIdentity, type FppStatusSources } from './fpp-status.js';
 import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
 import { fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
@@ -215,7 +216,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         const names = livePlaylists().map((p) => p.title);
         const fseqs = (deps.getSequences() ?? [])
             .filter((s) => !s.deleted && s.files?.fseq)
-            .map((s) => path.basename(s.files!.fseq!));
+            .map((s) => fileBaseName(s.files!.fseq!));
         ctx.body = [...names, ...fseqs].sort((a, b) => a.localeCompare(b));
     });
 

@@ -32,6 +32,7 @@ import { send } from '@koa/send';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
 import { autoDetectSongFilesFromFseq } from '../data/song-file-autodetect.js';
+import { fileBaseName } from './pathnames.js';
 
 export interface FileApiDeps {
     getShowFolder: () => string | undefined;
@@ -263,8 +264,8 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const lower = name.toLowerCase();
         const seqs = deps.getSequences() ?? [];
         for (const s of seqs) {
-            const fseq = s.files?.fseq ? path.basename(s.files.fseq).toLowerCase() : undefined;
-            const audio = s.files?.audio ? path.basename(s.files.audio).toLowerCase() : undefined;
+            const fseq = s.files?.fseq ? fileBaseName(s.files.fseq).toLowerCase() : undefined;
+            const audio = s.files?.audio ? fileBaseName(s.files.audio).toLowerCase() : undefined;
             if ((fseq === lower || audio === lower) && s.work?.length) return s.work.length;
         }
         if (path.extname(lower) === '.fseq') {
