@@ -14,7 +14,7 @@ open its dialog.
 Most **playback settings** (show-folder, ui, viewer control, jukebox, audio, cloud, player) save
 automatically when you change them. They are stored in your show folder and
 pushed to the playback engine right away. You can also change them from the
-[LAN UI](../basics/local-web-interface.md) or the HTTP API (`POST /api/ezp/playback-settings`).
+[LAN UI](../basics/local-web-interface.md) or the [HTTP API](../reference/api.md).
 
 **UI settings** (theme, scale, 3D controls) are stored in the browser on that
 device only.
