@@ -99,7 +99,6 @@ import {
     setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
-import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -1261,51 +1260,20 @@ async function loadXmlCoordinates() {
         if (xrgb.documentElement.tagName !== 'xrgb') {
             emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
         } else {
-            try {
-                const xmodels = getElementByTag(xrgb.documentElement, 'models');
-
-                let activeModelCount = 0;
-                let processedModelCount = 0;
-
-                for (let im = 0; im < xmodels.childNodes.length; ++im) {
-                    const n = xmodels.childNodes[im];
-                    if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                    const model = n as Element;
-                    if (model.tagName !== 'model') continue;
-
-                    const name = getAttrDef(model, 'name', '');
-                    const active = getBoolAttrDef(model, 'Active', true);
-
-                    processedModelCount++;
-
-                    if (!active) {
-                        continue;
-                    }
-
-                    activeModelCount++;
-                    try {
-                        // Get 3D coordinates (for 3D viewer)
-                        const nr3d = gmc3d.models.get(name)?.nodeResult;
-                        if (nr3d) {
-                            modelCoordinates.set(name, nr3d);
-                        }
-
-                        // Get 2D coordinates (for 2D viewer with perspective projection)
-                        const nr2d = gmc2d.models.get(name)?.nodeResult;
-                        if (nr2d) {
-                            modelCoordinates2D.set(name, nr2d);
-                        }
-                    } catch (coordErr) {
-                        emitError(`[loadXmlCoordinates] Error extracting coordinates for "${name}": ${coordErr}`);
-                    }
+            // Active models only for the viewers; the library parses every
+            // model and surfaces the Active flag on ModelResult.
+            for (const [name, mr] of gmc3d.models) {
+                if (!mr.active) continue;
+                modelCoordinates.set(name, mr.nodeResult);
+                const nr2d = gmc2d.models.get(name)?.nodeResult;
+                if (nr2d) {
+                    modelCoordinates2D.set(name, nr2d);
                 }
-
-                emitInfo(
-                    `[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`,
-                );
-            } catch (parseErr) {
-                emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }
+
+            emitInfo(
+                `[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`,
+            );
 
             // Build a file index of the show folder tree once, up front.
             // This replaces N separate recursive directory scans with a single pass.
@@ -1390,6 +1358,9 @@ async function loadXmlCoordinates() {
                 for (const [modelName, modelEntry] of gmc3d.models.entries()) {
                     const nr = modelEntry.nodeResult;
                     if (!nr.imageInfo) continue;
+                    // Deactivated Image models don't render — same filter the
+                    // pixel-model loop applies.
+                    if (!modelEntry.active) continue;
                     const resolvedImageFile = resolveFilePathFromIndex(nr.imageInfo.imageFile, resolvedShow, fileIndex);
                     if (!resolvedImageFile) {
                         emitWarning(
