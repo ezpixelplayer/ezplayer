@@ -35,8 +35,8 @@ import os from 'os';
 if (process.platform === 'linux') {
     app.commandLine.appendSwitch('no-sandbox');
     if (isHeadless()) {
-        // Boot Chromium without a display server (no X11/Wayland/xvfb needed).
-        app.commandLine.appendSwitch('ozone-platform', 'headless');
+        // --ozone-platform=headless must be on the real command line (the
+        // native layer consumes it before this code runs); see cli.md.
         app.commandLine.appendSwitch('disable-gpu');
     }
 }

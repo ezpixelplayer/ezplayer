@@ -51,8 +51,9 @@ export async function startEzPlayer(showFolder: string, opts?: { port?: number }
     const child = spawn(
         electronBinary(),
         [
-            // The SUID sandbox aborts before main.js's appendSwitch can run.
-            ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
+            // Both switches are consumed by the native layer before main.js
+            // runs, so they must be on the command line.
+            ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=headless'] : []),
             path.join(appDir, 'dist', 'main.js'),
             'headless',
             `--show-folder=${showFolder}`,

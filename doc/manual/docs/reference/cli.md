@@ -105,9 +105,12 @@ releases the show-folder lock, and exits cleanly. `EZPLAYER_HEADLESS=1` in the
 environment is equivalent to the verb for service scripts that cannot alter
 arguments.
 
-On headless Linux boxes (no X server), run under `xvfb-run -a` or pass
-`--disable-gpu`; Electron still needs a display stack to boot even though no
-window is shown.
+On headless Linux boxes (no X server), pass `--ozone-platform=headless` on the
+command line (it must come before EZPlayer's own arguments):
+
+```bash
+./EZPlayer --ozone-platform=headless headless --show-folder=/home/user/show
+```
 
 ## LAN and kiosk ports
 
