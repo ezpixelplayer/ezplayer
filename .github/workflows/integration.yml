@@ -7,6 +7,9 @@ name: Integration Tests
 
 on:
   workflow_dispatch:
+  # TEMP: run on the PR branch pre-merge; remove before/at merge.
+  push:
+    branches: [moc-api]
   schedule:
     - cron: '17 8 * * *' # daily, 08:17 UTC
 
