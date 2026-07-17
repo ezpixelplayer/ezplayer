@@ -32,6 +32,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch Electron runtime binary
+        # pnpm 10 blocks dependency postinstall scripts; the harness needs
+        # the real binary (electron-builder is not involved here).
+        run: cd apps/ezplayer-ui-electron && node node_modules/electron/install.js
+
       - name: Build workspace packages
         run: pnpm --filter './packages/*' build
 
