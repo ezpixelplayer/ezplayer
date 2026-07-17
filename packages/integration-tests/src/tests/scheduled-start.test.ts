@@ -4,13 +4,13 @@
  *  once, and the window is generous (starts a minute ago, ends in 10). */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startMockController, type MockController } from '@ezplayer/epp-moc-controller';
+import { startMockController, type MockController } from '@ezplayer/epp-mock-controller';
 import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
 import { FppClient } from '../harness/fpp-client.js';
 import { createFixtureShow, type FixtureShow } from '../fixtures/showfolder.js';
 import { buildFseq } from '../fixtures/fseq.js';
 
-let moc: MockController;
+let mock: MockController;
 let show: FixtureShow;
 let app: EzPlayerProc;
 let fpp: FppClient;
@@ -26,7 +26,7 @@ function ymd(d: Date): string {
 }
 
 beforeAll(async () => {
-    moc = await startMockController({ channels: 150, ddpPort: 4048 });
+    mock = await startMockController({ channels: 150, ddpPort: 4048 });
     show = await createFixtureShow({ channels: 150 });
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
@@ -41,7 +41,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
     await app?.stop();
-    await moc?.stop();
+    await mock?.stop();
     await show?.cleanup();
 });
 
@@ -76,8 +76,8 @@ describe('scheduled start', () => {
         expect(playing.current_playlist.playlist).toBe('Nightly');
         expect(playing.current_sequence).toBe('Sched.fseq');
 
-        await moc.ddp.waitForFrames(10, { timeoutMs: 20_000 });
-        expect(Array.from(moc.ddp.channelRange(0, 3))).toEqual([77, 77, 77]);
+        await mock.ddp.waitForFrames(10, { timeoutMs: 20_000 });
+        expect(Array.from(mock.ddp.channelRange(0, 3))).toEqual([77, 77, 77]);
 
         // Clear the schedule -> playback should wind down
         expect((await fpp.putSchedule([])).status).toBe(200);

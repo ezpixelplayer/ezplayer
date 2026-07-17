@@ -1,5 +1,5 @@
-// earlycli MUST stay the first import: its module body applies --user-data-dir
-// before showfolder/webport/ipcautoupdate construct their electron-stores.
+// earlycli must stay the first import: it applies --user-data-dir before
+// showfolder/webport/ipcautoupdate construct their electron-stores.
 import { cliUsage, getUnknownVerb, isHeadless } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker } from 'node:worker_threads';
@@ -34,6 +34,11 @@ import os from 'os';
 // Linux: Ubuntu 24.04+ AppArmor blocks unprivileged user namespaces; older distros lack SUID sandbox helper.
 if (process.platform === 'linux') {
     app.commandLine.appendSwitch('no-sandbox');
+    if (isHeadless()) {
+        // Boot Chromium without a display server (no X11/Wayland/xvfb needed).
+        app.commandLine.appendSwitch('ozone-platform', 'headless');
+        app.commandLine.appendSwitch('disable-gpu');
+    }
 }
 
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
@@ -276,22 +281,19 @@ async function startPlaybackWorker(): Promise<Worker> {
     return worker;
 }
 
-/** The `headless` verb: full player (playback, server, cloud, output, web/cloud
- *  audio) with zero BrowserWindows. Anything that would have raised a dialog is
- *  a fail-fast stderr message + exit code instead. */
+/** The `headless` verb: full player, zero BrowserWindows, dialogs become
+ *  fail-fast exit codes. */
 async function startHeadless() {
     const resolved = await ensureExclusiveFolderHeadless();
     if ('error' in resolved) {
         console.error(`EZPlayer headless: ${resolved.error}`);
-        // app.exit, not app.quit: quit() always exits 0, and nothing (workers,
-        // folder lock) has been acquired yet that would need before-quit cleanup.
+        // app.quit() always exits 0; nothing needs before-quit cleanup yet
         app.exit(resolved.exitCode);
         return;
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
-    // persist:false — a headless run's CLI ports are for this run only, never
-    // written into the interactive install's preferences.
+    // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });
     const kioskPortInfo = getKioskPort({ persist: false });
 
@@ -300,9 +302,7 @@ async function startHeadless() {
     registerFileListHandlers();
     await registerContentHandlers(null, null, playWorker);
 
-    // Signals are the only way out of a windowless run. Mirror the windowed
-    // exit-confirm's cleanup path: stop playback, then app.quit() so
-    // 'before-quit' shuts down workers and releases the show-folder lock.
+    // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
     const shutdown = (signal: NodeJS.Signals) => {
         if (isQuitting) return;
         isQuitting = true;
@@ -329,9 +329,7 @@ async function startHeadless() {
         console.error(e);
     }
 
-    // With no renderer, nothing sends ipcUIConnect — load the show content
-    // (sequences/playlists/schedule → playback worker, caches → server worker)
-    // ourselves.
+    // No renderer to send ipcUIConnect — load the show content ourselves.
     await loadShowFolder();
     console.log(`EZPlayer headless: ready on web port ${portInfo.port}`);
 }

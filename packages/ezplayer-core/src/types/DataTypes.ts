@@ -174,9 +174,7 @@ export interface PlayerPStatusContent {
         | 'Down'; // FPP: offline / unreachable
 
     reported_time: number;
-    /** Playback-engine clock at status time. Tracks wall clock while playing
-     *  but FREEZES during pause — use it for elapsed-time math that must not
-     *  drift while paused (reported_time keeps advancing with each push). */
+    /** Engine clock at status time; freezes during pause (reported_time doesn't). */
     engine_time?: number;
     now_playing?: PlayingItem;
     upcoming?: PlayingItem[];

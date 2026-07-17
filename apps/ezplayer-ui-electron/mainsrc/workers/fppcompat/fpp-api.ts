@@ -94,7 +94,6 @@ function statusSources(deps: FppApiDeps): FppStatusSources {
 export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void {
     const cmdDeps: FppCommandDeps = {
         sendPlayerCommand: deps.sendPlayerCommand,
-        getPStatus: deps.getPStatus,
         getPlaylists: deps.getPlaylists,
         getSequences: deps.getSequences,
     };
@@ -339,14 +338,9 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         ctx.body = { status: 'OK', method: 'EZPlayer', volume: Math.round(deps.getPStatus()?.volume?.level ?? 100) };
     });
 
-    router.post('/api/system/volume', async (ctx) => {
-        const v = Number((ctx.request.body as any)?.volume);
-        if (!Number.isFinite(v)) {
-            ctx.status = 400;
-            ctx.body = { status: 'error', error: 'volume required' };
-            return;
-        }
-        await deps.sendPlayerCommand({ command: 'setvolume', volume: Math.max(0, Math.min(100, Math.round(v))) });
-        ctx.body = { status: 'OK', volume: Math.max(0, Math.min(100, Math.round(v))) };
+    // Volume writes are settings/schedule-driven in EZPlayer; see fpp-commands.ts.
+    router.post('/api/system/volume', (ctx) => {
+        ctx.status = 500;
+        ctx.body = { status: 'error', error: 'Volume is schedule/settings-driven in EZPlayer; set it via playback settings' };
     });
 }

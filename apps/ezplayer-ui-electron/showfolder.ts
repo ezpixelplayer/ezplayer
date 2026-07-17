@@ -277,17 +277,14 @@ export interface HeadlessFolderError {
     exitCode: 2 | 3;
 }
 
-/** Headless counterpart of ensureExclusiveFolder(): same CLI/persisted
- *  resolution and locking, but every dialog becomes an error return, and the
- *  resolved folder is deliberately NOT persisted — a headless run must never
- *  rewrite the interactive install's configured show folder. */
+/** ensureExclusiveFolder() minus dialogs: errors return instead of prompting,
+ *  and the resolved folder is not persisted. */
 export async function ensureExclusiveFolderHeadless(): Promise<{ folder: string } | HeadlessFolderError> {
     if (currentShowFolder) return { folder: currentShowFolder };
 
     const cli = parseCliForShowFolder(process.argv);
     let candidate: string | undefined;
     if (cli !== undefined) {
-        // An explicit CLI folder that is missing is an error, not a fallthrough.
         if (!(await dirExists(cli))) {
             return { error: `Show folder does not exist or is not accessible: ${cli}`, exitCode: 2 };
         }

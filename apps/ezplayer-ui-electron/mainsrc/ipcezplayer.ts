@@ -427,10 +427,8 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     return filtered;
 }
 
-/** Sequence upsert with path fix-up and FSEQ-duration fill-in — shared by the
- *  renderer IPC (ipcPutCloudSequences) and the server worker's
- *  POST /api/sequences RPC. API clients send show-relative file names and may
- *  omit ids; renderer records arrive absolute and fully formed. */
+/** Sequence upsert shared by the renderer IPC and the server-worker RPC.
+ *  API clients may send show-relative file names and omit ids. */
 export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
     const uppl = recs.map((r) => {
@@ -450,8 +448,7 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             }
         }
         if (!ups?.work?.length && ups.files?.fseq) {
-            // Best-effort: a corrupt/unreadable fseq shouldn't fail the whole
-            // upsert — the record lands with length 0 and can be fixed later.
+            // best-effort: a corrupt fseq shouldn't fail the whole upsert
             try {
                 const fseq = new FSEQReaderAsync(ups.files.fseq);
                 await fseq.open();

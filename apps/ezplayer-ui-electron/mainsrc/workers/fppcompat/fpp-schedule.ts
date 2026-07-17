@@ -1,20 +1,10 @@
 /**
- * FPP schedule translators — FPP schedule.json entries ⇄ EZPlayer
- * ScheduledPlaylist records.
- *
- * EZPlayer's engine consumes ONE DATED OCCURRENCE per record (`date` +
- * `fromTime`/`toTime`); recurring schedules are materialized per-day by the
- * writer (exactly what the desktop scheduler UI does, with `baseScheduleId`
- * grouping and `recurrenceRule` metadata). FPP entries are recurring rules, so
- * ingest materializes them across a bounded horizon (MATERIALIZE_DAYS from
- * today — FPP's customary endDate of 2099-12-31 would otherwise create tens of
- * thousands of records), and egress collapses each baseScheduleId group back
- * into a single FPP entry.
- *
- * FPP `day` codes (src/Scheduler.h): 0-6 = Sun..Sat, 7 everyday, 8 weekdays,
- * 9 weekend, 10 Mon/Wed/Fri, 11 Tue/Thu, 12 Sun-Thu, 13 Fri/Sat,
- * 14 odd / 15 even (unsupported here), and 0x10000|mask with per-day bits
- * (Sunday 0x4000 down to Saturday 0x0100).
+ * FPP schedule.json ⇄ ScheduledPlaylist. The engine consumes one dated
+ * occurrence per record, so ingest materializes FPP's recurring entries
+ * per-day out to MATERIALIZE_DAYS (as the scheduler UI does, grouped by
+ * baseScheduleId); egress collapses each group back to one FPP entry.
+ * FPP day codes are from src/Scheduler.h (0-6 Sun..Sat, 7 daily, 8 weekdays,
+ * 9 weekend, 10 M/W/F, 11 Tu/Th, 12 Sun-Thu, 13 Fri/Sat, 0x10000|bitmask).
  */
 
 import * as crypto from 'crypto';

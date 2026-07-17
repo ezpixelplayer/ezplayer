@@ -2,16 +2,9 @@ import { app } from 'electron';
 import * as path from 'path';
 
 /**
- * Early CLI parsing. This module's side effects MUST run before any
- * electron-store construction (showfolder.ts, webport.ts, ipcautoupdate.ts all
- * build Stores at import time), so it has to be the first import of main.ts —
- * `--user-data-dir=` redirects everything those Stores persist.
- *
- * CLI shape: an optional verb as the first argument, then flags.
- *   EZPlayer.exe [<verb>] [--flags...]
- *   electron dist/main.js [<verb>] [--flags...]
- * No verb = the windowed GUI app, exactly as before. Squirrel/Chromium noise
- * arguments are all dash-prefixed, so they can never be mistaken for a verb.
+ * Early CLI parsing: an optional verb as the first argument, then flags.
+ * Must be main.ts's first import — `--user-data-dir=` has to apply before
+ * showfolder/webport/ipcautoupdate construct their electron-stores.
  */
 
 const KNOWN_VERBS = ['headless'] as const;
@@ -64,8 +57,7 @@ export function cliUsage(): string {
     ].join('\n');
 }
 
-// --user-data-dir: redirect userData/sessionData/logs so a headless or test
-// instance never touches (or poisons) the interactive install's state.
+// --user-data-dir: redirect userData/sessionData/logs (isolated test/second instances)
 const udArg = process.argv.find((a) => a.startsWith('--user-data-dir='));
 if (udArg) {
     const dir = path.resolve(udArg.substring('--user-data-dir='.length));

@@ -2,13 +2,13 @@
  *  frames arrive at the mock controller with the expected channel data. */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startMockController, type MockController } from '@ezplayer/epp-moc-controller';
+import { startMockController, type MockController } from '@ezplayer/epp-mock-controller';
 import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
 import { FppClient } from '../harness/fpp-client.js';
 import { createFixtureShow, type FixtureShow } from '../fixtures/showfolder.js';
 import { buildFseq } from '../fixtures/fseq.js';
 
-let moc: MockController;
+let mock: MockController;
 let show: FixtureShow;
 let app: EzPlayerProc;
 let fpp: FppClient;
@@ -16,7 +16,7 @@ let fpp: FppClient;
 beforeAll(async () => {
     // The player's DDP sender targets the controller IP on the fixed DDP port,
     // so the mock must own 4048 (vitest runs these files sequentially).
-    moc = await startMockController({ channels: 150, ddpPort: 4048 });
+    mock = await startMockController({ channels: 150, ddpPort: 4048 });
     show = await createFixtureShow({ channels: 150 });
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
@@ -31,7 +31,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
     await app?.stop();
-    await moc?.stop();
+    await mock?.stop();
     await show?.cleanup();
 });
 
@@ -53,9 +53,9 @@ describe('playback', () => {
         expect(typeof later.milliseconds_elapsed).toBe('number');
 
         // Real light data arrives: ~20fps push frames carrying the fixture value
-        await moc.ddp.waitForFrames(20, { timeoutMs: 20_000 });
-        expect(Array.from(moc.ddp.channelRange(0, 3))).toEqual([42, 42, 42]);
-        expect(Array.from(moc.ddp.channelRange(147, 3))).toEqual([42, 42, 42]);
+        await mock.ddp.waitForFrames(20, { timeoutMs: 20_000 });
+        expect(Array.from(mock.ddp.channelRange(0, 3))).toEqual([42, 42, 42]);
+        expect(Array.from(mock.ddp.channelRange(147, 3))).toEqual([42, 42, 42]);
     });
 
     it('pause freezes elapsed; resume unfreezes', async () => {
@@ -70,9 +70,10 @@ describe('playback', () => {
         await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'resumed' });
     });
 
-    it('Volume Set is reflected in status', async () => {
-        expect((await fpp.command('Volume Set', 37)).status).toBe(200);
-        await fpp.waitForStatus((s) => s.volume === 37, { label: 'volume 37', timeoutMs: 10_000 });
+    it('volume is readable but not writable (settings-driven)', async () => {
+        expect((await fpp.command('Volume Set', 37)).status).toBe(404);
+        const vol = (await (await fetch(`${app.base}/api/system/volume`)).json()) as { volume: number };
+        expect(typeof vol.volume).toBe('number');
     });
 
     it('Stop Now goes idle and output goes dark', async () => {
@@ -88,7 +89,7 @@ describe('playback', () => {
         // silence) — assert the data goes dark rather than the wire quiet.
         const deadline = Date.now() + 20_000;
         for (;;) {
-            const f = moc.ddp.lastFrame();
+            const f = mock.ddp.lastFrame();
             if (f && f.channels.every((b) => b === 0)) break;
             if (Date.now() > deadline) throw new Error('output never went dark after Stop Now');
             await new Promise((r) => setTimeout(r, 250));

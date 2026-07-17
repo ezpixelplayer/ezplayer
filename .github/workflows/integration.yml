@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -33,8 +33,12 @@ jobs:
       - name: Build app main process
         run: pnpm --filter ezplayer-ui-electron build:tsc
 
+      - name: Run app unit tests
+        run: pnpm --filter ezplayer-ui-electron test
+
       - name: Run integration tests
-        # Electron needs a display stack even windowless.
+        # headless mode passes --ozone-platform=headless; xvfb stays as a
+        # belt-and-suspenders until a dispatch run proves it unnecessary.
         run: xvfb-run -a pnpm --filter @ezplayer/integration-tests test
 
       - name: Upload EZPlayer logs on failure

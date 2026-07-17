@@ -1,12 +1,8 @@
 /**
- * FPP-compat status/identity translators — pure functions over EZPlayer's
- * cached state so they unit-test without Koa or workers.
- *
- * Field names AND types mirror FPP exactly (src/httpAPI.cpp
- * GetCurrentFPPDStatus): `index`/`count`/`seconds_played`/`seconds_elapsed`/
- * `seconds_remaining` are STRINGS; `milliseconds_elapsed`/`mode`/`status`/
- * `volume` are INTS; times are `MM:SS` (`HH:MM:SS` at >= 1h). Integrators
- * branch on these shapes — do not "fix" them.
+ * FPP-compat status/identity translators — pure functions over cached state.
+ * Field names AND types mirror FPP (src/httpAPI.cpp): index/count/seconds_*
+ * are strings, milliseconds_elapsed/mode/status/volume are ints, times are
+ * MM:SS. Integrators depend on these shapes — do not "fix" them.
  */
 
 import * as path from 'path';
@@ -22,8 +18,7 @@ export const FPP_STATUS = {
     PAUSED: 5,
 } as const;
 
-/** Advertised FPP compatibility level. The real EZPlayer version rides in the
- *  suffix; integrators that parseFloat()/majorVersion-check see a modern FPP. */
+/** Advertised FPP compat level; the real EZPlayer version rides in the suffix. */
 export const FPP_COMPAT_MAJOR = 8;
 export const FPP_COMPAT_MINOR = 0;
 export function fppCompatVersion(appVersion: string): string {
@@ -103,8 +98,7 @@ export function buildFppStatus(src: FppStatusSources, identity: FppIdentity, now
     let repeatMode = '0';
 
     if (np) {
-        // Scheduled items carry a schedule_id but no playlist_id — resolve the
-        // playlist through the schedule record.
+        // scheduled items carry schedule_id, not playlist_id
         let playlistId = np.playlist_id;
         if (!playlistId && np.schedule_id) {
             playlistId = src.schedule?.find((s) => s.id === np.schedule_id)?.playlistId;
@@ -129,9 +123,7 @@ export function buildFppStatus(src: FppStatusSources, identity: FppIdentity, now
         if (np.until !== undefined) {
             secondsRemaining = Math.max(0, (np.until - clock) / 1000);
         }
-        // `until` is the honest anchor: the engine readout re-clamps `at` to its
-        // current time on every push, so elapsed is derived from the end
-        // (duration - remaining) whenever the item's duration is known.
+        // elapsed = duration - remaining: the readout re-clamps `at` each push; `until` is honest
         const durationSec = seq?.work?.length;
         if (durationSec && np.until !== undefined) {
             secondsPlayed = Math.min(durationSec, Math.max(0, durationSec - secondsRemaining));

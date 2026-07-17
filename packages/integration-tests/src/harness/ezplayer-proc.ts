@@ -70,12 +70,12 @@ export async function startEzPlayer(showFolder: string, opts?: { port?: number }
             throw new Error(`EZPlayer exited with code ${child.exitCode} during startup (log: ${logFile})`);
         }
         try {
-            const res = await fetch(`${base}/api/hello`, { signal: AbortSignal.timeout(2000) });
+            const res = await fetch(`${base}/api/ezp/hello`, { signal: AbortSignal.timeout(2000) });
             if (res.ok) break;
         } catch {}
         if (Date.now() > deadline) {
             killTree(child);
-            throw new Error(`EZPlayer did not answer /api/hello within 45s (log: ${logFile})`);
+            throw new Error(`EZPlayer did not answer /api/ezp/hello within 45s (log: ${logFile})`);
         }
         await new Promise((r) => setTimeout(r, 500));
     }

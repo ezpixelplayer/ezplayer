@@ -278,8 +278,6 @@ function sendPlayerStateUpdate() {
             muted,
         },
     };
-    // Engine clock at status time — freezes during pause, unlike reported_time,
-    // so elapsed-time consumers (FPP-compat status) can stay exact while paused.
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
         const group = ps.curPLActions;
@@ -615,15 +613,6 @@ function sendEzvcUpdate() {
 // a 200ms gap moves ~20%, a 50ms gap ~5%, and a full 0-100 swing takes ~1s.
 const VOLUME_SLEW_INTERVAL_MS = 10;
 let lastVolCheck: number = Date.now();
-
-/** Manual volume set (setvolume command from UI/API/FPP-compat). Holds against
- *  the settings-driven target until either new settings arrive or a volume
- *  schedule entry (re)activates — scheduled volume wins at its boundary, but a
- *  manual set DURING a scheduled window sticks for that window. Without this,
- *  the slew loop walks every setvolume straight back to defaultVolume. */
-let interactiveVolume: number | undefined = undefined;
-let lastActiveVolSchedId: string | undefined = undefined;
-
 function doVolumeAdjust(dn: number) {
     const settings = latestSettings;
     if (!settings || !settings.volumeControl) {
@@ -631,12 +620,8 @@ function doVolumeAdjust(dn: number) {
         return;
     }
     const volsched = getActiveVolumeSchedule(settings.volumeControl);
-    if (volsched?.id !== lastActiveVolSchedId) {
-        lastActiveVolSchedId = volsched?.id;
-        if (volsched) interactiveVolume = undefined; // schedule boundary overrides a manual set
-    }
-    let tgtvol = interactiveVolume ?? settings.volumeControl.defaultVolume ?? 100;
-    if (volsched && interactiveVolume === undefined) {
+    let tgtvol = settings.volumeControl.defaultVolume ?? 100;
+    if (volsched) {
         tgtvol = volsched.volumeLevel;
     }
 
@@ -665,8 +650,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-                // A play command can arrive between a schedupdate message and its
-                // install in the loop — the pending data is strictly newer.
+                // pendingSchedule (not yet installed by the loop) is newer than curSequences
                 const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
                 const seq = liveSequences?.find((s) => s.id === cmd.songId);
                 if (!seq) {
@@ -711,7 +695,6 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'setvolume': {
             if (cmd?.volume !== undefined) {
                 volume = cmd.volume;
-                interactiveVolume = cmd.volume; // hold against the settings slew target
             }
             if (cmd.mute !== undefined) {
                 muted = cmd.mute;
@@ -752,7 +735,6 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playplaylist':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
-                // Same schedupdate race as playsong: prefer pending data.
                 const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
                 const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
                 if (!pl) {
@@ -983,7 +965,6 @@ let rfConfigInitialized = false;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
-    interactiveVolume = undefined; // explicit settings change reclaims volume control
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1132,10 +1113,7 @@ const playbackStatsAgg: OverallFrameSendStats = {
 ///////
 // Clockkeeping
 const rtcConverter = new ClockConverter('mrtc', 0, performance.now());
-// Seed immediately: computeTime() returns the constructor base (0!) until the
-// first poll-interval sample lands. processQueue latches its frame clock from
-// computeTime at entry, so a show folder that loads within the first poll tick
-// (headless startup does) froze playback at epoch 0 without this.
+// Seed now — computeTime() returns 0 until the first sample arrives.
 rtcConverter.addSample(Date.now(), performance.now());
 
 const _pollTimes = setInterval(async () => {
@@ -1766,9 +1744,7 @@ async function processQueue() {
 
             const curPN = performance.now();
 
-            // Safety net: never let the frame clock fall unrecoverably behind
-            // real time (a mis-latched clock base would otherwise leave the
-            // idle path crawling forward 200ms per iteration from epoch 0).
+            // Resync the frame clock if it falls well behind real time.
             const wallRTC = rtcConverter.computeTime(curPN);
             if (targetFrameRTC < wallRTC - 5000) {
                 emitWarning(

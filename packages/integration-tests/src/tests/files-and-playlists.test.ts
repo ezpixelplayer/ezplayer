@@ -37,7 +37,7 @@ describe('file API', () => {
         expect(Buffer.from(back).equals(fseqA)).toBe(true);
 
         // EZP-native registration fills duration from the FSEQ header
-        const reg = await fetch(`${app.base}/api/sequences`, {
+        const reg = await fetch(`${app.base}/api/ezp/sequences`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify([{ files: { fseq: 'SongA.fseq' }, work: { title: 'Song A', artist: '', length: 0 } }]),

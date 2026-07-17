@@ -78,7 +78,7 @@ export class FppClient {
     }
 
     async ezpCommand(cmd: Record<string, unknown>): Promise<Response> {
-        return fetch(`${this.base}/api/player-command`, {
+        return fetch(`${this.base}/api/ezp/player-command`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(cmd),
@@ -86,7 +86,7 @@ export class FppClient {
     }
 
     async currentShow(): Promise<Record<string, any>> {
-        return (await fetch(`${this.base}/api/current-show`)).json() as Promise<Record<string, any>>;
+        return (await fetch(`${this.base}/api/ezp/current-show`)).json() as Promise<Record<string, any>>;
     }
 
     /** Poll status until pred passes (or throw at timeout). Returns the status. */

@@ -11,7 +11,7 @@
     },
     "devDependencies": {
         "@ezplayer/epp": "workspace:*",
-        "@ezplayer/epp-moc-controller": "file:..\\..\\libs\\ezplayer-epp-moc-controller-0.0.1-dev.1.tgz",
+        "@ezplayer/epp-mock-controller": "file:..\\..\\libs\\ezplayer-epp-mock-controller-0.0.1-dev.2.tgz",
         "@types/node": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:"

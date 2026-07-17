@@ -1293,8 +1293,7 @@ export interface InteractivePlayCommand {
     playlistId?: string;
     scheduleId?: string;
     requestId: string;
-    /** Playlist play only: loop the main section until stopped (bounded by the
-     *  interactive item's 24h schedEnd) instead of a single pass. */
+    /** Playlist play only: loop the main section instead of a single pass. */
     loop?: boolean;
 }
 

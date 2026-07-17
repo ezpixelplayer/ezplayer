@@ -5,7 +5,7 @@
  * asset path — `objFile`, `imageFile`, MTL-referenced texture, etc. — into a fetchable URL.
  * Where those bytes live depends on hosting:
  *
- *  - Local Koa (Electron / local browser): bytes come from disk, served via `/api/show-file?path=…`.
+ *  - Local Koa (Electron / local browser): bytes come from disk, served via `/api/ezp/show-file?path=…`.
  *  - Cloud-hosted EZP / FSEQ-only browser preview: there is no local Koa, so bytes come from
  *    the layout zip the caller has already downloaded and unpacked into blob URLs.
  *
@@ -21,7 +21,7 @@
 export type AssetResolver = (path: string) => string | null;
 
 /**
- * Resolver that builds `frameServerUrl/api/show-file?path=…` URLs. Used in local-Koa hosting
+ * Resolver that builds `frameServerUrl/api/ezp/show-file?path=…` URLs. Used in local-Koa hosting
  * (Electron / local browser) where the show folder is served by the host. Returns a no-op
  * resolver when `frameServerUrl` is missing, so callers can pass through their optional
  * frameServerUrl prop without guarding.
@@ -29,14 +29,14 @@ export type AssetResolver = (path: string) => string | null;
  * `frameServerUrl` may be either an absolute URL (`http://localhost:3001`, Electron) or a
  * path-only base (`/api/enduserspa/proxy/<token>`, cloud SPA). `new URL()` rejects the latter
  * with `TypeError: Invalid base URL`, so we build via string concatenation — the same shape
- * `useImageUrl` uses for `/api/getimage`.
+ * `useImageUrl` uses for `/api/ezp/getimage`.
  */
 export function createShowFileResolver(frameServerUrl: string | undefined): AssetResolver {
     if (!frameServerUrl) return () => null;
     const base = frameServerUrl.replace(/\/+$/, '');
     return (path) => {
         if (!path) return null;
-        return `${base}/api/show-file?path=${encodeURIComponent(path)}`;
+        return `${base}/api/ezp/show-file?path=${encodeURIComponent(path)}`;
     };
 }
 

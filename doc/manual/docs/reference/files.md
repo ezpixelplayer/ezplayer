@@ -137,7 +137,7 @@ envelope), pretty-printed with 2-space indentation:
 }
 ```
 
-This is the same shape as the [`POST /api/playback-settings`](./api.md) body. A
+This is the same shape as the [`POST /api/ezp/playback-settings`](./api.md) body. A
 missing or empty file falls back to these defaults.
 
 ### `playbackSettingsCloudMeta.json`
@@ -208,8 +208,8 @@ which is the contract: one writer at a time.
   same atomic path:
     - `POST /api/ezp/playlists` — replace playlists
     - `POST /api/ezp/schedules` — replace the schedule
-    - `POST /api/playback-settings` — update volume / viewer control / jukebox / audio sync / blend
-    - `POST /api/player-command` — transport and request control (play, stop, queue, volume, …)
+    - `POST /api/ezp/playback-settings` — update volume / viewer control / jukebox / audio sync / blend
+    - `POST /api/ezp/player-command` — transport and request control (play, stop, queue, volume, …)
 
     See the [REST Interface (HTTP API)](./api.md) for the full surface.
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { EZPlayerCommand, PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { runFppCommand, type FppCommandDeps } from './fpp-commands';
+import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands';
 
-function makeDeps(volume = 70): { deps: FppCommandDeps; sent: EZPlayerCommand[] } {
+function makeDeps(): { deps: FppCommandDeps; sent: EZPlayerCommand[] } {
     const sent: EZPlayerCommand[] = [];
     const playlists: PlaylistRecord[] = [
         { id: 'pl1', title: 'Main Show', tags: [], createdAt: 0, items: [{ id: 'seq1', sequence: 1 }] },
@@ -17,7 +17,6 @@ function makeDeps(volume = 70): { deps: FppCommandDeps; sent: EZPlayerCommand[] 
     ];
     const deps: FppCommandDeps = {
         sendPlayerCommand: (cmd) => void sent.push(cmd),
-        getPStatus: () => ({ ptype: 'EZP', status: 'Playing', reported_time: 0, volume: { level: volume } }),
         getPlaylists: () => playlists,
         getSequences: () => sequences,
     };
@@ -63,22 +62,24 @@ describe('runFppCommand', () => {
         expect(sent.map((c) => c.command)).toEqual(['stopnow', 'stopgraceful', 'pause', 'resume', 'endsong']);
     });
 
-    it('volume set/increase/decrease clamp and use cached level', async () => {
-        const { deps, sent } = makeDeps(95);
-        await runFppCommand('Volume Set', ['150'], deps);
-        await runFppCommand('Volume Increase', ['10'], deps);
-        await runFppCommand('Volume Decrease', ['200'], deps);
-        expect(sent).toEqual([
-            { command: 'setvolume', volume: 100 },
-            { command: 'setvolume', volume: 100 }, // 95+10 clamped
-            { command: 'setvolume', volume: 0 }, // 95-200 clamped
-        ]);
+    it('volume commands are not honored (settings/schedule own volume)', async () => {
+        const { deps, sent } = makeDeps();
+        expect((await runFppCommand('Volume Set', ['50'], deps)).status).toBe(404);
+        expect((await runFppCommand('Volume Increase', ['10'], deps)).status).toBe(404);
+        expect(sent.length).toBe(0);
     });
 
     it('unknown command 404s, Prev is a 500 not-supported', async () => {
         const { deps } = makeDeps();
         expect((await runFppCommand('Launch Confetti', [], deps)).status).toBe(404);
         expect((await runFppCommand('Prev Playlist Item', [], deps)).status).toBe(500);
+    });
+
+    it('descriptors come from the same table as the handlers', async () => {
+        const { deps } = makeDeps();
+        for (const d of fppCommandDescriptors()) {
+            expect((await runFppCommand(d.name, ['Main Show'], deps)).status).not.toBe(404);
+        }
     });
 
     it('All Lights Off maps to stopnow', async () => {

@@ -39,7 +39,7 @@ export function getImageUrl(
 
     if (remoteImageUrl) return remoteImageUrl;
     // Id in query, not path: some hosting edges reject `%7C` in URL paths.
-    if (localImagePath && id) return `${apiBase}/api/getimage?id=${encodeURIComponent(id)}`;
+    if (localImagePath && id) return `${apiBase}/api/ezp/getimage?id=${encodeURIComponent(id)}`;
     return undefined;
 }
 

@@ -132,11 +132,11 @@ The HTTP listener serves:
 
 - **Web UI** — the embedded React app (same features as the LAN sidebar in the
   desktop app)
-- **REST API** — `GET /api/current-show`, `POST /api/player-command`, and
+- **REST API** — `GET /api/ezp/current-show`, `POST /api/ezp/player-command`, and
   other endpoints documented in the [API reference](../reference/api.md)
 - **WebSocket** — `ws://<show-pc-ip>:<port>/ws` for live player status, show
   data updates, and preview streaming
-- **Health check** — `GET /api/hello` returns a simple JSON message to verify
+- **Health check** — `GET /api/ezp/hello` returns a simple JSON message to verify
   the server is reachable
 
 No authentication is built into the LAN server — anyone on your local network who
@@ -165,7 +165,7 @@ restrict access at your router if needed.
 From any device on the LAN:
 
 ```
-http://<show-pc-ip>:<port>/api/hello
+http://<show-pc-ip>:<port>/api/ezp/hello
 ```
 
 You should see JSON like `{"message":"Hello from Koa + Electron!"}`.

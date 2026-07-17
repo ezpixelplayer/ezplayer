@@ -107,14 +107,14 @@ export interface Preview3DProps {
     layoutAssets?: Map<string, string>;
     /**
      * Optional view objects (mesh / image planes) parsed from rgbeffects. When supplied,
-     * Preview3D uses them directly and skips the `frameServerUrl/api/view-objects` fetch —
+     * Preview3D uses them directly and skips the `frameServerUrl/api/ezp/view-objects` fetch —
      * required for the cloud-only path where there is no Koa server. When omitted, falls
      * back to the show-server fetch (Electron / local browser).
      */
     viewObjects?: ViewObject[];
     /**
      * Optional DMX moving-head fixtures. Same role as `viewObjects` for the
-     * `frameServerUrl/api/moving-heads` fetch — supply when the caller has already extracted
+     * `frameServerUrl/api/ezp/moving-heads` fetch — supply when the caller has already extracted
      * them client-side (e.g. via `xllayoutcalcs.getAllMovingHeads`).
      */
     movingHeadFixtures?: MhFixtureInfo[];
@@ -445,7 +445,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 if (effectiveFrameServerUrl) {
                     // Use HTTP API (works in both Electron and browser — avoids IPC/RPC round-trip to playback worker)
                     try {
-                        const response = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates`);
+                        const response = await fetch(`${effectiveFrameServerUrl}/api/ezp/model-coordinates`);
                         if (response.ok) {
                             xmlCoords = await response.json();
                         }
@@ -457,7 +457,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Also fetch view objects (meshes like house models)
                     try {
-                        const viewObjectsResponse = await fetch(`${effectiveFrameServerUrl}/api/view-objects`);
+                        const viewObjectsResponse = await fetch(`${effectiveFrameServerUrl}/api/ezp/view-objects`);
                         if (viewObjectsResponse.ok) {
                             const viewObjs = await viewObjectsResponse.json();
                             if (Array.isArray(viewObjs)) {
@@ -470,7 +470,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Fetch layout settings (background image, preview dimensions)
                     try {
-                        const settingsResponse = await fetch(`${effectiveFrameServerUrl}/api/layout-settings`);
+                        const settingsResponse = await fetch(`${effectiveFrameServerUrl}/api/ezp/layout-settings`);
                         if (settingsResponse.ok) {
                             const settings = await settingsResponse.json();
                             if (settings && typeof settings === 'object') {
@@ -483,7 +483,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Fetch moving head fixture definitions
                     try {
-                        const mhResponse = await fetch(`${effectiveFrameServerUrl}/api/moving-heads`);
+                        const mhResponse = await fetch(`${effectiveFrameServerUrl}/api/ezp/moving-heads`);
                         if (mhResponse.ok) {
                             const mhFixtures = await mhResponse.json();
                             if (Array.isArray(mhFixtures)) {
@@ -496,7 +496,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Also fetch 2D-projected coordinates for the 2D viewer
                     try {
-                        const response2D = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates-2d`);
+                        const response2D = await fetch(`${effectiveFrameServerUrl}/api/ezp/model-coordinates-2d`);
                         if (response2D.ok) {
                             const xmlCoords2D = await response2D.json();
                             if (xmlCoords2D && Object.keys(xmlCoords2D).length > 0) {

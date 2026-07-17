@@ -43,7 +43,7 @@ EZPlayer) while keeping the shape FPP-parseable. The `uuid` persists in
 | GET    | `/api/commands` / `/api/commands/{Name}` | descriptors for the supported set |
 | GET    | `/api/playlist/{Name}/start[/{Repeat}[/{SchedProtected}]]` | convenience |
 | GET    | `/api/playlists/stop` `stopgracefully` `stopgracefullyafterloop` `pause` `resume` | convenience |
-| GET/POST | `/api/system/volume` | `{status, volume}` / body `{volume: n}` |
+| GET    | `/api/system/volume` | read-only: `{status, volume}` (volume writes are settings/schedule-driven) |
 
 Supported commands and their EZPlayer semantics:
 
@@ -56,7 +56,6 @@ Supported commands and their EZPlayer semantics:
 | `Pause Playlist` / `Resume Playlist` | Pause / resume |
 | `Next Playlist Item` | Skip to next item |
 | `Prev Playlist Item` | **Not supported** (500) |
-| `Volume Set/Increase/Decrease`, `Adjust Volume` | Sets player volume (0–100, clamped). A manual set holds until playback settings change or a volume schedule (re)activates. |
 | `All Lights Off` | Maps to an immediate stop |
 
 ## Playlists
@@ -117,8 +116,8 @@ end to end: listings (`GET /api/files/{dir}`), downloads
 ## Not implemented (404)
 
 MultiSync, OSC/Art-Net timecode output (planned follow-on), GPIO, effects,
-scripts, plugin management, system control (reboot/shutdown/update), channel
-output configuration, `/api/media/{name}/meta`. The one relocation on the
-EZPlayer side: the EZP-native bulk writes that used to live at
-`POST /api/playlists` / `POST /api/schedules` are now
-`POST /api/ezp/playlists` / `POST /api/ezp/schedules` (see [api.md](./api.md)).
+scripts, plugin management, system control (reboot/shutdown/update), volume
+writes (`POST /api/system/volume`, the `Volume *` commands — EZPlayer volume
+is settings/schedule-driven), channel output configuration, and
+`/api/media/{name}/meta`. EZPlayer's own API lives entirely under
+[`/api/ezp/*`](./api.md), so the two surfaces cannot collide.

@@ -126,10 +126,10 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return 'local-web-player';
     }
 
-    // Player commands - POST to /api/player-command
+    // Player commands - POST to /api/ezp/player-command
     async issuePlayerCommand(req: EZPlayerCommand): Promise<boolean> {
         try {
-            const response = await fetch(`${this.apiUrl}player-command`, {
+            const response = await fetch(`${this.apiUrl}ezp/player-command`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -152,7 +152,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async setPlayerSettings(s: PlaybackSettings): Promise<boolean> {
         try {
-            const response = await fetch(`${this.apiUrl}playback-settings`, {
+            const response = await fetch(`${this.apiUrl}ezp/playback-settings`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -184,7 +184,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
     }
 
     async postCloudSequences(data: SequenceRecord[]): Promise<SequenceRecord[]> {
-        const response = await fetch(`${this.apiUrl}sequences`, {
+        const response = await fetch(`${this.apiUrl}ezp/sequences`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

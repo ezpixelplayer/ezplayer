@@ -1,10 +1,6 @@
 /**
- * File-management HTTP API, FPP-shaped.
- *
- * Serves the show folder over HTTP so remote clients (embedded web UI, cloud,
- * FPP-ecosystem integrators) can list, download, upload, and delete show files
- * without native dialogs. Paths and response shapes mimic FPP's
- * www/api/controllers/files.php so FPP tooling works unchanged:
+ * File-management HTTP API over the show folder. Paths and response shapes
+ * mimic FPP's www/api/controllers/files.php so FPP tooling works unchanged:
  *   GET    /api/files/:dirName           list (?nameOnly=1 -> string array)
  *   GET    /api/file/:dirName/:name      download (?play=1 -> inline media)
  *   POST   /api/file/:dirName/:name      single-shot raw-body upload
@@ -16,17 +12,13 @@
  *   GET    /api/sequence/:name           download .fseq
  *   POST   /api/sequence/:name           raw-body .fseq upload
  *
- * EZPlayer-native additions (JSON bodies, registered on the shared router so
- * they sit behind jsonBody()):
- *   POST /api/sequences                  register SequenceRecords (RPC to main)
- *   POST /api/sequences/autodetect       find audio/metadata for an fseq
+ * EZPlayer-native additions (JSON bodies, behind jsonBody()):
+ *   POST /api/ezp/sequences                  register SequenceRecords (RPC to main)
+ *   POST /api/ezp/sequences/autodetect       find audio/metadata for an fseq
  *
- * EZP show folders are flat xLights folders, so every logical FPP directory
- * maps to the show root with an extension filter (table below — kept so
- * subdirectories could be adopted later without touching handlers).
- *
- * The raw-transfer router must be mounted BEFORE jsonBody() so upload bodies
- * are never consumed by the JSON parser regardless of content type.
+ * Show folders are flat, so each logical FPP directory is the show root plus
+ * an extension filter. This router must mount BEFORE jsonBody() so upload
+ * bodies are never consumed by the JSON parser.
  */
 
 import Router from '@koa/router';
@@ -60,8 +52,7 @@ const DIR_MAP: Record<string, { exts?: Set<string> }> = {
     uploads: {}, // unfiltered
 };
 
-/** Never writable/deletable through this API. (Dotfiles — .ezplayer/, the
- *  folder lock — are excluded wholesale by checkName.) */
+/** Never writable/deletable here (dotfiles are excluded wholesale by checkName). */
 const PROTECTED_NAMES = new Set(['xlights_rgbeffects.xml', 'xlights_networks.xml']);
 
 const MAX_UPLOAD_BYTES = (() => {
@@ -103,7 +94,7 @@ function checkName(name: string | undefined): string | null {
 }
 
 /** Resolve name inside the show folder with a case-insensitive prefix check
- *  (mirrors the /api/show-file guard; Windows paths compare lowercased). */
+ *  (mirrors the /api/ezp/show-file guard; Windows paths compare lowercased). */
 function resolveInShow(showFolder: string, name: string): string | null {
     const root = path.resolve(showFolder);
     const resolved = path.resolve(root, name);
@@ -182,9 +173,7 @@ interface ChunkSession {
     lastActivity: number;
 }
 
-// Keyed by `${dirKey}:${fileName}` — FPP's PATCH carries no session id, only
-// Upload-Name headers, so concurrent uploads of different files coexist and
-// re-uploading the same name at offset 0 restarts the session.
+// Keyed by dir:file — FPP's PATCH carries no session id, only Upload-Name.
 const chunkSessions = new Map<string, ChunkSession>();
 
 async function dropSession(key: string): Promise<void> {
@@ -534,7 +523,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
 
 /** EZP-native JSON routes — registered on the shared router (behind jsonBody). */
 export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): void {
-    router.post('/api/sequences', async (ctx) => {
+    router.post('/api/ezp/sequences', async (ctx) => {
         const recs = ctx.request.body;
         if (!Array.isArray(recs)) {
             ctx.status = 400;
@@ -550,7 +539,7 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
         }
     });
 
-    router.post('/api/sequences/autodetect', async (ctx) => {
+    router.post('/api/ezp/sequences/autodetect', async (ctx) => {
         const showFolder = deps.getShowFolder();
         if (!showFolder) {
             ctx.status = 400;

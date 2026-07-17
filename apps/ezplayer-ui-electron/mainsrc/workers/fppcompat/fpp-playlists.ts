@@ -1,15 +1,6 @@
 /**
- * FPP playlist translators — FPP playlist JSON (files.php/playlist.php,
- * leadIn/mainPlaylist/leadOut with typed entries) ⇄ EZPlayer PlaylistRecord
- * (a flat ordered list of sequence refs).
- *
- * The mapping is intentionally lossy and documented in fpp-compat.md:
- *  - leadIn + mainPlaylist + leadOut flatten into one item list (EZP models
- *    pre/post shows at the schedule level, not inside playlists).
- *  - `sequence` / `both` entries resolve to a registered SequenceRecord by
- *    fseq basename or title (case-insensitive, extension optional).
- *  - audio-only `media` entries and `pause` entries are skipped with warnings.
- *  - nested `playlist` entries reject the request — not representable.
+ * FPP playlist JSON ⇄ EZPlayer PlaylistRecord. Intentionally lossy; the rules
+ * live in doc/manual/docs/reference/fpp-compat.md.
  */
 
 import * as path from 'path';
