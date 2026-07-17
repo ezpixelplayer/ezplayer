@@ -44,9 +44,7 @@ jobs:
         run: pnpm --filter ezplayer-ui-electron test
 
       - name: Run integration tests
-        # headless mode passes --ozone-platform=headless; xvfb stays as a
-        # belt-and-suspenders until a dispatch run proves it unnecessary.
-        run: xvfb-run -a pnpm --filter @ezplayer/integration-tests test
+        run: pnpm --filter @ezplayer/integration-tests test
 
       - name: Upload EZPlayer logs on failure
         if: failure()
