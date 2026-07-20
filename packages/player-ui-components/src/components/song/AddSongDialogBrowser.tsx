@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 
-import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
+import {
+    Autocomplete,
+    Button,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    Divider,
+    Grid,
+    LinearProgress,
+    Typography,
+} from '@mui/material';
 import { Box } from '../box/Box';
 
 import { FileButton, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
@@ -43,6 +53,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
     const [needValidMp3File, setNeedValidMp3File] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadingName, setUploadingName] = useState<string | null>(null);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -122,6 +133,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
      *  run and Save is a pure metadata commit. */
     const uploadPicked = async (file: File): Promise<boolean> => {
         setUploading(true);
+        setUploadingName(file.name);
         try {
             await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
             return true;
@@ -135,6 +147,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             return false;
         } finally {
             setUploading(false);
+            setUploadingName(null);
         }
     };
 
@@ -413,6 +426,14 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                     </Grid>
+                    {uploading && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginTop: 2 }}>
+                            <LinearProgress sx={{ flex: 1 }} />
+                            <Typography variant="caption" color="text.secondary">
+                                Uploading {uploadingName}…
+                            </Typography>
+                        </Box>
+                    )}
                     <Box
                         sx={{
                             display: 'flex',
