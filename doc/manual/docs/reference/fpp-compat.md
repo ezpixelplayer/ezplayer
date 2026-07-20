@@ -113,9 +113,24 @@ end to end: listings (`GET /api/files/{dir}`), downloads
 `Upload-Length` headers), deletes, `GET /api/media`, and
 `GET|POST /api/sequence/{name}`.
 
+## MultiSync (master)
+
+EZPlayer can act as an FPP MultiSync **master**: enable it under
+Settings → Player → Sync Output (or via playback settings,
+`sync: { multisync: { enabled, remotes } }`) and it sends the standard sync
+UDP packets (port 32320) that FPP and xSchedule remotes follow — sequence
+OPEN/START on begin, SYNC frames every ~16 frames (every frame for the first
+few so remotes lock on fast), and STOP on end/pause/idle. `remotes` is a list
+of `host[:port]`; an empty list broadcasts to the FPP multicast group
+239.70.80.80 (port and multicast address are overridable under Advanced).
+Media sync packets are not sent (audio plays on the master), and EZPlayer
+does not act as a sync *remote*. Default is **off** — sync-master is a
+topology decision; exactly one master should exist on a network.
+
 ## Not implemented (404)
 
-MultiSync, OSC/Art-Net timecode output (planned follow-on), GPIO, effects,
+MultiSync remote mode and the `/api/fppd/multiSyncSystems` inventory,
+OSC/Art-Net timecode output (planned follow-on), GPIO, effects,
 scripts, plugin management, system control (reboot/shutdown/update), volume
 writes (`POST /api/system/volume`, the `Volume *` commands — EZPlayer volume
 is settings/schedule-driven), channel output configuration, and

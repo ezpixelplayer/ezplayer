@@ -594,8 +594,8 @@ importers:
         specifier: workspace:*
         version: link:../epp
       '@ezplayer/epp-mock-controller':
-        specifier: file:..\..\libs\ezplayer-epp-mock-controller-0.0.1-dev.3.tgz
-        version: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.3.tgz
+        specifier: file:..\..\libs\ezplayer-epp-mock-controller-0.0.1-dev.4.tgz
+        version: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.2
@@ -1693,9 +1693,9 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.3.tgz':
-    resolution: {integrity: sha512-QqGx74nf4Sv+Aqqf9P+wr5JTBHOFyP9iBTxTZ2jliHw48b1oGqEYK2+6mr9i7dHMhV2dIYdGB06KLgBYFlbGUA==, tarball: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.3.tgz}
-    version: 0.0.1-dev.3
+  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz':
+    resolution: {integrity: sha512-teTzab6q27DqWFl8doLsbOvJoN63APelfxNFC3H9uB7hLOBIJTu2KOUORgiUB+/9oAB9Dr9ND87gvtQ+XjE87w==, tarball: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz}
+    version: 0.0.1-dev.4
     hasBin: true
 
   '@floating-ui/core@1.7.5':
@@ -6629,7 +6629,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.3.tgz': {}
+  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz': {}
 
   '@floating-ui/core@1.7.5':
     dependencies:

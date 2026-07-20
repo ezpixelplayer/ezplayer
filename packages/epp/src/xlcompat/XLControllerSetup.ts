@@ -71,7 +71,12 @@ export async function readControllersFromXlights(showdir: string, options?: Mode
     return { controllers: ctrls, models: osmodels };
 }
 
-export async function openControllersForDataSend(ctrls: ControllerState[]) {
+export interface OpenControllersOptions {
+    /** DDP destination port override (default 4048) — a testing/diagnostic knob. */
+    ddpPort?: number;
+}
+
+export async function openControllersForDataSend(ctrls: ControllerState[], opts?: OpenControllersOptions) {
     const job = new SendJob();
     for (const c of ctrls) {
         if (!c.setup.usable || !c.setup.proto || !c.xlRecord) {
@@ -87,6 +92,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[]) {
         if (c.setup.proto === 'DDP') {
             const dsender = new DDPSender();
             dsender.address = c.setup.address;
+            if (opts?.ddpPort) dsender.port = opts.ddpPort;
             dsender.pushAtEnd = false; // TODO try variety
             dsender.startChNum = xc.keepChannelNumbers ? xc.startch - 1 : 0;
             dsender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;

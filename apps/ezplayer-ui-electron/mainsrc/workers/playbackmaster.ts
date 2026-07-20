@@ -82,6 +82,8 @@ import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 import process from 'node:process';
 import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
+import { MultiSyncSender } from './multisync';
+import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
@@ -964,6 +966,7 @@ let rfConfigInitialized = false;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
+    multiSync.configure(settings.sync?.multisync);
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1157,6 +1160,7 @@ let isStopped = false;
 // processQueue detects this, breaks out of its loop, and the handler
 // starts a fresh processQueue that reinitializes controllers & frame buffer.
 let shouldRestart = false;
+const multiSync = new MultiSyncSender();
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
 // (folder change or an explicit forceRestart / "reload" from the UI) rather than a
@@ -1602,7 +1606,9 @@ async function processQueue() {
             await loadXmlCoordinates();
         }
 
-        const sendJob = await openControllersForDataSend(controllers);
+        const sendJob = await openControllersForDataSend(controllers, {
+            ddpPort: latestSettings?.advanced?.ddpPort,
+        });
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             concurrency: 10,
@@ -1700,6 +1706,7 @@ async function processQueue() {
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
                 sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
             }
@@ -1708,6 +1715,7 @@ async function processQueue() {
             // processQueue with new controllers and frame buffer.
             if (shouldRestart) {
                 emitInfo('Show folder changed - restarting processQueue');
+                multiSync.onIdle();
                 break;
             }
 
@@ -2142,6 +2150,7 @@ async function processQueue() {
                 emitFrameDebug(
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
+                multiSync.onIdle();
                 await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
 
@@ -2152,6 +2161,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
+                multiSync.onIdle();
                 await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
@@ -2212,6 +2222,7 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
+            multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,

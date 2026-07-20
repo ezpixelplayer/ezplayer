@@ -598,6 +598,34 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
     jukebox?: JukeboxSettings;
+    /** Outbound sync strategies for followers of this player. */
+    sync?: SyncOutputSettings;
+    /** Diagnostic/testing overrides; leave unset for normal operation. */
+    advanced?: AdvancedPlaybackSettings;
+}
+
+/** Each strategy is independent and gets its own sub-object; Art-Net, OSC,
+ *  and MIDI timecode are expected to join `multisync` here. */
+export interface SyncOutputSettings {
+    multisync?: MultisyncSettings;
+}
+
+/** FPP MultiSync master: send sequence open/start/frame/stop packets so FPP
+ *  or xSchedule remotes follow playback. */
+export interface MultisyncSettings {
+    enabled: boolean;
+    /** Unicast remotes as host[:port]; an empty list means multicast. */
+    remotes: string[];
+    /** Port for multicast and for remotes without an explicit :port (default 32320). */
+    port?: number;
+    /** Multicast group override (default 239.70.80.80). */
+    multicastAddress?: string;
+}
+
+export interface AdvancedPlaybackSettings {
+    /** DDP output port override (default 4048). Takes effect when controllers
+     *  reopen (show folder reload or player restart). */
+    ddpPort?: number;
 }
 
 /** The "playback" cloud-managed settings group — the part of PlaybackSettings
