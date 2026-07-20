@@ -12,7 +12,6 @@ export interface ServerWorkerData {
     indexPath?: string;
     kioskPort?: number;
     kioskPortSource?: string;
-    /** EZPlayer app version, for the FPP-compat identity endpoints. */
     appVersion?: string;
 }
 
@@ -81,7 +80,6 @@ export type MainToServerWorkerMessage =
 export interface ServerWorkerRPCAPI {
     updatePlaylistsHandler(playlists: unknown[]): Promise<unknown[]>;
     updateScheduleHandler(schedules: unknown[]): Promise<unknown[]>;
-    /** Sequence upsert (POST /api/sequences) — path fix-up + duration fill in main. */
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
