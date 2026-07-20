@@ -133,6 +133,10 @@ const playbackSettingsSlice = createSlice({
             );
         },
 
+        setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
+            state.settings.sendIdleBlackFrames = action.payload;
+        },
+
         // Sync output (FPP MultiSync master; future timecode strategies join here)
         setMultisyncEnabled(state, action: PayloadAction<boolean>) {
             const sync = (state.settings.sync ??= {});
@@ -195,6 +199,7 @@ export const {
     setRemoteFalconToken,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
+    setSendIdleBlackFrames,
     setMultisyncEnabled,
     setMultisyncRemotes,
     setMultisyncPort,

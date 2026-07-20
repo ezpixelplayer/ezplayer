@@ -78,6 +78,9 @@ export class FrameSender {
     outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
+    /** Gate for every black-frame send (idle/pause/stop/keepalive). Off =
+     *  leave the wire untouched so another player can drive the controllers. */
+    blackFramesEnabled: boolean = true;
     blackFrame: Uint8Array | undefined = undefined;
     mixFrame: Uint8Array | undefined = undefined;
     exportBuffer: LatestFrameRingBuffer | undefined = undefined;
@@ -91,6 +94,7 @@ export class FrameSender {
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
     }) {
+        if (!this.blackFramesEnabled) return;
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];

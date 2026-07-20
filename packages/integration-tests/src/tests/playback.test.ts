@@ -94,5 +94,13 @@ describe('playback', () => {
             if (Date.now() > deadline) throw new Error('output never went dark after Stop Now');
             await new Promise((r) => setTimeout(r, 250));
         }
+
+        // And with sendIdleBlackFrames at its default, they keep coming at the
+        // idle cadence (~5Hz) — the counterpart of idle-black.test's silence.
+        mock.ddp.reset();
+        await new Promise((r) => setTimeout(r, 1600));
+        const idleFrames = mock.ddp.frameSummaries();
+        expect(idleFrames.length).toBeGreaterThanOrEqual(4);
+        expect(idleFrames.every((f) => f.black)).toBe(true);
     });
 });

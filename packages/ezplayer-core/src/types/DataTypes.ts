@@ -598,6 +598,11 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
     jukebox?: JukeboxSettings;
+    /** Send black frames while idle/paused/stopped so lights go dark
+     *  (default). Disable when another player drives the same controllers —
+     *  the wire is then left untouched outside active playback, and lights
+     *  hold their last frame on stop. */
+    sendIdleBlackFrames?: boolean;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */

@@ -967,6 +967,8 @@ let rfConfigInitialized = false;
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
     multiSync.configure(settings.sync?.multisync);
+    sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
+    if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1161,6 +1163,8 @@ let isStopped = false;
 // starts a fresh processQueue that reinitializes controllers & frame buffer.
 let shouldRestart = false;
 const multiSync = new MultiSyncSender();
+let sendIdleBlackFrames = true;
+let curSender: FrameSender | undefined;
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
 // (folder change or an explicit forceRestart / "reload" from the UI) rather than a
@@ -1592,6 +1596,8 @@ async function processQueue() {
     const sender: FrameSender = new FrameSender();
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
+    sender.blackFramesEnabled = sendIdleBlackFrames;
+    curSender = sender;
 
     try {
         const { controllers, models } = await readControllersFromXlights(showFolder!, {

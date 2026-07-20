@@ -65,6 +65,23 @@ export const PlayerSettings: React.FC = () => {
                     value={settings.backgroundSequence}
                 />
             </FormControl>
+            <Box sx={{ mt: 1 }}>
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={settings.sendIdleBlackFrames !== false}
+                            onChange={(e) =>
+                                dispatch(playbackSettingsActions.setSendIdleBlackFrames(e.target.checked))
+                            }
+                        />
+                    }
+                    label="Blackout when idle"
+                />
+                <Typography variant="body2" color="text.secondary">
+                    Send black frames while nothing is playing so lights go dark. Turn off when another player
+                    drives the same controllers — lights then hold their last frame when playback stops.
+                </Typography>
+            </Box>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
