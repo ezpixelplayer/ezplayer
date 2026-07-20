@@ -31,7 +31,7 @@ import type { IncomingMessage } from 'http';
 import { send } from '@koa/send';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
-import { autoDetectSongFilesFromFseq } from '../data/song-file-autodetect.js';
+import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
 import { fileBaseName } from './pathnames.js';
 
 export interface FileApiDeps {
@@ -566,6 +566,33 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
             ...detected,
             audioFile: detected.audioFile ? path.basename(detected.audioFile) : undefined,
             imageFile: detected.imageFile ? path.basename(detected.imageFile) : undefined,
+        };
+    });
+
+    router.post('/api/ezp/sequences/audio-metadata', async (ctx) => {
+        const showFolder = deps.getShowFolder();
+        if (!showFolder) {
+            ctx.status = 400;
+            ctx.body = { error: 'Show folder not set' };
+            return;
+        }
+        const audioName = (ctx.request.body as any)?.audio;
+        const nameErr = checkName(typeof audioName === 'string' ? audioName : undefined);
+        if (nameErr) {
+            ctx.status = 400;
+            ctx.body = { error: nameErr };
+            return;
+        }
+        const target = resolveInShow(showFolder, audioName);
+        if (!target) {
+            ctx.status = 403;
+            ctx.body = { error: 'Resolved path outside show folder' };
+            return;
+        }
+        const meta = await extractAudioTagMetadata(target);
+        ctx.body = {
+            ...meta,
+            imageFile: meta.imageFile ? path.basename(meta.imageFile) : undefined,
         };
     });
 }

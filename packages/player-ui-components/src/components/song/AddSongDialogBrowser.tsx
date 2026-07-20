@@ -6,7 +6,16 @@ import { Box } from '../box/Box';
 import { FileButton, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { AppDispatch, postSequenceData, RootState, setSequenceTags, uploadShowFiles } from '../..';
+import {
+    AppDispatch,
+    autodetectShowSequence,
+    extractShowAudioMetadata,
+    postSequenceData,
+    RootState,
+    setSequenceTags,
+    uploadShowFiles,
+} from '../..';
+import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,8 +34,15 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
 
     const [fseqFile, setFseqFile] = useState<File | null>(null);
     const [mp3File, setMp3File] = useState<File | null>(null);
+    // Files already in the player's show folder, chosen instead of uploading
+    const [fseqPlayerName, setFseqPlayerName] = useState<string | null>(null);
+    const [mp3PlayerName, setMp3PlayerName] = useState<string | null>(null);
+    const [artworkName, setArtworkName] = useState<string | null>(null);
+    const [imageUrl, setImageUrl] = useState('');
+    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
     const [needValidMp3File, setNeedValidMp3File] = useState(false);
+    const [uploading, setUploading] = useState(false);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -42,6 +58,10 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     useEffect(() => {
         setFseqFile(null);
         setMp3File(null);
+        setFseqPlayerName(null);
+        setMp3PlayerName(null);
+        setArtworkName(null);
+        setImageUrl('');
         setNewSongData({
             title: '',
             artist: '',
@@ -59,40 +79,99 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         setNewSongData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3') => {
-        const file = event.target.files?.[0];
-        if (file) {
-            if (type === 'fseq') {
-                if (file.name.endsWith('.fseq')) {
-                    setFseqFile(file);
-                    setNeedValidFseqFile(false);
-
-                    // Get duration from the FSEQ file
-                    try {
-                        const durationMs = await getFSEQDurationMSBrowser(file);
-                        const durationSeconds = Number((durationMs / 1000).toFixed(3));
-
-                        // Update the new song data with the duration
-                        setNewSongData((prev) => ({
-                            ...prev,
-                            length: durationSeconds,
-                        }));
-                    } catch (error) {
-                        console.error('Error getting FSEQ duration:', error);
-                    }
-                } else {
-                    setNeedValidFseqFile(true);
-                    setFseqFile(null);
-                }
-            } else if (type === 'mp3' || type === 'mp4') {
-                if (file.name.endsWith('.mp3') || file.name.endsWith('.mp4')) {
-                    setMp3File(file);
-                    setNeedValidMp3File(false);
-                } else {
-                    setNeedValidMp3File(true);
-                    setMp3File(null);
-                }
+    /** Fill from server-side detection: metadata only where the user has not
+     *  typed, matching audio only where none is chosen, artwork if found. */
+    const runAutodetect = async (fseqName: string) => {
+        try {
+            const detected = await dispatch(autodetectShowSequence(fseqName)).unwrap();
+            setNewSongData((prev) => ({
+                ...prev,
+                title: prev.title || detected.detectedTitle || '',
+                artist: prev.artist || detected.detectedArtist || '',
+                length: detected.durationSecs ?? prev.length,
+            }));
+            if (detected.audioFile) {
+                setMp3PlayerName((prev) => (prev || mp3File ? prev : detected.audioFile!));
             }
+            if (detected.imageFile) {
+                setArtworkName((prev) => prev ?? detected.imageFile!);
+            }
+        } catch (error) {
+            console.error('Autodetect failed:', error);
+        }
+    };
+
+    /** Tags from a specific audio file the user just picked or chose. */
+    const applyAudioMetadata = async (audioName: string) => {
+        try {
+            const meta = await dispatch(extractShowAudioMetadata(audioName)).unwrap();
+            setNewSongData((prev) => ({
+                ...prev,
+                title: prev.title || meta.title || '',
+                artist: prev.artist || meta.artist || '',
+            }));
+            if (meta.imageFile) {
+                setArtworkName((prev) => prev ?? meta.imageFile!);
+            }
+        } catch (error) {
+            console.error('Audio metadata failed:', error);
+        }
+    };
+
+    /** Push picked bytes to the player right away so server-side detection can
+     *  run and Save is a pure metadata commit. */
+    const uploadPicked = async (file: File): Promise<boolean> => {
+        setUploading(true);
+        try {
+            await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
+            return true;
+        } catch (error) {
+            console.error('Upload failed:', error);
+            ToastMsgs.showErrorMessage(`Failed to upload ${file.name}`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+            return false;
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        if (type === 'fseq') {
+            if (!file.name.endsWith('.fseq')) {
+                setNeedValidFseqFile(true);
+                setFseqFile(null);
+                return;
+            }
+            if (!(await uploadPicked(file))) return;
+            setFseqFile(file);
+            setFseqPlayerName(null);
+            setNeedValidFseqFile(false);
+            try {
+                const durationMs = await getFSEQDurationMSBrowser(file);
+                setNewSongData((prev) => ({ ...prev, length: Number((durationMs / 1000).toFixed(3)) }));
+            } catch (error) {
+                console.error('Error getting FSEQ duration:', error);
+            }
+            await runAutodetect(file.name);
+        } else if (type === 'mp3') {
+            if (!(file.name.endsWith('.mp3') || file.name.endsWith('.mp4'))) {
+                setNeedValidMp3File(true);
+                setMp3File(null);
+                return;
+            }
+            if (!(await uploadPicked(file))) return;
+            setMp3File(file);
+            setMp3PlayerName(null);
+            setNeedValidMp3File(false);
+            await applyAudioMetadata(file.name);
+        } else {
+            if (!(await uploadPicked(file))) return;
+            setArtworkName(file.name);
         }
     };
 
@@ -105,8 +184,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             const newId = `${uuid1}`;
 
             const files: SequenceFiles = {};
-            files.fseq = fseqFile?.name;
-            files.audio = mp3File?.name;
+            files.fseq = fseqFile?.name ?? fseqPlayerName ?? undefined;
+            files.audio = mp3File?.name ?? mp3PlayerName ?? undefined;
+            files.thumb = artworkName ?? undefined;
 
             // Create the new song object with correct type structure
             const newSong: SequenceRecord = {
@@ -116,6 +196,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     title: newSongData.title,
                     artist: newSongData.artist,
                     length: newSongData.length, // Use the length from the FSEQ file
+                    artwork: imageUrl.trim() || undefined,
                     description: '',
                     tags: [],
                     genre: '',
@@ -139,17 +220,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                 },
             };
 
-            // The picked Files live on THIS machine — push their bytes into the
-            // player's show folder first, then register the record referencing
-            // the show-relative names.
-            await dispatch(
-                uploadShowFiles([
-                    fseqFile ? { name: fseqFile.name, data: fseqFile } : undefined,
-                    mp3File ? { name: mp3File.name, data: mp3File } : undefined,
-                ]),
-            ).unwrap();
-
-            // Submit to redux
+            // Picked files were uploaded at selection time; this is metadata-only.
             await dispatch(postSequenceData([newSong])).unwrap();
 
             ToastMsgs.showSuccessMessage('Song added successfully', {
@@ -192,11 +263,19 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                                     *
                                 </Typography>
                             </Typography>
-                            <FileButton
-                                fileType={['.fseq']}
-                                isMultipleFile={false}
-                                onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'fseq')}
-                            />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <FileButton
+                                    fileType={['.fseq']}
+                                    isMultipleFile={false}
+                                    onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'fseq')}
+                                />
+                                <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
+                                    Choose on player
+                                </Button>
+                                <Typography variant="body2" color="text.secondary">
+                                    {fseqFile?.name ?? fseqPlayerName ?? ''}
+                                </Typography>
+                            </Box>
                             {needValidFseqFile && (
                                 <Typography color="error" sx={{ mt: 1 }}>
                                     Please upload a valid .fseq file
@@ -207,16 +286,51 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
                                 Upload .mp3 File
                             </Typography>
-                            <FileButton
-                                fileType={['.mp3']}
-                                isMultipleFile={false}
-                                onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'mp3')}
-                            />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <FileButton
+                                    fileType={['.mp3']}
+                                    isMultipleFile={false}
+                                    onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'mp3')}
+                                />
+                                <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                    Choose on player
+                                </Button>
+                                <Typography variant="body2" color="text.secondary">
+                                    {mp3File?.name ?? mp3PlayerName ?? ''}
+                                </Typography>
+                            </Box>
                             {needValidMp3File && (
                                 <Typography color="error" sx={{ mt: 1 }}>
                                     Please upload a valid .mp3 file
                                 </Typography>
                             )}
+                        </Grid>
+                        <Grid item xs={12}>
+                            <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
+                                Artwork
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <FileButton
+                                    fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
+                                    isMultipleFile={false}
+                                    onChange={(e) =>
+                                        handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'image')
+                                    }
+                                />
+                                <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
+                                    Choose on player
+                                </Button>
+                                <Typography variant="body2" color="text.secondary">
+                                    {artworkName ?? ''}
+                                </Typography>
+                            </Box>
+                            <TextField
+                                label="Image URL (optional)"
+                                value={imageUrl}
+                                onChange={(e) => setImageUrl(e.target.value)}
+                                fullWidth
+                                placeholder="https://example.com/image.jpg"
+                            />
                         </Grid>
                         <Grid item xs={6}>
                             <TextField
@@ -311,7 +425,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             variant="contained"
                             color="primary"
                             onClick={handleNewSongSubmit}
-                            disabled={!fseqFile || !newSongData.title || !newSongData.artist}
+                            disabled={
+                                uploading || !(fseqFile || fseqPlayerName) || !newSongData.title || !newSongData.artist
+                            }
                         >
                             Save
                         </Button>
@@ -321,6 +437,33 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     </Box>
                 </form>
             </>
+            <ServerFilePickerDialog
+                open={pickerFor !== null}
+                onClose={() => setPickerFor(null)}
+                title={
+                    pickerFor === 'fseq'
+                        ? 'Choose a sequence on the player'
+                        : pickerFor === 'mp3'
+                          ? 'Choose audio on the player'
+                          : 'Choose artwork on the player'
+                }
+                dir={pickerFor === 'fseq' ? 'sequences' : pickerFor === 'mp3' ? 'music' : 'images'}
+                onSelect={(name) => {
+                    if (pickerFor === 'fseq') {
+                        setFseqPlayerName(name);
+                        setFseqFile(null);
+                        setNeedValidFseqFile(false);
+                        void runAutodetect(name); // fills title/artist/length/audio/artwork
+                    } else if (pickerFor === 'mp3') {
+                        setMp3PlayerName(name);
+                        setMp3File(null);
+                        setNeedValidMp3File(false);
+                        void applyAudioMetadata(name);
+                    } else {
+                        setArtworkName(name);
+                    }
+                }}
+            />
         </Box>
     );
 

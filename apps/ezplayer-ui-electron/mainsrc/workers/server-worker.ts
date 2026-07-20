@@ -650,7 +650,7 @@ async function dispatchHttpProxy(
     // /api/ezp/getimage — id in path or query. Query form is preferred for cloud
     // because some hosting providers' edge proxies reject `%7C` (composite-id
     // pipe) in URL paths.
-    const getimagePath = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
+    const getimagePath = pathStr.match(/^\/api\/ezp\/getimage\/([^/?]+)$/);
     const getimageQuery = pathStr === '/api/ezp/getimage' ? query?.id : undefined;
     if (getimagePath || getimageQuery) {
         const raw = getimagePath ? getimagePath[1] : getimageQuery!;

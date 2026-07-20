@@ -200,11 +200,42 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return result.sequences || [];
     }
 
+    async autodetectShowSequence(fseqName: string) {
+        const response = await fetch(`${this.apiUrl}ezp/sequences/autodetect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fseq: fseqName }),
+        });
+        if (!response.ok) throw new Error(`Autodetect failed: ${response.statusText}`);
+        return await response.json();
+    }
+
+    async extractShowAudioMetadata(audioName: string) {
+        const response = await fetch(`${this.apiUrl}ezp/sequences/audio-metadata`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: audioName }),
+        });
+        if (!response.ok) throw new Error(`Audio metadata failed: ${response.statusText}`);
+        return await response.json();
+    }
+
+    async listShowFiles(dir: string): Promise<string[]> {
+        const res = await fetch(`${this.apiUrl}files/${encodeURIComponent(dir)}?nameOnly=1`);
+        if (!res.ok) throw new Error(`Failed to list ${dir}: ${res.statusText}`);
+        return (await res.json()) as string[];
+    }
+
     /** Push a file's bytes into the show folder via the file-management API.
      *  Chunked (FPP-style PATCH) above 16MB so big fseqs don't ride one request. */
     async uploadShowFile(fileName: string, data: Blob): Promise<void> {
         const ext = fileName.toLowerCase().split('.').pop() ?? '';
-        const dir = ext === 'fseq' ? 'sequences' : ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'].includes(ext) ? 'music' : 'uploads';
+        const dir =
+            ext === 'fseq'
+                ? 'sequences'
+                : ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'].includes(ext)
+                  ? 'music'
+                  : 'uploads';
 
         const CHUNK = 8 * 1024 * 1024;
         if (data.size <= CHUNK * 2) {

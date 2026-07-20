@@ -128,4 +128,27 @@ export interface DataStorageAPI {
      *  with the file-management API). Absent on backends where files are
      *  already local (Electron renderer uses native dialogs + paths). */
     uploadShowFile?: (fileName: string, data: Blob) => Promise<void>;
+
+    /** List file names already in the player's show folder, by logical
+     *  directory (sequences | music | images). Same availability as
+     *  uploadShowFile. */
+    listShowFiles?: (dir: string) => Promise<string[]>;
+
+    /** Server-side audio/metadata autodetect for an fseq already in the show
+     *  folder (matching audio file, tag title/artist, extracted cover art). */
+    autodetectShowSequence?: (fseqName: string) => Promise<{
+        audioFile?: string;
+        imageFile?: string;
+        detectedTitle?: string;
+        detectedArtist?: string;
+        durationSecs?: number;
+    }>;
+
+    /** Tag metadata (title/artist/extracted cover art) for an audio file
+     *  already in the show folder. */
+    extractShowAudioMetadata?: (audioName: string) => Promise<{
+        title?: string;
+        artist?: string;
+        imageFile?: string;
+    }>;
 }

@@ -55,6 +55,35 @@ export const postSequenceData = createAsyncThunk<SequenceRecord[], SequenceRecor
     },
 );
 
+/** List file names already on the player (empty when unsupported). */
+export const listShowFiles = createAsyncThunk<string[], string, { extra: DataStorageAPI }>(
+    'sequences/listShowFiles',
+    async (dir, { extra }) => {
+        if (!extra.listShowFiles) return [];
+        return await extra.listShowFiles(dir);
+    },
+);
+
+/** Server-side autodetect for an fseq already on the player. */
+export const autodetectShowSequence = createAsyncThunk<
+    { audioFile?: string; imageFile?: string; detectedTitle?: string; detectedArtist?: string; durationSecs?: number },
+    string,
+    { extra: DataStorageAPI }
+>('sequences/autodetectShowSequence', async (fseqName, { extra }) => {
+    if (!extra.autodetectShowSequence) return {};
+    return await extra.autodetectShowSequence(fseqName);
+});
+
+/** Tag metadata for an audio file already on the player. */
+export const extractShowAudioMetadata = createAsyncThunk<
+    { title?: string; artist?: string; imageFile?: string },
+    string,
+    { extra: DataStorageAPI }
+>('sequences/extractShowAudioMetadata', async (audioName, { extra }) => {
+    if (!extra.extractShowAudioMetadata) return {};
+    return await extra.extractShowAudioMetadata(audioName);
+});
+
 /** True when the connected backing store can receive file uploads (web/LAN
  *  file-management API). Electron's renderer works with local paths instead. */
 export function canUploadShowFiles(extra: DataStorageAPI): boolean {
@@ -63,17 +92,18 @@ export function canUploadShowFiles(extra: DataStorageAPI): boolean {
 
 /** Upload files into the player's show folder (dialog-free remote add-song
  *  flow). No-op entries are allowed so callers can pass optional files. */
-export const uploadShowFiles = createAsyncThunk<void, Array<{ name: string; data: Blob } | undefined>, { extra: DataStorageAPI }>(
-    'sequences/uploadShowFiles',
-    async (files, { extra }) => {
-        if (!extra.uploadShowFile) {
-            throw new Error('This player connection does not support file upload');
-        }
-        for (const f of files) {
-            if (f) await extra.uploadShowFile(f.name, f.data);
-        }
-    },
-);
+export const uploadShowFiles = createAsyncThunk<
+    void,
+    Array<{ name: string; data: Blob } | undefined>,
+    { extra: DataStorageAPI }
+>('sequences/uploadShowFiles', async (files, { extra }) => {
+    if (!extra.uploadShowFile) {
+        throw new Error('This player connection does not support file upload');
+    }
+    for (const f of files) {
+        if (f) await extra.uploadShowFile(f.name, f.data);
+    }
+});
 
 const sequenceSlice = createSongSlice((builder) => {
     builder

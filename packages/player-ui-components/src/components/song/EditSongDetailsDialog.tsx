@@ -7,8 +7,16 @@ import { Box } from '../box/Box';
 import { FileButton, isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { AppDispatch, postSequenceData, RootState, setSequenceTags, uploadShowFiles } from '../..';
+import {
+    AppDispatch,
+    extractShowAudioMetadata,
+    postSequenceData,
+    RootState,
+    setSequenceTags,
+    uploadShowFiles,
+} from '../..';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
+import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
@@ -89,6 +97,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     });
     const [uploadedFiles, setUploadedFiles] = useState<SequenceFiles>({});
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
+    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
 
     useEffect(() => {
@@ -151,6 +160,14 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file.name }));
+            if (type === 'mp3') {
+                try {
+                    const meta = await dispatch(extractShowAudioMetadata(file.name)).unwrap();
+                    applyDetectedMetadata(meta);
+                } catch {
+                    /* tags are best-effort */
+                }
+            }
             if (type === 'fseq') {
                 try {
                     const durationMs = await getFSEQDurationMSBrowser(file);
@@ -433,13 +450,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         onFileSelect={(file) => handleFileChange(file, 'fseq')}
                                     />
                                 ) : (
-                                    <FileButton
-                                        fileType={['.fseq']}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'fseq')
-                                        }
-                                    />
+                                    <>
+                                        <FileButton
+                                            fileType={['.fseq']}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'fseq')
+                                            }
+                                        />
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
+                                            On player
+                                        </Button>
+                                    </>
                                 )}
                                 <Typography variant="body1">
                                     {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
@@ -454,13 +476,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         onFileSelect={(file) => handleFileChange(file, 'mp3')}
                                     />
                                 ) : (
-                                    <FileButton
-                                        fileType={['.mp3']}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
-                                        }
-                                    />
+                                    <>
+                                        <FileButton
+                                            fileType={['.mp3']}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
+                                            }
+                                        />
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                            On player
+                                        </Button>
+                                    </>
                                 )}
                                 <Typography variant="body1">
                                     {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No MP3 file'}
@@ -475,13 +502,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         onFileSelect={(file) => handleFileChange(file, 'image')}
                                     />
                                 ) : (
-                                    <FileButton
-                                        fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'image')
-                                        }
-                                    />
+                                    <>
+                                        <FileButton
+                                            fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'image')
+                                            }
+                                        />
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
+                                            On player
+                                        </Button>
+                                    </>
                                 )}
                                 <Typography variant="body1">
                                     {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
@@ -624,6 +656,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 <Divider />
             </DialogTitle>
             <DialogContent>{editDialogContent}</DialogContent>
+
+            <ServerFilePickerDialog
+                open={pickerFor !== null}
+                onClose={() => setPickerFor(null)}
+                title="Choose a file on the player"
+                dir={pickerFor === 'fseq' ? 'sequences' : pickerFor === 'mp3' ? 'music' : 'images'}
+                onSelect={(name) => {
+                    const fileKey = pickerFor === 'mp3' ? 'audio' : pickerFor === 'image' ? 'thumb' : 'fseq';
+                    setNewFiles((prev) => ({ ...prev, [fileKey]: name }));
+                    if (pickerFor === 'fseq') setNewDurationSecs(0); // server refills from header
+                }}
+            />
         </Dialog>
     );
 }
