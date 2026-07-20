@@ -60,6 +60,7 @@ import type {
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
+    UIConnectSnapshot,
     FullPlayerState,
     PlaybackSettings,
     PlaylistRecord,
@@ -736,8 +737,20 @@ export async function registerContentHandlers(
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
-    ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
+    ipcMain.handle('ipcUIConnect', async (_event): Promise<UIConnectSnapshot> => {
         await loadShowFolder();
+        // Return the initial state directly — the invoke reply cannot be lost,
+        // unlike update:* pushes racing the renderer's listener registration.
+        return {
+            showFolder: getCurrentShowFolder() ?? undefined,
+            sequences: (curSequences ?? []).filter((s) => !s.deleted),
+            playlists: (curPlaylists ?? []).filter((p) => !p.deleted),
+            schedule: (curSchedule ?? []).filter((e) => !e.deleted),
+            combinedStatus: curStatus,
+            playbackSettings: getSettingsCache() ?? undefined,
+            cloudConfig: getCloudConfigCache(),
+            cloudStatus: getCurrentCloudStatus(),
+        };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
         return Promise.resolve();

@@ -2,6 +2,7 @@ import type {
     CloudConfig,
     CloudStatus,
     CombinedPlayerStatus,
+    UIConnectSnapshot,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -111,7 +112,7 @@ export interface EZPElectronAPI {
     onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => void;
 
     // Set up / remove callbacks
-    connect: () => Promise<void>;
+    connect: () => Promise<UIConnectSnapshot | undefined>;
     disconnect: () => Promise<void>;
 
     // Get versions

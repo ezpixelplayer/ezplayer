@@ -1795,7 +1795,8 @@ async function processQueue() {
             // See if a schedule update has been passed in.  If so, do something.
             if (installNewSchedule()) {
                 const initializeTime = rtcConverter.computeTime(curPN); // MoC - Review
-                const mainSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'main');
+                // scheduleType is absent on entries that predate background schedules
+                const mainSched = (curSchedule ?? []).filter((s) => (s.scheduleType ?? 'main') === 'main');
                 const bgSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'background');
                 const errs: string[] = [];
 

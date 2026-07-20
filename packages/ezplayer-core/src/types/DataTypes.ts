@@ -506,6 +506,20 @@ export type EZPlayerCommand =
           mute?: boolean;
       };
 
+/** Initial state returned by ipcUIConnect. The connect invoke RETURNS the
+ *  snapshot so first load cannot depend on push timing (update:* sends to a
+ *  page whose listeners aren't ready yet are silently dropped). */
+export interface UIConnectSnapshot {
+    showFolder?: string;
+    sequences: SequenceRecord[];
+    playlists: PlaylistRecord[];
+    schedule: ScheduledPlaylist[];
+    combinedStatus: CombinedPlayerStatus;
+    playbackSettings?: PlaybackSettings;
+    cloudConfig?: CloudConfig;
+    cloudStatus?: CloudStatus;
+}
+
 export type ScheduleDays =
     | 'all'
     | 'weekend-fri-sat'

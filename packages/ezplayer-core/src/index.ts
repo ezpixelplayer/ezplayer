@@ -20,6 +20,7 @@ export type {
     PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
+    UIConnectSnapshot,
     EZPlayerCommand,
     JSONEditChoice,
     JSONEditHeader,

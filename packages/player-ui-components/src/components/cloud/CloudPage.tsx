@@ -684,7 +684,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     ) : null}
                 </Card>
 
-                <Card sx={{ p: 4, mb: 3 }}>
+                <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                         <Typography variant="h6" sx={{ color: 'primary.main' }}>
                             Cloud Content
