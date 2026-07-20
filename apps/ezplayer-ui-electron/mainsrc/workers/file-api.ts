@@ -103,6 +103,16 @@ function resolveInShow(showFolder: string, name: string): string | null {
     return resolved;
 }
 
+async function listDir(showFolder: string, exts?: Set<string>): Promise<string[]> {
+    const entries = await fsp.readdir(showFolder, { withFileTypes: true });
+    return entries
+        .filter((e) => e.isFile())
+        .map((e) => e.name)
+        .filter((n) => !n.startsWith('.') && !PROTECTED_NAMES.has(n.toLowerCase()))
+        .filter((n) => !exts || exts.has(path.extname(n).toLowerCase()))
+        .sort((a, b) => a.localeCompare(b));
+}
+
 // ---------------------------------------------------------------------------
 // FPP presentation formats (files.php / common.php)
 // ---------------------------------------------------------------------------
@@ -197,6 +207,85 @@ setInterval(() => {
     }
 }, 60_000).unref();
 
+/** One chunk of the FPP-style resumable upload. Shared by the Koa PATCH
+ *  route (source = ctx.req) and the cloud proxy (source = one Buffer). */
+export async function applyUploadChunk(
+    showFolder: string,
+    dirKey: string,
+    name: string,
+    offset: number,
+    total: number,
+    source: AsyncIterable<Buffer> | Iterable<Buffer>,
+): Promise<{ status: number; body: unknown }> {
+    const nameErr = checkName(name);
+    if (nameErr || !Number.isInteger(offset) || offset < 0 || !Number.isInteger(total) || total <= 0) {
+        return {
+            status: 400,
+            body: { status: 'error', error: nameErr ?? 'Upload-Offset / Upload-Length headers required' },
+        };
+    }
+    if (total > MAX_UPLOAD_BYTES) {
+        return { status: 413, body: { status: 'error', error: 'Upload exceeds maximum size' } };
+    }
+    if (PROTECTED_NAMES.has(name.toLowerCase())) {
+        return {
+            status: 403,
+            body: { status: 'error', error: `${name} is managed by EZPlayer/xLights and cannot be modified here` },
+        };
+    }
+    const target = resolveInShow(showFolder, name);
+    if (!target) {
+        return { status: 403, body: { status: 'error', error: 'Resolved path outside show folder' } };
+    }
+
+    const key = `${dirKey}:${name.toLowerCase()}`;
+    let session = chunkSessions.get(key);
+    if (offset === 0 && session) {
+        await dropSession(key); // restarted upload
+        session = undefined;
+    }
+    if (!session) {
+        const staging = await ensureStagingDir(showFolder);
+        const tmpPath = path.join(staging, `patch-${crypto.randomBytes(8).toString('hex')}`);
+        session = {
+            tmpPath,
+            handle: await fsp.open(tmpPath, 'w+'),
+            received: 0,
+            total,
+            lastActivity: Date.now(),
+        };
+        chunkSessions.set(key, session);
+    }
+
+    try {
+        // Positional writes make out-of-order chunks safe.
+        let pos = offset;
+        for await (const chunk of source) {
+            const buf = chunk as Buffer;
+            if (pos + buf.length > MAX_UPLOAD_BYTES) {
+                throw Object.assign(new Error('Upload exceeds maximum size'), { status: 413 });
+            }
+            await session.handle.write(buf, 0, buf.length, pos);
+            pos += buf.length;
+            session.received += buf.length;
+        }
+        session.lastActivity = Date.now();
+
+        if (session.received >= session.total) {
+            await session.handle.close();
+            chunkSessions.delete(key);
+            await fsp.rename(session.tmpPath, target);
+        }
+        return { status: 200, body: { status: 'OK', file: name, dir: dirKey, size: session.received } };
+    } catch (err: any) {
+        await dropSession(key);
+        return {
+            status: err?.status ?? 500,
+            body: { status: 'failed', file: name, dir: dirKey, error: err?.message ?? 'Upload failed' },
+        };
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -246,16 +335,6 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
             return undefined;
         }
         return resolved;
-    }
-
-    async function listDir(showFolder: string, exts?: Set<string>): Promise<string[]> {
-        const entries = await fsp.readdir(showFolder, { withFileTypes: true });
-        return entries
-            .filter((e) => e.isFile())
-            .map((e) => e.name)
-            .filter((n) => !n.startsWith('.') && !PROTECTED_NAMES.has(n.toLowerCase()))
-            .filter((n) => !exts || exts.has(path.extname(n).toLowerCase()))
-            .sort((a, b) => a.localeCompare(b));
     }
 
     /** Playtime from the cached SequenceRecords (fseq or audio basename match),
@@ -428,76 +507,16 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const dir = requireDir(ctx);
         if (!dir) return;
 
-        const name = ctx.get('Upload-Name');
-        const offset = Number(ctx.get('Upload-Offset'));
-        const total = Number(ctx.get('Upload-Length'));
-        const nameErr = checkName(name);
-        if (nameErr || !Number.isInteger(offset) || offset < 0 || !Number.isInteger(total) || total <= 0) {
-            ctx.status = 400;
-            ctx.body = { status: 'error', error: nameErr ?? 'Upload-Offset / Upload-Length headers required' };
-            return;
-        }
-        if (total > MAX_UPLOAD_BYTES) {
-            ctx.status = 413;
-            ctx.body = { status: 'error', error: 'Upload exceeds maximum size' };
-            return;
-        }
-        if (PROTECTED_NAMES.has(name.toLowerCase())) {
-            ctx.status = 403;
-            ctx.body = { status: 'error', error: `${name} is managed by EZPlayer/xLights and cannot be modified here` };
-            return;
-        }
-        const target = resolveInShow(showFolder, name);
-        if (!target) {
-            ctx.status = 403;
-            ctx.body = { status: 'error', error: 'Resolved path outside show folder' };
-            return;
-        }
-
-        const key = `${dir.key}:${name.toLowerCase()}`;
-        let session = chunkSessions.get(key);
-        if (offset === 0 && session) {
-            await dropSession(key); // restarted upload
-            session = undefined;
-        }
-        if (!session) {
-            const staging = await ensureStagingDir(showFolder);
-            const tmpPath = path.join(staging, `patch-${crypto.randomBytes(8).toString('hex')}`);
-            session = {
-                tmpPath,
-                handle: await fsp.open(tmpPath, 'w+'),
-                received: 0,
-                total,
-                lastActivity: Date.now(),
-            };
-            chunkSessions.set(key, session);
-        }
-
-        try {
-            // Positional writes make out-of-order chunks safe.
-            let pos = offset;
-            for await (const chunk of ctx.req) {
-                const buf = chunk as Buffer;
-                if (pos + buf.length > MAX_UPLOAD_BYTES) {
-                    throw Object.assign(new Error('Upload exceeds maximum size'), { status: 413 });
-                }
-                await session.handle.write(buf, 0, buf.length, pos);
-                pos += buf.length;
-                session.received += buf.length;
-            }
-            session.lastActivity = Date.now();
-
-            if (session.received >= session.total) {
-                await session.handle.close();
-                chunkSessions.delete(key);
-                await fsp.rename(session.tmpPath, target);
-            }
-            ctx.body = { status: 'OK', file: name, dir: dir.key, size: session.received };
-        } catch (err: any) {
-            await dropSession(key);
-            ctx.status = err?.status ?? 500;
-            ctx.body = { status: 'failed', file: name, dir: dir.key, error: err?.message ?? 'Upload failed' };
-        }
+        const res = await applyUploadChunk(
+            showFolder,
+            dir.key,
+            ctx.get('Upload-Name'),
+            Number(ctx.get('Upload-Offset')),
+            Number(ctx.get('Upload-Length')),
+            ctx.req as AsyncIterable<Buffer>,
+        );
+        ctx.status = res.status;
+        ctx.body = res.body;
     });
 
     // ------------------------------------------------------------------
@@ -522,77 +541,113 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
     return router;
 }
 
-/** EZP-native JSON routes — registered on the shared router (behind jsonBody). */
-export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): void {
-    router.post('/api/ezp/sequences', async (ctx) => {
-        const recs = ctx.request.body;
-        if (!Array.isArray(recs)) {
-            ctx.status = 400;
-            ctx.body = { error: 'Body must be an array of SequenceRecords' };
-            return;
-        }
-        try {
-            const sequences = await deps.putSequences(recs);
-            ctx.body = { success: true, sequences };
-        } catch (err: any) {
-            ctx.status = 503;
-            ctx.body = { error: err?.message ?? 'Sequence update failed' };
-        }
-    });
+// ---------------------------------------------------------------------------
+// EZP-native sequence helpers — shared by the Koa routes and the cloud proxy
+// ---------------------------------------------------------------------------
 
-    router.post('/api/ezp/sequences/autodetect', async (ctx) => {
-        const showFolder = deps.getShowFolder();
-        if (!showFolder) {
-            ctx.status = 400;
-            ctx.body = { error: 'Show folder not set' };
-            return;
-        }
-        const fseqName = (ctx.request.body as any)?.fseq;
-        const nameErr = checkName(typeof fseqName === 'string' ? fseqName : undefined);
-        if (nameErr) {
-            ctx.status = 400;
-            ctx.body = { error: nameErr };
-            return;
-        }
-        const target = resolveInShow(showFolder, fseqName);
-        if (!target) {
-            ctx.status = 403;
-            ctx.body = { error: 'Resolved path outside show folder' };
-            return;
-        }
-        const detected = await autoDetectSongFilesFromFseq(target);
-        // Report show-relative names — clients never see absolute player paths.
-        ctx.body = {
+export interface ProxyResult {
+    status: number;
+    body: unknown;
+}
+
+export async function putSequencesCore(deps: FileApiDeps, recs: unknown): Promise<ProxyResult> {
+    if (!Array.isArray(recs)) {
+        return { status: 400, body: { error: 'Body must be an array of SequenceRecords' } };
+    }
+    try {
+        const sequences = await deps.putSequences(recs);
+        return { status: 200, body: { success: true, sequences } };
+    } catch (err: any) {
+        return { status: 503, body: { error: err?.message ?? 'Sequence update failed' } };
+    }
+}
+
+/** Validate a client-supplied basename against the show folder; error
+ *  ProxyResult or the resolved absolute path. */
+function resolveNamed(showFolder: string | undefined, name: unknown): ProxyResult | { target: string } {
+    if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
+    const nameErr = checkName(typeof name === 'string' ? name : undefined);
+    if (nameErr) return { status: 400, body: { error: nameErr } };
+    const target = resolveInShow(showFolder, name as string);
+    if (!target) return { status: 403, body: { error: 'Resolved path outside show folder' } };
+    return { target };
+}
+
+export async function autodetectSequenceCore(showFolder: string | undefined, fseqName: unknown): Promise<ProxyResult> {
+    const res = resolveNamed(showFolder, fseqName);
+    if (!('target' in res)) return res;
+    const detected = await autoDetectSongFilesFromFseq(res.target);
+    // Report show-relative names — clients never see absolute player paths.
+    return {
+        status: 200,
+        body: {
             ...detected,
             audioFile: detected.audioFile ? path.basename(detected.audioFile) : undefined,
             imageFile: detected.imageFile ? path.basename(detected.imageFile) : undefined,
-        };
+        },
+    };
+}
+
+export async function audioMetadataCore(showFolder: string | undefined, audioName: unknown): Promise<ProxyResult> {
+    const res = resolveNamed(showFolder, audioName);
+    if (!('target' in res)) return res;
+    const meta = await extractAudioTagMetadata(res.target);
+    return {
+        status: 200,
+        body: {
+            ...meta,
+            imageFile: meta.imageFile ? path.basename(meta.imageFile) : undefined,
+        },
+    };
+}
+
+/** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */
+export async function listFileNamesCore(showFolder: string | undefined, dirName: string): Promise<ProxyResult> {
+    if (!showFolder) return { status: 400, body: { status: 'error', error: 'Show folder not set' } };
+    const dir = DIR_MAP[dirName.toLowerCase()];
+    if (!dir) return { status: 404, body: { status: 'error', error: `Unknown directory: ${dirName}` } };
+    return { status: 200, body: await listDir(showFolder, dir.exts) };
+}
+
+/** Chunked upload via the cloud proxy: Upload-* fields arrive as envelope
+ *  headers, the chunk itself as one Buffer. */
+export async function chunkUploadCore(
+    showFolder: string | undefined,
+    dirName: string,
+    headers: Record<string, string | undefined>,
+    data: Buffer,
+): Promise<ProxyResult> {
+    if (!showFolder) return { status: 400, body: { status: 'error', error: 'Show folder not set' } };
+    const dirKey = dirName.toLowerCase();
+    if (!DIR_MAP[dirKey]) return { status: 404, body: { status: 'error', error: `Unknown directory: ${dirName}` } };
+    const h = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    return applyUploadChunk(
+        showFolder,
+        dirKey,
+        h.get('upload-name') ?? '',
+        Number(h.get('upload-offset')),
+        Number(h.get('upload-length')),
+        [data],
+    );
+}
+
+/** EZP-native JSON routes — registered on the shared router (behind jsonBody). */
+export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): void {
+    router.post('/api/ezp/sequences', async (ctx) => {
+        const res = await putSequencesCore(deps, ctx.request.body);
+        ctx.status = res.status;
+        ctx.body = res.body;
+    });
+
+    router.post('/api/ezp/sequences/autodetect', async (ctx) => {
+        const res = await autodetectSequenceCore(deps.getShowFolder(), (ctx.request.body as any)?.fseq);
+        ctx.status = res.status;
+        ctx.body = res.body;
     });
 
     router.post('/api/ezp/sequences/audio-metadata', async (ctx) => {
-        const showFolder = deps.getShowFolder();
-        if (!showFolder) {
-            ctx.status = 400;
-            ctx.body = { error: 'Show folder not set' };
-            return;
-        }
-        const audioName = (ctx.request.body as any)?.audio;
-        const nameErr = checkName(typeof audioName === 'string' ? audioName : undefined);
-        if (nameErr) {
-            ctx.status = 400;
-            ctx.body = { error: nameErr };
-            return;
-        }
-        const target = resolveInShow(showFolder, audioName);
-        if (!target) {
-            ctx.status = 403;
-            ctx.body = { error: 'Resolved path outside show folder' };
-            return;
-        }
-        const meta = await extractAudioTagMetadata(target);
-        ctx.body = {
-            ...meta,
-            imageFile: meta.imageFile ? path.basename(meta.imageFile) : undefined,
-        };
+        const res = await audioMetadataCore(deps.getShowFolder(), (ctx.request.body as any)?.audio);
+        ctx.status = res.status;
+        ctx.body = res.body;
     });
 }

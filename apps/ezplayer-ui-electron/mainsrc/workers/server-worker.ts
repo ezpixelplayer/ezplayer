@@ -33,7 +33,16 @@ import type {
     ServerWorkerRPCAPI,
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
-import { createFileApiRouter, registerSequenceApiRoutes, type FileApiDeps } from './file-api.js';
+import {
+    createFileApiRouter,
+    registerSequenceApiRoutes,
+    listFileNamesCore,
+    chunkUploadCore,
+    putSequencesCore,
+    autodetectSequenceCore,
+    audioMetadataCore,
+    type FileApiDeps,
+} from './file-api.js';
 import { registerFppCompatRoutes } from './fppcompat/fpp-api.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
@@ -425,10 +434,17 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
                 reqId?: string;
                 path?: string;
                 query?: Record<string, string>;
+                method?: string;
+                headers?: Record<string, string>;
+                bodyBase64?: string;
             };
             if (msg?.type !== 'httpProxyRequest' || typeof msg.reqId !== 'string') return;
             reqId = msg.reqId;
-            void dispatchHttpProxy(msg.path ?? '', msg.query).then((res) => {
+            void dispatchHttpProxy(msg.path ?? '', msg.query, {
+                method: msg.method,
+                headers: msg.headers,
+                bodyBase64: msg.bodyBase64,
+            }).then((res) => {
                 sendProxyResponse(ws, reqId!, res);
             });
         } catch (err) {
@@ -642,11 +658,88 @@ function sendProxyResponse(
     }
 }
 
+/** Non-GET proxied bodies are chunk-sized by the client (≤1MB); anything
+ *  bigger than this is a protocol violation, not a big upload. */
+const PROXY_MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+function proxyJson(res: { status: number; body: unknown }): {
+    status: number;
+    headers: Record<string, string>;
+    body: Buffer;
+} {
+    return {
+        status: res.status,
+        headers: { 'content-type': 'application/json' },
+        body: Buffer.from(JSON.stringify(res.body ?? null), 'utf8'),
+    };
+}
+
+/** Cloud-side writes: chunked file upload plus the EZP-native sequence
+ *  endpoints. Same validation cores as the Koa routes in file-api.ts; the
+ *  trust shape matches the WS write verbs (possession of the player token). */
+async function dispatchProxyWrite(
+    pathStr: string,
+    method: string,
+    req: { headers?: Record<string, string>; bodyBase64?: string } | undefined,
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+    const body = req?.bodyBase64 ? Buffer.from(req.bodyBase64, 'base64') : Buffer.alloc(0);
+    if (body.length > PROXY_MAX_BODY_BYTES) return { status: 413 };
+
+    if (method === 'PATCH') {
+        const m = pathStr.match(/^\/api\/file\/([^/?]+)$/);
+        if (!m) return { status: 404 };
+        return proxyJson(await chunkUploadCore(showFolder, decodeURIComponent(m[1]), req?.headers ?? {}, body));
+    }
+
+    if (method === 'POST') {
+        let parsed: unknown;
+        try {
+            parsed = body.length > 0 ? JSON.parse(body.toString('utf8')) : undefined;
+        } catch {
+            return { status: 400 };
+        }
+        if (pathStr === '/api/ezp/sequences') {
+            const deps: FileApiDeps = {
+                getShowFolder: () => showFolder,
+                getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+                putSequences: async (recs) => await rpc.call('putSequences', recs),
+            };
+            return proxyJson(await putSequencesCore(deps, parsed));
+        }
+        if (pathStr === '/api/ezp/sequences/autodetect') {
+            return proxyJson(await autodetectSequenceCore(showFolder, (parsed as any)?.fseq));
+        }
+        if (pathStr === '/api/ezp/sequences/audio-metadata') {
+            return proxyJson(await audioMetadataCore(showFolder, (parsed as any)?.audio));
+        }
+    }
+    return { status: 404 };
+}
+
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
 async function dispatchHttpProxy(
     pathStr: string,
     query: Record<string, string> | undefined,
+    req?: { method?: string; headers?: Record<string, string>; bodyBase64?: string },
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    const method = (req?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') return dispatchProxyWrite(pathStr, method, req);
+
+    // GET /api/files/:dirName — show-folder name listing for the cloud file
+    // picker (FPP-shaped path, so match it before the legacy-alias rewrite).
+    const filesMatch = pathStr.match(/^\/api\/files\/([^/?]+)$/);
+    if (filesMatch) {
+        const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+        return proxyJson(await listFileNamesCore(showFolder, decodeURIComponent(filesMatch[1])));
+    }
+
+    // Cloud endpoints deployed before the /api/ezp move still forward bare
+    // /api/* read paths; accept both until that fleet is updated.
+    if (!pathStr.startsWith('/api/ezp/') && pathStr.startsWith('/api/')) {
+        pathStr = '/api/ezp/' + pathStr.slice('/api/'.length);
+    }
+
     // /api/ezp/getimage — id in path or query. Query form is preferred for cloud
     // because some hosting providers' edge proxies reject `%7C` (composite-id
     // pipe) in URL paths.
