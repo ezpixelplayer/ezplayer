@@ -19,9 +19,12 @@ interface AboutDialogProps {
     onClose: () => void;
     playerVersion?: EZPlayerVersions;
     cloudVersion?: string;
+    /** Version of this UI bundle itself — shown when the UI deploys
+     *  independently of the player (cloud SPA). */
+    uiVersion?: string;
 }
 
-export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerVersion, cloudVersion }) => {
+export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerVersion, cloudVersion, uiVersion }) => {
     const handleClose = () => {
         onClose();
     };
@@ -187,6 +190,14 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                     : 'N/A'}
                             </Typography>
                         </Box>
+                        {uiVersion && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    UI Version:
+                                </Typography>
+                                <Typography variant="body2">{uiVersion}</Typography>
+                            </Box>
+                        )}
                         {formattedRam && (
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                                 <Typography variant="body2" color="text.secondary">

@@ -1,5 +1,6 @@
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
+import { ezpVersions } from '../versions.js';
 
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -528,6 +529,8 @@ export async function loadShowFolder(forceRestart?: boolean) {
     updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
     broadcastToWebSocket('cloudConfig', cloudConfig);
     broadcastToWebSocket('cloudStatus', getCurrentCloudStatus());
+    // Web/cloud clients have no IPC getVersions — the snapshot carries it.
+    broadcastToWebSocket('versions', ezpVersions);
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(

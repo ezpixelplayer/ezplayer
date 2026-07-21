@@ -60,6 +60,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.showFolder !== undefined) {
                 dispatch(authSliceActions.setShowDirectory(data.showFolder));
             }
+            if (data.versions !== undefined) {
+                dispatch(authSliceActions.setPlayerVersion(data.versions));
+            }
             if (data.sequences !== undefined) {
                 dispatch(setSequenceData(data.sequences));
             }
