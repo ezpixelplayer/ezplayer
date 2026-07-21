@@ -45,14 +45,15 @@ toggles a live **audio stream** — useful for listening over the network when y
 | Player, Jukebox, Playlists, Schedule | Yes           | Yes                             |
 | Show Status (full detail)            | Yes           | Yes                             |
 | HTTP Listener Status card            | Yes           | No                              |
-| Add / edit song files                | Yes           | No                              |
+| Add / edit song files                | Yes           | Yes (upload / choose on player) |
 | Choose show folder                   | Yes           | No                              |
 | Cloud registration dialog            | Yes           | Limited (Cloud tile)            |
 | Kiosk mode                           | Separate port | Yes (`__EZPLAYER_MODE__=kiosk`) |
 
-Song file management and show-folder selection stay on the show PC. Everything
-else — including playlist edits, schedule changes, jukebox requests, and API
-calls — can be done from the LAN UI once the server is **Listening**.
+Show-folder selection stays on the show PC. Everything else — song management,
+playlist edits, schedule changes, jukebox requests, and API calls — can be done
+from the LAN UI once the server is **Listening**. See
+[Songs](./songs.md#desktop-app-vs-lan--cloud-ui) for the file-handling details.
 
 ## Kiosk (public display)
 

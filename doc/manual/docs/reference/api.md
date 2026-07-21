@@ -406,7 +406,9 @@ with show-relative file names.
 
 ### POST /api/ezp/playback-settings
 
-Update playback settings. Updates playback configuration settings including audio sync, background sequence mode, viewer control, and volume control.
+Update playback settings. Updates playback configuration settings including
+audio sync, background sequence mode, idle blackout, viewer control, volume
+control, sync output (FPP MultiSync master), and advanced overrides.
 
 **Request:**
 
@@ -446,9 +448,28 @@ Update playback settings. Updates playback configuration settings including audi
                 "volumeLevel": 50
             }
         ]
+    },
+    "sendIdleBlackFrames": true,
+    "sync": {
+        "multisync": {
+            "enabled": false,
+            "remotes": ["192.168.1.50", "192.168.1.51:32320"],
+            "port": 32320,
+            "multicastAddress": "239.70.80.80"
+        }
+    },
+    "advanced": {
+        "ddpPort": 4048
     }
 }
 ```
+
+`sendIdleBlackFrames` (default `true`) controls whether black frames are sent
+while idle/paused/stopped. `sync.multisync` configures FPP MultiSync master
+output (see [FPP compatibility](./fpp-compat.md#multisync-master)); empty
+`remotes` means multicast, and `port`/`multicastAddress` are optional
+overrides. `advanced.ddpPort` overrides the DDP output port (default 4048)
+and takes effect when controllers reopen.
 
 **Response:**
 

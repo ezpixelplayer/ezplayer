@@ -46,21 +46,23 @@ show. The table shows:
 Use the search box to filter by title or artist. Use **Filter by Tags** to
 narrow the list — handy when you have a large library.
 
-**Double-click** a row (or click the edit icon) to open **Edit Song Details**.
-From the desktop app you can also click **Add Song** to register a new sequence.
+**Double-click** a row (or click the edit icon) to open **Edit Song Details**,
+or click **Add Song** to register a new sequence.
 
-### Desktop app vs LAN UI
+### Desktop app vs LAN / cloud UI
 
-| Capability                         | Desktop app | LAN / embedded UI |
-| ---------------------------------- | ----------- | ----------------- |
-| View song list                     | Yes         | Yes               |
-| Add songs                          | Yes         | No                |
-| Edit metadata and settings         | Yes         | No                |
-| Replace FSEQ / audio / image files | Yes         | No                |
-| Delete songs                       | Yes         | Yes               |
+| Capability                         | Desktop app        | LAN / cloud UI                 |
+| ---------------------------------- | ------------------ | ------------------------------ |
+| View song list                     | Yes                | Yes                            |
+| Add songs                          | Yes                | Yes                            |
+| Edit metadata and settings         | Yes                | Yes                            |
+| Replace FSEQ / audio / image files | Yes (local picker) | Yes (upload or choose on player) |
+| Delete songs                       | Yes                | Yes                            |
 
-The LAN UI is meant for monitoring and light control from phones and tablets on
-your network. Full song management stays on the show PC, where the files are stored.
+The desktop app picks files with native dialogs. The LAN and cloud UIs either
+**upload** a file from the browser's machine or **choose** one already in the
+player's show folder; uploads over the cloud show a progress bar. The
+kiosk page has no song management.
 
 ## Adding a song (local show)
 
@@ -75,7 +77,8 @@ your network. Full song management stays on the show PC, where the files are sto
 
 ### Automatic file matching
 
-On the desktop app, choosing an FSEQ file triggers **auto-detect**:
+Choosing an FSEQ file triggers **auto-detect** (over the network, this runs
+on the player after the upload or selection):
 
 1. EZPlayer reads the FSEQ header for duration and any embedded audio filename.
 2. It searches the show folder for a matching audio file (by header name, then
@@ -104,7 +107,8 @@ screen (or let the cloud sync deliver them — see below).
 Open **Edit Song Details** for any song in the list. You can change:
 
 - **Title, artist, and vendor**
-- **FSEQ, MP3, and image files** (desktop app only — use _Select another file_)
+- **FSEQ, MP3, and image files** (desktop: _Select another file_; network:
+  upload or choose a file on the player)
 - **Image URL** for artwork shown in the jukebox
 - **Lead time**, **trail time**, and **volume adjustment**
 - **Tags**
