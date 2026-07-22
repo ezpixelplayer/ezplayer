@@ -1758,12 +1758,21 @@ async function processQueue() {
                 const playing = foregroundPlayerRunState.isPlaying || backgroundPlayerRunState.isPlaying;
 
                 if (pendingFullRebuild || !playing) {
+                    // A forced rebuild (reload / folder change) intentionally forgets
+                    // manually stopped schedules so they restart; an incidental rebuild doesn't
+                    const preserveStops = !pendingFullRebuild;
                     pendingFullRebuild = false;
                     emitInfo(`New schedule installed (rebuild)`);
                     const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || initializeTime;
                     const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
+                    const preserveFGStops = foregroundPlayerRunState.stoppedIds;
+                    const preserveBGStops = backgroundPlayerRunState.stoppedIds;
                     foregroundPlayerRunState = new PlayerRunState(initializeTime);
                     backgroundPlayerRunState = new PlayerRunState(initializeTime);
+                    if (preserveStops) {
+                        foregroundPlayerRunState.stoppedIds = new Map(preserveFGStops);
+                        backgroundPlayerRunState.stoppedIds = new Map(preserveBGStops);
+                    }
                     foregroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], mainSched, errs);
                     backgroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], bgSched, errs);
                     foregroundPlayerRunState.addTimeRangeToSchedule(
