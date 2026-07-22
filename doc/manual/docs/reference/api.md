@@ -13,7 +13,7 @@ The REST API is subject to change. Currently used internally, could be used exte
 The goal is to finalize the shape and provide backward compatibility after the 1.0 release.
 :::
 
-### GET /api/hello
+### GET /api/ezp/hello
 
 Health check endpoint. Simple endpoint to verify the server is running.
 
@@ -35,7 +35,7 @@ Health check endpoint. Simple endpoint to verify the server is running.
 
 ---
 
-### GET /api/current-show
+### GET /api/ezp/current-show
 
 Get current show data. Returns the complete current show state, including sequences, playlists, schedules, user info, and status.
 
@@ -65,7 +65,7 @@ Get current show data. Returns the complete current show state, including sequen
 
 ---
 
-### GET /api/getimage/:sequenceId
+### GET /api/ezp/getimage/:sequenceId
 
 Get sequence thumbnail image. Serves thumbnail images for sequences by sequence ID. Supports multiple image formats (PNG, JPG, JPEG, GIF, WEBP, SVG, ICO, BMP).
 
@@ -84,7 +84,7 @@ Get sequence thumbnail image. Serves thumbnail images for sequences by sequence 
 **Example:**
 
 ```
-GET /api/getimage/seq-123-abc
+GET /api/ezp/getimage/seq-123-abc
 ```
 
 **Error Response (400):**
@@ -105,7 +105,7 @@ GET /api/getimage/seq-123-abc
 
 ---
 
-### POST /api/player-command
+### POST /api/ezp/player-command
 
 Send player command. Sends a command to control player playback, volume, or request playback of songs/playlists.
 
@@ -213,7 +213,7 @@ Set volume:
 
 ---
 
-### POST /api/playlists
+### POST /api/ezp/playlists
 
 Update playlists. Accepts an array of playlist records. Updates `updatedAt` timestamp automatically.
 
@@ -275,7 +275,7 @@ Note: The response includes only non-deleted playlists (`deleted !== true`).
 
 ---
 
-### POST /api/schedules
+### POST /api/ezp/schedules
 
 Update schedules. Accepts an array of scheduled playlist records. Updates `updatedAt` timestamp automatically.
 
@@ -336,9 +336,79 @@ Note: The response includes only non-deleted schedules (`deleted !== true`).
 
 ---
 
-### POST /api/playback-settings
+### File management (FPP-shaped)
 
-Update playback settings. Updates playback configuration settings including audio sync, background sequence mode, viewer control, and volume control.
+Remote file operations on the show folder. Paths and response shapes follow the
+[FPP](https://github.com/FalconChristmas/fpp) file API so FPP-ecosystem tools
+work unchanged. EZPlayer show folders are flat, so every logical directory maps
+to the show folder root with an extension filter:
+
+| `:dirName`  | Contents                                              |
+| ----------- | ----------------------------------------------------- |
+| `sequences` | `*.fseq`                                              |
+| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma`          |
+| `videos`    | `*.mp4 *.mkv *.avi *.mov *.mpg *.mpeg`                |
+| `images`    | `*.gif *.jpg *.jpeg *.png *.webp *.bmp`               |
+| `uploads`   | everything (minus protected/dot files)                |
+
+| Method   | Path                        | Purpose                                                                                      |
+| -------- | --------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/files/:dirName`       | List: `{status:"ok", files:[{name,mtime,sizeBytes,sizeHuman,playtimeSeconds}]}`; `?nameOnly=1` returns a plain name array |
+| `GET`    | `/api/file/:dirName/:name`  | Download (attachment); `?play=1` streams inline with a media content type                     |
+| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body                                        |
+| `POST`   | `/api/file/:dirName`        | Chunked-upload init; returns an id (plain text)                                               |
+| `PATCH`  | `/api/file/:dirName`        | Upload one chunk; headers `Upload-Name`, `Upload-Offset`, `Upload-Length` (raw body = chunk)  |
+| `DELETE` | `/api/file/:dirName/:name`  | Delete a file                                                                                 |
+| `GET`    | `/api/media`                | Music + video file names (array)                                                              |
+| `GET`    | `/api/sequence`             | Sequence base names, no `.fseq` extension (array)                                             |
+| `GET`    | `/api/sequence/:name`       | Download `<name>.fseq`                                                                        |
+| `POST`   | `/api/sequence/:name`       | Upload `<name>.fseq` (raw body) → `{"Status":"OK","Message":""}`                              |
+
+Uploads are **raw request bodies** (not multipart). Chunked uploads assemble in
+`.ezplayer/tmp-uploads/` and move into place atomically on completion, so a
+file never appears half-written. Upload size cap: 2 GB by default
+(`EZPLAYER_MAX_UPLOAD_MB` overrides).
+
+Safety: names must be plain basenames (no subdirectories, no traversal, no
+dotfiles); `xlights_rgbeffects.xml`, `xlights_networks.xml`, and everything
+under `.ezplayer/` cannot be modified or deleted through this API. These
+routes are served on the main web port only — the kiosk port has no file
+API.
+
+---
+
+### POST /api/ezp/sequences
+
+Register (upsert) sequences from files already in the show folder — the
+API-driven equivalent of the desktop "Add Sequence" flow. Body is an array of
+`SequenceRecord`s; `files.*` may be show-relative names (they are resolved
+against the show folder), `id`/`instanceId` are generated when omitted, and a
+missing `work.length` is filled from the FSEQ header.
+
+**Request:**
+
+```json
+[{ "files": { "fseq": "MySong.fseq", "audio": "MySong.mp3" }, "work": { "title": "My Song", "artist": "Artist", "length": 0 } }]
+```
+
+**Response:** `{ "success": true, "sequences": [ ...updated records... ] }`
+
+---
+
+### POST /api/ezp/sequences/autodetect
+
+Given `{ "fseq": "<name in show folder>" }`, look for a matching audio file
+(FSEQ header hints, then basename/prefix matching) and extract tag metadata.
+Returns `{ audioFile?, imageFile?, detectedTitle?, detectedArtist?, durationSecs? }`
+with show-relative file names.
+
+---
+
+### POST /api/ezp/playback-settings
+
+Update playback settings. Updates playback configuration settings including
+audio sync, background sequence mode, idle blackout, viewer control, volume
+control, sync output (FPP MultiSync master), and advanced overrides.
 
 **Request:**
 
@@ -378,9 +448,28 @@ Update playback settings. Updates playback configuration settings including audi
                 "volumeLevel": 50
             }
         ]
+    },
+    "sendIdleBlackFrames": true,
+    "sync": {
+        "multisync": {
+            "enabled": false,
+            "remotes": ["192.168.1.50", "192.168.1.51:32320"],
+            "port": 32320,
+            "multicastAddress": "239.70.80.80"
+        }
+    },
+    "advanced": {
+        "ddpPort": 4048
     }
 }
 ```
+
+`sendIdleBlackFrames` (default `true`) controls whether black frames are sent
+while idle/paused/stopped. `sync.multisync` configures FPP MultiSync master
+output (see [FPP compatibility](./fpp-compat.md#multisync-master)); empty
+`remotes` means multicast, and `port`/`multicastAddress` are optional
+overrides. `advanced.ddpPort` overrides the DDP output port (default 4048)
+and takes effect when controllers reopen.
 
 **Response:**
 
@@ -398,7 +487,7 @@ Update playback settings. Updates playback configuration settings including audi
 
 ---
 
-### GET /api/model-coordinates
+### GET /api/ezp/model-coordinates
 
 Get model coordinates for 3D preview. Returns coordinate data used to render the 3D light layout preview.
 
@@ -422,7 +511,7 @@ Get model coordinates for 3D preview. Returns coordinate data used to render the
 
 ---
 
-### GET /api/model-coordinates-2d
+### GET /api/ezp/model-coordinates-2d
 
 Get model coordinates for 2D preview. Returns coordinate data used to render the 2D light layout preview.
 
@@ -446,7 +535,7 @@ Get model coordinates for 2D preview. Returns coordinate data used to render the
 
 ---
 
-### GET /api/frames
+### GET /api/ezp/frames
 
 Get binary frame data for the live 3D viewer. Returns the latest frame of light channel data as a binary `application/octet-stream` response.
 
@@ -476,9 +565,9 @@ Get binary frame data for the live 3D viewer. Returns the latest frame of light 
 
 ---
 
-### GET /api/frames-zstd
+### GET /api/ezp/frames-zstd
 
-Get ZSTD-compressed binary frame data for the live 3D viewer. Same semantics as `/api/frames` but the frame payload is compressed with ZSTD at level 1 (fastest). Useful for remote/embedded clients on bandwidth-constrained links.
+Get ZSTD-compressed binary frame data for the live 3D viewer. Same semantics as `/api/ezp/frames` but the frame payload is compressed with ZSTD at level 1 (fastest). Useful for remote/embedded clients on bandwidth-constrained links.
 
 **Request:**
 
@@ -509,7 +598,7 @@ The 8-byte header is **not** compressed. Decompress the payload starting at offs
 
 ---
 
-### GET /api/time
+### GET /api/ezp/time
 
 Server clock for client clock-offset estimation. Returns the server's current `Date.now()` value. Clients can measure the round-trip time of this request and compute the offset between their local clock and the server's clock, enabling accurate audio scheduling on remote devices.
 
@@ -540,7 +629,7 @@ The recommended approach is to take several samples and trust the one with the l
 
 ```javascript
 const t0 = Date.now();
-const res = await fetch('/api/time');
+const res = await fetch('/api/ezp/time');
 const t1 = Date.now();
 const { now: serverNow } = await res.json();
 const rtt = t1 - t0;
@@ -550,7 +639,7 @@ const clockOffset = serverNow - (t0 + rtt / 2);
 
 ---
 
-### GET /api/audio
+### GET /api/ezp/audio
 
 Get binary audio chunk data for web client audio streaming. Returns all audio chunks published since a given sequence number. Used by the web UI to stream audio from the player in sync with the live pixel data.
 
@@ -595,7 +684,7 @@ The response is a binary `application/octet-stream` with the following layout:
 
 **Notes:**
 
-- `playAtRealTime` is a server-side `Date.now()` timestamp. Remote clients should use the `/api/time` endpoint to estimate clock offset and adjust accordingly.
+- `playAtRealTime` is a server-side `Date.now()` timestamp. Remote clients should use the `/api/ezp/time` endpoint to estimate clock offset and adjust accordingly.
 - `incarnation` changes when a new song or audio segment begins. Clients should reset their audio scheduling state when incarnation changes.
 - Audio samples are interleaved: for stereo, the pattern is `[L0, R0, L1, R1, ...]`. Clients must deinterleave into per-channel buffers for Web Audio API playback.
 - The ring buffer holds approximately 5 seconds of audio. If a client falls behind, the oldest chunks are silently lost. The response will include chunks starting from the oldest still available.
@@ -605,15 +694,15 @@ The response is a binary `application/octet-stream` with the following layout:
 
 ```bash
 # First request - get all available chunks
-curl http://localhost:3000/api/audio?afterSeq=0 --output audio.bin
+curl http://localhost:3000/api/ezp/audio?afterSeq=0 --output audio.bin
 
 # Subsequent requests - only get new chunks
-curl http://localhost:3000/api/audio?afterSeq=42 --output audio.bin
+curl http://localhost:3000/api/ezp/audio?afterSeq=42 --output audio.bin
 ```
 
 ---
 
-### GET /api/view-objects
+### GET /api/ezp/view-objects
 
 Get view objects for the 3D preview. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
 
@@ -668,7 +757,7 @@ Get view objects for the 3D preview. Returns the list of view objects (meshes an
 
 ---
 
-### GET /api/show-file
+### GET /api/ezp/show-file
 
 Serve a file from the current show folder. Used by the 3D viewer to load OBJ models, MTL materials, and texture images. Only accepts show-folder-relative paths and a restricted set of file extensions for security.
 
@@ -696,8 +785,8 @@ Serve a file from the current show folder. Used by the 3D viewer to load OBJ mod
 **Example:**
 
 ```
-GET /api/show-file?path=HouseModel/house.obj
-GET /api/show-file?path=HouseModel/texture_1001.png
+GET /api/ezp/show-file?path=HouseModel/house.obj
+GET /api/ezp/show-file?path=HouseModel/texture_1001.png
 ```
 
 **Error Responses:**
@@ -713,7 +802,7 @@ GET /api/show-file?path=HouseModel/texture_1001.png
 
 ---
 
-### GET /api/layout-settings
+### GET /api/ezp/layout-settings
 
 Returns layout-level settings parsed from the xLights `<settings>` element in `xlights_rgbeffects.xml`. Includes background image path, brightness, and preview canvas dimensions.
 
@@ -735,11 +824,11 @@ Returns layout-level settings parsed from the xLights `<settings>` element in `x
 }
 ```
 
-All fields are optional — the object may be empty if no settings are present in the XML. The `backgroundImage` path is show-folder-relative and can be loaded via `/api/show-file?path=PIFar.jpg`.
+All fields are optional — the object may be empty if no settings are present in the XML. The `backgroundImage` path is show-folder-relative and can be loaded via `/api/ezp/show-file?path=PIFar.jpg`.
 
 ---
 
-### GET /api/moving-heads
+### GET /api/ezp/moving-heads
 
 Get DMX moving head fixture definitions. Returns the list of `DmxMovingHead` and `DmxMovingHeadAdv` fixtures parsed from the xLights XML layout. Each entry contains everything needed to compute beam position, direction, and color from live frame data: motor definitions, color channels, beam geometry, and world transform. Returns an empty array when no show is loaded or no moving head fixtures are present.
 
@@ -834,7 +923,7 @@ To render a live beam, slice `channelOffset … channelOffset + numChannels` byt
 
 ---
 
-### GET /api/debug-show-folder
+### GET /api/ezp/debug-show-folder
 
 Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
 

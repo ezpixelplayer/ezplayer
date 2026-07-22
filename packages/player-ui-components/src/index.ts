@@ -13,6 +13,7 @@ export { CreateEditPlaylist } from './components/playlist/CreateEditPlaylist';
 export { PlaylistList } from './components/playlist/PlaylistList';
 export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
+export { ServerFilePickerDialog } from './components/song/ServerFilePickerDialog';
 export { EditSongDetailsDialog } from './components/song/EditSongDetailsDialog';
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
@@ -83,10 +84,15 @@ export { InitialDataProvider } from './store/InitialDataProvider';
 export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {
+    autodetectShowSequence,
+    extractShowAudioMetadata,
+    canUploadShowFiles,
+    listShowFiles,
     fetchSequences,
     postSequenceData,
     setSequenceData,
     setSequenceTags,
+    uploadShowFiles,
 } from './store/slices/SequenceStore';
 
 export { setPlaylists, fetchPlaylists, postPlaylistData, addTag } from './store/slices/PlaylistStore';
@@ -130,6 +136,7 @@ export { initI18N } from './i18n/i18n';
 
 export { getImageUrl, useImageUrl } from './util/imageUtils';
 export { ApiBaseProvider, useApiBase } from './util/ApiBaseProvider';
+export { UiVersionProvider, useUiVersion } from './util/UiVersionProvider';
 
 export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';

@@ -1293,6 +1293,8 @@ export interface InteractivePlayCommand {
     playlistId?: string;
     scheduleId?: string;
     requestId: string;
+    /** Playlist play only: loop the main section instead of a single pass. */
+    loop?: boolean;
 }
 
 export interface UpcomingPlaybackActions {
@@ -1615,7 +1617,7 @@ export class PlayerRunState {
         } else if (ipc.playlistId) {
             sc.playlistIds = [undefined, ipc.playlistId, undefined];
             sc.mainSection = [];
-            sc.mainSectionLoop = false;
+            sc.mainSectionLoop = !!ipc.loop;
             sc.mainSectionTotal = 0;
             sc.mainSectionLongest = 0;
 
@@ -2089,6 +2091,7 @@ export class PlayerRunState {
                   requestId: item.itemId,
                   startTime: item.schedStart,
                   scheduleId: item.scheduleId,
+                  playlistId: item.playlistIds?.[1],
                   actions: st.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
               };
     }

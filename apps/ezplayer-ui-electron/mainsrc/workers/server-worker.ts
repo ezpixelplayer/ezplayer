@@ -14,7 +14,15 @@ import Router from '@koa/router';
 import { send } from '@koa/send';
 import serve from 'koa-static';
 import { fileURLToPath } from 'url';
-import type { EZPlayerCommand, FullPlayerState, PlaybackSettings, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type {
+    EZPlayerCommand,
+    FullPlayerState,
+    PlaybackSettings,
+    PlayerPStatusContent,
+    PlaylistRecord,
+    ScheduledPlaylist,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
@@ -25,6 +33,17 @@ import type {
     ServerWorkerRPCAPI,
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
+import {
+    createFileApiRouter,
+    registerSequenceApiRoutes,
+    listFileNamesCore,
+    chunkUploadCore,
+    putSequencesCore,
+    autodetectSequenceCore,
+    audioMetadataCore,
+    type FileApiDeps,
+} from './file-api.js';
+import { registerFppCompatRoutes } from './fppcompat/fpp-api.js';
 import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
@@ -173,7 +192,7 @@ wsBroadcaster.setClientMessageHandler((msg) => {
             console.error('[server-worker] playerCommand failed:', err);
         });
     } else if (msg.type === 'settings') {
-        // Mirror the POST /api/playback-settings flow: persist to disk first
+        // Mirror the POST /api/ezp/playback-settings flow: persist to disk first
         // (so changes survive restart), then push to the live player, then
         // re-broadcast so other clients update.
         void (async () => {
@@ -415,10 +434,17 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
                 reqId?: string;
                 path?: string;
                 query?: Record<string, string>;
+                method?: string;
+                headers?: Record<string, string>;
+                bodyBase64?: string;
             };
             if (msg?.type !== 'httpProxyRequest' || typeof msg.reqId !== 'string') return;
             reqId = msg.reqId;
-            void dispatchHttpProxy(msg.path ?? '', msg.query).then((res) => {
+            void dispatchHttpProxy(msg.path ?? '', msg.query, {
+                method: msg.method,
+                headers: msg.headers,
+                bodyBase64: msg.bodyBase64,
+            }).then((res) => {
                 sendProxyResponse(ws, reqId!, res);
             });
         } catch (err) {
@@ -458,7 +484,7 @@ function closeCloudProxyBridge(sessionId?: string) {
 
 // -- cloud audio bridge (push) ------------------------------------------------
 // Push each new audio chunk as a binary WS frame: per-chunk wire format from
-// /api/audio, prefixed with `serverNow` for browser-side clockOffset refinement.
+// /api/ezp/audio, prefixed with `serverNow` for browser-side clockOffset refinement.
 
 interface CloudAudioBridge {
     sessionId: string;
@@ -632,16 +658,93 @@ function sendProxyResponse(
     }
 }
 
+/** Non-GET proxied bodies are chunk-sized by the client (≤1MB); anything
+ *  bigger than this is a protocol violation, not a big upload. */
+const PROXY_MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+function proxyJson(res: { status: number; body: unknown }): {
+    status: number;
+    headers: Record<string, string>;
+    body: Buffer;
+} {
+    return {
+        status: res.status,
+        headers: { 'content-type': 'application/json' },
+        body: Buffer.from(JSON.stringify(res.body ?? null), 'utf8'),
+    };
+}
+
+/** Cloud-side writes: chunked file upload plus the EZP-native sequence
+ *  endpoints. Same validation cores as the Koa routes in file-api.ts; the
+ *  trust shape matches the WS write verbs (possession of the player token). */
+async function dispatchProxyWrite(
+    pathStr: string,
+    method: string,
+    req: { headers?: Record<string, string>; bodyBase64?: string } | undefined,
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+    const body = req?.bodyBase64 ? Buffer.from(req.bodyBase64, 'base64') : Buffer.alloc(0);
+    if (body.length > PROXY_MAX_BODY_BYTES) return { status: 413 };
+
+    if (method === 'PATCH') {
+        const m = pathStr.match(/^\/api\/file\/([^/?]+)$/);
+        if (!m) return { status: 404 };
+        return proxyJson(await chunkUploadCore(showFolder, decodeURIComponent(m[1]), req?.headers ?? {}, body));
+    }
+
+    if (method === 'POST') {
+        let parsed: unknown;
+        try {
+            parsed = body.length > 0 ? JSON.parse(body.toString('utf8')) : undefined;
+        } catch {
+            return { status: 400 };
+        }
+        if (pathStr === '/api/ezp/sequences') {
+            const deps: FileApiDeps = {
+                getShowFolder: () => showFolder,
+                getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+                putSequences: async (recs) => await rpc.call('putSequences', recs),
+            };
+            return proxyJson(await putSequencesCore(deps, parsed));
+        }
+        if (pathStr === '/api/ezp/sequences/autodetect') {
+            return proxyJson(await autodetectSequenceCore(showFolder, (parsed as any)?.fseq));
+        }
+        if (pathStr === '/api/ezp/sequences/audio-metadata') {
+            return proxyJson(await audioMetadataCore(showFolder, (parsed as any)?.audio));
+        }
+    }
+    return { status: 404 };
+}
+
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
 async function dispatchHttpProxy(
     pathStr: string,
     query: Record<string, string> | undefined,
+    req?: { method?: string; headers?: Record<string, string>; bodyBase64?: string },
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
-    // /api/getimage — id in path or query. Query form is preferred for cloud
+    const method = (req?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') return dispatchProxyWrite(pathStr, method, req);
+
+    // GET /api/files/:dirName — show-folder name listing for the cloud file
+    // picker (FPP-shaped path, so match it before the legacy-alias rewrite).
+    const filesMatch = pathStr.match(/^\/api\/files\/([^/?]+)$/);
+    if (filesMatch) {
+        const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+        return proxyJson(await listFileNamesCore(showFolder, decodeURIComponent(filesMatch[1])));
+    }
+
+    // Cloud endpoints deployed before the /api/ezp move still forward bare
+    // /api/* read paths; accept both until that fleet is updated.
+    if (!pathStr.startsWith('/api/ezp/') && pathStr.startsWith('/api/')) {
+        pathStr = '/api/ezp/' + pathStr.slice('/api/'.length);
+    }
+
+    // /api/ezp/getimage — id in path or query. Query form is preferred for cloud
     // because some hosting providers' edge proxies reject `%7C` (composite-id
     // pipe) in URL paths.
-    const getimagePath = pathStr.match(/^\/api\/getimage\/([^/?]+)$/);
-    const getimageQuery = pathStr === '/api/getimage' ? query?.id : undefined;
+    const getimagePath = pathStr.match(/^\/api\/ezp\/getimage\/([^/?]+)$/);
+    const getimageQuery = pathStr === '/api/ezp/getimage' ? query?.id : undefined;
     if (getimagePath || getimageQuery) {
         const raw = getimagePath ? getimagePath[1] : getimageQuery!;
         const sequenceId = decodeURIComponent(raw);
@@ -665,38 +768,38 @@ async function dispatchHttpProxy(
     // Layout caches — read directly from the module-level vars the Koa
     // routes also serve. JSON-stringified and returned as a Buffer for
     // uniform chunking behavior on the wire.
-    if (pathStr === '/api/model-coordinates') return jsonResult(cachedModelCoordinates3D);
-    if (pathStr === '/api/model-coordinates-2d') return jsonResult(cachedModelCoordinates2D);
-    if (pathStr === '/api/view-objects') return jsonResult(cachedViewObjects);
-    if (pathStr === '/api/layout-settings') return jsonResult(cachedLayoutSettings);
-    if (pathStr === '/api/moving-heads') return jsonResult(cachedMovingHeads);
+    if (pathStr === '/api/ezp/model-coordinates') return jsonResult(cachedModelCoordinates3D);
+    if (pathStr === '/api/ezp/model-coordinates-2d') return jsonResult(cachedModelCoordinates2D);
+    if (pathStr === '/api/ezp/view-objects') return jsonResult(cachedViewObjects);
+    if (pathStr === '/api/ezp/layout-settings') return jsonResult(cachedLayoutSettings);
+    if (pathStr === '/api/ezp/moving-heads') return jsonResult(cachedMovingHeads);
 
-    // /api/show-file?path=… — OBJ/MTL/textures for the 3D viewer.
+    // /api/ezp/show-file?path=… — OBJ/MTL/textures for the 3D viewer.
     // Same validation as the Koa route; deviations would create a path the
     // LAN-only consumer can hit but cloud can't (or vice versa).
-    if (pathStr === '/api/show-file') {
+    if (pathStr === '/api/ezp/show-file') {
         return dispatchShowFile(query?.path);
     }
 
-    // /api/frames-zstd — live channel-data frames, zstd-compressed. Owner-
+    // /api/ezp/frames-zstd — live channel-data frames, zstd-compressed. Owner-
     // only diagnostic over WAN; the LAN path serves uncompressed frames too
     // but for WAN the bandwidth saving is meaningful. Mirrors the Koa route's
     // wire format: [frameSize u32 LE][seq u32 LE][zstd payload].
-    if (pathStr === '/api/frames-zstd') {
+    if (pathStr === '/api/ezp/frames-zstd') {
         return dispatchFramesZstd();
     }
 
-    // /api/audio?afterSeq=N — incremental audio chunks for the WAN-side
+    // /api/ezp/audio?afterSeq=N — incremental audio chunks for the WAN-side
     // browser. Mirrors the Koa route's binary chunk-pack wire format; the
     // browser uses `useAudioStream` to schedule via Web Audio with drift
-    // correction against the player's clock (sync'd via /api/time).
-    if (pathStr === '/api/audio') {
+    // correction against the player's clock (sync'd via /api/ezp/time).
+    if (pathStr === '/api/ezp/audio') {
         const afterSeq = parseInt(query?.afterSeq ?? '0', 10) || 0;
         return dispatchAudio(afterSeq);
     }
 
-    // /api/time — server-clock sample for client RTT/offset estimation.
-    if (pathStr === '/api/time') {
+    // /api/ezp/time — server-clock sample for client RTT/offset estimation.
+    if (pathStr === '/api/ezp/time') {
         return jsonResult({ now: Date.now() });
     }
 
@@ -858,7 +961,7 @@ async function startServer(config: ServerWorkerData) {
             console.log('[server-worker] ZSTD codec initialized');
         });
     } catch (err) {
-        console.warn('[server-worker] ZSTD codec failed to initialize, /api/frames-zstd will be unavailable:', err);
+        console.warn('[server-worker] ZSTD codec failed to initialize, /api/ezp/frames-zstd will be unavailable:', err);
     }
 
     console.log(`[server-worker] Starting Koa web server on port ${port} (source: ${portSource})`);
@@ -868,11 +971,43 @@ async function startServer(config: ServerWorkerData) {
     // Proxy middleware must be before bodyParser so it can stream raw request bodies
     webApp.use(createProxyMiddleware());
 
+    // File-transfer routes stream raw bodies, so they also sit before jsonBody().
+    // Deliberately NOT mounted on the kiosk app: the public jukebox port gets no
+    // file upload/download/delete surface.
+    const fileApiDeps: FileApiDeps = {
+        getShowFolder: () => wsBroadcaster.get('showFolder') as string | undefined,
+        getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+        putSequences: async (recs) => await rpc.call('putSequences', recs),
+    };
+    const fileApiRouter = createFileApiRouter(fileApiDeps);
+    webApp.use(fileApiRouter.routes());
+    webApp.use(fileApiRouter.allowedMethods());
+
     // Add body parser middleware for JSON requests
     webApp.use(jsonBody());
 
+    // EZP-native sequence registration/autodetect (JSON bodies, shared router).
+    registerSequenceApiRoutes(router, fileApiDeps);
+
+    // FPP-compat surface (status/info/version/commands/volume) — same paths a
+    // real FPP serves, translated onto the cached state + command bridge.
+    registerFppCompatRoutes(router, {
+        getShowFolder: () => wsBroadcaster.get('showFolder') as string | undefined,
+        getPStatus: () => wsBroadcaster.get('pStatus') as PlayerPStatusContent | undefined,
+        getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+        getPlaylists: () => wsBroadcaster.get('playlists') as PlaylistRecord[] | undefined,
+        getSchedule: () => wsBroadcaster.get('schedule') as ScheduledPlaylist[] | undefined,
+        sendPlayerCommand: async (cmd) => {
+            await rpc.call('sendPlayerCommand', cmd);
+        },
+        updatePlaylists: async (recs) => await rpc.call('updatePlaylistsHandler', recs),
+        updateSchedule: async (recs) => await rpc.call('updateScheduleHandler', recs),
+        putSequences: async (recs) => await rpc.call('putSequences', recs),
+        appVersion: config.appVersion ?? '0.0.0',
+    });
+
     // ----------------------------------------------
-    // API: GET /api/getimage?id=… (preferred) or /api/getimage/:sequenceId
+    // API: GET /api/ezp/getimage?id=… (preferred) or /api/ezp/getimage/:sequenceId
     // (legacy). Cloud-sourced ids are `<user>|<vseq>`; some hosting edges
     // reject `%7C` in URL paths, so the preferred caller-side form is the
     // query-string variant. Both shapes are accepted so a new browser
@@ -914,24 +1049,24 @@ async function startServer(config: ServerWorkerData) {
         }
     };
 
-    router.get('/api/getimage', async (ctx) => {
+    router.get('/api/ezp/getimage', async (ctx) => {
         await serveGetImage(ctx, ctx.query.id as string | undefined);
     });
-    router.get('/api/getimage/:sequenceId', async (ctx) => {
+    router.get('/api/ezp/getimage/:sequenceId', async (ctx) => {
         await serveGetImage(ctx, ctx.params.sequenceId);
     });
 
     // ----------------------------------------------
-    // API: GET /api/hello
+    // API: GET /api/ezp/hello
     // ----------------------------------------------
-    router.get('/api/hello', async (ctx) => {
+    router.get('/api/ezp/hello', async (ctx) => {
         ctx.body = { message: 'Hello from Koa + Electron!' };
     });
 
     // ----------------------------------------------
-    // API: GET /api/current-show (local cache read)
+    // API: GET /api/ezp/current-show (local cache read)
     // ----------------------------------------------
-    router.get('/api/current-show', async (ctx) => {
+    router.get('/api/ezp/current-show', async (ctx) => {
         ctx.body = {
             showFolder: wsBroadcaster.get('showFolder'),
             sequences: wsBroadcaster.get('sequences') ?? [],
@@ -944,9 +1079,9 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/debug-show-folder - diagnostic endpoint
+    // API: GET /api/ezp/debug-show-folder - diagnostic endpoint
     // ----------------------------------------------
-    router.get('/api/debug-show-folder', async (ctx) => {
+    router.get('/api/ezp/debug-show-folder', async (ctx) => {
         const showFolder = wsBroadcaster.get('showFolder');
         const state = wsBroadcaster.getState();
         ctx.body = {
@@ -958,9 +1093,9 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: POST /api/player-command
+    // API: POST /api/ezp/player-command
     // ----------------------------------------------
-    router.post('/api/player-command', async (ctx) => {
+    router.post('/api/ezp/player-command', async (ctx) => {
         try {
             const command = ctx.request.body as EZPlayerCommand;
             if (!command || !command.command) {
@@ -980,7 +1115,7 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     // API: POST /api/playlists
     // ----------------------------------------------
-    router.post('/api/playlists', async (ctx) => {
+    router.post('/api/ezp/playlists', async (ctx) => {
         try {
             const playlists = ctx.request.body;
             if (!Array.isArray(playlists)) {
@@ -1000,7 +1135,7 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     // API: POST /api/schedules
     // ----------------------------------------------
-    router.post('/api/schedules', async (ctx) => {
+    router.post('/api/ezp/schedules', async (ctx) => {
         try {
             const schedules = ctx.request.body;
             if (!Array.isArray(schedules)) {
@@ -1018,9 +1153,9 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: POST /api/playback-settings
+    // API: POST /api/ezp/playback-settings
     // ----------------------------------------------
-    router.post('/api/playback-settings', async (ctx) => {
+    router.post('/api/ezp/playback-settings', async (ctx) => {
         try {
             const settings = ctx.request.body;
             if (!settings || typeof settings !== 'object') {
@@ -1045,45 +1180,45 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/model-coordinates - get model coordinates for 3D preview (local cache)
+    // API: GET /api/ezp/model-coordinates - get model coordinates for 3D preview (local cache)
     // ----------------------------------------------
-    router.get('/api/model-coordinates', async (ctx) => {
+    router.get('/api/ezp/model-coordinates', async (ctx) => {
         ctx.body = cachedModelCoordinates3D;
     });
 
     // ----------------------------------------------
-    // API: GET /api/model-coordinates-2d - get 2D model coordinates for 2D preview (local cache)
+    // API: GET /api/ezp/model-coordinates-2d - get 2D model coordinates for 2D preview (local cache)
     // ----------------------------------------------
-    router.get('/api/model-coordinates-2d', async (ctx) => {
+    router.get('/api/ezp/model-coordinates-2d', async (ctx) => {
         ctx.body = cachedModelCoordinates2D;
     });
 
     // ----------------------------------------------
-    // API: GET /api/view-objects - get view objects (meshes) from XML (local cache)
+    // API: GET /api/ezp/view-objects - get view objects (meshes) from XML (local cache)
     // ----------------------------------------------
-    router.get('/api/view-objects', async (ctx) => {
+    router.get('/api/ezp/view-objects', async (ctx) => {
         ctx.body = cachedViewObjects;
     });
 
     // ----------------------------------------------
-    // API: GET /api/layout-settings - get layout settings (background image, preview size) from XML
+    // API: GET /api/ezp/layout-settings - get layout settings (background image, preview size) from XML
     // ----------------------------------------------
-    router.get('/api/layout-settings', async (ctx) => {
+    router.get('/api/ezp/layout-settings', async (ctx) => {
         ctx.body = cachedLayoutSettings;
     });
 
     // ----------------------------------------------
-    // API: GET /api/moving-heads - get DMX moving head fixture definitions from XML
+    // API: GET /api/ezp/moving-heads - get DMX moving head fixture definitions from XML
     // ----------------------------------------------
-    router.get('/api/moving-heads', async (ctx) => {
+    router.get('/api/ezp/moving-heads', async (ctx) => {
         ctx.body = cachedMovingHeads;
     });
 
     // ----------------------------------------------
-    // API: GET /api/show-file - serve files for OBJ/MTL/textures used by 3D viewer
+    // API: GET /api/ezp/show-file - serve files for OBJ/MTL/textures used by 3D viewer
     // Only accepts show-folder-relative paths (no absolute paths).
     // ----------------------------------------------
-    router.get('/api/show-file', async (ctx) => {
+    router.get('/api/ezp/show-file', async (ctx) => {
         const filePath = ctx.query.path as string;
         const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
 
@@ -1153,11 +1288,11 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/frames - binary frame data for 3D viewer
+    // API: GET /api/ezp/frames - binary frame data for 3D viewer
     // ----------------------------------------------
     const frameBufferPool = new BufferPool();
 
-    router.get('/api/frames', async (ctx) => {
+    router.get('/api/ezp/frames', async (ctx) => {
         // CORS headers for Electron renderer (file:// origin)
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -1212,10 +1347,10 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/frames-zstd - ZSTD-compressed binary frame data for 3D viewer
+    // API: GET /api/ezp/frames-zstd - ZSTD-compressed binary frame data for 3D viewer
     // Wire format: [frameSize u32 LE][seq u32 LE][zstd-compressed frame bytes]
     // ----------------------------------------------
-    router.get('/api/frames-zstd', async (ctx) => {
+    router.get('/api/ezp/frames-zstd', async (ctx) => {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
@@ -1273,10 +1408,10 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/time - server Date.now() for client clock-offset estimation
+    // API: GET /api/ezp/time - server Date.now() for client clock-offset estimation
     // Client measures RTT and computes offset = serverTime - clientTime + RTT/2
     // ----------------------------------------------
-    router.get('/api/time', async (ctx) => {
+    router.get('/api/ezp/time', async (ctx) => {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
         ctx.set('Cache-Control', 'no-store');
@@ -1284,12 +1419,12 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: GET /api/audio?afterSeq=N - binary audio chunk data for web client
+    // API: GET /api/ezp/audio?afterSeq=N - binary audio chunk data for web client
     // Wire format: [u32 chunkCount][u32 latestSeq]
     //   per chunk: [f64 playAtRealTime][u32 incarnation][u32 sampleRate]
     //              [u32 channels][u32 sampleCount][u32 advanceSamples][Float32 × sampleCount]
     // ----------------------------------------------
-    router.get('/api/audio', async (ctx) => {
+    router.get('/api/ezp/audio', async (ctx) => {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
 

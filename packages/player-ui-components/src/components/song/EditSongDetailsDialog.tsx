@@ -4,10 +4,19 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 
-import { isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
+import { FileButton, isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
-import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '../..';
+import {
+    AppDispatch,
+    extractShowAudioMetadata,
+    postSequenceData,
+    RootState,
+    setSequenceTags,
+    uploadShowFiles,
+} from '../..';
+import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
+import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
@@ -88,6 +97,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     });
     const [uploadedFiles, setUploadedFiles] = useState<SequenceFiles>({});
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
+    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
 
     useEffect(() => {
@@ -107,11 +117,8 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 tags: selectedSong?.settings?.tags || [],
             });
 
-            // Only initialize file states in Electron
-            if (isElectron()) {
-                setUploadedFiles(selectedSong?.files || {});
-                setNewFiles({});
-            }
+            setUploadedFiles(selectedSong?.files || {});
+            setNewFiles({});
         }
     }, [open, selectedSongId, sequenceData]);
 
@@ -141,6 +148,41 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         }));
         if (metadata.imageFile) {
             setNewFiles((prev) => ({ ...prev, thumb: prev.thumb ?? metadata.imageFile }));
+        }
+    };
+
+    /** Web replacement path: the picked File lives on this machine, so push
+     *  its bytes into the show folder first, then reference it by name. */
+    const handleWebFileReplace = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
+            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
+            setNewFiles((prev) => ({ ...prev, [fileKey]: file.name }));
+            if (type === 'mp3') {
+                try {
+                    const meta = await dispatch(extractShowAudioMetadata(file.name)).unwrap();
+                    applyDetectedMetadata(meta);
+                } catch {
+                    /* tags are best-effort */
+                }
+            }
+            if (type === 'fseq') {
+                try {
+                    const durationMs = await getFSEQDurationMSBrowser(file);
+                    setNewDurationSecs(Number((durationMs / 1000).toFixed(3)));
+                } catch {
+                    /* duration stays as-is; server fills from header when 0 */
+                }
+            }
+        } catch (error) {
+            console.error('Error uploading file:', error);
+            ToastMsgs.showErrorMessage(`Failed to upload ${file.name}`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
         }
     };
 
@@ -241,13 +283,13 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             // Create the updated song object
             const prevSong = sequenceData?.find((song) => song.id === selectedSongId);
             if (prevSong) {
-                // Merge existing files with new files (only in Electron)
-                const updatedFiles = isElectron()
-                    ? {
-                          ...prevSong.files,
-                          ...newFiles,
-                      }
-                    : prevSong.files;
+                // Merge existing files with any replacements. Electron picks
+                // supply absolute paths; web picks supply show-relative names
+                // whose bytes were already uploaded (the server resolves them).
+                const updatedFiles = {
+                    ...prevSong.files,
+                    ...newFiles,
+                };
 
                 const updatedSong = {
                     ...prevSong,
@@ -341,7 +383,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 justifyContent: 'center',
                 padding: 4,
                 width: '100%',
-                maxWidth: isElectron() ? '800px' : '500px',
+                maxWidth: '800px',
             }}
         >
             <>
@@ -394,48 +436,91 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </form>
                     </Grid>
 
-                    {/* File Management (Electron only) */}
-                    {isElectron() && (
-                        <Grid item xs={12}>
-                            <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-                                Files
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                {/* FSEQ File */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    {/* File Management — native picker in Electron, upload on web */}
+                    <Grid item xs={12}>
+                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+                            Files
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {/* FSEQ File */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                {isElectron() ? (
                                     <FileSelectButton
                                         fileType="fseq"
                                         onFileSelect={(file) => handleFileChange(file, 'fseq')}
                                     />
-                                    <Typography variant="body1">
-                                        {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
-                                    </Typography>
-                                </Box>
+                                ) : (
+                                    <>
+                                        <FileButton
+                                            fileType={['.fseq']}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'fseq')
+                                            }
+                                        />
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
+                                            On player
+                                        </Button>
+                                    </>
+                                )}
+                                <Typography variant="body1">
+                                    {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
+                                </Typography>
+                            </Box>
 
-                                {/* MP3 File */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            {/* MP3 File */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                {isElectron() ? (
                                     <FileSelectButton
                                         fileType="mp3"
                                         onFileSelect={(file) => handleFileChange(file, 'mp3')}
                                     />
-                                    <Typography variant="body1">
-                                        {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No MP3 file'}
-                                    </Typography>
-                                </Box>
+                                ) : (
+                                    <>
+                                        <FileButton
+                                            fileType={['.mp3']}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
+                                            }
+                                        />
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                            On player
+                                        </Button>
+                                    </>
+                                )}
+                                <Typography variant="body1">
+                                    {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No MP3 file'}
+                                </Typography>
+                            </Box>
 
-                                {/* Image File */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            {/* Image File */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                {isElectron() ? (
                                     <FileSelectButton
                                         fileType="image"
                                         onFileSelect={(file) => handleFileChange(file, 'image')}
                                     />
-                                    <Typography variant="body1">
-                                        {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
-                                    </Typography>
-                                </Box>
+                                ) : (
+                                    <>
+                                        <FileButton
+                                            fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'image')
+                                            }
+                                        />
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
+                                            On player
+                                        </Button>
+                                    </>
+                                )}
+                                <Typography variant="body1">
+                                    {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
+                                </Typography>
                             </Box>
-                        </Grid>
-                    )}
+                        </Box>
+                    </Grid>
 
                     {/* Image URL (available in both Electron and Web) */}
                     <Grid item xs={12}>
@@ -571,6 +656,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 <Divider />
             </DialogTitle>
             <DialogContent>{editDialogContent}</DialogContent>
+
+            <ServerFilePickerDialog
+                open={pickerFor !== null}
+                onClose={() => setPickerFor(null)}
+                title="Choose a file on the player"
+                dir={pickerFor === 'fseq' ? 'sequences' : pickerFor === 'mp3' ? 'music' : 'images'}
+                onSelect={(name) => {
+                    const fileKey = pickerFor === 'mp3' ? 'audio' : pickerFor === 'image' ? 'thumb' : 'fseq';
+                    setNewFiles((prev) => ({ ...prev, [fileKey]: name }));
+                    if (pickerFor === 'fseq') setNewDurationSecs(0); // server refills from header
+                }}
+            />
         </Dialog>
     );
 }

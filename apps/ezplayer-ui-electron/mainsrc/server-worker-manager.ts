@@ -18,8 +18,10 @@ import {
     curFrameBuffer,
     loadShowFolder,
     dispatchCloudCommand,
+    putSequencesWithDurations,
 } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
+import { ezpVersions } from '../versions.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
 
@@ -65,6 +67,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     updateScheduleHandler: async (schedules: unknown[]) => {
         return await updateScheduleHandler(schedules as any[]);
+    },
+    putSequences: async (recs: unknown[]) => {
+        return await putSequencesWithDurations(recs as any[]);
     },
     applySettingsFromRenderer: (settingsPath: string, settings: unknown) => {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
@@ -265,6 +270,7 @@ function initializeServerWorker(port: number, portSource: string, mainWindow: Br
             indexPath,
             kioskPort: kioskPortRef,
             kioskPortSource: kioskPortSourceRef,
+            appVersion: ezpVersions.version,
         },
     };
 

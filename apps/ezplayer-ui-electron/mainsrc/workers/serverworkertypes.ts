@@ -12,6 +12,7 @@ export interface ServerWorkerData {
     indexPath?: string;
     kioskPort?: number;
     kioskPortSource?: string;
+    appVersion?: string;
 }
 
 export type ServerWorkerToMainMessage =
@@ -79,6 +80,7 @@ export type MainToServerWorkerMessage =
 export interface ServerWorkerRPCAPI {
     updatePlaylistsHandler(playlists: unknown[]): Promise<unknown[]>;
     updateScheduleHandler(schedules: unknown[]): Promise<unknown[]>;
+    putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;

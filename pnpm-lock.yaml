@@ -430,6 +430,9 @@ importers:
       vite-plugin-static-copy:
         specifier: ^3.4.0
         version: 3.4.0(vite@5.4.21(@types/node@24.13.2)(sass@1.101.0))
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0)
 
   apps/ezplayer-ui-embedded:
     dependencies:
@@ -584,6 +587,24 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+
+  packages/integration-tests:
+    devDependencies:
+      '@ezplayer/epp':
+        specifier: workspace:*
+        version: link:../epp
+      '@ezplayer/epp-mock-controller':
+        specifier: file:..\..\libs\ezplayer-epp-mock-controller-0.0.1-dev.4.tgz
+        version: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.2
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0)
 
   packages/player-ui-components:
     dependencies:
@@ -1671,6 +1692,11 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz':
+    resolution: {integrity: sha512-teTzab6q27DqWFl8doLsbOvJoN63APelfxNFC3H9uB7hLOBIJTu2KOUORgiUB+/9oAB9Dr9ND87gvtQ+XjE87w==, tarball: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz}
+    version: 0.0.1-dev.4
+    hasBin: true
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -6603,6 +6629,8 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
+  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.4.tgz': {}
+
   '@floating-ui/core@1.7.5':
     dependencies:
       '@floating-ui/utils': 0.2.11
@@ -7797,6 +7825,14 @@ snapshots:
       '@vitest/utils': 2.1.9
       chai: 5.3.3
       tinyrainbow: 1.2.0
+
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@24.13.2)(sass@1.101.0))':
+    dependencies:
+      '@vitest/spy': 2.1.9
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 5.4.21(@types/node@24.13.2)(sass@1.101.0)
 
   '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.9.3)(sass@1.101.0))':
     dependencies:
@@ -10836,6 +10872,24 @@ snapshots:
       '@egjs/hammerjs': 2.0.17
       component-emitter: 1.3.1
 
+  vite-node@2.1.9(@types/node@24.13.2)(sass@1.101.0):
+    dependencies:
+      cac: 6.7.14
+      debug: 4.4.3
+      es-module-lexer: 1.7.0
+      pathe: 1.1.2
+      vite: 5.4.21(@types/node@24.13.2)(sass@1.101.0)
+    transitivePeerDependencies:
+      - '@types/node'
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+
   vite-node@2.1.9(@types/node@25.9.3)(sass@1.101.0):
     dependencies:
       cac: 6.7.14
@@ -10892,6 +10946,42 @@ snapshots:
       '@types/node': 25.9.3
       fsevents: 2.3.3
       sass: 1.101.0
+
+  vitest@2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0):
+    dependencies:
+      '@vitest/expect': 2.1.9
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@24.13.2)(sass@1.101.0))
+      '@vitest/pretty-format': 2.1.9
+      '@vitest/runner': 2.1.9
+      '@vitest/snapshot': 2.1.9
+      '@vitest/spy': 2.1.9
+      '@vitest/utils': 2.1.9
+      chai: 5.3.3
+      debug: 4.4.3
+      expect-type: 1.3.0
+      magic-string: 0.30.21
+      pathe: 1.1.2
+      std-env: 3.10.0
+      tinybench: 2.9.0
+      tinyexec: 0.3.2
+      tinypool: 1.1.1
+      tinyrainbow: 1.2.0
+      vite: 5.4.21(@types/node@24.13.2)(sass@1.101.0)
+      vite-node: 2.1.9(@types/node@24.13.2)(sass@1.101.0)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 24.13.2
+      jsdom: 25.0.1
+    transitivePeerDependencies:
+      - less
+      - lightningcss
+      - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
 
   vitest@2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(sass@1.101.0):
     dependencies:

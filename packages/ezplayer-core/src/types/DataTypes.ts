@@ -174,6 +174,8 @@ export interface PlayerPStatusContent {
         | 'Down'; // FPP: offline / unreachable
 
     reported_time: number;
+    /** Engine clock at status time; freezes during pause (reported_time doesn't). */
+    engine_time?: number;
     now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
@@ -489,6 +491,7 @@ export type EZPlayerCommand =
           immediate: boolean;
           priority: number; // Allows precedence over RF, lower is higher priority
           requestId: string; // To identify, for canceling
+          loop?: boolean; // Repeat the playlist until stopped
       }
     | {
           command: 'deleterequest';
@@ -502,6 +505,20 @@ export type EZPlayerCommand =
           volume?: number;
           mute?: boolean;
       };
+
+/** Initial state returned by ipcUIConnect. The connect invoke RETURNS the
+ *  snapshot so first load cannot depend on push timing (update:* sends to a
+ *  page whose listeners aren't ready yet are silently dropped). */
+export interface UIConnectSnapshot {
+    showFolder?: string;
+    sequences: SequenceRecord[];
+    playlists: PlaylistRecord[];
+    schedule: ScheduledPlaylist[];
+    combinedStatus: CombinedPlayerStatus;
+    playbackSettings?: PlaybackSettings;
+    cloudConfig?: CloudConfig;
+    cloudStatus?: CloudStatus;
+}
 
 export type ScheduleDays =
     | 'all'
@@ -581,6 +598,39 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
     jukebox?: JukeboxSettings;
+    /** Send black frames while idle/paused/stopped so lights go dark
+     *  (default). Disable when another player drives the same controllers —
+     *  the wire is then left untouched outside active playback, and lights
+     *  hold their last frame on stop. */
+    sendIdleBlackFrames?: boolean;
+    /** Outbound sync strategies for followers of this player. */
+    sync?: SyncOutputSettings;
+    /** Diagnostic/testing overrides; leave unset for normal operation. */
+    advanced?: AdvancedPlaybackSettings;
+}
+
+/** Each strategy is independent and gets its own sub-object; Art-Net, OSC,
+ *  and MIDI timecode are expected to join `multisync` here. */
+export interface SyncOutputSettings {
+    multisync?: MultisyncSettings;
+}
+
+/** FPP MultiSync master: send sequence open/start/frame/stop packets so FPP
+ *  or xSchedule remotes follow playback. */
+export interface MultisyncSettings {
+    enabled: boolean;
+    /** Unicast remotes as host[:port]; an empty list means multicast. */
+    remotes: string[];
+    /** Port for multicast and for remotes without an explicit :port (default 32320). */
+    port?: number;
+    /** Multicast group override (default 239.70.80.80). */
+    multicastAddress?: string;
+}
+
+export interface AdvancedPlaybackSettings {
+    /** DDP output port override (default 4048). Takes effect when controllers
+     *  reopen (show folder reload or player restart). */
+    ddpPort?: number;
 }
 
 /** The "playback" cloud-managed settings group — the part of PlaybackSettings

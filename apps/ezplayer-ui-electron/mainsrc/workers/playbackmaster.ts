@@ -82,6 +82,8 @@ import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 import process from 'node:process';
 import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
+import { MultiSyncSender } from './multisync';
+import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
@@ -277,16 +279,22 @@ function sendPlayerStateUpdate() {
             muted,
         },
     };
+    playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
+        const group = ps.curPLActions;
+        const groupIds =
+            group.type === 'interactive'
+                ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
+                : { schedule_id: group.scheduleId };
+        for (const pla of group.actions) {
             if (pla.end) continue;
             // Only "now playing" if it has actually started; a not-yet-started action
             // (within the readahead window) is upcoming, not playing.
             if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                playStatus.now_playing = actionToPlayingItem(false, pla);
+                playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
                 playStatus.status = isPaused ? 'Paused' : 'Playing';
             } else {
-                playStatus.upcoming!.push(actionToPlayingItem(false, pla));
+                playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
             }
         }
     }
@@ -643,7 +651,9 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-                const seq = curSequences?.find((s) => s.id === cmd.songId);
+                // pendingSchedule (not yet installed by the loop) is newer than curSequences
+                const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
+                const seq = liveSequences?.find((s) => s.id === cmd.songId);
                 if (!seq) {
                     emitError(`Unable to identify sequence ${cmd.songId}`);
                     return false;
@@ -691,6 +701,7 @@ function processCommand(cmd: EZPlayerCommand) {
                 muted = cmd.mute;
             }
             volumeSF = muted ? 0 : volume / 100;
+            sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
         case 'pause': {
@@ -723,6 +734,33 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'suppressoutput':
             break;
         case 'playplaylist':
+            {
+                emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
+                const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
+                const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
+                if (!pl) {
+                    emitError(`Unable to identify playlist ${cmd.playlistId}`);
+                    return false;
+                }
+                const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
+                foregroundPlayerRunState.addInteractiveCommand({
+                    immediate: cmd.immediate,
+                    requestId: cmd.requestId,
+                    startTime,
+                    playlistId: cmd.playlistId,
+                    loop: cmd.loop,
+                });
+
+                if (cmd.immediate) {
+                    audioPlayerRunTime = Math.min(audioPlayerRunTime, startTime); // Possibly overlap audio
+                }
+
+                emitInfo(`Enqueue playlist: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                sendPlayerStateUpdate();
+                if (!running) {
+                    running = processQueue(); // kick off first song
+                }
+            }
             break;
         case 'reloadcontrollers':
             break;
@@ -928,6 +966,9 @@ let rfConfigInitialized = false;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
+    multiSync.configure(settings.sync?.multisync);
+    sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
+    if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1076,6 +1117,8 @@ const playbackStatsAgg: OverallFrameSendStats = {
 ///////
 // Clockkeeping
 const rtcConverter = new ClockConverter('mrtc', 0, performance.now());
+// Seed now — computeTime() returns 0 until the first sample arrives.
+rtcConverter.addSample(Date.now(), performance.now());
 
 const _pollTimes = setInterval(async () => {
     const pn = performance.now();
@@ -1119,6 +1162,9 @@ let isStopped = false;
 // processQueue detects this, breaks out of its loop, and the handler
 // starts a fresh processQueue that reinitializes controllers & frame buffer.
 let shouldRestart = false;
+const multiSync = new MultiSyncSender();
+let sendIdleBlackFrames = true;
+let curSender: FrameSender | undefined;
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
 // (folder change or an explicit forceRestart / "reload" from the UI) rather than a
@@ -1550,6 +1596,8 @@ async function processQueue() {
     const sender: FrameSender = new FrameSender();
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
+    sender.blackFramesEnabled = sendIdleBlackFrames;
+    curSender = sender;
 
     try {
         const { controllers, models } = await readControllersFromXlights(showFolder!, {
@@ -1564,7 +1612,9 @@ async function processQueue() {
             await loadXmlCoordinates();
         }
 
-        const sendJob = await openControllersForDataSend(controllers);
+        const sendJob = await openControllersForDataSend(controllers, {
+            ddpPort: latestSettings?.advanced?.ddpPort,
+        });
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             concurrency: 10,
@@ -1662,6 +1712,7 @@ async function processQueue() {
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
                 sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
             }
@@ -1670,12 +1721,22 @@ async function processQueue() {
             // processQueue with new controllers and frame buffer.
             if (shouldRestart) {
                 emitInfo('Show folder changed - restarting processQueue');
+                multiSync.onIdle();
                 break;
             }
 
             ++iteration;
 
             const curPN = performance.now();
+
+            // Resync the frame clock if it falls well behind real time.
+            const wallRTC = rtcConverter.computeTime(curPN);
+            if (targetFrameRTC < wallRTC - 5000) {
+                emitWarning(
+                    `Frame clock ${((wallRTC - targetFrameRTC) / 1000).toFixed(1)}s behind real time — resyncing`,
+                );
+                targetFrameRTC = wallRTC;
+            }
 
             if (curPN - lastStatsUpdatePN >= 1000 && iteration % 4 === 0) {
                 function toCacheStat(s: CacheStats): PrefetchCacheStats {
@@ -1748,7 +1809,8 @@ async function processQueue() {
             // See if a schedule update has been passed in.  If so, do something.
             if (installNewSchedule()) {
                 const initializeTime = rtcConverter.computeTime(curPN); // MoC - Review
-                const mainSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'main');
+                // scheduleType is absent on entries that predate background schedules
+                const mainSched = (curSchedule ?? []).filter((s) => (s.scheduleType ?? 'main') === 'main');
                 const bgSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'background');
                 const errs: string[] = [];
 
@@ -2103,6 +2165,7 @@ async function processQueue() {
                 emitFrameDebug(
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
+                multiSync.onIdle();
                 await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
 
@@ -2113,6 +2176,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
+                multiSync.onIdle();
                 await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
@@ -2173,6 +2237,7 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
+            multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,

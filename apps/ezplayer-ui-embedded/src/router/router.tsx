@@ -10,6 +10,7 @@ import {
     SidebarLayout,
     Routes as ROUTES,
     JukeboxScreen,
+    AddSongDialogBrowser,
     SongList,
     PlaylistList,
     PlayerScreen,
@@ -36,8 +37,6 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
-
-import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
 const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
 
@@ -122,11 +121,11 @@ const allMenuRoutes: MenuRoute[] = [
         element: (
             <SongList
                 title="Songs"
-                AddSongDialog={AddSongDialogElectron}
+                AddSongDialog={AddSongDialogBrowser}
                 statusArea={getStatusArea()}
-                showEditAction={false}
+                showEditAction={!isKiosk}
                 showDeleteAction={!isKiosk}
-                showAddSongButton={false}
+                showAddSongButton={!isKiosk}
             />
         ),
         sidebar: { icon: <MusicIcon />, label: 'Songs' },

@@ -133,6 +133,33 @@ const playbackSettingsSlice = createSlice({
             );
         },
 
+        setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
+            state.settings.sendIdleBlackFrames = action.payload;
+        },
+
+        // Sync output (FPP MultiSync master; future timecode strategies join here)
+        setMultisyncEnabled(state, action: PayloadAction<boolean>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).enabled = action.payload;
+        },
+        setMultisyncRemotes(state, action: PayloadAction<string[]>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).remotes = action.payload;
+        },
+        setMultisyncPort(state, action: PayloadAction<number | undefined>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).port = action.payload;
+        },
+        setMultisyncMulticastAddress(state, action: PayloadAction<string | undefined>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).multicastAddress = action.payload || undefined;
+        },
+
+        // Advanced diagnostic overrides
+        setAdvancedDdpPort(state, action: PayloadAction<number | undefined>) {
+            (state.settings.advanced ??= {}).ddpPort = action.payload;
+        },
+
         // Volume control
         setDefaultVolume(state, action: PayloadAction<number>) {
             state.settings.volumeControl.defaultVolume = action.payload;
@@ -172,6 +199,12 @@ export const {
     setRemoteFalconToken,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
+    setSendIdleBlackFrames,
+    setMultisyncEnabled,
+    setMultisyncRemotes,
+    setMultisyncPort,
+    setMultisyncMulticastAddress,
+    setAdvancedDdpPort,
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,

@@ -1,7 +1,9 @@
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
+import { ezpVersions } from '../versions.js';
 
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 import { BrowserWindow, ipcMain } from 'electron';
 
@@ -59,6 +61,7 @@ import type {
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
+    UIConnectSnapshot,
     FullPlayerState,
     PlaybackSettings,
     PlaylistRecord,
@@ -426,6 +429,43 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     return filtered;
 }
 
+/** Sequence upsert shared by the renderer IPC and the server-worker RPC.
+ *  API clients may send show-relative file names and omit ids. */
+export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
+    const showFolder = getCurrentShowFolder();
+    const uppl = recs.map((r) => {
+        return { ...r, updatedAt: Date.now() };
+    });
+    for (const ups of uppl) {
+        if (!ups.id) ups.id = crypto.randomUUID();
+        if (!ups.instanceId) ups.instanceId = crypto.randomUUID();
+        if (!ups.work) {
+            const base = ups.files?.fseq ? path.basename(ups.files.fseq, path.extname(ups.files.fseq)) : '';
+            ups.work = { title: base, artist: '', length: 0 };
+        }
+        if (ups.files && showFolder) {
+            for (const key of ['fseq', 'audio', 'thumb'] as const) {
+                const p = ups.files[key];
+                if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
+            }
+        }
+        if (!ups?.work?.length && ups.files?.fseq) {
+            // best-effort: a corrupt fseq shouldn't fail the whole upsert
+            try {
+                const fseq = new FSEQReaderAsync(ups.files.fseq);
+                await fseq.open();
+                const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
+                const nframes = fseq.header!.frames;
+                ups.work.length = (frameTime * nframes) / 1000;
+                await fseq.close();
+            } catch (e) {
+                console.warn(`[sequences] could not read FSEQ header for ${ups.files.fseq}:`, e);
+            }
+        }
+    }
+    return await commitSequenceUpdates(uppl);
+}
+
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
 function scheduleUpdated(forceRestart?: boolean) {
@@ -489,6 +529,8 @@ export async function loadShowFolder(forceRestart?: boolean) {
     updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
     broadcastToWebSocket('cloudConfig', cloudConfig);
     broadcastToWebSocket('cloudStatus', getCurrentCloudStatus());
+    // Web/cloud clients have no IPC getVersions — the snapshot carries it.
+    broadcastToWebSocket('versions', ezpVersions);
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -698,8 +740,20 @@ export async function registerContentHandlers(
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
-    ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
+    ipcMain.handle('ipcUIConnect', async (_event): Promise<UIConnectSnapshot> => {
         await loadShowFolder();
+        // Return the initial state directly — the invoke reply cannot be lost,
+        // unlike update:* pushes racing the renderer's listener registration.
+        return {
+            showFolder: getCurrentShowFolder() ?? undefined,
+            sequences: (curSequences ?? []).filter((s) => !s.deleted),
+            playlists: (curPlaylists ?? []).filter((p) => !p.deleted),
+            schedule: (curSchedule ?? []).filter((e) => !e.deleted),
+            combinedStatus: curStatus,
+            playbackSettings: getSettingsCache() ?? undefined,
+            cloudConfig: getCloudConfigCache(),
+            cloudStatus: getCurrentCloudStatus(),
+        };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
         return Promise.resolve();
@@ -755,22 +809,8 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcPutCloudSequences', async (_event, recs: SequenceRecord[]): Promise<SequenceRecord[]> => {
         // TODO Cloud sync if that makes sense...
-        // TODO calculate any times if needed
         // TODO calculate any effect on the schedule
-        const uppl = recs.map((r) => {
-            return { ...r, updatedAt: Date.now() };
-        });
-        for (const ups of uppl) {
-            if (!ups?.work?.length && ups.files?.fseq) {
-                const fseq = new FSEQReaderAsync(ups.files.fseq);
-                await fseq.open();
-                const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
-                const nframes = fseq.header!.frames;
-                ups.work.length = (frameTime * nframes) / 1000;
-                await fseq.close();
-            }
-        }
-        return await commitSequenceUpdates(uppl);
+        return await putSequencesWithDurations(recs);
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {

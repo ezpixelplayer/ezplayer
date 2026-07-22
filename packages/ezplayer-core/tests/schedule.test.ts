@@ -2336,3 +2336,70 @@ describe('calcschedule', () => {
         }
     });
 });
+
+describe('interactive playlist play', () => {
+    const bdate = new Date(ps1NoLoop.date);
+    bdate.setHours(0, 0, 0);
+    const bt = bdate.getTime();
+
+    it('plays a playlist once through and ends', () => {
+        const errs: string[] = [];
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences(all9, playlists_3_9, [], errs);
+        expect(errs.length).toBe(0);
+
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: bt + 1_000,
+            playlistId: plof2.id,
+            requestId: 'plreq1',
+        });
+        const logs = plr.readOutScheduleUntil(bt + 3600_000, 100);
+        //console.log(toTextLog(logs));
+
+        const starts = logs.filter((l) => l.eventType === 'Sequence Started');
+        expect(starts.map((l) => l.sequenceId)).toEqual(['1', '2']);
+        expect(starts[0].eventTime).toBe(bt + 1_000);
+        expect(starts[1].eventTime).toBe(bt + 11_000);
+
+        const plEnd = logs.filter((l) => l.eventType === 'Playlist Ended');
+        expect(plEnd.length).toBe(1);
+        expect(plEnd[0].eventTime).toBe(bt + 21_000);
+        expect(plEnd[0].requestId).toBe('plreq1');
+
+        const schedEnd = logs.filter((l) => l.eventType === 'Schedule Ended');
+        expect(schedEnd.length).toBe(1);
+        expect(schedEnd[0].eventTime).toBe(bt + 21_000);
+    });
+
+    it('loops a playlist until the readout horizon when loop is set', () => {
+        const errs: string[] = [];
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences(all9, playlists_3_9, [], errs);
+        expect(errs.length).toBe(0);
+
+        plr.addInteractiveCommand({
+            immediate: false,
+            startTime: bt + 1_000,
+            playlistId: plof2.id,
+            requestId: 'plreq2',
+            loop: true,
+        });
+        const logs = plr.readOutScheduleUntil(bt + 46_000, 100);
+        //console.log(toTextLog(logs));
+
+        // 10s songs: passes restart at 21s and 41s — 1,2,1,2,1 within 45s.
+        const starts = logs.filter((l) => l.eventType === 'Sequence Started');
+        expect(starts.map((l) => l.sequenceId)).toEqual(['1', '2', '1', '2', '1']);
+        expect(starts.map((l) => l.eventTime)).toEqual([
+            bt + 1_000,
+            bt + 11_000,
+            bt + 21_000,
+            bt + 31_000,
+            bt + 41_000,
+        ]);
+
+        // Looping: the interactive item must not end within the horizon.
+        expect(logs.filter((l) => l.eventType === 'Schedule Ended').length).toBe(0);
+    });
+});

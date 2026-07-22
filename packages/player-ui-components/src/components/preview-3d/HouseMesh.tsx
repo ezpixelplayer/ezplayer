@@ -34,7 +34,7 @@ interface HouseMeshProps {
     /**
      * Optional asset resolver. When supplied, mesh / MTL / texture lookups go through it
      * (so e.g. cloud-only callers can serve assets out of an unpacked layout zip). When
-     * omitted, this component falls back to building `frameServerUrl/api/show-file?path=…`
+     * omitted, this component falls back to building `frameServerUrl/api/ezp/show-file?path=…`
      * URLs directly — preserves legacy behaviour for callers that haven't been updated.
      */
     assetResolver?: AssetResolver;
@@ -416,7 +416,7 @@ function createAssetLoadingManager(
 
         // Already a resolved show-file URL — we (or the resolver) produced it, so return it
         // untouched.
-        if (url.includes('/api/show-file?')) return url;
+        if (url.includes('/api/ezp/show-file?')) return url;
 
         let assetPath: string | null = null;
 

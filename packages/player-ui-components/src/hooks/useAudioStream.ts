@@ -15,7 +15,7 @@ export interface UseAudioStreamResult {
 const DEFAULT_POLL_INTERVAL = 50;
 const MAX_CONSECUTIVE_ERRORS = 5;
 const CLOCK_SYNC_SAMPLES = 6;
-/** Re-bootstrap clockOffset via /api/time every this often. Backstop for the
+/** Re-bootstrap clockOffset via /api/ezp/time every this often. Backstop for the
  *  running-max-on-WS-arrival refinement, in case the network's one-way
  *  asymmetry drifts (cellular handover, etc.). */
 const CLOCK_REFRESH_INTERVAL_MS = 30_000;
@@ -32,7 +32,7 @@ async function estimateClockOffset(baseUrl: string): Promise<number> {
     for (let i = 0; i < CLOCK_SYNC_SAMPLES; i++) {
         const t0 = Date.now();
         try {
-            const res = await fetch(`${baseUrl}/api/time`);
+            const res = await fetch(`${baseUrl}/api/ezp/time`);
             const t1 = Date.now();
             if (!res.ok) continue;
             const { now: serverNow } = await res.json();
@@ -192,7 +192,7 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
             let ws: WebSocket | null = null;
             let clockRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
-            // Bootstrap clockOffset via /api/time so the first few chunks land
+            // Bootstrap clockOffset via /api/ezp/time so the first few chunks land
             // close to schedule even before the running-max has settled.
             void estimateClockOffset(baseUrl).then((o) => {
                 clockOffsetRef.current = o;
@@ -278,7 +278,7 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
                 }
 
                 try {
-                    const response = await fetch(`${baseUrl}/api/audio?afterSeq=${afterSeqRef.current}`);
+                    const response = await fetch(`${baseUrl}/api/ezp/audio?afterSeq=${afterSeqRef.current}`);
                     if (shouldStopRef.current) return;
 
                     if (response.status === 204) {
