@@ -349,7 +349,7 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
 
                     if (didSchedule) setIsPlaying(true);
                     continue;
-                } catch (error) {
+                } catch {
                     consecutiveErrorsRef.current++;
                     if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
                         console.warn(
