@@ -14,6 +14,10 @@ import { ControllerState } from '../../xlcompat/XLControllerSetup';
 //     After the sends are called, top level gets a batch object
 //     This can be awaited
 
+/** Per-packet on-the-wire overhead beyond the UDP payload:
+ *  eth preamble+header+FCS+IFG (38) + IP (20) + UDP (8). Used for pacing math. */
+export const UDP_WIRE_OVERHEAD = 66;
+
 export type SendBatch = {
     sender: UdpClient;
     batchClosed: boolean;
@@ -291,4 +295,5 @@ export abstract class UDPSender implements Sender {
 
     abstract sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean;
     abstract sendPush(frame: SendJob, job: SenderJob, state: SendJobSenderState): void;
+    abstract frameWireBytes(job: SenderJob): number;
 }
