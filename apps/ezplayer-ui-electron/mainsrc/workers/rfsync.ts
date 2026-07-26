@@ -355,26 +355,23 @@ async function handleUpdatePlayback(nowPlaying?: string | null, nextScheduled?: 
     await runGuarded('updatePlayback', async () => {
         let changed = false;
 
-        // Update "now playing" if changed and non-empty
-        if (typeof nowPlaying === 'string') {
-            const trimmed = nowPlaying.trim();
-            if (trimmed && trimmed !== lastNowPlaying) {
-                const npres = await c.updateWhatsPlaying(trimmed);
-                console.log(`RF Now Playing: ${JSON.stringify(npres)}`);
-                lastNowPlaying = trimmed;
-                changed = true;
-            }
+        // Update "now playing" when it changes, including to empty.
+        const trimmed = (nowPlaying ?? '').trim();
+        if (trimmed !== (lastNowPlaying ?? '')) {
+            const npres = await c.updateWhatsPlaying(trimmed);
+            console.log(`RF Now Playing: ${JSON.stringify(npres)}`);
+            lastNowPlaying = trimmed;
+            if (!trimmed) lastNextScheduled = ''; // server cleared "next" with it
+            changed = true;
         }
 
         // Update "next scheduled" if changed and non-empty
-        if (typeof nextScheduled === 'string') {
-            const trimmedNext = nextScheduled.trim();
-            if (trimmedNext && trimmedNext !== lastNextScheduled) {
-                const unres = await c.updateNextScheduledSequence(trimmedNext);
-                console.log(`RF Next Playing: ${JSON.stringify(unres)}`);
-                lastNextScheduled = trimmedNext;
-                changed = true;
-            }
+        const trimmedNext = (nextScheduled ?? '').trim();
+        if (trimmedNext && trimmedNext !== lastNextScheduled) {
+            const unres = await c.updateNextScheduledSequence(trimmedNext);
+            console.log(`RF Next Playing: ${JSON.stringify(unres)}`);
+            lastNextScheduled = trimmedNext;
+            changed = true;
         }
 
         if (changed) {

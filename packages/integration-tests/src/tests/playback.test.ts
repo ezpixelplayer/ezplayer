@@ -13,6 +13,26 @@ let show: FixtureShow;
 let app: EzPlayerProc;
 let fpp: FppClient;
 
+/** Poll the raw pushed pStatus (GET /api/ezp/current-show) until pred passes.
+ *  This is the same object the electron UI and the LAN web viewers render, so
+ *  staleness here is exactly what a user sees on screen. */
+async function waitForPStatus(
+    pred: (p: Record<string, any> | undefined) => boolean,
+    label: string,
+    timeoutMs = 15_000,
+): Promise<Record<string, any>> {
+    const deadline = Date.now() + timeoutMs;
+    let last: Record<string, any> | undefined;
+    for (;;) {
+        last = (await fpp.currentShow()).pStatus as Record<string, any> | undefined;
+        if (pred(last)) return last ?? {};
+        if (Date.now() > deadline) {
+            throw new Error(`waitForPStatus (${label}) timed out; last=${JSON.stringify(last).slice(0, 400)}`);
+        }
+        await new Promise((r) => setTimeout(r, 500));
+    }
+}
+
 beforeAll(async () => {
     // The player's DDP sender targets the controller IP on the fixed DDP port,
     // so the mock must own 4048 (vitest runs these files sequentially).
@@ -77,6 +97,10 @@ describe('playback', () => {
     });
 
     it('Stop Now goes idle and output goes dark', async () => {
+        // Pre-condition: raw pStatus (what the UI and web viewers render) shows
+        // the track as now playing.
+        await waitForPStatus((p) => !!p?.now_playing, 'now_playing set while playing');
+
         expect((await fpp.command('Stop Now')).status).toBe(200);
         const idle = await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'idle' });
         // FPP idle shape
@@ -84,6 +108,14 @@ describe('playback', () => {
         expect(idle.seconds_elapsed).toBe('0');
         expect(idle.time_elapsed).toBe('00:00');
         expect(idle.current_playlist).toMatchObject({ playlist: '', index: '0', count: '0' });
+
+        // The raw pStatus must drop now_playing too — this is what NowPlayingCard
+        // and the viewer pages key off, and it used to stay stale after an abort.
+        const stopped = await waitForPStatus(
+            (p) => p?.status === 'Stopped' && !p?.now_playing,
+            'now_playing cleared after Stop Now',
+        );
+        expect(stopped.now_playing).toBeUndefined();
 
         // EZPlayer keeps pushing black frames while idle (lights off, not
         // silence) — assert the data goes dark rather than the wire quiet.
@@ -102,5 +134,27 @@ describe('playback', () => {
         const idleFrames = mock.ddp.frameSummaries();
         expect(idleFrames.length).toBeGreaterThanOrEqual(4);
         expect(idleFrames.every((f) => f.black)).toBe(true);
+    });
+
+    it('natural end clears now_playing in raw pStatus', async () => {
+        // Short 5s sequence so the playlist ends on its own.
+        await fpp.uploadFile('sequences', 'SongB.fseq', buildFseq({ channels: 150, frames: 100, value: 17 }));
+        const res = await fpp.putPlaylist('Short Show', {
+            name: 'Short Show',
+            mainPlaylist: [{ type: 'sequence', sequenceName: 'SongB.fseq' }],
+        });
+        expect(res.status).toBe(200);
+
+        expect((await fpp.command('Start Playlist', 'Short Show', 0, 0, 0)).status).toBe(200);
+        await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'short playing' });
+        await waitForPStatus((p) => !!p?.now_playing, 'now_playing set during short show');
+
+        // Let it run out on its own, then the pushed status must go fully idle.
+        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'idle after natural end', timeoutMs: 30_000 });
+        const ended = await waitForPStatus(
+            (p) => p?.status === 'Stopped' && !p?.now_playing,
+            'now_playing cleared after natural end',
+        );
+        expect(ended.now_playing).toBeUndefined();
     });
 });
