@@ -29,6 +29,13 @@ leave the list empty to send to the FPP multicast group so every listening
 remote follows. Off by default — only one sync master should exist on a
 network. Details and limits: [FPP compatibility](../reference/fpp-compat.md#multisync-master).
 
+## Test Sequences
+
+Sequences carrying any of these tags (default `test`) are offered in the
+[Show Status](../advanced/show-status/details.md) test area, so a test sequence
+can be played even when it is hidden from the jukebox. Clear the list to hide
+the test area.
+
 ## Advanced
 
 Overrides for testing and unusual networks; leave blank for standard behavior.

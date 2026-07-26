@@ -52,6 +52,10 @@ export const NowPlayingCard = ({
     allowVolumeControl = false,
     allowStopControls = true,
 }: NowPlayingCardProps) => {
+    // Hooks must precede the ptype early-return to keep call order stable.
+    const dispatch = useDispatch<AppDispatch>();
+    const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+
     if (player.ptype !== 'EZP') {
         return null;
     }
@@ -63,9 +67,6 @@ export const NowPlayingCard = ({
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
     const volume = player.volume?.level ?? 100;
     const muted = player.volume?.muted ?? false;
-    const dispatch = useDispatch<AppDispatch>();
-
-    const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
 
     return (
         <Card

@@ -598,6 +598,8 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
     jukebox?: JukeboxSettings;
+    /** Tags identifying test sequences, for display in test area. */
+    testSequenceTags?: string[];
     /** Send black frames while idle/paused/stopped so lights go dark
      *  (default). Disable when another player drives the same controllers —
      *  the wire is then left untouched outside active playback, and lights

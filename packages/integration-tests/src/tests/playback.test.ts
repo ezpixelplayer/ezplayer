@@ -103,4 +103,53 @@ describe('playback', () => {
         expect(idleFrames.length).toBeGreaterThanOrEqual(4);
         expect(idleFrames.every((f) => f.black)).toBe(true);
     });
+
+    // The native command endpoint is what the UI play buttons use (playlist
+    // list, songs list, show-status test area) — cover it alongside FPP-compat.
+    it('native playplaylist via /api/ezp/player-command plays the playlist', async () => {
+        const playlists = (await fpp.currentShow()).playlists as Array<{ id: string; title: string }>;
+        const pl = playlists.find((p) => p.title === 'Main Show');
+        expect(pl).toBeTruthy();
+
+        const res = await fpp.ezpCommand({
+            command: 'playplaylist',
+            playlistId: pl!.id,
+            immediate: true,
+            priority: 5,
+            requestId: 'it-native-playplaylist',
+        });
+        expect(res.status).toBe(200);
+
+        const playing = await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'native playlist' });
+        expect(playing.current_sequence).toBe('SongA.fseq');
+        expect(playing.current_playlist.playlist).toBe('Main Show');
+
+        expect((await fpp.command('Stop Now')).status).toBe(200);
+        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'idle after native playlist' });
+    });
+
+    it('native playsong via /api/ezp/player-command plays a single sequence', async () => {
+        const sequences = (await fpp.currentShow()).sequences as Array<{
+            id: string;
+            files?: { fseq?: string };
+        }>;
+        // files.fseq may be a bare name or an absolute path depending on origin
+        const seq = sequences.find((s) => s.files?.fseq?.replace(/\\/g, '/').endsWith('SongA.fseq'));
+        expect(seq).toBeTruthy();
+
+        const res = await fpp.ezpCommand({
+            command: 'playsong',
+            songId: seq!.id,
+            immediate: true,
+            priority: 5,
+            requestId: 'it-native-playsong',
+        });
+        expect(res.status).toBe(200);
+
+        const playing = await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'native song' });
+        expect(playing.current_sequence).toBe('SongA.fseq');
+
+        expect((await fpp.command('Stop Now')).status).toBe(200);
+        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'idle after native song' });
+    });
 });

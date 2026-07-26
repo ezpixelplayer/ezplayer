@@ -33,6 +33,7 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
             excludedTags: ['nojukebox'],
             includedTags: [],
         },
+        testSequenceTags: ['test'],
     };
     // Reset the dedupe cache for the new path. A subsequent save with content
     // identical to disk should still be skipped, so seed it from the parsed

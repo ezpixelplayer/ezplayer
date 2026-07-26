@@ -3,6 +3,7 @@ import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import { Box } from '../../box/Box';
+import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 
@@ -119,6 +120,21 @@ export const PlayerSettings: React.FC = () => {
                         ),
                     )
                 }
+            />
+
+            <Divider sx={{ my: 3 }} />
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Test Sequences
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Sequences carrying any of these tags are offered in the Show Status test area. Clear the list to
+                hide the test area.
+            </Typography>
+            <TagListInput
+                label="Test Sequence Tags"
+                value={settings.testSequenceTags ?? []}
+                onChange={(next) => dispatch(playbackSettingsActions.setTestSequenceTags(next))}
+                placeholder='Type a tag and press Enter (e.g., "test")'
             />
 
             <Divider sx={{ my: 3 }} />
