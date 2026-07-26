@@ -170,7 +170,7 @@ const StatusCards = ({
     );
 };
 
-const TimelineView = ({}: {}) => {
+const TimelineView = () => {
     // Get data from Redux store
     const sequences = useSelector((state: RootState) => state.sequences.sequenceData || []);
     const playlists = useSelector((state: RootState) => state.playlists.playlists || []);

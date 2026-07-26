@@ -454,7 +454,7 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
 
     // Controls object registered in R3F store
     const controlsRef = useRef<
-        THREE.EventDispatcher<{ change: {} }> & {
+        THREE.EventDispatcher<{ change: object }> & {
             target: THREE.Vector3;
             update: () => void;
             syncFromCamera: () => void;
@@ -492,7 +492,7 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         camera.getWorldDirection(dir);
         target.copy(camera.position).addScaledVector(dir, 100);
 
-        const dispatcher = new THREE.EventDispatcher<{ change: {} }>();
+        const dispatcher = new THREE.EventDispatcher<{ change: object }>();
         const controlsObj = Object.assign(dispatcher, {
             target,
             update: () => {

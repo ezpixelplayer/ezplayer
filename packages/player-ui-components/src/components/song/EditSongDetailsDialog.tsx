@@ -75,7 +75,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const availableTags = useSelector((state: RootState) => state.sequences.tags);
 
-    const [selectedSong, setSelectedSong] = useState<SequenceRecord | undefined>(undefined);
+    const [, setSelectedSong] = useState<SequenceRecord | undefined>(undefined);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [imageUrl, setImageUrl] = useState<string>('');
     const [formData, setFormData] = useState({

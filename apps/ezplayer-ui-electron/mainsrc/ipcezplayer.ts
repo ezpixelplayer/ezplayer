@@ -36,7 +36,6 @@ import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
     getCurrentCloudStatus,
-    getCurrentCStatus,
     fetchLayoutNow,
     manifestPollNow,
     onCloudPlaylists,
@@ -839,7 +838,7 @@ export async function registerContentHandlers(
         return await loadStatusAPI();
     });
 
-    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
+    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
             await loadShowFolder(true);
             return true;
@@ -854,7 +853,7 @@ export async function registerContentHandlers(
         } as PlayerCommand);
         return true;
     });
-    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<Boolean> => {
+    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<boolean> => {
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
         playWorker?.postMessage({

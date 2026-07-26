@@ -329,7 +329,7 @@ export class PrefetchCache<K, V, P> {
         item.waiters.add(d);
         this.addRefInternal(item, req.now);
         try {
-            const v = await d.promise;
+            await d.promise;
             return new RefHandle<V>(id, item.value!, (_v: V) => {
                 this.releaseRefInternal(item);
             });
@@ -412,7 +412,9 @@ export class PrefetchCache<K, V, P> {
                 try {
                     item.abort?.abort();
                     fps.push(item.fetchPromise);
-                } catch (e) {}
+                } catch {
+                    /* best-effort abort */
+                }
             }
         }
         await Promise.allSettled(fps);

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Stack } from '@mui/material';
 import { useSelector, useDispatch } from 'react-redux';
-import { PlayArrow, Pause, Stop, StopCircle, SkipNext, Delete, VolumeUp, VolumeOff } from '@mui/icons-material';
+import { PlayArrow, Pause, Stop, StopCircle, SkipNext } from '@mui/icons-material';
 
 import { ControlButton } from './ControlButton';
 import { AppDispatch, RootState } from '../../store/Store';
@@ -20,7 +20,6 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({ allowStopCon
     const player = runtime.combined?.player;
     const isPlaying = player?.status === 'Playing';
     const isPaused = player?.status === 'Paused';
-    const muted = player?.volume?.muted ?? false;
 
     const isStopped = !isPlaying && !isPaused;
 
