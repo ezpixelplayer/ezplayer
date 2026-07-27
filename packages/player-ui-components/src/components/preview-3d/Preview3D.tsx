@@ -436,7 +436,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         // Try to load from API, with retry when server returns empty data
         // (the playback worker may still be parsing the new show's XML)
-        const fetchShowData = async (attempt: number): Promise<boolean> => {
+        const fetchShowData = async (_attempt: number): Promise<boolean> => {
             if (cancelled) return false;
 
             try {

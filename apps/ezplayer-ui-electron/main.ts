@@ -63,14 +63,18 @@ process.on('uncaughtException', (err) => {
     const msg = `[uncaughtException] ${err.stack || err.message}\n`;
     try {
         fs.appendFileSync(mainCrashLogFile, msg);
-    } catch {}
+    } catch {
+        /* best-effort crash log */
+    }
     console.error(msg);
 });
 process.on('unhandledRejection', (reason: any) => {
     const msg = `[unhandledRejection] ${reason?.stack || String(reason)}\n`;
     try {
         fs.appendFileSync(mainCrashLogFile, msg);
-    } catch {}
+    } catch {
+        /* best-effort crash log */
+    }
     console.error(msg);
 });
 
@@ -135,6 +139,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     } else {
         splash.loadURL(`file://${path.join(__dirname, '../dist/splash.html')}`);
     }
+    const splashShownAt = Date.now();
 
     audioWindow = new BrowserWindow({
         show: false,
@@ -194,10 +199,16 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     // of and hides modal dialogs like the auto-update prompt (~10s in). We run
     // this on ready-to-show and, as a safety net, on a hard fallback timer in
     // case ready-to-show never fires (e.g. the renderer failed to load).
+    const SPLASH_MIN_MS = 1000;
     let startupFinished = false;
-    let splashFallback: ReturnType<typeof setTimeout>;
     const finishStartup = () => {
         if (startupFinished) return;
+        // Hold the splash up for a minimum time so a fast startup doesn't flash it.
+        const remaining = SPLASH_MIN_MS - (Date.now() - splashShownAt);
+        if (remaining > 0) {
+            setTimeout(finishStartup, remaining);
+            return;
+        }
         startupFinished = true;
         clearTimeout(splashFallback);
         if (!splash.isDestroyed()) splash.destroy();
@@ -211,7 +222,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     mainWindow.once('ready-to-show', finishStartup);
     // Fire well before the auto-update prompt's ~10s delay so a stuck splash
     // cannot cover it.
-    splashFallback = setTimeout(finishStartup, 8000);
+    const splashFallback = setTimeout(finishStartup, 8000);
     const handleCloseRequest = async (event: ElectronEvent) => {
         if (!mainWindow) return;
         if (!isScheduleActive()) {

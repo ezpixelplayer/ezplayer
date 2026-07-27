@@ -34,7 +34,7 @@ export async function readFileRange(path: string, opts: ReadFileRangeOptions) {
     const start = opts.start ?? 0;
     if (start < 0) throw new RangeError('start must be >= 0');
 
-    let length: number = opts.length;
+    const length: number = opts.length;
     const buf = opts.buffer;
 
     const fh = await fsp.open(path, 'r');

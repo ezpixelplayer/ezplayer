@@ -50,7 +50,9 @@ async function getUuid(showFolder: string | undefined): Promise<string> {
             cachedUuid = { showFolder, uuid: parsed.uuid };
             return parsed.uuid;
         }
-    } catch {}
+    } catch {
+        /* missing/corrupt cache; mint a new uuid below */
+    }
     const uuid = `EZP-${crypto.randomUUID()}`;
     try {
         await fsp.mkdir(path.dirname(file), { recursive: true });
@@ -248,7 +250,9 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
                     files: { fseq: name },
                     work: { title: name.replace(/\.fseq$/i, ''), artist: '', length: 0 },
                 });
-            } catch {}
+            } catch {
+                /* unreadable file; skip */
+            }
         }
         if (toCreate.length === 0) return false;
         await deps.putSequences(toCreate);

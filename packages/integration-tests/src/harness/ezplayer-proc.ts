@@ -75,7 +75,9 @@ export async function startEzPlayer(showFolder: string, opts?: { port?: number }
         try {
             const res = await fetch(`${base}/api/ezp/hello`, { signal: AbortSignal.timeout(2000) });
             if (res.ok) break;
-        } catch {}
+        } catch {
+            /* not up yet; keep polling */
+        }
         if (Date.now() > deadline) {
             killTree(child);
             throw new Error(`EZPlayer did not answer /api/ezp/hello within 45s (log: ${logFile})`);

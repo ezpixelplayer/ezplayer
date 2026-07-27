@@ -149,7 +149,7 @@ export class UdpClient {
         if (this.sendBatch) throw new Error('Already sending');
         let resolve: () => void = () => {};
         let reject: (err: unknown) => void = () => {};
-        let p = new Promise<void>((res: () => void, rej) => {
+        const p = new Promise<void>((res: () => void, rej) => {
             resolve = res;
             reject = rej;
         });
@@ -212,7 +212,7 @@ export class UdpClient {
     private countSend(data: Uint8Array<ArrayBufferLike> | Uint8Array<ArrayBufferLike>[]) {
         ++this.nSent;
         if (Array.isArray(data)) {
-            for (const d of data) this.bytesSent += data.length;
+            for (const d of data) this.bytesSent += d.length;
         } else {
             this.bytesSent += data.length;
         }

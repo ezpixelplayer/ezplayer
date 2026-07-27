@@ -147,7 +147,7 @@ const allMenuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.SHOWSTATUS,
-        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
+        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} allowTestControls={!isKiosk} />,
         sidebar: { icon: <InfoRounded />, label: 'Show Status' },
     },
     {

@@ -658,8 +658,6 @@ function HouseMeshContent({
 
                         materialCreator.preload();
 
-                        const matNames = Object.keys(materialCreator.materials);
-
                         // Optimise textures: disable mipmaps, fix colorSpace, cap size
                         optimizeMaterialTextures(materialCreator.materials);
                     } catch (mtlErr) {
@@ -678,13 +676,10 @@ function HouseMeshContent({
                 if (aborted) return;
 
                 // ---- Step 2a: Analyse OBJ content ----
-                const vertexCount = (objText.match(/^v\s/gm) || []).length;
                 const normalCount = (objText.match(/^vn\s/gm) || []).length;
                 const texCoordCount = (objText.match(/^vt\s/gm) || []).length;
                 const faceCount = (objText.match(/^f\s/gm) || []).length;
                 const lineCount = (objText.match(/^l\s/gm) || []).length;
-                const mtllibCount = (objText.match(/^mtllib\s/gm) || []).length;
-                const usemtlCount = (objText.match(/^usemtl\s/gm) || []).length;
 
                 // Also check for upper-case variants some exporters produce
                 const faceCountUpper = (objText.match(/^F\s/gm) || []).length;

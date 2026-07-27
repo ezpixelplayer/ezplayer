@@ -4,8 +4,6 @@ import { Buffer } from 'node:buffer';
 import { MPEGDecoder } from 'mpg123-decoder-ezp';
 import { getFileSize } from '@ezplayer/epp';
 
-import { getHeapStatistics } from 'node:v8';
-
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
 
@@ -33,6 +31,7 @@ class ListPool {
     bytes() {
         let sum = 0;
         for (const i of this.list) sum += i.byteLength;
+        return sum;
     }
 }
 
@@ -153,7 +152,9 @@ parentPort.on('message', async (msg: DecodeReq) => {
         } finally {
             try {
                 await fh.close();
-            } catch {}
+            } catch {
+                /* best-effort close */
+            }
         }
         const fileReadTime = performance.now() - startRead;
         //console.log(`End read of ${filePath}; took ${fileReadTime}`);

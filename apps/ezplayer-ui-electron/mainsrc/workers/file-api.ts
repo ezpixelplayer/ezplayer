@@ -193,10 +193,14 @@ async function dropSession(key: string): Promise<void> {
     chunkSessions.delete(key);
     try {
         await s.handle.close();
-    } catch {}
+    } catch {
+        /* best-effort close */
+    }
     try {
         await fsp.unlink(s.tmpPath);
-    } catch {}
+    } catch {
+        /* best-effort cleanup */
+    }
 }
 
 const SESSION_IDLE_MS = 15 * 60 * 1000;
@@ -465,7 +469,9 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         } catch (err: any) {
             try {
                 await fsp.unlink(tmp);
-            } catch {}
+            } catch {
+                /* best-effort cleanup */
+            }
             ctx.status = err?.status ?? 500;
             ctx.body = { status: 'error', error: err?.message ?? 'Upload failed' };
         }

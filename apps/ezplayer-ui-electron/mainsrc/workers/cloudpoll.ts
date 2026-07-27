@@ -637,6 +637,7 @@ function sanitizePathComponent(s: string): string {
         /* fall through with raw */
     }
     // Windows-illegal: < > : " | ? * \ /  plus control chars
+    // eslint-disable-next-line no-control-regex -- stripping control chars is the point
     v = v.replace(/[<>:"|?*\\/\x00-\x1f]/g, '_');
     if (v.length > 180) v = v.slice(0, 180);
     return v || 'file';

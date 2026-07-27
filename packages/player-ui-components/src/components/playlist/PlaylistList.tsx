@@ -3,6 +3,7 @@ import { PageHeader, TextField, ToastMsgs } from '@ezplayer/shared-ui-components
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Box } from '../box/Box';
 import {
     alpha,
@@ -29,6 +30,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { AppDispatch, postPlaylistData, RootState, Routes as ROUTES, useRouteBase } from '../..';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 interface PlaylistRow {
     id: string;
     title: string;
@@ -271,6 +273,33 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
         }
     };
 
+    // Same shape the FPP-compat 'Start Playlist' command emits, minus loop.
+    const handlePlayPlaylistClick = async (row: PlaylistRow) => {
+        try {
+            await dispatch(
+                callImmediateCommand({
+                    command: 'playplaylist',
+                    playlistId: row.id,
+                    immediate: true,
+                    priority: 5,
+                    requestId: uuidv4(),
+                }),
+            ).unwrap();
+            ToastMsgs.showSuccessMessage(`Playing "${row.title}"`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        } catch (error) {
+            console.error('Error starting playlist playback:', error);
+            ToastMsgs.showErrorMessage('Failed to start playlist', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
+
     const handleEditPlaylistClick = (playlistId: PlaylistRow) => {
         // Navigate to create-edit-playlist with the playlist ID. `routeBase`
         // is empty for LAN/Electron, `/p/<token>` for the cloud per-player view.
@@ -364,6 +393,15 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             sortable: false,
             renderCell: (params: any) => (
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 0.5 }}>
+                    <Button
+                        aria-label="play"
+                        title="Play immediately"
+                        startIcon={<PlayArrowIcon />}
+                        onClick={() => handlePlayPlaylistClick(params.row)}
+                        size="small"
+                        color="success"
+                        sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                    />
                     <Button
                         aria-label="edit"
                         startIcon={<EditIcon />}

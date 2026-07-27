@@ -10,7 +10,6 @@ const store = new Store<{ skippedUpdateVersions: string[] }>();
 let mainWin: BrowserWindow | null = null;
 let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 let updateDownloaded = false;
-let availableVersion: string | null = null;
 
 function sendStatus(status: AutoUpdateStatus) {
     mainWin?.webContents.send('update:autoupdate-status', status);
@@ -40,7 +39,6 @@ function wireUpdaterEvents() {
     });
 
     autoUpdater.on('update-available', (info) => {
-        availableVersion = info.version;
         sendStatus({
             state: 'available',
             version: info.version,

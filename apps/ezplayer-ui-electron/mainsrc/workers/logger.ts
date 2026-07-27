@@ -35,7 +35,7 @@ export class AsyncBatchLogger {
             return false;
         }
 
-        let out = this.format(line);
+        const out = this.format(line);
         this.queue.push(out);
 
         // If nothing is flushing or scheduled, schedule a one-shot flush.

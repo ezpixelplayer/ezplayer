@@ -24,7 +24,8 @@ export interface ModelPointMetadata {
     gamma?: number; // Gamma correction value (default: 2.2)
 }
 
-export interface ModelShapeMetadata {}
+/** Placeholder for future per-shape metadata; no fields defined yet. */
+export type ModelShapeMetadata = Record<string, unknown>;
 
 export interface ModelMetadata {
     name: string;

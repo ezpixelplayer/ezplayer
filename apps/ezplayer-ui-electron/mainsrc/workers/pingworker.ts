@@ -102,7 +102,7 @@ export class RollingSuccessWindow {
 
 const windows = new Map<string, RollingSuccessWindow>();
 
-let cfg: PingConfig = {
+const cfg: PingConfig = {
     hosts: [],
     intervalS: 5,
     maxSamples: 10,

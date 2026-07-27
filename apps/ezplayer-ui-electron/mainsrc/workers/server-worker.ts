@@ -227,7 +227,6 @@ let cachedLayoutSettings: LayoutSettings = {};
 let cachedMovingHeads: Array<MhFixtureInfo> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
-let curAudioBuffer: SharedArrayBuffer | undefined = undefined;
 let curAudioRing: AudioChunkRingBuffer | undefined = undefined;
 let serverStarted = false;
 
@@ -246,7 +245,6 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'updateFrameBuffer') {
         curFrameBuffer = msg.buffer;
     } else if (msg.type === 'updateAudioBuffer') {
-        curAudioBuffer = msg.buffer;
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
     } else if (msg.type === 'broadcast') {
         // Forward broadcast from main thread to WebSocket clients

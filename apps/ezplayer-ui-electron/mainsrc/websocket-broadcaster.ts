@@ -260,7 +260,9 @@ export class WebSocketBroadcaster {
         this.conns.delete(c);
         try {
             c.ws.close();
-        } catch {}
+        } catch {
+            /* already closed */
+        }
     }
 
     private send(c: Conn, msg: PlayerWebSocketMessage) {

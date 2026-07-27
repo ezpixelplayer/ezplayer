@@ -227,7 +227,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
 /**
  * Initialize the server worker with configuration
  */
-function initializeServerWorker(port: number, portSource: string, mainWindow: BrowserWindow | null) {
+function initializeServerWorker(port: number, portSource: string, _mainWindow: BrowserWindow | null) {
     if (!serverWorker) return;
 
     // Determine static path for React web app
