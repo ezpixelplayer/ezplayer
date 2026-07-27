@@ -4,34 +4,38 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config({
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    files: ['**/*.{ts,tsx}'],
-    ignores: ['dist/', '**/dist/**'],
-    languageOptions: {
-        ecmaVersion: 2020,
-        globals: globals.browser,
+export default tseslint.config(
+    // Global ignores: a bare `ignores` object applies to every config,
+    // including default-parser fallback on files no other config matches.
+    { ignores: ['dist/', '**/dist/**'] },
+    {
+        extends: [js.configs.recommended, ...tseslint.configs.recommended],
+        files: ['**/*.{ts,tsx}'],
+        languageOptions: {
+            ecmaVersion: 2020,
+            globals: globals.browser,
+        },
+        plugins: {
+            'react-hooks': reactHooks,
+            'react-refresh': reactRefresh,
+        },
+        rules: {
+            ...reactHooks.configs.recommended.rules,
+            'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+            '@typescript-eslint/no-explicit-any': ['warn'],
+            '@typescript-eslint/no-require-imports': ['off'],
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                {
+                    vars: 'all',
+                    args: 'after-used',
+                    ignoreRestSiblings: true,
+                    argsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_',
+                    caughtErrorsIgnorePattern: '^_',
+                },
+            ],
+            'react-refresh/only-export-components': ['off'],
+        },
     },
-    plugins: {
-        'react-hooks': reactHooks,
-        'react-refresh': reactRefresh,
-    },
-    rules: {
-        ...reactHooks.configs.recommended.rules,
-        'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
-        '@typescript-eslint/no-explicit-any': ['warn'],
-        '@typescript-eslint/no-require-imports': ['off'],
-        '@typescript-eslint/no-unused-vars': [
-            'error',
-            {
-                vars: 'all',
-                args: 'after-used',
-                ignoreRestSiblings: true,
-                argsIgnorePattern: '^_',
-                varsIgnorePattern: '^_',
-                caughtErrorsIgnorePattern: '^_',
-            },
-        ],
-        'react-refresh/only-export-components': ['off'],
-    },
-});
+);

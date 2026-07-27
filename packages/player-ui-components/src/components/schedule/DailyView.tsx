@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { format, isSameDay } from 'date-fns';
+import { isSameDay } from 'date-fns';
 import { Typography, styled } from '@mui/material';
 import { Box } from '../box/Box';
 import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';

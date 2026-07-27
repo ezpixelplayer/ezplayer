@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { v4 as uuidv4 } from 'uuid';
 
-import { PageHeader, TextField } from '@ezplayer/shared-ui-components';
+import { PageHeader, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
-import { RootState } from '../..';
+import { AppDispatch, RootState } from '../..';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
 import {
     Autocomplete,
@@ -28,6 +30,7 @@ import { Box } from '../box/Box';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { AddSongProps } from './AddSongDialogBrowser';
 import { DeleteSongDialog } from './DeleteSongDialog';
@@ -37,6 +40,7 @@ export interface SongListProps {
     title: string;
     AddSongDialog?: React.ComponentType<AddSongProps>;
     statusArea: React.ReactNode[];
+    showPlayAction?: boolean;
     showEditAction?: boolean;
     showDeleteAction?: boolean;
     showAddSongButton?: boolean;
@@ -198,10 +202,12 @@ export function SongList({
     title,
     AddSongDialog,
     statusArea,
+    showPlayAction = true,
     showEditAction = true,
     showDeleteAction = true,
     showAddSongButton = true,
 }: SongListProps) {
+    const dispatch = useDispatch<AppDispatch>();
     const [openAddDialog, setOpenAddDialog] = useState(false);
     const [openEditDialog, setOpenEditDialog] = useState(false);
     const [rows, setRows] = useState<SongListRow[]>([]);
@@ -323,6 +329,33 @@ export function SongList({
         setOpenEditDialog(true);
     };
 
+    // Same command the jukebox Play button sends (JukeboxScreen.handlePlay).
+    const handlePlayClick = async (row: SongListRow) => {
+        try {
+            await dispatch(
+                callImmediateCommand({
+                    command: 'playsong',
+                    songId: row.id,
+                    immediate: true,
+                    priority: 5,
+                    requestId: uuidv4(),
+                }),
+            ).unwrap();
+            ToastMsgs.showSuccessMessage(`Playing "${row.title}"`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        } catch (error) {
+            console.error('Error starting playback:', error);
+            ToastMsgs.showErrorMessage('Failed to start playback', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
+
     const handleSearchChange = (value: string) => {
         setSearchQuery(value); // Update search query state
     };
@@ -409,17 +442,18 @@ export function SongList({
     ];
 
     const actionColumn =
-        showEditAction || showDeleteAction
+        showPlayAction || showEditAction || showDeleteAction
             ? {
                   field: 'actions',
                   headerName: '',
                   flex: 0.8,
-                  minWidth: 120,
+                  minWidth: 140,
                   renderCell: (params: any) => {
+                      const canShowPlay = showPlayAction;
                       const canShowEdit = showEditAction;
                       const canShowDelete = showDeleteAction && params.row.isDeletableSong;
 
-                      if (!canShowEdit && !canShowDelete) {
+                      if (!canShowPlay && !canShowEdit && !canShowDelete) {
                           return null;
                       }
 
@@ -437,6 +471,17 @@ export function SongList({
                                   },
                               }}
                           >
+                              {canShowPlay && (
+                                  <Button
+                                      aria-label="play"
+                                      title="Play immediately"
+                                      startIcon={<PlayArrowIcon />}
+                                      size="small"
+                                      color="success"
+                                      onClick={() => handlePlayClick(params.row)}
+                                      sx={{ minWidth: 'auto', padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
+                                  />
+                              )}
                               {canShowEdit && (
                                   <Button
                                       aria-label="edit"

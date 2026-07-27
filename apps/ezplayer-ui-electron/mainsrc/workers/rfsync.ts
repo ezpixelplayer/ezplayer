@@ -442,10 +442,8 @@ async function handleRequestNextSuggestion() {
         }
 
         let suggestion: NextToPlay | null = null;
-        let type: 'vote' | 'queue';
 
         if (viewerMode === 'voting') {
-            type = 'vote';
             try {
                 const response = await c.getHighestVotedPlaylist();
                 if (!response) return;
@@ -454,7 +452,6 @@ async function handleRequestNextSuggestion() {
                 return;
             }
         } else {
-            type = 'queue';
             try {
                 const response = await c.getNextPlaylistInQueue({ updateQueue: true });
                 if (!response) return;

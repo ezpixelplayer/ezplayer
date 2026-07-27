@@ -776,8 +776,6 @@ class PlaybackStateEntry {
         log?: PlaybackLogDetail[],
         dbg?: boolean,
     ) {
-        const pthis = this;
-
         /*
         We start at -1, -1
         The transition to 0, -1 is trivial.
@@ -794,13 +792,13 @@ class PlaybackStateEntry {
         Starting a part means we go to index 0
         */
 
-        function startNextPart(ctime: number) {
+        const startNextPart = (ctime: number) => {
             c.itemCursor = 0;
             c.offsetInto = 0;
-            if (c.itemPart <= 2 && pthis.seqSections[c.itemPart]?.length) {
-                pthis.addLog(depth, 'Playlist Started', ctime, c, log);
+            if (c.itemPart <= 2 && this.seqSections[c.itemPart]?.length) {
+                this.addLog(depth, 'Playlist Started', ctime, c, log);
             }
-        }
+        };
 
         if (dbg && runToTime < c.baseTime + c.offsetInto) {
             console.log(`PSE running backwards by ${c.baseTime + c.offsetInto - runToTime}; ${Date.now() - runToTime}`);
@@ -2236,7 +2234,7 @@ export class PlayerRunState {
     /** Graceful stop: finish the current sequence, play the outro (post-section)
      *  of the current schedule if it has one, then let it end naturally.
      *  Schedules and heap remain intact. */
-    stopGracefully(currentTime: number, log?: PlaybackLogDetail[]) {
+    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
         this.interactiveQueue = [];
         this.immediateItem = undefined;
 

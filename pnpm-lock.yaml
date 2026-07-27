@@ -222,6 +222,15 @@ importers:
       '@eslint/js':
         specifier: 'catalog:'
         version: 9.39.4
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.4(jiti@2.7.0)
+      eslint-plugin-react-hooks:
+        specifier: 'catalog:'
+        version: 5.1.0(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-react-refresh:
+        specifier: 'catalog:'
+        version: 0.4.26(eslint@9.39.4(jiti@2.7.0))
       globals:
         specifier: 'catalog:'
         version: 15.15.0
@@ -234,6 +243,9 @@ importers:
       prettier:
         specifier: 'catalog:'
         version: 3.8.4
+      typescript-eslint:
+        specifier: 'catalog:'
+        version: 8.61.0(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
 
   apps/ezplayer-ui-electron:
     dependencies:

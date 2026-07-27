@@ -267,8 +267,6 @@ const PlaylistContainer = ({
     playlistSongs,
     dragOverItemId,
     onRemoveSong,
-    sortOrder,
-    sortType,
     onSort,
     setSortOrder,
     setSortType,

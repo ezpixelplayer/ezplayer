@@ -466,7 +466,8 @@ const parts1MedHCEarly: ScheduledPlaylist = {
     hardCutIn: true,
 };
 
-function toTextLog(log: PlaybackLogDetail[]) {
+// Debugging helper; underscore-named because tests only enable it ad hoc.
+function _toTextLog(log: PlaybackLogDetail[]) {
     return log
         .map(
             (e) =>

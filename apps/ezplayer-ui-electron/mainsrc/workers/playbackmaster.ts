@@ -220,13 +220,13 @@ const handlers: PlayWorkerRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
-    stopPlayback: async (_args: {}) => {
+    stopPlayback: async (_args: Record<string, never>) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
         await stopPing(); // Cleanly shut down native pinger before exit
         return true;
     },
-    getModelCoordinates: async (_args: {}) => {
+    getModelCoordinates: async (_args: Record<string, never>) => {
         const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates) {
             for (const [name, coord] of modelCoordinates.entries()) {
@@ -235,7 +235,7 @@ const handlers: PlayWorkerRPCAPI = {
         }
         return coords;
     },
-    getModelCoordinates2D: async (_args: {}) => {
+    getModelCoordinates2D: async (_args: Record<string, never>) => {
         const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates2D) {
             for (const [name, coord] of modelCoordinates2D.entries()) {
@@ -2024,14 +2024,14 @@ async function processQueue() {
                     break;
                 }
 
-                let startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
+                const startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
 
                 audioSnapshot.runUntil(audioPlayerRunTime);
                 const upcomingAudio = audioSnapshot.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
-                let audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
+                const audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
                     sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
                     audioPlayerRunTime = audioAction.atTime;

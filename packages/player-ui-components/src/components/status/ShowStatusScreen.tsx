@@ -1,21 +1,25 @@
-import { PageHeader } from '@ezplayer/shared-ui-components';
+import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import {
     Accordion,
     AccordionDetails,
     AccordionSummary,
+    Autocomplete,
     Button,
     Card,
     CardContent,
     Chip,
     CircularProgress,
     Grid,
+    TextField,
     Typography,
     useTheme,
 } from '@mui/material';
 import { Box } from '../box/Box';
 import { format } from 'date-fns';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -34,7 +38,9 @@ import {
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
+import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 
 // Extend Window interface to include electronAPI
 declare global {
@@ -76,9 +82,11 @@ const formatTime = (timestamp?: number | string) => {
 export interface ShowStatusScreenProps {
     title: string;
     statusArea: React.ReactNode[];
+    /** Hide the test-sequence play area (e.g., kiosk mode). */
+    allowTestControls?: boolean;
 }
 
-export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) => {
+export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }: ShowStatusScreenProps) => {
     const theme = useTheme();
     const [statsDialogOpen, setStatsDialogOpen] = useState(false);
     /** Per-controller accordion: omitted index defaults to expanded (matches prior “always open” behavior). */
@@ -93,6 +101,46 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
 
     const dispatch = useDispatch<AppDispatch>();
     const runtime = useSelector((s: RootState) => s.runtime);
+    const testSequenceTags = useSelector((s: RootState) => s.playbackSettings.settings.testSequenceTags);
+    const sequenceData = useSelector((s: RootState) => s.sequences.sequenceData);
+    const [testSongId, setTestSongId] = useState<string | null>(null);
+
+    const testTags = useMemo(() => normalizeTagList(testSequenceTags, []), [testSequenceTags]);
+    const testSequences = useMemo(
+        () =>
+            (sequenceData || [])
+                .filter(isSequencePlayable)
+                .filter((seq) => songMatchesAnyTag(seq.settings?.tags, testTags)),
+        [sequenceData, testTags],
+    );
+    const selectedTestSequence = testSequences.find((seq) => seq.id === testSongId) ?? null;
+
+    const handlePlayTestSequence = async () => {
+        if (!selectedTestSequence) return;
+        try {
+            await dispatch(
+                callImmediateCommand({
+                    command: 'playsong',
+                    songId: selectedTestSequence.id,
+                    immediate: true,
+                    priority: 5,
+                    requestId: uuidv4(),
+                }),
+            ).unwrap();
+            ToastMsgs.showSuccessMessage(`Playing "${selectedTestSequence.work?.title || 'test sequence'}"`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        } catch (error) {
+            console.error('Error starting test sequence:', error);
+            ToastMsgs.showErrorMessage('Failed to start test sequence', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
 
     useEffect(() => {
         const fetchServerStatus = async () => {
@@ -286,6 +334,58 @@ export const ShowStatusScreen = ({ title, statusArea }: ShowStatusScreenProps) =
                                             size="small"
                                         >
                                             Stats
+                                        </Button>
+                                    </Box>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                )}
+
+                {/* Test Sequences */}
+                {allowTestControls && testTags.length > 0 && (
+                    <Grid item xs={12}>
+                        <Card>
+                            <CardContent>
+                                <Typography variant="h3" fontWeight="bold" color={theme.palette.secondary.main}>
+                                    Test Sequences
+                                </Typography>
+                                {testSequences.length === 0 ? (
+                                    <Typography variant="body1" sx={{ mt: 1 }}>
+                                        No sequences are tagged {testTags.map((t) => `"${t}"`).join(', ')}. Tag a
+                                        sequence on the Songs page, or change the test tags in Settings &gt; Player.
+                                    </Typography>
+                                ) : (
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            gap: 2,
+                                            mt: 2,
+                                            alignItems: 'center',
+                                            flexWrap: 'wrap',
+                                        }}
+                                    >
+                                        <Autocomplete
+                                            size="small"
+                                            sx={{ minWidth: 280 }}
+                                            options={testSequences}
+                                            value={selectedTestSequence}
+                                            getOptionLabel={(seq) => seq.work?.title || seq.id}
+                                            isOptionEqualToValue={(a, b) => a.id === b.id}
+                                            onChange={(_, seq) => setTestSongId(seq?.id ?? null)}
+                                            renderInput={(params) => (
+                                                <TextField {...params} label="Test Sequence" />
+                                            )}
+                                        />
+                                        <Button
+                                            variant="contained"
+                                            color="success"
+                                            size="small"
+                                            startIcon={<PlayArrowIcon />}
+                                            disabled={!selectedTestSequence}
+                                            onClick={handlePlayTestSequence}
+                                        >
+                                            Play Test Sequence
                                         </Button>
                                     </Box>
                                 )}

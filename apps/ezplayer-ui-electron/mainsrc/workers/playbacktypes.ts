@@ -18,7 +18,6 @@ import type {
     PlayerNStatusContent,
     EZPlayerCommand,
     PlaybackSettings,
-    LatestFrameRingBuffer,
 } from '@ezplayer/ezplayer-core';
 
 export interface PlaybackWorkerData {
@@ -85,9 +84,9 @@ export interface ViewObject {
 export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
-    stopPlayback: (args: {}) => Promise<boolean> | boolean;
-    getModelCoordinates: (args: {}) => Promise<Record<string, GetNodeResult>>;
-    getModelCoordinates2D: (args: {}) => Promise<Record<string, GetNodeResult>>;
+    stopPlayback: (args: Record<string, never>) => Promise<boolean> | boolean;
+    getModelCoordinates: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
+    getModelCoordinates2D: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
 };
 
