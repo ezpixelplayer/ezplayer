@@ -273,6 +273,7 @@ function sendPlayerStateUpdate() {
         ptype: 'EZP',
         status: 'Stopped',
         reported_time: Date.now(),
+        now_playing: undefined,
         upcoming: [],
         volume: {
             level: volume,

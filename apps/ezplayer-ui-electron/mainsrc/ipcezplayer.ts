@@ -1025,12 +1025,10 @@ export async function registerContentHandlers(
                 break;
             }
             case 'pstatus': {
-                // Merge so any second writer's fields on curStatus.player survive
-                // playback's pushes.
-                const merged = { ...(curStatus.player ?? {}), ...msg.status };
-                curStatus = { ...curStatus, player: merged, player_updated: Date.now() };
-                mainWindow?.webContents.send('playback:pstatus', merged);
-                broadcastToWebSocket('pStatus', merged);
+                // The worker's pstatus is a complete snapshot of playback state.
+                curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
+                mainWindow?.webContents.send('playback:pstatus', msg.status);
+                broadcastToWebSocket('pStatus', msg.status);
                 break;
             }
             case 'modelCoordinates': {
