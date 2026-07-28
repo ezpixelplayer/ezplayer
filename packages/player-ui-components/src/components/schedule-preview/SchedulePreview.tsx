@@ -13,12 +13,65 @@ import ScheduledPlaylistsList, {
     ScheduledPlaylistsListRef,
 } from './ScheduledPlaylistsList/ScheduledPlaylistsList';
 import GraphForSchedule from './GraphForSchedule';
-import { priorityToNumber } from '@ezplayer/ezplayer-core';
+import { priorityToNumber, type ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 
 interface SchedulePreviewProps {
     title: string;
     className?: string;
     statusArea: React.ReactNode[];
+}
+
+const combineDateAndTime = (date: Date, time: string) => {
+    const d = new Date(date);
+    const [hours, minutes] = time.split(':').map(Number);
+    d.setHours(hours ?? 0, minutes ?? 0, 0, 0);
+    return d.getTime();
+};
+
+function filterSchedulesBySettings(schedules: ScheduledPlaylist[], previewSettings: SettingsType): ScheduledPlaylist[] {
+    const start = combineDateAndTime(previewSettings.startDate, previewSettings.startTime);
+    const end = combineDateAndTime(previewSettings.endDate, previewSettings.endTime);
+    return schedules.filter((sch) => {
+        const schStart = combineDateAndTime(new Date(sch.date), sch.fromTime);
+        const timeMatches = schStart >= start && schStart <= end;
+
+        let typeMatches = true;
+        if (previewSettings.scheduleTypeFilter === 'main') {
+            typeMatches = sch.scheduleType !== 'background';
+        } else if (previewSettings.scheduleTypeFilter === 'background') {
+            typeMatches = sch.scheduleType === 'background';
+        }
+
+        return timeMatches && typeMatches;
+    });
+}
+
+function splitAndSortSchedulesByType(filteredSchedules: ScheduledPlaylist[]) {
+    const background = filteredSchedules.filter((sch) => sch.scheduleType === 'background');
+    const main = filteredSchedules.filter((sch) => sch.scheduleType !== 'background');
+
+    const sortByPriorityAndTime = (scheduleList: ScheduledPlaylist[]) => {
+        return [...scheduleList].sort((a, b) => {
+            const priorityA = a.priority || 'normal';
+            const priorityB = b.priority || 'normal';
+
+            const priorityValueA = priorityToNumber[priorityA] || priorityToNumber.normal;
+            const priorityValueB = priorityToNumber[priorityB] || priorityToNumber.normal;
+
+            if (priorityValueA !== priorityValueB) {
+                return priorityValueB - priorityValueA;
+            }
+
+            const startTimeA = combineDateAndTime(new Date(a.date), a.fromTime);
+            const startTimeB = combineDateAndTime(new Date(b.date), b.fromTime);
+            return startTimeA - startTimeB;
+        });
+    };
+
+    return {
+        backgroundSchedules: sortByPriorityAndTime(background),
+        mainSchedules: sortByPriorityAndTime(main),
+    };
 }
 
 export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusArea, className = '' }) => {
@@ -43,77 +96,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
         return sequences.length > 0 && playlists.length > 0 && schedules.length > 0;
     }, [sequences.length, playlists.length, schedules.length]);
 
-    // Helper to combine date and time into a timestamp
-    const combineDateAndTime = (date: Date, time: string) => {
-        const d = new Date(date);
-        const [hours, minutes] = time.split(':').map(Number);
-        d.setHours(hours ?? 0, minutes ?? 0, 0, 0);
-        return d.getTime();
-    };
-
-    // Filter schedules by selected date and time range
-    const filteredSchedules = useMemo(() => {
-        const start = combineDateAndTime(settings.startDate, settings.startTime);
-        const end = combineDateAndTime(settings.endDate, settings.endTime);
-        return schedules.filter((sch) => {
-            const schStart = combineDateAndTime(new Date(sch.date), sch.fromTime);
-            const timeMatches = schStart >= start && schStart <= end;
-
-            // Apply schedule type filter
-            let typeMatches = true;
-            if (settings.scheduleTypeFilter === 'main') {
-                typeMatches = sch.scheduleType !== 'background';
-            } else if (settings.scheduleTypeFilter === 'background') {
-                typeMatches = sch.scheduleType === 'background';
-            }
-            // If filter is 'all', typeMatches remains true
-
-            return timeMatches && typeMatches;
-        });
-    }, [
-        schedules,
-        settings.startDate,
-        settings.startTime,
-        settings.endDate,
-        settings.endTime,
-        settings.scheduleTypeFilter,
-    ]);
-
-    // Separate schedules into background and main for parallel simulation
-    const { backgroundSchedules, mainSchedules } = useMemo(() => {
-        const background = filteredSchedules.filter((sch) => sch.scheduleType === 'background');
-        const main = filteredSchedules.filter((sch) => sch.scheduleType !== 'background');
-
-        // Sort both arrays by priority first, then by start time
-        const sortByPriorityAndTime = (schedules: typeof filteredSchedules) => {
-            return schedules.sort((a, b) => {
-                // Get priority values (default to 'normal' if not set)
-                const priorityA = a.priority || 'normal';
-                const priorityB = b.priority || 'normal';
-
-                // Convert priority to number for comparison
-                const priorityValueA = priorityToNumber[priorityA] || priorityToNumber.normal;
-                const priorityValueB = priorityToNumber[priorityB] || priorityToNumber.normal;
-
-                // Sort by priority first (higher number = lower priority, so we want low priority first)
-                if (priorityValueA !== priorityValueB) {
-                    return priorityValueB - priorityValueA; // Reverse the comparison
-                }
-
-                // If priorities are equal, sort by start time
-                const startTimeA = combineDateAndTime(new Date(a.date), a.fromTime);
-                const startTimeB = combineDateAndTime(new Date(b.date), b.fromTime);
-                return startTimeA - startTimeB;
-            });
-        };
-
-        // Background schedules are processed first, then main schedules
-        return {
-            backgroundSchedules: sortByPriorityAndTime(background),
-            mainSchedules: sortByPriorityAndTime(main),
-        };
-    }, [filteredSchedules]);
-
     const handleGeneratePreview = useCallback(
         async (newSettings: SettingsType) => {
             if (!hasData) {
@@ -123,16 +105,26 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                 return;
             }
 
+            setSettings(newSettings);
             setIsGenerating(true);
             setError(null);
             setWarnings([]);
-            setPreviewData(null); // Clear previous preview data immediately
+            setPreviewData(null);
 
             try {
-                // Use setTimeout to allow UI to update before heavy computation
                 setTimeout(() => {
                     try {
-                        // Generate separate previews for background and main schedules
+                        const filteredSchedules = filterSchedulesBySettings(schedules, newSettings);
+                        const { backgroundSchedules, mainSchedules } = splitAndSortSchedulesByType(filteredSchedules);
+
+                        if (backgroundSchedules.length === 0 && mainSchedules.length === 0) {
+                            setError(
+                                'No schedules found in the selected time range. Please check your schedule configuration or try a different date range.',
+                            );
+                            setIsGenerating(false);
+                            return;
+                        }
+
                         const backgroundData = generateSchedulePreview(
                             sequences,
                             playlists,
@@ -141,15 +133,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                         );
 
                         const mainData = generateSchedulePreview(sequences, playlists, mainSchedules, newSettings);
-
-                        // Handle edge cases where there might be no schedules of a particular type
-                        if (backgroundSchedules.length === 0 && mainSchedules.length === 0) {
-                            setError(
-                                'No schedules found in the selected time range. Please check your schedule configuration or try a different date range.',
-                            );
-                            setIsGenerating(false);
-                            return;
-                        }
 
                         // Combine the results into a parallel schedule preview
                         const combinedData: ParallelSchedulePreviewData = {
@@ -183,7 +166,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                         }
 
                         setPreviewData(combinedData);
-                        setSettings(newSettings);
                     } catch (err) {
                         const errorMessage = err instanceof Error ? err.message : 'Failed to generate schedule preview';
                         console.error('Schedule preview generation error:', err);
@@ -200,24 +182,7 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                 setIsGenerating(false);
             }
         },
-        [sequences, playlists, backgroundSchedules, mainSchedules, hasData],
-    );
-
-    const handleSettingsChange = useCallback(
-        (newSettings: SettingsType) => {
-            setSettings(newSettings);
-
-            // Clear preview data when date changes to show fresh state
-            const currentDateKey = `${settings.startDate?.toDateString()}-${settings.endDate?.toDateString()}`;
-            const newDateKey = `${newSettings.startDate?.toDateString()}-${newSettings.endDate?.toDateString()}`;
-
-            if (currentDateKey !== newDateKey) {
-                setPreviewData(null);
-                setError(null);
-                setWarnings([]);
-            }
-        },
-        [settings.startDate, settings.endDate],
+        [sequences, playlists, schedules, hasData],
     );
 
     // Handle timeline item click to scroll to specific schedule accordion
@@ -278,7 +243,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                 <Box sx={{ padding: 2, flexShrink: 0 }}>
                     <SchedulePreviewSettings
                         settings={settings}
-                        onSettingsChange={handleSettingsChange}
                         onGeneratePreview={handleGeneratePreview}
                         isGenerating={isGenerating}
                         hasData={hasData}
