@@ -473,6 +473,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const [sortType, setSortType] = useState<'title' | 'artist'>('title');
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
     const [isNavigationDialogOpen, setIsNavigationDialogOpen] = useState(false);
+    const [isEmptyPlaylistDialogOpen, setIsEmptyPlaylistDialogOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<'navigate' | 'discard' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [availableSortOrder, setAvailableSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -853,11 +854,16 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
         if (!playlistName || playlistName.trim() === '') {
             return { isValid: false, error: 'Playlist name is required' };
         }
-        if (!playlistSongs || playlistSongs.length === 0) {
-            return { isValid: false, error: 'At least one song is required' };
-        }
 
         return { isValid: true, error: '' };
+    };
+
+    const handleSaveClick = () => {
+        if (!playlistSongs || playlistSongs.length === 0) {
+            setIsEmptyPlaylistDialogOpen(true);
+            return;
+        }
+        handleSavePlaylist();
     };
 
     const handleDiscardClick = () => {
@@ -947,7 +953,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                         key="save"
                         variant="contained"
                         color="primary"
-                        onClick={handleSavePlaylist}
+                        onClick={handleSaveClick}
                         disabled={!isPlaylistValid().isValid}
                         sx={{ whiteSpace: 'nowrap', ml: 2 }}
                     >
@@ -976,6 +982,35 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                     </Button>
                     <Button onClick={handleConfirmNavigation} color="error">
                         Leave
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Empty playlist save confirmation */}
+            <Dialog
+                open={isEmptyPlaylistDialogOpen}
+                onClose={() => setIsEmptyPlaylistDialogOpen(false)}
+                aria-labelledby="empty-playlist-dialog-title"
+                aria-describedby="empty-playlist-dialog-description"
+            >
+                <DialogTitle id="empty-playlist-dialog-title">Empty Playlist</DialogTitle>
+                <DialogContent>
+                    <DialogContentText id="empty-playlist-dialog-description">
+                        Are you sure you want to save the empty playlist?
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIsEmptyPlaylistDialogOpen(false)} color="error">
+                        Take Me Back
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            setIsEmptyPlaylistDialogOpen(false);
+                            handleSavePlaylist();
+                        }}
+                        color="primary"
+                    >
+                        Yes, Go Ahead
                     </Button>
                 </DialogActions>
             </Dialog>
