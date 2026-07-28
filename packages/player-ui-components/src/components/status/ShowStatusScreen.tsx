@@ -465,40 +465,27 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                             <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                                                 Controller Details
                                             </Typography>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    onClick={() =>
-                                                        setControllerSectionExpanded(
-                                                            Object.fromEntries(
-                                                                (controller.controllers ?? []).map((_, idx) => [
-                                                                    idx,
-                                                                    true,
-                                                                ]),
-                                                            ),
-                                                        )
-                                                    }
-                                                >
-                                                    Expand All
-                                                </Button>
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    onClick={() =>
-                                                        setControllerSectionExpanded(
-                                                            Object.fromEntries(
-                                                                (controller.controllers ?? []).map((_, idx) => [
-                                                                    idx,
-                                                                    false,
-                                                                ]),
-                                                            ),
-                                                        )
-                                                    }
-                                                >
-                                                    Collapse All
-                                                </Button>
-                                            </Box>
+                                            <Button
+                                                size="small"
+                                                variant="outlined"
+                                                onClick={() => {
+                                                    const controllers = controller.controllers ?? [];
+                                                    const allCollapsed = controllers.every(
+                                                        (_, idx) => controllerSectionExpanded[idx] === false,
+                                                    );
+                                                    setControllerSectionExpanded(
+                                                        Object.fromEntries(
+                                                            controllers.map((_, idx) => [idx, allCollapsed]),
+                                                        ),
+                                                    );
+                                                }}
+                                            >
+                                                {(controller.controllers ?? []).every(
+                                                    (_, idx) => controllerSectionExpanded[idx] === false,
+                                                )
+                                                    ? 'Expand All'
+                                                    : 'Collapse All'}
+                                            </Button>
                                         </Box>
                                         {controller.controllers.map((ctrl, index) => {
                                             const ctrlSeverity = getControllerSeverity(ctrl);
