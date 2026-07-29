@@ -143,8 +143,7 @@ export interface Preview3DProps {
     /** When true, viewers use minHeight 0 so the preview fills a flex/dialog container instead of forcing 600px. */
     compact?: boolean;
     /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
-     *  storage-shaped JSON. localStorage only sees the camera on discrete events (mode/selection
-     *  switch, save-as-default), so share links must capture through this instead. */
+     *  storage-shaped JSON */
     captureViewStateRef?: React.MutableRefObject<(() => string | null) | null>;
 }
 
