@@ -381,8 +381,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, [previewSelection, viewStateBySelection, cameraStateLoaded, previewSettingsStorageKey]);
 
-    // Live view-state capture for share links — pulls the CURRENT camera from the viewer
-    // getter refs rather than the last persisted snapshot.
+    // Live view-state capture for share links.
     useEffect(() => {
         if (!captureViewStateRef) return undefined;
         captureViewStateRef.current = () => {
