@@ -60,6 +60,16 @@ let layoutSource: 'xlights' | 'cloud' = 'xlights';
 let pollMode: 'always' | 'scheduled' = 'always';
 let pollSchedule: CloudPollScheduleEntry[] = [];
 
+/** Last setConfig identity (url + token + folder). Soft updates (poll mode /
+ *  schedule / intervals / layoutSource) keep this key and must not abort
+ *  in-flight work or wipe cStatus — that briefly marks the player unregistered
+ *  in the UI and shows the registration QR again. */
+let lastSessionKey: string | undefined;
+
+function sessionKey(url: string, token: string, folder: string): string {
+    return `${url}\0${token}\0${folder}`;
+}
+
 /** Returns true when content polling (manifest + sequence files + layout) is
  *  permitted right now. Always-true when not in scheduled mode. Registration
  *  heartbeat polls run regardless of this gate. */
@@ -98,8 +108,8 @@ const cStatus: PlayerCStatusContent = { files: {} };
 
 // Last serialized payloads we sent to the parent. We compare new fetches to these
 // and skip postMessage when identical — the parent's update path is disruptive to
-// playback even when nothing actually changed. Reset on setConfig (folder/user
-// change ⇒ different store, always push).
+// playback even when nothing actually changed. Reset on session-changing setConfig
+// (folder/user change ⇒ different store, always push).
 let lastSentPlaylistsJson: string | undefined;
 let lastSentScheduleJson: string | undefined;
 let lastSentSettingsJson: string | undefined;
@@ -1601,9 +1611,16 @@ async function uploadLayout(): Promise<void> {
 parentPort?.on('message', (msg: CloudPollInMessage) => {
     switch (msg.type) {
         case 'setConfig': {
-            cloudUrl = msg.cloudUrl ?? '';
-            playerIdToken = msg.playerIdToken ?? '';
-            showFolder = msg.showFolder ?? '';
+            const nextUrl = msg.cloudUrl ?? '';
+            const nextToken = msg.playerIdToken ?? '';
+            const nextFolder = msg.showFolder ?? '';
+            const nextKey = sessionKey(nextUrl, nextToken, nextFolder);
+            const sessionChanged = lastSessionKey !== nextKey;
+            lastSessionKey = nextKey;
+
+            cloudUrl = nextUrl;
+            playerIdToken = nextToken;
+            showFolder = nextFolder;
             existingSequences = msg.existingSequences ?? [];
             layoutMeta = msg.layoutMeta ?? {};
             layoutSource = msg.layoutSource === 'cloud' ? 'cloud' : 'xlights';
@@ -1612,38 +1629,46 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             seedInstalledFiles();
             applyTuning(msg.tuning);
 
-            // Every reconfigure is a session change (folder switch, token rotation,
-            // pause/resume). Without this, the worker would keep the previous
-            // session's cStatus (sequences, layout, files, lastManifestAt) in
-            // its module-level singleton and the next pushCStatus would resurrect
-            // the stale snapshot in the parent — even though the parent already
-            // cleared its mirror. Abort in-flight transfers from the previous
-            // session for the same reason: a download that started before a
-            // folder switch should not silently land in the new folder.
-            abortAllAndReset();
-            for (const k of Object.keys(cStatus)) {
-                delete (cStatus as Record<string, unknown>)[k];
-            }
-            cStatus.files = {};
-            lastSentPlaylistsJson = undefined;
-            lastSentScheduleJson = undefined;
-            lastSentSettingsJson = undefined;
+            if (sessionChanged) {
+                // Folder switch / token rotation / pause (empty url|token).
+                // Without this, the worker would keep the previous session's
+                // cStatus and the next pushCStatus would resurrect the stale
+                // snapshot in the parent. Abort in-flight transfers so a
+                // download that started before a folder switch does not land
+                // in the new folder.
+                abortAllAndReset();
+                for (const k of Object.keys(cStatus)) {
+                    delete (cStatus as Record<string, unknown>)[k];
+                }
+                cStatus.files = {};
+                lastSentPlaylistsJson = undefined;
+                lastSentScheduleJson = undefined;
+                lastSentSettingsJson = undefined;
 
-            cancelAutoClearTimer();
-            stopped = false;
-            halted = false;
-            consecutiveFailures = 0;
+                cancelAutoClearTimer();
+                stopped = false;
+                halted = false;
+                consecutiveFailures = 0;
+            }
+
             log(
                 'info',
                 `setConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} ` +
                     `playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} ` +
-                    `showFolder="${showFolder}" reg=${registrationIntervalMs}ms manifest=${manifestIntervalMs}ms`,
+                    `showFolder="${showFolder}" reg=${registrationIntervalMs}ms manifest=${manifestIntervalMs}ms` +
+                    (sessionChanged ? '' : ' (soft)'),
             );
-            // Push the now-empty cStatus so the parent (and renderer) see a
-            // clean slate immediately, not on the next manifest tick.
-            pushCStatus();
+            if (sessionChanged) {
+                // Push the now-empty cStatus so the parent (and renderer) see a
+                // clean slate immediately, not on the next manifest tick.
+                pushCStatus();
+            }
             rescheduleTimers();
-            void electHomeServerOnce();
+            if (sessionChanged) {
+                void electHomeServerOnce();
+            }
+            // Soft updates still tick immediately so poll-mode / interval
+            // changes take effect without waiting for the next cadence.
             void pollRegistration();
             void pollManifest();
             break;
