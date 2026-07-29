@@ -14,6 +14,7 @@ import {
     DialogTitle,
     FormControl,
     FormControlLabel,
+    FormHelperText,
     FormGroup,
     IconButton,
     InputLabel,
@@ -56,6 +57,17 @@ type RecurrenceOption = 'once' | 'daily' | 'selectedDays';
 type EditMode = 'single' | 'all' | null;
 type PriorityOption = 'normal' | 'high' | 'low';
 type EndPolicyOption = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut';
+
+const END_POLICY_DESCRIPTIONS: Record<EndPolicyOption, string> = {
+    seqboundearly:
+        'Choose this if the schedule must finish by the selected end time. For example, if you promised your neighbor the show would be over by 10:00 PM, use this option.',
+    seqboundlate:
+        'Choose this if the schedule should still be running at the selected end time. For example, if you promised your audience the show would still be playing at 10:00 PM, use this option.',
+    seqboundnearest:
+        'Choose this if you want the schedule to end at the item boundary closest to the selected end time. For example, if your show should wrap up around 10:00 PM without ending too early or too late, use this option.',
+    hardcut:
+        'Choose this if the schedule must stop exactly at the selected end time, even if a sequence is still playing. For example, if you need the show to end precisely at 10:00 PM, use this option.',
+};
 
 const StyledToggleButtonGroup = styled(ToggleButtonGroup)(({ theme }) => ({
     backgroundColor: theme.palette.background.paper,
@@ -108,6 +120,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         preferHardCutIn: false,
         keepToScheduleWhenPreempted: false,
     });
+    const [isLoopAutoEnabled, setIsLoopAutoEnabled] = useState(false);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const [scheduledPlaylists, setScheduledPlaylists] = useState<ScheduledPlaylist[]>(initialSchedules);
     const [selectedSchedule, setSelectedSchedule] = useState<ScheduledPlaylist | null>(null);
@@ -182,6 +195,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     const handleDateSelect = (date: Date, time: string) => {
         setSelectedDate(date);
+        setIsLoopAutoEnabled(false);
         // Apply 2-minute start buffer to the selected time
         const actualStartTime = calcActualStartTime(time);
         setFormData((prev) => ({
@@ -197,6 +211,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const handleScheduleClick = (schedule: ScheduledPlaylist) => {
         try {
             setSelectedSchedule(schedule);
+            setIsLoopAutoEnabled(false);
             const scheduleDate = timestampToDate(schedule.date);
             setSelectedDate(scheduleDate);
 
@@ -236,6 +251,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const handleClose = () => {
         setIsDialogOpen(false);
         setSelectedSchedule(null);
+        setIsLoopAutoEnabled(false);
         setFormData({
             title: '',
             fromTime: '',
@@ -843,12 +859,21 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 const endHours = Math.floor(endTotalMinutes / 60);
                 const endMinutes = endTotalMinutes % 60;
                 const toTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+                const loopUpdates = getLoopAutoToggleUpdates(
+                    formattedValue,
+                    toTime,
+                    formData,
+                    isLoopAutoEnabled,
+                );
 
                 setFormData((prev) => ({
                     ...prev,
                     [name]: formattedValue,
                     toTime,
+                    ...(loopUpdates.loop !== undefined ? { loop: loopUpdates.loop } : {}),
+                    ...(loopUpdates.shuffle !== undefined ? { shuffle: loopUpdates.shuffle } : {}),
                 }));
+                setIsLoopAutoEnabled(loopUpdates.nextAutoEnabled);
             } else {
                 setFormData((prev) => ({
                     ...prev,
@@ -856,10 +881,28 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 }));
             }
         } else {
-            setFormData((prev) => ({
-                ...prev,
-                [name]: formattedValue,
-            }));
+            if (name === 'toTime') {
+                const loopUpdates = getLoopAutoToggleUpdates(
+                    formData.fromTime,
+                    formattedValue,
+                    formData,
+                    isLoopAutoEnabled,
+                );
+
+                setFormData((prev) => ({
+                    ...prev,
+                    [name]: formattedValue,
+                    ...(loopUpdates.loop !== undefined ? { loop: loopUpdates.loop } : {}),
+                    ...(loopUpdates.shuffle !== undefined ? { shuffle: loopUpdates.shuffle } : {}),
+                }));
+
+                setIsLoopAutoEnabled(loopUpdates.nextAutoEnabled);
+            } else {
+                setFormData((prev) => ({
+                    ...prev,
+                    [name]: formattedValue,
+                }));
+            }
         }
     };
 
@@ -893,10 +936,28 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 const formatted = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
                 if (formatted !== value) {
-                    setFormData((prev) => ({
-                        ...prev,
-                        [name]: formatted,
-                    }));
+                    if (name === 'toTime') {
+                        const loopUpdates = getLoopAutoToggleUpdates(
+                            formData.fromTime,
+                            formatted,
+                            formData,
+                            isLoopAutoEnabled,
+                        );
+
+                        setFormData((prev) => ({
+                            ...prev,
+                            [name]: formatted,
+                            ...(loopUpdates.loop !== undefined ? { loop: loopUpdates.loop } : {}),
+                            ...(loopUpdates.shuffle !== undefined ? { shuffle: loopUpdates.shuffle } : {}),
+                        }));
+
+                        setIsLoopAutoEnabled(loopUpdates.nextAutoEnabled);
+                    } else {
+                        setFormData((prev) => ({
+                            ...prev,
+                            [name]: formatted,
+                        }));
+                    }
                 }
             }
         }
@@ -971,6 +1032,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     // Update handleLoopChange to uncheck shuffle when loop is selected
     const handleLoopChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        // Explicit user interaction: don't keep the auto-enable warning.
+        setIsLoopAutoEnabled(false);
         const isChecked = event.target.checked;
 
         setFormData((prev) => ({
@@ -983,6 +1046,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     // Update handleShuffleChange to uncheck loop when shuffle is selected
     const handleShuffleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        // Explicit user interaction: don't keep the auto-enable warning.
+        setIsLoopAutoEnabled(false);
         const isChecked = event.target.checked;
 
         setFormData((prev) => ({
@@ -998,6 +1063,57 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         const playlist = availablePlaylists.find((p) => p.id === playlistId);
         if (!playlist) return { totalDuration: 0 };
         return { totalDuration: getPlaylistDurationMS(sequenceData ?? [], playlist, []).totalMS / 1000 };
+    };
+
+    const getScheduleDurationMinutes = (mpid: string, prepid?: string, postpid?: string): number | null => {
+        const totalDuration1 = calculatePlaylistDuration(mpid).totalDuration;
+        const totalDuration2 = prepid ? calculatePlaylistDuration(prepid).totalDuration : 0;
+        const totalDuration3 = postpid ? calculatePlaylistDuration(postpid).totalDuration : 0;
+        const totalSeconds = totalDuration1 + totalDuration2 + totalDuration3;
+
+        if (totalSeconds <= 0) return null;
+        // Match existing `calcToTime` behavior: duration in minutes rounded up.
+        return Math.max(1, Math.ceil(totalSeconds / 60));
+    };
+
+    const isToTimeLongerThanScheduleDuration = (fromTime: string, toTime: string, fd: typeof formData): boolean => {
+        if (!fd.playlistId) return false;
+        if (!fromTime || !toTime) return false;
+        if (!isTimeValid(fromTime) || !isExtendedTimeValid(toTime)) return false;
+
+        const totalDurationMinutes = getScheduleDurationMinutes(fd.playlistId, fd.prePlaylistId, fd.postPlaylistId);
+        if (totalDurationMinutes === null) return false;
+
+        const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
+        const [toHours, toMinutes] = toTime.split(':').map(Number);
+
+        const startTotalMinutes = fromHours * 60 + fromMinutes;
+        const endTotalMinutes = toHours * 60 + toMinutes;
+
+        return endTotalMinutes - startTotalMinutes > totalDurationMinutes;
+    };
+
+    const shouldAutoEnableLoopForToTime = (fromTime: string, toTime: string, fd: typeof formData): boolean => {
+        // Only auto-enable Loop when the user hasn't already enabled Loop.
+        if (fd.loop) return false;
+        return isToTimeLongerThanScheduleDuration(fromTime, toTime, fd);
+    };
+
+    const getLoopAutoToggleUpdates = (
+        fromTime: string,
+        toTime: string,
+        fd: typeof formData,
+        autoEnabled: boolean,
+    ): { loop?: boolean; shuffle?: boolean; nextAutoEnabled: boolean } => {
+        if (shouldAutoEnableLoopForToTime(fromTime, toTime, fd)) {
+            return { loop: true, shuffle: false, nextAutoEnabled: true };
+        }
+
+        if (autoEnabled && fd.loop && !isToTimeLongerThanScheduleDuration(fromTime, toTime, fd)) {
+            return { loop: false, nextAutoEnabled: false };
+        }
+
+        return { nextAutoEnabled: autoEnabled && isToTimeLongerThanScheduleDuration(fromTime, toTime, fd) };
     };
 
     const formatDuration = (seconds: number): string => {
@@ -1471,12 +1587,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                     }))
                                 }
                             >
-                                // 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut'
                                 <MenuItem value="seqboundearly">End Between Items, Before End Time</MenuItem>
                                 <MenuItem value="seqboundlate">End Between Items, After End Time</MenuItem>
                                 <MenuItem value="seqboundnearest">End Between Items, Closest To End Time</MenuItem>
                                 <MenuItem value="hardcut">Hard Cutoff At End Time</MenuItem>
                             </Select>
+                            <FormHelperText>{END_POLICY_DESCRIPTIONS[formData.endPolicy]}</FormHelperText>
                         </FormControl>
 
                         <FormGroup row sx={{ mt: 1, gap: 2 }}>
@@ -1489,6 +1605,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 label="Loop"
                             />
                         </FormGroup>
+                        {isLoopAutoEnabled &&
+                            formData.loop &&
+                            isToTimeLongerThanScheduleDuration(formData.fromTime, formData.toTime, formData) && (
+                            <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
+                                The Loop option has been enabled automatically because the schedule duration does not match the selected end time.
+                            </Typography>
+                        )}
 
                         <Box sx={{ display: 'flex', gap: 2 }}>
                             <FormControl fullWidth sx={{ mt: 1 }}>
