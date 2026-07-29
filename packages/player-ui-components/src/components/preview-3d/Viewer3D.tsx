@@ -1421,13 +1421,13 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             variant="caption"
                             sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                         >
-                            🖱️ Right drag: Pan
+                            🖱️ Middle drag: Pan
                         </Typography>
                         <Typography
                             variant="caption"
                             sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                         >
-                            🖱️ Scroll / Middle drag: Zoom
+                            🖱️ Scroll / Right drag: Zoom
                         </Typography>
                     </>
                 ) : (
@@ -1529,8 +1529,10 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                                 zoomSpeed={1.0}
                                 mouseButtons={{
                                     LEFT: THREE.MOUSE.ROTATE,
-                                    MIDDLE: THREE.MOUSE.DOLLY,
-                                    RIGHT: THREE.MOUSE.PAN,
+                                    // Middle pans everywhere (freelook + Viewer2D agree); right
+                                    // dollies so a two-button, wheel-less mouse can still zoom.
+                                    MIDDLE: THREE.MOUSE.PAN,
+                                    RIGHT: THREE.MOUSE.DOLLY,
                                 }}
                                 touches={{
                                     ONE: THREE.TOUCH.ROTATE,
