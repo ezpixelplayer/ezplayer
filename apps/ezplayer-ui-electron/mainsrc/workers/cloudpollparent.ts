@@ -27,6 +27,15 @@ let worker: Worker | null = null;
 let currentStatus: CloudStatus = { playerIdIsRegistered: false };
 let currentCStatus: PlayerCStatusContent = {};
 
+/** Session identity last pushed to the worker. Poll-mode / schedule / interval /
+ *  layoutSource tweaks reuse the same identity — those must not wipe registration
+ *  status or tear down the cloud bridge (that flicker shows the QR again). */
+let lastSessionKey: string | undefined;
+
+function sessionKey(cloudUrl: string, playerIdToken: string, showFolder: string): string {
+    return `${cloudUrl}\0${playerIdToken}\0${showFolder}`;
+}
+
 let statusListener: ((s: CloudStatus) => void) | undefined;
 let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
 let installListener: ((record: SequenceRecord) => void) | undefined;
@@ -144,16 +153,22 @@ export function setCloudWorkerConfig(
     console.log(
         `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
     );
-    // Every reconfigure is a session change (folder switch, token rotation,
-    // disable). Reset registration + content state so the renderer never sees
-    // the previous session's snapshot bridging the gap until the worker's
-    // first poll completes. Also tear down any cloud bridge — viewers tied to
-    // the previous player_token shouldn't see traffic from the new one.
-    currentStatus = { playerIdIsRegistered: false };
-    statusListener?.(currentStatus);
-    currentCStatus = {};
-    cStatusListener?.(currentCStatus);
-    cloudBridgeClose(); // unconditional close; player_token may have changed
+    const nextKey = sessionKey(cloudUrl, playerIdToken, showFolder);
+    const sessionChanged = lastSessionKey !== nextKey;
+    lastSessionKey = nextKey;
+
+    // Folder switch / token rotation / pause (empty url|token) are real session
+    // changes: wipe registration + content so the renderer never bridges the
+    // previous session's snapshot, and close the bridge (viewers must not see
+    // traffic under a new player_token). Polling tweaks keep the same identity
+    // — preserve status so the registration UI does not flash the QR code.
+    if (sessionChanged) {
+        currentStatus = { playerIdIsRegistered: false };
+        statusListener?.(currentStatus);
+        currentCStatus = {};
+        cStatusListener?.(currentCStatus);
+        cloudBridgeClose();
+    }
     send({
         type: 'setConfig',
         cloudUrl,
