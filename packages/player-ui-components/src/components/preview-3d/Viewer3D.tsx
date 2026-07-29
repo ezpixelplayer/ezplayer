@@ -1529,8 +1529,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                                 zoomSpeed={1.0}
                                 mouseButtons={{
                                     LEFT: THREE.MOUSE.ROTATE,
-                                    // Middle pans everywhere (freelook + Viewer2D agree); right
-                                    // dollies so a two-button, wheel-less mouse can still zoom.
                                     MIDDLE: THREE.MOUSE.PAN,
                                     RIGHT: THREE.MOUSE.DOLLY,
                                 }}
