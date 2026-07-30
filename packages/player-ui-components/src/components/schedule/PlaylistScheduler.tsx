@@ -1,6 +1,6 @@
 import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
-import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight } from '@mui/icons-material';
+import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight, ExpandLess, ExpandMore } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PreviewIcon from '@mui/icons-material/Preview';
 import { Box } from '../box/Box';
@@ -8,6 +8,7 @@ import {
     Button,
     Checkbox,
     CircularProgress,
+    Collapse,
     Dialog,
     DialogActions,
     DialogContent,
@@ -57,6 +58,13 @@ type RecurrenceOption = 'once' | 'daily' | 'selectedDays';
 type EditMode = 'single' | 'all' | null;
 type PriorityOption = 'normal' | 'high' | 'low';
 type EndPolicyOption = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut';
+
+const END_POLICY_LABELS: Record<EndPolicyOption, string> = {
+    seqboundearly: 'Finish before, between songs.',
+    seqboundlate: 'Finish a bit after, between songs.',
+    seqboundnearest: 'End Between Items, Closest To End Time',
+    hardcut: 'Finish exactly at, even if a song gets cut off.',
+};
 
 const END_POLICY_DESCRIPTIONS: Record<EndPolicyOption, string> = {
     seqboundearly:
@@ -121,6 +129,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         keepToScheduleWhenPreempted: false,
     });
     const [isLoopAutoEnabled, setIsLoopAutoEnabled] = useState(false);
+    const [isAdvancedOptionsExpanded, setIsAdvancedOptionsExpanded] = useState(false);
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const [scheduledPlaylists, setScheduledPlaylists] = useState<ScheduledPlaylist[]>(initialSchedules);
     const [selectedSchedule, setSelectedSchedule] = useState<ScheduledPlaylist | null>(null);
@@ -252,6 +261,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         setIsDialogOpen(false);
         setSelectedSchedule(null);
         setIsLoopAutoEnabled(false);
+        setIsAdvancedOptionsExpanded(false);
         setFormData({
             title: '',
             fromTime: '',
@@ -1357,23 +1367,31 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         )}
 
                         {onScheduleTypeChange && (
-                            <ToggleButtonGroup
-                                value={scheduleType}
-                                exclusive
-                                size="small"
-                                color="primary"
-                                onChange={(_e, value: 'main' | 'background' | null) => {
-                                    if (value !== null) onScheduleTypeChange(value);
-                                }}
-                                aria-label="schedule layer"
+                            <Tooltip
+                                title={
+                                    <Typography component="span" sx={{ fontSize: 11, lineHeight: 1.3, display: 'block', maxWidth: 180 }}>
+                                        Choose FG or BG to set whether this schedule runs in the foreground or background when other schedules are running.
+                                    </Typography>
+                                }
                             >
-                                <ToggleButton value="main" aria-label="foreground">
-                                    FG
-                                </ToggleButton>
-                                <ToggleButton value="background" aria-label="background">
-                                    BG
-                                </ToggleButton>
-                            </ToggleButtonGroup>
+                                <ToggleButtonGroup
+                                    value={scheduleType}
+                                    exclusive
+                                    size="small"
+                                    color="primary"
+                                    onChange={(_e, value: 'main' | 'background' | null) => {
+                                        if (value !== null) onScheduleTypeChange(value);
+                                    }}
+                                    aria-label="schedule layer"
+                                >
+                                    <ToggleButton value="main" aria-label="foreground">
+                                        FG
+                                    </ToggleButton>
+                                    <ToggleButton value="background" aria-label="background">
+                                        BG
+                                    </ToggleButton>
+                                </ToggleButtonGroup>
+                            </Tooltip>
                         )}
 
                         <StyledToggleButtonGroup
@@ -1556,25 +1574,6 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         </Box>
 
                         <FormControl fullWidth sx={{ mt: 1 }}>
-                            <InputLabel id="priority-select-label">Priority</InputLabel>
-                            <Select
-                                labelId="priority-select-label"
-                                value={formData.priority}
-                                label="Priority"
-                                onChange={(e) =>
-                                    setFormData((prev) => ({
-                                        ...prev,
-                                        priority: e.target.value as PriorityOption,
-                                    }))
-                                }
-                            >
-                                <MenuItem value="normal">Normal</MenuItem>
-                                <MenuItem value="high">High</MenuItem>
-                                <MenuItem value="low">Low</MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        <FormControl fullWidth sx={{ mt: 1 }}>
                             <InputLabel id="endpolicy-select-label">End Time Behavior</InputLabel>
                             <Select
                                 labelId="endpolicy-select-label"
@@ -1586,11 +1585,11 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                         endPolicy: e.target.value as EndPolicyOption,
                                     }))
                                 }
+                                renderValue={(value) => END_POLICY_LABELS[value as EndPolicyOption]}
                             >
-                                <MenuItem value="seqboundearly">End Between Items, Before End Time</MenuItem>
-                                <MenuItem value="seqboundlate">End Between Items, After End Time</MenuItem>
-                                <MenuItem value="seqboundnearest">End Between Items, Closest To End Time</MenuItem>
-                                <MenuItem value="hardcut">Hard Cutoff At End Time</MenuItem>
+                                <MenuItem value="seqboundearly">{END_POLICY_LABELS.seqboundearly}</MenuItem>
+                                <MenuItem value="seqboundlate">{END_POLICY_LABELS.seqboundlate}</MenuItem>
+                                <MenuItem value="hardcut">{END_POLICY_LABELS.hardcut}</MenuItem>
                             </Select>
                             <FormHelperText>{END_POLICY_DESCRIPTIONS[formData.endPolicy]}</FormHelperText>
                         </FormControl>
@@ -1696,49 +1695,131 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             </FormControl>
                         </Box>
 
-                        <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={formData.hardCutIn}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                hardCutIn: e.target.checked,
-                                            }))
-                                        }
-                                    />
-                                }
-                                label="Interrupt Other Schedules Immediately"
-                            />
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={formData.preferHardCutIn}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                preferHardCutIn: e.target.checked,
-                                            }))
-                                        }
-                                    />
-                                }
-                                label="Other Schedules Interrupt Immediately"
-                            />
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={formData.keepToScheduleWhenPreempted}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                keepToScheduleWhenPreempted: e.target.checked,
-                                            }))
-                                        }
-                                    />
-                                }
-                                label="Keep To Schedule When Interrupted"
-                            />
+                        <Box sx={{ mt: 1 }}>
+                            <Box
+                                role="button"
+                                tabIndex={0}
+                                aria-expanded={isAdvancedOptionsExpanded}
+                                aria-label="Advanced Options"
+                                onClick={() => setIsAdvancedOptionsExpanded((prev) => !prev)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        setIsAdvancedOptionsExpanded((prev) => !prev);
+                                    }
+                                }}
+                                sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    cursor: 'pointer',
+                                    px: 1.5,
+                                    py: 1,
+                                    border: 1,
+                                    borderColor: 'divider',
+                                    borderRadius: 1,
+                                    bgcolor: 'background.paper',
+                                    color: 'text.primary',
+                                    '&:hover': {
+                                        bgcolor: 'action.hover',
+                                        borderColor: 'text.secondary',
+                                    },
+                                    '&:focus-visible': {
+                                        outline: '2px solid',
+                                        outlineColor: 'primary.main',
+                                        outlineOffset: 1,
+                                    },
+                                }}
+                            >
+                                <Typography variant="body1" sx={{ fontWeight: 500, color: 'text.primary' }}>
+                                    Advanced Options
+                                </Typography>
+                                {isAdvancedOptionsExpanded ? (
+                                    <ExpandLess color="action" />
+                                ) : (
+                                    <ExpandMore color="action" />
+                                )}
+                            </Box>
+                            <Collapse in={isAdvancedOptionsExpanded}>
+                                <Box
+                                    sx={{
+                                        mt: 1,
+                                        pt: 1.5,
+                                        px: 1.5,
+                                        pb: 1,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 1.5,
+                                        border: 1,
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                    }}
+                                >
+                                    <FormControl fullWidth>
+                                        <InputLabel id="priority-select-label">Priority</InputLabel>
+                                        <Select
+                                            labelId="priority-select-label"
+                                            value={formData.priority}
+                                            label="Priority"
+                                            onChange={(e) =>
+                                                setFormData((prev) => ({
+                                                    ...prev,
+                                                    priority: e.target.value as PriorityOption,
+                                                }))
+                                            }
+                                        >
+                                            <MenuItem value="normal">Normal</MenuItem>
+                                            <MenuItem value="high">High</MenuItem>
+                                            <MenuItem value="low">Low</MenuItem>
+                                        </Select>
+                                    </FormControl>
+
+                                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                                        <FormControlLabel
+                                            control={
+                                                <Checkbox
+                                                    checked={formData.hardCutIn}
+                                                    onChange={(e) =>
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            hardCutIn: e.target.checked,
+                                                        }))
+                                                    }
+                                                />
+                                            }
+                                            label="Interrupt Other Schedules Immediately"
+                                        />
+                                        <FormControlLabel
+                                            control={
+                                                <Checkbox
+                                                    checked={formData.preferHardCutIn}
+                                                    onChange={(e) =>
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            preferHardCutIn: e.target.checked,
+                                                        }))
+                                                    }
+                                                />
+                                            }
+                                            label="Other Schedules Interrupt Immediately"
+                                        />
+                                        <FormControlLabel
+                                            control={
+                                                <Checkbox
+                                                    checked={formData.keepToScheduleWhenPreempted}
+                                                    onChange={(e) =>
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            keepToScheduleWhenPreempted: e.target.checked,
+                                                        }))
+                                                    }
+                                                />
+                                            }
+                                            label="Keep To Schedule When Interrupted"
+                                        />
+                                    </Box>
+                                </Box>
+                            </Collapse>
                         </Box>
 
                         <FormControl fullWidth sx={{ mt: 1 }}>
