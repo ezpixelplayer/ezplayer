@@ -52,6 +52,52 @@ function getAudioNameFromFseqHeader(headers: Record<string, string> | undefined)
     return undefined;
 }
 
+/**
+ * Pick the first non-empty header value for any of the candidate 2-char codes
+ * (FSEQ variable headers are always two bytes). Values that look binary / non-
+ * printable are ignored so malformed or extended-data headers never surface.
+ */
+function firstPrintableHeader(
+    headers: Record<string, string>,
+    keys: readonly string[],
+): string | undefined {
+    for (const key of keys) {
+        const raw = headers[key];
+        if (typeof raw !== 'string') continue;
+        const val = raw.replace(/\0/g, '').trim();
+        if (!val) continue;
+        // Reject binary / control-heavy payloads (e.g. unresolved ED blobs).
+        if (/[\x00-\x08\x0E-\x1F]/.test(val)) continue;
+        return val;
+    }
+    return undefined;
+}
+
+/**
+ * Optional title/artist tags some sequencers embed as FSEQ variable headers.
+ * Official FSEQ only defines `mf` / `sp`; these codes are best-effort extras
+ * (vendor custom tags + recommended authorship codes). Returns empty when absent.
+ */
+function getTitleArtistFromFseqHeaders(headers: Record<string, string> | undefined): {
+    title?: string;
+    artist?: string;
+} {
+    if (!headers) return {};
+    try {
+        // Title: tt/ti (title), sn/st (song name/title) — common custom codes.
+        const title = firstPrintableHeader(headers, ['tt', 'ti', 'sn', 'st']);
+        // Artist: ta/ar (artist), sa (song artist), an (author name — recommended).
+        const artist = firstPrintableHeader(headers, ['ta', 'ar', 'sa', 'an']);
+        return {
+            title: title || undefined,
+            artist: artist || undefined,
+        };
+    } catch {
+        // Malformed header maps must never break import.
+        return {};
+    }
+}
+
 async function findWithBasename(dir: string, baseName: string, exts: string[]): Promise<string | undefined> {
     for (const ext of exts) {
         const p = path.join(dir, `${baseName}${ext}`);
@@ -114,6 +160,7 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
     const fseqBase = path.parse(fseqFilePath).name;
 
     let headerAudioName: string | undefined;
+    let fseqMeta: { title?: string; artist?: string } = {};
     try {
         const header = await FSEQReaderAsync.readFSEQHeaderAsync(fseqFilePath);
         out.durationSecs = (header.frames * header.msperframe) / 1000;
@@ -122,8 +169,10 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             `[SongAutoDetect] FSEQ headers [${keys.join(', ')}]: ${keys.map((k) => `${k}="${header.headers[k]}"`).join(', ') || '(empty)'}`,
         );
         headerAudioName = getAudioNameFromFseqHeader(header.headers);
+        fseqMeta = getTitleArtistFromFseqHeaders(header.headers);
         console.log(
-            `[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s`,
+            `[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s` +
+                `, fseqTitle=${fseqMeta.title ?? '(none)'}, fseqArtist=${fseqMeta.artist ?? '(none)'}`,
         );
     } catch (error) {
         console.warn(`[SongAutoDetect] FSEQ header read failed for "${fseqFilePath}":`, String(error));
@@ -147,6 +196,10 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             (await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS));
     }
 
+    // Prefer FSEQ embedded title/artist; fall back to MP3/ID3 only for gaps.
+    out.detectedTitle = fseqMeta.title;
+    out.detectedArtist = fseqMeta.artist;
+
     if (out.audioFile) {
         const audioBase = path.parse(out.audioFile).name;
         out.imageFile =
@@ -156,8 +209,12 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             (await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS));
 
         const metadata = await extractAudioTagMetadata(out.audioFile);
-        out.detectedTitle = metadata.title;
-        out.detectedArtist = metadata.artist;
+        if (!out.detectedTitle && metadata.title) {
+            out.detectedTitle = metadata.title;
+        }
+        if (!out.detectedArtist && metadata.artist) {
+            out.detectedArtist = metadata.artist;
+        }
         if (!out.imageFile && metadata.imageFile) {
             out.imageFile = metadata.imageFile;
             out.imageGeneratedFromAudio = metadata.imageGeneratedFromAudio;
