@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 
-import { PageHeader, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
+import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-ui-components';
 
-import type { SequenceSettings } from '@ezplayer/ezplayer-core';
+import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
@@ -14,6 +14,9 @@ import {
     alpha,
     Button,
     Card,
+    CircularProgress,
+    Menu,
+    MenuItem,
     Typography,
     useTheme,
     Table,
@@ -30,9 +33,11 @@ import { Box } from '../box/Box';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import LibraryAddIcon from '@mui/icons-material/LibraryAdd';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { AddSongProps } from './AddSongDialogBrowser';
+import { BulkImportSummaryDialog } from './BulkImportSummaryDialog';
 import { DeleteSongDialog } from './DeleteSongDialog';
 import { EditSongDetailsDialog } from './EditSongDetailsDialog';
 
@@ -44,6 +49,8 @@ export interface SongListProps {
     showEditAction?: boolean;
     showDeleteAction?: boolean;
     showAddSongButton?: boolean;
+    /** Electron-only: show Bulk Import (multi-file / folder). */
+    showBulkImportButton?: boolean;
 }
 
 interface SongListRow {
@@ -206,6 +213,7 @@ export function SongList({
     showEditAction = true,
     showDeleteAction = true,
     showAddSongButton = true,
+    showBulkImportButton = false,
 }: SongListProps) {
     const dispatch = useDispatch<AppDispatch>();
     const [openAddDialog, setOpenAddDialog] = useState(false);
@@ -215,6 +223,10 @@ export function SongList({
     const [searchQuery, setSearchQuery] = useState('');
     const [filterTags, setFilterTags] = useState<string[]>([]);
     const [tagInputValue, setTagInputValue] = useState('');
+    const [bulkMenuAnchor, setBulkMenuAnchor] = useState<null | HTMLElement>(null);
+    const [bulkImporting, setBulkImporting] = useState(false);
+    const [bulkSummary, setBulkSummary] = useState<BatchImportSummary | null>(null);
+    const [bulkSummaryOpen, setBulkSummaryOpen] = useState(false);
 
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const availableTags = useSelector((state: RootState) => state.sequences.tags || []);
@@ -233,6 +245,127 @@ export function SongList({
     const handleClose = () => {
         setOpenAddDialog(false);
         setOpenEditDialog(false);
+    };
+
+    const runBulkImport = async (runner: () => Promise<BatchImportSummary | undefined>) => {
+        setBulkImporting(true);
+        try {
+            const summary = await runner();
+            if (!summary) return; // user cancelled picker
+            setBulkSummary(summary);
+            setBulkSummaryOpen(true);
+            if (summary.imported > 0 && summary.failed === 0) {
+                ToastMsgs.showSuccessMessage(`Imported ${summary.imported} sequence(s)`, {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 2500,
+                });
+            } else if (summary.imported > 0) {
+                ToastMsgs.showSuccessMessage(
+                    `Imported ${summary.imported}; ${summary.failed} failed — see summary`,
+                    {
+                        theme: 'colored',
+                        position: 'bottom-right',
+                        autoClose: 3500,
+                    },
+                );
+            } else if (summary.failed > 0) {
+                ToastMsgs.showErrorMessage(`No sequences imported (${summary.failed} failed)`, {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 3500,
+                });
+            }
+        } catch (error) {
+            console.error('[BulkImport] failed:', error);
+            ToastMsgs.showErrorMessage('Bulk import failed', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2500,
+            });
+        } finally {
+            setBulkImporting(false);
+        }
+    };
+
+    /** Close the MUI menu first, then open the native dialog. Opening a modal
+     *  dialog while the menu is still tearing down often fails silently on Windows. */
+    const startBulkImportAfterMenuClose = (runner: () => Promise<BatchImportSummary | undefined>) => {
+        setBulkMenuAnchor(null);
+        window.setTimeout(() => {
+            void runBulkImport(runner);
+        }, 100);
+    };
+
+    const handleBulkImportFiles = () => {
+        startBulkImportAfterMenuClose(async () => {
+            const api = (window as any).electronAPI;
+            if (!api?.selectFiles) {
+                console.warn('[BulkImport] electronAPI.selectFiles is unavailable');
+                ToastMsgs.showErrorMessage('File picker is unavailable in this environment', {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 2500,
+                });
+                return undefined;
+            }
+            if (!api?.batchImportSequences) {
+                console.warn('[BulkImport] electronAPI.batchImportSequences is unavailable — restart the app');
+                ToastMsgs.showErrorMessage('Bulk import is unavailable. Restart the app and try again.', {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 3500,
+                });
+                return undefined;
+            }
+            console.log('[BulkImport] Opening multi-file .fseq picker…');
+            const paths: string[] =
+                (await api.selectFiles({
+                    title: 'Select .fseq files to import',
+                    buttonLabel: 'Import',
+                    multi: true,
+                    types: [{ name: 'FSEQ Sequence', extensions: ['fseq'] }],
+                })) ?? [];
+            console.log(`[BulkImport] Selected ${paths.length} file(s)`);
+            if (!paths.length) return undefined;
+            return api.batchImportSequences(paths);
+        });
+    };
+
+    const handleBulkImportFolder = () => {
+        startBulkImportAfterMenuClose(async () => {
+            const api = (window as any).electronAPI;
+            if (!api?.selectDirectory) {
+                console.warn('[BulkImport] electronAPI.selectDirectory is unavailable');
+                ToastMsgs.showErrorMessage('Folder picker is unavailable in this environment', {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 2500,
+                });
+                return undefined;
+            }
+            if (!api?.batchImportSequencesFromFolder) {
+                console.warn(
+                    '[BulkImport] electronAPI.batchImportSequencesFromFolder is unavailable — restart the app',
+                );
+                ToastMsgs.showErrorMessage('Bulk import is unavailable. Restart the app and try again.', {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 3500,
+                });
+                return undefined;
+            }
+            console.log('[BulkImport] Opening folder picker…');
+            const dirs: string[] =
+                (await api.selectDirectory({
+                    title: 'Select folder containing .fseq files',
+                    buttonLabel: 'Import Folder',
+                })) ?? [];
+            const folder = dirs[0];
+            console.log(`[BulkImport] Selected folder: ${folder ?? '(none)'}`);
+            if (!folder) return undefined;
+            return api.batchImportSequencesFromFolder(folder);
+        });
     };
 
     // Replace the direct handleDeleteSong function with this
@@ -564,18 +697,52 @@ export function SongList({
                         />
                     </Box>
 
-                    {showAddSongButton && AddSongDialog && (
-                        <Button
-                            size={'small'}
-                            sx={{ pt: 1, pb: 1 }}
-                            className="letter-spacing"
-                            variant={'contained'}
-                            onClick={handleAddClick}
-                            startIcon={<AddIcon />}
-                        >
-                            Add Song
-                        </Button>
-                    )}
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {showAddSongButton && AddSongDialog && (
+                            <Button
+                                size={'small'}
+                                sx={{ pt: 1, pb: 1 }}
+                                className="letter-spacing"
+                                variant={'contained'}
+                                onClick={handleAddClick}
+                                startIcon={<AddIcon />}
+                            >
+                                Add Song
+                            </Button>
+                        )}
+                        {showBulkImportButton && isElectron() && (
+                            <>
+                                <Button
+                                    size={'small'}
+                                    sx={{ pt: 1, pb: 1 }}
+                                    className="letter-spacing"
+                                    variant={'outlined'}
+                                    onClick={(e) => setBulkMenuAnchor(e.currentTarget)}
+                                    startIcon={
+                                        bulkImporting ? (
+                                            <CircularProgress size={16} color="inherit" />
+                                        ) : (
+                                            <LibraryAddIcon />
+                                        )
+                                    }
+                                    disabled={bulkImporting}
+                                >
+                                    Bulk Import
+                                </Button>
+                                <Menu
+                                    anchorEl={bulkMenuAnchor}
+                                    open={Boolean(bulkMenuAnchor)}
+                                    onClose={() => setBulkMenuAnchor(null)}
+                                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                                    PaperProps={{ sx: { mt: 1.5 } }}
+                                >
+                                    <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
+                                    <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
+                                </Menu>
+                            </>
+                        )}
+                    </Box>
                 </Box>
 
                 <Box
@@ -595,6 +762,12 @@ export function SongList({
             </Card>
 
             {AddSongDialog && <AddSongDialog open={openAddDialog} onClose={handleClose} title="Add New Song" />}
+
+            <BulkImportSummaryDialog
+                open={bulkSummaryOpen}
+                summary={bulkSummary}
+                onClose={() => setBulkSummaryOpen(false)}
+            />
 
             <EditSongDetailsDialog
                 open={openEditDialog}

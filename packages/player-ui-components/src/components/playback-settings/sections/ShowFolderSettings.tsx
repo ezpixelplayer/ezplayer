@@ -1,11 +1,12 @@
 import { Button, TextField, Typography } from '@mui/material';
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import React, { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { isElectron, ToastMsgs } from '@ezplayer/shared-ui-components';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
-import type { RootState } from '../../../store/Store';
+import type { AppDispatch, RootState } from '../../../store/Store';
+import { savePlayerSettings, setMediaFolder } from '../../../store/slices/PlaybackSettingsStore';
 
 declare global {
     interface Window {
@@ -14,12 +15,19 @@ declare global {
 }
 
 export const ShowFolderSettings: React.FC = () => {
+    const dispatch = useDispatch<AppDispatch>();
     const storedShowDirectory = useSelector((s: RootState) => s.auth.showDirectory);
+    const mediaFolder = useSelector((s: RootState) => s.playbackSettings.settings.mediaFolder);
     const [selectedDirectory, setSelectedDirectory] = useState<string>('');
+    const [mediaFolderLocal, setMediaFolderLocal] = useState<string>(mediaFolder ?? '');
 
     useEffect(() => {
         if (storedShowDirectory) setSelectedDirectory(storedShowDirectory);
     }, [storedShowDirectory]);
+
+    useEffect(() => {
+        setMediaFolderLocal(mediaFolder ?? '');
+    }, [mediaFolder]);
 
     const handleSelectDirectory = async () => {
         if (isElectron() && window.electronAPI?.requestChooseShowFolder) {
@@ -75,13 +83,62 @@ export const ShowFolderSettings: React.FC = () => {
         }
     };
 
+    const persistMediaFolder = async (next: string | undefined) => {
+        dispatch(setMediaFolder(next));
+        try {
+            await dispatch(savePlayerSettings()).unwrap();
+        } catch (error) {
+            console.error('Failed to save media folder:', error);
+            ToastMsgs.showErrorMessage('Failed to save media folder', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
+
+    const handleSelectMediaFolder = async () => {
+        if (!isElectron() || !window.electronAPI?.selectDirectory) return;
+        try {
+            const dirs = await window.electronAPI.selectDirectory({
+                title: 'Select Media Folder',
+                buttonLabel: 'Use Folder',
+            });
+            const chosen = dirs[0];
+            if (!chosen) return;
+            setMediaFolderLocal(chosen);
+            await persistMediaFolder(chosen);
+            ToastMsgs.showSuccessMessage(`Media folder set: ${chosen}`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        } catch (error) {
+            console.error('Error selecting media folder:', error);
+            ToastMsgs.showErrorMessage('Failed to select media folder', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
+
+    const handleClearMediaFolder = async () => {
+        setMediaFolderLocal('');
+        await persistMediaFolder(undefined);
+    };
+
     return (
         <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Select a directory containing your show files.
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Button variant="contained" onClick={handleSelectDirectory} sx={{ whiteSpace: 'nowrap' }}>
+                <Button
+                    variant="contained"
+                    onClick={handleSelectDirectory}
+                    sx={{ whiteSpace: 'nowrap', minWidth: 180, px: 2, py: 1 }}
+                >
                     Choose Show Folder
                 </Button>
                 <TextField
@@ -106,6 +163,41 @@ export const ShowFolderSettings: React.FC = () => {
             >
                 Download Cloud Show
             </Button>
+
+            <Typography variant="subtitle2" sx={{ mt: 4, mb: 0.5 }}>
+                Media Folder (optional)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Extra location searched for companion MP3 files after the sequence&apos;s own folder. Used by song
+                autodetection and bulk import.
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Button
+                    variant="contained"
+                    onClick={handleSelectMediaFolder}
+                    disabled={!isElectron()}
+                    sx={{ whiteSpace: 'nowrap', minWidth: 180, px: 2, py: 1 }}
+                >
+                    Choose Media Folder
+                </Button>
+                <TextField
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                    placeholder="Not set — search sequence folder only"
+                    value={mediaFolderLocal}
+                    disabled
+                    sx={{ '& .MuiInputBase-input': { color: 'text.primary' } }}
+                />
+                <Button
+                    variant="outlined"
+                    onClick={handleClearMediaFolder}
+                    disabled={!mediaFolderLocal}
+                    sx={{ whiteSpace: 'nowrap', px: 2, py: 1 }}
+                >
+                    Clear
+                </Button>
+            </Box>
         </Box>
     );
 };

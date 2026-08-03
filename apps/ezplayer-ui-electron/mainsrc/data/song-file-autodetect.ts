@@ -14,6 +14,14 @@ const MIME_TO_EXT: Record<string, string> = {
     'image/bmp': '.bmp',
 };
 
+/** Directories skipped while walking a media-folder tree. */
+const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.ezplayer', '__MACOSX', '.Trash', '$RECYCLE.BIN']);
+
+export interface AutoDetectOptions {
+    /** Optional media folder — searched only after existing co-located lookup fails. */
+    mediaFolder?: string;
+}
+
 export interface AutoDetectedSongFiles {
     audioFile?: string;
     imageFile?: string;
@@ -21,6 +29,13 @@ export interface AutoDetectedSongFiles {
     detectedTitle?: string;
     detectedArtist?: string;
     durationSecs?: number;
+    /**
+     * True when the FSEQ header names an audio file (`mf`/`mu`/`md`).
+     * Bulk import uses this to fail sequences whose required audio is missing.
+     */
+    audioRequired?: boolean;
+    /** Basename of the audio file named in the FSEQ header, when present. */
+    headerAudioName?: string;
 }
 
 export interface AudioTagMetadata {
@@ -57,10 +72,7 @@ function getAudioNameFromFseqHeader(headers: Record<string, string> | undefined)
  * (FSEQ variable headers are always two bytes). Values that look binary / non-
  * printable are ignored so malformed or extended-data headers never surface.
  */
-function firstPrintableHeader(
-    headers: Record<string, string>,
-    keys: readonly string[],
-): string | undefined {
+function firstPrintableHeader(headers: Record<string, string>, keys: readonly string[]): string | undefined {
     for (const key of keys) {
         const raw = headers[key];
         if (typeof raw !== 'string') continue;
@@ -124,6 +136,50 @@ async function findWithPrefix(dir: string, prefix: string, exts: string[]): Prom
     return undefined;
 }
 
+/** Existing co-located search: exact basename, then prefix match (non-recursive). */
+async function findAudioInDirectory(dir: string, baseNames: string[]): Promise<string | undefined> {
+    for (const base of baseNames) {
+        const hit =
+            (await findWithBasename(dir, base, AUDIO_EXTENSIONS)) ??
+            (await findWithPrefix(dir, base, AUDIO_EXTENSIONS));
+        if (hit) return hit;
+    }
+    return undefined;
+}
+
+/** Recursive walk of `root` looking for an audio file whose basename (no ext)
+ *  equals or starts with any candidate. Used only as media-folder fallback. */
+async function findAudioRecursive(root: string, baseNames: string[]): Promise<string | undefined> {
+    const lowerBases = baseNames.map((b) => b.toLowerCase());
+    const extSet = new Set(AUDIO_EXTENSIONS);
+    const stack = [root];
+    while (stack.length) {
+        const dir = stack.pop()!;
+        let entries;
+        try {
+            entries = await fs.readdir(dir, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+        for (const entry of entries) {
+            const name = String(entry.name);
+            if (entry.isDirectory()) {
+                if (SKIP_DIR_NAMES.has(name)) continue;
+                stack.push(path.join(dir, name));
+                continue;
+            }
+            if (!entry.isFile()) continue;
+            const ext = path.extname(name).toLowerCase();
+            if (!extSet.has(ext)) continue;
+            const nameNoExt = path.parse(name).name.toLowerCase();
+            if (lowerBases.some((b) => nameNoExt === b || nameNoExt.startsWith(b))) {
+                return path.join(dir, name);
+            }
+        }
+    }
+    return undefined;
+}
+
 export async function extractAudioTagMetadata(audioFilePath: string): Promise<AudioTagMetadata> {
     const out: AudioTagMetadata = {};
     try {
@@ -150,7 +206,15 @@ export async function extractAudioTagMetadata(audioFilePath: string): Promise<Au
     return out;
 }
 
-export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise<AutoDetectedSongFiles> {
+/**
+ * Locate companion audio/image and title/artist for an FSEQ.
+ * Optional `mediaFolder` is searched only after the existing same-directory
+ * lookup fails — existing single-sequence behavior is unchanged when unset.
+ */
+export async function autoDetectSongFilesFromFseq(
+    fseqFilePath: string,
+    options?: AutoDetectOptions,
+): Promise<AutoDetectedSongFiles> {
     const out: AutoDetectedSongFiles = {};
     if (!fseqFilePath || path.extname(fseqFilePath).toLowerCase() !== '.fseq') {
         return out;
@@ -158,6 +222,7 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
 
     const fseqDir = path.dirname(fseqFilePath);
     const fseqBase = path.parse(fseqFilePath).name;
+    const mediaFolder = options?.mediaFolder?.trim() || undefined;
 
     let headerAudioName: string | undefined;
     let fseqMeta: { title?: string; artist?: string } = {};
@@ -169,6 +234,8 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             `[SongAutoDetect] FSEQ headers [${keys.join(', ')}]: ${keys.map((k) => `${k}="${header.headers[k]}"`).join(', ') || '(empty)'}`,
         );
         headerAudioName = getAudioNameFromFseqHeader(header.headers);
+        out.headerAudioName = headerAudioName;
+        out.audioRequired = !!headerAudioName;
         fseqMeta = getTitleArtistFromFseqHeaders(header.headers);
         console.log(
             `[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s` +
@@ -178,6 +245,7 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         console.warn(`[SongAutoDetect] FSEQ header read failed for "${fseqFilePath}":`, String(error));
     }
 
+    // --- Existing / default search (unchanged): FSEQ directory only ---
     if (headerAudioName) {
         const direct = path.join(fseqDir, headerAudioName);
         if (await fileExists(direct)) {
@@ -196,9 +264,22 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             (await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS));
     }
 
-    // Prefer FSEQ embedded title/artist; fall back to MP3/ID3 only for gaps.
-    out.detectedTitle = fseqMeta.title;
-    out.detectedArtist = fseqMeta.artist;
+    // --- Additive fallback: optional Media Folder ---
+    if (!out.audioFile && mediaFolder) {
+        const baseNames = [
+            ...new Set([headerAudioName ? path.parse(headerAudioName).name : undefined, fseqBase].filter(Boolean)),
+        ] as string[];
+        out.audioFile =
+            (await findAudioInDirectory(mediaFolder, baseNames)) ??
+            (await findAudioRecursive(mediaFolder, baseNames));
+        if (out.audioFile) {
+            console.log(`[SongAutoDetect] Audio found in media folder: ${out.audioFile}`);
+        }
+    }
+
+    // Prefer MP3/ID3 title/artist; fall back to FSEQ headers only for gaps.
+    let titleSource: 'fseq' | 'mp3' | 'none' = 'none';
+    let artistSource: 'fseq' | 'mp3' | 'none' = 'none';
 
     if (out.audioFile) {
         const audioBase = path.parse(out.audioFile).name;
@@ -209,12 +290,10 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
             (await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS));
 
         const metadata = await extractAudioTagMetadata(out.audioFile);
-        if (!out.detectedTitle && metadata.title) {
-            out.detectedTitle = metadata.title;
-        }
-        if (!out.detectedArtist && metadata.artist) {
-            out.detectedArtist = metadata.artist;
-        }
+        out.detectedTitle = metadata.title;
+        out.detectedArtist = metadata.artist;
+        if (metadata.title) titleSource = 'mp3';
+        if (metadata.artist) artistSource = 'mp3';
         if (!out.imageFile && metadata.imageFile) {
             out.imageFile = metadata.imageFile;
             out.imageGeneratedFromAudio = metadata.imageGeneratedFromAudio;
@@ -223,10 +302,59 @@ export async function autoDetectSongFilesFromFseq(fseqFilePath: string): Promise
         out.imageFile =
             (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS)) ??
             (await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS));
+        console.log('[SongAutoDetect] No MP3 linked; will try FSEQ metadata tags for title/artist.');
+    }
+
+    if (!out.detectedTitle && fseqMeta.title) {
+        out.detectedTitle = fseqMeta.title;
+        titleSource = 'fseq';
+        console.log(`[SongAutoDetect] Title taken from FSEQ: "${fseqMeta.title}"`);
+    } else if (out.detectedTitle && fseqMeta.title && titleSource === 'mp3') {
+        console.log(
+            `[SongAutoDetect] Title kept from MP3 ("${out.detectedTitle}"); ignoring FSEQ title ("${fseqMeta.title}")`,
+        );
+    }
+
+    if (!out.detectedArtist && fseqMeta.artist) {
+        out.detectedArtist = fseqMeta.artist;
+        artistSource = 'fseq';
+        console.log(`[SongAutoDetect] Artist taken from FSEQ: "${fseqMeta.artist}"`);
+    } else if (out.detectedArtist && fseqMeta.artist && artistSource === 'mp3') {
+        console.log(
+            `[SongAutoDetect] Artist kept from MP3 ("${out.detectedArtist}"); ignoring FSEQ artist ("${fseqMeta.artist}")`,
+        );
     }
 
     console.log(
-        `[SongAutoDetect] FSEQ "${fseqBase}" -> audio=${out.audioFile ?? '(none)'}, image=${out.imageFile ?? '(none)'}, title=${out.detectedTitle ?? '(none)'}, artist=${out.detectedArtist ?? '(none)'}`,
+        `[SongAutoDetect] FSEQ "${fseqBase}" -> audio=${out.audioFile ?? '(none)'}, image=${out.imageFile ?? '(none)'}, ` +
+            `title=${out.detectedTitle ?? '(none)'} [from ${titleSource}], artist=${out.detectedArtist ?? '(none)'} [from ${artistSource}]`,
     );
     return out;
+}
+
+/** Recursively collect `.fseq` paths under a directory (for bulk folder import). */
+export async function listFseqFilesInDirectory(dirPath: string): Promise<string[]> {
+    const results: string[] = [];
+    const stack = [dirPath];
+    while (stack.length) {
+        const dir = stack.pop()!;
+        let entries;
+        try {
+            entries = await fs.readdir(dir, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+        for (const entry of entries) {
+            const name = String(entry.name);
+            if (entry.isDirectory()) {
+                if (SKIP_DIR_NAMES.has(name)) continue;
+                stack.push(path.join(dir, name));
+                continue;
+            }
+            if (entry.isFile() && path.extname(name).toLowerCase() === '.fseq') {
+                results.push(path.join(dir, name));
+            }
+        }
+    }
+    return results.sort((a, b) => a.localeCompare(b));
 }

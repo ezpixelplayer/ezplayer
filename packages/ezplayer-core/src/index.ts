@@ -83,6 +83,9 @@ export type {
     ChannelRoleKind,
     ImageInfo,
     AudioTagMetadata,
+    BatchImportFailure,
+    BatchImportSuccess,
+    BatchImportSummary,
 } from './types/EZPElectronAPI';
 
 export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';

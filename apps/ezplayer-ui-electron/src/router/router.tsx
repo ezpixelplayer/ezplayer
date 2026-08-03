@@ -126,7 +126,14 @@ const menuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.SONGS,
-        element: <SongList title="Songs" AddSongDialog={AddSongDialogElectron} statusArea={getStatusArea()} />,
+        element: (
+            <SongList
+                title="Songs"
+                AddSongDialog={AddSongDialogElectron}
+                statusArea={getStatusArea()}
+                showBulkImportButton
+            />
+        ),
         sidebar: { icon: <MusicIcon />, label: 'Songs' },
     },
     {
