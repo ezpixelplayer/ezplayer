@@ -61,7 +61,7 @@ type EndPolicyOption = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'h
 
 const END_POLICY_LABELS: Record<EndPolicyOption, string> = {
     seqboundearly: 'Finish  before end time, between songs',
-    seqboundlate: 'Finish after end time between songs',
+    seqboundlate: 'Finish after end time, between songs',
     seqboundnearest: 'Finish near end time, between songs',
     hardcut: 'Finish exactly at end time, even if a song gets cut off',
 };
@@ -1589,6 +1589,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             >
                                 <MenuItem value="seqboundearly">{END_POLICY_LABELS.seqboundearly}</MenuItem>
                                 <MenuItem value="seqboundlate">{END_POLICY_LABELS.seqboundlate}</MenuItem>
+                                <MenuItem value="seqboundnearest">{END_POLICY_LABELS.seqboundnearest}</MenuItem>
                                 <MenuItem value="hardcut">{END_POLICY_LABELS.hardcut}</MenuItem>
                             </Select>
                             <FormHelperText>{END_POLICY_DESCRIPTIONS[formData.endPolicy]}</FormHelperText>
