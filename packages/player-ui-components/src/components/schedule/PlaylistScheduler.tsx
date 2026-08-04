@@ -60,10 +60,10 @@ type PriorityOption = 'normal' | 'high' | 'low';
 type EndPolicyOption = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut';
 
 const END_POLICY_LABELS: Record<EndPolicyOption, string> = {
-    seqboundearly: 'Finish before, between songs.',
-    seqboundlate: 'Finish a bit after, between songs.',
-    seqboundnearest: 'End Between Items, Closest To End Time',
-    hardcut: 'Finish exactly at, even if a song gets cut off.',
+    seqboundearly: 'Finish  before end time, between songs',
+    seqboundlate: 'Finish after end time between songs',
+    seqboundnearest: 'Finish near end time, between songs',
+    hardcut: 'Finish exactly at end time, even if a song gets cut off',
 };
 
 const END_POLICY_DESCRIPTIONS: Record<EndPolicyOption, string> = {
@@ -72,7 +72,7 @@ const END_POLICY_DESCRIPTIONS: Record<EndPolicyOption, string> = {
     seqboundlate:
         'Choose this if the schedule should still be running at the selected end time. For example, if you promised your audience the show would still be playing at 10:00 PM, use this option.',
     seqboundnearest:
-        'Choose this if you want the schedule to end at the item boundary closest to the selected end time. For example, if your show should wrap up around 10:00 PM without ending too early or too late, use this option.',
+        'Choose this if you want the schedule to end at the item boundary closest to the selected end time. For example, if your show should wrap up at approximately 10:00 PM, use this option.',
     hardcut:
         'Choose this if the schedule must stop exactly at the selected end time, even if a sequence is still playing. For example, if you need the show to end precisely at 10:00 PM, use this option.',
 };
@@ -1370,7 +1370,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             <Tooltip
                                 title={
                                     <Typography component="span" sx={{ fontSize: 11, lineHeight: 1.3, display: 'block', maxWidth: 180 }}>
-                                        Choose FG or BG to set whether this schedule runs in the foreground or background when other schedules are running.
+                                        Choose FG to see the foreground schedule or BG to see the background schedule.  Background runs while foreground schedules are running.
                                     </Typography>
                                 }
                             >
