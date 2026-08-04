@@ -1612,6 +1612,15 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 The Loop option has been enabled automatically because the schedule duration does not match the selected end time.
                             </Typography>
                         )}
+                        {/* Advisory only: the schedule is still allowed to be submitted. */}
+                        {!formData.loop &&
+                            !formData.shuffle &&
+                            isToTimeLongerThanScheduleDuration(formData.fromTime, formData.toTime, formData) && (
+                            <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
+                                NOTE: Playlist is too short to fill the scheduled time. Choose loop or shuffle to fill
+                                the whole schedule.
+                            </Typography>
+                        )}
 
                         <Box sx={{ display: 'flex', gap: 2 }}>
                             <FormControl fullWidth sx={{ mt: 1 }}>
@@ -1696,7 +1705,15 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             </FormControl>
                         </Box>
 
-                        <Box sx={{ mt: 1 }}>
+                        <Box
+                            sx={{
+                                mt: 1,
+                                border: 1,
+                                borderColor: 'divider',
+                                borderRadius: 1,
+                                overflow: 'hidden',
+                            }}
+                        >
                             <Box
                                 role="button"
                                 tabIndex={0}
@@ -1716,19 +1733,18 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                     cursor: 'pointer',
                                     px: 1.5,
                                     py: 1,
-                                    border: 1,
+                                    // Divider only while expanded, so the card reads as one unit.
+                                    borderBottom: isAdvancedOptionsExpanded ? 1 : 0,
                                     borderColor: 'divider',
-                                    borderRadius: 1,
                                     bgcolor: 'background.paper',
                                     color: 'text.primary',
                                     '&:hover': {
                                         bgcolor: 'action.hover',
-                                        borderColor: 'text.secondary',
                                     },
                                     '&:focus-visible': {
                                         outline: '2px solid',
                                         outlineColor: 'primary.main',
-                                        outlineOffset: 1,
+                                        outlineOffset: -2,
                                     },
                                 }}
                             >
@@ -1744,16 +1760,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             <Collapse in={isAdvancedOptionsExpanded}>
                                 <Box
                                     sx={{
-                                        mt: 1,
                                         pt: 1.5,
                                         px: 1.5,
-                                        pb: 1,
+                                        pb: 1.5,
                                         display: 'flex',
                                         flexDirection: 'column',
                                         gap: 1.5,
-                                        border: 1,
-                                        borderColor: 'divider',
-                                        borderRadius: 1,
                                     }}
                                 >
                                     <FormControl fullWidth>
