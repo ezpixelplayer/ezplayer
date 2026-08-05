@@ -126,6 +126,7 @@ const allMenuRoutes: MenuRoute[] = [
                 showEditAction={!isKiosk}
                 showDeleteAction={!isKiosk}
                 showAddSongButton={!isKiosk}
+                showBulkImportButton={!isKiosk}
             />
         ),
         sidebar: { icon: <MusicIcon />, label: 'Songs' },

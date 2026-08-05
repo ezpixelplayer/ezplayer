@@ -6,6 +6,7 @@ import type {
     CloudCommand,
     EZPlayerCommand,
     PlaybackSettings,
+    BatchImportSummary,
 } from '@ezplayer/ezplayer-core';
 
 import { AppDispatch } from '../..';
@@ -151,4 +152,7 @@ export interface DataStorageAPI {
         artist?: string;
         imageFile?: string;
     }>;
+
+    /** Bulk-import `.fseq` files already uploaded to the show folder (web/LAN). */
+    batchImportShowSequences?: (fseqNames: string[]) => Promise<BatchImportSummary>;
 }

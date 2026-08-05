@@ -85,6 +85,7 @@ export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {
     autodetectShowSequence,
+    batchImportShowSequences,
     extractShowAudioMetadata,
     canUploadShowFiles,
     listShowFiles,

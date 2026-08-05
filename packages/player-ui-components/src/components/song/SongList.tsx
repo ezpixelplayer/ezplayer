@@ -7,6 +7,7 @@ import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-u
 import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
+import { batchImportShowSequences, uploadShowFiles } from '../../store/slices/SequenceStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
 import {
@@ -49,7 +50,7 @@ export interface SongListProps {
     showEditAction?: boolean;
     showDeleteAction?: boolean;
     showAddSongButton?: boolean;
-    /** Electron-only: show Bulk Import (multi-file / folder). */
+    /** Show Bulk Import (multi-file / folder). Electron uses native dialogs; LAN/web uploads then imports. */
     showBulkImportButton?: boolean;
 }
 
@@ -295,6 +296,50 @@ export function SongList({
         window.setTimeout(() => {
             void runBulkImport(runner);
         }, 100);
+    };
+
+    const collectFseqUploadFiles = (files: FileList | File[]): File[] => {
+        const byName = new Map<string, File>();
+        for (const file of files) {
+            if (!file.name.toLowerCase().endsWith('.fseq')) continue;
+            byName.set(file.name, file);
+        }
+        return [...byName.values()];
+    };
+
+    const uploadAndBatchImportBrowser = async (files: File[]): Promise<BatchImportSummary | undefined> => {
+        const fseqFiles = collectFseqUploadFiles(files);
+        if (!fseqFiles.length) {
+            ToastMsgs.showErrorMessage('No .fseq files found in the selection', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2500,
+            });
+            return undefined;
+        }
+        const names: string[] = [];
+        for (const file of fseqFiles) {
+            await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
+            names.push(file.name);
+        }
+        console.log(`[BulkImport] Uploaded ${names.length} file(s); starting server batch import…`);
+        return dispatch(batchImportShowSequences(names)).unwrap();
+    };
+
+    const handleBulkFilesInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        event.target.value = '';
+        setBulkMenuAnchor(null);
+        if (!files?.length) return;
+        await runBulkImport(() => uploadAndBatchImportBrowser([...files]));
+    };
+
+    const handleBulkFolderInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        event.target.value = '';
+        setBulkMenuAnchor(null);
+        if (!files?.length) return;
+        await runBulkImport(() => uploadAndBatchImportBrowser([...files]));
     };
 
     const handleBulkImportFiles = () => {
@@ -710,7 +755,7 @@ export function SongList({
                                 Add Song
                             </Button>
                         )}
-                        {showBulkImportButton && isElectron() && (
+                        {showBulkImportButton && (
                             <>
                                 <Button
                                     size={'small'}
@@ -737,9 +782,66 @@ export function SongList({
                                     transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                                     PaperProps={{ sx: { mt: 1.5 } }}
                                 >
-                                    <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
-                                    <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
+                                    {isElectron() ? (
+                                        <>
+                                            <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
+                                            <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MenuItem
+                                                onClick={() => {
+                                                    // Input lives outside Menu so it is not unmounted when
+                                                    // the menu closes. Click must stay synchronous.
+                                                    const el = document.getElementById(
+                                                        'ezplayer-bulk-fseq-files',
+                                                    ) as HTMLInputElement | null;
+                                                    el?.click();
+                                                    setBulkMenuAnchor(null);
+                                                }}
+                                            >
+                                                Select .fseq files…
+                                            </MenuItem>
+                                            <MenuItem
+                                                onClick={() => {
+                                                    const el = document.getElementById(
+                                                        'ezplayer-bulk-fseq-folder',
+                                                    ) as HTMLInputElement | null;
+                                                    el?.click();
+                                                    setBulkMenuAnchor(null);
+                                                }}
+                                            >
+                                                Select folder…
+                                            </MenuItem>
+                                        </>
+                                    )}
                                 </Menu>
+                                {/* Always mounted — never nest file inputs inside Menu. */}
+                                {showBulkImportButton && !isElectron() && (
+                                    <>
+                                        <input
+                                            id="ezplayer-bulk-fseq-files"
+                                            type="file"
+                                            accept=".fseq,application/octet-stream"
+                                            multiple
+                                            style={{ display: 'none' }}
+                                            onChange={handleBulkFilesInputChange}
+                                        />
+                                        <input
+                                            id="ezplayer-bulk-fseq-folder"
+                                            ref={(el) => {
+                                                if (el) {
+                                                    el.setAttribute('webkitdirectory', '');
+                                                    el.setAttribute('directory', '');
+                                                }
+                                            }}
+                                            type="file"
+                                            multiple
+                                            style={{ display: 'none' }}
+                                            onChange={handleBulkFolderInputChange}
+                                        />
+                                    </>
+                                )}
                             </>
                         )}
                     </Box>

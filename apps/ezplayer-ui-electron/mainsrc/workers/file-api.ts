@@ -15,6 +15,7 @@
  * EZPlayer-native additions (JSON bodies, behind jsonBody()):
  *   POST /api/ezp/sequences                  register SequenceRecords (RPC to main)
  *   POST /api/ezp/sequences/autodetect       find audio/metadata for an fseq
+ *   POST /api/ezp/sequences/batch-import     bulk-import fseq already in show folder
  *
  * Show folders are flat, so each logical FPP directory is the show root plus
  * an extension filter. This router must mount BEFORE jsonBody() so upload
@@ -31,6 +32,7 @@ import type { IncomingMessage } from 'http';
 import { send } from '@koa/send';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
+import { batchImportSequences } from '../data/batch-sequence-import.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
 import { fileBaseName } from './pathnames.js';
 
@@ -38,6 +40,8 @@ export interface FileApiDeps {
     getShowFolder: () => string | undefined;
     getSequences: () => SequenceRecord[] | undefined;
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
+    /** Playback-settings media folder — same fallback used by Electron bulk import. */
+    getMediaFolder?: () => string | undefined;
 }
 
 const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac', '.wma']);
@@ -607,6 +611,45 @@ export async function audioMetadataCore(showFolder: string | undefined, audioNam
     };
 }
 
+/** Bulk-import `.fseq` files already present in the show folder (LAN / web UI).
+ *  Body: `{ fseqNames: string[] }` — basenames only, same flat layout as uploads. */
+export async function batchImportSequencesCore(
+    showFolder: string | undefined,
+    deps: FileApiDeps,
+    fseqNames: unknown,
+): Promise<ProxyResult> {
+    if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
+    if (!Array.isArray(fseqNames)) {
+        return { status: 400, body: { error: 'Body must include fseqNames array' } };
+    }
+
+    const paths: string[] = [];
+    for (const raw of fseqNames) {
+        if (typeof raw !== 'string' || !raw.trim()) continue;
+        const name = raw.trim();
+        if (path.extname(name).toLowerCase() !== '.fseq') continue;
+        const nameErr = checkName(name);
+        if (nameErr) continue;
+        const target = resolveInShow(showFolder, name);
+        if (target) paths.push(target);
+    }
+
+    const unique = [...new Set(paths)];
+    if (!unique.length) {
+        return { status: 400, body: { error: 'No valid .fseq file names provided' } };
+    }
+
+    try {
+        const summary = await batchImportSequences(unique, {
+            mediaFolder: deps.getMediaFolder?.(),
+            putSequences: async (recs) => (await deps.putSequences(recs)) as SequenceRecord[],
+        });
+        return { status: 200, body: summary };
+    } catch (err: any) {
+        return { status: 503, body: { error: err?.message ?? 'Batch import failed' } };
+    }
+}
+
 /** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */
 export async function listFileNamesCore(showFolder: string | undefined, dirName: string): Promise<ProxyResult> {
     if (!showFolder) return { status: 400, body: { status: 'error', error: 'Show folder not set' } };
@@ -653,6 +696,12 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
 
     router.post('/api/ezp/sequences/audio-metadata', async (ctx) => {
         const res = await audioMetadataCore(deps.getShowFolder(), (ctx.request.body as any)?.audio);
+        ctx.status = res.status;
+        ctx.body = res.body;
+    });
+
+    router.post('/api/ezp/sequences/batch-import', async (ctx) => {
+        const res = await batchImportSequencesCore(deps.getShowFolder(), deps, (ctx.request.body as any)?.fseqNames);
         ctx.status = res.status;
         ctx.body = res.body;
     });

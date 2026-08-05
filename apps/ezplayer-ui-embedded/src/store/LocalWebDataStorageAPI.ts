@@ -6,6 +6,7 @@ import type {
     CloudCommand,
     EZPlayerCommand,
     PlaybackSettings,
+    BatchImportSummary,
     PlayerWebSocketMessage,
 } from '@ezplayer/ezplayer-core';
 
@@ -221,6 +222,19 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         });
         if (!response.ok) throw new Error(`Audio metadata failed: ${response.statusText}`);
         return await response.json();
+    }
+
+    async batchImportShowSequences(fseqNames: string[]) {
+        const response = await fetch(`${this.apiUrl}ezp/sequences/batch-import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fseqNames }),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error ?? `Batch import failed: ${response.statusText}`);
+        }
+        return (await response.json()) as BatchImportSummary;
     }
 
     async listShowFiles(dir: string): Promise<string[]> {
