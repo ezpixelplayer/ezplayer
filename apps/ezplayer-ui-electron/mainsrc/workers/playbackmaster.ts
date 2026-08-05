@@ -31,6 +31,10 @@ import type {
     VcSong,
     VcPlayingItem,
     VcScheduleEntry,
+    KnownController,
+    ControllerPortIntent,
+    ControllerModelIntent,
+    ControllerOutputIntent,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -39,6 +43,7 @@ import {
     getScheduleTimes,
     LatestFrameRingBuffer,
     PlayerRunState,
+    portIntentFromModelIntents,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -47,28 +52,33 @@ import {
     openControllersForDataSend,
     FSeqPrefetchCache,
     ModelRec,
+    controllersFromParsedXlights,
     readControllersFromXlights,
     ControllerState,
     FrameReference,
     CacheStats,
     loadXmlFile,
-    getNumAttrDef,
+    resolveShowAssetPath,
 } from '@ezplayer/epp';
 
 import {
     getAllLayoutGroups,
     getAllModelCoordinates,
     getAllMovingHeads,
+    getAllViewObjects,
     getAllViewpoints,
+    getControllersAndModelChannels,
+    getLayoutSettings,
     GetNodeResult,
+    type ControllersAndModelChannels,
     type MhFixtureInfo,
     type ModelParseOptions,
+    type XlControllerInfo,
+    type XlModelChannelInfo,
     migrateToFormat,
 } from 'xllayoutcalcs';
 
-// xllayoutcalcs warns about XML attributes the model parser ignored — useful
-// during in-tree development, but actionable only by xllayoutcalcs maintainers,
-// so silence it in the shipped player.
+// Unused-attribute warnings are only actionable in the parser library itself.
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
@@ -80,6 +90,8 @@ import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
 import process from 'node:process';
 import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
+import { MultiSyncSender } from './multisync';
+import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
@@ -97,7 +109,6 @@ import {
     setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
-import { getAttrDef, getBoolAttrDef, getElementByTag, XMLConstants } from '@ezplayer/epp';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -217,13 +228,13 @@ const handlers: PlayWorkerRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
-    stopPlayback: async (_args: {}) => {
+    stopPlayback: async (_args: Record<string, never>) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
         await stopPing(); // Cleanly shut down native pinger before exit
         return true;
     },
-    getModelCoordinates: async (_args: {}) => {
+    getModelCoordinates: async (_args: Record<string, never>) => {
         const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates) {
             for (const [name, coord] of modelCoordinates.entries()) {
@@ -232,7 +243,7 @@ const handlers: PlayWorkerRPCAPI = {
         }
         return coords;
     },
-    getModelCoordinates2D: async (_args: {}) => {
+    getModelCoordinates2D: async (_args: Record<string, never>) => {
         const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates2D) {
             for (const [name, coord] of modelCoordinates2D.entries()) {
@@ -270,22 +281,29 @@ function sendPlayerStateUpdate() {
         ptype: 'EZP',
         status: 'Stopped',
         reported_time: Date.now(),
+        now_playing: undefined,
         upcoming: [],
         volume: {
             level: volume,
             muted,
         },
     };
+    playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
+        const group = ps.curPLActions;
+        const groupIds =
+            group.type === 'interactive'
+                ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
+                : { schedule_id: group.scheduleId };
+        for (const pla of group.actions) {
             if (pla.end) continue;
             // Only "now playing" if it has actually started; a not-yet-started action
             // (within the readahead window) is upcoming, not playing.
             if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                playStatus.now_playing = actionToPlayingItem(false, pla);
+                playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
                 playStatus.status = isPaused ? 'Paused' : 'Playing';
             } else {
-                playStatus.upcoming!.push(actionToPlayingItem(false, pla));
+                playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
             }
         }
     }
@@ -642,7 +660,9 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-                const seq = curSequences?.find((s) => s.id === cmd.songId);
+                // pendingSchedule (not yet installed by the loop) is newer than curSequences
+                const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
+                const seq = liveSequences?.find((s) => s.id === cmd.songId);
                 if (!seq) {
                     emitError(`Unable to identify sequence ${cmd.songId}`);
                     return false;
@@ -690,6 +710,7 @@ function processCommand(cmd: EZPlayerCommand) {
                 muted = cmd.mute;
             }
             volumeSF = muted ? 0 : volume / 100;
+            sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
         case 'pause': {
@@ -722,6 +743,33 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'suppressoutput':
             break;
         case 'playplaylist':
+            {
+                emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
+                const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
+                const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
+                if (!pl) {
+                    emitError(`Unable to identify playlist ${cmd.playlistId}`);
+                    return false;
+                }
+                const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
+                foregroundPlayerRunState.addInteractiveCommand({
+                    immediate: cmd.immediate,
+                    requestId: cmd.requestId,
+                    startTime,
+                    playlistId: cmd.playlistId,
+                    loop: cmd.loop,
+                });
+
+                if (cmd.immediate) {
+                    audioPlayerRunTime = Math.min(audioPlayerRunTime, startTime); // Possibly overlap audio
+                }
+
+                emitInfo(`Enqueue playlist: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                sendPlayerStateUpdate();
+                if (!running) {
+                    running = processQueue(); // kick off first song
+                }
+            }
             break;
         case 'reloadcontrollers':
             break;
@@ -927,6 +975,9 @@ let rfConfigInitialized = false;
 
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
+    multiSync.configure(settings.sync?.multisync);
+    sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
+    if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1075,6 +1126,8 @@ const playbackStatsAgg: OverallFrameSendStats = {
 ///////
 // Clockkeeping
 const rtcConverter = new ClockConverter('mrtc', 0, performance.now());
+// Seed now — computeTime() returns 0 until the first sample arrives.
+rtcConverter.addSample(Date.now(), performance.now());
 
 const _pollTimes = setInterval(async () => {
     const pn = performance.now();
@@ -1097,6 +1150,7 @@ let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
+let parsedControllerDoc: ControllersAndModelChannels | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
 let layoutSettings: LayoutSettings = {};
@@ -1118,6 +1172,9 @@ let isStopped = false;
 // processQueue detects this, breaks out of its loop, and the handler
 // starts a fresh processQueue that reinitializes controllers & frame buffer.
 let shouldRestart = false;
+const multiSync = new MultiSyncSender();
+let sendIdleBlackFrames = true;
+let curSender: FrameSender | undefined;
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
 // (folder change or an explicit forceRestart / "reload" from the UI) rather than a
@@ -1171,31 +1228,11 @@ async function buildShowFolderIndex(folder: string, maxDepth = 5): Promise<Map<s
     return index;
 }
 
-/**
- * Resolve a file path from the XML to a show-folder-relative path.
- * If the path is already relative, normalises slashes and returns it.
- * If absolute and inside the show folder, strips the prefix.
- * Otherwise looks up the basename in the pre-built file index.
- */
-function resolveFilePathFromIndex(
-    filePath: string,
-    resolvedShow: string,
-    fileIndex: Map<string, string>,
-): string | undefined {
-    if (!path.isAbsolute(filePath)) {
-        return filePath.replace(/\\/g, '/');
-    }
-    const resolvedFile = path.resolve(filePath);
-    if (
-        resolvedFile.toLowerCase().startsWith(resolvedShow.toLowerCase() + path.sep.toLowerCase()) ||
-        resolvedFile.toLowerCase() === resolvedShow.toLowerCase()
-    ) {
-        return path.relative(resolvedShow, resolvedFile).replace(/\\/g, '/');
-    }
-    // Fall back to index lookup by basename
-    const basename = path.basename(filePath);
-    return fileIndex.get(basename.toLowerCase());
-}
+// Resolve a file path from the XML to a show-folder-relative path.
+// resolveShowAssetPath (epp) handles foreign-platform absolute paths too —
+// a layout authored on Windows and copied to a Linux player carries C:\...
+// refs that POSIX path.isAbsolute doesn't recognize as absolute.
+const resolveFilePathFromIndex = resolveShowAssetPath;
 
 ////////
 // Load XML coordinates independently (can be called before processQueue)
@@ -1213,7 +1250,7 @@ async function loadXmlCoordinates() {
     let xnet;
     try {
         xrgb = await loadXmlFile(xmlPath);
-        migrateToFormat(xrgb, 'x2026_2');
+        migrateToFormat(xrgb, 'x2026_3');
         xnet = await loadXmlFile(netPath);
     } catch (err) {
         emitError(`[loadXmlCoordinates] Failed to load XML file: ${err}`);
@@ -1225,6 +1262,8 @@ async function loadXmlCoordinates() {
     modelCoordinates2D = new Map<string, GetNodeResult>();
     movingHeads = [];
     layoutSettings = {};
+    parsedControllerDoc = undefined;
+    let knownControllers: KnownController[] = [];
 
     if (xrgb && xnet) {
         const gmc2d = getAllModelCoordinates(xrgb, xnet, true, PARSE_OPTS);
@@ -1238,54 +1277,42 @@ async function loadXmlCoordinates() {
             emitWarning(`[loadXmlCoordinates] Error extracting moving heads: ${mhErr}`);
         }
 
+        // Best-effort: a parse failure yields no controllers.
+        try {
+            const parsed = getControllersAndModelChannels(xrgb, xnet, {
+                ...PARSE_OPTS,
+                // Surface library-side skips in the warning log, not console.
+                logger: (msg) => emitWarning(msg),
+            });
+            parsedControllerDoc = parsed;
+            const { controllers, models } = parsed;
+            const portIntent = buildPortIntent(models);
+            const modelIntents = buildModelIntents(models);
+            knownControllers = controllers.map((c) =>
+                xlControllerToKnown(c, portIntent.get(c.name), modelIntents.get(c.name)),
+            );
+            emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
+        } catch (cErr) {
+            emitWarning(`[loadXmlCoordinates] Error extracting controllers: ${cErr}`);
+        }
+
         if (xrgb.documentElement.tagName !== 'xrgb') {
             emitError(`[loadXmlCoordinates] XML root element is not 'xrgb', got: ${xrgb.documentElement.tagName}`);
         } else {
-            try {
-                const xmodels = getElementByTag(xrgb.documentElement, 'models');
-
-                let activeModelCount = 0;
-                let processedModelCount = 0;
-
-                for (let im = 0; im < xmodels.childNodes.length; ++im) {
-                    const n = xmodels.childNodes[im];
-                    if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                    const model = n as Element;
-                    if (model.tagName !== 'model') continue;
-
-                    const name = getAttrDef(model, 'name', '');
-                    const active = getBoolAttrDef(model, 'Active', true);
-
-                    processedModelCount++;
-
-                    if (!active) {
-                        continue;
-                    }
-
-                    activeModelCount++;
-                    try {
-                        // Get 3D coordinates (for 3D viewer)
-                        const nr3d = gmc3d.models.get(name)?.nodeResult;
-                        if (nr3d) {
-                            modelCoordinates.set(name, nr3d);
-                        }
-
-                        // Get 2D coordinates (for 2D viewer with perspective projection)
-                        const nr2d = gmc2d.models.get(name)?.nodeResult;
-                        if (nr2d) {
-                            modelCoordinates2D.set(name, nr2d);
-                        }
-                    } catch (coordErr) {
-                        emitError(`[loadXmlCoordinates] Error extracting coordinates for "${name}": ${coordErr}`);
-                    }
+            // Active models only for the viewers; the library parses every
+            // model and surfaces the Active flag on ModelResult.
+            for (const [name, mr] of gmc3d.models) {
+                if (!mr.active) continue;
+                modelCoordinates.set(name, mr.nodeResult);
+                const nr2d = gmc2d.models.get(name)?.nodeResult;
+                if (nr2d) {
+                    modelCoordinates2D.set(name, nr2d);
                 }
-
-                emitInfo(
-                    `[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`,
-                );
-            } catch (parseErr) {
-                emitError(`[loadXmlCoordinates] Error parsing models element: ${parseErr}`);
             }
+
+            emitInfo(
+                `[loadXmlCoordinates] Loaded ${modelCoordinates.size} models with 3D coordinates and ${modelCoordinates2D.size} models with 2D coordinates`,
+            );
 
             // Build a file index of the show folder tree once, up front.
             // This replaces N separate recursive directory scans with a single pass.
@@ -1302,105 +1329,62 @@ async function loadXmlCoordinates() {
 
             // Parse view_objects (meshes like house models)
             try {
-                const xviewObjects = getElementByTag(xrgb.documentElement, 'view_objects');
                 viewObjects = [];
 
-                if (xviewObjects) {
-                    for (let iv = 0; iv < xviewObjects.childNodes.length; ++iv) {
-                        const n = xviewObjects.childNodes[iv];
-                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                        const viewObj = n as Element;
-                        if (viewObj.tagName !== 'view_object') continue;
-
-                        const name = getAttrDef(viewObj, 'name', '');
-                        const displayAs = getAttrDef(viewObj, 'DisplayAs', '');
-                        const objFile = getAttrDef(viewObj, 'ObjFile', '');
-                        const active = getBoolAttrDef(viewObj, 'Active', true);
-
-                        // Process Mesh objects with OBJ files
-                        if (displayAs === 'Mesh' && objFile && active) {
-                            // Parse transform attributes
-                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
-                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
-                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
-                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
-                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
-                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
-                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
-                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
-                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
-
-                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
-
-                            const resolvedObjFile = resolveFilePathFromIndex(objFile, resolvedShow, fileIndex);
-                            if (!resolvedObjFile) {
-                                emitWarning(
-                                    `[loadXmlCoordinates] Could not resolve "${objFile}" for view object "${name}"`,
-                                );
-                                continue;
-                            }
-
-                            viewObjects.push({
-                                name,
-                                displayAs,
-                                objFile: resolvedObjFile,
-                                worldPosX,
-                                worldPosY,
-                                worldPosZ,
-                                scaleX,
-                                scaleY,
-                                scaleZ,
-                                rotateX,
-                                rotateY,
-                                rotateZ,
-                                brightness,
-                                active,
-                            });
-                        } else if (displayAs === 'Image' && active) {
-                            // Process Image view objects (textured planes)
-                            const imageFile = getAttrDef(viewObj, 'Image', '');
-                            if (!imageFile) continue;
-
-                            const transparency = parseFloat(getAttrDef(viewObj, 'Transparency', '0'));
-
-                            const worldPosX = parseFloat(getAttrDef(viewObj, 'WorldPosX', '0'));
-                            const worldPosY = parseFloat(getAttrDef(viewObj, 'WorldPosY', '0'));
-                            const worldPosZ = parseFloat(getAttrDef(viewObj, 'WorldPosZ', '0'));
-                            const scaleX = parseFloat(getAttrDef(viewObj, 'ScaleX', '1'));
-                            const scaleY = parseFloat(getAttrDef(viewObj, 'ScaleY', '1'));
-                            const scaleZ = parseFloat(getAttrDef(viewObj, 'ScaleZ', '1'));
-                            const rotateX = parseFloat(getAttrDef(viewObj, 'RotateX', '0'));
-                            const rotateY = parseFloat(getAttrDef(viewObj, 'RotateY', '0'));
-                            const rotateZ = parseFloat(getAttrDef(viewObj, 'RotateZ', '0'));
-
-                            let brightness = getNumAttrDef(viewObj, 'Brightness', 100);
-
-                            const resolvedImageFile = resolveFilePathFromIndex(imageFile, resolvedShow, fileIndex);
-                            if (!resolvedImageFile) {
-                                emitWarning(
-                                    `[loadXmlCoordinates] Could not resolve image "${imageFile}" for view object "${name}"`,
-                                );
-                                continue;
-                            }
-
-                            viewObjects.push({
-                                name,
-                                displayAs,
-                                imageFile: resolvedImageFile,
-                                worldPosX,
-                                worldPosY,
-                                worldPosZ,
-                                scaleX,
-                                scaleY,
-                                scaleZ,
-                                rotateX,
-                                rotateY,
-                                rotateZ,
-                                brightness,
-                                transparency: isNaN(transparency) ? 0 : transparency,
-                                active,
-                            });
+                for (const vo of getAllViewObjects(xrgb)) {
+                    // Process Mesh objects with OBJ files
+                    if (vo.displayAs === 'Mesh' && vo.objFile && vo.active) {
+                        const resolvedObjFile = resolveFilePathFromIndex(vo.objFile, resolvedShow, fileIndex);
+                        if (!resolvedObjFile) {
+                            emitWarning(
+                                `[loadXmlCoordinates] Could not resolve "${vo.objFile}" for view object "${vo.name}"`,
+                            );
+                            continue;
                         }
+
+                        viewObjects.push({
+                            name: vo.name,
+                            displayAs: vo.displayAs,
+                            objFile: resolvedObjFile,
+                            worldPosX: vo.worldPosX,
+                            worldPosY: vo.worldPosY,
+                            worldPosZ: vo.worldPosZ,
+                            scaleX: vo.scaleX,
+                            scaleY: vo.scaleY,
+                            scaleZ: vo.scaleZ,
+                            rotateX: vo.rotateX,
+                            rotateY: vo.rotateY,
+                            rotateZ: vo.rotateZ,
+                            brightness: vo.brightness,
+                            active: vo.active,
+                        });
+                    } else if (vo.displayAs === 'Image' && vo.imageFile && vo.active) {
+                        // Process Image view objects (textured planes)
+                        const resolvedImageFile = resolveFilePathFromIndex(vo.imageFile, resolvedShow, fileIndex);
+                        if (!resolvedImageFile) {
+                            emitWarning(
+                                `[loadXmlCoordinates] Could not resolve image "${vo.imageFile}" for view object "${vo.name}"`,
+                            );
+                            continue;
+                        }
+
+                        viewObjects.push({
+                            name: vo.name,
+                            displayAs: vo.displayAs,
+                            imageFile: resolvedImageFile,
+                            worldPosX: vo.worldPosX,
+                            worldPosY: vo.worldPosY,
+                            worldPosZ: vo.worldPosZ,
+                            scaleX: vo.scaleX,
+                            scaleY: vo.scaleY,
+                            scaleZ: vo.scaleZ,
+                            rotateX: vo.rotateX,
+                            rotateY: vo.rotateY,
+                            rotateZ: vo.rotateZ,
+                            brightness: vo.brightness,
+                            transparency: vo.transparency,
+                            active: vo.active,
+                        });
                     }
                 }
 
@@ -1413,6 +1397,9 @@ async function loadXmlCoordinates() {
                 for (const [modelName, modelEntry] of gmc3d.models.entries()) {
                     const nr = modelEntry.nodeResult;
                     if (!nr.imageInfo) continue;
+                    // Deactivated Image models don't render — same filter the
+                    // pixel-model loop applies.
+                    if (!modelEntry.active) continue;
                     const resolvedImageFile = resolveFilePathFromIndex(nr.imageInfo.imageFile, resolvedShow, fileIndex);
                     if (!resolvedImageFile) {
                         emitWarning(
@@ -1454,50 +1441,38 @@ async function loadXmlCoordinates() {
 
             // Parse layout <settings> element (backgroundImage, previewWidth, etc.)
             try {
-                const xsettings = getElementByTag(xrgb.documentElement, 'settings');
+                const parsedSettings = getLayoutSettings(xrgb);
 
-                if (xsettings) {
-                    for (let is = 0; is < xsettings.childNodes.length; ++is) {
-                        const n = xsettings.childNodes[is];
-                        if (n.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                        const el = n as Element;
-                        const val = getAttrDef(el, 'value', '');
-                        if (!val) continue;
-
-                        switch (el.tagName) {
-                            case 'backgroundImage': {
-                                const resolved = resolveFilePathFromIndex(val, resolvedShow, fileIndex);
-                                if (resolved) {
-                                    layoutSettings.backgroundImage = resolved;
-                                } else {
-                                    emitWarning(`[loadXmlCoordinates] Could not resolve backgroundImage "${val}"`);
-                                }
-                                break;
-                            }
-                            case 'backgroundBrightness':
-                                layoutSettings.backgroundBrightness = parseInt(val, 10);
-                                break;
-                            case 'previewWidth':
-                                layoutSettings.previewWidth = parseInt(val, 10);
-                                break;
-                            case 'previewHeight':
-                                layoutSettings.previewHeight = parseInt(val, 10);
-                                break;
-                        }
-                    }
-
-                    if (layoutSettings.backgroundImage) {
-                        emitInfo(
-                            `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                if (parsedSettings.backgroundImage) {
+                    const resolved = resolveFilePathFromIndex(parsedSettings.backgroundImage, resolvedShow, fileIndex);
+                    if (resolved) {
+                        layoutSettings.backgroundImage = resolved;
+                    } else {
+                        emitWarning(
+                            `[loadXmlCoordinates] Could not resolve backgroundImage "${parsedSettings.backgroundImage}"`,
                         );
                     }
+                }
+                if (parsedSettings.backgroundBrightness !== undefined) {
+                    layoutSettings.backgroundBrightness = parsedSettings.backgroundBrightness;
+                }
+                if (parsedSettings.previewWidth !== undefined) {
+                    layoutSettings.previewWidth = parsedSettings.previewWidth;
+                }
+                if (parsedSettings.previewHeight !== undefined) {
+                    layoutSettings.previewHeight = parsedSettings.previewHeight;
+                }
+
+                if (layoutSettings.backgroundImage) {
+                    emitInfo(
+                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                    );
                 }
             } catch (parseErr) {
                 emitError(`[loadXmlCoordinates] Error parsing settings element: ${parseErr}`);
             }
 
-            // Layout groups — xllayoutcalcs parses the <layoutGroups> section; we resolve
-            // show-folder-relative backgroundImage paths here since that part is Electron-side.
+            // backgroundImage paths are show-folder-relative; resolve them here.
             try {
                 const parsedGroups = getAllLayoutGroups(xrgb);
                 if (parsedGroups.length > 0) {
@@ -1555,7 +1530,136 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads, controllers: knownControllers });
+}
+
+/** xLights controller record → the lean KnownController the reconcile grid
+ *  uses. Only an explicit `Inactive` state counts as disabled; empty strings
+ *  collapse to undefined. */
+function xlControllerToKnown(
+    c: XlControllerInfo,
+    ports?: ControllerPortIntent[],
+    modelIntents?: ControllerModelIntent[],
+): KnownController {
+    const enableState =
+        c.activeState === 'Active'
+            ? ('enabled' as const)
+            : c.activeState === 'Inactive'
+              ? ('disabled' as const)
+              : c.activeState === 'xLights Only'
+                ? ('xlightsOnly' as const)
+                : undefined;
+    return {
+        name: c.name,
+        address: c.address || undefined,
+        active: c.activeState !== 'Inactive',
+        enableState,
+        vendor: c.vendor || undefined,
+        model: c.model || undefined,
+        variant: c.variant || undefined,
+        defaultBrightness: c.defaultBrightnessUnderFullControl,
+        defaultGamma: c.defaultGammaUnderFullControl,
+        protocol: c.protocol || undefined,
+        startChannel: c.startChannel,
+        channelCount: c.maxChannels,
+        ports: ports && ports.length ? ports : undefined,
+        modelIntents: modelIntents && modelIntents.length ? modelIntents : undefined,
+        outputs: xlControllerOutputs(c),
+        source: 'xlights',
+    };
+}
+
+/** The controller's outputs as upload intent: E131/ArtNet one entry per
+ *  universe, DDP and friends one block spanning the channel range. */
+function xlControllerOutputs(c: XlControllerInfo): ControllerOutputIntent[] | undefined {
+    const proto = (c.protocol || '').toLowerCase();
+    if ((proto === 'e131' || proto === 'artnet') && c.universeSizes.length > 0) {
+        const outs: ControllerOutputIntent[] = [];
+        let ch = c.startChannel;
+        for (let i = 0; i < c.universeSizes.length; i++) {
+            outs.push({
+                type: proto,
+                universe: c.universeNumbers[i],
+                startChannel: ch,
+                channels: c.universeSizes[i],
+            });
+            ch += c.universeSizes[i];
+        }
+        return outs;
+    }
+    if (!c.maxChannels) return undefined;
+    return [{ type: proto || 'ddp', startChannel: c.startChannel, channels: c.maxChannels }];
+}
+
+/** One model's rich upload intent. Absent fields stay absent — set-vs-unset
+ *  semantics matter downstream. Protocol may be '' when xLights has none. */
+function modelIntentOf(m: XlModelChannelInfo): ControllerModelIntent {
+    const cc = m.controllerConnection;
+    const intent: ControllerModelIntent = {
+        name: m.name,
+        controllerPort: m.controllerPort,
+        protocol: m.controllerProtocol || '',
+        startChannel: m.startChannel,
+        nodeCount: m.nodeCount,
+        channels: m.channelCount,
+    };
+    if (cc) {
+        if (cc.brightness !== undefined) intent.brightness = cc.brightness;
+        if (cc.gamma !== undefined) intent.gamma = cc.gamma;
+        if (cc.colorOrder !== undefined) intent.colorOrder = cc.colorOrder;
+        if (cc.nullNodes !== undefined) intent.nullPixels = cc.nullNodes;
+        if (cc.endNullNodes !== undefined) intent.endNullPixels = cc.endNullNodes;
+        if (cc.groupCount !== undefined) intent.groupCount = cc.groupCount;
+        if (cc.reverse !== undefined) intent.reverse = cc.reverse;
+        if (cc.zigZag !== undefined) intent.zigZag = cc.zigZag;
+        if (cc.smartRemote !== undefined && cc.smartRemote > 0) intent.smartRemote = cc.smartRemote;
+        if (cc.smartRemoteType !== undefined) intent.smartRemoteType = cc.smartRemoteType;
+        if (cc.ts !== undefined) intent.ts = cc.ts;
+        if (cc.srCascadeOnPort !== undefined) intent.srCascadeOnPort = cc.srCascadeOnPort;
+        if (cc.srMaxCascade !== undefined) intent.srMaxCascade = cc.srMaxCascade;
+    }
+    if (
+        m.numPhysicalStrings > 1 &&
+        m.stringStartChannels.length === m.numPhysicalStrings &&
+        m.stringNodeCounts.length === m.numPhysicalStrings
+    ) {
+        intent.stringStartChannels = m.stringStartChannels;
+        intent.stringNodeCounts = m.stringNodeCounts;
+    }
+    return intent;
+}
+
+/** Per-model upload intent grouped by controller name. Only models with a
+ *  protocol qualify. */
+function buildModelIntents(models: XlModelChannelInfo[]): Map<string, ControllerModelIntent[]> {
+    const by = new Map<string, ControllerModelIntent[]>();
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0 || !m.controllerProtocol) continue;
+        const arr = by.get(m.controllerName) ?? [];
+        arr.push(modelIntentOf(m));
+        by.set(m.controllerName, arr);
+    }
+    for (const arr of by.values()) arr.sort((a, b) => a.startChannel - b.startChannel);
+    return by;
+}
+
+/** Per-PHYSICAL-port intent, keyed by controller name — expands multi-string
+ *  models and smart-remote cascades onto every port they really land on.
+ *  Models without a protocol still count here (unlike buildModelIntents). */
+function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPortIntent[]> {
+    const byController = new Map<string, ControllerModelIntent[]>();
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0) continue;
+        const arr = byController.get(m.controllerName) ?? [];
+        arr.push(modelIntentOf(m));
+        byController.set(m.controllerName, arr);
+    }
+    const out = new Map<string, ControllerPortIntent[]>();
+    for (const [name, intents] of byController) {
+        intents.sort((a, b) => a.startChannel - b.startChannel);
+        out.set(name, portIntentFromModelIntents(intents));
+    }
+    return out;
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
@@ -1651,16 +1755,26 @@ async function processQueue() {
     const sender: FrameSender = new FrameSender();
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
+    sender.blackFramesEnabled = sendIdleBlackFrames;
+    curSender = sender;
 
     try {
-        const { controllers, models } = await readControllersFromXlights(showFolder!);
-
-        // Load XML coordinates if not already loaded
         if (!modelCoordinates || modelCoordinates.size === 0) {
             await loadXmlCoordinates();
         }
 
-        const sendJob = await openControllersForDataSend(controllers);
+        // Fall back to a disk read only when no parsed doc is available.
+        const { controllers, models } = parsedControllerDoc
+            ? controllersFromParsedXlights(parsedControllerDoc)
+            : await readControllersFromXlights(showFolder!, {
+                  warnUnusedAttrs: false,
+                  // Surface library-side skips in the warning log, not console.
+                  logger: (msg) => emitWarning(msg),
+              });
+
+        const sendJob = await openControllersForDataSend(controllers, {
+            ddpPort: latestSettings?.advanced?.ddpPort,
+        });
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             concurrency: 10,
@@ -1758,6 +1872,7 @@ async function processQueue() {
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
                 sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
             }
@@ -1766,12 +1881,22 @@ async function processQueue() {
             // processQueue with new controllers and frame buffer.
             if (shouldRestart) {
                 emitInfo('Show folder changed - restarting processQueue');
+                multiSync.onIdle();
                 break;
             }
 
             ++iteration;
 
             const curPN = performance.now();
+
+            // Resync the frame clock if it falls well behind real time.
+            const wallRTC = rtcConverter.computeTime(curPN);
+            if (targetFrameRTC < wallRTC - 5000) {
+                emitWarning(
+                    `Frame clock ${((wallRTC - targetFrameRTC) / 1000).toFixed(1)}s behind real time — resyncing`,
+                );
+                targetFrameRTC = wallRTC;
+            }
 
             if (curPN - lastStatsUpdatePN >= 1000 && iteration % 4 === 0) {
                 function toCacheStat(s: CacheStats): PrefetchCacheStats {
@@ -1844,7 +1969,8 @@ async function processQueue() {
             // See if a schedule update has been passed in.  If so, do something.
             if (installNewSchedule()) {
                 const initializeTime = rtcConverter.computeTime(curPN); // MoC - Review
-                const mainSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'main');
+                // scheduleType is absent on entries that predate background schedules
+                const mainSched = (curSchedule ?? []).filter((s) => (s.scheduleType ?? 'main') === 'main');
                 const bgSched = (curSchedule ?? []).filter((s) => s.scheduleType === 'background');
                 const errs: string[] = [];
 
@@ -1854,12 +1980,21 @@ async function processQueue() {
                 const playing = foregroundPlayerRunState.isPlaying || backgroundPlayerRunState.isPlaying;
 
                 if (pendingFullRebuild || !playing) {
+                    // A forced rebuild (reload / folder change) intentionally forgets
+                    // manually stopped schedules so they restart; an incidental rebuild doesn't
+                    const preserveStops = !pendingFullRebuild;
                     pendingFullRebuild = false;
                     emitInfo(`New schedule installed (rebuild)`);
                     const preserveFGFseqTime = foregroundPlayerRunState?.currentTime || initializeTime;
                     const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
+                    const preserveFGStops = foregroundPlayerRunState.stoppedIds;
+                    const preserveBGStops = backgroundPlayerRunState.stoppedIds;
                     foregroundPlayerRunState = new PlayerRunState(initializeTime);
                     backgroundPlayerRunState = new PlayerRunState(initializeTime);
+                    if (preserveStops) {
+                        foregroundPlayerRunState.stoppedIds = new Map(preserveFGStops);
+                        backgroundPlayerRunState.stoppedIds = new Map(preserveBGStops);
+                    }
                     foregroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], mainSched, errs);
                     backgroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], bgSched, errs);
                     foregroundPlayerRunState.addTimeRangeToSchedule(
@@ -2048,14 +2183,14 @@ async function processQueue() {
                     break;
                 }
 
-                let startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
+                const startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
 
                 audioSnapshot.runUntil(audioPlayerRunTime);
                 const upcomingAudio = audioSnapshot.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
-                let audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
+                const audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
                     sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
                     audioPlayerRunTime = audioAction.atTime;
@@ -2190,6 +2325,7 @@ async function processQueue() {
                 emitFrameDebug(
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
+                multiSync.onIdle();
                 await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
 
@@ -2200,6 +2336,7 @@ async function processQueue() {
             // TODO: Something else here that accommodates background and other things
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
+                multiSync.onIdle();
                 await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
@@ -2260,6 +2397,7 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
+            multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,

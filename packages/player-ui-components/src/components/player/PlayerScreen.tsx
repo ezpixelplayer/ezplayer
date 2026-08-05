@@ -170,7 +170,7 @@ const StatusCards = ({
     );
 };
 
-const TimelineView = ({}: {}) => {
+const TimelineView = () => {
     // Get data from Redux store
     const sequences = useSelector((state: RootState) => state.sequences.sequenceData || []);
     const playlists = useSelector((state: RootState) => state.playlists.playlists || []);
@@ -213,9 +213,10 @@ const TimelineView = ({}: {}) => {
     );
 
     // Stale-while-revalidate so a loading flip doesn't unmount the graph.
-    type PreviewBundle = NonNullable<ReturnType<typeof generateSchedulePreview>> extends infer S
-        ? { background: S; main: S; startTime: number; endTime: number; errors: never[]; warnings: never[] }
-        : never;
+    type PreviewBundle =
+        NonNullable<ReturnType<typeof generateSchedulePreview>> extends infer S
+            ? { background: S; main: S; startTime: number; endTime: number; errors: never[]; warnings: never[] }
+            : never;
     const lastGoodPreviewRef = useRef<PreviewBundle | null>(null);
 
     const { data: previewData, error } = useMemo(() => {

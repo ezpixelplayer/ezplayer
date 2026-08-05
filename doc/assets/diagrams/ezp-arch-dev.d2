@@ -1,0 +1,40 @@
+# Developer view: where the Koa server / REST API sits in the pipeline.
+# Shared between the dev slide deck and the manual.
+
+direction: right
+
+eui: Electron UI {
+  shape: rectangle
+}
+
+wui: Local Web UI {
+  shape: rectangle
+}
+
+player: EZPlayer core {
+  shape: rectangle
+
+  parent: IPC Port {
+    shape: rectangle
+  }
+  server: Koa server\n(worker thread) {
+    shape: rectangle
+  }
+  engine: Playback engine {
+    shape: rectangle
+  }
+}
+
+controllers: Controllers {
+  shape: rectangle
+}
+pixels: Pixels / Lights {
+  shape: rectangle
+}
+
+eui -> player.parent: REST /api/*
+wui -> player.server: REST /api/*
+player.parent -> player.engine: control
+player.server -> player.engine: control
+player.engine -> controllers: show data
+controllers -> pixels: color per pixel

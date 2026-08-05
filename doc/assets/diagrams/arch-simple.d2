@@ -1,0 +1,21 @@
+# Simple end-user view of the signal path.
+# Shared between the user slide deck and the manual.
+
+direction: right
+
+sequencer: Sequencer {
+  shape: rectangle
+}
+player: Player {
+  shape: rectangle
+}
+controllers: Controllers {
+  shape: rectangle
+}
+pixels: Pixels / Lights {
+  shape: rectangle
+}
+
+sequencer -> player: files
+player -> controllers: network data
+controllers -> pixels: light signals

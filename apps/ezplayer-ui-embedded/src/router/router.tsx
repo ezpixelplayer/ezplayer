@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
     AudioSettings,
     CloudPage,
+    ControllersScreen,
     JukeboxSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
@@ -10,6 +11,7 @@ import {
     SidebarLayout,
     Routes as ROUTES,
     JukeboxScreen,
+    AddSongDialogBrowser,
     SongList,
     PlaylistList,
     PlayerScreen,
@@ -31,13 +33,12 @@ import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
+import RouterIcon from '@mui/icons-material/Router';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
-
-import { AddSongDialogElectron } from '../../../ezplayer-ui-electron/src/components/song/AddSongDialogElectron';
 
 const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
 
@@ -48,6 +49,7 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
     ROUTES.SCHEDULE,
     ROUTES.PLAYBACKSETTINGS,
     ROUTES.CLOUD,
+    ROUTES.CONTROLLERS,
 ]);
 
 const getStatusArea = () => [];
@@ -122,11 +124,11 @@ const allMenuRoutes: MenuRoute[] = [
         element: (
             <SongList
                 title="Songs"
-                AddSongDialog={AddSongDialogElectron}
+                AddSongDialog={AddSongDialogBrowser}
                 statusArea={getStatusArea()}
-                showEditAction={false}
+                showEditAction={!isKiosk}
                 showDeleteAction={!isKiosk}
-                showAddSongButton={false}
+                showAddSongButton={!isKiosk}
             />
         ),
         sidebar: { icon: <MusicIcon />, label: 'Songs' },
@@ -148,7 +150,7 @@ const allMenuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.SHOWSTATUS,
-        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
+        element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} allowTestControls={!isKiosk} />,
         sidebar: { icon: <InfoRounded />, label: 'Show Status' },
     },
     {
@@ -160,6 +162,11 @@ const allMenuRoutes: MenuRoute[] = [
         path: ROUTES.CLOUD,
         element: <CloudPage title="Cloud" statusArea={getStatusArea()} />,
         sidebar: { icon: <CloudIcon />, label: 'Cloud' },
+    },
+    {
+        path: ROUTES.CONTROLLERS,
+        element: <ControllersScreen title="Controllers" statusArea={getStatusArea()} />,
+        sidebar: { icon: <RouterIcon />, label: 'Controllers' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,

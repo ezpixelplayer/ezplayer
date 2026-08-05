@@ -63,8 +63,24 @@ function filterRawHeaders(rawHeaders: string[]): http.OutgoingHttpHeaders {
     return out;
 }
 
+/** Whether a proxy target is on a LAN we'd bridge to: a private/link-local
+ *  IPv4 literal or an mDNS `.local` name. Used by the cloud HTTP-over-WS
+ *  bridge, which must not become an open proxy to the wider internet —
+ *  controllers only ever live on these ranges. */
+export function isLanProxyTarget(hostname: string): boolean {
+    if (hostname.endsWith('.local')) return true;
+    const m = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!m) return false;
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 10 || a === 127) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+}
+
 /** Parse and validate the target URL from the proxy path. */
-function parseTargetUrl(originalUrl: string): URL | null {
+export function parseTargetUrl(originalUrl: string): URL | null {
     let raw = originalUrl.slice(PROXY_PREFIX.length);
     if (!raw) return null;
     // Default to http:// when no protocol is specified
@@ -80,7 +96,28 @@ function parseTargetUrl(originalUrl: string): URL | null {
 
 // ─── HTTP Proxy Middleware ───────────────────────────────────────────
 
-export function createProxyMiddleware(): Koa.Middleware {
+/** Rescue root-absolute asset requests made by proxied device pages (e.g. a
+ *  controller page loading "/turnip_ota/ota.js"): those escape the /proxy/
+ *  prefix, and the SPA history-fallback would otherwise swallow them with a
+ *  200 index.html. When the Referer is a proxied device page, 307-redirect
+ *  back under that device's proxy root. Mount BEFORE static/SPA middlewares. */
+export function createProxyRefererRescue(): Koa.Middleware {
+    return async (ctx, next) => {
+        if (!ctx.path.startsWith(PROXY_PREFIX) && !ctx.path.startsWith('/api/') && ctx.path !== '/ws') {
+            const m = ctx.get('referer').match(/^https?:\/\/[^/]+(\/proxy\/[^/?#]+)/);
+            if (m) {
+                ctx.status = 307;
+                ctx.redirect(m[1] + ctx.originalUrl);
+                return;
+            }
+        }
+        return next();
+    };
+}
+
+/** `isAllowed` (optional) lets the host enforce per-network policy — return
+ *  false to refuse bridging to that hostname (403). */
+export function createProxyMiddleware(isAllowed?: (hostname: string) => boolean): Koa.Middleware {
     return async (ctx, next) => {
         if (!ctx.originalUrl.startsWith(PROXY_PREFIX)) {
             return next();
@@ -90,6 +127,11 @@ export function createProxyMiddleware(): Koa.Middleware {
         if (!target) {
             ctx.status = 400;
             ctx.body = { error: 'Invalid or unsupported proxy target URL' };
+            return;
+        }
+        if (isAllowed && !isAllowed(target.hostname)) {
+            ctx.status = 403;
+            ctx.body = { error: `Proxying to ${target.hostname} is disallowed by network policy` };
             return;
         }
 
@@ -113,11 +155,23 @@ export function createProxyMiddleware(): Koa.Middleware {
                 (proxyRes) => {
                     ctx.status = proxyRes.statusCode ?? 502;
 
+                    // The proxied prefix as it appears in the request URL
+                    // (handles both `/proxy/<host>` and `/proxy/http://host`).
+                    const suffix = target.pathname + target.search;
+                    const proxiedPrefix = ctx.originalUrl.endsWith(suffix)
+                        ? ctx.originalUrl.slice(0, ctx.originalUrl.length - suffix.length)
+                        : ctx.originalUrl;
+
                     const responseHeaders = filterHeaders(proxyRes.headers);
                     for (const [key, value] of Object.entries(responseHeaders)) {
-                        if (value !== undefined) {
-                            ctx.set(key, value as string);
+                        if (value === undefined) continue;
+                        // A device-absolute redirect would escape the proxy
+                        // prefix; remap it under the proxied root.
+                        if (key.toLowerCase() === 'location' && typeof value === 'string' && value.startsWith('/')) {
+                            ctx.set(key, proxiedPrefix + value);
+                            continue;
                         }
+                        ctx.set(key, value as string);
                     }
 
                     ctx.body = proxyRes;
@@ -154,7 +208,7 @@ export function createProxyMiddleware(): Koa.Middleware {
 
 // ─── WebSocket Proxy ────────────────────────────────────────────────
 
-export function attachWebSocketProxy(httpServer: http.Server): void {
+export function attachWebSocketProxy(httpServer: http.Server, isAllowed?: (hostname: string) => boolean): void {
     const proxyWss = new WebSocketServer({ noServer: true });
 
     httpServer.on('upgrade', (req, socket, head) => {
@@ -168,6 +222,12 @@ export function attachWebSocketProxy(httpServer: http.Server): void {
         // forms, including a bare host (`/proxy/<host>`).
         const target = parseTargetUrl(url);
         if (!target) {
+            socket.destroy();
+            return;
+        }
+        // Same per-network policy gate as the HTTP proxy.
+        if (isAllowed && !isAllowed(target.hostname)) {
+            socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
             socket.destroy();
             return;
         }

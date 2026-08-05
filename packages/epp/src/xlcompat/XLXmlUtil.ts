@@ -1,8 +1,13 @@
 import * as path from 'path';
-import { getBoolAttrDef, getNumAttrDef, XMLConstants } from '../util/XMLUtil';
 import { loadXmlFile } from '../util/FileUtil';
 import { ExplicitControllerDesc } from './XLControllerDesc';
-import { migrateToFormat } from 'xllayoutcalcs';
+import {
+    getControllersAndModelChannels,
+    type ControllersAndModelChannels,
+    type ModelParseOptions,
+    type XlControllerActiveState,
+    type XlControllerType,
+} from 'xllayoutcalcs';
 
 export class ModelRec {
     name: string;
@@ -38,8 +43,8 @@ export class ModelRec {
     }
 }
 
-export type ActiveStateChoice = 'Active' | 'Inactive' | 'xLights Only' | 'Unknown';
-export type ControllerTypeChoice = 'Null' | 'Ethernet' | 'Serial' | 'Unknown';
+export type ActiveStateChoice = XlControllerActiveState;
+export type ControllerTypeChoice = XlControllerType;
 
 export class ControllerRec {
     // Details of controller
@@ -69,209 +74,113 @@ export class ControllerRec {
     // E1.31 Options
     universeNumbers?: number[]; // (probably start channel #s in DDP)
     universeSizes?: number[];
+
+    // Reachability options (set only when the XML declares them)
+    /** FPP proxy host this controller is reached through (`FPPProxy` attr or
+     *  the networks root's `GlobalFPPProxy`).  xLights sends show data for a
+     *  proxied controller to this host as DDP at absolute channel numbers. */
+    fppProxy?: string;
+    /** Local NIC address to bind when sending to this controller
+     *  (`ForceLocalIP` attr or root `GlobalForceLocalIP`) — multi-NIC hint. */
+    forceLocalIP?: string;
 }
 
-export async function readControllersAndModels(xldir: string) {
-    const models: ModelRec[] = [];
+/**
+ * Flatten an already-parsed `ControllersAndModelChannels` document into the
+ * legacy `ControllerRec`/`ModelRec` view used by the data plane.
+ *
+ * This is the parse-once entry point: a caller that has already run
+ * `getControllersAndModelChannels` (e.g. for controller reconciliation or
+ * model coordinates) can derive the data-plane view from the same parse
+ * instead of re-reading the XML files from disk.
+ */
+export function controllersAndModelsFromParsed(parsed: ControllersAndModelChannels) {
     const controllers: ControllerRec[] = [];
     const controllersByName: Map<string, number> = new Map();
-    const xmodelsXml = await loadXmlFile(path.join(xldir, 'xlights_rgbeffects.xml'));
-    migrateToFormat(xmodelsXml, 'x2026_2');
-    const xnetworksXml = await loadXmlFile(path.join(xldir, 'xlights_networks.xml'));
-
-    // Handle networks
-    const xndNetworks = xnetworksXml.documentElement;
-    if (!xndNetworks) {
-        throw new Error('Root not "Networks"');
-    }
-
-    let startch = 1;
-    for (let icn = 0; icn < xndNetworks.childNodes.length; ++icn) {
-        const ncn = xndNetworks.childNodes[icn];
-        if (ncn.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-        const cn = ncn as Element;
-        if (cn.tagName !== 'Controller') continue;
-
-        const rawstate = cn.getAttribute('ActiveState');
-        const astate = ['Active', 'Inactive', 'xLights Only'].includes(rawstate ?? '') ? rawstate : 'Unknown';
-        const rawctype = cn.getAttribute('Type');
-        const ctype = ['Null', 'Ethernet', 'Serial'].includes(rawctype ?? '') ? rawctype : 'Unknown';
-
-        const description = cn.getAttribute('Description') || '';
-
+    for (const c of parsed.controllers) {
         const ctrl: ControllerRec = {
-            id: cn.getAttribute('Id') || '',
-            address: cn.getAttribute('IP') || '',
-            name: cn.getAttribute('Name')!,
-            description: description,
-            desc: new ExplicitControllerDesc(description),
+            id: c.id,
+            address: c.address,
+            name: c.name,
+            description: c.description,
+            // EZPlayer-specific convention: the controller Description carries
+            // an explicit controller descriptor.
+            desc: new ExplicitControllerDesc(c.description),
 
-            activeState: astate as ActiveStateChoice,
-            type: ctype as ControllerTypeChoice,
-            monitor: getBoolAttrDef(cn, 'Monitor', true),
+            activeState: c.activeState,
+            type: c.type,
+            monitor: c.monitor,
 
-            startch,
-            maxch: 0,
-            universeNumbers: [],
-            universeSizes: [],
-            channelsPerPacket: 1440,
-            keepChannelNumbers: false,
+            startch: c.startChannel,
+            maxch: c.maxChannels,
+            universeNumbers: c.universeNumbers,
+            universeSizes: c.universeSizes,
+            channelsPerPacket: c.channelsPerPacket,
+            keepChannelNumbers: c.keepChannelNumbers,
 
-            vendor: cn.getAttribute('Vendor') || '',
-            model: cn.getAttribute('Model') || '',
-            variant: cn.getAttribute('Variant') || '',
+            vendor: c.vendor,
+            model: c.model,
+            variant: c.variant,
 
-            protocol: cn.getAttribute('Protocol') || '',
+            protocol: c.protocol,
+
+            // '' means "not set" in the XML; keep unset fields absent here.
+            fppProxy: c.fppProxy || undefined,
+            forceLocalIP: c.forceLocalIP || undefined,
         };
         controllers.push(ctrl);
-        controllersByName.set(cn.getAttribute('Name')!, startch);
-
-        for (let inet = 0; inet < cn.childNodes.length; ++inet) {
-            const nnet = cn.childNodes[inet];
-            if (nnet.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-            const net = nnet as Element;
-            if (net.tagName !== 'network') continue;
-            const pch = getNumAttrDef(net, 'MaxChannels', 510);
-            const unum = getNumAttrDef(net, 'BaudRate', 1);
-            ctrl.universeNumbers?.push(unum);
-            ctrl.universeSizes?.push(pch);
-            startch += pch;
-            ctrl.maxch += pch;
-            ctrl.channelsPerPacket = getNumAttrDef(net, 'ChannelsPerPacket', 1440);
-            ctrl.keepChannelNumbers = getBoolAttrDef(net, 'KeepChannelNumbers', false);
-        }
+        controllersByName.set(c.name, c.startChannel);
     }
 
-    const xnd = xmodelsXml.documentElement;
-    if (xnd.tagName !== 'xrgb') {
-        throw new Error("Root not 'xrgb'");
+    const models: ModelRec[] = [];
+    for (const m of parsed.models) {
+        const nmrec = new ModelRec(m.name, m.displayAs, m.startChannel, m.channelCount);
+        nmrec.r = m.rgbOffsets.r;
+        nmrec.g = m.rgbOffsets.g;
+        nmrec.b = m.rgbOffsets.b;
+        nmrec.simple = m.simple;
+        nmrec.gamma = m.gamma;
+        nmrec.brightness = m.brightness;
+        models.push(nmrec);
     }
-
-    // Handle models
-
-    for (let igrp = 0; igrp < xnd.childNodes.length; ++igrp) {
-        const ngrp = xnd.childNodes[igrp];
-        if (ngrp.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-        const grp = ngrp as Element;
-        if (grp.tagName !== 'models') continue;
-
-        for (let imdl = 0; imdl < grp.childNodes.length; ++imdl) {
-            const nmdl = grp.childNodes[imdl];
-            if (nmdl.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-            const mdl = nmdl as Element;
-            if (mdl.tagName !== 'model') continue;
-
-            const name = mdl.getAttribute('name')!;
-            const mtyp = mdl.getAttribute('DisplayAs') ?? '';
-            const chstr = mdl.getAttribute('StartChannel') ?? '';
-            if (!name || !chstr) {
-                // Some sort of inactive, degenerate thing
-                continue;
-            }
-            let channel = -1;
-            if (chstr[0] >= '0' && chstr[0] <= '9') {
-                channel = parseInt(chstr);
-            } else if (chstr[0] === '@') {
-                continue;
-            } else if (chstr[0] === '!') {
-                // TODO Look up controller
-                const [ctrlnm, offset] = chstr.slice(1).split(':');
-                channel = controllersByName.get(ctrlnm)! + parseInt(offset) - 1;
-            } else if (chstr[0] === '#') {
-                // Huh, seems to be an IP:universe:channel or universe:channel
-                //(ctrladdr,univ,ch) = chstr[1:].split(':')
-                // TODO we would need to find the channel for the universe or something
-                //channel = ctrlbyname[ctrladdr]
-                continue;
-            } else if (chstr[0] === '>') {
-                // Shadow model name:channel such as ">Spinner 2:1"
-                continue;
-            } else {
-                throw new Error(`Unknown channel string: "${chstr}" in model ${name}`);
-            }
-
-            const nmrec = new ModelRec(name, mtyp, channel, -1);
-
-            if (mdl.hasAttribute('StringType')) {
-                const strtyp = mdl.getAttribute('StringType')!;
-                if (strtyp === 'RGB Nodes') {
-                    nmrec.r = 0;
-                    nmrec.g = 1;
-                    nmrec.b = 2;
-                    nmrec.simple = true;
-                }
-                if (strtyp === 'RBG Nodes') {
-                    nmrec.r = 0;
-                    nmrec.g = 2;
-                    nmrec.b = 1;
-                    nmrec.simple = true;
-                }
-                if (strtyp === 'GRB Nodes') {
-                    nmrec.r = 1;
-                    nmrec.g = 0;
-                    nmrec.b = 2;
-                    nmrec.simple = true;
-                }
-                if (strtyp === 'GBR Nodes') {
-                    nmrec.r = 2;
-                    nmrec.g = 0;
-                    nmrec.b = 1;
-                    nmrec.simple = true;
-                }
-                if (strtyp === 'BRG Nodes') {
-                    nmrec.r = 1;
-                    nmrec.g = 2;
-                    nmrec.b = 0;
-                    nmrec.simple = true;
-                }
-                if (strtyp === 'BGR Nodes') {
-                    nmrec.r = 2;
-                    nmrec.g = 1;
-                    nmrec.b = 0;
-                    nmrec.simple = true;
-                }
-            }
-
-            for (let idc = 0; idc < mdl.childNodes.length; ++idc) {
-                const ndc = mdl.childNodes[idc];
-                if (ndc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                const dc = ndc as Element;
-                if (dc.tagName !== 'dimmingCurve') continue;
-
-                for (let iddc = 0; iddc < dc.childNodes.length; ++iddc) {
-                    const nddc = dc.childNodes[iddc];
-                    if (nddc.nodeType !== XMLConstants.ELEMENT_NODE) continue;
-                    const ddc = nddc as Element;
-                    if (ddc.tagName !== 'all') continue;
-                    if (ddc.hasAttribute('gamma')) {
-                        nmrec.gamma = parseFloat(ddc.getAttribute('gamma')!);
-                    }
-                    if (ddc.hasAttribute('brightness')) {
-                        nmrec.brightness = Math.min(1.0, (100.0 + parseFloat(ddc.getAttribute('brightness')!)) / 100.0);
-                    }
-                }
-            }
-            models.push(nmrec);
-        }
-    }
-    // Oh heck how to calculate channels per model
-    //  Will we eventually just have to add specific logic?
     models.sort((a, b) => {
         return a.startch - b.startch;
     });
 
-    for (let i = 0; i < models.length; ++i) {
-        if (i === models.length - 1) continue;
-        models[i].nch = models[i + 1].startch - models[i].startch;
-    }
-    const osmodels: ModelRec[] = [];
-    for (const m of models) {
-        osmodels.push(m);
-    }
-
     return {
-        models: osmodels,
+        models,
         controllers,
         controllersByName,
     };
+}
+
+/**
+ * Read `xlights_rgbeffects.xml` / `xlights_networks.xml` from a show folder
+ * and flatten them into the legacy `ControllerRec`/`ModelRec` view.
+ *
+ * Thin wrapper: parse (via xllayoutcalcs) + delegate to
+ * `controllersAndModelsFromParsed`.  Callers that already hold a parsed
+ * `ControllersAndModelChannels` should call that function directly instead
+ * of re-reading the files.
+ */
+export async function readControllersAndModels(xldir: string, options?: ModelParseOptions) {
+    const xmodelsXml = await loadXmlFile(path.join(xldir, 'xlights_rgbeffects.xml'));
+    const xnetworksXml = await loadXmlFile(path.join(xldir, 'xlights_networks.xml'));
+
+    // A wrong root element means a corrupt or mis-pointed show folder; fail loudly
+    // rather than proceeding with silently-empty controller/model lists.
+    if (xmodelsXml.documentElement?.tagName !== 'xrgb') {
+        throw new Error("Root not 'xrgb'");
+    }
+    if (xnetworksXml.documentElement?.tagName !== 'Networks') {
+        throw new Error('Root not "Networks"');
+    }
+
+    // xllayoutcalcs handles both the x2026_2 and x2026_3 layout formats natively.
+    const parsed = getControllersAndModelChannels(xmodelsXml, xnetworksXml, {
+        warnUnusedAttrs: false,
+        ...options,
+    });
+
+    return controllersAndModelsFromParsed(parsed);
 }

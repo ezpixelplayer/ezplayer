@@ -1,3 +1,6 @@
+// earlycli must stay the first import: it applies --user-data-dir before
+// showfolder/webport/ipcautoupdate construct their electron-stores.
+import { cliUsage, getCliArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
@@ -8,12 +11,13 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { isScheduleActive, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
+import { isScheduleActive, loadShowFolder, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import {
     clearPersistedShowFolder,
     closeShowFolder,
     ensureExclusiveFolder,
+    ensureExclusiveFolderHeadless,
     getWelcomeShowCloud,
     hasValidConfiguredShowFolder,
     setWelcomeShowCloud,
@@ -23,6 +27,7 @@ import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
+import { runCli } from './cli/dispatch.js';
 import type { Event as ElectronEvent } from 'electron';
 
 import os from 'os';
@@ -30,6 +35,11 @@ import os from 'os';
 // Linux: Ubuntu 24.04+ AppArmor blocks unprivileged user namespaces; older distros lack SUID sandbox helper.
 if (process.platform === 'linux') {
     app.commandLine.appendSwitch('no-sandbox');
+    if (isHeadless()) {
+        // --ozone-platform=headless must be on the real command line (the
+        // native layer consumes it before this code runs); see cli.md.
+        app.commandLine.appendSwitch('disable-gpu');
+    }
 }
 
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
@@ -54,14 +64,18 @@ process.on('uncaughtException', (err) => {
     const msg = `[uncaughtException] ${err.stack || err.message}\n`;
     try {
         fs.appendFileSync(mainCrashLogFile, msg);
-    } catch {}
+    } catch {
+        /* best-effort crash log */
+    }
     console.error(msg);
 });
 process.on('unhandledRejection', (reason: any) => {
     const msg = `[unhandledRejection] ${reason?.stack || String(reason)}\n`;
     try {
         fs.appendFileSync(mainCrashLogFile, msg);
-    } catch {}
+    } catch {
+        /* best-effort crash log */
+    }
     console.error(msg);
 });
 
@@ -126,6 +140,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     } else {
         splash.loadURL(`file://${path.join(__dirname, '../dist/splash.html')}`);
     }
+    const splashShownAt = Date.now();
 
     audioWindow = new BrowserWindow({
         show: false,
@@ -185,10 +200,16 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     // of and hides modal dialogs like the auto-update prompt (~10s in). We run
     // this on ready-to-show and, as a safety net, on a hard fallback timer in
     // case ready-to-show never fires (e.g. the renderer failed to load).
+    const SPLASH_MIN_MS = 1000;
     let startupFinished = false;
-    let splashFallback: ReturnType<typeof setTimeout>;
     const finishStartup = () => {
         if (startupFinished) return;
+        // Hold the splash up for a minimum time so a fast startup doesn't flash it.
+        const remaining = SPLASH_MIN_MS - (Date.now() - splashShownAt);
+        if (remaining > 0) {
+            setTimeout(finishStartup, remaining);
+            return;
+        }
         startupFinished = true;
         clearTimeout(splashFallback);
         if (!splash.isDestroyed()) splash.destroy();
@@ -202,7 +223,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     mainWindow.once('ready-to-show', finishStartup);
     // Fire well before the auto-update prompt's ~10s delay so a stuck splash
     // cannot cover it.
-    splashFallback = setTimeout(finishStartup, 8000);
+    const splashFallback = setTimeout(finishStartup, 8000);
     const handleCloseRequest = async (event: ElectronEvent) => {
         if (!mainWindow) return;
         if (!isScheduleActive()) {
@@ -253,7 +274,89 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
 
 let playWorker: Worker | null = null;
 
-app.whenReady().then(async () => {
+async function startPlaybackWorker(): Promise<Worker> {
+    const worker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
+        workerData: {
+            name: 'main',
+            logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
+        } satisfies PlaybackWorkerData,
+    });
+    await new Promise<void>((resolve) => {
+        const onMessage = (msg: any) => {
+            if (msg.type === 'ready') {
+                worker.off('message', onMessage);
+                resolve();
+            }
+        };
+        worker.on('message', onMessage);
+    });
+    return worker;
+}
+
+/** The `headless` verb: full player, zero BrowserWindows, dialogs become
+ *  fail-fast exit codes. */
+async function startHeadless() {
+    const resolved = await ensureExclusiveFolderHeadless();
+    if ('error' in resolved) {
+        console.error(`EZPlayer headless: ${resolved.error}`);
+        // app.quit() always exits 0; nothing needs before-quit cleanup yet
+        app.exit(resolved.exitCode);
+        return;
+    }
+    console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
+
+    // persist:false — never write headless CLI values into stored preferences
+    const portInfo = getWebPort({ persist: false });
+    const kioskPortInfo = getKioskPort({ persist: false });
+
+    playWorker = await startPlaybackWorker();
+
+    registerFileListHandlers();
+    await registerContentHandlers(null, null, playWorker);
+
+    // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
+    const shutdown = (signal: NodeJS.Signals) => {
+        if (isQuitting) return;
+        isQuitting = true;
+        console.log(`EZPlayer headless: ${signal} received, shutting down`);
+        void stopPlayerPlayback()
+            .catch((err) => console.error(`Failed to stop player playback: ${err}`))
+            .finally(() => app.quit());
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
+    try {
+        await setUpServerWorker({
+            port: portInfo.port,
+            portSource: portInfo.source,
+            playWorker,
+            mainWindow: null,
+            getMainWindow,
+            distDir: __dirname,
+            kioskPort: kioskPortInfo?.port,
+            kioskPortSource: kioskPortInfo?.source,
+        });
+    } catch (e) {
+        console.error(e);
+    }
+
+    // No renderer to send ipcUIConnect — load the show content ourselves.
+    await loadShowFolder();
+    console.log(`EZPlayer headless: ready on web port ${portInfo.port}`);
+}
+
+if (isToolVerb()) {
+    // Text-only verbs (discover/interfaces) run and exit without ever creating a
+    // window or starting workers — unlike `headless`, which is a full player with
+    // no windows. app.exit() tears down abruptly, so flush stdout first (the empty
+    // write's callback fires after buffered output drains) to avoid truncating.
+    const exitFlushed = (code: number) => process.stdout.write('', () => app.exit(code));
+    runCli(getCliArgs()).then(exitFlushed, (e) => {
+        console.error(e);
+        exitFlushed(1);
+    });
+} else app.whenReady().then(async () => {
     console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
     // Reset CLI flags — wipe persisted state and quit. Variants differ in what
@@ -285,6 +388,18 @@ app.whenReady().then(async () => {
         return;
     }
 
+    const unknownVerb = getUnknownVerb();
+    if (unknownVerb) {
+        console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
+        app.exit(64);
+        return;
+    }
+
+    if (isHeadless()) {
+        await startHeadless();
+        return;
+    }
+
     const shouldShowWelcome = !(await hasValidConfiguredShowFolder());
     let showFolderSpec: string | null = null;
     if (!shouldShowWelcome) {
@@ -304,21 +419,7 @@ app.whenReady().then(async () => {
     const kioskPort = kioskPortInfo?.port;
     const kioskPortSource = kioskPortInfo?.source;
 
-    playWorker = new Worker(path.join(__dirname, 'workers/playbackmaster.js'), {
-        workerData: {
-            name: 'main',
-            logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
-        } satisfies PlaybackWorkerData,
-    });
-    await new Promise<void>((resolve) => {
-        const onMessage = (msg: any) => {
-            if (msg.type === 'ready') {
-                playWorker!.off('message', onMessage);
-                resolve();
-            }
-        };
-        playWorker!.on('message', onMessage);
-    });
+    playWorker = await startPlaybackWorker();
 
     registerFileListHandlers();
     createWindow(showFolderSpec ?? undefined, shouldShowWelcome);

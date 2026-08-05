@@ -305,7 +305,9 @@ export class FSeqPrefetchCache {
                     } finally {
                         try {
                             await fh.close();
-                        } catch (_e) {}
+                        } catch {
+                            /* best-effort close */
+                        }
                     }
                 } finally {
                     if (!readBufReleased) this.decompDataPool.release(readBuf);

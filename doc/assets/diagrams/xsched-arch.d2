@@ -1,0 +1,17 @@
+# xSchedule (the predecessor) signal path.
+# Shared: used in the "xSchedule architecture" slide.
+
+direction: right
+
+show: xLights show folder\n+ xSchedule {
+  shape: rectangle
+}
+controllers: Controllers {
+  shape: rectangle
+}
+lights: Lights {
+  shape: rectangle
+}
+
+show -> controllers: network
+controllers -> lights: cables

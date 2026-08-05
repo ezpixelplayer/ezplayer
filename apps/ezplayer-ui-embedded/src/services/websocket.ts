@@ -136,9 +136,9 @@ class WebSocketService {
             return;
         }
 
-        // Don't try to connect if we're in Electron renderer (use IPC instead)
-        // @ts-ignore - window.electronAPI might not exist in web version
-        if (typeof window !== 'undefined' && window.electronAPI) {
+        // Don't try to connect if we're in Electron renderer (use IPC instead);
+        // electronAPI is absent in the web build so probe it untyped.
+        if (typeof window !== 'undefined' && (window as { electronAPI?: unknown }).electronAPI) {
             return;
         }
 
@@ -182,7 +182,7 @@ class WebSocketService {
                 this.errorHandlers.forEach((handler) => {
                     try {
                         handler(error);
-                    } catch (err) {
+                    } catch {
                         // Silently handle errors in error handlers to prevent crashes
                     }
                 });

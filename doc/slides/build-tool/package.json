@@ -1,0 +1,21 @@
+{
+    "name": "@ezplayer/slide-builder",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "description": "Manifest-driven slide deck builder: resolves fragments + assets from logical roots, compiles d2, runs marp.",
+    "bin": {
+        "build-deck": "./build.mjs"
+    },
+    "scripts": {
+        "build": "node build.mjs",
+        "diagrams": "node compile-diagrams.mjs",
+        "user-talk": "node build.mjs ../decks/user-talk.yaml",
+        "dev-talk": "node build.mjs ../decks/dev-talk.yaml"
+    },
+    "dependencies": {
+        "@marp-team/marp-cli": "^4.4.0",
+        "@terrastruct/d2": "^0.1.33",
+        "yaml": "^2.8.3"
+    }
+}

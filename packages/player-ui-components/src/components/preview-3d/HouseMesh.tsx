@@ -5,7 +5,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as THREE from 'three';
 import type { ViewObject, Point3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
+import { type AssetResolver, createShowFileResolver, SHOW_FILE_DIR, SHOW_FILE_PATH } from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -34,7 +34,7 @@ interface HouseMeshProps {
     /**
      * Optional asset resolver. When supplied, mesh / MTL / texture lookups go through it
      * (so e.g. cloud-only callers can serve assets out of an unpacked layout zip). When
-     * omitted, this component falls back to building `frameServerUrl/api/show-file?path=…`
+     * omitted, this component falls back to building `frameServerUrl/api/ezp/show-file?path=…`
      * URLs directly — preserves legacy behaviour for callers that haven't been updated.
      */
     assetResolver?: AssetResolver;
@@ -395,16 +395,16 @@ class HouseMeshErrorBoundary extends React.Component<
  *   - `blob:…/relativeFile.png`      → MTLLoader appended a relative path to a blob: base
  *                                      (we loaded the MTL via blob URL); strip to basename
  *   - HTTP(S) URLs of the form
- *     `<frameServerUrl>/api/<relpath>` → MTLLoader's internal `extractUrlBase` synthesised
- *                                      this when the MTL was loaded via show-file; strip
- *                                      the `/api/` prefix to recover the relative path
+ *     `<frameServerUrl><SHOW_FILE_DIR><relpath>` → MTLLoader's `extractUrlBase` synthesised this
+ *                                      when the MTL was loaded via show-file (the base is the
+ *                                      endpoint's own directory); strip it to recover the path
  *   - any other absolute URL         → pass through unchanged (don't intercept third-party CDNs)
  *   - plain relative path            → resolve directly
  *
  * In every case where we recover a relative path, we prefix `objDir` (so e.g. an MTL line
  * `map_Kd texture_1001.png` becomes `<objDir>/texture_1001.png` before resolver lookup).
  */
-function createAssetLoadingManager(
+export function createAssetLoadingManager(
     resolver: AssetResolver,
     objDir: string,
     frameServerUrl: string | undefined,
@@ -416,7 +416,7 @@ function createAssetLoadingManager(
 
         // Already a resolved show-file URL — we (or the resolver) produced it, so return it
         // untouched.
-        if (url.includes('/api/show-file?')) return url;
+        if (url.includes(`${SHOW_FILE_PATH}?`)) return url;
 
         let assetPath: string | null = null;
 
@@ -442,10 +442,10 @@ function createAssetLoadingManager(
                     const serverParsed = new URL(frameServerUrl);
                     if (
                         parsed.origin === serverParsed.origin &&
-                        parsed.pathname.startsWith('/api/') &&
+                        parsed.pathname.startsWith(SHOW_FILE_DIR) &&
                         !parsed.pathname.includes('show-file')
                     ) {
-                        const filename = parsed.pathname.replace(/^\/api\//, '');
+                        const filename = parsed.pathname.slice(SHOW_FILE_DIR.length);
                         if (filename) assetPath = objDir + filename;
                     }
                 } catch {
@@ -454,15 +454,15 @@ function createAssetLoadingManager(
             }
             // External or already-resolved URL — leave it alone.
             if (!assetPath) return url;
-        } else if (frameServerUrl && url.startsWith(`${frameServerUrl.replace(/\/+$/, '')}/api/`) && !url.includes('show-file')) {
+        } else if (
+            frameServerUrl &&
+            url.startsWith(`${frameServerUrl.replace(/\/+$/, '')}${SHOW_FILE_DIR}`) &&
+            !url.includes('show-file')
+        ) {
             // Path-only proxy base (cloud SPA `frameServerUrl`, e.g. `/api/enduserspa/proxy/<token>`):
-            // the http(s) origin check above can't fire because `new URL()` rejects a path-only base,
-            // so an MTL-referenced texture would otherwise fall through to the relative branch and get
-            // `objDir + <full-proxy-path>` (→ a mangled show-file path → 404; this is why mesh textures
-            // loaded over LAN but not over the cloud). MTLLoader appended the texture filename onto
-            // `<base>/api/`, so recover the trailing path and resolve it against the OBJ dir — mirroring
-            // the absolute-URL case above.
-            const apiBase = `${frameServerUrl.replace(/\/+$/, '')}/api/`;
+            // `new URL()` rejects it, so the http(s) branch above can't fire. Same recovery as
+            // there — strip the show-file directory MTLLoader used as its base.
+            const apiBase = `${frameServerUrl.replace(/\/+$/, '')}${SHOW_FILE_DIR}`;
             const rest = url.slice(apiBase.length).split('?')[0];
             if (rest) assetPath = objDir + rest;
             if (!assetPath) return url;
@@ -654,8 +654,6 @@ function HouseMeshContent({
 
                         materialCreator.preload();
 
-                        const matNames = Object.keys(materialCreator.materials);
-
                         // Optimise textures: disable mipmaps, fix colorSpace, cap size
                         optimizeMaterialTextures(materialCreator.materials);
                     } catch (mtlErr) {
@@ -674,13 +672,10 @@ function HouseMeshContent({
                 if (aborted) return;
 
                 // ---- Step 2a: Analyse OBJ content ----
-                const vertexCount = (objText.match(/^v\s/gm) || []).length;
                 const normalCount = (objText.match(/^vn\s/gm) || []).length;
                 const texCoordCount = (objText.match(/^vt\s/gm) || []).length;
                 const faceCount = (objText.match(/^f\s/gm) || []).length;
                 const lineCount = (objText.match(/^l\s/gm) || []).length;
-                const mtllibCount = (objText.match(/^mtllib\s/gm) || []).length;
-                const usemtlCount = (objText.match(/^usemtl\s/gm) || []).length;
 
                 // Also check for upper-case variants some exporters produce
                 const faceCountUpper = (objText.match(/^F\s/gm) || []).length;

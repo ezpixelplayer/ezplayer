@@ -107,14 +107,14 @@ export interface Preview3DProps {
     layoutAssets?: Map<string, string>;
     /**
      * Optional view objects (mesh / image planes) parsed from rgbeffects. When supplied,
-     * Preview3D uses them directly and skips the `frameServerUrl/api/view-objects` fetch —
+     * Preview3D uses them directly and skips the `frameServerUrl/api/ezp/view-objects` fetch —
      * required for the cloud-only path where there is no Koa server. When omitted, falls
      * back to the show-server fetch (Electron / local browser).
      */
     viewObjects?: ViewObject[];
     /**
      * Optional DMX moving-head fixtures. Same role as `viewObjects` for the
-     * `frameServerUrl/api/moving-heads` fetch — supply when the caller has already extracted
+     * `frameServerUrl/api/ezp/moving-heads` fetch — supply when the caller has already extracted
      * them client-side (e.g. via `xllayoutcalcs.getAllMovingHeads`).
      */
     movingHeadFixtures?: MhFixtureInfo[];
@@ -142,6 +142,9 @@ export interface Preview3DProps {
     mode?: 'standalone' | 'embedded';
     /** When true, viewers use minHeight 0 so the preview fills a flex/dialog container instead of forcing 600px. */
     compact?: boolean;
+    /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
+     *  storage-shaped JSON */
+    captureViewStateRef?: React.MutableRefObject<(() => string | null) | null>;
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -161,6 +164,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     previewSettingsStorageKey = 'previewSettings',
     mode = 'standalone',
     compact = false,
+    captureViewStateRef,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
@@ -377,6 +381,28 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, [previewSelection, viewStateBySelection, cameraStateLoaded, previewSettingsStorageKey]);
 
+    // Live view-state capture for share links.
+    useEffect(() => {
+        if (!captureViewStateRef) return undefined;
+        captureViewStateRef.current = () => {
+            const live3D = getCurrentCameraState3DRef.current?.() ?? cameraState3D;
+            const live2D = getCurrentCameraState2DRef.current?.() ?? cameraState2D;
+            const vs = { mode: viewMode, cameraState2D: live2D, cameraState3D: live3D };
+            return JSON.stringify({
+                pixelSize: previewSettings.pixelSize,
+                brightnessMultiplier: previewSettings.brightnessMultiplier,
+                mode: viewMode,
+                cameraState2D: live2D,
+                cameraState3D: live3D,
+                previewSelection,
+                viewStateBySelection: { ...viewStateBySelection, [previewSelection]: vs },
+            });
+        };
+        return () => {
+            captureViewStateRef.current = null;
+        };
+    }, [captureViewStateRef, viewMode, cameraState2D, cameraState3D, previewSelection, viewStateBySelection, previewSettings]);
+
     // Resolve the server URL (auto-detects Electron port or falls back to same-origin).
     const { url: effectiveFrameServerUrl } = useFrameServerUrl({ frameServerUrl });
 
@@ -436,7 +462,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         // Try to load from API, with retry when server returns empty data
         // (the playback worker may still be parsing the new show's XML)
-        const fetchShowData = async (attempt: number): Promise<boolean> => {
+        const fetchShowData = async (_attempt: number): Promise<boolean> => {
             if (cancelled) return false;
 
             try {
@@ -445,7 +471,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 if (effectiveFrameServerUrl) {
                     // Use HTTP API (works in both Electron and browser — avoids IPC/RPC round-trip to playback worker)
                     try {
-                        const response = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates`);
+                        const response = await fetch(`${effectiveFrameServerUrl}/api/ezp/model-coordinates`);
                         if (response.ok) {
                             xmlCoords = await response.json();
                         }
@@ -457,7 +483,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Also fetch view objects (meshes like house models)
                     try {
-                        const viewObjectsResponse = await fetch(`${effectiveFrameServerUrl}/api/view-objects`);
+                        const viewObjectsResponse = await fetch(`${effectiveFrameServerUrl}/api/ezp/view-objects`);
                         if (viewObjectsResponse.ok) {
                             const viewObjs = await viewObjectsResponse.json();
                             if (Array.isArray(viewObjs)) {
@@ -470,7 +496,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Fetch layout settings (background image, preview dimensions)
                     try {
-                        const settingsResponse = await fetch(`${effectiveFrameServerUrl}/api/layout-settings`);
+                        const settingsResponse = await fetch(`${effectiveFrameServerUrl}/api/ezp/layout-settings`);
                         if (settingsResponse.ok) {
                             const settings = await settingsResponse.json();
                             if (settings && typeof settings === 'object') {
@@ -483,7 +509,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Fetch moving head fixture definitions
                     try {
-                        const mhResponse = await fetch(`${effectiveFrameServerUrl}/api/moving-heads`);
+                        const mhResponse = await fetch(`${effectiveFrameServerUrl}/api/ezp/moving-heads`);
                         if (mhResponse.ok) {
                             const mhFixtures = await mhResponse.json();
                             if (Array.isArray(mhFixtures)) {
@@ -496,7 +522,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     // Also fetch 2D-projected coordinates for the 2D viewer
                     try {
-                        const response2D = await fetch(`${effectiveFrameServerUrl}/api/model-coordinates-2d`);
+                        const response2D = await fetch(`${effectiveFrameServerUrl}/api/ezp/model-coordinates-2d`);
                         if (response2D.ok) {
                             const xmlCoords2D = await response2D.json();
                             if (xmlCoords2D && Object.keys(xmlCoords2D).length > 0) {
@@ -727,7 +753,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // Handle settings change
     const handleSettingsChange = useCallback((newSettings: PreviewSettingsData) => {
         // Validate and clamp values
-        const clampedPixelSize = Math.max(PIXEL_SIZE_MIN, Math.min(PIXEL_SIZE_MAX, Number(newSettings.pixelSize) || 1.0));
+        const clampedPixelSize = Math.max(
+            PIXEL_SIZE_MIN,
+            Math.min(PIXEL_SIZE_MAX, Number(newSettings.pixelSize) || 1.0),
+        );
         const clampedMultiplier = Math.max(0, Math.min(200, Number(newSettings.brightnessMultiplier) || 100));
 
         setPreviewSettings({

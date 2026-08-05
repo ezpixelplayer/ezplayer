@@ -1,0 +1,21 @@
+# Cloud delivery: the EZRGB cloud pushes content to the local player,
+# which serves the LAN. Shared: "Cloud service architecture" slide.
+
+direction: right
+
+cloud: EZRGB cloud {
+  shape: rectangle
+}
+player: Local player {
+  shape: rectangle
+}
+server: Player server {
+  shape: rectangle
+}
+clients: Phone / PC {
+  shape: rectangle
+}
+
+cloud -> player: cloud poll
+player <-> server
+server <-> clients

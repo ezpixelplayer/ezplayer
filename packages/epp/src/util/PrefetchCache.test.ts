@@ -8,7 +8,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
     }
     constructor(budget: number) {
         super({
-            fetchFunction: async (key, abort) => {
+            fetchFunction: async (key, _abort) => {
                 this.counts.set(key, (this.counts.get(key) ?? 0) + 1);
                 if (key.includes('@')) throw new Error();
                 return key;
@@ -24,7 +24,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
             budgetLimit: budget,
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => {},
+            onDispose: (_k, _v) => {},
         });
     }
 
@@ -41,10 +41,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
 
     /** One player loop iteration: bump the generation, (re)place the plays that the
      *  forward-run would produce this pass, then dispatch + settle. */
-    async frame(
-        now: number,
-        reqs: { key: string; neededTime: number; neededThroughTime?: number; tier?: number }[],
-    ) {
+    async frame(now: number, reqs: { key: string; neededTime: number; neededThroughTime?: number; tier?: number }[]) {
         this.beginGeneration();
         for (const r of reqs) {
             this.prefetch({

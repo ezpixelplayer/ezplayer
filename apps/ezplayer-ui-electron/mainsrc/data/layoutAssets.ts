@@ -1,5 +1,6 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { isAssetPathAbsolute } from '@ezplayer/epp';
 
 /**
  * Attribute names in xLights XML that carry filesystem references we need to bundle
@@ -47,7 +48,11 @@ export function extractAssetRefs(xmlText: string): string[] {
  */
 export function refToShowFolderRelative(ref: string, showFolder: string): string | null {
     const norm = ref.replace(/\\/g, '/');
-    if (path.isAbsolute(norm)) {
+    if (isAssetPathAbsolute(norm)) {
+        // Foreign-platform absolute paths (C:\... on a Linux player) are never
+        // host-resolvable — path.relative would treat them as relative and
+        // produce garbage; send them straight to the basename fallback.
+        if (!path.isAbsolute(norm)) return null;
         const rel = path.relative(showFolder, norm);
         if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
         return rel.replace(/\\/g, '/');

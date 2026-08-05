@@ -1,8 +1,9 @@
 {
     "name": "@ezplayer/player-ui-components",
     "private": true,
-    "version": "0.14.1",
+    "version": "0.15.2",
     "type": "module",
+    "sideEffects": false,
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "files": [
@@ -102,6 +103,6 @@
         "vite": "catalog:",
         "vite-plugin-svgr": "catalog:",
         "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.1.6.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.1.tgz"
     }
 }

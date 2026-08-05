@@ -37,13 +37,17 @@ function isValidPort(port: number): boolean {
  * 2. Environment variable EZPLAYER_WEB_PORT
  * 3. Stored preference
  * 4. Default port (3000)
+ * @param opts.persist When false (headless/test runs), a CLI/env port is used
+ *                      for this run only and NOT written back to the stored
+ *                      preference. Defaults to true (interactive behavior).
  * @returns Object with port number and source information
  */
-export function getWebPort(): { port: number; source: string } {
+export function getWebPort(opts?: { persist?: boolean }): { port: number; source: string } {
+    const persist = opts?.persist ?? true;
     // 1. Check CLI arguments first
     const cliPort = parseCliForWebPort(process.argv);
     if (cliPort !== undefined && isValidPort(cliPort)) {
-        store.set('webPort', cliPort);
+        if (persist) store.set('webPort', cliPort);
         return { port: cliPort, source: 'CLI argument' };
     }
 
@@ -51,7 +55,7 @@ export function getWebPort(): { port: number; source: string } {
     if (process.env.EZPLAYER_WEB_PORT) {
         const envPort = parseInt(process.env.EZPLAYER_WEB_PORT, 10);
         if (!isNaN(envPort) && isValidPort(envPort)) {
-            store.set('webPort', envPort);
+            if (persist) store.set('webPort', envPort);
             return { port: envPort, source: 'Environment variable (EZPLAYER_WEB_PORT)' };
         }
     }
@@ -87,13 +91,16 @@ function parseCliForKioskPort(argv: string[]): number | undefined {
  * 3. Stored preference
  * 4. Default port (3001)
  * Returns undefined if kiosk mode is explicitly disabled (port=0)
+ * @param opts.persist As getWebPort(): false skips writing CLI/env values back
+ *                     to the stored preference.
  */
-export function getKioskPort(): { port: number; source: string } | undefined {
+export function getKioskPort(opts?: { persist?: boolean }): { port: number; source: string } | undefined {
+    const persist = opts?.persist ?? true;
     // 1. Check CLI arguments first
     const cliPort = parseCliForKioskPort(process.argv);
     if (cliPort === 0) return undefined; // Explicitly disabled
     if (cliPort !== undefined && isValidPort(cliPort)) {
-        store.set('kioskPort', cliPort);
+        if (persist) store.set('kioskPort', cliPort);
         return { port: cliPort, source: 'CLI argument' };
     }
 
@@ -102,7 +109,7 @@ export function getKioskPort(): { port: number; source: string } | undefined {
         const envPort = parseInt(process.env.EZPLAYER_KIOSK_PORT, 10);
         if (envPort === 0) return undefined;
         if (!isNaN(envPort) && isValidPort(envPort)) {
-            store.set('kioskPort', envPort);
+            if (persist) store.set('kioskPort', envPort);
             return { port: envPort, source: 'Environment variable (EZPLAYER_KIOSK_PORT)' };
         }
     }

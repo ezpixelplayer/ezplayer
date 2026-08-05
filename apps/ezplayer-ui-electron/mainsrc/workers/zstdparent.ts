@@ -31,8 +31,6 @@ const workers: Worker[] = [];
 for (let i = 0; i < nworkers; ++i) {
     workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: { name: 'zstddecode' } }));
 }
-const inuse: Worker[] = [];
-
 export function getZstdStats() {
     return {
         decompTime,

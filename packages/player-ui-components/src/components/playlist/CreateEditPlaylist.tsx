@@ -14,6 +14,7 @@ import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import SearchIcon from '@mui/icons-material/Search';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
+import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import {
     Autocomplete,
     Button,
@@ -26,6 +27,7 @@ import {
     DialogTitle,
     Grid,
     InputAdornment,
+    Menu,
     MenuItem,
     Select,
     TextField,
@@ -265,8 +267,6 @@ const PlaylistContainer = ({
     playlistSongs,
     dragOverItemId,
     onRemoveSong,
-    sortOrder,
-    sortType,
     onSort,
     setSortOrder,
     setSortType,
@@ -275,6 +275,24 @@ const PlaylistContainer = ({
     const { setNodeRef: setPlaylistRef } = useDroppable({
         id: 'playlist',
     });
+
+    const [sortMenuAnchorEl, setSortMenuAnchorEl] = useState<null | HTMLElement>(null);
+    const isSortMenuOpen = Boolean(sortMenuAnchorEl);
+
+    const handleSortMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+        setSortMenuAnchorEl(event.currentTarget);
+    };
+
+    const handleSortMenuClose = () => {
+        setSortMenuAnchorEl(null);
+    };
+
+    const handleSortMenuSelect = (type: 'title' | 'artist', order: 'asc' | 'desc') => {
+        setSortType(type);
+        setSortOrder(order);
+        onSort(type, order);
+        handleSortMenuClose();
+    };
 
     const songCount = useMemo(() => playlistSongs.length, [playlistSongs]);
 
@@ -306,41 +324,31 @@ const PlaylistContainer = ({
             >
                 <Grid container spacing={1}>
                     <Grid item xs={12} md={3}>
-                        <Select
+                        <Button
+                            startIcon={<SortByAlphaIcon />}
+                            onClick={handleSortMenuOpen}
+                            variant="outlined"
                             size="small"
-                            value={sortType}
-                            onChange={(e) => {
-                                const value = e.target.value as 'title' | 'artist';
-                                setSortType(value);
-                                if (!sortOrder) {
-                                    setSortOrder('asc');
-                                    onSort(value, 'asc');
-                                } else {
-                                    onSort(value, sortOrder);
-                                }
-                            }}
                             fullWidth
                         >
-                            <MenuItem value="title">Sort by Title</MenuItem>
-                            <MenuItem value="artist">Sort by Artist</MenuItem>
-                        </Select>
+                            Apply Sort
+                        </Button>
+                        <Menu anchorEl={sortMenuAnchorEl} open={isSortMenuOpen} onClose={handleSortMenuClose}>
+                            <MenuItem onClick={() => handleSortMenuSelect('title', 'asc')}>
+                                Sort by Title (A-Z)
+                            </MenuItem>
+                            <MenuItem onClick={() => handleSortMenuSelect('artist', 'asc')}>
+                                Sort by Artist (A-Z)
+                            </MenuItem>
+                            <MenuItem onClick={() => handleSortMenuSelect('title', 'desc')}>
+                                Sort by Title (Z-A)
+                            </MenuItem>
+                            <MenuItem onClick={() => handleSortMenuSelect('artist', 'desc')}>
+                                Sort by Artist (Z-A)
+                            </MenuItem>
+                        </Menu>
                     </Grid>
                     <Grid item xs={12} md={3}>
-                        <Select
-                            size="small"
-                            value={sortOrder || 'asc'}
-                            onChange={(e) => {
-                                const value = e.target.value as 'asc' | 'desc';
-                                setSortOrder(value);
-                                onSort(sortType, value);
-                            }}
-                            fullWidth
-                        >
-                            <MenuItem value="asc">A-Z</MenuItem>
-                            <MenuItem value="desc">Z-A</MenuItem>
-                        </Select>
-                    </Grid>
-                    <Grid item xs={12} md={2}>
                         <Button
                             startIcon={<ShuffleIcon />}
                             onClick={onShuffle}
@@ -465,6 +473,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
     const [sortType, setSortType] = useState<'title' | 'artist'>('title');
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
     const [isNavigationDialogOpen, setIsNavigationDialogOpen] = useState(false);
+    const [isEmptyPlaylistDialogOpen, setIsEmptyPlaylistDialogOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<'navigate' | 'discard' | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [availableSortOrder, setAvailableSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -845,11 +854,16 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
         if (!playlistName || playlistName.trim() === '') {
             return { isValid: false, error: 'Playlist name is required' };
         }
-        if (!playlistSongs || playlistSongs.length === 0) {
-            return { isValid: false, error: 'At least one song is required' };
-        }
 
         return { isValid: true, error: '' };
+    };
+
+    const handleSaveClick = () => {
+        if (!playlistSongs || playlistSongs.length === 0) {
+            setIsEmptyPlaylistDialogOpen(true);
+            return;
+        }
+        handleSavePlaylist();
     };
 
     const handleDiscardClick = () => {
@@ -939,7 +953,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                         key="save"
                         variant="contained"
                         color="primary"
-                        onClick={handleSavePlaylist}
+                        onClick={handleSaveClick}
                         disabled={!isPlaylistValid().isValid}
                         sx={{ whiteSpace: 'nowrap', ml: 2 }}
                     >
@@ -968,6 +982,35 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                     </Button>
                     <Button onClick={handleConfirmNavigation} color="error">
                         Leave
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Empty playlist save confirmation */}
+            <Dialog
+                open={isEmptyPlaylistDialogOpen}
+                onClose={() => setIsEmptyPlaylistDialogOpen(false)}
+                aria-labelledby="empty-playlist-dialog-title"
+                aria-describedby="empty-playlist-dialog-description"
+            >
+                <DialogTitle id="empty-playlist-dialog-title">Empty Playlist</DialogTitle>
+                <DialogContent>
+                    <DialogContentText id="empty-playlist-dialog-description">
+                        Are you sure you want to save the empty playlist?
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIsEmptyPlaylistDialogOpen(false)} color="error">
+                        Take Me Back
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            setIsEmptyPlaylistDialogOpen(false);
+                            handleSavePlaylist();
+                        }}
+                        color="primary"
+                    >
+                        Yes, Go Ahead
                     </Button>
                 </DialogActions>
             </Dialog>

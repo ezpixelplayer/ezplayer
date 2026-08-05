@@ -1,0 +1,19 @@
+{
+    "name": "@ezplayer/integration-tests",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "description": "End-to-end tests: headless EZPlayer driven over the FPP-compat API, DDP output asserted at a mock controller",
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "lint": "eslint ."
+    },
+    "devDependencies": {
+        "@ezplayer/epp": "workspace:*",
+        "@ezplayer/epp-mock-controller": "file:..\\..\\libs\\ezplayer-epp-mock-controller-0.0.1-dev.4.tgz",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:"
+    }
+}

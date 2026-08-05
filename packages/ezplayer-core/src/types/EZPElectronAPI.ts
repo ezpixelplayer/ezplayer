@@ -2,6 +2,7 @@ import type {
     CloudConfig,
     CloudStatus,
     CombinedPlayerStatus,
+    UIConnectSnapshot,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -14,6 +15,7 @@ import type {
     PlaybackSettings,
     CloudCommand,
 } from './DataTypes';
+import type { ControllerCommand, ControllerOpsState } from './ControllerOps';
 
 export interface AudioDevice {
     deviceId: string;
@@ -110,8 +112,14 @@ export interface EZPElectronAPI {
     getCloudStatus: () => Promise<CloudStatus>;
     onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => void;
 
+    /** Controller ops (discovery/status/action). Same command shape as the LAN
+     *  HTTP/WS and cloud. Initial state arrives in the connect() snapshot; updates
+     *  push via onControllerOpsUpdated. */
+    controllerCommand: (command: ControllerCommand) => Promise<void>;
+    onControllerOpsUpdated: (callback: (data: ControllerOpsState) => void) => void;
+
     // Set up / remove callbacks
-    connect: () => Promise<void>;
+    connect: () => Promise<UIConnectSnapshot | undefined>;
     disconnect: () => Promise<void>;
 
     // Get versions

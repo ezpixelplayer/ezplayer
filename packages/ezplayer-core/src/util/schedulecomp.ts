@@ -776,8 +776,6 @@ class PlaybackStateEntry {
         log?: PlaybackLogDetail[],
         dbg?: boolean,
     ) {
-        const pthis = this;
-
         /*
         We start at -1, -1
         The transition to 0, -1 is trivial.
@@ -794,13 +792,13 @@ class PlaybackStateEntry {
         Starting a part means we go to index 0
         */
 
-        function startNextPart(ctime: number) {
+        const startNextPart = (ctime: number) => {
             c.itemCursor = 0;
             c.offsetInto = 0;
-            if (c.itemPart <= 2 && pthis.seqSections[c.itemPart]?.length) {
-                pthis.addLog(depth, 'Playlist Started', ctime, c, log);
+            if (c.itemPart <= 2 && this.seqSections[c.itemPart]?.length) {
+                this.addLog(depth, 'Playlist Started', ctime, c, log);
             }
-        }
+        };
 
         if (dbg && runToTime < c.baseTime + c.offsetInto) {
             console.log(`PSE running backwards by ${c.baseTime + c.offsetInto - runToTime}; ${Date.now() - runToTime}`);
@@ -1293,6 +1291,8 @@ export interface InteractivePlayCommand {
     playlistId?: string;
     scheduleId?: string;
     requestId: string;
+    /** Playlist play only: loop the main section instead of a single pass. */
+    loop?: boolean;
 }
 
 export interface UpcomingPlaybackActions {
@@ -1392,11 +1392,9 @@ export class PlayerRunState {
         schedules: ScheduledPlaylist[],
         errs: string[],
     ) {
-        this.sequences = seqs
-            .filter(isSequencePlayable)
-            .map((s) => {
-                return { ...s };
-            });
+        this.sequences = seqs.filter(isSequencePlayable).map((s) => {
+            return { ...s };
+        });
         this.sequencesById = seqsToMap(this.sequences, errs);
         this.playlists = playlists
             .filter((p) => p.deleted !== true)
@@ -1583,7 +1581,12 @@ export class PlayerRunState {
             sc.mainSectionLongest = mainTimes.longestMS;
 
             if (s.shuffle) {
-                sc.mainSection = createShuffleList(mainpl, sc.schedStart, sc.schedEnd - sc.schedStart, this.sequencesById)
+                sc.mainSection = createShuffleList(
+                    mainpl,
+                    sc.schedStart,
+                    sc.schedEnd - sc.schedStart,
+                    this.sequencesById,
+                )
                     .map((id) => this.sequencesById.get(id))
                     .filter((seq): seq is SequenceRecord => !!seq);
             } else {
@@ -1612,7 +1615,7 @@ export class PlayerRunState {
         } else if (ipc.playlistId) {
             sc.playlistIds = [undefined, ipc.playlistId, undefined];
             sc.mainSection = [];
-            sc.mainSectionLoop = false;
+            sc.mainSectionLoop = !!ipc.loop;
             sc.mainSectionTotal = 0;
             sc.mainSectionLongest = 0;
 
@@ -2086,6 +2089,7 @@ export class PlayerRunState {
                   requestId: item.itemId,
                   startTime: item.schedStart,
                   scheduleId: item.scheduleId,
+                  playlistId: item.playlistIds?.[1],
                   actions: st.getUpcomingItems(this.depth, this.currentTime, readahead, maxItems),
               };
     }
@@ -2230,7 +2234,7 @@ export class PlayerRunState {
     /** Graceful stop: finish the current sequence, play the outro (post-section)
      *  of the current schedule if it has one, then let it end naturally.
      *  Schedules and heap remain intact. */
-    stopGracefully(currentTime: number, log?: PlaybackLogDetail[]) {
+    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
         this.interactiveQueue = [];
         this.immediateItem = undefined;
 
@@ -2277,7 +2281,8 @@ export class PlayerRunState {
 
         // If a songId was specified, only skip if it matches the current sequence
         if (songId !== undefined) {
-            const curSeqId = st.seqSections[st.itemPart]?.[st.itemCursor % (st.seqSections[st.itemPart].length || 1)]?.id;
+            const curSeqId =
+                st.seqSections[st.itemPart]?.[st.itemCursor % (st.seqSections[st.itemPart].length || 1)]?.id;
             if (curSeqId !== songId) return;
         }
 

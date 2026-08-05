@@ -454,7 +454,7 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
 
     // Controls object registered in R3F store
     const controlsRef = useRef<
-        THREE.EventDispatcher<{ change: {} }> & {
+        THREE.EventDispatcher<{ change: object }> & {
             target: THREE.Vector3;
             update: () => void;
             syncFromCamera: () => void;
@@ -492,7 +492,7 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         camera.getWorldDirection(dir);
         target.copy(camera.position).addScaledVector(dir, 100);
 
-        const dispatcher = new THREE.EventDispatcher<{ change: {} }>();
+        const dispatcher = new THREE.EventDispatcher<{ change: object }>();
         const controlsObj = Object.assign(dispatcher, {
             target,
             update: () => {
@@ -1421,13 +1421,13 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             variant="caption"
                             sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                         >
-                            🖱️ Right drag: Pan
+                            🖱️ Middle drag: Pan
                         </Typography>
                         <Typography
                             variant="caption"
                             sx={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                         >
-                            🖱️ Scroll / Middle drag: Zoom
+                            🖱️ Scroll / Right drag: Zoom
                         </Typography>
                     </>
                 ) : (
@@ -1529,8 +1529,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                                 zoomSpeed={1.0}
                                 mouseButtons={{
                                     LEFT: THREE.MOUSE.ROTATE,
-                                    MIDDLE: THREE.MOUSE.DOLLY,
-                                    RIGHT: THREE.MOUSE.PAN,
+                                    MIDDLE: THREE.MOUSE.PAN,
+                                    RIGHT: THREE.MOUSE.DOLLY,
                                 }}
                                 touches={{
                                     ONE: THREE.TOUCH.ROTATE,

@@ -174,7 +174,12 @@ describe('applyDataUpdate', () => {
     it('adopts new details for sequences that are not on the active stack', () => {
         const plr = runningState();
         const editedC: SequenceRecord = { ...seqC, work: { ...seqC.work, length: 42 } };
-        const seqD: SequenceRecord = { id: 'D', instanceId: 'D', work: { length: 7, artist: 'd', title: 'D' }, files: { fseq: 'd.fseq' } };
+        const seqD: SequenceRecord = {
+            id: 'D',
+            instanceId: 'D',
+            work: { length: 7, artist: 'd', title: 'D' },
+            files: { fseq: 'd.fseq' },
+        };
 
         apply(plr, [seqA, seqB, editedC, seqD], [plAB], [sched]);
 

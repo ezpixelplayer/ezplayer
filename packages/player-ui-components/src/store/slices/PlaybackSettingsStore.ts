@@ -16,6 +16,7 @@ export interface PlaybackSettingsState {
 }
 
 const DEFAULT_JUKEBOX_EXCLUDED_TAGS = ['nojukebox'];
+const DEFAULT_TEST_SEQUENCE_TAGS = ['test'];
 
 function normalizeTagList(tags: unknown, fallback: string[] = []): string[] {
     if (!Array.isArray(tags)) return fallback;
@@ -50,6 +51,7 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
             includedTags: includedNormalized,
         },
+        testSequenceTags: normalizeTagList(input.testSequenceTags, DEFAULT_TEST_SEQUENCE_TAGS),
     };
 }
 
@@ -73,6 +75,7 @@ export const initialPlaybackSettingsState: PlaybackSettingsState = {
             excludedTags: DEFAULT_JUKEBOX_EXCLUDED_TAGS,
             includedTags: [],
         },
+        testSequenceTags: DEFAULT_TEST_SEQUENCE_TAGS,
     }),
 };
 
@@ -110,6 +113,10 @@ const playbackSettingsSlice = createSlice({
             state.settings.jukebox.includedTags = normalizeTagList(action.payload, []);
         },
 
+        setTestSequenceTags(state, action: PayloadAction<string[]>) {
+            state.settings.testSequenceTags = normalizeTagList(action.payload, []);
+        },
+
         // Viewer control
         setViewerControlEnabled(state, action: PayloadAction<boolean>) {
             state.settings.viewerControl.enabled = action.payload;
@@ -131,6 +138,33 @@ const playbackSettingsSlice = createSlice({
             state.settings.viewerControl.schedule = (state.settings.viewerControl.schedule ?? []).filter(
                 (e) => e.id !== action.payload,
             );
+        },
+
+        setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
+            state.settings.sendIdleBlackFrames = action.payload;
+        },
+
+        // Sync output (FPP MultiSync master; future timecode strategies join here)
+        setMultisyncEnabled(state, action: PayloadAction<boolean>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).enabled = action.payload;
+        },
+        setMultisyncRemotes(state, action: PayloadAction<string[]>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).remotes = action.payload;
+        },
+        setMultisyncPort(state, action: PayloadAction<number | undefined>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).port = action.payload;
+        },
+        setMultisyncMulticastAddress(state, action: PayloadAction<string | undefined>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).multicastAddress = action.payload || undefined;
+        },
+
+        // Advanced diagnostic overrides
+        setAdvancedDdpPort(state, action: PayloadAction<number | undefined>) {
+            (state.settings.advanced ??= {}).ddpPort = action.payload;
         },
 
         // Volume control
@@ -167,11 +201,18 @@ export const {
     setBackgroundSequence,
     setJukeboxExcludedTags,
     setJukeboxIncludedTags,
+    setTestSequenceTags,
     setViewerControlEnabled,
     setViewerControlType,
     setRemoteFalconToken,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
+    setSendIdleBlackFrames,
+    setMultisyncEnabled,
+    setMultisyncRemotes,
+    setMultisyncPort,
+    setMultisyncMulticastAddress,
+    setAdvancedDdpPort,
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,

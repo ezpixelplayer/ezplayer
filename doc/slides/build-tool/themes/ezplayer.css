@@ -1,0 +1,60 @@
+/* @theme ezplayer */
+/* Minimal EZPlayer deck theme. Extends marp's built-in "default". */
+
+@import 'default';
+
+:root {
+    --ezp-bg: #0f1419;
+    --ezp-fg: #e6edf3;
+    --ezp-accent: #36c5f0;
+    --ezp-muted: #8b98a5;
+}
+
+section {
+    background: var(--ezp-bg);
+    color: var(--ezp-fg);
+    font-family:
+        'Segoe UI',
+        system-ui,
+        -apple-system,
+        sans-serif;
+    padding: 56px 64px;
+}
+
+section h1,
+section h2 {
+    color: var(--ezp-accent);
+}
+
+section a {
+    color: var(--ezp-accent);
+}
+
+section code {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+}
+
+section img {
+    background: transparent;
+}
+
+/* Title slides: add `<!-- _class: title -->` at the top of a slide. */
+section.title {
+    justify-content: center;
+    text-align: center;
+}
+
+section.title h1 {
+    font-size: 2.4em;
+    margin-bottom: 0.1em;
+}
+
+section.title .subtitle {
+    color: var(--ezp-muted);
+    font-size: 1.1em;
+}
+
+section footer {
+    color: var(--ezp-muted);
+}

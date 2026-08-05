@@ -11,6 +11,7 @@ import { AboutDialog } from './AboutDialog';
 import { LicenseDialog, LicenseEntry } from './LicenseDialog';
 import { TermsDialog } from './TermsDialog';
 import Licenses from '../../constants/licenses.json';
+import { useUiVersion } from '../../util/UiVersionProvider';
 
 const selectAuth = (s: RootState) => s.auth;
 const selectCloudStatus = (s: RootState) => s.cloudStatus;
@@ -27,6 +28,7 @@ export const LegalFooter: React.FC = () => {
     const [termsOpen, setTermsOpen] = useState(false);
 
     const versionInfo = useSelector(selectVersionInfo);
+    const uiVersion = useUiVersion();
     const licenseEntries: LicenseEntry[] = useMemo(() => Licenses, []);
 
     return (
@@ -74,6 +76,7 @@ export const LegalFooter: React.FC = () => {
                 onClose={() => setAboutOpen(false)}
                 playerVersion={versionInfo.playerVersion}
                 cloudVersion={versionInfo.cloudVersion}
+                uiVersion={uiVersion}
             />
             <LicenseDialog open={licenseOpen} onClose={() => setLicenseOpen(false)} licenses={licenseEntries} />
             <TermsDialog open={termsOpen} onClose={() => setTermsOpen(false)} />

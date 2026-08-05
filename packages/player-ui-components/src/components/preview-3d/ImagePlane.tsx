@@ -117,7 +117,7 @@ function parseHexColor(hex: string | undefined): [number, number, number] {
  * white-as-alpha into the canvas before handing it to THREE.
  *
  * Takes an `AssetResolver` so the same hook serves textures from local Koa
- * (`/api/show-file?path=…`) or from a layout-zip blob URL (cloud-only / FSEQ-only).
+ * (`/api/ezp/show-file?path=…`) or from a layout-zip blob URL (cloud-only / FSEQ-only).
  */
 function useImageTexture(imageFile: string | undefined, resolver: AssetResolver, whiteAsAlpha: boolean) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);

@@ -1,0 +1,10 @@
+# Developer talk. Public fragments here; a private repo's dev-talk.yaml
+# would reuse these same shared/dev fragments and splice in private/about-me.md.
+name: dev-talk
+title: EZPlayer — Developer Overview
+theme: ezplayer
+fragments:
+    - dev/title-dev.md
+    - shared/arch-overview.md
+    - dev/koa-apis.md
+    - shared/contact.md

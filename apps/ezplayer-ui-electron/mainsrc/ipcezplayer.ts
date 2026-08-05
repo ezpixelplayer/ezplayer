@@ -1,7 +1,9 @@
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
+import { ezpVersions } from '../versions.js';
 
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 import { BrowserWindow, ipcMain } from 'electron';
 
@@ -34,7 +36,6 @@ import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
     getCurrentCloudStatus,
-    getCurrentCStatus,
     fetchLayoutNow,
     manifestPollNow,
     onCloudPlaylists,
@@ -59,6 +60,7 @@ import type {
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
+    UIConnectSnapshot,
     FullPlayerState,
     PlaybackSettings,
     PlaylistRecord,
@@ -81,6 +83,14 @@ import {
     pickCloudShowFolder,
 } from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
+import {
+    dispatchControllerCommand,
+    getControllerOpsState,
+    loadControllerRecords,
+    loadNetworkPolicies,
+    setKnownControllers,
+} from './controller-ops.js';
+import type { ControllerCommand } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
     updateAudioBuffer,
@@ -111,9 +121,7 @@ function applyStatusSummary() {
         viewer_control_mode: s?.viewerControl?.type,
     };
     const files = curStatus.content?.files;
-    const nNeeding = files
-        ? Object.values(files).filter((f) => f.status !== 'installed').length
-        : undefined;
+    const nNeeding = files ? Object.values(files).filter((f) => f.status !== 'installed').length : undefined;
     curStatus.content = {
         ...(curStatus.content ?? {}),
         n_sequences: curSequences.filter((x) => !x.deleted && x.render_enabled !== false).length,
@@ -428,6 +436,43 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     return filtered;
 }
 
+/** Sequence upsert shared by the renderer IPC and the server-worker RPC.
+ *  API clients may send show-relative file names and omit ids. */
+export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
+    const showFolder = getCurrentShowFolder();
+    const uppl = recs.map((r) => {
+        return { ...r, updatedAt: Date.now() };
+    });
+    for (const ups of uppl) {
+        if (!ups.id) ups.id = crypto.randomUUID();
+        if (!ups.instanceId) ups.instanceId = crypto.randomUUID();
+        if (!ups.work) {
+            const base = ups.files?.fseq ? path.basename(ups.files.fseq, path.extname(ups.files.fseq)) : '';
+            ups.work = { title: base, artist: '', length: 0 };
+        }
+        if (ups.files && showFolder) {
+            for (const key of ['fseq', 'audio', 'thumb'] as const) {
+                const p = ups.files[key];
+                if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
+            }
+        }
+        if (!ups?.work?.length && ups.files?.fseq) {
+            // best-effort: a corrupt fseq shouldn't fail the whole upsert
+            try {
+                const fseq = new FSEQReaderAsync(ups.files.fseq);
+                await fseq.open();
+                const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
+                const nframes = fseq.header!.frames;
+                ups.work.length = (frameTime * nframes) / 1000;
+                await fseq.close();
+            } catch (e) {
+                console.warn(`[sequences] could not read FSEQ header for ${ups.files.fseq}:`, e);
+            }
+        }
+    }
+    return await commitSequenceUpdates(uppl);
+}
+
 // Passes our current info to the player
 //  (We may not always do this, if we do not wish to disrupt the playback)
 function scheduleUpdated(forceRestart?: boolean) {
@@ -465,6 +510,8 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // into the subdir and the loaders read the migrated copies on this same tick.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
+    await loadControllerRecords(showFolder);
+    await loadNetworkPolicies(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
@@ -491,6 +538,8 @@ export async function loadShowFolder(forceRestart?: boolean) {
     updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
     broadcastToWebSocket('cloudConfig', cloudConfig);
     broadcastToWebSocket('cloudStatus', getCurrentCloudStatus());
+    // Web/cloud clients have no IPC getVersions — the snapshot carries it.
+    broadcastToWebSocket('versions', ezpVersions);
 
     updateWindow?.webContents?.send('update:showFolder', showFolder);
     updateWindow?.webContents?.send(
@@ -604,6 +653,10 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
                 intervals: cmd.intervals,
             });
             break;
+        case 'controllerCommand':
+            // Fire-and-forget: results reach clients via the broadcast state.
+            void dispatchControllerCommand(cmd.command, 'cloud');
+            break;
         default: {
             const _exhaustive: never = cmd;
             console.warn('[cloud-command] unknown verb', _exhaustive);
@@ -700,8 +753,21 @@ export async function registerContentHandlers(
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
-    ipcMain.handle('ipcUIConnect', async (_event): Promise<void> => {
+    ipcMain.handle('ipcUIConnect', async (_event): Promise<UIConnectSnapshot> => {
         await loadShowFolder();
+        // Return the initial state directly — the invoke reply cannot be lost,
+        // unlike update:* pushes racing the renderer's listener registration.
+        return {
+            showFolder: getCurrentShowFolder() ?? undefined,
+            sequences: (curSequences ?? []).filter((s) => !s.deleted),
+            playlists: (curPlaylists ?? []).filter((p) => !p.deleted),
+            schedule: (curSchedule ?? []).filter((e) => !e.deleted),
+            combinedStatus: curStatus,
+            playbackSettings: getSettingsCache() ?? undefined,
+            cloudConfig: getCloudConfigCache(),
+            cloudStatus: getCurrentCloudStatus(),
+            controllerops: getControllerOpsState(),
+        };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
         return Promise.resolve();
@@ -757,22 +823,8 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcPutCloudSequences', async (_event, recs: SequenceRecord[]): Promise<SequenceRecord[]> => {
         // TODO Cloud sync if that makes sense...
-        // TODO calculate any times if needed
         // TODO calculate any effect on the schedule
-        const uppl = recs.map((r) => {
-            return { ...r, updatedAt: Date.now() };
-        });
-        for (const ups of uppl) {
-            if (!ups?.work?.length && ups.files?.fseq) {
-                const fseq = new FSEQReaderAsync(ups.files.fseq);
-                await fseq.open();
-                const frameTime = fseq.header!.msperframe; // 50 -> 20FPS, 25 -> 40 FPS, 20 -> 50 FPS, 10 -> 100 FPS
-                const nframes = fseq.header!.frames;
-                ups.work.length = (frameTime * nframes) / 1000;
-                await fseq.close();
-            }
-        }
-        return await commitSequenceUpdates(uppl);
+        return await putSequencesWithDurations(recs);
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
@@ -801,7 +853,7 @@ export async function registerContentHandlers(
         return await loadStatusAPI();
     });
 
-    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<Boolean> => {
+    ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
             await loadShowFolder(true);
             return true;
@@ -816,7 +868,7 @@ export async function registerContentHandlers(
         } as PlayerCommand);
         return true;
     });
-    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<Boolean> => {
+    ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<boolean> => {
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
         playWorker?.postMessage({
@@ -842,6 +894,9 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
+    });
+    ipcMain.handle('ipcControllerCommand', async (_event, command: ControllerCommand) => {
+        await dispatchControllerCommand(command, 'lan');
     });
 
     onCloudStatus((status) => {
@@ -988,16 +1043,15 @@ export async function registerContentHandlers(
                 break;
             }
             case 'pstatus': {
-                // Merge so any second writer's fields on curStatus.player survive
-                // playback's pushes.
-                const merged = { ...(curStatus.player ?? {}), ...msg.status };
-                curStatus = { ...curStatus, player: merged, player_updated: Date.now() };
-                mainWindow?.webContents.send('playback:pstatus', merged);
-                broadcastToWebSocket('pStatus', merged);
+                // The worker's pstatus is a complete snapshot of playback state.
+                curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
+                mainWindow?.webContents.send('playback:pstatus', msg.status);
+                broadcastToWebSocket('pStatus', msg.status);
                 break;
             }
             case 'modelCoordinates': {
                 pushModelCoordinates(msg.coords3D, msg.coords2D, msg.viewObjects, msg.layoutSettings, msg.movingHeads);
+                if (msg.controllers) setKnownControllers(msg.controllers);
                 break;
             }
             case 'rpc': {

@@ -64,7 +64,7 @@ export function useFrameBuffer(options: UseFrameBufferOptions): UseFrameBufferRe
             });
         }
 
-        const endpoint = compressed ? '/api/frames-zstd' : '/api/frames';
+        const endpoint = compressed ? '/api/ezp/frames-zstd' : '/api/ezp/frames';
 
         // Poll loop - waits for previous request to complete before starting next
         const runPollLoop = async () => {
