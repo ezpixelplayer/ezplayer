@@ -4,6 +4,7 @@ import type {
     ScheduledPlaylist,
     CombinedPlayerStatus,
     CloudCommand,
+    ControllerCommand,
     EZPlayerCommand,
     PlaybackSettings,
 } from '@ezplayer/ezplayer-core';
@@ -120,6 +121,10 @@ export interface DataStorageAPI {
     /** Single umbrella for player-cloud-worker commands. New verbs add a `CloudCommand`
      *  union variant + a case in main's `dispatchCloudCommand`; no per-verb plumbing. */
     issueCloudCommand: (cmd: CloudCommand) => Promise<void>;
+
+    /** Single umbrella for controller ops (discovery / status / action). Fire and
+     *  forget: progress + results arrive via the pushed `controllerops` state. */
+    issueControllerCommand: (command: ControllerCommand) => Promise<void>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;

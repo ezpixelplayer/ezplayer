@@ -7,6 +7,8 @@ import Koa from 'koa';
 import getRawBody from 'raw-body';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createServer } from 'http';
+import httpMod from 'http';
+import httpsMod from 'https';
 import * as path from 'path';
 import * as fs from 'fs';
 import fsp from 'fs/promises';
@@ -15,6 +17,7 @@ import { send } from '@koa/send';
 import serve from 'koa-static';
 import { fileURLToPath } from 'url';
 import type {
+    ControllerOpsState,
     EZPlayerCommand,
     FullPlayerState,
     PlaybackSettings,
@@ -44,7 +47,15 @@ import {
     type FileApiDeps,
 } from './file-api.js';
 import { registerFppCompatRoutes } from './fppcompat/fpp-api.js';
-import { createProxyMiddleware, attachWebSocketProxy } from './proxy-middleware.js';
+import {
+    createProxyMiddleware,
+    createProxyRefererRescue,
+    attachWebSocketProxy,
+    parseTargetUrl,
+    isLanProxyTarget,
+} from './proxy-middleware.js';
+import { registerScanApiRoutes } from './scan-api.js';
+import { registerControllersApiRoutes } from './controllers-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
 
@@ -127,10 +138,16 @@ function getSequenceThumbnailLocal(sequenceId: string): string | undefined {
 class MainThreadRPC {
     private pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 
+    // Most RPCs are quick (30s). A network scan runs the discovery engine to its
+    // own cap (~120s), so it gets a longer leash.
+    private static readonly TIMEOUT_MS: Partial<Record<keyof ServerWorkerRPCAPI, number>> = {
+        controllerCommand: 130_000,
+    };
+
     call<K extends keyof ServerWorkerRPCAPI>(
         method: K,
         ...args: Parameters<ServerWorkerRPCAPI[K]>
-    ): Promise<ReturnType<ServerWorkerRPCAPI[K]>> {
+    ): Promise<Awaited<ReturnType<ServerWorkerRPCAPI[K]>>> {
         return new Promise((resolve, reject) => {
             const id = `${Date.now()}-${Math.random()}`;
             // Store resolve with proper type casting
@@ -148,13 +165,13 @@ class MainThreadRPC {
 
             parentPort!.postMessage(message);
 
-            // Timeout after 30 seconds
+            const timeoutMs = MainThreadRPC.TIMEOUT_MS[method] ?? 30000;
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
                     reject(new Error(`RPC timeout for ${method}`));
                 }
-            }, 30000);
+            }, timeoutMs);
         });
     }
 
@@ -215,6 +232,12 @@ wsBroadcaster.setClientMessageHandler((msg) => {
     } else if (msg.type === 'updateSchedule') {
         void rpc.call('updateScheduleHandler', msg.data).catch((err) => {
             console.error('[server-worker] updateSchedule failed:', err);
+        });
+    } else if (msg.type === 'controllerCommand') {
+        // LAN WS trigger for a controller op. Fire-and-forget: results flow
+        // back via the broadcast `controllerops` state.
+        void rpc.call('controllerCommand', msg.command, 'lan').catch((err) => {
+            console.error('[server-worker] controllerCommand failed:', err);
         });
     }
 });
@@ -417,14 +440,73 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     const ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
     cloudProxyBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer };
 
+    // Device WebSocket relays for this bridge (cloud wsProxy* envelopes ↔ a
+    // real WS to the device). Keyed by the cloud-assigned wsId.
+    const deviceWs = new Map<string, WebSocket>();
+    const MAX_DEVICE_WS = 8;
+    const wsSend = (obj: Record<string, unknown>) => {
+        try {
+            ws.send(JSON.stringify(obj));
+        } catch {
+            /* bridge gone; close handler cleans up */
+        }
+    };
+    const closeDeviceWs = (wsId: string, code?: number, reason?: string) => {
+        const t = deviceWs.get(wsId);
+        if (!t) return;
+        deviceWs.delete(wsId);
+        try {
+            if (code === 1000 || (code !== undefined && code >= 3000 && code <= 4999)) t.close(code, reason);
+            else t.close();
+        } catch {
+            /* already closing */
+        }
+    };
+    const openDeviceWs = (wsId: string, pathStr: string) => {
+        const fail = (reason: string) => wsSend({ type: 'wsProxyClose', wsId, reason });
+        if (deviceWs.size >= MAX_DEVICE_WS) return fail('too many device sockets');
+        if (!pathStr.startsWith('/proxy/')) return fail('not a device path');
+        const target = parseTargetUrl(pathStr);
+        if (!target) return fail('bad target');
+        if (!isLanProxyTarget(target.hostname)) return fail('target not on a LAN');
+        if (!proxyTargetAllowed(target.hostname)) return fail('network disallowed by policy');
+        const wsProto = target.protocol === 'https:' ? 'wss:' : 'ws:';
+        let t: WebSocket;
+        try {
+            t = new WebSocket(`${wsProto}//${target.host}${target.pathname}${target.search}`, {
+                rejectUnauthorized: false,
+                handshakeTimeout: 15_000,
+            });
+        } catch (e) {
+            return fail(`dial failed: ${(e as Error).message}`);
+        }
+        deviceWs.set(wsId, t);
+        t.on('open', () => wsSend({ type: 'wsProxyOpened', wsId }));
+        t.on('message', (data, isBinary) => {
+            const buf = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer);
+            wsSend({ type: 'wsProxyData', wsId, dataBase64: buf.toString('base64'), binary: isBinary });
+        });
+        t.on('close', (code, reason) => {
+            if (!deviceWs.delete(wsId)) return;
+            wsSend({ type: 'wsProxyClose', wsId, code, reason: reason.toString() });
+        });
+        t.on('error', () => {
+            if (deviceWs.delete(wsId)) wsSend({ type: 'wsProxyClose', wsId, reason: 'device socket error' });
+            try {
+                t.close();
+            } catch {
+                /* ignore */
+            }
+        });
+    };
+
     ws.on('open', () => {
         if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
         console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}…`);
     });
     ws.on('message', (raw) => {
-        // Best-effort: parse, dispatch, reply. Errors at any layer turn into
-        // a 500 response with the same reqId so the cloud's pending-promise
-        // resolves and the browser sees a clear failure instead of timing out.
+        // Errors at any layer become a 500 with the same reqId so the cloud's
+        // pending promise resolves instead of timing out.
         let reqId: string | undefined;
         try {
             const msg = JSON.parse(raw.toString()) as {
@@ -435,7 +517,27 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
                 method?: string;
                 headers?: Record<string, string>;
                 bodyBase64?: string;
+                wsId?: string;
+                dataBase64?: string;
+                binary?: boolean;
+                code?: number;
+                reason?: string;
             };
+            if (msg?.type === 'wsProxyOpen' && typeof msg.wsId === 'string') {
+                openDeviceWs(msg.wsId, msg.path ?? '');
+                return;
+            }
+            if (msg?.type === 'wsProxyData' && typeof msg.wsId === 'string') {
+                const t = deviceWs.get(msg.wsId);
+                if (t && t.readyState === WebSocket.OPEN && typeof msg.dataBase64 === 'string') {
+                    t.send(Buffer.from(msg.dataBase64, 'base64'), { binary: !!msg.binary });
+                }
+                return;
+            }
+            if (msg?.type === 'wsProxyClose' && typeof msg.wsId === 'string') {
+                closeDeviceWs(msg.wsId, msg.code, msg.reason);
+                return;
+            }
             if (msg?.type !== 'httpProxyRequest' || typeof msg.reqId !== 'string') return;
             reqId = msg.reqId;
             void dispatchHttpProxy(msg.path ?? '', msg.query, {
@@ -460,6 +562,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         console.error('[server-worker] cloud proxy bridge error:', err);
     });
     ws.on('close', () => {
+        for (const wsId of [...deviceWs.keys()]) closeDeviceWs(wsId);
         if (cloudProxyBridge?.ws === ws) {
             console.log('[server-worker] cloud proxy bridge socket closed');
             clearTimeout(cloudProxyBridge.ttlTimer);
@@ -673,8 +776,7 @@ function proxyJson(res: { status: number; body: unknown }): {
 }
 
 /** Cloud-side writes: chunked file upload plus the EZP-native sequence
- *  endpoints. Same validation cores as the Koa routes in file-api.ts; the
- *  trust shape matches the WS write verbs (possession of the player token). */
+ *  endpoints. Same validation cores as the Koa routes in file-api.ts. */
 async function dispatchProxyWrite(
     pathStr: string,
     method: string,
@@ -715,6 +817,117 @@ async function dispatchProxyWrite(
     return { status: 404 };
 }
 
+/** Response-size cap for device pages bridged over the WS proxy. Controller
+ *  web UIs are small; anything bigger is a misdirected request. */
+const DEVICE_PROXY_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/** Per-network policy check for proxy targets: an IP inside a CIDR whose
+ *  persisted policy says `allow: false` is refused. Policies ride the broadcast
+ *  `controllerops` state; non-IP hostnames (`.local`) pass — policy is CIDR-based. */
+function proxyTargetAllowed(hostname: string): boolean {
+    const m = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!m) return true;
+    const ops = wsBroadcaster.get('controllerops') as
+        | { networkPolicies?: { cidr: string; allow?: boolean }[] }
+        | undefined;
+    const policies = ops?.networkPolicies;
+    if (!policies?.length) return true;
+    const ipNum = hostname.split('.').reduce((a, o) => ((a << 8) + (Number(o) & 0xff)) >>> 0, 0);
+    let verdict = true;
+    let bestBits = -1;
+    for (const p of policies) {
+        const pm = p.cidr.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+        if (!pm) continue;
+        const bits = Number(pm[2]);
+        const net = pm[1].split('.').reduce((a, o) => ((a << 8) + (Number(o) & 0xff)) >>> 0, 0);
+        const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+        if ((ipNum & mask) === (net & mask) && bits > bestBits) {
+            bestBits = bits;
+            verdict = p.allow !== false;
+        }
+    }
+    return verdict;
+}
+
+/** Bridge a `/proxy/<target>/…` request to a LAN device — the cloud analogue of
+ *  the Koa `createProxyMiddleware` route. Targets are limited to LAN addresses
+ *  (isLanProxyTarget) so the player token cannot open-proxy the internet; nested
+ *  FPP hops (`/proxy/<fpp>/proxy/<ip>/…`) terminate one hop at a time. */
+async function dispatchDeviceProxy(
+    pathStr: string,
+    query: Record<string, string> | undefined,
+    req?: { method?: string; headers?: Record<string, string>; bodyBase64?: string },
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    const qs = query && Object.keys(query).length > 0 ? `?${new URLSearchParams(query).toString()}` : '';
+    const target = parseTargetUrl(pathStr + qs);
+    if (!target) return { status: 400 };
+    if (!isLanProxyTarget(target.hostname)) return { status: 403 };
+    if (!proxyTargetAllowed(target.hostname)) return { status: 403 };
+
+    const method = (req?.method ?? 'GET').toUpperCase();
+    const body = req?.bodyBase64 ? Buffer.from(req.bodyBase64, 'base64') : undefined;
+    if (body && body.length > PROXY_MAX_BODY_BYTES) return { status: 413 };
+
+    const transport = target.protocol === 'https:' ? httpsMod : httpMod;
+    const outHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req?.headers ?? {})) {
+        const lower = k.toLowerCase();
+        if (lower === 'host' || lower === 'connection' || lower === 'transfer-encoding' || lower === 'upgrade') continue;
+        outHeaders[k] = v;
+    }
+    outHeaders['host'] = target.host;
+
+    return new Promise((resolve) => {
+        const proxyReq = transport.request(
+            {
+                hostname: target.hostname,
+                port: target.port || (target.protocol === 'https:' ? 443 : 80),
+                path: target.pathname + target.search,
+                method,
+                headers: outHeaders,
+                timeout: 30_000,
+                rejectUnauthorized: false,
+            },
+            (proxyRes) => {
+                const chunks: Buffer[] = [];
+                let size = 0;
+                let aborted = false;
+                proxyRes.on('data', (c: Buffer) => {
+                    size += c.length;
+                    if (size > DEVICE_PROXY_MAX_RESPONSE_BYTES) {
+                        aborted = true;
+                        proxyReq.destroy();
+                        resolve({ status: 502 });
+                        return;
+                    }
+                    chunks.push(c);
+                });
+                proxyRes.on('end', () => {
+                    if (aborted) return;
+                    const headers: Record<string, string> = {};
+                    for (const [k, v] of Object.entries(proxyRes.headers)) {
+                        if (v === undefined) continue;
+                        const lower = k.toLowerCase();
+                        if (lower === 'connection' || lower === 'transfer-encoding' || lower === 'keep-alive') continue;
+                        headers[k] = Array.isArray(v) ? v.join(', ') : v;
+                    }
+                    resolve({ status: proxyRes.statusCode ?? 502, headers, body: Buffer.concat(chunks) });
+                });
+                proxyRes.on('error', () => {
+                    if (!aborted) resolve({ status: 502 });
+                });
+            },
+        );
+        proxyReq.on('timeout', () => {
+            proxyReq.destroy();
+            resolve({ status: 504 });
+        });
+        proxyReq.on('error', () => resolve({ status: 502 }));
+        if (body) proxyReq.write(body);
+        proxyReq.end();
+    });
+}
+
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
 async function dispatchHttpProxy(
     pathStr: string,
@@ -722,6 +935,9 @@ async function dispatchHttpProxy(
     req?: { method?: string; headers?: Record<string, string>; bodyBase64?: string },
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
     const method = (req?.method ?? 'GET').toUpperCase();
+    // Device web-UI bridge — must run before the method split so device POSTs
+    // (login forms, config writes) work too.
+    if (pathStr.startsWith('/proxy/')) return dispatchDeviceProxy(pathStr, query, req);
     if (method !== 'GET') return dispatchProxyWrite(pathStr, method, req);
 
     // GET /api/files/:dirName — show-folder name listing for the cloud file
@@ -967,7 +1183,8 @@ async function startServer(config: ServerWorkerData) {
     const webApp = new Koa();
 
     // Proxy middleware must be before bodyParser so it can stream raw request bodies
-    webApp.use(createProxyMiddleware());
+    webApp.use(createProxyRefererRescue());
+    webApp.use(createProxyMiddleware(proxyTargetAllowed));
 
     // File-transfer routes stream raw bodies, so they also sit before jsonBody().
     // Deliberately NOT mounted on the kiosk app: the public jukebox port gets no
@@ -1001,6 +1218,7 @@ async function startServer(config: ServerWorkerData) {
         updatePlaylists: async (recs) => await rpc.call('updatePlaylistsHandler', recs),
         updateSchedule: async (recs) => await rpc.call('updateScheduleHandler', recs),
         putSequences: async (recs) => await rpc.call('putSequences', recs),
+        getControllerOps: () => wsBroadcaster.get('controllerops') as ControllerOpsState | undefined,
         appVersion: config.appVersion ?? '0.0.0',
     });
 
@@ -1486,6 +1704,32 @@ async function startServer(config: ServerWorkerData) {
     webApp.use(router.routes());
     webApp.use(router.allowedMethods());
 
+    // Scan + controllers APIs (and FPP-compat GET /api/proxies) — their OWN
+    // router, mounted on the web app ONLY, never the kiosk: scans probe the
+    // LAN, controller commands mutate state/devices, and /api/proxies pairs
+    // with the web-only /proxy/ bridge.
+    const scanRouter = new Router();
+    const controllerCommandRpc = (command: Parameters<ServerWorkerRPCAPI['controllerCommand']>[0], origin: Parameters<ServerWorkerRPCAPI['controllerCommand']>[1]) =>
+        rpc.call('controllerCommand', command, origin);
+    registerScanApiRoutes(scanRouter, {
+        controllerCommand: controllerCommandRpc,
+    });
+    registerControllersApiRoutes(scanRouter, {
+        controllerCommand: controllerCommandRpc,
+        // State reads come from the worker's cached `controllerops` broadcast.
+        getControllerOpsState: () =>
+            (wsBroadcaster.get('controllerops') as ControllerOpsState | undefined) ?? {
+                interfaces: [],
+                devices: {},
+                operations: {},
+                known: [],
+                networkPolicies: [],
+            },
+        isIpAllowed: proxyTargetAllowed,
+    });
+    webApp.use(scanRouter.routes());
+    webApp.use(scanRouter.allowedMethods());
+
     // ----------------------------
     // Local mode uses /assets and optional frontend dev-server proxy
     // ----------------------------
@@ -1611,13 +1855,23 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // Attach WebSocket proxy for /proxy/ paths (before main WSS)
-    attachWebSocketProxy(httpServer);
+    attachWebSocketProxy(httpServer, proxyTargetAllowed);
+
+    // Route `/ws` upgrades ourselves: ws's `{ server, path }` option 400s
+    // every non-`/ws` upgrade, killing the `/proxy/<ip>/…` WebSockets that
+    // attachWebSocketProxy handles. Ignoring non-`/ws` upgrades here lets
+    // both upgrade handlers coexist.
+    const attachWsPath = (server: ReturnType<typeof createServer>, target: WebSocketServer): void => {
+        server.on('upgrade', (req, socket, head) => {
+            const pathname = (req.url ?? '').split('?')[0];
+            if (pathname !== '/ws') return; // leave for attachWebSocketProxy / others
+            target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
+        });
+    };
 
     // Create WebSocket server
-    const wss = new WebSocketServer({
-        server: httpServer,
-        path: '/ws',
-    });
+    const wss = new WebSocketServer({ noServer: true });
+    attachWsPath(httpServer, wss);
 
     // Initialize WebSocket broadcaster with the WebSocket server
     wsBroadcaster.attach(wss);
@@ -1630,8 +1884,9 @@ async function startServer(config: ServerWorkerData) {
 
         const kioskApp = new Koa();
 
-        // Proxy middleware
-        kioskApp.use(createProxyMiddleware());
+        // No proxy middleware on the kiosk: the `/proxy/<host>/…` bridge reaches
+        // arbitrary LAN/show-net hosts (controllers), which must never be exposed
+        // on the anonymous jukebox surface. Proxying is web-app-only.
 
         // Body parser
         kioskApp.use(jsonBody());
@@ -1709,14 +1964,12 @@ async function startServer(config: ServerWorkerData) {
             console.error('[server-worker] Kiosk HTTP server error:', err);
         });
 
-        // Attach WebSocket proxy for /proxy/ paths on kiosk server too
-        attachWebSocketProxy(kioskHttpServer);
+        // No `/proxy/` WebSocket bridge on the kiosk either (see above) — only the
+        // app's own `/ws` is served here.
 
         // Create WebSocket server for kiosk (shares the same broadcaster)
-        const kioskWss = new WebSocketServer({
-            server: kioskHttpServer,
-            path: '/ws',
-        });
+        const kioskWss = new WebSocketServer({ noServer: true });
+        attachWsPath(kioskHttpServer, kioskWss);
         wsBroadcaster.attach(kioskWss);
     }
 }

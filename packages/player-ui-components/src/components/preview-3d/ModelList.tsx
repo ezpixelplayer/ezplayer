@@ -17,6 +17,9 @@ import {
 import { Box } from '../box/Box';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
+import { useSelector } from 'react-redux';
+import type { KnownController } from '@ezplayer/ezplayer-core';
+import type { RootState } from '../../store/Store';
 import { Model3DData, ModelMetadata } from '../../types/model3d';
 
 export interface ModelListProps {
@@ -24,6 +27,51 @@ export interface ModelListProps {
     onModelSelect: (model: ModelMetadata | null) => void;
     searchable?: boolean;
     modelData?: Model3DData | null;
+}
+
+/** Where a model plugs in, joined from known controllers' modelIntents by name. */
+interface ModelControllerInfo {
+    controllerName: string;
+    /** 1-based physical port. */
+    port: number;
+    /** xLights smart-remote index (0/undefined = none, 1 = A, 2 = B, ...). */
+    smartRemote?: number;
+    protocol?: string;
+    /** Matches for this model name; the first wins for display, extras show as "+N". */
+    matchCount: number;
+}
+
+/** 1 → "A", 2 → "B", ... (falls back to the raw number past Z). */
+function smartRemoteLetter(sr: number): string {
+    return sr >= 1 && sr <= 26 ? String.fromCharCode(64 + sr) : String(sr);
+}
+
+/** "Port 5" / "Port 5 SR B". */
+function formatPort(info: ModelControllerInfo): string {
+    const sr = info.smartRemote && info.smartRemote > 0 ? ` SR ${smartRemoteLetter(info.smartRemote)}` : '';
+    return `Port ${info.port}${sr}`;
+}
+
+/** Build the model-name → controller/port lookup once per `known` change. */
+function buildControllerInfoMap(known: KnownController[] | undefined): Map<string, ModelControllerInfo> {
+    const map = new Map<string, ModelControllerInfo>();
+    for (const kc of known ?? []) {
+        for (const mi of kc.modelIntents ?? []) {
+            const existing = map.get(mi.name);
+            if (existing) {
+                existing.matchCount += 1;
+            } else {
+                map.set(mi.name, {
+                    controllerName: kc.name,
+                    port: mi.controllerPort,
+                    smartRemote: mi.smartRemote,
+                    protocol: mi.protocol || kc.protocol,
+                    matchCount: 1,
+                });
+            }
+        }
+    }
+    return map;
 }
 
 export const ModelList = React.memo(function ModelList({
@@ -38,28 +86,35 @@ export const ModelList = React.memo(function ModelList({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const selectedItemRef = useRef<HTMLLIElement>(null);
 
-    // Extract models from modelData
     const allModels = useMemo(() => {
         return modelData?.metadata?.models ?? [];
     }, [modelData]);
 
-    // Filter models based on search query
+    const knownControllers = useSelector((state: RootState) => state.controllerOps.known);
+    const controllerInfoByModel = useMemo(() => buildControllerInfoMap(knownControllers), [knownControllers]);
+
+    // Search matches the model name or its controller's name.
     const filteredModels = useMemo(() => {
         if (!searchQuery.trim()) {
             return allModels;
         }
 
         const query = searchQuery.toLowerCase();
-        return allModels.filter((model) => model.name.toLowerCase().includes(query));
-    }, [allModels, searchQuery]);
+        return allModels.filter((model) => {
+            if (model.name.toLowerCase().includes(query)) {
+                return true;
+            }
+            const info = controllerInfoByModel.get(model.name);
+            return info ? info.controllerName.toLowerCase().includes(query) : false;
+        });
+    }, [allModels, searchQuery, controllerInfoByModel]);
 
-    // Calculate point count for a model
     const getModelPointCount = (model: ModelMetadata): number => {
         return model?.pointCount ?? 0;
     };
 
     const handleModelClick = (model: ModelMetadata) => {
-        // Toggle selection: if the clicked model is already selected, deselect it
+        // Clicking the selected model deselects it.
         if (selectedModelNames?.has(model.name)) {
             onModelSelect(null);
         } else {
@@ -81,15 +136,12 @@ export const ModelList = React.memo(function ModelList({
             const container = scrollContainerRef.current;
             const item = selectedItemRef.current;
 
-            // Calculate scroll position to center the selected item
+            // Center the selected item in the container.
             const itemOffsetTop = item.offsetTop;
             const containerHeight = container.clientHeight;
             const itemHeight = item.clientHeight;
-
-            // Calculate the desired scroll position to center the item
             const targetScrollTop = itemOffsetTop - containerHeight / 2 + itemHeight / 2;
 
-            // Smooth scroll to the selected item
             container.scrollTo({
                 top: Math.max(0, targetScrollTop),
                 behavior: 'smooth',
@@ -99,7 +151,7 @@ export const ModelList = React.memo(function ModelList({
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-            {/* Fixed Header Section */}
+            {/* Header */}
             <Box
                 sx={{
                     p: 1.5,
@@ -132,12 +184,11 @@ export const ModelList = React.memo(function ModelList({
                     />
                 </Box>
 
-                {/* Fixed Search Bar */}
                 {searchable && (
                     <TextField
                         fullWidth
                         size="small"
-                        placeholder="Search models..."
+                        placeholder="Search models or controllers..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         InputProps={{
@@ -156,7 +207,7 @@ export const ModelList = React.memo(function ModelList({
                 )}
             </Box>
 
-            {/* SCROLLABLE Model List - ONLY THIS SECTION SCROLLS */}
+            {/* Scrollable model list */}
             <Paper
                 ref={scrollContainerRef}
                 elevation={0}
@@ -168,7 +219,6 @@ export const ModelList = React.memo(function ModelList({
                     m: 0,
                     borderRadius: 0,
                     backgroundColor: 'transparent',
-                    // Custom scrollbar styling
                     '&::-webkit-scrollbar': {
                         width: 8,
                     },
@@ -207,6 +257,7 @@ export const ModelList = React.memo(function ModelList({
                             const isSelected = selectedModelNames?.has(model.name);
                             const isHovered = hoveredModelName === model.name;
                             const pointCount = getModelPointCount(model);
+                            const controllerInfo = controllerInfoByModel.get(model.name);
 
                             return (
                                 <React.Fragment key={`${model.name}-${index}`}>
@@ -323,6 +374,73 @@ export const ModelList = React.memo(function ModelList({
                                                                 </>
                                                             )}
                                                         </Box>
+                                                        {controllerInfo ? (
+                                                            <Box
+                                                                sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 1,
+                                                                    flexWrap: 'wrap',
+                                                                }}
+                                                            >
+                                                                <Typography
+                                                                    variant="caption"
+                                                                    sx={{
+                                                                        fontWeight: 600,
+                                                                        color: theme.palette.info.main,
+                                                                    }}
+                                                                >
+                                                                    {controllerInfo.controllerName}
+                                                                </Typography>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    •
+                                                                </Typography>
+                                                                <Typography
+                                                                    variant="caption"
+                                                                    color="text.secondary"
+                                                                    sx={{ fontWeight: 500 }}
+                                                                >
+                                                                    {formatPort(controllerInfo)}
+                                                                </Typography>
+                                                                {controllerInfo.protocol && (
+                                                                    <>
+                                                                        <Typography
+                                                                            variant="caption"
+                                                                            color="text.secondary"
+                                                                        >
+                                                                            •
+                                                                        </Typography>
+                                                                        <Typography
+                                                                            variant="caption"
+                                                                            color="text.secondary"
+                                                                        >
+                                                                            {controllerInfo.protocol}
+                                                                        </Typography>
+                                                                    </>
+                                                                )}
+                                                                {controllerInfo.matchCount > 1 && (
+                                                                    <Chip
+                                                                        label={`+${controllerInfo.matchCount - 1} more`}
+                                                                        size="small"
+                                                                        sx={{
+                                                                            height: 16,
+                                                                            fontSize: '0.6rem',
+                                                                            backgroundColor:
+                                                                                theme.palette.mode === 'dark'
+                                                                                    ? theme.palette.grey[700]
+                                                                                    : theme.palette.grey[200],
+                                                                            color: theme.palette.text.secondary,
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            </Box>
+                                                        ) : (
+                                                            controllerInfoByModel.size > 0 && (
+                                                                <Typography variant="caption" color="text.disabled">
+                                                                    — no controller
+                                                                </Typography>
+                                                            )
+                                                        )}
                                                         {model.pixelStyle && (
                                                             <Chip
                                                                 label={model.pixelStyle}
@@ -359,7 +477,7 @@ export const ModelList = React.memo(function ModelList({
                 </List>
             </Paper>
 
-            {/* Fixed Footer with Stats */}
+            {/* Footer stats */}
             <Paper
                 elevation={0}
                 sx={{

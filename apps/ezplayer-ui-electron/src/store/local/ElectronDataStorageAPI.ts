@@ -2,6 +2,8 @@ import type {
     AudioDevice,
     AutoUpdateStatus,
     CloudCommand,
+    ControllerCommand,
+    ControllerOpsState,
     CloudConfig,
     CloudStatus,
     CombinedPlayerStatus,
@@ -31,6 +33,7 @@ import {
     authSliceActions,
     cloudConfigActions,
     cloudStatusActions,
+    controllerOpsActions,
 } from '@ezplayer/player-ui-components';
 
 /**
@@ -76,6 +79,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         window.electronAPI!.onCloudStatusUpdated((data: CloudStatus) => {
             if (!this.dispatch) return;
             this.dispatch(cloudStatusActions.setCloudStatus(data));
+        });
+        window.electronAPI!.onControllerOpsUpdated((data: ControllerOpsState) => {
+            if (!this.dispatch) return;
+            this.dispatch(controllerOpsActions.setControllerOps(data));
         });
         window.electronAPI!.ipcRequestAudioDevices(async () => {
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -219,6 +226,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         await window.electronAPI!.cloudCommand(cmd);
     }
 
+    async issueControllerCommand(command: ControllerCommand): Promise<void> {
+        await window.electronAPI!.controllerCommand(command);
+    }
+
     async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;
         // Retry: on a cold start the invoke can beat main's handler registration.
@@ -241,6 +252,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.playbackSettings) dispatch(hydratePlaybackSettings(snapshot.playbackSettings));
             if (snapshot.cloudConfig) dispatch(cloudConfigActions.setCloudConfig(snapshot.cloudConfig));
             if (snapshot.cloudStatus) dispatch(cloudStatusActions.setCloudStatus(snapshot.cloudStatus));
+            if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
         }
         this.audioCtx = new AudioContext();
         ++this.audioCtxIncarnation;

@@ -6,6 +6,7 @@ import { SuspenseLoader } from '@ezplayer/shared-ui-components';
 import {
     AudioSettings,
     CloudPage,
+    ControllersScreen,
     CreateEditPlaylist,
     JukeboxScreen,
     JukeboxFullScreen,
@@ -37,6 +38,7 @@ import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
+import RouterIcon from '@mui/icons-material/Router';
 import FolderIcon from '@mui/icons-material/Folder';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -158,6 +160,11 @@ const menuRoutes: MenuRoute[] = [
         path: ROUTES.CLOUD,
         element: <CloudPage title="Cloud" statusArea={getStatusArea()} />,
         sidebar: { icon: <CloudIcon />, label: 'Cloud' },
+    },
+    {
+        path: ROUTES.CONTROLLERS,
+        element: <ControllersScreen title="Controllers" statusArea={getStatusArea()} />,
+        sidebar: { icon: <RouterIcon />, label: 'Controllers' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,
