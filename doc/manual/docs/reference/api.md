@@ -377,6 +377,163 @@ API.
 
 ---
 
+### Network scan API (`/api/ezp/scan`)
+
+Discover lighting controllers on the network — the HTTP face of the same engine
+behind the [`discover` CLI verb](./cli.md#discover). Powers web/cloud discovery
+UIs, and is the endpoint one EZPlayer calls on another to federate a scan (the
+CLI's `--ezp-proxy`).
+
+These routes are served on the **main web port only, never the kiosk port** — a
+scan actively probes the LAN, so it is not exposed on the public jukebox
+surface. Only run discovery on networks you are authorized to scan.
+
+#### GET /api/ezp/scan/interfaces
+
+List this host's external IPv4 networks — the CIDRs you can feed to a discover
+request. Internal and link-local (`169.254.x.x`) addresses are excluded.
+
+```json
+{
+  "interfaces": [
+    { "name": "eth0", "address": "192.168.25.11", "network": "192.168.25.0/24" },
+    { "name": "wlan0", "address": "192.168.11.123", "network": "192.168.11.0/24" }
+  ]
+}
+```
+
+#### POST /api/ezp/scan/discover
+
+Run a discovery and return the full result. Body (all fields optional):
+
+| Field               | Type                        | Default      | Meaning                                                        |
+| ------------------- | --------------------------- | ------------ | -------------------------------------------------------------- |
+| `networks`          | `[{ "cidr": "…" }]`         | host's own   | Networks to scan. **Omit to scan this host's own networks** — which is what a federated scan wants. |
+| `depth`             | `"sweep"｜"identify"｜"full"` | `"identify"` | `sweep` = liveness (IP/MAC/OUI/protocols); `identify` = + driver-confirmed vendor/model/firmware; `full` = + per-device detail tree. |
+| `recurseFppProxies` | `boolean`                   | `false`      | Recurse one level through FPP proxies (identify/full only).    |
+
+There is intentionally **no `recurseEzpProxies`** here: a federated scan must
+not chain onward, so EZPlayer federation stays strictly one level.
+
+```bash
+# Scan two subnets, confirm models, follow FPP proxies
+curl -X POST http://player.local:3000/api/ezp/scan/discover \
+  -H 'Content-Type: application/json' \
+  -d '{"networks":[{"cidr":"192.168.1.0/24"}],"depth":"identify","recurseFppProxies":true}'
+
+# Ask a remote EZPlayer to discover on its own networks (federation)
+curl -X POST http://other-player.local:3000/api/ezp/scan/discover -d '{"depth":"full"}'
+```
+
+The response is a `DiscoveryResult`:
+
+```json
+{
+  "request": { "networks": [{ "cidr": "192.168.1.0/24" }], "depth": "identify" },
+  "devices": [
+    {
+      "ip": "192.168.1.58",
+      "source": { "via": "direct" },
+      "mac": "b8:27:eb:…", "oui": "Raspberry Pi",
+      "driverType": "FPP", "vendor": "FPP", "model": "WB1616", "firmwareVersion": "pre-7"
+    }
+  ],
+  "startedAt": "2026-06-28T15:00:00.000Z",
+  "finishedAt": "2026-06-28T15:00:12.000Z"
+}
+```
+
+Each device's `source` records provenance: `{ "via": "direct" }`,
+`{ "via": "fpp-proxy", "proxy": "<ip>" }`, or `{ "via": "ezp", "host": "<ip>" }`.
+For `depth: "full"`, devices also carry a `report` and a generic `detail` tree.
+
+#### GET /api/ezp/scan/discover
+
+Convenience form of the POST for quick checks — parameters as query string:
+`?networks=192.168.1.0/24,10.0.0.0/24&depth=full&fppProxy=1`. Same result shape.
+
+Concurrent scans are limited (currently two at once, and an identical scan of
+the same networks/depth is rejected while one is running); a request over the
+limit returns `409`. A bad `depth` or no scannable network returns `400`, and a
+network disallowed by [policy](#post-apiezpcontrollerscommand) returns `403`.
+
+---
+
+### Controller management API (`/api/ezp/controllers`)
+
+The HTTP face of the controllers screen: the reconcile state (xLights ∪
+EZPlayer records vs. the live scan) and the same command dispatcher every UI
+uses. Like the scan API, it is served on the **main web port only** — never the
+public kiosk surface.
+
+#### GET /api/ezp/controllers
+
+The full controller-ops state in one snapshot:
+
+```json
+{
+  "interfaces":      [ { "name": "Ethernet 2", "address": "…", "network": "…" } ],
+  "devices":         { "<ip>|direct": { "id": "…", "ip": "…", "driverType": "Falcon", "…": "…" } },
+  "operations":      { "op_…": { "kind": "status", "status": "done", "…": "…" } },
+  "known":           [ { "name": "Mega Tree", "address": "…", "ports": [], "…": "…" } ],
+  "networkPolicies": [ { "cidr": "192.168.1.0/24", "allow": false } ]
+}
+```
+
+`devices` is keyed by `"<ip>|<via>"` — that key is the `id` that `status`,
+`action`, and `upload` commands target.
+
+#### GET /api/ezp/controllers/:id
+
+One device by its state key (URL-encode the `|`, e.g.
+`/api/ezp/controllers/192.168.11.61%7Cdirect`) or by bare IP. `404` if unknown.
+
+#### POST /api/ezp/controllers/command
+
+The generic command endpoint — the body is one `ControllerCommand`, identical
+to what the desktop/LAN/cloud UIs issue. One endpoint covers every verb:
+
+| `cmd`               | Purpose                                                            |
+| ------------------- | ------------------------------------------------------------------ |
+| `scan`              | Discover controllers (same options as `/api/ezp/scan/discover`); returns the scan result. |
+| `status`            | Deep-read one controller: `{ "cmd": "status", "id": "<ip>\|direct", "address": "<ip>" }`. `address` lets it work with no prior scan. |
+| `action`            | Run a driver action: `{ "cmd": "action", "id": "…", "action": "reboot" }`. Action ids are driver-enumerated (see each device's `actions`). |
+| `upload`            | Push xLights config: `{ "cmd": "upload", "id": "…", "scope": "inputs"\|"strings"\|"full", "fullControl": true\|false }`. |
+| `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`. |
+| `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`. |
+| `refreshInterfaces` | Re-enumerate this host's networks.                                 |
+
+Verbs other than `scan` return `{"ok":true}` immediately; results and progress
+ride the shared `controllerops` state (WebSocket broadcast, or re-poll the GET).
+Errors map to HTTP status: unknown `cmd` or missing fields `400`, network
+disallowed by policy `403`, unknown controller id `404`, scan limit `409`,
+anything else `500`.
+
+```bash
+# Deep-read a controller that was never scanned
+curl -X POST http://player.local:3000/api/ezp/controllers/command \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"status","id":"192.168.11.61|direct","address":"192.168.11.61"}'
+
+# Upload the xLights config, resetting unspecified settings to defaults
+curl -X POST http://player.local:3000/api/ezp/controllers/command \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"upload","id":"192.168.11.61|direct","scope":"full","fullControl":true}'
+```
+
+#### GET /api/proxies (FPP-compatible)
+
+Advertises the controllers this player can proxy to, in the FPP 8+ wire shape
+`[{ "host": "<ip>", "description": "<name>" }]` — so tools that use FPP hosts
+as proxy hops (e.g. xLights) can use EZPlayer the same way, reaching each
+listed host via `http://<player>/proxy/<ip>/…`. The list is the distinct
+addresses of known controllers and directly-scanned devices, excluding this
+host's own IPs and any network whose policy disallows proxying. Served on the
+main web port only; `POST /api/proxies` is intentionally not implemented
+(`404`).
+
+---
+
 ### POST /api/ezp/sequences
 
 Register (upsert) sequences from files already in the show folder — the

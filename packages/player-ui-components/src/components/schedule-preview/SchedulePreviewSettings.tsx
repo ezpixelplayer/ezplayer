@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, TextField, Button, Grid, Typography, Collapse, IconButton, MenuItem } from '@mui/material';
 import { Box } from '../box/Box';
 import { ExpandMore, ExpandLess, PlayArrow } from '@mui/icons-material';
@@ -9,7 +9,6 @@ import { SchedulePreviewSettings as SettingsType } from '../../types/SchedulePre
 
 interface SchedulePreviewSettingsProps {
     settings: SettingsType;
-    onSettingsChange: (settings: SettingsType) => void;
     onGeneratePreview: (settings: SettingsType) => void;
     isGenerating: boolean;
     hasData: boolean;
@@ -18,7 +17,6 @@ interface SchedulePreviewSettingsProps {
 
 const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
     settings,
-    onSettingsChange,
     onGeneratePreview,
     isGenerating,
     hasData,
@@ -27,14 +25,13 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
     const [isExpanded, setIsExpanded] = useState(false);
     const [localSettings, setLocalSettings] = useState<SettingsType>(settings);
 
-    const handleInputChange = useCallback(
-        (field: keyof SettingsType, value: any) => {
-            const newSettings = { ...localSettings, [field]: value };
-            setLocalSettings(newSettings);
-            onSettingsChange(newSettings);
-        },
-        [localSettings, onSettingsChange],
-    );
+    useEffect(() => {
+        setLocalSettings(settings);
+    }, [settings]);
+
+    const handleInputChange = useCallback((field: keyof SettingsType, value: any) => {
+        setLocalSettings((prev) => ({ ...prev, [field]: value }));
+    }, []);
 
     // Helper function to get date without time for comparison
     const getDateOnly = (date: Date) => {
@@ -61,25 +58,18 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
                 const startDateOnly = getDateOnly(value);
                 const endDateOnly = getDateOnly(localSettings.endDate);
                 if (startDateOnly > endDateOnly) {
-                    const newSettings = { ...localSettings, startDate: value, endDate: value };
-                    setLocalSettings(newSettings);
-                    onSettingsChange(newSettings);
+                    setLocalSettings((prev) => ({ ...prev, startDate: value, endDate: value }));
                     return;
                 }
             }
 
             // If setting start date and there's no end date, set end date to start date
             if (field === 'startDate' && !localSettings.endDate) {
-                const newSettings = { ...localSettings, startDate: value, endDate: value };
-                setLocalSettings(newSettings);
-                onSettingsChange(newSettings);
+                setLocalSettings((prev) => ({ ...prev, startDate: value, endDate: value }));
                 return;
             }
 
-            // Create new settings with the updated field
-            const newSettings = { ...localSettings, [field]: value };
-            setLocalSettings(newSettings);
-            onSettingsChange(newSettings);
+            setLocalSettings((prev) => ({ ...prev, [field]: value }));
         }
     };
 

@@ -116,8 +116,7 @@ export class FrameSender {
         dontSleepIfDurationLessThan: number;
     }): Promise<number> {
         try {
-            if (args.frame?.frame && this.state && this.job) {
-            } else {
+            if (!(args.frame?.frame && this.state && this.job)) {
                 ++args.playbackStats.missedFramesCumulative;
             }
 

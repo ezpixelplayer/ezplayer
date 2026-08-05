@@ -1,3 +1,5 @@
+import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+
 export interface EZPlayerVersions {
     name: string;
     version: string;
@@ -518,6 +520,7 @@ export interface UIConnectSnapshot {
     playbackSettings?: PlaybackSettings;
     cloudConfig?: CloudConfig;
     cloudStatus?: CloudStatus;
+    controllerops?: ControllerOpsState;
 }
 
 export type ScheduleDays =
@@ -598,6 +601,8 @@ export interface PlaybackSettings {
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
     jukebox?: JukeboxSettings;
+    /** Tags identifying test sequences, for display in test area. */
+    testSequenceTags?: string[];
     /** Send black frames while idle/paused/stopped so lights go dark
      *  (default). Disable when another player drives the same controllers —
      *  the wire is then left untouched outside active playback, and lights
@@ -727,6 +732,9 @@ export type FullPlayerState = {
     versions?: EZPlayerVersions;
     cloudConfig?: CloudConfig;
     cloudStatus?: CloudStatus;
+    /** Shared network-controller discovery/status/action operations + known
+     *  controllers. One atomic snapshot so late-joining clients get it all. */
+    controllerops?: ControllerOpsState;
 };
 
 export type PlayerWebSocketSnapshot = {
@@ -829,7 +837,10 @@ export type CloudCommand =
           mode?: 'always' | 'scheduled';
           schedule?: CloudPollScheduleEntry[];
           intervals?: { registrationMs?: number; manifestMs?: number };
-      };
+      }
+    // Cloud-initiated controller op (discovery/status/action). Same command
+    // shape as LAN, so a cloud viewer can trigger a scan on the player's networks.
+    | { type: 'controllerCommand'; command: ControllerCommand };
 
 // `playerCommand` / `settings` / `updatePlaylists` / `updateSchedule` mirror
 // the LAN-side HTTP endpoints over the WS so cloud viewers (no HTTP route
@@ -841,7 +852,10 @@ export type PlayerClientWebSocketMessage =
     | { type: 'playerCommand'; cmd: EZPlayerCommand }
     | { type: 'settings'; settings: PlaybackSettings }
     | { type: 'updatePlaylists'; data: PlaylistRecord[] }
-    | { type: 'updateSchedule'; data: ScheduledPlaylist[] };
+    | { type: 'updateSchedule'; data: ScheduledPlaylist[] }
+    // Drive controller discovery/status/actions over the LAN WS (same shape the
+    // HTTP /api/ezp endpoints and cloud commands use — one command, any transport).
+    | { type: 'controllerCommand'; command: ControllerCommand };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 

@@ -8,6 +8,7 @@ import playbackSettingsReducer from './slices/PlaybackSettingsStore';
 import authReducer from './slices/AuthStore';
 import cloudConfigReducer from './slices/CloudConfigStore';
 import cloudStatusReducer from './slices/CloudStatusStore';
+import controllerOpsReducer from './slices/ControllerOpsStore';
 
 import { DataStorageAPI } from './api/DataStorageAPI';
 import { playerSettingsAutoSaveMiddleware } from './slices/PlayerStatusMiddleware';
@@ -21,6 +22,7 @@ export const playerReducers = {
     auth: authReducer,
     cloudConfig: cloudConfigReducer,
     cloudStatus: cloudStatusReducer,
+    controllerOps: controllerOpsReducer,
 };
 
 export function createAppStore(thunkAPI: DataStorageAPI) {

@@ -472,7 +472,9 @@ function setNewShowFolder(rLock: (() => Promise<void>) | null, sf: string | null
 export async function closeShowFolder() {
     try {
         if (releaseLock) await releaseLock();
-    } catch {}
+    } catch {
+        /* best-effort unlock */
+    }
     currentShowFolder = null;
 }
 

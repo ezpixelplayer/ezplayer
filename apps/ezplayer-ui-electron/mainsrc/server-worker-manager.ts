@@ -21,6 +21,7 @@ import {
     putSequencesWithDurations,
 } from './ipcezplayer.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
+import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
 import { ezpVersions } from '../versions.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
@@ -55,6 +56,8 @@ let playWorkerRef: Worker | null = null;
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
 let kioskPortRef: number | undefined = undefined;
 let kioskPortSourceRef: string | undefined = undefined;
+// Base dist dir for resolving sibling workers (e.g. the scanner worker).
+let distDirRef: string | undefined = undefined;
 
 export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
@@ -105,6 +108,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     cloudCommand: async (cmd) => {
         dispatchCloudCommand(cmd);
     },
+    controllerCommand: async (command, origin) => {
+        return dispatchControllerCommand(command, origin);
+    },
 };
 
 /**
@@ -117,6 +123,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     getMainWindowRef = getMainWindow;
     kioskPortRef = kioskPort;
     kioskPortSourceRef = kioskPortSource;
+    distDirRef = distDir;
 
     console.log(`🌐 Starting Koa server worker on port ${port} (source: ${portSource})`);
 
@@ -135,6 +142,14 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     }
 
     serverWorker = new Worker(workerPath);
+
+    // Controller-ops state goes to both front-ends: WebSocket clients and the
+    // electron renderer. refreshInterfaces() publishes the first snapshot.
+    setControllerOpsBroadcaster((s) => {
+        broadcastToWebSocket('controllerops', s);
+        getMainWindowRef?.()?.webContents?.send('update:controllerops', s);
+    });
+    refreshInterfaces();
 
     // Handle messages from server worker
     let readyReceived = false;
@@ -227,7 +242,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
 /**
  * Initialize the server worker with configuration
  */
-function initializeServerWorker(port: number, portSource: string, mainWindow: BrowserWindow | null) {
+function initializeServerWorker(port: number, portSource: string, _mainWindow: BrowserWindow | null) {
     if (!serverWorker) return;
 
     // Determine static path for React web app

@@ -3,11 +3,22 @@
 // Windows : IcmpSendEcho2 (async with events) + WaitForMultipleObjects
 // POSIX   : non-blocking SOCK_DGRAM/IPPROTO_ICMP + poll()
 //
-// A single long-lived "ping manager" thread is created in Init() and
-// joined in Shutdown().  Incoming requests are queued via a mutex and a
-// wake signal.  Results are posted back to JS via a TypedThreadSafeFunction.
+// MULTI-TENANT: every piece of state (the ping thread, the thread-safe
+// function, the request queue, the wake handle) lives in a per-environment
+// `AddonState`, NOT in process-global statics.  N-API runs Init() once per
+// Node environment (each worker_thread is one), and worker_threads share a
+// single process address space — so process-global state would be a single
+// shared instance across every worker, and a second Init() would reassign a
+// still-joinable global std::thread (→ std::terminate) and clobber the first
+// tenant's TSFN.  Storing state per-environment and handing each JS binding
+// its own `AddonState*` (via the callback data pointer) lets any number of
+// workers each own an independent ping engine.  This is what allows the
+// discovery scanner to ICMP in-process alongside the always-on health pinger.
 //
-// No libuv thread-pool threads are consumed.  No per-ping OS threads.
+// A single long-lived "ping manager" thread is created per environment in
+// Init() and joined in Shutdown()/the env cleanup hook.  Requests are queued
+// via a mutex and a wake signal.  Results are posted back to JS via a
+// TypedThreadSafeFunction.  No libuv thread-pool threads are consumed.
 #include "napi.h"
 #include <string>
 #include <cstring>
@@ -40,25 +51,11 @@
 // Forward declarations for TSFN template
 // ---------------------------------------------------------------------------
 struct PingRequest;
+struct AddonState;
 static void CallJs(Napi::Env env, Napi::Function jsCallback,
                    void* context, PingRequest* data);
 
 using TSFN = Napi::TypedThreadSafeFunction<void, PingRequest, CallJs>;
-
-// ---------------------------------------------------------------------------
-// Module-level state
-// ---------------------------------------------------------------------------
-static TSFN tsfn;
-static std::atomic<bool> shutting_down{false};
-static std::thread ping_thread;
-static std::mutex queue_mutex;
-static std::vector<PingRequest*> ping_queue;
-
-#if defined(_WIN32)
-static HANDLE wake_event = NULL;          // auto-reset
-#else
-static int wake_pipe[2] = {-1, -1};
-#endif
 
 // ---------------------------------------------------------------------------
 // Per-ping request (allocated on JS thread, freed in CallJs or on abort)
@@ -73,6 +70,22 @@ struct PingRequest {
 
     PingRequest(Napi::Env env, const std::string& h, int t)
         : deferred(Napi::Promise::Deferred::New(env)), host(h), timeout_ms(t) {}
+};
+
+// ---------------------------------------------------------------------------
+// Per-environment state — one ping engine per Node environment (worker).
+// ---------------------------------------------------------------------------
+struct AddonState {
+    TSFN tsfn;
+    std::atomic<bool> shutting_down{false};
+    std::thread ping_thread;
+    std::mutex queue_mutex;
+    std::vector<PingRequest*> ping_queue;
+#if defined(_WIN32)
+    HANDLE wake_event = NULL;          // auto-reset
+#else
+    int wake_pipe[2] = {-1, -1};
+#endif
 };
 
 // ---------------------------------------------------------------------------
@@ -110,18 +123,18 @@ static bool resolve_host(const std::string& host, struct in_addr& out) {
     return true;
 }
 
-static void post_result(PingRequest* req) {
-    if (tsfn.NonBlockingCall(req) != napi_ok) {
+static void post_result(AddonState* st, PingRequest* req) {
+    if (st->tsfn.NonBlockingCall(req) != napi_ok) {
         delete req;   // TSFN closing — discard
     }
 }
 
-static void wake_thread() {
+static void wake_thread(AddonState* st) {
 #if defined(_WIN32)
-    if (wake_event) SetEvent(wake_event);
+    if (st->wake_event) SetEvent(st->wake_event);
 #else
     char c = 1;
-    (void)write(wake_pipe[1], &c, 1);
+    (void)write(st->wake_pipe[1], &c, 1);
 #endif
 }
 
@@ -138,19 +151,19 @@ struct PendingPing {
     std::chrono::steady_clock::time_point deadline;
 };
 
-static void ping_thread_func() {
+static void ping_thread_func(AddonState* st) {
     std::vector<PendingPing> pending;
 
-    while (!shutting_down.load()) {
+    while (!st->shutting_down.load()) {
 
         // --- drain incoming queue, start async pings ---
         {
-            std::lock_guard<std::mutex> lk(queue_mutex);
-            for (auto* req : ping_queue) {
+            std::lock_guard<std::mutex> lk(st->queue_mutex);
+            for (auto* req : st->ping_queue) {
                 struct in_addr addr{};
                 if (!resolve_host(req->host, addr)) {
                     req->error = "DNS resolution failed for " + req->host;
-                    post_result(req);
+                    post_result(st, req);
                     continue;
                 }
 
@@ -160,7 +173,7 @@ static void ping_thread_func() {
                 pp.hIcmp = IcmpCreateFile();
                 if (pp.hIcmp == INVALID_HANDLE_VALUE) {
                     req->error = "IcmpCreateFile failed";
-                    post_result(req);
+                    post_result(st, req);
                     CloseHandle(pp.event);
                     continue;
                 }
@@ -193,7 +206,7 @@ static void ping_thread_func() {
                         req->error =
                             "ICMP status " + std::to_string(reply->Status);
                     }
-                    post_result(req);
+                    post_result(st, req);
                     CloseHandle(pp.event);
                     IcmpCloseHandle(pp.hIcmp);
                 } else if (GetLastError() == ERROR_IO_PENDING) {
@@ -203,19 +216,19 @@ static void ping_thread_func() {
                 } else {
                     req->error = "IcmpSendEcho2 error "
                                  + std::to_string(GetLastError());
-                    post_result(req);
+                    post_result(st, req);
                     CloseHandle(pp.event);
                     IcmpCloseHandle(pp.hIcmp);
                 }
             }
-            ping_queue.clear();
+            st->ping_queue.clear();
         }
 
         // --- wait for any event (wake, or a ping reply) ---
         // Build handle array:  [0]=wake  [1..N]=pending events
         std::vector<HANDLE> handles;
         handles.reserve(1 + pending.size());
-        handles.push_back(wake_event);
+        handles.push_back(st->wake_event);
         for (auto& pp : pending) handles.push_back(pp.event);
 
         // Wait timeout = time until nearest pending deadline
@@ -261,7 +274,7 @@ static void ping_thread_func() {
             } else {
                 pp.req->error = "No ICMP reply";
             }
-            post_result(pp.req);
+            post_result(st, pp.req);
             CloseHandle(pp.event);
             IcmpCloseHandle(pp.hIcmp);
             pending.erase(pending.begin() + i);
@@ -273,7 +286,7 @@ static void ping_thread_func() {
             for (int i = static_cast<int>(pending.size()) - 1; i >= 0; --i) {
                 if (now >= pending[i].deadline) {
                     pending[i].req->error = "timeout";
-                    post_result(pending[i].req);
+                    post_result(st, pending[i].req);
                     CloseHandle(pending[i].event);
                     IcmpCloseHandle(pending[i].hIcmp);
                     pending.erase(pending.begin() + i);
@@ -285,7 +298,7 @@ static void ping_thread_func() {
     // --- shutdown: fail anything still outstanding ---
     for (auto& pp : pending) {
         pp.req->error = "shutting down";
-        post_result(pp.req);
+        post_result(st, pp.req);
         CloseHandle(pp.event);
         IcmpCloseHandle(pp.hIcmp);
     }
@@ -313,7 +326,7 @@ struct PendingPing {
     std::chrono::steady_clock::time_point deadline;
 };
 
-static void ping_thread_func() {
+static void ping_thread_func(AddonState* st) {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
     if (sock < 0) return;   // can't ping — give up silently
 
@@ -323,16 +336,16 @@ static void ping_thread_func() {
     uint16_t next_seq = 1;
     std::vector<PendingPing> pending;
 
-    while (!shutting_down.load()) {
+    while (!st->shutting_down.load()) {
 
         // --- drain queue, send echo requests ---
         {
-            std::lock_guard<std::mutex> lk(queue_mutex);
-            for (auto* req : ping_queue) {
+            std::lock_guard<std::mutex> lk(st->queue_mutex);
+            for (auto* req : st->ping_queue) {
                 struct in_addr addr{};
                 if (!resolve_host(req->host, addr)) {
                     req->error = "DNS resolution failed for " + req->host;
-                    post_result(req);
+                    post_result(st, req);
                     continue;
                 }
 
@@ -360,7 +373,7 @@ static void ping_thread_func() {
                            reinterpret_cast<struct sockaddr*>(&dst),
                            sizeof(dst)) < 0) {
                     req->error = std::string("sendto: ") + strerror(errno);
-                    post_result(req);
+                    post_result(st, req);
                     continue;
                 }
 
@@ -368,13 +381,13 @@ static void ping_thread_func() {
                 pending.push_back({req, sq, addr, now,
                     now + std::chrono::milliseconds(req->timeout_ms)});
             }
-            ping_queue.clear();
+            st->ping_queue.clear();
         }
 
         // --- poll: socket + wake pipe ---
         struct pollfd fds[2];
-        fds[0] = {sock,          POLLIN, 0};
-        fds[1] = {wake_pipe[0],  POLLIN, 0};
+        fds[0] = {sock,             POLLIN, 0};
+        fds[1] = {st->wake_pipe[0], POLLIN, 0};
 
         int poll_ms = 200;  // default wake-up interval
         if (!pending.empty()) {
@@ -391,7 +404,7 @@ static void ping_thread_func() {
         // drain wake pipe
         if (fds[1].revents & POLLIN) {
             char buf[64];
-            while (read(wake_pipe[0], buf, sizeof(buf)) > 0) {}
+            while (read(st->wake_pipe[0], buf, sizeof(buf)) > 0) {}
         }
 
         // receive all available replies
@@ -418,7 +431,7 @@ static void ping_thread_func() {
                         pending[i].req->alive = true;
                         pending[i].req->elapsed_ms =
                             static_cast<double>(us) / 1000.0;
-                        post_result(pending[i].req);
+                        post_result(st, pending[i].req);
                         pending.erase(pending.begin() + i);
                         break;
                     }
@@ -431,7 +444,7 @@ static void ping_thread_func() {
         for (int i = static_cast<int>(pending.size()) - 1; i >= 0; --i) {
             if (now >= pending[i].deadline) {
                 pending[i].req->error = "timeout";
-                post_result(pending[i].req);
+                post_result(st, pending[i].req);
                 pending.erase(pending.begin() + i);
             }
         }
@@ -439,7 +452,7 @@ static void ping_thread_func() {
 
     for (auto& pp : pending) {
         pp.req->error = "shutting down";
-        post_result(pp.req);
+        post_result(st, pp.req);
     }
     close(sock);
 }
@@ -447,12 +460,32 @@ static void ping_thread_func() {
 #endif // _WIN32 / POSIX
 
 // ---------------------------------------------------------------------------
+// Per-instance teardown — idempotent. Stops the thread, releases the TSFN,
+// and frees the wake handle. Runs from Shutdown() (JS) or the env cleanup hook.
+// ---------------------------------------------------------------------------
+static void teardown(AddonState* st) {
+    if (st->shutting_down.exchange(true)) return;   // already torn down
+    wake_thread(st);
+    if (st->ping_thread.joinable()) st->ping_thread.join();
+    st->tsfn.Release();   // release thread's reference
+    st->tsfn.Abort();     // release owner reference, mark closing
+
+#if defined(_WIN32)
+    if (st->wake_event) { CloseHandle(st->wake_event); st->wake_event = NULL; }
+#else
+    if (st->wake_pipe[0] >= 0) { close(st->wake_pipe[0]); st->wake_pipe[0] = -1; }
+    if (st->wake_pipe[1] >= 0) { close(st->wake_pipe[1]); st->wake_pipe[1] = -1; }
+#endif
+}
+
+// ---------------------------------------------------------------------------
 // N-API export: ping(host, timeoutMs) => Promise<PingResult>
 // ---------------------------------------------------------------------------
 static Napi::Value Ping(const Napi::CallbackInfo& info) {
+    auto* st = static_cast<AddonState*>(info.Data());
     Napi::Env env = info.Env();
 
-    if (shutting_down.load()) {
+    if (st->shutting_down.load()) {
         auto d = Napi::Promise::Deferred::New(env);
         auto obj = Napi::Object::New(env);
         obj.Set("alive", Napi::Boolean::New(env, false));
@@ -476,69 +509,56 @@ static Napi::Value Ping(const Napi::CallbackInfo& info) {
     auto promise = req->deferred.Promise();
 
     {
-        std::lock_guard<std::mutex> lk(queue_mutex);
-        ping_queue.push_back(req);
+        std::lock_guard<std::mutex> lk(st->queue_mutex);
+        st->ping_queue.push_back(req);
     }
-    wake_thread();
+    wake_thread(st);
 
     return promise;
 }
 
 // ---------------------------------------------------------------------------
-// N-API export: shutdown() — join thread, abort TSFN
+// N-API export: shutdown() — join this environment's thread, abort its TSFN
 // ---------------------------------------------------------------------------
 static Napi::Value Shutdown(const Napi::CallbackInfo& info) {
-    if (!shutting_down.exchange(true)) {
-        wake_thread();
-        if (ping_thread.joinable()) ping_thread.join();
-        tsfn.Release();   // release thread's reference
-        tsfn.Abort();     // release owner reference, mark closing
-
-#if defined(_WIN32)
-        if (wake_event) { CloseHandle(wake_event); wake_event = NULL; }
-#else
-        if (wake_pipe[0] >= 0) { close(wake_pipe[0]); wake_pipe[0] = -1; }
-        if (wake_pipe[1] >= 0) { close(wake_pipe[1]); wake_pipe[1] = -1; }
-#endif
-    }
+    teardown(static_cast<AddonState*>(info.Data()));
     return info.Env().Undefined();
 }
 
 // ---------------------------------------------------------------------------
-// Cleanup hook — safety net if shutdown() was never called
+// Cleanup hook — safety net if shutdown() was never called; also frees state.
 // ---------------------------------------------------------------------------
-static void CleanupHook(void*) {
-    if (!shutting_down.exchange(true)) {
-        wake_thread();
-        if (ping_thread.joinable()) ping_thread.join();
-        tsfn.Release();
-        tsfn.Abort();
-    }
+static void CleanupHook(void* arg) {
+    auto* st = static_cast<AddonState*>(arg);
+    teardown(st);
+    delete st;
 }
 
 // ---------------------------------------------------------------------------
-// Module init
+// Module init — one AddonState per Node environment. Each JS binding carries
+// its own `AddonState*` as callback data, so lookups never touch a global.
 // ---------------------------------------------------------------------------
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-    shutting_down.store(false);
+    auto* st = new AddonState();
 
     // TSFN: unlimited queue, 2 references (owner + ping thread)
-    tsfn = TSFN::New(env, "PingTSFN", 0, 2);
+    st->tsfn = TSFN::New(env, "PingTSFN", 0, 2);
 
 #if defined(_WIN32)
-    wake_event = CreateEvent(NULL, FALSE, FALSE, NULL);  // auto-reset
+    st->wake_event = CreateEvent(NULL, FALSE, FALSE, NULL);  // auto-reset
 #else
-    pipe(wake_pipe);
-    fcntl(wake_pipe[0], F_SETFL, O_NONBLOCK);
-    fcntl(wake_pipe[1], F_SETFL, O_NONBLOCK);
+    if (pipe(st->wake_pipe) == 0) {
+        fcntl(st->wake_pipe[0], F_SETFL, O_NONBLOCK);
+        fcntl(st->wake_pipe[1], F_SETFL, O_NONBLOCK);
+    }
 #endif
 
-    ping_thread = std::thread(ping_thread_func);
+    st->ping_thread = std::thread(ping_thread_func, st);
 
-    napi_add_env_cleanup_hook(env, CleanupHook, nullptr);
+    napi_add_env_cleanup_hook(env, CleanupHook, st);
 
-    exports.Set("ping", Napi::Function::New(env, Ping));
-    exports.Set("shutdown", Napi::Function::New(env, Shutdown));
+    exports.Set("ping", Napi::Function::New(env, Ping, "ping", st));
+    exports.Set("shutdown", Napi::Function::New(env, Shutdown, "shutdown", st));
     return exports;
 }
 

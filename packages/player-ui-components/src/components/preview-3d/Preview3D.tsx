@@ -142,6 +142,9 @@ export interface Preview3DProps {
     mode?: 'standalone' | 'embedded';
     /** When true, viewers use minHeight 0 so the preview fills a flex/dialog container instead of forcing 600px. */
     compact?: boolean;
+    /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
+     *  storage-shaped JSON */
+    captureViewStateRef?: React.MutableRefObject<(() => string | null) | null>;
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -161,6 +164,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     previewSettingsStorageKey = 'previewSettings',
     mode = 'standalone',
     compact = false,
+    captureViewStateRef,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
@@ -377,6 +381,28 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         }
     }, [previewSelection, viewStateBySelection, cameraStateLoaded, previewSettingsStorageKey]);
 
+    // Live view-state capture for share links.
+    useEffect(() => {
+        if (!captureViewStateRef) return undefined;
+        captureViewStateRef.current = () => {
+            const live3D = getCurrentCameraState3DRef.current?.() ?? cameraState3D;
+            const live2D = getCurrentCameraState2DRef.current?.() ?? cameraState2D;
+            const vs = { mode: viewMode, cameraState2D: live2D, cameraState3D: live3D };
+            return JSON.stringify({
+                pixelSize: previewSettings.pixelSize,
+                brightnessMultiplier: previewSettings.brightnessMultiplier,
+                mode: viewMode,
+                cameraState2D: live2D,
+                cameraState3D: live3D,
+                previewSelection,
+                viewStateBySelection: { ...viewStateBySelection, [previewSelection]: vs },
+            });
+        };
+        return () => {
+            captureViewStateRef.current = null;
+        };
+    }, [captureViewStateRef, viewMode, cameraState2D, cameraState3D, previewSelection, viewStateBySelection, previewSettings]);
+
     // Resolve the server URL (auto-detects Electron port or falls back to same-origin).
     const { url: effectiveFrameServerUrl } = useFrameServerUrl({ frameServerUrl });
 
@@ -436,7 +462,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
         // Try to load from API, with retry when server returns empty data
         // (the playback worker may still be parsing the new show's XML)
-        const fetchShowData = async (attempt: number): Promise<boolean> => {
+        const fetchShowData = async (_attempt: number): Promise<boolean> => {
             if (cancelled) return false;
 
             try {

@@ -4,6 +4,8 @@
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type { CloudCommand } from '@ezplayer/ezplayer-core';
+import type { DiscoveryResult } from '@ezplayer/epp-controllers';
+import type { ControllerCommand, ControllerOpOrigin } from '@ezplayer/ezplayer-core';
 
 export interface ServerWorkerData {
     port: number;
@@ -86,4 +88,7 @@ export interface ServerWorkerRPCAPI {
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;
+    /** Resolves with the DiscoveryResult for a `scan`; other kinds resolve
+     *  undefined and report through the broadcast state. */
+    controllerCommand(command: ControllerCommand, origin: ControllerOpOrigin): Promise<DiscoveryResult | undefined>;
 }

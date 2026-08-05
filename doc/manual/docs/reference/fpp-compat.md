@@ -127,9 +127,19 @@ Media sync packets are not sent (audio plays on the master), and EZPlayer
 does not act as a sync *remote*. Default is **off** — sync-master is a
 topology decision; exactly one master should exist on a network.
 
+## System inventory
+
+`GET /api/fppd/multiSyncSystems` serves the FPP systems roster from
+EZPlayer's controller-discovery state: one entry for EZPlayer itself
+(type `EZPlayer`, typeId `0xee`) plus every device the scans identified
+as a real FPP or another EZPlayer. Other controller families are omitted —
+they don't speak the FPP systems protocol and tools discover them directly.
+Combined with `GET /api/proxies`, this lets xLights' FPP discovery crawl
+through an EZPlayer to everything behind it.
+
 ## Not implemented (404)
 
-MultiSync remote mode and the `/api/fppd/multiSyncSystems` inventory,
+MultiSync remote mode,
 OSC/Art-Net timecode output (planned follow-on), GPIO, effects,
 scripts, plugin management, system control (reboot/shutdown/update), volume
 writes (`POST /api/system/volume`, the `Volume *` commands — EZPlayer volume

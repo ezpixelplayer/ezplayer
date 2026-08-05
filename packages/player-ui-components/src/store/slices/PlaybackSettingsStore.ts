@@ -16,6 +16,7 @@ export interface PlaybackSettingsState {
 }
 
 const DEFAULT_JUKEBOX_EXCLUDED_TAGS = ['nojukebox'];
+const DEFAULT_TEST_SEQUENCE_TAGS = ['test'];
 
 function normalizeTagList(tags: unknown, fallback: string[] = []): string[] {
     if (!Array.isArray(tags)) return fallback;
@@ -50,6 +51,7 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
             includedTags: includedNormalized,
         },
+        testSequenceTags: normalizeTagList(input.testSequenceTags, DEFAULT_TEST_SEQUENCE_TAGS),
     };
 }
 
@@ -73,6 +75,7 @@ export const initialPlaybackSettingsState: PlaybackSettingsState = {
             excludedTags: DEFAULT_JUKEBOX_EXCLUDED_TAGS,
             includedTags: [],
         },
+        testSequenceTags: DEFAULT_TEST_SEQUENCE_TAGS,
     }),
 };
 
@@ -108,6 +111,10 @@ const playbackSettingsSlice = createSlice({
         setJukeboxIncludedTags(state, action: PayloadAction<string[]>) {
             state.settings.jukebox = state.settings.jukebox ?? {};
             state.settings.jukebox.includedTags = normalizeTagList(action.payload, []);
+        },
+
+        setTestSequenceTags(state, action: PayloadAction<string[]>) {
+            state.settings.testSequenceTags = normalizeTagList(action.payload, []);
         },
 
         // Viewer control
@@ -194,6 +201,7 @@ export const {
     setBackgroundSequence,
     setJukeboxExcludedTags,
     setJukeboxIncludedTags,
+    setTestSequenceTags,
     setViewerControlEnabled,
     setViewerControlType,
     setRemoteFalconToken,

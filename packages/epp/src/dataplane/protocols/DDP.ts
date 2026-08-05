@@ -164,6 +164,7 @@ export class DDPSender extends UDPSender {
                 this.address,
                 this.port,
                 this.sendBufSize ?? 6_250_000 /*1Gbps 50ms*/,
+                this.localAddress,
             );
         }
         if (!this.client.isConnected()) {

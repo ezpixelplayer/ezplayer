@@ -47,7 +47,8 @@ Use the search box to filter by title or artist. Use **Filter by Tags** to
 narrow the list — handy when you have a large library.
 
 **Double-click** a row (or click the edit icon) to open **Edit Song Details**,
-or click **Add Song** to register a new sequence.
+or click **Add Song** to register a new sequence. The **play** button on a row
+starts that song immediately, the same as pressing **Play** in the jukebox.
 
 ### Desktop app vs LAN / cloud UI
 

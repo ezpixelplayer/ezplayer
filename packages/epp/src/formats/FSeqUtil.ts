@@ -184,7 +184,9 @@ export class FSEQReaderSync {
     async close() {
         try {
             await this.fd?.close();
-        } catch (e) {}
+        } catch {
+            /* best-effort close */
+        }
         this.fd = undefined;
     }
 

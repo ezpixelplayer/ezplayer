@@ -14,9 +14,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import fsp from 'fs/promises';
 import * as crypto from 'crypto';
-import type { EZPlayerCommand, PlayerPStatusContent, PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type { ControllerOpsState, EZPlayerCommand, PlayerPStatusContent, PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { fileBaseName } from '../pathnames.js';
-import { buildFppStatus, buildFppdVersion, buildSystemInfo, type FppIdentity, type FppStatusSources } from './fpp-status.js';
+import { buildFppStatus, buildFppdVersion, buildSystemInfo, fppCompatVersion, FPP_COMPAT_MAJOR, FPP_COMPAT_MINOR, type FppIdentity, type FppStatusSources } from './fpp-status.js';
 import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
 import { fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
 import { fppScheduleToRecords, recordsToFppSchedule, type FppScheduleEntry } from './fpp-schedule.js';
@@ -31,6 +31,8 @@ export interface FppApiDeps {
     updatePlaylists: (recs: unknown[]) => Promise<unknown[]>;
     updateSchedule: (recs: unknown[]) => Promise<unknown[]>;
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
+    /** Cached controller-discovery state; feeds /api/fppd/multiSyncSystems. */
+    getControllerOps?: () => ControllerOpsState | undefined;
     appVersion: string;
 }
 
@@ -50,7 +52,9 @@ async function getUuid(showFolder: string | undefined): Promise<string> {
             cachedUuid = { showFolder, uuid: parsed.uuid };
             return parsed.uuid;
         }
-    } catch {}
+    } catch {
+        /* missing/corrupt cache; mint a new uuid below */
+    }
     const uuid = `EZP-${crypto.randomUUID()}`;
     try {
         await fsp.mkdir(path.dirname(file), { recursive: true });
@@ -120,6 +124,51 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         ctx.body = [];
     });
 
+    // FPP's multi-sync roster: ourselves plus every scanned device identified
+    // as an FPP or EZPlayer. Other controller families are deliberately
+    // omitted — they don't speak the FPP systems protocol.
+    router.get('/api/fppd/multiSyncSystems', async (ctx) => {
+        const identity = await identityOf(deps);
+        const systems: Record<string, unknown>[] = [{
+            address: identity.ips[0] ?? '127.0.0.1',
+            hostname: identity.hostName,
+            type: 'EZPlayer',
+            model: 'EZPlayer',
+            version: fppCompatVersion(identity.appVersion),
+            majorVersion: FPP_COMPAT_MAJOR,
+            minorVersion: FPP_COMPAT_MINOR,
+            typeId: 0xee,
+            fppModeString: 'player',
+            multisync: false,
+            local: true,
+            uuid: identity.uuid,
+        }];
+        const devices = deps.getControllerOps?.()?.devices ?? {};
+        const seen = new Set<string>();
+        for (const dev of Object.values(devices)) {
+            if (dev.driverType !== 'FPP' && dev.driverType !== 'EZPlayer') continue;
+            if (seen.has(dev.ip)) continue;
+            seen.add(dev.ip);
+            const fw = dev.firmwareVersion ?? '';
+            const verMatch = /^(\d+)\.(\d+)/.exec(fw);
+            const entry: Record<string, unknown> = {
+                address: dev.ip,
+                hostname: dev.hostname ?? '',
+                type: dev.driverType,
+                model: dev.model ?? '',
+                version: fw,
+                multisync: false,
+                local: false,
+            };
+            if (verMatch) {
+                entry.majorVersion = Number(verMatch[1]);
+                entry.minorVersion = Number(verMatch[2]);
+            }
+            systems.push(entry);
+        }
+        ctx.body = { systems };
+    });
+
     // ---- command API -------------------------------------------------------
 
     const respondCommand = (ctx: RouterContext, result: { status: number; message: string }) => {
@@ -128,10 +177,9 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         ctx.body = result.message;
     };
 
-    // GET /api/command/{Name}[/{arg1}/{arg2}...] — name and args are path
-    // segments (URL-encoded); regex route because the arg count is open-ended.
-    // @koa/router exposes regex capture groups via ctx.captures (params stays
-    // empty for regex paths, even with named groups).
+    // GET /api/command/{Name}[/{arg1}/{arg2}...] — regex route because the arg
+    // count is open-ended; @koa/router exposes regex captures via ctx.captures
+    // (params stays empty for regex paths).
     router.get(/^\/api\/command\/(.+)$/, async (ctx) => {
         const rest = ctx.captures?.[0];
         if (!rest) {
@@ -231,10 +279,9 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         ctx.body = recordToFppPlaylist(pl, deps.getSequences());
     });
 
-    /** For unresolved sequenceName entries whose fseq file actually exists in
-     *  the show folder, register a SequenceRecord on the fly — an FPP tool
-     *  that uploads an fseq and immediately references it in a playlist
-     *  shouldn't need to know about EZP's registration step. */
+    /** Register a SequenceRecord on the fly for unresolved sequenceName
+     *  entries whose fseq file exists — FPP tools don't know about EZP's
+     *  registration step. */
     async function autoRegisterSequences(unresolved: string[]): Promise<boolean> {
         const showFolder = deps.getShowFolder();
         if (!showFolder || unresolved.length === 0) return false;
@@ -248,7 +295,9 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
                     files: { fseq: name },
                     work: { title: name.replace(/\.fseq$/i, ''), artist: '', length: 0 },
                 });
-            } catch {}
+            } catch {
+                /* unreadable file; skip */
+            }
         }
         if (toCreate.length === 0) return false;
         await deps.putSequences(toCreate);

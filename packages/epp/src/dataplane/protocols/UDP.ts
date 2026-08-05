@@ -38,6 +38,8 @@ export class UdpClient {
     readonly address: string;
     readonly port: number;
     readonly sendBufSize?: number;
+    /** Local NIC address to bind before connecting (xLights ForceLocalIP). */
+    readonly localAddress?: string;
 
     private socket: dgram.Socket | undefined;
     private _isConnected = false;
@@ -71,11 +73,12 @@ export class UdpClient {
         };
     }
 
-    constructor(type: 'udp4' | 'udp6', address: string, port: number, sendBufSize?: number) {
+    constructor(type: 'udp4' | 'udp6', address: string, port: number, sendBufSize?: number, localAddress?: string) {
         this.type = type;
         this.address = address;
         this.sendBufSize = sendBufSize;
         this.port = port;
+        this.localAddress = localAddress;
     }
 
     isConnected() {
@@ -98,6 +101,25 @@ export class UdpClient {
         try {
             this._connAttemptInProgress = true;
             this.socket = dgram.createSocket(this.type);
+
+            // Bind to a specific local NIC first when requested (ForceLocalIP).
+            // Must complete ('listening') before connect() is issued.
+            if (this.localAddress) {
+                await new Promise<void>((resolve, reject) => {
+                    const onError = (err: Error) => {
+                        this.socket?.off('listening', onListening);
+                        this.lastError = err.message;
+                        reject(err);
+                    };
+                    const onListening = () => {
+                        this.socket?.off('error', onError);
+                        resolve();
+                    };
+                    this.socket?.once('error', onError);
+                    this.socket?.once('listening', onListening);
+                    this.socket?.bind({ address: this.localAddress });
+                });
+            }
 
             if (this.sendBufSize) {
                 try {
@@ -153,7 +175,7 @@ export class UdpClient {
         if (this.sendBatch) throw new Error('Already sending');
         let resolve: () => void = () => {};
         let reject: (err: unknown) => void = () => {};
-        let p = new Promise<void>((res: () => void, rej) => {
+        const p = new Promise<void>((res: () => void, rej) => {
             resolve = res;
             reject = rej;
         });
@@ -216,7 +238,7 @@ export class UdpClient {
     private countSend(data: Uint8Array<ArrayBufferLike> | Uint8Array<ArrayBufferLike>[]) {
         ++this.nSent;
         if (Array.isArray(data)) {
-            for (const d of data) this.bytesSent += data.length;
+            for (const d of data) this.bytesSent += d.length;
         } else {
             this.bytesSent += data.length;
         }
@@ -260,6 +282,8 @@ export abstract class UDPSender implements Sender {
     controller?: ControllerState = undefined;
 
     address: string = '';
+    /** Local NIC address to bind (xLights ForceLocalIP); OS default when unset. */
+    localAddress?: string = undefined;
     minTimeBetweenFrames = 0;
 
     minFrameTime(): number {

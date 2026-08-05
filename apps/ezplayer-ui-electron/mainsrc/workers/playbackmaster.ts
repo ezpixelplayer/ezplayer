@@ -31,6 +31,10 @@ import type {
     VcSong,
     VcPlayingItem,
     VcScheduleEntry,
+    KnownController,
+    ControllerPortIntent,
+    ControllerModelIntent,
+    ControllerOutputIntent,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -39,6 +43,7 @@ import {
     getScheduleTimes,
     LatestFrameRingBuffer,
     PlayerRunState,
+    portIntentFromModelIntents,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -47,6 +52,7 @@ import {
     openControllersForDataSend,
     FSeqPrefetchCache,
     ModelRec,
+    controllersFromParsedXlights,
     readControllersFromXlights,
     ControllerState,
     FrameReference,
@@ -61,16 +67,18 @@ import {
     getAllMovingHeads,
     getAllViewObjects,
     getAllViewpoints,
+    getControllersAndModelChannels,
     getLayoutSettings,
     GetNodeResult,
+    type ControllersAndModelChannels,
     type MhFixtureInfo,
     type ModelParseOptions,
+    type XlControllerInfo,
+    type XlModelChannelInfo,
     migrateToFormat,
 } from 'xllayoutcalcs';
 
-// xllayoutcalcs warns about XML attributes the model parser ignored — useful
-// during in-tree development, but actionable only by xllayoutcalcs maintainers,
-// so silence it in the shipped player.
+// Unused-attribute warnings are only actionable in the parser library itself.
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
@@ -220,13 +228,13 @@ const handlers: PlayWorkerRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
-    stopPlayback: async (_args: {}) => {
+    stopPlayback: async (_args: Record<string, never>) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
         await stopPing(); // Cleanly shut down native pinger before exit
         return true;
     },
-    getModelCoordinates: async (_args: {}) => {
+    getModelCoordinates: async (_args: Record<string, never>) => {
         const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates) {
             for (const [name, coord] of modelCoordinates.entries()) {
@@ -235,7 +243,7 @@ const handlers: PlayWorkerRPCAPI = {
         }
         return coords;
     },
-    getModelCoordinates2D: async (_args: {}) => {
+    getModelCoordinates2D: async (_args: Record<string, never>) => {
         const coords: Record<string, GetNodeResult> = {};
         if (modelCoordinates2D) {
             for (const [name, coord] of modelCoordinates2D.entries()) {
@@ -273,6 +281,7 @@ function sendPlayerStateUpdate() {
         ptype: 'EZP',
         status: 'Stopped',
         reported_time: Date.now(),
+        now_playing: undefined,
         upcoming: [],
         volume: {
             level: volume,
@@ -1141,6 +1150,7 @@ let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
+let parsedControllerDoc: ControllersAndModelChannels | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
 let layoutSettings: LayoutSettings = {};
@@ -1252,6 +1262,8 @@ async function loadXmlCoordinates() {
     modelCoordinates2D = new Map<string, GetNodeResult>();
     movingHeads = [];
     layoutSettings = {};
+    parsedControllerDoc = undefined;
+    let knownControllers: KnownController[] = [];
 
     if (xrgb && xnet) {
         const gmc2d = getAllModelCoordinates(xrgb, xnet, true, PARSE_OPTS);
@@ -1263,6 +1275,25 @@ async function loadXmlCoordinates() {
             emitInfo(`[loadXmlCoordinates] Found ${movingHeads.length} moving head fixture(s)`);
         } catch (mhErr) {
             emitWarning(`[loadXmlCoordinates] Error extracting moving heads: ${mhErr}`);
+        }
+
+        // Best-effort: a parse failure yields no controllers.
+        try {
+            const parsed = getControllersAndModelChannels(xrgb, xnet, {
+                ...PARSE_OPTS,
+                // Surface library-side skips in the warning log, not console.
+                logger: (msg) => emitWarning(msg),
+            });
+            parsedControllerDoc = parsed;
+            const { controllers, models } = parsed;
+            const portIntent = buildPortIntent(models);
+            const modelIntents = buildModelIntents(models);
+            knownControllers = controllers.map((c) =>
+                xlControllerToKnown(c, portIntent.get(c.name), modelIntents.get(c.name)),
+            );
+            emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
+        } catch (cErr) {
+            emitWarning(`[loadXmlCoordinates] Error extracting controllers: ${cErr}`);
         }
 
         if (xrgb.documentElement.tagName !== 'xrgb') {
@@ -1441,8 +1472,7 @@ async function loadXmlCoordinates() {
                 emitError(`[loadXmlCoordinates] Error parsing settings element: ${parseErr}`);
             }
 
-            // Layout groups — xllayoutcalcs parses the <layoutGroups> section; we resolve
-            // show-folder-relative backgroundImage paths here since that part is Electron-side.
+            // backgroundImage paths are show-folder-relative; resolve them here.
             try {
                 const parsedGroups = getAllLayoutGroups(xrgb);
                 if (parsedGroups.length > 0) {
@@ -1500,7 +1530,136 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads });
+    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads, controllers: knownControllers });
+}
+
+/** xLights controller record → the lean KnownController the reconcile grid
+ *  uses. Only an explicit `Inactive` state counts as disabled; empty strings
+ *  collapse to undefined. */
+function xlControllerToKnown(
+    c: XlControllerInfo,
+    ports?: ControllerPortIntent[],
+    modelIntents?: ControllerModelIntent[],
+): KnownController {
+    const enableState =
+        c.activeState === 'Active'
+            ? ('enabled' as const)
+            : c.activeState === 'Inactive'
+              ? ('disabled' as const)
+              : c.activeState === 'xLights Only'
+                ? ('xlightsOnly' as const)
+                : undefined;
+    return {
+        name: c.name,
+        address: c.address || undefined,
+        active: c.activeState !== 'Inactive',
+        enableState,
+        vendor: c.vendor || undefined,
+        model: c.model || undefined,
+        variant: c.variant || undefined,
+        defaultBrightness: c.defaultBrightnessUnderFullControl,
+        defaultGamma: c.defaultGammaUnderFullControl,
+        protocol: c.protocol || undefined,
+        startChannel: c.startChannel,
+        channelCount: c.maxChannels,
+        ports: ports && ports.length ? ports : undefined,
+        modelIntents: modelIntents && modelIntents.length ? modelIntents : undefined,
+        outputs: xlControllerOutputs(c),
+        source: 'xlights',
+    };
+}
+
+/** The controller's outputs as upload intent: E131/ArtNet one entry per
+ *  universe, DDP and friends one block spanning the channel range. */
+function xlControllerOutputs(c: XlControllerInfo): ControllerOutputIntent[] | undefined {
+    const proto = (c.protocol || '').toLowerCase();
+    if ((proto === 'e131' || proto === 'artnet') && c.universeSizes.length > 0) {
+        const outs: ControllerOutputIntent[] = [];
+        let ch = c.startChannel;
+        for (let i = 0; i < c.universeSizes.length; i++) {
+            outs.push({
+                type: proto,
+                universe: c.universeNumbers[i],
+                startChannel: ch,
+                channels: c.universeSizes[i],
+            });
+            ch += c.universeSizes[i];
+        }
+        return outs;
+    }
+    if (!c.maxChannels) return undefined;
+    return [{ type: proto || 'ddp', startChannel: c.startChannel, channels: c.maxChannels }];
+}
+
+/** One model's rich upload intent. Absent fields stay absent — set-vs-unset
+ *  semantics matter downstream. Protocol may be '' when xLights has none. */
+function modelIntentOf(m: XlModelChannelInfo): ControllerModelIntent {
+    const cc = m.controllerConnection;
+    const intent: ControllerModelIntent = {
+        name: m.name,
+        controllerPort: m.controllerPort,
+        protocol: m.controllerProtocol || '',
+        startChannel: m.startChannel,
+        nodeCount: m.nodeCount,
+        channels: m.channelCount,
+    };
+    if (cc) {
+        if (cc.brightness !== undefined) intent.brightness = cc.brightness;
+        if (cc.gamma !== undefined) intent.gamma = cc.gamma;
+        if (cc.colorOrder !== undefined) intent.colorOrder = cc.colorOrder;
+        if (cc.nullNodes !== undefined) intent.nullPixels = cc.nullNodes;
+        if (cc.endNullNodes !== undefined) intent.endNullPixels = cc.endNullNodes;
+        if (cc.groupCount !== undefined) intent.groupCount = cc.groupCount;
+        if (cc.reverse !== undefined) intent.reverse = cc.reverse;
+        if (cc.zigZag !== undefined) intent.zigZag = cc.zigZag;
+        if (cc.smartRemote !== undefined && cc.smartRemote > 0) intent.smartRemote = cc.smartRemote;
+        if (cc.smartRemoteType !== undefined) intent.smartRemoteType = cc.smartRemoteType;
+        if (cc.ts !== undefined) intent.ts = cc.ts;
+        if (cc.srCascadeOnPort !== undefined) intent.srCascadeOnPort = cc.srCascadeOnPort;
+        if (cc.srMaxCascade !== undefined) intent.srMaxCascade = cc.srMaxCascade;
+    }
+    if (
+        m.numPhysicalStrings > 1 &&
+        m.stringStartChannels.length === m.numPhysicalStrings &&
+        m.stringNodeCounts.length === m.numPhysicalStrings
+    ) {
+        intent.stringStartChannels = m.stringStartChannels;
+        intent.stringNodeCounts = m.stringNodeCounts;
+    }
+    return intent;
+}
+
+/** Per-model upload intent grouped by controller name. Only models with a
+ *  protocol qualify. */
+function buildModelIntents(models: XlModelChannelInfo[]): Map<string, ControllerModelIntent[]> {
+    const by = new Map<string, ControllerModelIntent[]>();
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0 || !m.controllerProtocol) continue;
+        const arr = by.get(m.controllerName) ?? [];
+        arr.push(modelIntentOf(m));
+        by.set(m.controllerName, arr);
+    }
+    for (const arr of by.values()) arr.sort((a, b) => a.startChannel - b.startChannel);
+    return by;
+}
+
+/** Per-PHYSICAL-port intent, keyed by controller name — expands multi-string
+ *  models and smart-remote cascades onto every port they really land on.
+ *  Models without a protocol still count here (unlike buildModelIntents). */
+function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPortIntent[]> {
+    const byController = new Map<string, ControllerModelIntent[]>();
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0) continue;
+        const arr = byController.get(m.controllerName) ?? [];
+        arr.push(modelIntentOf(m));
+        byController.set(m.controllerName, arr);
+    }
+    const out = new Map<string, ControllerPortIntent[]>();
+    for (const [name, intents] of byController) {
+        intents.sort((a, b) => a.startChannel - b.startChannel);
+        out.set(name, portIntentFromModelIntents(intents));
+    }
+    return out;
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
@@ -1600,17 +1759,18 @@ async function processQueue() {
     curSender = sender;
 
     try {
-        const { controllers, models } = await readControllersFromXlights(showFolder!, {
-            warnUnusedAttrs: false,
-            // Surface library-side skips (unknown model types, unresolvable
-            // start channels) in the player's warning log instead of console.
-            logger: (msg) => emitWarning(msg),
-        });
-
-        // Load XML coordinates if not already loaded
         if (!modelCoordinates || modelCoordinates.size === 0) {
             await loadXmlCoordinates();
         }
+
+        // Fall back to a disk read only when no parsed doc is available.
+        const { controllers, models } = parsedControllerDoc
+            ? controllersFromParsedXlights(parsedControllerDoc)
+            : await readControllersFromXlights(showFolder!, {
+                  warnUnusedAttrs: false,
+                  // Surface library-side skips in the warning log, not console.
+                  logger: (msg) => emitWarning(msg),
+              });
 
         const sendJob = await openControllersForDataSend(controllers, {
             ddpPort: latestSettings?.advanced?.ddpPort,
@@ -2023,14 +2183,14 @@ async function processQueue() {
                     break;
                 }
 
-                let startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
+                const startTime = Math.floor(audioPlayerRunTime + playbackParams.audioTimeAdjMs);
 
                 audioSnapshot.runUntil(audioPlayerRunTime);
                 const upcomingAudio = audioSnapshot.getUpcomingItems(
                     playbackParams.sendAudioInAdvanceMs,
                     playbackParams.scheduleLoadTime,
                 );
-                let audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
+                const audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
                     sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
                     audioPlayerRunTime = audioAction.atTime;

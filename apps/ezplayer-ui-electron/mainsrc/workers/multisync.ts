@@ -47,7 +47,9 @@ export class MultiSyncSender {
             if (this.socket) {
                 try {
                     this.socket.close();
-                } catch {}
+                } catch {
+                    /* already closed */
+                }
                 this.socket = undefined;
             }
             this.remotes = [];
@@ -69,7 +71,9 @@ export class MultiSyncSender {
             sock.bind(0, () => {
                 try {
                     sock.setMulticastTTL(1);
-                } catch {}
+                } catch {
+                    /* not fatal without multicast */
+                }
             });
             this.socket = sock;
         }

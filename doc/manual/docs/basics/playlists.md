@@ -28,6 +28,8 @@ large library.
 
 **Double-click** a row to open the editor. Action buttons on each row:
 
+- **Play** — start the playlist immediately (once through, preempting whatever
+  is playing, like a jukebox pick)
 - **Edit** — open the create/edit screen
 - **Clone** — duplicate the playlist
 - **Delete** — soft-delete after confirmation

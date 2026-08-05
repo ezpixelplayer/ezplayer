@@ -11,3 +11,4 @@ export const SHOWSTATUS = '/showstatus';
 export const PLAYBACKSETTINGS = '/playbacksettings';
 export const CLOUD = '/cloud';
 export const PREVIEW_3D = '/preview-3d';
+export const CONTROLLERS = '/controllers';

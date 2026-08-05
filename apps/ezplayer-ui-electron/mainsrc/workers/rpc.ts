@@ -14,7 +14,8 @@ export class RPCClient<Methods extends Record<string, (...args: any[]) => any>> 
         const { id, result, error } = msg;
         const entry = this.pending.get(id);
         if (!entry) return;
-        error ? entry.reject(new Error(error)) : entry.resolve(result);
+        if (error) entry.reject(new Error(error));
+        else entry.resolve(result);
         this.pending.delete(id);
     }
 

@@ -9,6 +9,8 @@ import type {
     EZPlayerCommand,
     PlaybackSettings,
     CloudCommand,
+    ControllerCommand,
+    ControllerOpsState,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -129,6 +131,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => {
         ipcRenderer.on('update:cloudStatus', (_event: any, data: CloudStatus) => {
+            callback(data);
+        });
+    },
+    controllerCommand(command: ControllerCommand): Promise<void> {
+        return ipcRenderer.invoke('ipcControllerCommand', command);
+    },
+    onControllerOpsUpdated: (callback: (data: ControllerOpsState) => void) => {
+        ipcRenderer.on('update:controllerops', (_event: any, data: ControllerOpsState) => {
             callback(data);
         });
     },

@@ -190,6 +190,14 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose, playerV
                                     : 'N/A'}
                             </Typography>
                         </Box>
+                        {cloudVersion && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    Cloud Version:
+                                </Typography>
+                                <Typography variant="body2">{cloudVersion}</Typography>
+                            </Box>
+                        )}
                         {uiVersion && (
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                                 <Typography variant="body2" color="text.secondary">

@@ -52,6 +52,10 @@ export const NowPlayingCard = ({
     allowVolumeControl = false,
     allowStopControls = true,
 }: NowPlayingCardProps) => {
+    // Hooks must precede the ptype early-return to keep call order stable.
+    const dispatch = useDispatch<AppDispatch>();
+    const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+
     if (player.ptype !== 'EZP') {
         return null;
     }
@@ -63,9 +67,7 @@ export const NowPlayingCard = ({
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
     const volume = player.volume?.level ?? 100;
     const muted = player.volume?.muted ?? false;
-    const dispatch = useDispatch<AppDispatch>();
-
-    const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+    const openAudioSettings = () => setAudioSettingsOpen(true);
 
     return (
         <Card
@@ -92,12 +94,26 @@ export const NowPlayingCard = ({
                 {/* The level is automated toward the default/scheduled target, so it's shown
                     read-only here — change it via the settings dialog. Mute is a live toggle
                     (operator contexts only); the gear opens the volume settings. */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 2 }}>
+                <Box
+                    onClick={allowVolumeControl ? openAudioSettings : undefined}
+                    role={allowVolumeControl ? 'button' : undefined}
+                    aria-label={allowVolumeControl ? 'Open volume settings' : undefined}
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        ml: 2,
+                        ...(allowVolumeControl ? { cursor: 'pointer' } : {}),
+                    }}
+                >
                     {allowVolumeControl ? (
                         <IconButton
                             size="small"
                             aria-label={muted ? 'Unmute' : 'Mute'}
-                            onClick={() => dispatch(callImmediateCommand({ command: 'setvolume', mute: !muted }))}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                dispatch(callImmediateCommand({ command: 'setvolume', mute: !muted }));
+                            }}
                         >
                             {muted || volume === 0 ? <VolumeOff fontSize="small" /> : <VolumeUp fontSize="small" />}
                         </IconButton>
@@ -119,7 +135,7 @@ export const NowPlayingCard = ({
                             <IconButton
                                 size="small"
                                 aria-label="Open volume settings"
-                                onClick={() => setAudioSettingsOpen(true)}
+                                onClick={openAudioSettings}
                             >
                                 <Tune fontSize="small" />
                             </IconButton>
