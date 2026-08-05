@@ -162,6 +162,7 @@ export class E131Sender extends UDPSender {
                 this.address,
                 E131_PORT_DEFAULT,
                 this.sendBufSize ?? 625_000 /*100Mbps 50ms*/,
+                this.localAddress,
             );
         }
         if (!this.client.isConnected()) {

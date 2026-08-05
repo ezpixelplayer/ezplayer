@@ -1,6 +1,6 @@
 // earlycli must stay the first import: it applies --user-data-dir before
 // showfolder/webport/ipcautoupdate construct their electron-stores.
-import { cliUsage, getUnknownVerb, isHeadless } from './mainsrc/earlycli.js';
+import { cliUsage, getCliArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
@@ -27,6 +27,7 @@ import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
+import { runCli } from './cli/dispatch.js';
 import type { Event as ElectronEvent } from 'electron';
 
 import os from 'os';
@@ -345,7 +346,17 @@ async function startHeadless() {
     console.log(`EZPlayer headless: ready on web port ${portInfo.port}`);
 }
 
-app.whenReady().then(async () => {
+if (isToolVerb()) {
+    // Text-only verbs (discover/interfaces) run and exit without ever creating a
+    // window or starting workers — unlike `headless`, which is a full player with
+    // no windows. app.exit() tears down abruptly, so flush stdout first (the empty
+    // write's callback fires after buffered output drains) to avoid truncating.
+    const exitFlushed = (code: number) => process.stdout.write('', () => app.exit(code));
+    runCli(getCliArgs()).then(exitFlushed, (e) => {
+        console.error(e);
+        exitFlushed(1);
+    });
+} else app.whenReady().then(async () => {
     console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
     // Reset CLI flags — wipe persisted state and quit. Variants differ in what

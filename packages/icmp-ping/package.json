@@ -1,7 +1,7 @@
 {
     "name": "@ezplayer/icmp-ping",
     "private": true,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Async ICMP ping via native addon (Windows IcmpSendEcho2 / POSIX SOCK_DGRAM).",
     "type": "module",
     "module": "./dist/index.js",
