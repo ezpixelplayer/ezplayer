@@ -10,7 +10,7 @@ import {
     ListItemText,
     Typography,
 } from '@mui/material';
-import type { BatchImportSummary } from '@ezplayer/ezplayer-core';
+import type { BatchImportFailure, BatchImportSuccess, BatchImportSummary } from '@ezplayer/ezplayer-core';
 
 export interface BulkImportSummaryDialogProps {
     open: boolean;
@@ -38,13 +38,32 @@ export function BulkImportSummaryDialog({ open, summary, onClose }: BulkImportSu
                     </Typography>
                 )}
 
+                {summary.successes.length > 0 && (
+                    <>
+                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="success.main">
+                            Imported
+                        </Typography>
+                        <List dense disablePadding>
+                            {summary.successes.map((s: BatchImportSuccess) => (
+                                <ListItem key={s.fseqPath} alignItems="flex-start" sx={{ px: 0 }}>
+                                    <ListItemText
+                                        primary={s.fseqName}
+                                        secondary={`${s.title} — ${s.artist}${s.mediaFound ? '' : ' (no media)'}`}
+                                        primaryTypographyProps={{ fontWeight: 600 }}
+                                    />
+                                </ListItem>
+                            ))}
+                        </List>
+                    </>
+                )}
+
                 {summary.failures.length > 0 && (
                     <>
-                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
+                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="error">
                             Failures
                         </Typography>
                         <List dense disablePadding>
-                            {summary.failures.map((f) => (
+                            {summary.failures.map((f: BatchImportFailure) => (
                                 <ListItem key={f.fseqPath} alignItems="flex-start" sx={{ px: 0 }}>
                                     <ListItemText
                                         primary={f.fseqName}
@@ -55,12 +74,6 @@ export function BulkImportSummaryDialog({ open, summary, onClose }: BulkImportSu
                             ))}
                         </List>
                     </>
-                )}
-
-                {summary.successes.length > 0 && summary.failures.length === 0 && (
-                    <Typography color="text.secondary" sx={{ mt: 1 }}>
-                        All selected sequences imported successfully.
-                    </Typography>
                 )}
             </DialogContent>
             <DialogActions>

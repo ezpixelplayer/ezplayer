@@ -27,7 +27,8 @@
         "clean": "rimraf dist"
     },
     "dependencies": {
-        "uuid": "catalog:"
+        "uuid": "catalog:",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.2.2.tgz"
     },
     "devDependencies": {
         "eslint": "catalog:",
@@ -35,7 +36,6 @@
         "tsup": "catalog:",
         "typescript": "catalog:",
         "typescript-eslint": "catalog:",
-        "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.2.2.tgz"
+        "vitest": "catalog:"
     }
 }

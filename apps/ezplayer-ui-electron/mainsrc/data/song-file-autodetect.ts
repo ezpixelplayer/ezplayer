@@ -20,6 +20,21 @@ const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.ezplayer', '__MACOSX',
 export interface AutoDetectOptions {
     /** Optional media folder — searched only after existing co-located lookup fails. */
     mediaFolder?: string;
+    /**
+     * When true, only exact basename matches are accepted (no prefix matching).
+     * Bulk import uses this so a flat show folder full of other MP3s cannot
+     * falsely satisfy a different FSEQ (common on LAN after upload).
+     */
+    exactAudioMatch?: boolean;
+    /**
+     * When set (including `[]`), audio found next to the FSEQ is kept only if
+     * its basename is in this list. Used by LAN bulk import: the show folder
+     * holds every uploaded MP3, so it must NOT be treated like Electron's
+     * original colocated folder. Pass companions uploaded in the same request;
+     * pass `[]` when none were uploaded (media-folder-only).
+     * Leave undefined for Electron IPC (full colocated search).
+     */
+    colocatedAudioAllowlist?: string[];
 }
 
 export interface AutoDetectedSongFiles {
@@ -136,20 +151,30 @@ async function findWithPrefix(dir: string, prefix: string, exts: string[]): Prom
     return undefined;
 }
 
-/** Existing co-located search: exact basename, then prefix match (non-recursive). */
-async function findAudioInDirectory(dir: string, baseNames: string[]): Promise<string | undefined> {
+/** Existing co-located search: exact basename, then optional prefix match (non-recursive). */
+async function findAudioInDirectory(
+    dir: string,
+    baseNames: string[],
+    exactOnly = false,
+): Promise<string | undefined> {
     for (const base of baseNames) {
-        const hit =
-            (await findWithBasename(dir, base, AUDIO_EXTENSIONS)) ??
-            (await findWithPrefix(dir, base, AUDIO_EXTENSIONS));
+        const hit = await findWithBasename(dir, base, AUDIO_EXTENSIONS);
         if (hit) return hit;
+        if (!exactOnly) {
+            const prefixHit = await findWithPrefix(dir, base, AUDIO_EXTENSIONS);
+            if (prefixHit) return prefixHit;
+        }
     }
     return undefined;
 }
 
 /** Recursive walk of `root` looking for an audio file whose basename (no ext)
- *  equals or starts with any candidate. Used only as media-folder fallback. */
-async function findAudioRecursive(root: string, baseNames: string[]): Promise<string | undefined> {
+ *  equals (or, when not exactOnly, starts with) any candidate. Used only as media-folder fallback. */
+async function findAudioRecursive(
+    root: string,
+    baseNames: string[],
+    exactOnly = false,
+): Promise<string | undefined> {
     const lowerBases = baseNames.map((b) => b.toLowerCase());
     const extSet = new Set(AUDIO_EXTENSIONS);
     const stack = [root];
@@ -172,7 +197,10 @@ async function findAudioRecursive(root: string, baseNames: string[]): Promise<st
             const ext = path.extname(name).toLowerCase();
             if (!extSet.has(ext)) continue;
             const nameNoExt = path.parse(name).name.toLowerCase();
-            if (lowerBases.some((b) => nameNoExt === b || nameNoExt.startsWith(b))) {
+            const matched = exactOnly
+                ? lowerBases.some((b) => nameNoExt === b)
+                : lowerBases.some((b) => nameNoExt === b || nameNoExt.startsWith(b));
+            if (matched) {
                 return path.join(dir, name);
             }
         }
@@ -223,6 +251,12 @@ export async function autoDetectSongFilesFromFseq(
     const fseqDir = path.dirname(fseqFilePath);
     const fseqBase = path.parse(fseqFilePath).name;
     const mediaFolder = options?.mediaFolder?.trim() || undefined;
+    const exactOnly = options?.exactAudioMatch === true;
+    const colocatedAllowlist = options?.colocatedAudioAllowlist;
+    const colocatedRestricted = colocatedAllowlist !== undefined;
+    const colocatedAllowed = new Set(
+        (colocatedAllowlist ?? []).map((n) => path.basename(n).toLowerCase()),
+    );
 
     let headerAudioName: string | undefined;
     let fseqMeta: { title?: string; artist?: string } = {};
@@ -239,29 +273,46 @@ export async function autoDetectSongFilesFromFseq(
         fseqMeta = getTitleArtistFromFseqHeaders(header.headers);
         console.log(
             `[SongAutoDetect] Audio name from header: ${headerAudioName ?? '(none)'}, duration: ${out.durationSecs}s` +
-                `, fseqTitle=${fseqMeta.title ?? '(none)'}, fseqArtist=${fseqMeta.artist ?? '(none)'}`,
+                `, fseqTitle=${fseqMeta.title ?? '(none)'}, fseqArtist=${fseqMeta.artist ?? '(none)'}` +
+                `, exactAudioMatch=${exactOnly}, colocatedRestricted=${colocatedRestricted}`,
         );
     } catch (error) {
         console.warn(`[SongAutoDetect] FSEQ header read failed for "${fseqFilePath}":`, String(error));
     }
 
-    // --- Existing / default search (unchanged): FSEQ directory only ---
+    const acceptColocatedHit = (hit: string | undefined): string | undefined => {
+        if (!hit) return undefined;
+        if (!colocatedRestricted) return hit;
+        const base = path.basename(hit).toLowerCase();
+        if (colocatedAllowed.has(base)) return hit;
+        console.log(
+            `[SongAutoDetect] Ignoring show-folder audio "${hit}" (not in this import's companion allowlist)`,
+        );
+        return undefined;
+    };
+
+    // --- Colocated search (FSEQ directory). On LAN bulk import this directory is
+    // the flat show folder — only allowlisted companions may be used. ---
     if (headerAudioName) {
         const direct = path.join(fseqDir, headerAudioName);
         if (await fileExists(direct)) {
-            out.audioFile = direct;
+            out.audioFile = acceptColocatedHit(direct);
         }
         if (!out.audioFile) {
             const headerBase = path.parse(headerAudioName).name;
-            out.audioFile =
-                (await findWithBasename(fseqDir, headerBase, AUDIO_EXTENSIONS)) ??
-                (await findWithPrefix(fseqDir, headerBase, AUDIO_EXTENSIONS));
+            let hit = await findWithBasename(fseqDir, headerBase, AUDIO_EXTENSIONS);
+            if (!hit && !exactOnly) {
+                hit = await findWithPrefix(fseqDir, headerBase, AUDIO_EXTENSIONS);
+            }
+            out.audioFile = acceptColocatedHit(hit);
         }
     }
     if (!out.audioFile) {
-        out.audioFile =
-            (await findWithBasename(fseqDir, fseqBase, AUDIO_EXTENSIONS)) ??
-            (await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS));
+        let hit = await findWithBasename(fseqDir, fseqBase, AUDIO_EXTENSIONS);
+        if (!hit && !exactOnly) {
+            hit = await findWithPrefix(fseqDir, fseqBase, AUDIO_EXTENSIONS);
+        }
+        out.audioFile = acceptColocatedHit(hit);
     }
 
     // --- Additive fallback: optional Media Folder ---
@@ -270,8 +321,8 @@ export async function autoDetectSongFilesFromFseq(
             ...new Set([headerAudioName ? path.parse(headerAudioName).name : undefined, fseqBase].filter(Boolean)),
         ] as string[];
         out.audioFile =
-            (await findAudioInDirectory(mediaFolder, baseNames)) ??
-            (await findAudioRecursive(mediaFolder, baseNames));
+            (await findAudioInDirectory(mediaFolder, baseNames, exactOnly)) ??
+            (await findAudioRecursive(mediaFolder, baseNames, exactOnly));
         if (out.audioFile) {
             console.log(`[SongAutoDetect] Audio found in media folder: ${out.audioFile}`);
         }

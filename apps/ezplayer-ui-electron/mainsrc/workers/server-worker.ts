@@ -720,7 +720,14 @@ async function dispatchProxyWrite(
                 getMediaFolder: () =>
                     (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder,
             };
-            return proxyJson(await batchImportSequencesCore(showFolder, deps, (parsed as any)?.fseqNames));
+            return proxyJson(
+                await batchImportSequencesCore(
+                    showFolder,
+                    deps,
+                    (parsed as any)?.fseqNames,
+                    (parsed as any)?.companionAudioNames,
+                ),
+            );
         }
     }
     return { status: 404 };

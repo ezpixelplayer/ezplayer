@@ -153,6 +153,16 @@ export interface DataStorageAPI {
         imageFile?: string;
     }>;
 
-    /** Bulk-import `.fseq` files already uploaded to the show folder (web/LAN). */
-    batchImportShowSequences?: (fseqNames: string[]) => Promise<BatchImportSummary>;
+    /** Bulk-import `.fseq` files already uploaded to the show folder (web/LAN).
+     *  `companionAudioNames` = audio uploaded in the same selection (colocated equivalent). */
+    batchImportShowSequences?: (
+        fseqNames: string[],
+        companionAudioNames?: string[],
+    ) => Promise<BatchImportSummary>;
+
+    /** LAN bulk import: upload companions + fseqs and import in one HTTP request. */
+    batchUploadImportShowSequences?: (
+        files: Array<{ name: string; data: Blob }>,
+        companionAudioNames?: string[],
+    ) => Promise<BatchImportSummary>;
 }

@@ -37,8 +37,8 @@ export interface BatchImportOptions extends AutoDetectOptions {
 
 /**
  * Build a SequenceRecord from an FSEQ path + autodetection result.
- * Missing optional media is allowed — title/artist fall back to the fseq
- * basename / "Unknown Artist" so the sequence can still be saved.
+ * Bulk import requires companion audio to be resolved first; title/artist
+ * still fall back to the fseq basename / "Unknown Artist" when tags are absent.
  */
 export function buildSequenceRecordFromDetected(
     fseqPath: string,
@@ -84,8 +84,11 @@ export function buildSequenceRecordFromDetected(
 
 async function importOneFseq(
     fseqPath: string,
-    options: BatchImportOptions,
-): Promise<{ ok: true; success: BatchImportSuccess } | { ok: false; failure: BatchImportFailure }> {
+    options: AutoDetectOptions,
+): Promise<
+    | { ok: true; success: BatchImportSuccess; record: SequenceRecord }
+    | { ok: false; failure: BatchImportFailure }
+> {
     const fseqName = path.basename(fseqPath);
     try {
         if (path.extname(fseqPath).toLowerCase() !== '.fseq') {
@@ -94,9 +97,16 @@ async function importOneFseq(
 
         const detected = await autoDetectSongFilesFromFseq(fseqPath, {
             mediaFolder: options.mediaFolder,
+            exactAudioMatch: true,
+            // LAN passes [] or companion names; Electron IPC leaves this undefined
+            // so the real colocated folder next to the FSEQ is still searched.
+            colocatedAudioAllowlist: options.colocatedAudioAllowlist,
         });
 
-        if (detected.audioRequired && !detected.audioFile) {
+        // Bulk import always requires a resolved companion audio file (show
+        // folder, colocated with the fseq, or media folder). Same rule for
+        // Electron IPC and LAN HTTP so both UIs stay in lockstep.
+        if (!detected.audioFile) {
             const wanted = detected.headerAudioName ? ` (${detected.headerAudioName})` : '';
             return {
                 ok: false,
@@ -109,10 +119,10 @@ async function importOneFseq(
         }
 
         const record = buildSequenceRecordFromDetected(fseqPath, detected);
-        await options.putSequences([record]);
 
         return {
             ok: true,
+            record,
             success: {
                 fseqPath,
                 fseqName,
@@ -147,15 +157,21 @@ export async function batchImportSequences(
 
     console.log(`[BatchImport] Starting import of ${unique.length} sequence(s)`);
 
+    const recordsToSave: SequenceRecord[] = [];
     for (const fseqPath of unique) {
         const result = await importOneFseq(fseqPath, options);
         if (result.ok) {
             successes.push(result.success);
+            recordsToSave.push(result.record);
             console.log(`[BatchImport] Imported "${result.success.fseqName}"`);
         } else {
             failures.push(result.failure);
             console.warn(`[BatchImport] Skipped "${result.failure.fseqName}": ${result.failure.reason}`);
         }
+    }
+
+    if (recordsToSave.length) {
+        await options.putSequences(recordsToSave);
     }
 
     const summary: BatchImportSummary = {

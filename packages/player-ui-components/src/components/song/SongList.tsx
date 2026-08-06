@@ -7,7 +7,7 @@ import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-u
 import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
-import { batchImportShowSequences, uploadShowFiles } from '../../store/slices/SequenceStore';
+import { batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
 import {
@@ -255,35 +255,22 @@ export function SongList({
             if (!summary) return; // user cancelled picker
             setBulkSummary(summary);
             setBulkSummaryOpen(true);
-            if (summary.imported > 0 && summary.failed === 0) {
-                ToastMsgs.showSuccessMessage(`Imported ${summary.imported} sequence(s)`, {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2500,
-                });
-            } else if (summary.imported > 0) {
-                ToastMsgs.showSuccessMessage(
-                    `Imported ${summary.imported}; ${summary.failed} failed — see summary`,
-                    {
-                        theme: 'colored',
-                        position: 'bottom-right',
-                        autoClose: 3500,
-                    },
-                );
-            } else if (summary.failed > 0) {
-                ToastMsgs.showErrorMessage(`No sequences imported (${summary.failed} failed)`, {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 3500,
-                });
-            }
         } catch (error) {
             console.error('[BulkImport] failed:', error);
-            ToastMsgs.showErrorMessage('Bulk import failed', {
-                theme: 'colored',
-                position: 'bottom-right',
-                autoClose: 2500,
+            setBulkSummary({
+                total: 1,
+                imported: 0,
+                failed: 1,
+                successes: [],
+                failures: [
+                    {
+                        fseqPath: '',
+                        fseqName: 'Bulk import',
+                        reason: error instanceof Error ? error.message : 'Bulk import failed',
+                    },
+                ],
             });
+            setBulkSummaryOpen(true);
         } finally {
             setBulkImporting(false);
         }
@@ -307,39 +294,73 @@ export function SongList({
         return [...byName.values()];
     };
 
+    const AUDIO_UPLOAD_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma']);
+    const IMAGE_UPLOAD_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
+
+    const pathExt = (name: string) => {
+        const i = name.lastIndexOf('.');
+        return i >= 0 ? name.slice(i).toLowerCase() : '';
+    };
+
+    /** Companion media from the same browser selection (folder pick includes them).
+     *  Mirrors Electron colocated-search: audio/image next to the fseq can be used. */
+    const collectCompanionUploadFiles = (files: FileList | File[]): File[] => {
+        const byName = new Map<string, File>();
+        for (const file of files) {
+            const ext = pathExt(file.name);
+            if (!AUDIO_UPLOAD_EXTS.has(ext) && !IMAGE_UPLOAD_EXTS.has(ext)) continue;
+            byName.set(file.name, file);
+        }
+        return [...byName.values()];
+    };
+
     const uploadAndBatchImportBrowser = async (files: File[]): Promise<BatchImportSummary | undefined> => {
         const fseqFiles = collectFseqUploadFiles(files);
         if (!fseqFiles.length) {
-            ToastMsgs.showErrorMessage('No .fseq files found in the selection', {
-                theme: 'colored',
-                position: 'bottom-right',
-                autoClose: 2500,
-            });
-            return undefined;
+            return {
+                total: 0,
+                imported: 0,
+                failed: 1,
+                successes: [],
+                failures: [
+                    {
+                        fseqPath: '',
+                        fseqName: '(selection)',
+                        reason: 'No .fseq files found in the selection',
+                    },
+                ],
+            };
         }
-        const names: string[] = [];
-        for (const file of fseqFiles) {
-            await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
-            names.push(file.name);
-        }
-        console.log(`[BulkImport] Uploaded ${names.length} file(s); starting server batch import…`);
-        return dispatch(batchImportShowSequences(names)).unwrap();
+        const companions = collectCompanionUploadFiles(files);
+        const companionAudio = companions.filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
+        const companionAudioNames = companionAudio.map((f) => f.name);
+        // One HTTP request: write all companions + fseqs, then import once.
+        const toUpload = [...companions, ...fseqFiles].map((f) => ({ name: f.name, data: f as Blob }));
+        console.log(
+            `[BulkImport] Uploading+importing ${fseqFiles.length} fseq(s), ${companionAudioNames.length} companion audio(s) in one request…`,
+        );
+        return dispatch(
+            batchUploadImportShowSequences({ files: toUpload, companionAudioNames }),
+        ).unwrap();
     };
 
     const handleBulkFilesInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
+        // Copy BEFORE clearing — FileList is live; setting value='' empties it.
+        const fileArray = event.target.files ? Array.from(event.target.files) : [];
         event.target.value = '';
         setBulkMenuAnchor(null);
-        if (!files?.length) return;
-        await runBulkImport(() => uploadAndBatchImportBrowser([...files]));
+        if (!fileArray.length) return;
+        console.log(`[BulkImport] Browser selected ${fileArray.length} file(s)`);
+        await runBulkImport(() => uploadAndBatchImportBrowser(fileArray));
     };
 
     const handleBulkFolderInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
+        const fileArray = event.target.files ? Array.from(event.target.files) : [];
         event.target.value = '';
         setBulkMenuAnchor(null);
-        if (!files?.length) return;
-        await runBulkImport(() => uploadAndBatchImportBrowser([...files]));
+        if (!fileArray.length) return;
+        console.log(`[BulkImport] Browser folder selected ${fileArray.length} file(s)`);
+        await runBulkImport(() => uploadAndBatchImportBrowser(fileArray));
     };
 
     const handleBulkImportFiles = () => {
@@ -347,20 +368,10 @@ export function SongList({
             const api = (window as any).electronAPI;
             if (!api?.selectFiles) {
                 console.warn('[BulkImport] electronAPI.selectFiles is unavailable');
-                ToastMsgs.showErrorMessage('File picker is unavailable in this environment', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2500,
-                });
                 return undefined;
             }
             if (!api?.batchImportSequences) {
                 console.warn('[BulkImport] electronAPI.batchImportSequences is unavailable — restart the app');
-                ToastMsgs.showErrorMessage('Bulk import is unavailable. Restart the app and try again.', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 3500,
-                });
                 return undefined;
             }
             console.log('[BulkImport] Opening multi-file .fseq picker…');
@@ -382,22 +393,12 @@ export function SongList({
             const api = (window as any).electronAPI;
             if (!api?.selectDirectory) {
                 console.warn('[BulkImport] electronAPI.selectDirectory is unavailable');
-                ToastMsgs.showErrorMessage('Folder picker is unavailable in this environment', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2500,
-                });
                 return undefined;
             }
             if (!api?.batchImportSequencesFromFolder) {
                 console.warn(
                     '[BulkImport] electronAPI.batchImportSequencesFromFolder is unavailable — restart the app',
                 );
-                ToastMsgs.showErrorMessage('Bulk import is unavailable. Restart the app and try again.', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 3500,
-                });
                 return undefined;
             }
             console.log('[BulkImport] Opening folder picker…');
@@ -791,8 +792,6 @@ export function SongList({
                                         <>
                                             <MenuItem
                                                 onClick={() => {
-                                                    // Input lives outside Menu so it is not unmounted when
-                                                    // the menu closes. Click must stay synchronous.
                                                     const el = document.getElementById(
                                                         'ezplayer-bulk-fseq-files',
                                                     ) as HTMLInputElement | null;
@@ -816,8 +815,8 @@ export function SongList({
                                         </>
                                     )}
                                 </Menu>
-                                {/* Always mounted — never nest file inputs inside Menu. */}
-                                {showBulkImportButton && !isElectron() && (
+                                {/* LAN only: inputs stay outside Menu so closing it does not cancel the dialog. */}
+                                {!isElectron() && (
                                     <>
                                         <input
                                             id="ezplayer-bulk-fseq-files"
@@ -825,6 +824,7 @@ export function SongList({
                                             accept=".fseq,application/octet-stream"
                                             multiple
                                             style={{ display: 'none' }}
+                                            disabled={bulkImporting}
                                             onChange={handleBulkFilesInputChange}
                                         />
                                         <input
@@ -838,6 +838,7 @@ export function SongList({
                                             type="file"
                                             multiple
                                             style={{ display: 'none' }}
+                                            disabled={bulkImporting}
                                             onChange={handleBulkFolderInputChange}
                                         />
                                     </>

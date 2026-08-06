@@ -1,5 +1,5 @@
 import { ActionReducerMapBuilder, createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { BatchImportSummary, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type { BatchImportSummary, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 
 export interface SequenceState {
@@ -87,13 +87,25 @@ export const extractShowAudioMetadata = createAsyncThunk<
 /** Bulk-import fseq files already on the player (web/LAN). */
 export const batchImportShowSequences = createAsyncThunk<
     BatchImportSummary,
-    string[],
+    { fseqNames: string[]; companionAudioNames?: string[] },
     { extra: DataStorageAPI }
->('sequences/batchImportShowSequences', async (fseqNames, { extra }) => {
+>('sequences/batchImportShowSequences', async ({ fseqNames, companionAudioNames }, { extra }) => {
     if (!extra.batchImportShowSequences) {
         throw new Error('This player connection does not support bulk import');
     }
-    return await extra.batchImportShowSequences(fseqNames);
+    return await extra.batchImportShowSequences(fseqNames, companionAudioNames ?? []);
+});
+
+/** LAN bulk import: upload files + import sequences in a single HTTP request. */
+export const batchUploadImportShowSequences = createAsyncThunk<
+    BatchImportSummary,
+    { files: Array<{ name: string; data: Blob }>; companionAudioNames?: string[] },
+    { extra: DataStorageAPI }
+>('sequences/batchUploadImportShowSequences', async ({ files, companionAudioNames }, { extra }) => {
+    if (!extra.batchUploadImportShowSequences) {
+        throw new Error('This player connection does not support bulk upload-import');
+    }
+    return await extra.batchUploadImportShowSequences(files, companionAudioNames ?? []);
 });
 
 /** True when the connected backing store can receive file uploads (web/LAN

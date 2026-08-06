@@ -224,15 +224,49 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return await response.json();
     }
 
-    async batchImportShowSequences(fseqNames: string[]) {
+    async batchImportShowSequences(fseqNames: string[], companionAudioNames?: string[]) {
         const response = await fetch(`${this.apiUrl}ezp/sequences/batch-import`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fseqNames }),
+            body: JSON.stringify({ fseqNames, companionAudioNames: companionAudioNames ?? [] }),
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             throw new Error((err as { error?: string }).error ?? `Batch import failed: ${response.statusText}`);
+        }
+        return (await response.json()) as BatchImportSummary;
+    }
+
+    /** Upload companions + fseqs and import in one request (avoids N sequence file uploads). */
+    async batchUploadImportShowSequences(
+        files: Array<{ name: string; data: Blob }>,
+        companionAudioNames?: string[],
+    ): Promise<BatchImportSummary> {
+        const byName = new Map<string, Blob>();
+        for (const f of files) {
+            if (f?.name && f.data) byName.set(f.name, f.data);
+        }
+        const unique = [...byName.entries()].map(([name, data]) => ({ name, data }));
+        if (!unique.length) {
+            throw new Error('No files to upload');
+        }
+        const manifest = {
+            files: unique.map((f) => ({ name: f.name, size: f.data.size })),
+            companionAudioNames: companionAudioNames ?? [],
+        };
+        const response = await fetch(`${this.apiUrl}ezp/sequences/batch-upload-import`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'X-EZP-Batch-Manifest': JSON.stringify(manifest),
+            },
+            body: new Blob(unique.map((f) => f.data)),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(
+                (err as { error?: string }).error ?? `Batch upload-import failed: ${response.statusText}`,
+            );
         }
         return (await response.json()) as BatchImportSummary;
     }

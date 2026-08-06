@@ -16,6 +16,7 @@
  *   POST /api/ezp/sequences                  register SequenceRecords (RPC to main)
  *   POST /api/ezp/sequences/autodetect       find audio/metadata for an fseq
  *   POST /api/ezp/sequences/batch-import     bulk-import fseq already in show folder
+ *   POST /api/ezp/sequences/batch-upload-import  upload many files + import in one request
  *
  * Show folders are flat, so each logical FPP directory is the show root plus
  * an extension filter. This router must mount BEFORE jsonBody() so upload
@@ -29,6 +30,7 @@ import * as fs from 'fs';
 import fsp from 'fs/promises';
 import * as crypto from 'crypto';
 import type { IncomingMessage } from 'http';
+import { Readable } from 'stream';
 import { send } from '@koa/send';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
@@ -177,6 +179,91 @@ function streamToFile(req: IncomingMessage, filePath: string, append = false): P
         out.on('finish', () => resolve(written));
         out.on('error', reject);
         req.on('error', reject);
+    });
+}
+
+/** Read exactly `byteCount` bytes from `req` into `filePath`, leaving any
+ *  leftover bytes on the stream for the next consumer (via unshift). */
+function streamExactBytes(req: IncomingMessage, filePath: string, byteCount: number): Promise<void> {
+    if (byteCount < 0 || !Number.isFinite(byteCount)) {
+        return Promise.reject(Object.assign(new Error('Invalid byte count'), { status: 400 }));
+    }
+    if (byteCount === 0) {
+        return fsp.writeFile(filePath, Buffer.alloc(0));
+    }
+    return new Promise((resolve, reject) => {
+        const out = fs.createWriteStream(filePath);
+        let remaining = byteCount;
+        let settled = false;
+
+        const fail = (err: Error & { status?: number }) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            out.destroy();
+            try {
+                fs.unlinkSync(filePath);
+            } catch {
+                /* best-effort */
+            }
+            reject(err);
+        };
+
+        const succeed = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            // Pause so the next streamExactBytes call can attach listeners
+            // before more data is delivered (avoids dropped chunks).
+            req.pause();
+            out.end(() => resolve());
+        };
+
+        const onData = (chunk: Buffer) => {
+            if (settled) return;
+            if (chunk.length <= remaining) {
+                remaining -= chunk.length;
+                if (!out.write(chunk) && remaining > 0) {
+                    req.pause();
+                    out.once('drain', () => req.resume());
+                }
+                if (remaining === 0) succeed();
+                return;
+            }
+            const needed = chunk.subarray(0, remaining);
+            const leftover = chunk.subarray(remaining);
+            remaining = 0;
+            req.pause();
+            // Put unused bytes back for the next file in the concatenated body.
+            (req as Readable).unshift(leftover);
+            if (!out.write(needed)) {
+                out.once('drain', succeed);
+            } else {
+                succeed();
+            }
+        };
+
+        const onEnd = () => {
+            if (settled) return;
+            if (remaining > 0) {
+                fail(Object.assign(new Error('Unexpected end of upload body'), { status: 400 }));
+            }
+        };
+
+        const onError = (err: Error) => fail(err);
+
+        const cleanup = () => {
+            req.off('data', onData);
+            req.off('end', onEnd);
+            req.off('error', onError);
+            out.off('error', onError);
+        };
+
+        out.on('error', onError);
+        req.on('data', onData);
+        req.on('end', onEnd);
+        req.on('error', onError);
+        req.resume();
     });
 }
 
@@ -548,6 +635,19 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         }
     });
 
+    // ------------------------------------------------------------------
+    // Bulk upload + import (one HTTP request for LAN UI)
+    // Header X-EZP-Batch-Manifest: { files:[{name,size}], companionAudioNames?: string[] }
+    // Body: concatenated raw file bytes in manifest order.
+    // ------------------------------------------------------------------
+    router.post('/api/ezp/sequences/batch-upload-import', async (ctx) => {
+        const showFolder = requireShowFolder(ctx);
+        if (!showFolder) return;
+        const res = await batchUploadImportSequencesCore(showFolder, deps, ctx.req, ctx.get('X-EZP-Batch-Manifest'));
+        ctx.status = res.status;
+        ctx.body = res.body;
+    });
+
     return router;
 }
 
@@ -612,11 +712,15 @@ export async function audioMetadataCore(showFolder: string | undefined, audioNam
 }
 
 /** Bulk-import `.fseq` files already present in the show folder (LAN / web UI).
- *  Body: `{ fseqNames: string[] }` — basenames only, same flat layout as uploads. */
+ *  Body: `{ fseqNames: string[], companionAudioNames?: string[] }`.
+ *  Companion names are audio files uploaded in the same browser selection
+ *  (Electron colocated equivalent). Without them, only the media folder may
+ *  supply audio — never unrelated MP3s already sitting in the show folder. */
 export async function batchImportSequencesCore(
     showFolder: string | undefined,
     deps: FileApiDeps,
     fseqNames: unknown,
+    companionAudioNames?: unknown,
 ): Promise<ProxyResult> {
     if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
     if (!Array.isArray(fseqNames)) {
@@ -639,15 +743,121 @@ export async function batchImportSequencesCore(
         return { status: 400, body: { error: 'No valid .fseq file names provided' } };
     }
 
+    const allowlist: string[] = [];
+    if (Array.isArray(companionAudioNames)) {
+        for (const raw of companionAudioNames) {
+            if (typeof raw !== 'string' || !raw.trim()) continue;
+            const name = path.basename(raw.trim());
+            if (checkName(name)) continue;
+            allowlist.push(name);
+        }
+    }
+
     try {
         const summary = await batchImportSequences(unique, {
             mediaFolder: deps.getMediaFolder?.(),
+            // Always restrict show-folder audio on the LAN/HTTP path.
+            colocatedAudioAllowlist: allowlist,
+            exactAudioMatch: true,
             putSequences: async (recs) => (await deps.putSequences(recs)) as SequenceRecord[],
         });
         return { status: 200, body: summary };
     } catch (err: any) {
         return { status: 503, body: { error: err?.message ?? 'Batch import failed' } };
     }
+}
+
+export interface BatchUploadManifestFile {
+    name: string;
+    size: number;
+}
+
+export interface BatchUploadManifest {
+    files: BatchUploadManifestFile[];
+    companionAudioNames?: string[];
+}
+
+/** Stream concatenated file bytes into the show folder, then run batch import.
+ *  Used by LAN bulk import so the browser makes one HTTP call instead of
+ *  N `/api/file/sequences/...` uploads + a separate batch-import. */
+export async function batchUploadImportSequencesCore(
+    showFolder: string | undefined,
+    deps: FileApiDeps,
+    req: IncomingMessage,
+    manifestHeader: string | undefined,
+): Promise<ProxyResult> {
+    if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
+    if (!manifestHeader?.trim()) {
+        return { status: 400, body: { error: 'X-EZP-Batch-Manifest header is required' } };
+    }
+
+    let manifest: BatchUploadManifest;
+    try {
+        manifest = JSON.parse(manifestHeader) as BatchUploadManifest;
+    } catch {
+        return { status: 400, body: { error: 'Invalid X-EZP-Batch-Manifest JSON' } };
+    }
+    if (!Array.isArray(manifest.files) || !manifest.files.length) {
+        return { status: 400, body: { error: 'Manifest must include a non-empty files array' } };
+    }
+
+    let totalBytes = 0;
+    const prepared: { name: string; size: number; target: string }[] = [];
+    for (const entry of manifest.files) {
+        if (!entry || typeof entry.name !== 'string' || typeof entry.size !== 'number') {
+            return { status: 400, body: { error: 'Each manifest file needs name and size' } };
+        }
+        const name = path.basename(entry.name.trim());
+        const nameErr = checkName(name);
+        if (nameErr) return { status: 400, body: { error: `${name}: ${nameErr}` } };
+        if (!Number.isInteger(entry.size) || entry.size < 0) {
+            return { status: 400, body: { error: `${name}: invalid size` } };
+        }
+        if (PROTECTED_NAMES.has(name.toLowerCase())) {
+            return { status: 403, body: { error: `${name} is protected` } };
+        }
+        const target = resolveInShow(showFolder, name);
+        if (!target) return { status: 403, body: { error: `Resolved path outside show folder: ${name}` } };
+        totalBytes += entry.size;
+        prepared.push({ name, size: entry.size, target });
+    }
+    if (totalBytes > MAX_UPLOAD_BYTES) {
+        return { status: 413, body: { error: 'Upload exceeds maximum size' } };
+    }
+
+    const staging = await ensureStagingDir(showFolder);
+    const writtenNames: string[] = [];
+    try {
+        for (const file of prepared) {
+            const tmp = path.join(staging, `batch-${crypto.randomBytes(8).toString('hex')}`);
+            await streamExactBytes(req, tmp, file.size);
+            await fsp.rename(tmp, file.target);
+            writtenNames.push(file.name);
+            console.log(`[BatchImport] Wrote uploaded "${file.name}" (${file.size} bytes)`);
+        }
+    } catch (err: any) {
+        // Best-effort cleanup of files written in this request.
+        for (const name of writtenNames) {
+            const target = resolveInShow(showFolder, name);
+            if (target) {
+                try {
+                    await fsp.unlink(target);
+                } catch {
+                    /* best-effort */
+                }
+            }
+        }
+        return { status: err?.status ?? 500, body: { error: err?.message ?? 'Upload failed' } };
+    }
+
+    const fseqNames = prepared
+        .filter((f) => path.extname(f.name).toLowerCase() === '.fseq')
+        .map((f) => f.name);
+    if (!fseqNames.length) {
+        return { status: 400, body: { error: 'No .fseq files in upload' } };
+    }
+
+    return batchImportSequencesCore(showFolder, deps, fseqNames, manifest.companionAudioNames ?? []);
 }
 
 /** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */
@@ -701,7 +911,13 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
     });
 
     router.post('/api/ezp/sequences/batch-import', async (ctx) => {
-        const res = await batchImportSequencesCore(deps.getShowFolder(), deps, (ctx.request.body as any)?.fseqNames);
+        const body = ctx.request.body as any;
+        const res = await batchImportSequencesCore(
+            deps.getShowFolder(),
+            deps,
+            body?.fseqNames,
+            body?.companionAudioNames,
+        );
         ctx.status = res.status;
         ctx.body = res.body;
     });
