@@ -40,27 +40,71 @@ export function endBatch(state?: SendJobState): SendBatch[] {
     return b;
 }
 
+/** Don't bother sleeping for gaps smaller than this (sleep granularity). */
+const SEND_DUE_EPSILON_MS = 0.1;
+/** If we fall behind schedule (event loop hiccup), catch up at most this much
+ *  as an immediate burst; older debt is forgiven to avoid a compensating blast. */
+const SEND_CATCHUP_LIMIT_MS = 5;
+
+/**
+ * Run the send: pop the earliest-due sender off the heap, send one burst
+ * (up to its SenderJob.burstSize), and advance its nextTime by bytes/rate so
+ * each controller's packets are spread across the send slot, interleaved with
+ * all the others.
+ *
+ * Returns the time (performance.now() basis) the caller should sleep until
+ * before calling again, or -1 when every sender has finished the frame.
+ */
 export function sendPartial(state?: SendJobState): number {
     if (!state?.job) return -1;
-    // TODO EZP the whole scheduling thing
-    for (let i = 0; i < state.states.length; ++i) {
-        const sender = state.job.senders[i];
-        if (!sender || !sender.sender || state.states[i].skippingThisFrame) continue;
-        sender.sender.sendPortion(state.job, sender, state.states[i]);
+    const heap = state.sendHeap;
+    while (true) {
+        const top = heap.top;
+        if (!top || top.nextTime === Infinity) return -1; // All done
+        const now = performance.now();
+        if (top.nextTime > now + SEND_DUE_EPSILON_MS) return top.nextTime;
+
+        const senderJob = state.job.senders[top.senderIdx];
+        if (!senderJob?.sender) {
+            heap.updateTop((t) => (t.nextTime = Infinity));
+            continue;
+        }
+        const before = top.wireBytesSent;
+        const done = senderJob.sender.sendPortion(state.job, senderJob, top);
+        const sent = top.wireBytesSent - before;
+        if (done || sent <= 0) {
+            // sent <= 0 without done should not happen; treat it as done rather than spin.
+            if (done) senderJob.sender.sendPush(state.job, senderJob, top);
+            heap.updateTop((t) => (t.nextTime = Infinity));
+        } else {
+            const rate = top.sendRate > 0 ? top.sendRate : Number.MAX_SAFE_INTEGER;
+            const base = Math.max(top.nextTime, now - SEND_CATCHUP_LIMIT_MS);
+            heap.updateTop((t) => (t.nextTime = base + sent / rate));
+        }
     }
-    return -1; // Done!
+}
+
+export interface SendFullResult {
+    /** Time spent actually packetizing/enqueueing sends. */
+    activeMs: number;
+    /** Time spent sleeping between paced bursts. */
+    waitMs: number;
 }
 
 export async function sendFull(
     state: SendJobState | undefined,
     sleepfn: (sleepUntil: number) => Promise<void>,
-): Promise<void> {
-    if (!state?.job) return;
-    startFrame();
+): Promise<SendFullResult> {
+    const result: SendFullResult = { activeMs: 0, waitMs: 0 };
+    if (!state?.job) return result;
     while (true) {
+        const t0 = performance.now();
         const st = sendPartial(state);
+        const t1 = performance.now();
+        result.activeMs += t1 - t0;
         if (st < 0) break;
         await sleepfn(st);
+        result.waitMs += performance.now() - t1;
     }
-    endFrame();
+    return result;
 }

@@ -1,8 +1,8 @@
 import {
-    busySleep,
     endBatch,
     endFrame,
     FrameReference,
+    lpBusySleep,
     SendBatch,
     sendFull,
     SendJob,
@@ -78,8 +78,6 @@ export class FrameSender {
     outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
-    /** Gate for every black-frame send (idle/pause/stop/keepalive). Off =
-     *  leave the wire untouched so another player can drive the controllers. */
     blackFramesEnabled: boolean = true;
     blackFrame: Uint8Array | undefined = undefined;
     mixFrame: Uint8Array | undefined = undefined;
@@ -88,17 +86,20 @@ export class FrameSender {
     emitError?: (err: Error) => void;
     private warnedShortFrame = false;
     private warnedLongFrame = false;
+    private sendInProgress = false; // Guards SendJobState from concurrent send
 
     async sendBlackFrame(args: {
         targetFramePN: number;
+        frameInterval?: number;
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
     }) {
         if (!this.blackFramesEnabled) return;
         if (!this.blackFrame || !this.job || !this.state) return;
+        if (this.sendInProgress) return; // A send is still running; skip this black frame
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
-        this.state.initialize(args.targetFramePN, this.job);
+        this.state.initialize(args.targetFramePN, this.job, args.frameInterval ?? 50);
         await this.doSendFrame({ ...args, frame: undefined });
     }
 
@@ -122,10 +123,14 @@ export class FrameSender {
             const preSleepPN = performance.now();
             // If target frame PN is way in the future compared to other tasks, go around again.
             if (args.targetFramePN - preSleepPN > args.frameInterval * 2) {
-                // Send black
+                // Send black (awaited: send shares this.state with the next frame)
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({ targetFramePN: preSleepPN });
+                if (this.blackFrame)
+                    await this.sendBlackFrame({
+                        targetFramePN: preSleepPN + args.frameInterval,
+                        frameInterval: args.frameInterval,
+                    });
                 return 0;
             }
 
@@ -189,7 +194,7 @@ export class FrameSender {
                     this.exportBuffer.publishFrom(this.job.dataBuffers[0].slice(0, this.nChannels));
                 }
 
-                const res = this.state.initialize(args.targetFramePN, this.job);
+                const res = this.state.initialize(args.targetFramePN, this.job, args.frameInterval);
                 args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
                 args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
                 if (this.outstandingFrames.has(args.frame)) {
@@ -219,19 +224,26 @@ export class FrameSender {
         playbackStatsAgg?: OverallFrameSendStats;
         frame: FrameReference | undefined;
     }) {
+        if (this.sendInProgress) {
+            this.emitWarning?.('Frame send started while previous frame in progress');
+            if (args.playbackStats) ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
+            args.frame?.release();
+            args.frame = undefined;
+            return;
+        }
+        this.sendInProgress = true;
         try {
             const frameref = args.frame;
             if (frameref) {
                 this.outstandingFrames.add(frameref);
                 args.frame = undefined;
             }
-            const startSendTime = performance.now();
             startFrame(this.state);
             startBatch(this.state);
-            await sendFull(this.state, busySleep);
+            const paced = await sendFull(this.state, lpBusySleep);
             const end = endBatch(this.state);
             this.prevSendBatch = end;
-            const sendTime = performance.now() - startSendTime;
+            const sendTime = paced.activeMs;
             Promise.allSettled(end.map((s) => s.promise)).then(() => {
                 for (const sb of end) {
                     if (sb.nECBs > 0) {
@@ -249,6 +261,7 @@ export class FrameSender {
             });
             if (args.playbackStatsAgg) {
                 args.playbackStatsAgg.totalSendTime += sendTime;
+                args.playbackStatsAgg.totalIdleTime += paced.waitMs;
                 ++args.playbackStatsAgg.nSends;
             }
             if (args.playbackStats) {
@@ -258,6 +271,8 @@ export class FrameSender {
         } catch (e) {
             const err = e as Error;
             this.emitError?.(err);
+        } finally {
+            this.sendInProgress = false;
         }
         endFrame(this.state);
     }
