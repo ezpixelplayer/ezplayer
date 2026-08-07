@@ -1,8 +1,5 @@
-/**
- * Proxying a header-less (HTTP/0.9) device — an AlphaPix stand-in that answers
- * with the body alone and closes. Node's HTTP client rejects that, so the proxy
- * has to retry on a raw socket and synthesize the response head.
- */
+/** Proxying a header-less (HTTP/0.9) device — an AlphaPix stand-in that answers
+ *  with the body alone and closes. */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import net from 'node:net';
@@ -13,8 +10,8 @@ import { http09Request } from './http09-fallback';
 
 const PAGE = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN">\r\n<html><body>AlphaPix</body></html>';
 
-/** Header-less device: reads the request, writes the body with no status line
- *  or headers, then closes — the firmware's end-of-body signal. */
+/** Writes the body with no status line or headers, then closes — the
+ *  firmware's end-of-body signal. */
 function startHeaderlessDevice(): Promise<{ port: number; close: () => void; lastRequest: () => string }> {
     let lastRequest = '';
     const server = net.createServer((socket) => {
@@ -27,7 +24,7 @@ function startHeaderlessDevice(): Promise<{ port: number; close: () => void; las
             const need = headEnd + 4 + (declared ? Number(declared[1]) : 0);
             if (received.length < need) return;
             lastRequest = received;
-            // POSTs echo what arrived so the test can prove the body was resent.
+            // POSTs echo the body back, to prove it was resent on the retry.
             socket.end(received.startsWith('POST') ? `<html>echo:${received.slice(headEnd + 4)}</html>` : PAGE);
         });
     });
@@ -39,7 +36,7 @@ function startHeaderlessDevice(): Promise<{ port: number; close: () => void; las
     });
 }
 
-/** Ordinary HTTP/1.1 device, to prove the fallback didn't disturb the normal path. */
+/** Ordinary HTTP/1.1 device: the normal path must be undisturbed. */
 function startNormalDevice(): Promise<{ port: number; close: () => void }> {
     const server = http.createServer((req, res) => {
         res.setHeader('content-type', 'text/plain');

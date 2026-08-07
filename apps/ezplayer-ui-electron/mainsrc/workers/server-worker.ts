@@ -947,7 +947,7 @@ async function dispatchDeviceProxy(
     });
 }
 
-/** Case-insensitive header lookup over a forwarded header set. */
+/** Case-insensitive header lookup. */
 function findHeader(headers: Record<string, string>, name: string): string | undefined {
     const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === name);
     return entry?.[1];

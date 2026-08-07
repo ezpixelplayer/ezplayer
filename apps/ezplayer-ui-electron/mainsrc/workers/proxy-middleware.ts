@@ -15,8 +15,7 @@ import { http09Request, isHeaderlessResponse } from './http09-fallback';
 
 const PROXY_PREFIX = '/proxy/';
 const REQUEST_TIMEOUT_MS = 30_000;
-/** Largest request body held in memory so an HTTP/0.9 retry can resend it;
- *  anything bigger streams straight through and forgoes the fallback. */
+/** Largest request body held in memory so an HTTP/0.9 retry can resend it. */
 const RETRY_BODY_MAX_BYTES = 1024 * 1024;
 
 /** Hop-by-hop headers that must not be forwarded. */
@@ -219,15 +218,14 @@ export function createProxyMiddleware(isAllowed?: (hostname: string) => boolean)
                 resolve();
             });
 
-            // Send the buffered body, or stream it when it was too big to hold.
             if (retryBody) proxyReq.end(retryBody.length > 0 ? retryBody : undefined);
             else ctx.req.pipe(proxyReq);
         });
     };
 }
 
-/** Copy proxied response headers onto the context, remapping a device-absolute
- *  redirect (which would escape the proxy prefix) under the proxied root. */
+/** A device-absolute redirect would escape the proxy prefix; remap it under
+ *  the proxied root. */
 function setProxiedHeaders(
     ctx: Koa.Context,
     headers: http.OutgoingHttpHeaders | Record<string, string>,
@@ -243,12 +241,10 @@ function setProxiedHeaders(
     }
 }
 
-/** Buffer a request body so an HTTP/0.9 retry can resend it. Returns null when
- *  the body is too large (or of unknown length) to hold — those stream through
- *  and get no retry. */
+/** Buffer a request body so an HTTP/0.9 retry can resend it. Null means too
+ *  large or of unknown length: stream it through and forgo the retry. */
 async function readRetryableBody(req: http.IncomingMessage, contentLength: string): Promise<Buffer | null> {
     if (req.method === 'GET' || req.method === 'HEAD') return Buffer.alloc(0);
-    // No declared length means chunked (or absent) — stream rather than guess.
     if (!contentLength) return null;
     const declared = Number(contentLength);
     if (!Number.isFinite(declared) || declared > RETRY_BODY_MAX_BYTES) return null;
@@ -257,8 +253,8 @@ async function readRetryableBody(req: http.IncomingMessage, contentLength: strin
         let size = 0;
         req.on('data', (c: Buffer) => {
             size += c.length;
-            // Only reachable if the sender's Content-Length lied; the partly
-            // consumed stream can't be handed to the pipe path, so drop it.
+            // Only reachable if Content-Length lied; the partly consumed stream
+            // can't be handed to the pipe path, so drop it.
             if (size > RETRY_BODY_MAX_BYTES) {
                 req.destroy();
                 resolve(null);
