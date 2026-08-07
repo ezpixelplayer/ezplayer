@@ -11,9 +11,12 @@ import https from 'https';
 import { URL } from 'url';
 import type Koa from 'koa';
 import { WebSocketServer, WebSocket } from 'ws';
+import { http09Request, isHeaderlessResponse } from './http09-fallback';
 
 const PROXY_PREFIX = '/proxy/';
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Largest request body held in memory so an HTTP/0.9 retry can resend it. */
+const RETRY_BODY_MAX_BYTES = 1024 * 1024;
 
 /** Hop-by-hop headers that must not be forwarded. */
 const HOP_BY_HOP = new Set([
@@ -140,6 +143,15 @@ export function createProxyMiddleware(isAllowed?: (hostname: string) => boolean)
         const outHeaders = filterRawHeaders(ctx.req.rawHeaders);
         outHeaders['host'] = target.host;
 
+        // The proxied prefix as it appears in the request URL
+        // (handles both `/proxy/<host>` and `/proxy/http://host`).
+        const suffix = target.pathname + target.search;
+        const proxiedPrefix = ctx.originalUrl.endsWith(suffix)
+            ? ctx.originalUrl.slice(0, ctx.originalUrl.length - suffix.length)
+            : ctx.originalUrl;
+
+        const retryBody = await readRetryableBody(ctx.req, ctx.get('content-length'));
+
         await new Promise<void>((resolve) => {
             const proxyReq = transport.request(
                 {
@@ -154,26 +166,7 @@ export function createProxyMiddleware(isAllowed?: (hostname: string) => boolean)
                 },
                 (proxyRes) => {
                     ctx.status = proxyRes.statusCode ?? 502;
-
-                    // The proxied prefix as it appears in the request URL
-                    // (handles both `/proxy/<host>` and `/proxy/http://host`).
-                    const suffix = target.pathname + target.search;
-                    const proxiedPrefix = ctx.originalUrl.endsWith(suffix)
-                        ? ctx.originalUrl.slice(0, ctx.originalUrl.length - suffix.length)
-                        : ctx.originalUrl;
-
-                    const responseHeaders = filterHeaders(proxyRes.headers);
-                    for (const [key, value] of Object.entries(responseHeaders)) {
-                        if (value === undefined) continue;
-                        // A device-absolute redirect would escape the proxy
-                        // prefix; remap it under the proxied root.
-                        if (key.toLowerCase() === 'location' && typeof value === 'string' && value.startsWith('/')) {
-                            ctx.set(key, proxiedPrefix + value);
-                            continue;
-                        }
-                        ctx.set(key, value as string);
-                    }
-
+                    setProxiedHeaders(ctx, filterHeaders(proxyRes.headers), proxiedPrefix);
                     ctx.body = proxyRes;
                     resolve();
                 },
@@ -187,6 +180,31 @@ export function createProxyMiddleware(isAllowed?: (hostname: string) => boolean)
             });
 
             proxyReq.on('error', (err: NodeJS.ErrnoException) => {
+                // Header-less device (AlphaPix): redo the request on a raw socket.
+                if (retryBody && isHeaderlessResponse(err)) {
+                    void http09Request({
+                        hostname: target.hostname,
+                        port: Number(target.port) || (target.protocol === 'https:' ? 443 : 80),
+                        path: target.pathname + target.search,
+                        method: ctx.method,
+                        contentType: ctx.get('content-type') || undefined,
+                        body: retryBody.length > 0 ? retryBody : undefined,
+                        timeoutMs: REQUEST_TIMEOUT_MS,
+                    }).then(
+                        (res) => {
+                            ctx.status = res.status;
+                            setProxiedHeaders(ctx, res.headers, proxiedPrefix);
+                            ctx.body = res.body;
+                            resolve();
+                        },
+                        (fallbackErr: Error) => {
+                            ctx.status = 502;
+                            ctx.body = { error: `Proxy error: ${fallbackErr.message}` };
+                            resolve();
+                        },
+                    );
+                    return;
+                }
                 if (err.code === 'ECONNREFUSED') {
                     ctx.status = 502;
                     ctx.body = { error: `Connection refused: ${target.host}` };
@@ -200,10 +218,53 @@ export function createProxyMiddleware(isAllowed?: (hostname: string) => boolean)
                 resolve();
             });
 
-            // Pipe the incoming request body to the proxy request
-            ctx.req.pipe(proxyReq);
+            if (retryBody) proxyReq.end(retryBody.length > 0 ? retryBody : undefined);
+            else ctx.req.pipe(proxyReq);
         });
     };
+}
+
+/** A device-absolute redirect would escape the proxy prefix; remap it under
+ *  the proxied root. */
+function setProxiedHeaders(
+    ctx: Koa.Context,
+    headers: http.OutgoingHttpHeaders | Record<string, string>,
+    proxiedPrefix: string,
+): void {
+    for (const [key, value] of Object.entries(headers)) {
+        if (value === undefined) continue;
+        if (key.toLowerCase() === 'location' && typeof value === 'string' && value.startsWith('/')) {
+            ctx.set(key, proxiedPrefix + value);
+            continue;
+        }
+        ctx.set(key, value as string);
+    }
+}
+
+/** Buffer a request body so an HTTP/0.9 retry can resend it. Null means too
+ *  large or of unknown length: stream it through and forgo the retry. */
+async function readRetryableBody(req: http.IncomingMessage, contentLength: string): Promise<Buffer | null> {
+    if (req.method === 'GET' || req.method === 'HEAD') return Buffer.alloc(0);
+    if (!contentLength) return null;
+    const declared = Number(contentLength);
+    if (!Number.isFinite(declared) || declared > RETRY_BODY_MAX_BYTES) return null;
+    return new Promise<Buffer | null>((resolve) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        req.on('data', (c: Buffer) => {
+            size += c.length;
+            // Only reachable if Content-Length lied; the partly consumed stream
+            // can't be handed to the pipe path, so drop it.
+            if (size > RETRY_BODY_MAX_BYTES) {
+                req.destroy();
+                resolve(null);
+                return;
+            }
+            chunks.push(c);
+        });
+        req.on('end', () => resolve(Buffer.concat(chunks)));
+        req.on('error', () => resolve(null));
+    });
 }
 
 // ─── WebSocket Proxy ────────────────────────────────────────────────
