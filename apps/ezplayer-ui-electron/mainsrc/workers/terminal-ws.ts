@@ -4,31 +4,23 @@
  * Security posture, in order of enforcement:
  *   1. If no password is configured, the endpoint does not exist — upgrades are
  *      rejected outright. This is the master switch, and only the CLI can flip
- *      it (see mainsrc/shellconfig.ts).
+ *      it.
  *   2. A freshly-opened socket may send exactly one kind of message: `auth`.
  *      Anything else, or silence past AUTH_TIMEOUT_MS, closes it.
  *   3. Wrong passwords are throttled process-wide with escalating lockouts, so
  *      the password — not the network — is what an attacker has to beat.
  * Only after all three does main get asked to spawn a pty.
  *
- * Terminal bytes deliberately do NOT go through WebSocketBroadcaster: that
- * coalesces per key and kicks slow clients, which is right for state snapshots
- * and catastrophic for a byte stream.
+ * Terminal bytes deliberately do NOT go through the state broadcaster: it
+ * coalesces per key and kicks slow clients, which is right for snapshots and
+ * catastrophic for a byte stream.
  */
 
 import { randomUUID } from 'crypto';
 import type { IncomingMessage } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
-import { readShellConfig, shellEnabled, verifyShellPassword } from '../shellconfig.js';
+import { AUTH_TIMEOUT_MS, authenticateFeature, featureEndpointEnabled } from './password-gate.js';
 import type { ShellEvent } from './serverworkertypes.js';
-
-/** How long an unauthenticated socket may sit there. */
-const AUTH_TIMEOUT_MS = 20_000;
-/** Failures tolerated before lockouts begin. */
-const FREE_ATTEMPTS = 3;
-/** Lockout after that grows 5s, 10s, 20s … to this ceiling. */
-const BASE_LOCKOUT_MS = 5_000;
-const MAX_LOCKOUT_MS = 5 * 60_000;
 
 /** Client → player. */
 type TerminalClientMessage =
@@ -69,30 +61,6 @@ let attached: Attached | undefined;
 /** Set by `createTerminalWss`, so revocation paths can reach into main too. */
 let activeHost: TerminalHost | undefined;
 
-/** Failed-attempt state, process-wide rather than per-IP: a shell is valuable
- *  enough that spreading guesses across source addresses shouldn't help. */
-let failureCount = 0;
-let lockedUntil = 0;
-
-function lockoutRemainingMs(): number {
-    return Math.max(0, lockedUntil - Date.now());
-}
-
-function recordFailure(): void {
-    failureCount += 1;
-    if (failureCount > FREE_ATTEMPTS) {
-        const step = failureCount - FREE_ATTEMPTS - 1;
-        const delay = Math.min(BASE_LOCKOUT_MS * 2 ** step, MAX_LOCKOUT_MS);
-        lockedUntil = Date.now() + delay;
-        console.warn(`[terminal] ${failureCount} failed shell logins; locked out for ${Math.round(delay / 1000)}s`);
-    }
-}
-
-function recordSuccess(): void {
-    failureCount = 0;
-    lockedUntil = 0;
-}
-
 function send(ws: WebSocket, msg: Record<string, unknown>): void {
     if (ws.readyState !== WebSocket.OPEN) return;
     try {
@@ -110,7 +78,7 @@ function toDim(value: unknown, fallback: number): number {
 
 /**
  * Create the `/terminal` WebSocketServer. The caller wires it into the HTTP
- * server's upgrade routing; `shellIsEnabled` is re-checked on every upgrade so
+ * server's upgrade routing and re-checks the password gate on every upgrade, so
  * clearing the password takes effect immediately.
  */
 export function createTerminalWss(host: TerminalHost): WebSocketServer {
@@ -166,39 +134,19 @@ export function createTerminalWss(host: TerminalHost): WebSocketServer {
         });
 
         const handleAuth = async (msg: Extract<TerminalClientMessage, { type: 'auth' }>) => {
-            const waitMs = lockoutRemainingMs();
-            if (waitMs > 0) {
-                send(ws, {
-                    type: 'authFail',
-                    reason: `too many failed attempts; try again in ${Math.ceil(waitMs / 1000)}s`,
-                });
-                ws.close(4429, 'locked out');
-                return;
-            }
-
-            // Read once and reuse: the folder must not change between the
-            // password check and the spawn.
+            // Read the folder once and reuse it: it must not change between the
+            // password check and the spawn. The gate re-reads the config on
+            // every attempt, so clearing the password (or switching shows)
+            // takes effect even for a socket already mid-handshake.
             const showFolder = host.getShowFolder();
-            const cfg = await readShellConfig(showFolder);
-            // Re-checked here as well as at upgrade: the CLI may have cleared
-            // the password (or the show folder may have changed) while this
-            // socket was mid-handshake.
-            if (!shellEnabled(cfg)) {
-                send(ws, { type: 'authFail', reason: 'the remote shell is not enabled on this player' });
-                ws.close(4403, 'shell disabled');
-                return;
-            }
-
-            const password = typeof msg.password === 'string' ? msg.password : '';
-            if (!(await verifyShellPassword(cfg, password))) {
-                recordFailure();
-                send(ws, { type: 'authFail', reason: 'incorrect password' });
-                ws.close(4401, 'bad password');
+            const auth = await authenticateFeature('shell', showFolder, msg.password);
+            if (!auth.ok) {
+                send(ws, { type: 'authFail', reason: auth.reason });
+                ws.close(auth.code, 'authentication failed');
                 return;
             }
             if (ws.readyState !== WebSocket.OPEN) return;
 
-            recordSuccess();
             authed = true;
             clearTimeout(authTimer);
 
@@ -265,7 +213,7 @@ export function dispatchShellEvent(event: ShellEvent): void {
 /** True when the open show has a password configured — the gate for accepting
  *  an upgrade at all. */
 export async function terminalEndpointEnabled(showFolder: string | undefined): Promise<boolean> {
-    return shellEnabled(await readShellConfig(showFolder));
+    return featureEndpointEnabled('shell', showFolder);
 }
 
 /** Drop the active terminal and its pty — used when the CLI clears the

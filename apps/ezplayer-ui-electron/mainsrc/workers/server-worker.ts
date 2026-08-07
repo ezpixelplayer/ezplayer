@@ -42,6 +42,7 @@ import {
     dispatchShellEvent,
     terminalEndpointEnabled,
 } from './terminal-ws.js';
+import { closeFileManagerSessions, createFileManagerWss, fileManagerEndpointEnabled } from './filemanager-ws.js';
 import {
     createFileApiRouter,
     registerSequenceApiRoutes,
@@ -201,13 +202,18 @@ const rpc = new MainThreadRPC();
 const wsBroadcaster = new WebSocketBroadcaster();
 
 /** The port the web server actually bound (after any EADDRINUSE walk-up). Set
- *  once the listener is up; used to dial our own `/terminal` from the cloud
- *  bridge. */
+ *  once the listener is up; used to dial our own remote-access sockets from the
+ *  cloud bridge. */
 let boundWebPort: number | undefined;
+
+/** Loopback WebSocket paths the cloud bridge may reach. Each is password-gated
+ *  behind its own endpoint; this set only says "this is one of ours, not a LAN
+ *  device address". */
+const REMOTE_ACCESS_WS_PATHS = new Set(['/terminal', '/filemanager']);
 
 // -- remote shell -------------------------------------------------------------
 // The pty itself lives in main (native addon, privileged operation); this
-// worker owns the socket and relays bytes. See terminal-ws.ts for the gate.
+// worker owns the socket and relays bytes; the password gate lives with the
 /** The show folder the player currently has open — where the shell password
  *  lives. Read through the broadcaster so it always reflects the live value. */
 const currentShowFolder = (): string | undefined => wsBroadcaster.get('showFolder') as string | undefined;
@@ -240,20 +246,27 @@ function isLoopbackAddress(remote: string): boolean {
     return addr === '127.0.0.1' || addr === '::1' || addr.startsWith('127.');
 }
 
-/** Route `/terminal` upgrades, refusing them unless a password is configured.
- *  Checked per-upgrade (not cached) so `EZPlayer shell --clear` shuts the door
- *  immediately, whether or not the CLI managed to nudge us. */
-function attachTerminalUpgrade(server: ReturnType<typeof createServer>): void {
+const fileManagerWss = createFileManagerWss({ getShowFolder: currentShowFolder });
+
+/** Route a remote-access upgrade, refusing it unless that feature has a
+ *  password configured. Checked per-upgrade (not cached) so `--clear` shuts the
+ *  door immediately, whether or not the CLI managed to nudge us. */
+function attachRemoteAccessUpgrade(
+    server: ReturnType<typeof createServer>,
+    pathToMatch: string,
+    wss: WebSocketServer,
+    isEnabled: (showFolder: string | undefined) => Promise<boolean>,
+): void {
     server.on('upgrade', (req, socket, head) => {
         const pathname = (req.url ?? '').split('?')[0];
-        if (pathname !== '/terminal') return; // leave for the other upgrade handlers
-        void terminalEndpointEnabled(currentShowFolder()).then((enabled) => {
+        if (pathname !== pathToMatch) return; // leave for the other upgrade handlers
+        void isEnabled(currentShowFolder()).then((enabled) => {
             if (!enabled) {
                 socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
                 socket.destroy();
                 return;
             }
-            terminalWss.handleUpgrade(req, socket, head, (ws) => terminalWss.emit('connection', ws, req));
+            wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
         });
     });
 }
@@ -334,11 +347,12 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'updateAudioBuffer') {
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
     } else if (msg.type === 'broadcast') {
-        // A terminal belongs to the show it was opened against — its password
-        // lives in that show's folder. Switching shows revokes it rather than
-        // silently carrying it over to a show that may not permit one at all.
+        // A remote-access session belongs to the show it was opened against —
+        // its password lives in that show's folder. Switching shows revokes it
+        // rather than carrying it into a show that may not permit it at all.
         if (msg.key === 'showFolder' && msg.value !== wsBroadcaster.get('showFolder')) {
             closeActiveTerminal('the player switched to a different show folder');
+            closeFileManagerSessions('the player switched to a different show folder');
         }
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
@@ -535,7 +549,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         }
     };
     /** Wire an outbound socket into the cloud relay under `wsId`. Shared by the
-     *  LAN-device path and the loopback `/terminal` path. */
+     *  LAN-device path and the loopback remote-access paths. */
     const relayWs = (wsId: string, t: WebSocket) => {
         deviceWs.set(wsId, t);
         t.on('open', () => wsSend({ type: 'wsProxyOpened', wsId }));
@@ -561,17 +575,17 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         const fail = (reason: string) => wsSend({ type: 'wsProxyClose', wsId, reason });
         if (deviceWs.size >= MAX_DEVICE_WS) return fail('too many device sockets');
 
-        // `/terminal` is us, not a LAN device: loop back to our own server so a
-        // cloud viewer lands on exactly the same endpoint, and the same password
+        // These are us, not a LAN device: loop back to our own server so a cloud
+        // viewer lands on exactly the same endpoint, and the same password
         // check, as a LAN viewer. Nothing is relaxed by routing here — every
-        // guard that protects the shell lives behind that socket.
-        if (pathStr === '/terminal') {
+        // guard that protects these features lives behind those sockets.
+        if (REMOTE_ACCESS_WS_PATHS.has(pathStr)) {
             if (boundWebPort === undefined) return fail('server not listening yet');
             let t: WebSocket;
             try {
-                t = new WebSocket(`ws://127.0.0.1:${boundWebPort}/terminal`, { handshakeTimeout: 15_000 });
+                t = new WebSocket(`ws://127.0.0.1:${boundWebPort}${pathStr}`, { handshakeTimeout: 15_000 });
             } catch (e) {
-                return fail(`terminal dial failed: ${(e as Error).message}`);
+                return fail(`dial failed: ${(e as Error).message}`);
             }
             return relayWs(wsId, t);
         }
@@ -1391,11 +1405,12 @@ async function startServer(config: ServerWorkerData) {
             ctx.body = { error: 'this endpoint is loopback-only' };
             return;
         }
-        const enabled = await rpc.call('shellReloadConfig');
+        const state = await rpc.call('remoteAccessReloadConfig');
         // Revoking should take effect on sessions already in flight, not just
         // on the next login.
-        if (!enabled) closeActiveTerminal('the remote shell was disabled');
-        ctx.body = { shellAvailable: enabled };
+        if (!state.shell) closeActiveTerminal('the remote shell was disabled');
+        if (!state.files) closeFileManagerSessions('the file manager was disabled');
+        ctx.body = state;
     });
 
     // ----------------------------------------------
@@ -1996,11 +2011,13 @@ async function startServer(config: ServerWorkerData) {
     // Initialize WebSocket broadcaster with the WebSocket server
     wsBroadcaster.attach(wss);
 
-    // `/terminal` — the remote shell. Its own socket rather than a channel on
-    // `/ws`, because the broadcaster there is lossy by design. The upgrade is
-    // refused outright unless a password has been configured via the CLI, so
-    // with the feature off there is nothing on the network to attack.
-    attachTerminalUpgrade(httpServer);
+    // The remote-access endpoints get their own sockets rather than channels on
+    // `/ws`, because the broadcaster there is lossy by design. Each upgrade is
+    // refused outright unless that feature's password has been configured via
+    // the CLI, so with a feature off there is nothing on the network to attack.
+    // Neither is attached to the kiosk server.
+    attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
+    attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
 
     // ----------------------------
     // Kiosk server — second port, same API, limited sidebar

@@ -3,38 +3,20 @@ import * as path from 'path';
 
 /**
  * Early CLI parsing: an optional verb as the first argument, then flags.
- * Must be main.ts's first import — `--user-data-dir=` has to apply before
- * showfolder/webport/ipcautoupdate construct their electron-stores.
+ * Must be the entry point's first import — `--user-data-dir=` has to apply
+ * before anything constructs an electron-store.
  */
-
-const KNOWN_VERBS = [
-    'headless',
-    'discover',
-    'interfaces',
-    'controllers',
-    'status',
-    'action',
-    'upload',
-    'shell',
-    'help',
-] as const;
-export type CliVerb = (typeof KNOWN_VERBS)[number];
 
 /**
  * Verbs that run text-only and exit *before* any Electron bootstrap — unlike
- * `headless`, which is a full player that merely has no windows. These are
- * dispatched by cli/dispatch.ts.
+ * `headless`, a full player that merely has no windows. The dispatch table is
+ * electron-free and its command modules are lazy `import()`s, so importing it
+ * here loads nothing.
  */
-const TOOL_VERBS: readonly string[] = [
-    'discover',
-    'interfaces',
-    'controllers',
-    'status',
-    'action',
-    'upload',
-    'shell',
-    'help',
-];
+import { isToolVerbName, TOOL_VERBS, toolVerbSummary, type ToolVerb } from '../cli/dispatch.js';
+
+const KNOWN_VERBS = ['headless', ...TOOL_VERBS] as const;
+export type CliVerb = (typeof KNOWN_VERBS)[number];
 
 // The verb is the first non-flag argument after the executable (and, in dev,
 // after the app path). Chromium switches can precede the app path.
@@ -76,13 +58,13 @@ export function isHeadless(): boolean {
 
 /** True for text-only verbs that run and exit before the app bootstraps. */
 export function isToolVerb(): boolean {
-    return verb !== null && TOOL_VERBS.includes(verb);
+    return verb !== null && isToolVerbName(verb);
 }
 
 /**
- * Argv from the verb onward (verb + its flags), for cli/dispatch.ts. Uses the
- * same positional scan as the verb detection, so it is correct both packaged
- * and in dev (where the app path precedes the verb).
+ * Argv from the verb onward (verb + its flags). Uses the same positional scan
+ * as the verb detection, so it is correct both packaged and in dev, where the
+ * app path precedes the verb.
  */
 export function getCliArgs(): string[] {
     return process.argv.slice(firstIndex);
@@ -96,13 +78,7 @@ export function cliUsage(): string {
         '  (none)      Launch the windowed player.',
         '  headless    Run the player with no windows. Requires a valid show',
         '              folder via --show-folder= or a previously configured one.',
-        '  discover    Scan networks for lighting controllers (text-only, exits).',
-        '  interfaces  List this host\'s networks (text-only, exits).',
-        '  controllers Show the controller reconcile state from the running app.',
-        '  status      Deep-read one controller and print its detail report.',
-        '  action      Run a management action (e.g. reboot) on a controller.',
-        '  upload      Upload xLights-derived config to a controller (via the app).',
-        '  help        Show help for a verb, e.g. `ezplayer help discover`.',
+        ...TOOL_VERBS.map((verb: ToolVerb) => `  ${verb.padEnd(11)} ${toolVerbSummary(verb)}`),
         '',
         'Common options:',
         '  --show-folder=<path>    xLights show folder to open',
@@ -112,7 +88,6 @@ export function cliUsage(): string {
     ].join('\n');
 }
 
-// --user-data-dir: redirect userData/sessionData/logs (isolated test/second instances)
 const udArg = process.argv.find((a) => a.startsWith('--user-data-dir='));
 if (udArg) {
     const dir = path.resolve(udArg.substring('--user-data-dir='.length));

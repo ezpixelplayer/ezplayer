@@ -26,6 +26,8 @@ export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
 export { ShellDialog } from './components/shell/ShellDialog';
 export { useShellSection } from './components/shell/useShellSection';
+export { FileManagerDialog } from './components/files/FileManagerDialog';
+export { useFilesSection } from './components/files/useFilesSection';
 export { LegalFooter } from './components/playback-settings/LegalFooter';
 export { TermsDialog } from './components/playback-settings/TermsDialog';
 export { ShowFolderSettings } from './components/playback-settings/sections/ShowFolderSettings';
@@ -133,7 +135,7 @@ export {
 export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
-export { shellAvailabilityActions } from './store/slices/ShellAvailabilityStore';
+export { remoteAccessActions } from './store/slices/RemoteAccessStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

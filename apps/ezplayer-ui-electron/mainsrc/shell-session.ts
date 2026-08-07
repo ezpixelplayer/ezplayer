@@ -14,7 +14,7 @@
  */
 
 import os from 'os';
-import { readShellConfig, resolveShellCommand } from './shellconfig.js';
+import { readRemoteAccessConfig, resolveShellCommand } from './remoteaccess.js';
 import type { ShellEvent } from './workers/serverworkertypes.js';
 
 /** Minimal shape we use from node-pty, so the import can stay dynamic. */
@@ -93,7 +93,7 @@ export async function startShellSession(
         emit({ type: 'superseded', sessionId: displaced });
     }
 
-    const cfg = await readShellConfig(showFolder);
+    const cfg = await readRemoteAccessConfig(showFolder);
     const file = resolveShellCommand(cfg);
     let proc: PtyProcess;
     try {

@@ -23,6 +23,7 @@ import {
     ViewerSettings,
     toRouteChildren,
     useShellSection,
+    useFilesSection,
 } from '@ezplayer/player-ui-components';
 import type { MenuRoute, SettingsSection } from '@ezplayer/player-ui-components';
 
@@ -58,6 +59,7 @@ const getStatusArea = () => [];
 const EmbeddedSettingsPage = () => {
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
+    const { section: filesSection, dialog: filesDialog } = useFilesSection();
     // Embedded is a browser; show-folder selection isn't possible here.
     const sections: SettingsSection[] = [
         {
@@ -98,15 +100,16 @@ const EmbeddedSettingsPage = () => {
             title: 'Player Settings',
             content: <PlayerSettings />,
         },
-        // Present only when a shell password was set via the CLI; the hook
-        // supplies `available: false` otherwise, which the drawer filters out.
+        // Present only when that feature's password was set via the CLI.
         shellSection,
+        filesSection,
     ];
     return (
         <>
             <SettingsDrawer title="Settings" statusArea={getStatusArea()} sections={sections} />
             <PlayerCloudRegistrationDialog open={cloudOpen} onClose={() => setCloudOpen(false)} />
             {shellDialog}
+            {filesDialog}
         </>
     );
 };

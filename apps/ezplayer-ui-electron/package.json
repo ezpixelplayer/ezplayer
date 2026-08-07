@@ -56,7 +56,13 @@
                 "nsis"
             ],
             "icon": "src/assets/images/EZPlayerLogoTransparent.ico",
-            "artifactName": "${productName}-Setup-${version}.${ext}"
+            "artifactName": "${productName}-Setup-${version}.${ext}",
+            "extraFiles": [
+                {
+                    "from": "bin/ezplayer.cmd",
+                    "to": "ezplayer.cmd"
+                }
+            ]
         },
         "mac": {
             "artifactName": "${productName}-${version}-${arch}.${ext}",

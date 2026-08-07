@@ -58,8 +58,7 @@ const nodeExternals = [
     '@ezplayer/icmp-ping',
     // node-pty (remote shell) resolves its prebuilt binary with a COMPUTED
     // require — `@lydell/node-pty-${platform}-${arch}` — which esbuild cannot
-    // follow. It has to stay external and ship in node_modules; see the
-    // `files` entries in package.json.
+    // follow. It has to stay external and ship unbundled in node_modules.
     '@lydell/node-pty',
     'ws',
     'http',

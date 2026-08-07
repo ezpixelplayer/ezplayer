@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { WebSocket, type WebSocketServer } from 'ws';
-import { setShellPassword } from '../shellconfig.js';
+import { setFeaturePassword } from '../remoteaccess.js';
 
 const PASSWORD = 'correct horse battery';
 
@@ -99,7 +99,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('starts a pty after the correct password', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const { ws, reply } = await authenticate(PASSWORD);
         expect(reply.type).toBe('authOk');
@@ -111,7 +111,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('rejects a wrong password and never starts a pty', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const { reply } = await authenticate('not the password');
         expect(reply.type).toBe('authFail');
@@ -119,7 +119,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('ignores input sent before authenticating', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const ws = connect();
         await opened(ws);
@@ -131,7 +131,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('relays input and resize only after auth', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const { ws } = await authenticate(PASSWORD);
         ws.send(JSON.stringify({ type: 'input', data: 'whoami\n' }));
@@ -144,7 +144,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('locks out after repeated failures, even with the right password', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         for (let i = 0; i < 4; i++) {
             const { reply } = await authenticate('wrong');
@@ -157,7 +157,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('supersedes an existing terminal when a second one authenticates', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const first = await authenticate(PASSWORD);
         expect(first.reply.type).toBe('authOk');
@@ -171,7 +171,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('kills the pty when the viewer disconnects', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const { ws } = await authenticate(PASSWORD);
         const sessionId = host.shellStart.mock.calls[0][0];
@@ -180,7 +180,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('forwards pty output only to the session that owns it', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const { ws } = await authenticate(PASSWORD);
         const sessionId = host.shellStart.mock.calls[0][0] as string;
@@ -194,7 +194,7 @@ describe('/terminal endpoint', () => {
     });
 
     it('closeActiveTerminal drops a live session and its pty', async () => {
-        await setShellPassword(showFolder, PASSWORD);
+        await setFeaturePassword(showFolder, 'shell', PASSWORD);
         await startHarness();
         const { ws } = await authenticate(PASSWORD);
         const sessionId = host.shellStart.mock.calls[0][0];

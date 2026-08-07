@@ -1,8 +1,7 @@
 /**
- * End-to-end over the real seam: a genuine pty from shell-session.ts driven
- * through the genuine /terminal WebSocket. Only Electron's process boundary is
- * absent — here main and the worker are the same process, and the RPC hop is a
- * direct call.
+ * End-to-end over the real seam: a genuine pty driven through the genuine
+ * /terminal WebSocket. Only Electron's process boundary is absent — main and
+ * the worker are one process here, and the RPC hop is a direct call.
  *
  * Spawns a real shell, so it is slower than the other suites and is skipped if
  * the platform has no usable pty.
@@ -13,7 +12,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { WebSocket, type WebSocketServer } from 'ws';
-import { setShellPassword } from './shellconfig.js';
+import { setFeaturePassword } from './remoteaccess.js';
 import {
     killShellSession,
     resizeShellSession,
@@ -36,7 +35,7 @@ let port: number;
 
 beforeEach(async () => {
     showFolder = await fs.mkdtemp(path.join(os.tmpdir(), 'ezp-shell-e2e-'));
-    await setShellPassword(showFolder, PASSWORD);
+    await setFeaturePassword(showFolder, 'shell', PASSWORD);
 
     // Wire the two halves together exactly as the app does, minus the thread
     // boundary: pty events flow into the terminal module, terminal calls flow

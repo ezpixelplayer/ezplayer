@@ -71,7 +71,15 @@ const sidebars = {
             label: 'Additional Settings',
             collapsed: true,
             link: { type: 'doc', id: 'settings/overview' },
-            items: ['settings/show-folder', 'settings/ui', 'settings/audio', 'settings/jukebox', 'settings/cloud'],
+            items: [
+                'settings/show-folder',
+                'settings/ui',
+                'settings/audio',
+                'settings/jukebox',
+                'settings/cloud',
+                'settings/shell',
+                'settings/files',
+            ],
         },
         {
             type: 'category',

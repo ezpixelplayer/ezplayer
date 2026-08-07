@@ -11,6 +11,7 @@ import type {
     ServerWorkerToMainMessage,
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
+    RemoteAccessAvailability,
 } from './workers/serverworkertypes.js';
 import {
     updatePlaylistsHandler,
@@ -22,7 +23,7 @@ import {
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
-import { isShellEnabled } from './shellconfig.js';
+import { isFeatureEnabled } from './remoteaccess.js';
 import {
     killShellSession,
     resizeShellSession,
@@ -134,29 +135,36 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     shellKill: (sessionId) => {
         killShellSession(sessionId);
     },
-    shellReloadConfig: async () => {
-        return publishShellAvailability();
+    remoteAccessReloadConfig: async () => {
+        return publishRemoteAccessAvailability();
     },
 };
 
 /**
- * Re-read the shell config and tell every connected UI whether to show the
- * Shell tile. Only the boolean crosses the wire — the password hash never
- * leaves the main process. Returns the state it published.
+ * Re-read the remote-access config and tell every connected UI which tiles to
+ * offer. Only the booleans cross the wire — the password hashes never leave the
+ * main process. Returns the state it published.
  */
-export async function publishShellAvailability(): Promise<boolean> {
-    const enabled = await getShellAvailability();
-    broadcastToWebSocket('shellAvailable', enabled);
-    getMainWindowRef?.()?.webContents?.send('update:shellavailable', enabled);
-    return enabled;
+export async function publishRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
+    const state = await getRemoteAccessAvailability();
+    broadcastToWebSocket('remoteAccess', state);
+    getMainWindowRef?.()?.webContents?.send('update:remoteaccess', state);
+    return state;
 }
 
-/** Is the remote shell on offer? Both halves must hold: a password configured
- *  in the open show's folder (the CLI-only gate) and a pty backend that
- *  actually loaded. */
-export async function getShellAvailability(): Promise<boolean> {
+/**
+ * Which remote-access features are on offer for the open show. The shell needs
+ * a pty backend on top of its password — no point advertising a terminal we
+ * cannot start — while the file manager only needs its password.
+ */
+export async function getRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
     const showFolder = getCurrentShowFolder() ?? undefined;
-    return (await isShellEnabled(showFolder)) && (await shellRuntimeAvailable());
+    const [shellConfigured, filesConfigured, ptyUsable] = await Promise.all([
+        isFeatureEnabled(showFolder, 'shell'),
+        isFeatureEnabled(showFolder, 'files'),
+        shellRuntimeAvailable(),
+    ]);
+    return { shell: shellConfigured && ptyUsable, files: filesConfigured };
 }
 
 /**
@@ -228,7 +236,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
                         (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
                 );
-                if (msg.status === 'listening') void publishShellAvailability();
+                if (msg.status === 'listening') void publishRemoteAccessAvailability();
                 break;
             case 'request':
                 // Handle RPC request from server worker

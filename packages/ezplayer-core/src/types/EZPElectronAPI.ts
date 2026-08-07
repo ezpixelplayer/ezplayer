@@ -14,6 +14,7 @@ import type {
     EZPlayerCommand,
     PlaybackSettings,
     CloudCommand,
+    RemoteAccessAvailability,
 } from './DataTypes';
 import type { ControllerCommand, ControllerOpsState } from './ControllerOps';
 
@@ -118,10 +119,9 @@ export interface EZPElectronAPI {
     controllerCommand: (command: ControllerCommand) => Promise<void>;
     onControllerOpsUpdated: (callback: (data: ControllerOpsState) => void) => void;
 
-    /** Whether this player offers a remote shell — true only when a password
-     *  has been set with the `EZPlayer shell` CLI. Pushed whenever it changes,
-     *  so the Shell tile appears/disappears without a restart. */
-    onShellAvailabilityUpdated: (callback: (available: boolean) => void) => void;
+    /** Pushed whenever remote-access availability changes, so the tiles appear
+     *  and disappear without a restart. */
+    onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => void;
 
     // Set up / remove callbacks
     connect: () => Promise<UIConnectSnapshot | undefined>;

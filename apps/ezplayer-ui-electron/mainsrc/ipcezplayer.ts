@@ -97,8 +97,8 @@ import {
     broadcastToWebSocket,
     pushModelCoordinates,
     clearShowData,
-    getShellAvailability,
-    publishShellAvailability,
+    getRemoteAccessAvailability,
+    publishRemoteAccessAvailability,
 } from './server-worker-manager.js';
 
 // Polyfill for `__dirname` in ES Modules
@@ -562,9 +562,9 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     // Broadcast via WebSocket (for React web app)
     broadcastToWebSocket('showFolder', showFolder);
-    // The shell password lives in this show's `.ezplayer/`, so whether the
-    // feature exists at all is a per-show answer that has just changed.
-    void publishShellAvailability();
+    // Remote-access passwords live in this show's `.ezplayer/`, so which
+    // features exist at all is a per-show answer that has just changed.
+    void publishRemoteAccessAvailability();
     broadcastToWebSocket(
         'sequences',
         curSequences.filter((s) => !s.deleted),
@@ -772,7 +772,7 @@ export async function registerContentHandlers(
             cloudConfig: getCloudConfigCache(),
             cloudStatus: getCurrentCloudStatus(),
             controllerops: getControllerOpsState(),
-            shellAvailable: await getShellAvailability(),
+            remoteAccess: await getRemoteAccessAvailability(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {

@@ -3,7 +3,9 @@
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
-import type { CloudCommand } from '@ezplayer/ezplayer-core';
+import type { CloudCommand, RemoteAccessAvailability } from '@ezplayer/ezplayer-core';
+
+export type { RemoteAccessAvailability };
 import type { DiscoveryResult } from '@ezplayer/epp-controllers';
 import type { ControllerCommand, ControllerOpOrigin } from '@ezplayer/ezplayer-core';
 
@@ -118,7 +120,7 @@ export interface ServerWorkerRPCAPI {
     shellInput(sessionId: string, data: string): void;
     shellResize(sessionId: string, cols: number, rows: number): void;
     shellKill(sessionId: string): void;
-    /** Re-read the shell config after the CLI changed it, and re-broadcast
-     *  availability. Resolves to the new enabled state. */
-    shellReloadConfig(): Promise<boolean>;
+    /** Re-read the remote-access config after the CLI changed it, and
+     *  re-broadcast availability. Resolves to the new per-feature state. */
+    remoteAccessReloadConfig(): Promise<RemoteAccessAvailability>;
 }

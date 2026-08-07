@@ -11,6 +11,7 @@ import type {
     CloudCommand,
     ControllerCommand,
     ControllerOpsState,
+    RemoteAccessAvailability,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -142,9 +143,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-    onShellAvailabilityUpdated: (callback: (available: boolean) => void) => {
-        ipcRenderer.on('update:shellavailable', (_event: any, available: boolean) => {
-            callback(available);
+    onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => {
+        ipcRenderer.on('update:remoteaccess', (_event: any, state: RemoteAccessAvailability) => {
+            callback(state);
         });
     },
 

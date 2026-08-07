@@ -1,15 +1,38 @@
 /**
  * Headless CLI dispatch — maps a verb to a command module.
  *
- * MUST stay free of any `electron` import: this is reached from both the
- * Electron entry (main.ts) and the pure-Node entry (cli.ts → dist/cli.js).
- * The absence of a verb (or `gui`) means "launch the app" — handled by
- * main.ts, not here.
+ * MUST stay free of any `electron` import: both the Electron entry and the
+ * pure-Node CLI entry reach this. No verb (or `gui`) means "launch the app",
+ * which is not handled here.
  */
 
 type CommandModule = { run: (args: string[]) => Promise<number> };
 
-const COMMANDS: Record<string, () => Promise<CommandModule>> = {
+/**
+ * Every text-only verb, in the order usage output lists them.
+ *
+ * THE single source of truth for verbs; everything else derives from it. The
+ * `Record` types below make adding a name here a compile error until it has
+ * both a command module and a usage entry.
+ */
+export const TOOL_VERBS = [
+    'discover',
+    'interfaces',
+    'controllers',
+    'status',
+    'action',
+    'upload',
+    'shell',
+    'files',
+    'help',
+] as const;
+
+export type ToolVerb = (typeof TOOL_VERBS)[number];
+
+/** `help` is answered inline rather than by a command module. */
+type DispatchableVerb = Exclude<ToolVerb, 'help'>;
+
+const COMMANDS: Record<DispatchableVerb, () => Promise<CommandModule>> = {
     discover: () => import('./commands/discover.js'),
     interfaces: () => import('./commands/interfaces.js'),
     controllers: () => import('./commands/controllers.js'),
@@ -17,10 +40,18 @@ const COMMANDS: Record<string, () => Promise<CommandModule>> = {
     action: () => import('./commands/action.js'),
     upload: () => import('./commands/upload.js'),
     shell: () => import('./commands/shell.js'),
+    files: () => import('./commands/files.js'),
 };
 
+const HELP_SUMMARY = 'Show help for a verb, e.g. `EZPlayer help discover`.';
+
+/** One-line summary for any verb, including `help`. */
+export function toolVerbSummary(verb: ToolVerb): string {
+    return verb === 'help' ? HELP_SUMMARY : USAGE[verb].summary;
+}
+
 /** One-line + detailed usage per command, for `--help`. */
-const USAGE: Record<string, { summary: string; detail: string }> = {
+const USAGE: Record<DispatchableVerb, { summary: string; detail: string }> = {
     discover: {
         summary: 'Scan networks for lighting controllers.',
         detail:
@@ -84,49 +115,87 @@ const USAGE: Record<string, { summary: string; detail: string }> = {
             '               full    = both (default)',
     },
     shell: {
-        summary: 'Set the password that enables the remote shell.',
-        detail:
-            'Usage: EZPlayer shell    [--show-folder <dir>] [--password <pw> | --stdin]\n' +
-            '       EZPlayer shell    [--show-folder <dir>] --clear\n' +
-            '       EZPlayer shell    [--show-folder <dir>] --status\n' +
-            '\n' +
-            'The remote shell is OFF and unreachable until a password is set here,\n' +
-            'and there is no way to set one from the UI. Once set, a Shell tile\n' +
-            "appears in that show's Settings screen; opening it asks for this\n" +
-            'password and then gives you a terminal on the player machine, over the\n' +
-            'LAN UI or the cloud alike.\n' +
-            '\n' +
-            'The password is stored hashed in <show folder>/.ezplayer/shell.json, so\n' +
-            'it is a per-show setting that travels with the folder. Give the folder\n' +
-            'with --show-folder; if the current directory is already a show folder\n' +
-            '(it has a .ezplayer/ directory) that one is used.\n' +
-            '\n' +
-            'Works whether or not a player is running. If one is running locally it\n' +
-            'is nudged over loopback to pick the change up without a restart.\n' +
-            '\n' +
-            'With no --password or --stdin, you are prompted twice without echo —\n' +
-            'the safest option, since a password given on the command line is\n' +
-            'visible in shell history and in the process list.\n' +
-            '\n' +
-            '      --show-folder  the show to set the password for (default: the\n' +
-            '                     current directory, if it is a show folder)\n' +
-            '      --password     the new password, given inline (see caveat above)\n' +
-            '      --stdin        read the password from stdin instead of prompting\n' +
-            '      --clear        remove the password, disabling the shell entirely\n' +
-            '      --status       report whether the shell is enabled for this show\n' +
-            '      --port         loopback port of the running player (default 3000;\n' +
-            '                     also honors EZPLAYER_WEB_PORT)',
+        summary: 'Set the password that enables the remote terminal.',
+        detail: remoteAccessUsage('shell'),
+    },
+    files: {
+        summary: 'Set the password that enables the file manager.',
+        detail: remoteAccessUsage('files'),
     },
 };
 
+/** Both remote-access verbs take identical options and differ only in what they
+ *  unlock, so their help is generated from one template. */
+function remoteAccessUsage(verb: 'shell' | 'files'): string {
+    const what =
+        verb === 'shell'
+            ? 'a terminal on the player machine'
+            : "a file manager for the player's show folder (browse, upload,\n" +
+              'download, rename, move and delete)';
+    const tile = verb === 'shell' ? 'Shell' : 'Files';
+    const pad = ' '.repeat(5 - verb.length);
+    return (
+        `Usage: EZPlayer ${verb}${pad}[--show-folder <dir>] (--password-file <f> | --password <pw>)\n` +
+        `       EZPlayer ${verb}${pad}[--show-folder <dir>] --clear\n` +
+        `       EZPlayer ${verb}${pad}[--show-folder <dir>] --status\n` +
+        '\n' +
+        `This feature is OFF and unreachable until a password is set here, and\n` +
+        `there is no way to set one from the UI. Once set, a ${tile} tile appears in\n` +
+        `that show's Settings screen; opening it asks for this password and then\n` +
+        `gives you ${what}, over the LAN UI or the cloud alike.\n` +
+        '\n' +
+        'The terminal and the file manager have SEPARATE passwords, so granting\n' +
+        'one does not grant the other.\n' +
+        '\n' +
+        'Passwords are stored hashed in\n' +
+        '<show folder>/.ezplayer/remote-access.json, so they are per-show settings\n' +
+        'that travel with the folder. Give the folder with --show-folder; if the\n' +
+        'current directory is already a show folder (it has a .ezplayer/\n' +
+        'directory) that one is used.\n' +
+        '\n' +
+        'Works whether or not a player is running. If one is running locally it is\n' +
+        'nudged over loopback to pick the change up without a restart.\n' +
+        '\n' +
+        'WINDOWS: run EZPlayer.exe directly and your shell will not wait for it, nor\n' +
+        'can it read the console. Use the ezplayer.cmd launcher installed beside it;\n' +
+        'then --stdin and exit codes behave normally. An interactive hidden prompt is\n' +
+        'still unavailable on Windows (Electron Node mode has no TTY support), so use\n' +
+        '--password-file there. The prompt works on macOS/Linux and from the pure-Node\n' +
+        'CLI.\n' +
+        '\n' +
+        'Prefer --password-file over --password: it keeps the password out of your\n' +
+        'shell history and out of the process list. Delete the file afterwards.\n' +
+        '\n' +
+        '      --show-folder    the show to set the password for (default: the\n' +
+        '                       current directory, if it is a show folder)\n' +
+        '      --password-file  read the password from the first line of a file\n' +
+        '      --password       the new password, given inline (see caveat above)\n' +
+        '      --stdin          read the password from stdin (not on Windows GUI)\n' +
+        '      --clear          remove the password, disabling this feature entirely\n' +
+        '      --status         report whether it is enabled for this show\n' +
+        '      --port           loopback port of the running player (default 3000;\n' +
+        '                       also honors EZPLAYER_WEB_PORT)'
+    );
+}
+
 const HELP_FLAGS = new Set(['help', '--help', '-h']);
+
+/** Narrow an arbitrary bareword to a verb that has a command module. */
+function isDispatchable(verb: string): verb is DispatchableVerb {
+    return Object.prototype.hasOwnProperty.call(COMMANDS, verb);
+}
+
+/** Whether an arbitrary bareword is one of our text-only verbs. */
+export function isToolVerbName(verb: string): verb is ToolVerb {
+    return (TOOL_VERBS as readonly string[]).includes(verb);
+}
 
 function printTopHelp(): void {
     console.log('EZPlayer — headless commands\n');
     console.log('Usage: EZPlayer <command> [options]\n');
     console.log('Commands:');
-    for (const [name, u] of Object.entries(USAGE)) {
-        console.log(`  ${name.padEnd(12)} ${u.summary}`);
+    for (const verb of TOOL_VERBS) {
+        console.log(`  ${verb.padEnd(12)} ${toolVerbSummary(verb)}`);
     }
     console.log('\nRun "EZPlayer <command> --help" for command options.');
     console.log('With no command (or `gui`), EZPlayer launches the desktop app.');
@@ -142,7 +211,6 @@ export function isHeadlessVerb(verb: string | undefined): boolean {
     return true;
 }
 
-/** Run the command named by args[0] with the remaining args. Returns an exit code. */
 export async function runCli(args: string[]): Promise<number> {
     const [verb, ...rest] = args;
 
@@ -159,8 +227,7 @@ export async function runCli(args: string[]): Promise<number> {
         return 2;
     }
 
-    const loader = COMMANDS[verb];
-    if (!loader) {
+    if (!isDispatchable(verb)) {
         console.error(`Unknown command "${verb}".\n`);
         printTopHelp();
         return 2;
@@ -171,6 +238,6 @@ export async function runCli(args: string[]): Promise<number> {
         return 0;
     }
 
-    const mod = await loader();
+    const mod = await COMMANDS[verb]();
     return mod.run(rest);
 }
