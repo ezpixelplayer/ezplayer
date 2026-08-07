@@ -142,6 +142,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
+    onShellAvailabilityUpdated: (callback: (available: boolean) => void) => {
+        ipcRenderer.on('update:shellavailable', (_event: any, available: boolean) => {
+            callback(available);
+        });
+    },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
         ipcRenderer.on('update:showFolder', (_event: any, data: string) => {

@@ -521,6 +521,10 @@ export interface UIConnectSnapshot {
     cloudConfig?: CloudConfig;
     cloudStatus?: CloudStatus;
     controllerops?: ControllerOpsState;
+    /** True when a remote-shell password is configured (CLI-only) and the pty
+     *  backend loaded. Sent in the snapshot as well as pushed, since a push can
+     *  race the renderer registering its listener. */
+    shellAvailable?: boolean;
 }
 
 export type ScheduleDays =
@@ -735,6 +739,10 @@ export type FullPlayerState = {
     /** Shared network-controller discovery/status/action operations + known
      *  controllers. One atomic snapshot so late-joining clients get it all. */
     controllerops?: ControllerOpsState;
+    /** True when a remote-shell password has been configured (CLI-only) AND the
+     *  pty backend loaded. Drives whether the Shell tile is offered at all; the
+     *  password itself never leaves the player. */
+    shellAvailable?: boolean;
 };
 
 export type PlayerWebSocketSnapshot = {

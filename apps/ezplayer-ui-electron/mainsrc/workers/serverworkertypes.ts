@@ -74,7 +74,21 @@ export type MainToServerWorkerMessage =
           type: 'cloudBridgeClose';
           sessionId?: string;
       }
+    | {
+          /** Output (or lifecycle news) from the remote-shell pty, which runs
+           *  in main. The worker forwards these to the one authenticated
+           *  `/terminal` socket that owns `sessionId`. */
+          type: 'shellEvent';
+          event: ShellEvent;
+      }
     | { type: 'shutdown' };
+
+/** pty → viewer events. `superseded` is what the displaced viewer sees when
+ *  someone else opens a terminal, since only one session exists at a time. */
+export type ShellEvent =
+    | { type: 'data'; sessionId: string; data: string }
+    | { type: 'exit'; sessionId: string; code: number }
+    | { type: 'superseded'; sessionId: string };
 
 /**
  * RPC methods that the server worker can call on the main thread
@@ -91,4 +105,20 @@ export interface ServerWorkerRPCAPI {
     /** Resolves with the DiscoveryResult for a `scan`; other kinds resolve
      *  undefined and report through the broadcast state. */
     controllerCommand(command: ControllerCommand, origin: ControllerOpOrigin): Promise<DiscoveryResult | undefined>;
+    /** Start the remote-shell pty, superseding any existing session. Resolves
+     *  to an error string the viewer can read, or undefined on success. The
+     *  worker has already checked the password before calling this, and passes
+     *  the show folder it checked against so main reads the same config. */
+    shellStart(
+        sessionId: string,
+        cols: number,
+        rows: number,
+        showFolder: string | undefined,
+    ): Promise<string | undefined>;
+    shellInput(sessionId: string, data: string): void;
+    shellResize(sessionId: string, cols: number, rows: number): void;
+    shellKill(sessionId: string): void;
+    /** Re-read the shell config after the CLI changed it, and re-broadcast
+     *  availability. Resolves to the new enabled state. */
+    shellReloadConfig(): Promise<boolean>;
 }

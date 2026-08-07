@@ -7,7 +7,17 @@ import * as path from 'path';
  * showfolder/webport/ipcautoupdate construct their electron-stores.
  */
 
-const KNOWN_VERBS = ['headless', 'discover', 'interfaces', 'controllers', 'status', 'action', 'upload', 'help'] as const;
+const KNOWN_VERBS = [
+    'headless',
+    'discover',
+    'interfaces',
+    'controllers',
+    'status',
+    'action',
+    'upload',
+    'shell',
+    'help',
+] as const;
 export type CliVerb = (typeof KNOWN_VERBS)[number];
 
 /**
@@ -15,7 +25,16 @@ export type CliVerb = (typeof KNOWN_VERBS)[number];
  * `headless`, which is a full player that merely has no windows. These are
  * dispatched by cli/dispatch.ts.
  */
-const TOOL_VERBS: readonly string[] = ['discover', 'interfaces', 'controllers', 'status', 'action', 'upload', 'help'];
+const TOOL_VERBS: readonly string[] = [
+    'discover',
+    'interfaces',
+    'controllers',
+    'status',
+    'action',
+    'upload',
+    'shell',
+    'help',
+];
 
 // The verb is the first non-flag argument after the executable (and, in dev,
 // after the app path). Chromium switches can precede the app path.

@@ -29,7 +29,7 @@ The **first non-flag argument** decides what EZPlayer does:
 | _(none)_                             | Launch the desktop app (the normal GUI).                            |
 | A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
 | [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
-| `discover`, `interfaces`, `controllers`, `status`, `action`, `upload`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
+| `discover`, `interfaces`, `controllers`, `status`, `action`, `upload`, `shell`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
 | Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
 
 Note the distinction between the two window-less modes: `headless` is the
@@ -58,6 +58,7 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | `status`               | Deep-read one controller and print its detail report.       |
 | `action`               | Run a management action (e.g. reboot) on a controller.      |
 | `upload`               | Upload xLights-derived config to a controller (via the app).|
+| `shell`                | Set the password that enables the [remote shell](#remote-shell). |
 | `help`                 | Print the command list. Also `--help`, `-h`.                |
 
 `discover`, `interfaces`, `status`, and `action` talk to devices directly and
@@ -223,6 +224,72 @@ EZPlayer upload GarageF16 --full-control
 Uploads rewrite the controller's port configuration. There is no undo beyond
 uploading again.
 :::
+
+### Remote shell
+
+EZPlayer can offer a **terminal on the player machine**, reachable from the LAN
+web UI and from the cloud player site. It is off by default, and the only way to
+turn it on is this command, run on the player machine itself:
+
+```bash
+# Prompt for the password twice, without echoing it (the safest form)
+EZPlayer shell --show-folder "D:\Shows\MyShow"
+
+# Or give it inline / on stdin, for scripted setup
+EZPlayer shell --show-folder "D:\Shows\MyShow" --password "correct horse battery"
+echo "correct horse battery" | EZPlayer shell --show-folder "D:\Shows\MyShow" --stdin
+
+EZPlayer shell --show-folder "D:\Shows\MyShow" --status   # is it enabled?
+EZPlayer shell --show-folder "D:\Shows\MyShow" --clear    # disable it entirely
+```
+
+Until a password is set there is **no Shell tile in Settings and no endpoint on
+the network** — the `/terminal` WebSocket refuses every connection. Once one is
+set, a Shell tile appears in that show's Settings screen in every UI; opening it
+asks for this password and then gives you a terminal.
+
+There is deliberately no way to set the password from any UI. Arming a remote
+shell requires the ability to run commands on the player already, which keeps
+the decision with whoever owns the machine.
+
+| Option          | Meaning                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `--show-folder` | Which show to set the password for. Defaults to the current directory when that is already a show folder (it has a `.ezplayer/` directory); otherwise required. |
+| `--password`    | The new password, given inline. Convenient for scripts, but see the caveat below. |
+| `--stdin`       | Read the password from stdin instead of prompting.                         |
+| `--clear`       | Remove the password. Any terminal open at the time is closed immediately.  |
+| `--status`      | Report whether the shell is enabled for this show, and the file in use.    |
+| `--port`        | Loopback port of the running player (default `3000`, honors `EZPLAYER_WEB_PORT`). |
+
+:::caution
+`--password` puts the password in your shell history, and on most systems it is
+visible to other users in the process list for as long as the command runs.
+Prefer the interactive prompt, or `--stdin`, on a machine you share.
+:::
+
+The password is stored **salted and hashed** (scrypt) in
+`<show folder>/.ezplayer/shell.json`, alongside the other per-show settings. That
+makes the remote shell a property of the **show**, not the machine: move the show
+folder to another player and the setting travels with it, and two shows on one
+machine can differ. Switching a running player to a different show folder closes
+any terminal that was open, since it belonged to the previous show.
+
+The command works whether or not a player is running; if one is running locally
+it is nudged over loopback so the change takes effect without a restart.
+
+Things worth knowing before you enable it:
+
+- **One terminal at a time, player-wide.** Opening a second one closes the first,
+  and it is told why rather than just going quiet. Closing the window kills the
+  shell.
+- **Over the cloud the password is encrypted** (the bridge is `wss:`), so a
+  remote attacker needs the cloud URL, the player token, *and* this password.
+- **On the LAN it is not.** The LAN UI is plain HTTP, so someone sniffing your
+  local network while you log in could capture the password. That matches the
+  rest of the LAN surface, which has no authentication at all — but it is worth
+  knowing if your LAN is not trusted.
+- **Repeated wrong guesses lock the endpoint out** for escalating periods, so
+  the password rather than the network is what an attacker has to beat.
 
 ### Exit codes
 

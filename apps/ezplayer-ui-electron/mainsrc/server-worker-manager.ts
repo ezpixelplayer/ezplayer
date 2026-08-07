@@ -20,7 +20,18 @@ import {
     dispatchCloudCommand,
     putSequencesWithDurations,
 } from './ipcezplayer.js';
+import { getCurrentShowFolder } from '../showfolder.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
+import { isShellEnabled } from './shellconfig.js';
+import {
+    killShellSession,
+    resizeShellSession,
+    setShellEventSink,
+    shellRuntimeAvailable,
+    shutdownShellSessions,
+    startShellSession,
+    writeToShellSession,
+} from './shell-session.js';
 import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
 import { ezpVersions } from '../versions.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
@@ -111,7 +122,42 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
     },
+    shellStart: async (sessionId, cols, rows, showFolder) => {
+        return startShellSession(sessionId, cols, rows, showFolder);
+    },
+    shellInput: (sessionId, data) => {
+        writeToShellSession(sessionId, data);
+    },
+    shellResize: (sessionId, cols, rows) => {
+        resizeShellSession(sessionId, cols, rows);
+    },
+    shellKill: (sessionId) => {
+        killShellSession(sessionId);
+    },
+    shellReloadConfig: async () => {
+        return publishShellAvailability();
+    },
 };
+
+/**
+ * Re-read the shell config and tell every connected UI whether to show the
+ * Shell tile. Only the boolean crosses the wire — the password hash never
+ * leaves the main process. Returns the state it published.
+ */
+export async function publishShellAvailability(): Promise<boolean> {
+    const enabled = await getShellAvailability();
+    broadcastToWebSocket('shellAvailable', enabled);
+    getMainWindowRef?.()?.webContents?.send('update:shellavailable', enabled);
+    return enabled;
+}
+
+/** Is the remote shell on offer? Both halves must hold: a password configured
+ *  in the open show's folder (the CLI-only gate) and a pty backend that
+ *  actually loaded. */
+export async function getShellAvailability(): Promise<boolean> {
+    const showFolder = getCurrentShowFolder() ?? undefined;
+    return (await isShellEnabled(showFolder)) && (await shellRuntimeAvailable());
+}
 
 /**
  * Sets up and starts the Koa server in a worker thread
@@ -142,6 +188,13 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     }
 
     serverWorker = new Worker(workerPath);
+
+    // pty output flows main → worker → the one authenticated /terminal socket.
+    // Deliberately NOT the state broadcaster: that coalesces and drops, which
+    // would silently corrupt a terminal stream.
+    setShellEventSink((event) => {
+        serverWorker?.postMessage({ type: 'shellEvent', event } satisfies MainToServerWorkerMessage);
+    });
 
     // Controller-ops state goes to both front-ends: WebSocket clients and the
     // electron renderer. refreshInterfaces() publishes the first snapshot.
@@ -175,6 +228,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
                         (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
                 );
+                if (msg.status === 'listening') void publishShellAvailability();
                 break;
             case 'request':
                 // Handle RPC request from server worker
@@ -449,6 +503,8 @@ export function pushModelCoordinates(
  * Shutdown the server worker
  */
 export async function shutdownServerWorker(): Promise<void> {
+    // No shell should outlive the player, even if the worker is already gone.
+    shutdownShellSessions();
     if (!serverWorker) return;
 
     const shutdownMessage: MainToServerWorkerMessage = {

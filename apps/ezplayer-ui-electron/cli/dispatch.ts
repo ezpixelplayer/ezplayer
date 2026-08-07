@@ -16,6 +16,7 @@ const COMMANDS: Record<string, () => Promise<CommandModule>> = {
     status: () => import('./commands/status.js'),
     action: () => import('./commands/action.js'),
     upload: () => import('./commands/upload.js'),
+    shell: () => import('./commands/shell.js'),
 };
 
 /** One-line + detailed usage per command, for `--help`. */
@@ -81,6 +82,40 @@ const USAGE: Record<string, { summary: string; detail: string }> = {
             '      --scope  inputs  = input/universe config only\n' +
             '               strings = string/port outputs only\n' +
             '               full    = both (default)',
+    },
+    shell: {
+        summary: 'Set the password that enables the remote shell.',
+        detail:
+            'Usage: EZPlayer shell    [--show-folder <dir>] [--password <pw> | --stdin]\n' +
+            '       EZPlayer shell    [--show-folder <dir>] --clear\n' +
+            '       EZPlayer shell    [--show-folder <dir>] --status\n' +
+            '\n' +
+            'The remote shell is OFF and unreachable until a password is set here,\n' +
+            'and there is no way to set one from the UI. Once set, a Shell tile\n' +
+            "appears in that show's Settings screen; opening it asks for this\n" +
+            'password and then gives you a terminal on the player machine, over the\n' +
+            'LAN UI or the cloud alike.\n' +
+            '\n' +
+            'The password is stored hashed in <show folder>/.ezplayer/shell.json, so\n' +
+            'it is a per-show setting that travels with the folder. Give the folder\n' +
+            'with --show-folder; if the current directory is already a show folder\n' +
+            '(it has a .ezplayer/ directory) that one is used.\n' +
+            '\n' +
+            'Works whether or not a player is running. If one is running locally it\n' +
+            'is nudged over loopback to pick the change up without a restart.\n' +
+            '\n' +
+            'With no --password or --stdin, you are prompted twice without echo —\n' +
+            'the safest option, since a password given on the command line is\n' +
+            'visible in shell history and in the process list.\n' +
+            '\n' +
+            '      --show-folder  the show to set the password for (default: the\n' +
+            '                     current directory, if it is a show folder)\n' +
+            '      --password     the new password, given inline (see caveat above)\n' +
+            '      --stdin        read the password from stdin instead of prompting\n' +
+            '      --clear        remove the password, disabling the shell entirely\n' +
+            '      --status       report whether the shell is enabled for this show\n' +
+            '      --port         loopback port of the running player (default 3000;\n' +
+            '                     also honors EZPLAYER_WEB_PORT)',
     },
 };
 
