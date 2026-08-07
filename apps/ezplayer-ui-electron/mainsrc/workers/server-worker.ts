@@ -1415,6 +1415,34 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: POST /api/ezp/choose-media-folder
+    // Opens a native folder picker on the player PC (same dialog as desktop).
+    // ----------------------------------------------
+    router.post('/api/ezp/choose-media-folder', async (ctx) => {
+        try {
+            const chosen = (await rpc.call('chooseMediaFolder')) as string | undefined;
+            if (!chosen) {
+                ctx.body = { success: false, cancelled: true };
+                return;
+            }
+            const cur = (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined) ?? ({} as PlaybackSettings);
+            const settings: PlaybackSettings = { ...cur, mediaFolder: chosen };
+            const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
+            if (showFolder) {
+                const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
+                await rpc.call('applySettingsFromRenderer', settingsPath, settings);
+            }
+            await rpc.call('sendPlaybackSettings', settings);
+            wsBroadcaster.set('playbackSettings', settings);
+            ctx.body = { success: true, mediaFolder: chosen };
+        } catch (error) {
+            console.error('[server-worker] Error choosing media folder:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Failed to choose media folder' };
+        }
+    });
+
+    // ----------------------------------------------
     // API: GET /api/ezp/model-coordinates - get model coordinates for 3D preview (local cache)
     // ----------------------------------------------
     router.get('/api/ezp/model-coordinates', async (ctx) => {

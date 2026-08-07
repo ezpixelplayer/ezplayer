@@ -242,10 +242,13 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return (await response.json()) as BatchImportSummary;
     }
 
-    /** Upload companions + fseqs and import in one request (avoids N sequence file uploads). */
+    /** Upload companions + fseqs and import in one request (avoids N sequence file uploads).
+     *  Pass `importFseqNames` with an audio-only upload to retry existing FSEQs
+     *  after choosing a media folder in the browser. */
     async batchUploadImportShowSequences(
         files: Array<{ name: string; data: Blob }>,
         companionAudioNames?: string[],
+        importFseqNames?: string[],
     ): Promise<BatchImportSummary> {
         const byName = new Map<string, Blob>();
         for (const f of files) {
@@ -255,17 +258,28 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         if (!unique.length) {
             throw new Error('No files to upload');
         }
-        const manifest = {
+        const manifest: {
+            files: Array<{ name: string; size: number }>;
+            companionAudioNames: string[];
+            importFseqNames?: string[];
+        } = {
             files: unique.map((f) => ({ name: f.name, size: f.data.size })),
             companionAudioNames: companionAudioNames ?? [],
         };
+        if (importFseqNames?.length) {
+            manifest.importFseqNames = importFseqNames;
+        }
+        // Length-prefixed JSON manifest in the body (not a header) so large
+        // folder imports stay under Node's ~16KB request-header limit.
+        const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+        const lengthPrefix = new Uint8Array(4);
+        new DataView(lengthPrefix.buffer).setUint32(0, manifestBytes.byteLength, false);
         const response = await fetch(`${this.apiUrl}ezp/sequences/batch-upload-import`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/octet-stream',
-                'X-EZP-Batch-Manifest': JSON.stringify(manifest),
             },
-            body: new Blob(unique.map((f) => f.data)),
+            body: new Blob([lengthPrefix, manifestBytes, ...unique.map((f) => f.data)]),
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
@@ -274,6 +288,18 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             );
         }
         return (await response.json()) as BatchImportSummary;
+    }
+
+    /** Opens the native folder picker on the player PC and saves mediaFolder. */
+    async chooseMediaFolder(): Promise<string | undefined> {
+        const response = await fetch(`${this.apiUrl}ezp/choose-media-folder`, { method: 'POST' });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error ?? `Choose media folder failed: ${response.statusText}`);
+        }
+        const body = (await response.json()) as { success?: boolean; cancelled?: boolean; mediaFolder?: string };
+        if (body.cancelled || !body.mediaFolder) return undefined;
+        return body.mediaFolder;
     }
 
     async listShowFiles(dir: string): Promise<string[]> {

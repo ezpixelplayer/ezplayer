@@ -165,9 +165,16 @@ export interface DataStorageAPI {
         companionAudioNames?: string[],
     ) => Promise<BatchImportSummary>;
 
-    /** LAN bulk import: upload companions + fseqs and import in one HTTP request. */
+    /** LAN bulk import: upload companions + fseqs and import in one HTTP request.
+     *  Optional `importFseqNames` imports existing show-folder FSEQs after an
+     *  audio-only upload (media-folder retry from the browser). */
     batchUploadImportShowSequences?: (
         files: Array<{ name: string; data: Blob }>,
         companionAudioNames?: string[],
+        importFseqNames?: string[],
     ) => Promise<BatchImportSummary>;
+
+    /** Open a native folder picker on the player PC and set mediaFolder (LAN).
+     *  Prefer browser folder pick + upload for LAN bulk-import retry UX. */
+    chooseMediaFolder?: () => Promise<string | undefined>;
 }

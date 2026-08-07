@@ -1,34 +1,17 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
-import type { SequenceRecord } from '@ezplayer/ezplayer-core';
+import type {
+    BatchImportFailure,
+    BatchImportSuccess,
+    BatchImportSummary,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
 import {
     autoDetectSongFilesFromFseq,
     listFseqFilesInDirectory,
     type AutoDetectOptions,
     type AutoDetectedSongFiles,
 } from './song-file-autodetect.js';
-
-export interface BatchImportFailure {
-    fseqPath: string;
-    fseqName: string;
-    reason: string;
-}
-
-export interface BatchImportSuccess {
-    fseqPath: string;
-    fseqName: string;
-    title: string;
-    artist: string;
-    mediaFound: boolean;
-}
-
-export interface BatchImportSummary {
-    total: number;
-    imported: number;
-    failed: number;
-    successes: BatchImportSuccess[];
-    failures: BatchImportFailure[];
-}
 
 export interface BatchImportOptions extends AutoDetectOptions {
     /** Persist one or more SequenceRecords (typically putSequencesWithDurations). */

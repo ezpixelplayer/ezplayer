@@ -5,6 +5,7 @@ import {
     CloudPage,
     ControllersScreen,
     JukeboxSettings,
+    MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
     ShowStatusScreen,
@@ -39,6 +40,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
+import FolderIcon from '@mui/icons-material/Folder';
 
 const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
 
@@ -57,7 +59,15 @@ const getStatusArea = () => [];
 const EmbeddedSettingsPage = () => {
     const [cloudOpen, setCloudOpen] = useState(false);
     // Embedded is a browser; show-folder selection isn't possible here.
+    // Media folder can still be set as a path on the player machine.
     const sections: SettingsSection[] = [
+        {
+            key: 'mediaFolder',
+            label: 'Media Folder',
+            icon: <FolderIcon sx={{ fontSize: 56 }} />,
+            title: 'Media Folder',
+            content: <MediaFolderSettings />,
+        },
         {
             key: 'ui',
             label: 'UI',

@@ -56,6 +56,7 @@ starts that song immediately, the same as pressing **Play** in the jukebox.
 | ---------------------------------- | ------------------ | ------------------------------ |
 | View song list                     | Yes                | Yes                            |
 | Add songs                          | Yes                | Yes                            |
+| Bulk import many `.fseq` files     | Yes                | Yes                            |
 | Edit metadata and settings         | Yes                | Yes                            |
 | Replace FSEQ / audio / image files | Yes (local picker) | Yes (upload or choose on player) |
 | Delete songs                       | Yes                | Yes                            |
@@ -72,7 +73,8 @@ kiosk page has no song management.
    play to your lights.
 3. Optionally select a **`.mp3` file** for audio and an **image** for the
    jukebox and song list.
-4. Fill in **title** and **artist** (required).
+4. Fill in **title** and **artist** (required). The form will not save until
+   both are set — you will see validation messages on empty required fields.
 5. Adjust optional fields — vendor, tags, lead/trail time, volume adjustment —
    then click **Save**.
 
@@ -81,13 +83,18 @@ kiosk page has no song management.
 Choosing an FSEQ file triggers **auto-detect** (over the network, this runs
 on the player after the upload or selection):
 
-1. EZPlayer reads the FSEQ header for duration and any embedded audio filename.
-2. It searches the show folder for a matching audio file (by header name, then
-   by matching basename, then by prefix). The supported audio type is `.mp3`.
+1. EZPlayer reads the FSEQ header for duration, any embedded audio filename,
+   and (when present) title/artist metadata stored in the sequence.
+2. It searches for a matching audio file — first next to the FSEQ, then in the
+   optional [Media Folder](../settings/show-folder.md#media-folder), then in
+   the show folder (by header name, then by matching basename, then by
+   prefix). The supported audio type is `.mp3` (and related formats such as
+   `.wav`, `.m4a`, `.flac`, and `.ogg` where available).
 3. It looks for a matching image next to the audio or FSEQ file (`.jpg`,
    `.png`, `.gif`, `.webp`, and others), or tries to extract one from the audio file.
 4. If the audio file has ID3 tags, title and artist are filled in when those
    fields are still empty. Album art from the tags can become the thumbnail.
+   FSEQ header title/artist are used as a fallback when tags are missing.
 
 If auto-detect does not find everything, pick the remaining files manually.
 Selecting a different MP3 re-reads ID3 metadata and refreshes title, artist, and
@@ -100,14 +107,73 @@ image file. Using a URL for the image will work as long as it can be reached.
 
 Point EZPlayer at the same **show folder** you use in xLights. Sequences and
 audio often already live side by side with matching names, so a single FSEQ
-selection is usually enough. If you render new sequences, add them on the Songs
-screen (or let the cloud sync deliver them — see below).
+selection is usually enough. If your MP3s live in a separate render or media
+directory, set that path as the [Media Folder](../settings/show-folder.md#media-folder)
+so auto-detect and bulk import can find them. If you render new sequences, add
+them on the Songs screen (or let the cloud sync deliver them — see below), or
+use [Bulk import](#bulk-import) to bring in many at once.
+
+## Bulk import
+
+Use **Bulk Import** on the Songs screen when you need to register many
+sequences at once instead of adding them one by one.
+
+1. Open **Songs** and click **Bulk Import**.
+2. Choose either:
+   - **Select .fseq files…** — pick one or more `.fseq` files, or
+   - **Select folder…** — pick a folder; every `.fseq` under it is considered.
+3. Wait for the **Bulk Import Summary** dialog. It lists each successful import
+   (file name, title, artist) and each failure with a reason.
+
+### Desktop app
+
+Native file and folder dialogs open on the show PC. EZPlayer searches for
+companion audio next to each FSEQ and in the configured Media Folder.
+
+### LAN / cloud UI
+
+The browser picks files (or a folder) and uploads them to the player in a
+**single request**, then runs the same import logic on the player. Include the
+matching MP3 (and optional images) in the same selection when they are not
+already available via the Media Folder.
+
+### Rules (desktop and LAN)
+
+Bulk import is stricter than single **Add Song** about audio:
+
+| Rule | Behavior |
+| ---- | -------- |
+| Companion audio required | Each FSEQ must resolve to a matching audio file, or that file fails with **Audio file not found**. |
+| Exact basename match | Audio is matched by exact name (from the FSEQ header or the FSEQ basename), not a loose prefix match. |
+| Media Folder | Searched after the FSEQ’s own folder (desktop) or as the shared media location (LAN). |
+| One failure does not stop the rest | Other sequences in the same batch still import. |
+| Title / artist | Taken from audio tags when present; otherwise from FSEQ metadata; otherwise the FSEQ basename and **Unknown Artist**. |
+
+Failed imports leave that sequence out of the catalog. Fix the missing audio
+(or Media Folder path), then run Bulk Import again for those files.
+
+When one or more failures are **Audio file not found**, the Bulk Import Summary
+dialog shows a tip to choose a Media Folder:
+
+1. Click **Choose Media Folder**.
+   - **Desktop app:** a native folder picker opens on this PC; the path is saved
+     as the Media Folder setting.
+   - **LAN UI:** a folder picker opens **in this browser**. Matching audio files
+     are uploaded to the player (you do not need to use the player PC).
+2. EZPlayer then **automatically retries** only the sequences that failed for
+   missing audio.
+
+You can also set a permanent Media Folder path anytime under
+[Settings → Show Folder](../settings/show-folder.md#media-folder) in the desktop
+app. On the LAN UI, use **Choose Media Folder** in the Bulk Import Summary when
+audio is missing.
 
 ## Editing a song
 
 Open **Edit Song Details** for any song in the list. You can change:
 
-- **Title, artist, and vendor**
+- **Title, artist, and vendor** (title and artist remain required — empty
+  values show validation errors and block save)
 - **FSEQ, MP3, and image files** (desktop: _Select another file_; network:
   upload or choose a file on the player)
 - **Image URL** for artwork shown in the jukebox
@@ -216,5 +282,7 @@ Falcon and EZVC use the same song IDs. See
 
 ## Next steps
 
+- Import many sequences at once with [Bulk Import](#bulk-import), or set a
+  [Media Folder](../settings/show-folder.md#media-folder) for companion audio
 - Play your song from the [Jukebox](../basics/jukebox.md), and watch the [Preview](../basics/preview.md)
 - Add songs to [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) so they play automatically

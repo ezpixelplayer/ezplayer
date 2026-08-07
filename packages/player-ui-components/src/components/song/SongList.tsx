@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -7,7 +7,10 @@ import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-u
 import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
-import { batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
+import {
+    batchUploadImportShowSequences,
+} from '../../store/slices/SequenceStore';
+import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
 import {
@@ -228,6 +231,9 @@ export function SongList({
     const [bulkImporting, setBulkImporting] = useState(false);
     const [bulkSummary, setBulkSummary] = useState<BatchImportSummary | null>(null);
     const [bulkSummaryOpen, setBulkSummaryOpen] = useState(false);
+    const [choosingMediaFolder, setChoosingMediaFolder] = useState(false);
+    /** LAN: companion audio names from the last selection (allowlist for retry). */
+    const lanCompanionAudioRef = useRef<string[]>([]);
 
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const availableTags = useSelector((state: RootState) => state.sequences.tags || []);
@@ -334,6 +340,7 @@ export function SongList({
         const companions = collectCompanionUploadFiles(files);
         const companionAudio = companions.filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
         const companionAudioNames = companionAudio.map((f) => f.name);
+        lanCompanionAudioRef.current = companionAudioNames;
         // One HTTP request: write all companions + fseqs, then import once.
         const toUpload = [...companions, ...fseqFiles].map((f) => ({ name: f.name, data: f as Blob }));
         console.log(
@@ -342,6 +349,103 @@ export function SongList({
         return dispatch(
             batchUploadImportShowSequences({ files: toUpload, companionAudioNames }),
         ).unwrap();
+    };
+
+    const handleChooseMediaFolderAndRetry = async () => {
+        // LAN embedded UI always mounts this input. Prefer it over any Electron
+        // dialog so a remote browser never triggers the player PC picker.
+        const lanInput = document.getElementById('ezplayer-bulk-media-folder') as HTMLInputElement | null;
+        if (lanInput) {
+            lanInput.click();
+            return;
+        }
+        if (!isElectron()) {
+            console.warn('[BulkImport] LAN media-folder input missing; rebuild ui-embedded');
+            return;
+        }
+        setChoosingMediaFolder(true);
+        try {
+            const api = (window as any).electronAPI;
+            if (!api?.selectDirectory) {
+                console.warn('[BulkImport] selectDirectory unavailable');
+                return;
+            }
+            const dirs: string[] =
+                (await api.selectDirectory({
+                    title: 'Select Media Folder',
+                    buttonLabel: 'Use Folder',
+                })) ?? [];
+            const chosen = dirs[0];
+            if (!chosen) return;
+            dispatch(setMediaFolder(chosen));
+            await dispatch(savePlayerSettings()).unwrap();
+
+            const missingAudio = (bulkSummary?.failures ?? []).filter((f) =>
+                /audio file not found/i.test(f.reason),
+            );
+            if (!missingAudio.length) return;
+
+            setBulkSummaryOpen(false);
+            await runBulkImport(async () => {
+                const paths = missingAudio.map((f) => f.fseqPath).filter(Boolean);
+                if (!paths.length || !api?.batchImportSequences) return undefined;
+                console.log(`[BulkImport] Retrying ${paths.length} sequence(s) after media folder set…`);
+                return api.batchImportSequences(paths);
+            });
+        } catch (error) {
+            console.error('[BulkImport] choose media folder / retry failed:', error);
+        } finally {
+            setChoosingMediaFolder(false);
+        }
+    };
+
+    /** LAN: browser folder picker for companion MP3s, then upload + retry failed FSEQs. */
+    const handleLanMediaFolderInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const fileArray = event.target.files ? Array.from(event.target.files) : [];
+        event.target.value = '';
+        if (!fileArray.length) return;
+
+        const companions = collectCompanionUploadFiles(fileArray).filter((f) =>
+            AUDIO_UPLOAD_EXTS.has(pathExt(f.name)),
+        );
+        if (!companions.length) {
+            ToastMsgs.showErrorMessage('No audio files found in the selected folder', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 3000,
+            });
+            return;
+        }
+
+        const missingAudio = (bulkSummary?.failures ?? []).filter((f) =>
+            /audio file not found/i.test(f.reason),
+        );
+        const importFseqNames = missingAudio.map((f) => f.fseqName).filter(Boolean);
+        if (!importFseqNames.length) return;
+
+        const companionAudioNames = [
+            ...new Set([...lanCompanionAudioRef.current, ...companions.map((f) => f.name)]),
+        ];
+        lanCompanionAudioRef.current = companionAudioNames;
+
+        setChoosingMediaFolder(true);
+        setBulkSummaryOpen(false);
+        try {
+            await runBulkImport(async () => {
+                console.log(
+                    `[BulkImport] LAN media folder: uploading ${companions.length} audio(s), retrying ${importFseqNames.length} sequence(s)…`,
+                );
+                return dispatch(
+                    batchUploadImportShowSequences({
+                        files: companions.map((f) => ({ name: f.name, data: f as Blob })),
+                        companionAudioNames,
+                        importFseqNames,
+                    }),
+                ).unwrap();
+            });
+        } finally {
+            setChoosingMediaFolder(false);
+        }
     };
 
     const handleBulkFilesInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -841,6 +945,20 @@ export function SongList({
                                             disabled={bulkImporting}
                                             onChange={handleBulkFolderInputChange}
                                         />
+                                        <input
+                                            id="ezplayer-bulk-media-folder"
+                                            ref={(el) => {
+                                                if (el) {
+                                                    el.setAttribute('webkitdirectory', '');
+                                                    el.setAttribute('directory', '');
+                                                }
+                                            }}
+                                            type="file"
+                                            multiple
+                                            style={{ display: 'none' }}
+                                            disabled={bulkImporting || choosingMediaFolder}
+                                            onChange={handleLanMediaFolderInputChange}
+                                        />
                                     </>
                                 )}
                             </>
@@ -870,6 +988,8 @@ export function SongList({
                 open={bulkSummaryOpen}
                 summary={bulkSummary}
                 onClose={() => setBulkSummaryOpen(false)}
+                onChooseMediaFolderAndRetry={handleChooseMediaFolderAndRetry}
+                choosingMediaFolder={choosingMediaFolder}
             />
 
             <EditSongDetailsDialog

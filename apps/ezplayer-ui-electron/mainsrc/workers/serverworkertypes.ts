@@ -91,4 +91,6 @@ export interface ServerWorkerRPCAPI {
     /** Resolves with the DiscoveryResult for a `scan`; other kinds resolve
      *  undefined and report through the broadcast state. */
     controllerCommand(command: ControllerCommand, origin: ControllerOpOrigin): Promise<DiscoveryResult | undefined>;
+    /** Open a native folder picker on the player PC (for LAN media-folder choose). */
+    chooseMediaFolder(): Promise<string | undefined>;
 }

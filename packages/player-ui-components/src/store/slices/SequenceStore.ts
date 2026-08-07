@@ -99,14 +99,34 @@ export const batchImportShowSequences = createAsyncThunk<
 /** LAN bulk import: upload files + import sequences in a single HTTP request. */
 export const batchUploadImportShowSequences = createAsyncThunk<
     BatchImportSummary,
-    { files: Array<{ name: string; data: Blob }>; companionAudioNames?: string[] },
+    {
+        files: Array<{ name: string; data: Blob }>;
+        companionAudioNames?: string[];
+        /** Existing show-folder FSEQs to import after an audio-only upload. */
+        importFseqNames?: string[];
+    },
     { extra: DataStorageAPI }
->('sequences/batchUploadImportShowSequences', async ({ files, companionAudioNames }, { extra }) => {
+>('sequences/batchUploadImportShowSequences', async ({ files, companionAudioNames, importFseqNames }, { extra }) => {
     if (!extra.batchUploadImportShowSequences) {
         throw new Error('This player connection does not support bulk upload-import');
     }
-    return await extra.batchUploadImportShowSequences(files, companionAudioNames ?? []);
+    return await extra.batchUploadImportShowSequences(
+        files,
+        companionAudioNames ?? [],
+        importFseqNames,
+    );
 });
+
+/** Open native media-folder picker on the player (LAN) and return the chosen path. */
+export const chooseMediaFolder = createAsyncThunk<string | undefined, void, { extra: DataStorageAPI }>(
+    'sequences/chooseMediaFolder',
+    async (_arg, { extra }) => {
+        if (!extra.chooseMediaFolder) {
+            throw new Error('This player connection does not support choosing a media folder');
+        }
+        return await extra.chooseMediaFolder();
+    },
+);
 
 /** True when the connected backing store can receive file uploads (web/LAN
  *  file-management API). Electron's renderer works with local paths instead. */
