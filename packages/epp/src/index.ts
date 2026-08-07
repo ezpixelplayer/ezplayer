@@ -24,9 +24,14 @@ export {
     summarizeFSEQHeader,
 } from './formats/FSeqUtil';
 
-export { ControllerRec, ModelRec, readControllersAndModels } from './xlcompat/XLXmlUtil';
+export { ControllerRec, ModelRec, controllersAndModelsFromParsed, readControllersAndModels } from './xlcompat/XLXmlUtil';
 
-export { ControllerState, readControllersFromXlights, openControllersForDataSend } from './xlcompat/XLControllerSetup';
+export {
+    ControllerState,
+    controllersFromParsedXlights,
+    readControllersFromXlights,
+    openControllersForDataSend,
+} from './xlcompat/XLControllerSetup';
 
 export { ArrayBufferPool, BufferPool } from './util/BufferRecycler';
 

@@ -17,9 +17,227 @@ or service script:
 EZPlayer.exe [<verb>] [--flags...]
 ```
 
-With no verb, EZPlayer starts the windowed player as always. Verbs select an
-alternate mode — currently the only verb is [`headless`](#headless-mode). Flags
-control the show folder, LAN web server ports, and first-run behavior.
+With no verb, EZPlayer starts the windowed player as always. Flags control the
+show folder, LAN web server ports, and first-run behavior.
+
+## Verbs
+
+The **first non-flag argument** decides what EZPlayer does:
+
+| First argument                       | What happens                                                        |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| _(none)_                             | Launch the desktop app (the normal GUI).                            |
+| A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
+| [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
+| `discover`, `interfaces`, `controllers`, `status`, `action`, `upload`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
+| Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
+
+Note the distinction between the two window-less modes: `headless` is the
+**player** running without a UI, while the text-only commands are
+**diagnostic/management tools** that print and exit before the app ever
+bootstraps.
+
+:::note
+The text-only commands are also available from the pure-Node CLI entry used in
+development and CI (`node dist/cli.js <command>`), which has no GUI to launch.
+:::
+
+Everything from [Launch flags](#launch-flags) onward describes the flags that
+configure the desktop app. The next section describes the **text-only commands**.
+
+## Text-only commands
+
+These commands print plain text and exit; they never open a window or start
+the show. They are useful for setup, network diagnostics, and scripting.
+
+| Command                | Purpose                                                     |
+| ---------------------- | ----------------------------------------------------------- |
+| `discover`             | Scan LAN networks for lighting controllers.                 |
+| `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
+| `controllers`          | Show the controller reconcile state from a running player.  |
+| `status`               | Deep-read one controller and print its detail report.       |
+| `action`               | Run a management action (e.g. reboot) on a controller.      |
+| `upload`               | Upload xLights-derived config to a controller (via the app).|
+| `help`                 | Print the command list. Also `--help`, `-h`.                |
+
+`discover`, `interfaces`, `status`, and `action` talk to devices directly and
+need no running player. `controllers` and `upload` query/drive a **running
+EZPlayer** over its LAN API (`--host`, default `127.0.0.1:3000`, honoring
+`EZPLAYER_WEB_PORT`) — the reconcile state and the xLights upload intent only
+exist inside the app.
+
+Get top-level help or per-command help:
+
+```bash
+EZPlayer help                 # list commands
+EZPlayer discover --help      # options for one command
+```
+
+### `discover`
+
+Scan one or more networks for lighting controllers and print what is found.
+
+```bash
+EZPlayer discover [--networks <cidr[,cidr…]>] [--depth sweep|identify|full] [--fpp-proxy]
+```
+
+| Option              | Alias | Description                                                                                   |
+| ------------------- | ----- | --------------------------------------------------------------------------------------------- |
+| `--networks <cidr>` | `-n`  | Comma-separated CIDRs to scan (e.g. `192.168.1.0/24,10.0.0.0/24`). Omit to scan every external host network (run `interfaces` to see them). |
+| `--depth <level>`   | `-d`  | How hard to look — see the table below. Default: `identify`.                                  |
+| `--fpp-proxy`       |       | Recurse one level through FPP proxies to find controllers behind them. Needs `identify` or `full`; ignored (with a warning) on `sweep`. |
+
+**Depth levels**
+
+| Depth      | What you get                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `sweep`    | Liveness only — IP, MAC/OUI, mDNS hostname, and detected protocols.                        |
+| `identify` | _(default)_ Everything in `sweep`, plus driver-confirmed vendor, model, and firmware.      |
+| `full`     | Everything in `identify`, plus a per-device detail tree.                                   |
+
+**Output** adapts to where it is going:
+
+- **Interactive terminal** (`sweep`/`identify`): a live table redraws in place as
+  devices resolve, ending with a summary line.
+- **Piped or redirected** output: progress goes to `stderr`; the final table is
+  printed once to `stdout`. This makes `EZPlayer discover … > devices.txt` clean.
+- **`full`**: a detail tree is printed per device at the end; progress stays on
+  `stderr`.
+
+Every run ends with `N device(s), M identified.` Exit code is `0` on success, or
+`2` for a usage error (an invalid `--depth`, an unrecognized argument, or no
+scannable network found).
+
+```bash
+# Scan the whole LAN at default depth
+EZPlayer discover
+
+# Two specific subnets, confirm models, follow FPP proxies
+EZPlayer discover -n 192.168.1.0/24,192.168.2.0/24 -d identify --fpp-proxy
+
+# Full detail, captured to a file
+EZPlayer discover --depth full > controllers.txt
+```
+
+:::note
+Discovery scans the network actively (ARP/mDNS/driver probes). Only run it on
+networks you are authorized to scan.
+:::
+
+### `interfaces`
+
+List this host's external IPv4 networks as CIDRs, ready to pass to
+`discover --networks`. Internal and link-local (`169.254.x.x`) addresses are
+excluded.
+
+```bash
+EZPlayer interfaces
+```
+
+```text
+  INTERFACE            ADDRESS          NETWORK
+  Wi-Fi                192.168.1.154    192.168.1.0/24
+  Ethernet             10.0.0.12        10.0.0.0/24
+```
+
+Exit code is `0`. If no external IPv4 interface exists, it prints
+`(no external IPv4 interfaces)`.
+
+### `controllers`
+
+Print the running player's controller reconcile state: known controllers
+(xLights ∪ EZPlayer records) versus what the network scan found, plus recent
+operations and network policies.
+
+```bash
+EZPlayer controllers [--host <host[:port]>] [--json]
+```
+
+| Option              | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
+| `--host <host[:port]>` | The running player's LAN API. Default `127.0.0.1:3000` (`EZPLAYER_WEB_PORT` honored). |
+| `--json`            | Emit the raw state as JSON instead of tables.                           |
+
+```bash
+EZPlayer controllers                    # local player
+EZPlayer controllers --host pi5:3000    # a player elsewhere on the LAN
+```
+
+### `status`
+
+Deep-read one controller and print its detail report (identity, health,
+per-port config). Talks to the device **directly** — no running player needed.
+A bare name (instead of an IP) is resolved through the running player's known
+controllers.
+
+```bash
+EZPlayer status <ip-or-name> [--host <host[:port]>] [--json]
+```
+
+```bash
+EZPlayer status 192.168.11.61
+EZPlayer status "Mega Tree" --json
+```
+
+### `action`
+
+Run a management action against one controller, or list the actions its driver
+offers. Talks to the device directly.
+
+```bash
+EZPlayer action <ip-or-name> <actionId> [--host <host[:port]>]
+EZPlayer action <ip-or-name> --list
+```
+
+Action ids are driver-specific — `--list` shows them (e.g. FPP offers
+`restart` for a quick daemon restart and `reboot` for a full OS reboot; most
+pixel controllers offer `reboot` only).
+
+```bash
+EZPlayer action 192.168.11.63 --list
+EZPlayer action 192.168.11.63 reboot
+```
+
+### `upload`
+
+Push the xLights-derived configuration (input universes and/or string outputs)
+to one controller, by known-record name. Runs **through the running player**:
+the upload intent comes from the show's xLights files, and the app performs a
+post-upload read-back so every UI reflects the device's new state.
+
+```bash
+EZPlayer upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]
+```
+
+| Option           | Description                                                                    |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `--scope`        | `inputs` (universes), `strings` (port outputs), or `full` (both — the default). |
+| `--full-control` | Settings xLights doesn't specify are reset to the controller defaults (brightness/gamma/color order), wiping per-port tweaks made on the device. |
+
+```bash
+EZPlayer upload "Mega Tree" --scope strings
+EZPlayer upload GarageF16 --full-control
+```
+
+:::warning
+Uploads rewrite the controller's port configuration. There is no undo beyond
+uploading again.
+:::
+
+### Exit codes
+
+| Code | Meaning                                                              |
+| ---- | ------------------------------------------------------------------- |
+| `0`  | Success, or a help request.                                         |
+| `2`  | Usage error within a command — bad option or invalid argument.      |
+| `64` | Unknown verb (rejected by the launcher before the app starts).      |
+| `1`  | Unexpected failure (an uncaught error while running the command).   |
+
+## Launch flags
+
+The remaining sections describe **launch-flag mode** — the flags that configure
+the desktop app when it opens. These are leading-dash arguments, so they never
+collide with the verbs above.
 
 CLI arguments take **priority over** [environment variables](./env-variables.md)
 when both configure the same setting (for example `--web-port=` beats
@@ -29,7 +247,7 @@ On Windows, append flags after the executable path. On Linux AppImage/deb
 packages, `executableArgs` may include `--no-sandbox` automatically — see
 [Platform notes](#platform-notes).
 
-## Quick reference
+### Quick reference
 
 | Verb / Flag            | Purpose                                                         |
 | ---------------------- | --------------------------------------------------------------- |
@@ -55,9 +273,6 @@ EZPlayer.exe --show-folder=C:\Shows\MyDisplay
 ```bash
 ./EZPlayer --show-folder=/home/user/shows/my-display
 ```
-
-The preferred form is `--show-folder=<path>`. A camelCase alias (`--showFolder=`)
-and a space-separated form (`--show-folder <path>`) are also accepted.
 
 The path must **exist** as a directory. If it is valid, EZPlayer saves it as
 the persisted show folder and loads sequences, playlists, schedule, and layout

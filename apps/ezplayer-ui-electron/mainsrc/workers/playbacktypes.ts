@@ -18,6 +18,7 @@ import type {
     PlayerNStatusContent,
     EZPlayerCommand,
     PlaybackSettings,
+    KnownController,
 } from '@ezplayer/ezplayer-core';
 
 export interface PlaybackWorkerData {
@@ -141,6 +142,9 @@ export type WorkerToMainMessage =
           viewObjects?: Array<ViewObject>;
           layoutSettings?: LayoutSettings;
           movingHeads?: Array<MhFixtureInfo>;
+          /** xLights controllers parsed from the same layout load — the "known"
+           *  side of the controller reconciliation grid. */
+          controllers?: KnownController[];
       }
     | { type: 'audiobuffer'; buffer: SharedArrayBuffer }
     | { type: 'rpc'; rpc: RPCRequest }

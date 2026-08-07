@@ -4,6 +4,7 @@ import type {
     ScheduledPlaylist,
     CombinedPlayerStatus,
     CloudCommand,
+    ControllerCommand,
     EZPlayerCommand,
     PlaybackSettings,
     BatchImportSummary,
@@ -17,6 +18,7 @@ import {
     authSliceActions,
     cloudConfigActions,
     cloudStatusActions,
+    controllerOpsActions,
     hydratePlaybackSettings,
     setCStatus,
     setNStatus,
@@ -93,6 +95,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
             if (data.cloudStatus !== undefined) {
                 dispatch(cloudStatusActions.setCloudStatus(data.cloudStatus));
+            }
+            if (data.controllerops !== undefined) {
+                dispatch(controllerOpsActions.setControllerOps(data.controllerops));
             }
         });
 
@@ -391,6 +396,10 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async issueCloudCommand(cmd: CloudCommand): Promise<void> {
         wsService.send({ type: 'cloudCommand', cmd });
+    }
+
+    async issueControllerCommand(command: ControllerCommand): Promise<void> {
+        wsService.send({ type: 'controllerCommand', command });
     }
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {

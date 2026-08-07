@@ -3,8 +3,8 @@ import { E131Sender } from '../dataplane/protocols/E131';
 import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
-import type { ModelParseOptions } from 'xllayoutcalcs';
-import { ControllerRec, readControllersAndModels } from './XLXmlUtil';
+import type { ControllersAndModelChannels, ModelParseOptions } from 'xllayoutcalcs';
+import { ControllerRec, controllersAndModelsFromParsed, ModelRec, readControllersAndModels } from './XLXmlUtil';
 
 export interface ControllerState {
     setup: ControllerSetup; // This is the name and channel map (as it pertains to xLights fseq layout)
@@ -13,9 +13,32 @@ export interface ControllerState {
     sender?: Sender;
 }
 
+/**
+ * Read the xLights XML files from a show folder and build the data-plane
+ * controller states.  Thin wrapper: disk read + `controllerStatesFromRecs`.
+ * Callers that already hold a parsed `ControllersAndModelChannels` should
+ * use `controllersFromParsedXlights` instead to avoid a second parse.
+ */
 export async function readControllersFromXlights(showdir: string, options?: ModelParseOptions) {
-    const ctrls: ControllerState[] = [];
     const { controllers: xcontrollers, models: osmodels } = await readControllersAndModels(showdir, options);
+    return { controllers: controllerStatesFromRecs(xcontrollers), models: osmodels };
+}
+
+/**
+ * Build the data-plane controller states from an already-parsed
+ * `ControllersAndModelChannels` document (the result of xllayoutcalcs'
+ * `getControllersAndModelChannels`) — no disk access.
+ */
+export function controllersFromParsedXlights(parsed: ControllersAndModelChannels): {
+    controllers: ControllerState[];
+    models: ModelRec[];
+} {
+    const { controllers: xcontrollers, models: osmodels } = controllersAndModelsFromParsed(parsed);
+    return { controllers: controllerStatesFromRecs(xcontrollers), models: osmodels };
+}
+
+function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerState[] {
+    const ctrls: ControllerState[] = [];
 
     function makeErrorState(exc: ControllerRec, sum: string, skipped: boolean) {
         return {
@@ -68,7 +91,7 @@ export async function readControllersFromXlights(showdir: string, options?: Mode
         ctrls.push(ctrl);
     }
 
-    return { controllers: ctrls, models: osmodels };
+    return ctrls;
 }
 
 export interface OpenControllersOptions {
@@ -89,12 +112,19 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
         }
         const xc = c.xlRecord;
 
-        if (c.setup.proto === 'DDP') {
+        // xLights parity (Output::Open): show data for a controller behind an
+        // FPP proxy goes to the proxy host as DDP at ABSOLUTE channel numbers
+        // (the proxy bridges its input channel range onward), regardless of
+        // the controller's own protocol.
+        const proxied = !!xc.fppProxy;
+
+        if (c.setup.proto === 'DDP' || proxied) {
             const dsender = new DDPSender();
-            dsender.address = c.setup.address;
+            dsender.address = proxied ? xc.fppProxy! : c.setup.address;
             if (opts?.ddpPort) dsender.port = opts.ddpPort;
             dsender.pushAtEnd = false; // TODO try variety
-            dsender.startChNum = xc.keepChannelNumbers ? xc.startch - 1 : 0;
+            dsender.startChNum = proxied || xc.keepChannelNumbers ? xc.startch - 1 : 0;
+            dsender.localAddress = xc.forceLocalIP;
             dsender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;
             dsender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
 
@@ -123,6 +153,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
         } else if (c.setup.proto === 'E131') {
             const esender = new E131Sender();
             esender.address = c.setup.address;
+            esender.localAddress = xc.forceLocalIP;
             esender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
             esender.pushAtEnd = false; // TODO try variety
             // TODO!  Must fill in universe and ch per packet on multiple universes!  Do not do this now.

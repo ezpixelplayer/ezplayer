@@ -1,6 +1,6 @@
 // scripts/build-main.js
 import { build } from 'esbuild';
-import { builtinModules } from 'node:module';
+import { builtinModules, createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 
 const BUILD_DATE = new Date().toISOString();
@@ -123,6 +123,17 @@ const run = (entryPoints, outfile) =>
 
 await run('main.ts', 'dist/main.js');
 await run('showfolder.ts', 'dist/showfolder.js');
+await run('cli.ts', 'dist/cli.js');
+
+// The epp-controllers scanner runs in a worker_threads worker. Build it as our
+// own entry (resolved from the installed lib via its ./scanner-worker export)
+// so the packaged app ships a real dist/workers/scanner-worker.js — handled by
+// the same native/external rules as the other workers, no node_modules lookup
+// or asar surprises at runtime.
+await run(
+    createRequire(import.meta.url).resolve('@ezplayer/epp-controllers/scanner-worker'),
+    'dist/workers/scanner-worker.js',
+);
 await run('mainsrc/workers/playbackmaster.ts', 'dist/workers/playbackmaster.js');
 await run('mainsrc/workers/mp3decodeworker.ts', 'dist/workers/mp3decodeworker.js');
 await run('mainsrc/workers/zstdworker.ts', 'dist/workers/zstdworker.js');

@@ -60,6 +60,53 @@ export type {
 } from './types/DataTypes';
 
 export type {
+    ControllerDetailNode,
+    ControllerDeviceAction,
+    ControllerEnableState,
+    ControllerSource,
+    ControllerNetwork,
+    NetworkPolicy,
+    DiscoveredController,
+    ControllerOpKind,
+    ControllerOpStatus,
+    ControllerOpOrigin,
+    ControllerOpProgress,
+    ControllerOp,
+    ControllerOpsState,
+    ControllerCommand,
+    KnownController,
+    EzpControllerRecord,
+    EzpControllerRecordPatch,
+    ControllerRecordState,
+    ControllerGridRow,
+    ControllerPortIntent,
+    ControllerModelIntent,
+    ControllerOutputIntent,
+    ControllerPort,
+    PortDriftKind,
+    PortReconcile,
+    ControllerHealth,
+} from './types/ControllerOps';
+
+export {
+    reconcileControllers,
+    reconcilePorts,
+    hasPortDrift,
+    overlayHealth,
+    healthNeedsAttention,
+    applyOverrides,
+} from './util/controllerReconcile';
+
+export {
+    buildPortMap,
+    expandIntentStrings,
+    getPortSR,
+    portIntentFromModelIntents,
+    PORTS_PER_SMARTREMOTE,
+} from './util/controllerPortMap';
+export type { PortMap, PortMapBox, PortMapRow, PortMapString } from './util/controllerPortMap';
+
+export type {
     VcSong,
     VcPlayingItem,
     VcPlayingUpdate,

@@ -36,6 +36,7 @@ export { PlayerCloudRegistrationDialog } from './components/player-cloud-registr
 export { PlayerCloudRegistrationPanel } from './components/player-cloud-registration/PlayerCloudRegistrationPanel';
 export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/PlayerCloudWelcomePanel';
 export { CloudPage } from './components/cloud/CloudPage';
+export { ControllersScreen } from './components/controllers/ControllersScreen';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { BridgeStatusOverlay } from './components/status/BridgeStatusOverlay';
@@ -131,6 +132,7 @@ export {
 
 export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
+export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

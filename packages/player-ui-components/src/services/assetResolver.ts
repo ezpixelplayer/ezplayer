@@ -21,6 +21,15 @@
 export type AssetResolver = (path: string) => string | null;
 
 /**
+ * Path segment the show-file endpoint lives under, relative to a frame-server base.
+ * Loaders that reverse MTLLoader's `extractUrlBase` must strip exactly this prefix —
+ * derive from it rather than hardcoding, so moving the endpoint can't silently break
+ * texture resolution.
+ */
+export const SHOW_FILE_DIR = '/api/ezp/';
+export const SHOW_FILE_PATH = `${SHOW_FILE_DIR}show-file`;
+
+/**
  * Resolver that builds `frameServerUrl/api/ezp/show-file?path=…` URLs. Used in local-Koa hosting
  * (Electron / local browser) where the show folder is served by the host. Returns a no-op
  * resolver when `frameServerUrl` is missing, so callers can pass through their optional
@@ -36,7 +45,7 @@ export function createShowFileResolver(frameServerUrl: string | undefined): Asse
     const base = frameServerUrl.replace(/\/+$/, '');
     return (path) => {
         if (!path) return null;
-        return `${base}/api/ezp/show-file?path=${encodeURIComponent(path)}`;
+        return `${base}${SHOW_FILE_PATH}?path=${encodeURIComponent(path)}`;
     };
 }
 

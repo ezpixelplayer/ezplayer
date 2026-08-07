@@ -88,6 +88,14 @@ import {
 } from '../showfolder.js';
 import { getServerStatus } from './server-worker-manager.js';
 import {
+    dispatchControllerCommand,
+    getControllerOpsState,
+    loadControllerRecords,
+    loadNetworkPolicies,
+    setKnownControllers,
+} from './controller-ops.js';
+import type { ControllerCommand } from '@ezplayer/ezplayer-core';
+import {
     updateFrameBuffer,
     updateAudioBuffer,
     broadcastToWebSocket,
@@ -506,6 +514,8 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // into the subdir and the loaders read the migrated copies on this same tick.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
+    await loadControllerRecords(showFolder);
+    await loadNetworkPolicies(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
@@ -647,6 +657,10 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
                 intervals: cmd.intervals,
             });
             break;
+        case 'controllerCommand':
+            // Fire-and-forget: results reach clients via the broadcast state.
+            void dispatchControllerCommand(cmd.command, 'cloud');
+            break;
         default: {
             const _exhaustive: never = cmd;
             console.warn('[cloud-command] unknown verb', _exhaustive);
@@ -756,6 +770,7 @@ export async function registerContentHandlers(
             playbackSettings: getSettingsCache() ?? undefined,
             cloudConfig: getCloudConfigCache(),
             cloudStatus: getCurrentCloudStatus(),
+            controllerops: getControllerOpsState(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
@@ -898,6 +913,9 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
+    });
+    ipcMain.handle('ipcControllerCommand', async (_event, command: ControllerCommand) => {
+        await dispatchControllerCommand(command, 'lan');
     });
 
     onCloudStatus((status) => {
@@ -1052,6 +1070,7 @@ export async function registerContentHandlers(
             }
             case 'modelCoordinates': {
                 pushModelCoordinates(msg.coords3D, msg.coords2D, msg.viewObjects, msg.layoutSettings, msg.movingHeads);
+                if (msg.controllers) setKnownControllers(msg.controllers);
                 break;
             }
             case 'rpc': {
