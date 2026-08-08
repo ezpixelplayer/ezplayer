@@ -61,6 +61,7 @@ import {
     parseTargetUrl,
     isLanProxyTarget,
 } from './proxy-middleware.js';
+import { http09Request, isHeaderlessResponse } from './http09-fallback.js';
 import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
@@ -1030,10 +1031,34 @@ async function dispatchDeviceProxy(
             proxyReq.destroy();
             resolve({ status: 504 });
         });
-        proxyReq.on('error', () => resolve({ status: 502 }));
+        proxyReq.on('error', (err: NodeJS.ErrnoException) => {
+            // Header-less device (AlphaPix): redo the request on a raw socket.
+            if (!isHeaderlessResponse(err)) {
+                resolve({ status: 502 });
+                return;
+            }
+            void http09Request({
+                hostname: target.hostname,
+                port: Number(target.port) || (target.protocol === 'https:' ? 443 : 80),
+                path: target.pathname + target.search,
+                method,
+                contentType: findHeader(outHeaders, 'content-type'),
+                body,
+                maxBytes: DEVICE_PROXY_MAX_RESPONSE_BYTES,
+            }).then(
+                (res) => resolve({ status: res.status, headers: res.headers, body: res.body }),
+                () => resolve({ status: 502 }),
+            );
+        });
         if (body) proxyReq.write(body);
         proxyReq.end();
     });
+}
+
+/** Case-insensitive header lookup. */
+function findHeader(headers: Record<string, string>, name: string): string | undefined {
+    const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === name);
+    return entry?.[1];
 }
 
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
