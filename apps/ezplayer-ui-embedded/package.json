@@ -47,7 +47,8 @@
         "react-helmet-async": "catalog:",
         "react-redux": "catalog:",
         "react-router-dom": "catalog:",
-        "react-toastify": "catalog:"
+        "react-toastify": "catalog:",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.1.tgz"
     },
     "peerDependencies": {
         "react": "^18.0.0",

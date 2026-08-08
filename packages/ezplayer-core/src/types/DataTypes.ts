@@ -612,6 +612,11 @@ export interface PlaybackSettings {
     sync?: SyncOutputSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;
+    /**
+     * Optional folder searched for companion MP3/media after the default
+     * co-located lookup fails (sequence import / autodetection).
+     */
+    mediaFolder?: string;
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,

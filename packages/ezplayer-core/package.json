@@ -28,7 +28,8 @@
         "postbuild": "pnpm pack --pack-destination ./dist"
     },
     "dependencies": {
-        "uuid": "catalog:"
+        "uuid": "catalog:",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.1.tgz"
     },
     "devDependencies": {
         "eslint": "catalog:",
@@ -36,7 +37,6 @@
         "tsup": "catalog:",
         "typescript": "catalog:",
         "typescript-eslint": "catalog:",
-        "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.1.tgz"
+        "vitest": "catalog:"
     }
 }

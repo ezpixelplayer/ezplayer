@@ -59,6 +59,10 @@ export interface AutoDetectedSongFiles {
     detectedTitle?: string;
     detectedArtist?: string;
     durationSecs?: number;
+    /** True when the FSEQ header names an audio file that must be resolved. */
+    audioRequired?: boolean;
+    /** Basename of the audio file named in the FSEQ header, when present. */
+    headerAudioName?: string;
 }
 
 export interface AudioTagMetadata {
@@ -66,6 +70,28 @@ export interface AudioTagMetadata {
     artist?: string;
     imageFile?: string;
     imageGeneratedFromAudio?: boolean;
+}
+
+export interface BatchImportFailure {
+    fseqPath: string;
+    fseqName: string;
+    reason: string;
+}
+
+export interface BatchImportSuccess {
+    fseqPath: string;
+    fseqName: string;
+    title: string;
+    artist: string;
+    mediaFound: boolean;
+}
+
+export interface BatchImportSummary {
+    total: number;
+    imported: number;
+    failed: number;
+    successes: BatchImportSuccess[];
+    failures: BatchImportFailure[];
 }
 
 // Node/coord types, color profile, channel mapping, and `GetNodeResult` now live in
@@ -89,6 +115,10 @@ export interface EZPElectronAPI {
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
     autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
     extractAudioTagMetadata: (audioPath: string) => Promise<AudioTagMetadata>;
+    /** Import many .fseq paths using the same autodetection as single-song add. */
+    batchImportSequences: (fseqPaths: string[]) => Promise<BatchImportSummary>;
+    /** Import every .fseq under a folder (recursive). */
+    batchImportSequencesFromFolder: (folderPath: string) => Promise<BatchImportSummary>;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;

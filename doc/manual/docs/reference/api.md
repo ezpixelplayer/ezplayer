@@ -556,8 +556,114 @@ missing `work.length` is filled from the FSEQ header.
 
 Given `{ "fseq": "<name in show folder>" }`, look for a matching audio file
 (FSEQ header hints, then basename/prefix matching) and extract tag metadata.
+Also reads title/artist from the FSEQ when present. Searches the sequence’s
+folder, the configured media folder, and the show folder.
 Returns `{ audioFile?, imageFile?, detectedTitle?, detectedArtist?, durationSecs? }`
 with show-relative file names.
+
+---
+
+### POST /api/ezp/sequences/audio-metadata
+
+Given `{ "audio": "<name in show folder>" }`, extract ID3 (or equivalent) tag
+metadata from an audio file already in the show folder.
+Returns `{ title?, artist?, imageFile? }` (image is show-relative when cover
+art was extracted).
+
+---
+
+### POST /api/ezp/sequences/batch-import
+
+Bulk-import `.fseq` files that are **already** in the show folder — same
+autodetect + register path as the desktop Bulk Import action.
+
+**Request:**
+
+```json
+{
+    "fseqNames": ["SongA.fseq", "SongB.fseq"],
+    "companionAudioNames": ["SongA.mp3"]
+}
+```
+
+| Field | Meaning |
+| ----- | ------- |
+| `fseqNames` | Basenames of `.fseq` files in the show folder (required) |
+| `companionAudioNames` | Optional audio basenames from the same LAN selection. On the HTTP/LAN path, show-folder audio is restricted to this allowlist (plus the media folder). Omit or pass `[]` when relying only on the media folder. |
+
+Bulk import requires a resolved companion audio file for each FSEQ (exact
+basename match). Failures are per-file and do not abort the rest of the batch.
+All successful records are persisted in **one** sequence commit.
+
+**Response (200):** `BatchImportSummary`
+
+```json
+{
+    "total": 2,
+    "imported": 1,
+    "failed": 1,
+    "successes": [
+        {
+            "fseqPath": "/show/SongA.fseq",
+            "fseqName": "SongA.fseq",
+            "title": "Song A",
+            "artist": "Artist",
+            "mediaFound": true
+        }
+    ],
+    "failures": [
+        {
+            "fseqPath": "/show/SongB.fseq",
+            "fseqName": "SongB.fseq",
+            "reason": "Audio file not found (SongB.mp3)"
+        }
+    ]
+}
+```
+
+---
+
+### POST /api/ezp/sequences/batch-upload-import
+
+LAN Bulk Import in **one HTTP request**: upload companions + FSEQs, then run
+the same import as `batch-import`. Prefer this from browsers so you do not
+issue one `/api/file/sequences/...` upload per file.
+
+**Request:**
+
+- Method: POST
+- Headers:
+    - `Content-Type: application/octet-stream`
+- Body (binary, concatenated):
+    1. `uint32` big-endian length `N` of the UTF-8 manifest JSON
+    2. `N` bytes of UTF-8 JSON manifest (see below)
+    3. Raw concatenation of each file’s bytes, in the same order as
+       `manifest.files`
+
+The manifest lives in the body (not a header) so large folder imports do not
+hit Node’s default ~16 KB request-header limit.
+
+**Manifest JSON:**
+
+```json
+{
+    "files": [
+        { "name": "SongA.mp3", "size": 4123456 },
+        { "name": "SongA.fseq", "size": 89123456 }
+    ],
+    "companionAudioNames": ["SongA.mp3"],
+    "importFseqNames": ["SongB.fseq"]
+}
+```
+
+Files are written into the show folder, then import runs. By default every
+`.fseq` in `manifest.files` is imported. If the upload has **no** FSEQs (audio
+only), pass `importFseqNames` with basenames of FSEQs already in the show
+folder — used by the LAN UI when choosing a media folder after a failed bulk
+import. Response shape matches `batch-import` (`BatchImportSummary`).
+
+**Errors:** `400` invalid manifest / no FSEQs to import; `413` over upload
+limit; `503` import failure after upload.
 
 ---
 
