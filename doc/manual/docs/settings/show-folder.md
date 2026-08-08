@@ -34,18 +34,19 @@ shared media library or an xLights render output folder.
 
 ### LAN UI
 
-Browsers cannot select a path on the player disk. For missing audio during
-[Bulk Import](../basics/songs.md#bulk-import):
+Browsers cannot browse the player's disk, so **Settings → Media Folder** in the
+LAN UI is a text field: type the folder path **as the player PC sees it**
+(for example `C:\Shows\Media`) and click **Save**, or **Clear** to stop
+searching that location.
+
+For missing audio during [Bulk Import](../basics/songs.md#bulk-import) you do
+not need the player-side path at all:
 
 1. In the Bulk Import Summary, click **Choose Media Folder**.
 2. Pick a folder **on the device running the LAN UI** that contains the matching
    MP3 files.
 3. Those files are uploaded to the player and the failed sequences are
    **retried automatically**.
-
-To set a **permanent** media folder path on the player, use the desktop app
-(**Settings → Show Folder**). The LAN **Settings → Media Folder** page shows the
-current path (if any) and can clear it.
 
 ### Search order
 

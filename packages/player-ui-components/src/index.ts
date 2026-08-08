@@ -89,7 +89,6 @@ export {
     autodetectShowSequence,
     batchImportShowSequences,
     batchUploadImportShowSequences,
-    chooseMediaFolder,
     extractShowAudioMetadata,
     canUploadShowFiles,
     listShowFiles,

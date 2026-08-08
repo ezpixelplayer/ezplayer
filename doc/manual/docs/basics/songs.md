@@ -165,8 +165,8 @@ dialog shows a tip to choose a Media Folder:
 
 You can also set a permanent Media Folder path anytime under
 [Settings → Show Folder](../settings/show-folder.md#media-folder) in the desktop
-app. On the LAN UI, use **Choose Media Folder** in the Bulk Import Summary when
-audio is missing.
+app, or by typing the player-side path under **Settings → Media Folder** in the
+LAN UI.
 
 ## Editing a song
 

@@ -15,8 +15,9 @@ declare global {
 
 /** Choose / set the optional media folder used by song auto-detect and bulk import.
  *  Desktop: native folder picker on this PC.
- *  LAN: permanent player paths are set in the desktop app; bulk-import retry
- *  picks a folder in the browser and uploads companion audio. */
+ *  LAN/cloud: type the player-side path directly (no remote directory browser
+ *  yet); bulk-import retry separately picks a folder in the browser and
+ *  uploads companion audio. */
 export const MediaFolderSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const mediaFolder = useSelector((s: RootState) => s.playbackSettings.settings.mediaFolder);
@@ -89,9 +90,10 @@ export const MediaFolderSettings: React.FC = () => {
                     </>
                 ) : (
                     <>
-                        A permanent media folder path lives on the player PC and is set in the desktop app. During{' '}
-                        <strong>Bulk Import</strong>, if audio is missing, choose a folder in this browser — matching
-                        MP3s are uploaded and the failed sequences are retried.
+                        Extra folder <strong>on the player PC</strong> searched for companion MP3 files. Enter the
+                        path as the player sees it (e.g. <code>C:\Shows\Media</code>). During <strong>Bulk Import</strong>,
+                        if audio is missing, you can instead choose a folder in this browser — matching MP3s are
+                        uploaded and the failed sequences are retried.
                     </>
                 )}
             </Typography>
@@ -123,27 +125,39 @@ export const MediaFolderSettings: React.FC = () => {
                         Clear
                     </Button>
                 </Box>
-            ) : mediaFolderLocal ? (
+            ) : (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <TextField
                         fullWidth
                         variant="outlined"
                         size="small"
-                        label="Current media folder (on player)"
+                        label="Media folder path (on player)"
+                        placeholder="Not set — search sequence folder only"
                         value={mediaFolderLocal}
-                        disabled
-                        sx={{ '& .MuiInputBase-input': { color: 'text.primary' } }}
+                        disabled={saving}
+                        onChange={(e) => setMediaFolderLocal(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') void persistMediaFolder(mediaFolderLocal.trim() || undefined);
+                        }}
                     />
+                    <Button
+                        variant="contained"
+                        onClick={() => void persistMediaFolder(mediaFolderLocal.trim() || undefined)}
+                        disabled={saving || mediaFolderLocal.trim() === (mediaFolder ?? '')}
+                        sx={{ whiteSpace: 'nowrap', px: 2, py: 1 }}
+                    >
+                        Save
+                    </Button>
                     <Button
                         variant="outlined"
                         onClick={() => void handleClearMediaFolder()}
-                        disabled={saving}
+                        disabled={!mediaFolderLocal || saving}
                         sx={{ whiteSpace: 'nowrap', px: 2, py: 1 }}
                     >
                         Clear
                     </Button>
                 </Box>
-            ) : null}
+            )}
         </Box>
     );
 };

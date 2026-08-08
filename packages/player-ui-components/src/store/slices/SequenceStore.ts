@@ -117,17 +117,6 @@ export const batchUploadImportShowSequences = createAsyncThunk<
     );
 });
 
-/** Open native media-folder picker on the player (LAN) and return the chosen path. */
-export const chooseMediaFolder = createAsyncThunk<string | undefined, void, { extra: DataStorageAPI }>(
-    'sequences/chooseMediaFolder',
-    async (_arg, { extra }) => {
-        if (!extra.chooseMediaFolder) {
-            throw new Error('This player connection does not support choosing a media folder');
-        }
-        return await extra.chooseMediaFolder();
-    },
-);
-
 /** True when the connected backing store can receive file uploads (web/LAN
  *  file-management API). Electron's renderer works with local paths instead. */
 export function canUploadShowFiles(extra: DataStorageAPI): boolean {

@@ -173,8 +173,4 @@ export interface DataStorageAPI {
         companionAudioNames?: string[],
         importFseqNames?: string[],
     ) => Promise<BatchImportSummary>;
-
-    /** Open a native folder picker on the player PC and set mediaFolder (LAN).
-     *  Prefer browser folder pick + upload for LAN bulk-import retry UX. */
-    chooseMediaFolder?: () => Promise<string | undefined>;
 }

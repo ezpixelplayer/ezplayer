@@ -6,7 +6,7 @@ import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import type {
     ServerWorkerToMainMessage,
     MainToServerWorkerMessage,
@@ -110,19 +110,6 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
-    },
-    chooseMediaFolder: async () => {
-        const props = {
-            properties: ['openDirectory' as const],
-            title: 'Select Media Folder',
-            buttonLabel: 'Use Folder',
-        };
-        const mainWindow = getMainWindowRef?.();
-        const result = mainWindow
-            ? await dialog.showOpenDialog(mainWindow, props)
-            : await dialog.showOpenDialog(props);
-        if (result.canceled || !result.filePaths[0]) return undefined;
-        return result.filePaths[0];
     },
 };
 

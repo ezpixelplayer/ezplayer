@@ -667,28 +667,6 @@ limit; `503` import failure after upload.
 
 ---
 
-### POST /api/ezp/choose-media-folder
-
-Opens a **native folder picker on the player PC** (same dialog the desktop app
-uses). On success, saves the path as `playbackSettings.mediaFolder` and
-broadcasts the updated settings.
-
-The LAN Bulk Import Summary prefers a **browser** folder pick that uploads
-companion audio via `batch-upload-import` instead of this endpoint, so users
-do not need to operate the player screen.
-
-**Request:** POST with empty body.
-
-**Response:**
-
-```json
-{ "success": true, "mediaFolder": "C:\\\\Shows\\\\Media" }
-```
-
-If the user cancels the dialog: `{ "success": false, "cancelled": true }`.
-
----
-
 ### POST /api/ezp/playback-settings
 
 Update playback settings. Updates playback configuration settings including

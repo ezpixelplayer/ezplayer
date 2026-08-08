@@ -290,18 +290,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return (await response.json()) as BatchImportSummary;
     }
 
-    /** Opens the native folder picker on the player PC and saves mediaFolder. */
-    async chooseMediaFolder(): Promise<string | undefined> {
-        const response = await fetch(`${this.apiUrl}ezp/choose-media-folder`, { method: 'POST' });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error((err as { error?: string }).error ?? `Choose media folder failed: ${response.statusText}`);
-        }
-        const body = (await response.json()) as { success?: boolean; cancelled?: boolean; mediaFolder?: string };
-        if (body.cancelled || !body.mediaFolder) return undefined;
-        return body.mediaFolder;
-    }
-
     async listShowFiles(dir: string): Promise<string[]> {
         const res = await fetch(`${this.apiUrl}files/${encodeURIComponent(dir)}?nameOnly=1`);
         if (!res.ok) throw new Error(`Failed to list ${dir}: ${res.statusText}`);
