@@ -56,8 +56,6 @@ let playWorkerRef: Worker | null = null;
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
 let kioskPortRef: number | undefined = undefined;
 let kioskPortSourceRef: string | undefined = undefined;
-// Base dist dir for resolving sibling workers (e.g. the scanner worker).
-let distDirRef: string | undefined = undefined;
 
 export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
@@ -123,7 +121,6 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     getMainWindowRef = getMainWindow;
     kioskPortRef = kioskPort;
     kioskPortSourceRef = kioskPortSource;
-    distDirRef = distDir;
 
     console.log(`🌐 Starting Koa server worker on port ${port} (source: ${portSource})`);
 

@@ -93,8 +93,10 @@ export class FrameSender {
         targetFramePN: number;
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
+        /** Send even when idle black frames are disabled (lead/trail pads). */
+        force?: boolean;
     }) {
-        if (!this.blackFramesEnabled) return;
+        if (!this.blackFramesEnabled && !args.force) return;
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
