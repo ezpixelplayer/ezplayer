@@ -1,0 +1,7 @@
+# Windows batch files MUST keep CRLF endings. cmd.exe mis-parses an LF-only
+# .cmd — you get errors like "'m' is not recognized" as it chops REM lines —
+# and the failure is baffling because the script still half-works. Without this
+# rule a build host with core.autocrlf=false (any Linux/macOS CI) would check
+# these out as LF and ship a broken launcher.
+*.cmd text eol=crlf
+*.bat text eol=crlf

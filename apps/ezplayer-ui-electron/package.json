@@ -26,7 +26,12 @@
             "build/Release/*.node",
             "node_modules/@ezplayer/icmp-ping/dist/**/*",
             "node_modules/@ezplayer/icmp-ping/package.json",
-            "node_modules/@ezplayer/icmp-ping/build/Release/*.node"
+            "node_modules/@ezplayer/icmp-ping/build/Release/*.node",
+            "node_modules/@lydell/node-pty/**/*",
+            "node_modules/@lydell/node-pty-*/**/*"
+        ],
+        "asarUnpack": [
+            "**/*.node"
         ],
         "extraResources": [
             {
@@ -51,7 +56,13 @@
                 "nsis"
             ],
             "icon": "src/assets/images/EZPlayerLogoTransparent.ico",
-            "artifactName": "${productName}-Setup-${version}.${ext}"
+            "artifactName": "${productName}-Setup-${version}.${ext}",
+            "extraFiles": [
+                {
+                    "from": "bin/ezplayer.cmd",
+                    "to": "ezplayer.cmd"
+                }
+            ]
         },
         "mac": {
             "artifactName": "${productName}-${version}-${arch}.${ext}",
@@ -106,6 +117,15 @@
         "prod:log": "sh -c './release/win-unpacked/EZPlayer.exe --enable-logging --v=1'",
         "prod:sf": "sh -c './release/win-unpacked/EZPlayer.exe --show-folder=THIS_IS_AN_EXAMPLE'"
     },
+    "comment:optionalDependencies": "node-pty's prebuilt binaries, one package per platform/arch. Listed explicitly because pnpm 10+ does not auto-install TRANSITIVE platform binaries, so without these a mac/linux/arm build would package an app whose shell silently fails to load. Keep the versions in lockstep with @lydell/node-pty.",
+    "optionalDependencies": {
+        "@lydell/node-pty-darwin-arm64": "1.2.0-beta.14",
+        "@lydell/node-pty-darwin-x64": "1.2.0-beta.14",
+        "@lydell/node-pty-linux-arm64": "1.2.0-beta.14",
+        "@lydell/node-pty-linux-x64": "1.2.0-beta.14",
+        "@lydell/node-pty-win32-arm64": "1.2.0-beta.14",
+        "@lydell/node-pty-win32-x64": "1.2.0-beta.14"
+    },
     "devDependencies": {
         "@electron/asar": "^3.4.1",
         "@types/koa": "catalog:",
@@ -116,7 +136,6 @@
         "@types/react-dom": "catalog:",
         "@vitejs/plugin-react": "catalog:",
         "concurrently": "^9.2.1",
-        "vitest": "catalog:",
         "dmg-builder": "^26.15.4",
         "electron": "^41.7.2",
         "electron-builder": "^26.15.4",
@@ -125,7 +144,8 @@
         "node-gyp": "^10.3.1",
         "typescript": "catalog:",
         "vite": "catalog:",
-        "vite-plugin-static-copy": "^3.4.0"
+        "vite-plugin-static-copy": "^3.4.0",
+        "vitest": "catalog:"
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
@@ -139,6 +159,7 @@
         "@floating-ui/react": "^0.27.19",
         "@koa/router": "^15.6.0",
         "@koa/send": "^6.0.0",
+        "@lydell/node-pty": "1.2.0-beta.14",
         "@mui/icons-material": "catalog:",
         "@mui/material": "catalog:",
         "@mui/styles": "catalog:",
