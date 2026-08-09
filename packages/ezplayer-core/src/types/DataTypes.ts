@@ -521,8 +521,7 @@ export interface UIConnectSnapshot {
     cloudConfig?: CloudConfig;
     cloudStatus?: CloudStatus;
     controllerops?: ControllerOpsState;
-    /** Which remote-access tiles to offer. Sent in the snapshot as well as
-     *  pushed, since a push can race the renderer registering its listener. */
+    /** Which remote-access tiles to offer. */
     remoteAccess?: RemoteAccessAvailability;
 }
 
@@ -744,13 +743,11 @@ export type FullPlayerState = {
 
 /**
  * Whether the player is offering each password-gated remote-access feature.
- * A feature is on only when a password for it was configured with the CLI on
- * the player machine — there is no UI that can enable one. The passwords
- * themselves never leave the player; only these booleans do.
  */
 export interface RemoteAccessAvailability {
-    /** Remote terminal. Also requires the pty backend to have loaded. */
+    /** Remote terminal. */
     shell: boolean;
+    /** Show-folder files. */
     files: boolean;
 }
 
