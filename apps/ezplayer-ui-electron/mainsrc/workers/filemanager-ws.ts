@@ -1,20 +1,13 @@
 /**
  * The `/filemanager` WebSocket: browse and edit the show folder remotely.
  *
- * Gated exactly like `/terminal`, by its own password — a file-manager password
- * does not open a shell, and vice versa. With no password configured the
+ * Gated by its own password; with no password configured, the
  * endpoint refuses every upgrade, so the feature has no presence on the
  * network at all.
  *
- * WHY ONE WEBSOCKET RATHER THAN HTTP ROUTES: the cloud relays browser
- * WebSockets straight through, so LAN and cloud take byte-for-byte the same
- * route with one password check, instead of a second HTTP surface needing its
- * own auth. The cloud's HTTP path also caps body size and cannot express a
- * delete.
- *
  * Every path in every message is relative to the show folder. The
  * path-resolution layer is the only thing that turns one into a real location,
- * and the only thing keeping this feature inside the show folder.
+ * and responsible for keeping this feature inside the show folder.
  */
 
 import type { IncomingMessage } from 'http';
@@ -31,13 +24,12 @@ import {
     writeChunk,
 } from './showfolder-fs.js';
 
-/** Binary payload per frame, sized so base64 (×4/3) plus the JSON envelope
- *  stays under the cloud relay's per-frame cap. */
+/** Binary payload per frame, sized to stay under the cloud relay's per-frame cap. */
 export const CHUNK_BYTES = 512 * 1024;
 
 /** Refuse to buffer an unbounded download into a browser tab. Large media can
  *  still be managed here — moved, renamed, deleted — just not downloaded. */
-const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES = 1024 * 1024 * 1024;
 
 interface Session {
     ws: WebSocket;
@@ -218,8 +210,7 @@ export async function fileManagerEndpointEnabled(showFolder: string | undefined)
     return featureEndpointEnabled('files', showFolder);
 }
 
-/** Drop every session — used when the password is cleared or the show changes,
- *  so revoking access takes effect on windows already open. */
+/** Drop every session when the password is cleared or the show changes */
 export function closeFileManagerSessions(reason: string): void {
     for (const session of [...sessions]) {
         sessions.delete(session);
