@@ -228,75 +228,74 @@ uploading again.
 
 ### Remote access: terminal and file manager
 
-EZPlayer can offer two password-gated features, reachable from the LAN web UI
-and from the cloud player site alike:
+EZPlayer optionally offers two features:
 
 - **Shell** — a terminal on the player machine.
 - **Files** — a file manager for the show folder: browse, upload, download,
   rename, move and delete.
 
-Both are off by default. The only way to turn either on is these commands, run
-on the player machine itself:
+Both are off by default. The only way to turn either on is to establish a
+password via these commands, run on the player machine itself:
 
 ```bash
-# Read the password from a file — the recommended form, and the one that
-# works everywhere including the packaged Windows app
+# Read the password from a file (recommended form)
 EZPlayer files --show-folder "D:\Shows\MyShow" --password-file secret.txt
 
 # Or inline (see the caution below)
 EZPlayer files --show-folder "D:\Shows\MyShow" --password "correct horse battery"
 
+# Or inline (see the caution below)
+EZPlayer files --show-folder "D:\Shows\MyShow" --stdin    # Read from console
+
 EZPlayer files --show-folder "D:\Shows\MyShow" --status   # is it enabled?
 EZPlayer files --show-folder "D:\Shows\MyShow" --clear    # disable it entirely
 ```
 
-:::caution Windows: use `ezplayer.cmd`, not `EZPlayer.exe`
-`EZPlayer.exe` is a **GUI-subsystem binary**. Run it directly from a command
-prompt and two things go wrong: your shell does not wait for it, and Electron's
-stdio handling leaves standard input unreadable — so `--stdin` fails even when
-you pipe input in.
+:::caution
+For Windows, use `ezplayer.cmd`, not `EZPlayer.exe`.
+`EZPlayer.exe` is a **GUI-subsystem binary**, with limited ability to use the
+console.  `--stdin` does not work directly with `EZPlayer.exe`.
 
 The Windows installer therefore places a small console launcher,
-**`ezplayer.cmd`**, next to it. Use that for every text-only command:
-
-```bat
-ezplayer files --show-folder "D:\Shows\MyShow" --password-file secret.txt
-type secret.txt | ezplayer files --show-folder "D:\Shows\MyShow" --stdin
-```
-
-It runs the very same binary in Node mode, so nothing extra is installed, and
-the shell waits for it and sees its exit code like any normal program.
-
-**The interactive password prompt is still unavailable on Windows.** Electron's
-Node mode provides no TTY, so echo cannot be turned off and the password would
-be typed in plain view; EZPlayer refuses rather than doing that. Use
-`--password-file`. The prompt works on macOS and Linux, and from the pure-Node
-CLI (`node dist/cli.js …`) used in development.
+**`ezplayer.cmd`**, next to it.  Use that for every text-only command.
 :::
 
-They have **separate passwords**, and each is independently on or off. That
-split is the point: you can hand someone the file manager without handing them
-a shell. (The reverse is moot — anyone with a shell already has the files.)
+There are separate passwords for `files` and `shell`; each is independently on or off.
 
 Until a password is set for a feature there is **no tile in Settings and no
-endpoint on the network** — its WebSocket refuses every connection. Once one is
+endpoint on the network**. Once one is
 set, the matching tile appears in that show's Settings screen; opening it asks
 for that password. See [Shell](../settings/shell.md) and
 [Files](../settings/files.md) for what each one does.
 
-There is deliberately no way to set either password from any UI. Arming remote
+Password reset commands work whether or not a player is running; if one is running locally
+it is nudged over loopback so the change takes effect without a restart.
+
+:::warning
+Enabling shell access on a machine provides siginificant power over both that machine,
+and anything reachable over the attached networks.  You should only enable this if the
+diagnostic benefits of full remote access outweigh the potential for damage or loss of
+sensitive information.
+
+Enabling remote file access also has the potential to allow remote reading or update of
+sensitive files.
+
+Ensure that your passwords are appropriately secure.
+:::
+
+There is deliberately no way to set either password from any UI.  Enabling remote
 access requires the ability to run commands on the player already, which keeps
 the decision with whoever owns the machine.
 
 | Option          | Meaning                                                                    |
 | --------------- | -------------------------------------------------------------------------- |
 | `--show-folder` | Which show to set the password for. Defaults to the current directory when that is already a show folder (it has a `.ezplayer/` directory); otherwise required. |
-| `--password-file` | Read the password from the first line of a file. **The recommended option**, and the only secure one that works from the packaged Windows app. A leading byte-order mark is ignored. Delete the file afterwards. |
-| `--password`    | The new password, given inline. Convenient, but see the caution below.      |
-| `--stdin`       | Read the password from stdin. Does not work from the packaged Windows app (see above). |
+| `--password-file` | Read the password from the first line of a file (recommended option). |
+| `--password`    | The new password, given inline. Convenient, but see the caution below.  |
+| `--stdin`       | Read the password from stdin. (Requires `ezplayer.cmd` on Windows.)     |
 | `--clear`       | Remove the password. Anything open at the time is closed immediately.      |
 | `--status`      | Report whether the feature is enabled for this show, and the file in use.  |
-| `--port`        | Loopback port of the running player (default `3000`, honors `EZPLAYER_WEB_PORT`). |
+| `--port`        | Loopback port of the running player.  (Defaults to checking the lockfile) |
 
 :::caution
 `--password` puts the password in your shell history, and on most systems it is
@@ -313,23 +312,19 @@ shows on one machine can differ. Switching a running player to a different show
 folder closes any terminal or file-manager session that was open, since it
 belonged to the previous show.
 
-Both commands work whether or not a player is running; if one is running locally
-it is nudged over loopback so the change takes effect without a restart.
-
 Things worth knowing before you enable either:
 
 - **Only one terminal at a time, player-wide.** Opening a second closes the
   first, and it is told why rather than just going quiet. Closing the window
-  kills the shell. The file manager has no such limit — it holds nothing
-  exclusive.
+  kills the shell. The file manager has no such limit.
 - **The file manager cannot leave the show folder**, and cannot see the
   player's own `.ezplayer/` settings directory at all — that is where these
   password hashes and your cloud credentials live. `xlights_rgbeffects.xml` and
   `xlights_networks.xml` are visible but cannot be renamed, moved or deleted.
-- **Over the cloud the passwords are encrypted** (the bridge is `wss:`), so a
-  remote attacker needs the cloud URL, the player token, *and* the relevant
+- **Cloud security:** All cloud transport, if enabled, is encrypted. A fully
+  remote user/attacker needs the cloud URL, the player token, and the relevant
   password.
-- **On the LAN they are not.** The LAN UI is plain HTTP, so someone sniffing
+- **LAN security:** The LAN UI is plain HTTP, so someone sniffing
   your local network while you log in could capture a password. That matches
   the rest of the LAN surface, which has no authentication at all — but it is
   worth knowing if your LAN is not trusted.
