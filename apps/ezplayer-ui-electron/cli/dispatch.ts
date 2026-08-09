@@ -154,12 +154,8 @@ function remoteAccessUsage(verb: 'shell' | 'files'): string {
         'Works whether or not a player is running. If one is running locally it is\n' +
         'nudged over loopback to pick the change up without a restart.\n' +
         '\n' +
-        'WINDOWS: run EZPlayer.exe directly and your shell will not wait for it, nor\n' +
-        'can it read the console. Use the ezplayer.cmd launcher installed beside it;\n' +
-        'then --stdin and exit codes behave normally. An interactive hidden prompt is\n' +
-        'still unavailable on Windows (Electron Node mode has no TTY support), so use\n' +
-        '--password-file there. The prompt works on macOS/Linux and from the pure-Node\n' +
-        'CLI.\n' +
+        'WINDOWS: Use the ezplayer.cmd launcher installed beside EZPlayer;\n' +
+        'then --stdin and exit codes behave normally.\n' +
         '\n' +
         'Prefer --password-file over --password: it keeps the password out of your\n' +
         'shell history and out of the process list. Delete the file afterwards.\n' +
