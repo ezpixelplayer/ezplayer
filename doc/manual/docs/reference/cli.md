@@ -29,7 +29,7 @@ The **first non-flag argument** decides what EZPlayer does:
 | _(none)_                             | Launch the desktop app (the normal GUI).                            |
 | A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
 | [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
-| `discover`, `interfaces`, `controllers`, `status`, `action`, `upload`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
+| `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
 | Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
 
 Note the distinction between the two window-less modes: `headless` is the
@@ -54,23 +54,34 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | ---------------------- | ----------------------------------------------------------- |
 | `discover`             | Scan LAN networks for lighting controllers.                 |
 | `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
-| `controllers`          | Show the controller reconcile state from a running player.  |
-| `status`               | Deep-read one controller and print its detail report.       |
-| `action`               | Run a management action (e.g. reboot) on a controller.      |
-| `upload`               | Upload xLights-derived config to a controller (via the app).|
+| `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
+| `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager). |
+| `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager). |
 | `help`                 | Print the command list. Also `--help`, `-h`.                |
 
-`discover`, `interfaces`, `status`, and `action` talk to devices directly and
-need no running player. `controllers` and `upload` query/drive a **running
-EZPlayer** over its LAN API (`--host`, default `127.0.0.1:3000`, honoring
-`EZPLAYER_WEB_PORT`) — the reconcile state and the xLights upload intent only
-exist inside the app.
+`discover`, `interfaces`, `controller status`, and `controller action` talk to
+devices directly and need no running player. `controller list` and
+`controller upload` query/drive a **running EZPlayer** over its LAN API
+(`--host`, default `127.0.0.1:3000`, honoring `EZPLAYER_WEB_PORT`) — the
+reconcile state and the xLights upload intent only exist inside the app.
+
+Everything that acts on a lighting controller is a **subcommand of
+`controller`**, which keeps the plain names free for what they sound like — the
+player's own status, or uploading show content:
+
+| Subcommand            | Purpose                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `controller list`     | Show the controller reconcile state from a running player.  |
+| `controller status`   | Deep-read one controller and print its detail report.       |
+| `controller action`   | Run a management action (e.g. reboot) on a controller.      |
+| `controller upload`   | Upload xLights-derived config to a controller (via the app).|
 
 Get top-level help or per-command help:
 
 ```bash
 EZPlayer help                 # list commands
 EZPlayer discover --help      # options for one command
+EZPlayer controller           # list the controller subcommands
 ```
 
 ### `discover`
@@ -143,14 +154,14 @@ EZPlayer interfaces
 Exit code is `0`. If no external IPv4 interface exists, it prints
 `(no external IPv4 interfaces)`.
 
-### `controllers`
+### `controller list`
 
 Print the running player's controller reconcile state: known controllers
 (xLights ∪ EZPlayer records) versus what the network scan found, plus recent
 operations and network policies.
 
 ```bash
-EZPlayer controllers [--host <host[:port]>] [--json]
+EZPlayer controller list [--host <host[:port]>] [--json]
 ```
 
 | Option              | Description                                                             |
@@ -159,11 +170,11 @@ EZPlayer controllers [--host <host[:port]>] [--json]
 | `--json`            | Emit the raw state as JSON instead of tables.                           |
 
 ```bash
-EZPlayer controllers                    # local player
-EZPlayer controllers --host pi5:3000    # a player elsewhere on the LAN
+EZPlayer controller list                    # local player
+EZPlayer controller list --host pi5:3000    # a player elsewhere on the LAN
 ```
 
-### `status`
+### `controller status`
 
 Deep-read one controller and print its detail report (identity, health,
 per-port config). Talks to the device **directly** — no running player needed.
@@ -171,22 +182,22 @@ A bare name (instead of an IP) is resolved through the running player's known
 controllers.
 
 ```bash
-EZPlayer status <ip-or-name> [--host <host[:port]>] [--json]
+EZPlayer controller status <ip-or-name> [--host <host[:port]>] [--json]
 ```
 
 ```bash
-EZPlayer status 192.168.11.61
-EZPlayer status "Mega Tree" --json
+EZPlayer controller status 192.168.11.61
+EZPlayer controller status "Mega Tree" --json
 ```
 
-### `action`
+### `controller action`
 
 Run a management action against one controller, or list the actions its driver
 offers. Talks to the device directly.
 
 ```bash
-EZPlayer action <ip-or-name> <actionId> [--host <host[:port]>]
-EZPlayer action <ip-or-name> --list
+EZPlayer controller action <ip-or-name> <actionId> [--host <host[:port]>]
+EZPlayer controller action <ip-or-name> --list
 ```
 
 Action ids are driver-specific — `--list` shows them (e.g. FPP offers
@@ -194,11 +205,11 @@ Action ids are driver-specific — `--list` shows them (e.g. FPP offers
 pixel controllers offer `reboot` only).
 
 ```bash
-EZPlayer action 192.168.11.63 --list
-EZPlayer action 192.168.11.63 reboot
+EZPlayer controller action 192.168.11.63 --list
+EZPlayer controller action 192.168.11.63 reboot
 ```
 
-### `upload`
+### `controller upload`
 
 Push the xLights-derived configuration (input universes and/or string outputs)
 to one controller, by known-record name. Runs **through the running player**:
@@ -206,7 +217,7 @@ the upload intent comes from the show's xLights files, and the app performs a
 post-upload read-back so every UI reflects the device's new state.
 
 ```bash
-EZPlayer upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]
+EZPlayer controller upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]
 ```
 
 | Option           | Description                                                                    |
@@ -215,14 +226,120 @@ EZPlayer upload <name> [--scope inputs|strings|full] [--full-control] [--host <h
 | `--full-control` | Settings xLights doesn't specify are reset to the controller defaults (brightness/gamma/color order), wiping per-port tweaks made on the device. |
 
 ```bash
-EZPlayer upload "Mega Tree" --scope strings
-EZPlayer upload GarageF16 --full-control
+EZPlayer controller upload "Mega Tree" --scope strings
+EZPlayer controller upload GarageF16 --full-control
 ```
 
 :::warning
 Uploads rewrite the controller's port configuration. There is no undo beyond
 uploading again.
 :::
+
+### Remote access: terminal and file manager
+
+EZPlayer optionally offers two features:
+
+- **Shell** — a terminal on the player machine.
+- **Files** — a file manager for the show folder: browse, upload, download,
+  rename, move and delete.
+
+Both are off by default. The only way to turn either on is to establish a
+password via these commands, run on the player machine itself:
+
+```bash
+# Read the password from a file (recommended form)
+EZPlayer files --show-folder "D:\Shows\MyShow" --password-file secret.txt
+
+# Or inline (see the caution below)
+EZPlayer files --show-folder "D:\Shows\MyShow" --password "correct horse battery"
+
+# Or inline (see the caution below)
+EZPlayer files --show-folder "D:\Shows\MyShow" --stdin    # Read from console
+
+EZPlayer files --show-folder "D:\Shows\MyShow" --status   # is it enabled?
+EZPlayer files --show-folder "D:\Shows\MyShow" --clear    # disable it entirely
+```
+
+:::caution
+For Windows, use `ezplayer.cmd`, not `EZPlayer.exe`.
+`EZPlayer.exe` is a **GUI-subsystem binary**, with limited ability to use the
+console.  `--stdin` does not work directly with `EZPlayer.exe`.
+
+The Windows installer therefore places a small console launcher,
+**`ezplayer.cmd`**, next to it.  Use that for every text-only command.
+:::
+
+There are separate passwords for `files` and `shell`; each is independently on or off.
+
+Until a password is set for a feature there is **no tile in Settings and no
+endpoint on the network**. Once one is
+set, the matching tile appears in that show's Settings screen; opening it asks
+for that password. See [Shell](../settings/shell.md) and
+[Files](../settings/files.md) for what each one does.
+
+Password reset commands work whether or not a player is running; if one is running locally
+it is nudged over loopback so the change takes effect without a restart.
+
+:::warning
+Enabling shell access on a machine provides siginificant power over both that machine,
+and anything reachable over the attached networks.  You should only enable this if the
+diagnostic benefits of full remote access outweigh the potential for damage or loss of
+sensitive information.
+
+Enabling remote file access also has the potential to allow remote reading or update of
+sensitive files.
+
+Ensure that your passwords are appropriately secure.
+:::
+
+There is deliberately no way to set either password from any UI.  Enabling remote
+access requires the ability to run commands on the player already, which keeps
+the decision with whoever owns the machine.
+
+| Option          | Meaning                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `--show-folder` | Which show to set the password for. Defaults to the current directory when that is already a show folder (it has a `.ezplayer/` directory); otherwise required. |
+| `--password-file` | Read the password from the first line of a file (recommended option). |
+| `--password`    | The new password, given inline. Convenient, but see the caution below.  |
+| `--stdin`       | Read the password from stdin. (Requires `ezplayer.cmd` on Windows.)     |
+| `--clear`       | Remove the password. Anything open at the time is closed immediately.      |
+| `--status`      | Report whether the feature is enabled for this show, and the file in use.  |
+| `--port`        | Loopback port of the running player.  (Defaults to checking the lockfile) |
+
+:::caution
+`--password` puts the password in your shell history, and on most systems it is
+visible to other users in the process list for as long as the command runs.
+Prefer `--password-file` on a machine you share — the value never reaches
+either.
+:::
+
+Passwords are stored **salted and hashed** (scrypt) in
+`<show folder>/.ezplayer/remote-access.json`, alongside the other per-show
+settings. That makes remote access a property of the **show**, not the machine:
+move the show folder to another player and the settings travel with it, and two
+shows on one machine can differ. Switching a running player to a different show
+folder closes any terminal or file-manager session that was open, since it
+belonged to the previous show.
+
+Things worth knowing before you enable either:
+
+- **Only one terminal at a time, player-wide.** Opening a second closes the
+  first, and it is told why rather than just going quiet. Closing the window
+  kills the shell. The file manager has no such limit.
+- **The file manager cannot leave the show folder**, and cannot see the
+  player's own `.ezplayer/` settings directory at all — that is where these
+  password hashes and your cloud credentials live. `xlights_rgbeffects.xml` and
+  `xlights_networks.xml` are visible but cannot be renamed, moved or deleted.
+- **Cloud security:** All cloud transport, if enabled, is encrypted. A fully
+  remote user/attacker needs the cloud URL, the player token, and the relevant
+  password.
+- **LAN security:** The LAN UI is plain HTTP, so someone sniffing
+  your local network while you log in could capture a password. That matches
+  the rest of the LAN surface, which has no authentication at all — but it is
+  worth knowing if your LAN is not trusted.
+- **Repeated wrong guesses lock the endpoint out** for escalating periods, per
+  feature, so the password rather than the network is what an attacker has to
+  beat.
 
 ### Exit codes
 

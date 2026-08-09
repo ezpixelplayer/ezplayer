@@ -16,6 +16,7 @@ import {
     AppDispatch,
     authSliceActions,
     cloudConfigActions,
+    remoteAccessActions,
     cloudStatusActions,
     controllerOpsActions,
     hydratePlaybackSettings,
@@ -97,6 +98,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
             if (data.controllerops !== undefined) {
                 dispatch(controllerOpsActions.setControllerOps(data.controllerops));
+            }
+            if (data.remoteAccess !== undefined) {
+                dispatch(remoteAccessActions.setRemoteAccess(data.remoteAccess));
             }
         });
 

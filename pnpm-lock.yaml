@@ -253,8 +253,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/epp
       '@ezplayer/epp-controllers':
-        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.9.tgz
-        version: file:libs/ezplayer-epp-controllers-0.0.9.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
+        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.10.tgz
+        version: file:libs/ezplayer-epp-controllers-0.0.10.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
       '@ezplayer/ezplayer-core':
         specifier: workspace:*
         version: link:../../packages/ezplayer-core
@@ -282,6 +282,9 @@ importers:
       '@koa/send':
         specifier: ^6.0.0
         version: 6.0.0
+      '@lydell/node-pty':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
       '@mui/icons-material':
         specifier: 'catalog:'
         version: 5.18.0(@mui/material@5.18.0(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1))(@types/react@18.3.31)(react@18.3.1))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@types/react@18.3.31)(react@18.3.1)
@@ -448,6 +451,25 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@24.13.2)(jsdom@25.0.1)(sass@1.101.0)
+    optionalDependencies:
+      '@lydell/node-pty-darwin-arm64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-darwin-x64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-linux-arm64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-linux-x64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-win32-arm64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-win32-x64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
 
   apps/ezplayer-ui-embedded:
     dependencies:
@@ -665,6 +687,12 @@ importers:
       '@reduxjs/toolkit':
         specifier: 'catalog:'
         version: 2.12.0(react-redux@9.3.0(@types/react@18.3.31)(react@18.3.1)(redux@5.0.1))(react@18.3.1)
+      '@xterm/addon-fit':
+        specifier: ^0.11.0
+        version: 0.11.0
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
       axios:
         specifier: 'catalog:'
         version: 1.18.0(debug@4.4.3)
@@ -1708,9 +1736,9 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.9.tgz':
-    resolution: {integrity: sha512-ke0HWmXOQH1Biom2Ul8npQ0xVV1MHlyKzFD0/1cPIMm9dw3fMMjTMl4YqFrc6+dcLq30qphuxEshGkySWthSaA==, tarball: file:libs/ezplayer-epp-controllers-0.0.9.tgz}
-    version: 0.0.9
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.10.tgz':
+    resolution: {integrity: sha512-S0+sBB60NoA+ydCjJlkoMLHLqxv2GMqTFDQob8EA4C75BJ4Ml5dcvyXdnYKi1DPpJEOihcXtzlYtJH17pkX9dQ==, tarball: file:libs/ezplayer-epp-controllers-0.0.10.tgz}
+    version: 0.0.10
     peerDependencies:
       '@ezplayer/epp': 0.1.4
       '@ezplayer/icmp-ping': 0.1.1
@@ -1812,6 +1840,39 @@ packages:
 
   '@leichtgewicht/ip-codec@2.0.5':
     resolution: {integrity: sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==}
+
+  '@lydell/node-pty-darwin-arm64@1.2.0-beta.14':
+    resolution: {integrity: sha512-C0Zxnl8rTrW/ngu1CKb1NoIiBxoCDL+9SpFSkOaV5MytE7pFN/qTVDFtuIOruE1SL6v17A71jI9bpUIBHn6jJA==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@lydell/node-pty-darwin-x64@1.2.0-beta.14':
+    resolution: {integrity: sha512-P77aRx2TzjmlX6D3XUjTEi4rxvjkJA8VIBwUwe23pphg5DKdc9/g5Y+IsN3KX3lmNmKFVTBIbKcNkl+n8Cgwiw==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@lydell/node-pty-linux-arm64@1.2.0-beta.14':
+    resolution: {integrity: sha512-xZclf3acgWmHi7VMZeVBUJRyJQf78pjCkeBf3ofT/5Xvn5QkRICCZJXtcg1f2lJoCtdF1OWHkeddmJgVDOSv6Q==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@lydell/node-pty-linux-x64@1.2.0-beta.14':
+    resolution: {integrity: sha512-ijTyPgkECpLkrBqs/uuasaXgjv/lQf+5am19ywF6SQ6PsreHZgT36h2j5cdFTN551KHFEDMl6fCgMPDxEEyqxg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@lydell/node-pty-win32-arm64@1.2.0-beta.14':
+    resolution: {integrity: sha512-yw1R4qPtspu0w2p4YhoYuznfQQsdHrVtQnKVDKYTjyuqzF720JZyIdfTRQ0Fl8ChcNesLIrq1kIBfkDPy7CXgg==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@lydell/node-pty-win32-x64@1.2.0-beta.14':
+    resolution: {integrity: sha512-aenTbinERVvWgCQkFwqj9SOR+t/1ZVJ8RqMAk6nB9Lh7oiuRCDzVfs0fNhHRw7JtURZ4jG4i51jou0uXg2yrIw==}
+    cpu: [x64]
+    os: [win32]
+
+  '@lydell/node-pty@1.2.0-beta.14':
+    resolution: {integrity: sha512-RjQis46eBwL9xyDvfXqVsNS2JZ5zQQK/QAYsNE5j8sYPTf4/OpG5Ghm92WGn+w4Rsk3LTpj2adpaZM9Cb8rzDA==}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -2895,6 +2956,12 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+
+  '@xterm/addon-fit@0.11.0':
+    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+
+  '@xterm/xterm@6.0.0':
+    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   abbrev@2.0.0:
     resolution: {integrity: sha512-6/mh1E2u2YgEsCHdY0Yx5oW+61gZU+1vXaoiHHrpKeuRNNgFvS+/jrwHiQhB5apAf5oB7UB7E19ol2R2LKH8hQ==}
@@ -6668,7 +6735,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.9.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.10.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
     dependencies:
       '@ezplayer/epp': link:packages/epp
       '@xmldom/xmldom': 0.8.13
@@ -6784,6 +6851,33 @@ snapshots:
       resolve-path: 1.4.0
 
   '@leichtgewicht/ip-codec@2.0.5': {}
+
+  '@lydell/node-pty-darwin-arm64@1.2.0-beta.14':
+    optional: true
+
+  '@lydell/node-pty-darwin-x64@1.2.0-beta.14':
+    optional: true
+
+  '@lydell/node-pty-linux-arm64@1.2.0-beta.14':
+    optional: true
+
+  '@lydell/node-pty-linux-x64@1.2.0-beta.14':
+    optional: true
+
+  '@lydell/node-pty-win32-arm64@1.2.0-beta.14':
+    optional: true
+
+  '@lydell/node-pty-win32-x64@1.2.0-beta.14':
+    optional: true
+
+  '@lydell/node-pty@1.2.0-beta.14':
+    optionalDependencies:
+      '@lydell/node-pty-darwin-arm64': 1.2.0-beta.14
+      '@lydell/node-pty-darwin-x64': 1.2.0-beta.14
+      '@lydell/node-pty-linux-arm64': 1.2.0-beta.14
+      '@lydell/node-pty-linux-x64': 1.2.0-beta.14
+      '@lydell/node-pty-win32-arm64': 1.2.0-beta.14
+      '@lydell/node-pty-win32-x64': 1.2.0-beta.14
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
@@ -7924,6 +8018,10 @@ snapshots:
   '@webgpu/types@0.1.70': {}
 
   '@xmldom/xmldom@0.8.13': {}
+
+  '@xterm/addon-fit@0.11.0': {}
+
+  '@xterm/xterm@6.0.0': {}
 
   abbrev@2.0.0: {}
 

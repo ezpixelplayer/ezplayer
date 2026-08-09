@@ -21,6 +21,7 @@ export type {
     PlaybackStatistics,
     PlayingItem,
     UIConnectSnapshot,
+    RemoteAccessAvailability,
     EZPlayerCommand,
     JSONEditChoice,
     JSONEditHeader,
