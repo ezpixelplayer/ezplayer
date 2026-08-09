@@ -2,22 +2,14 @@
  * Configuration for the password-gated remote-access features: the terminal
  * (`shell`) and the file manager (`files`).
  *
- * Lives in the SHOW FOLDER, next to the other per-show settings:
+ * Config lives in the show folder:
  * `<showFolder>/.ezplayer/remote-access.json`. That makes remote access a
- * property of the show a player has open rather than of the machine — move the
- * folder to another player and the setting travels with it, and two shows on
- * one machine can differ.
+ * property of the show a player has open rather than of the machine.
  *
- * Each feature has its OWN password and is independently off by default. That
- * split is the point: handing someone the file manager should not hand them a
- * shell. (The reverse is moot — anyone with a shell already has the files.)
+ * Each feature has its OWN password and is independently off by default.
  *
  * MUST stay free of any `electron` import: the pure-Node CLI, the Electron
  * main process and the server worker thread all read this.
- *
- * A feature is INERT unless this file carries a password for it, and there is
- * deliberately no UI that can create one — only `EZPlayer shell` / `EZPlayer
- * files`.
  */
 
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'crypto';
@@ -89,8 +81,7 @@ export function remoteAccessConfigPath(showFolder: string): string {
 }
 
 /** Parsed config, or undefined when the file is absent/empty/corrupt. A broken
- *  file must read as "everything off", never as "on with no password". An
- *  undefined show folder (none loaded yet) is likewise off. */
+ *  file must read as "everything off". */
 export async function readRemoteAccessConfig(showFolder: string | undefined): Promise<RemoteAccessConfig | undefined> {
     if (!showFolder) return undefined;
     try {
@@ -123,7 +114,7 @@ function isUsableRecord(rec: PasswordRecord | undefined): rec is PasswordRecord 
     );
 }
 
-/** True when this feature has a password configured — its single gate. */
+/** True when this feature has a password configured. */
 export function featureEnabled(cfg: RemoteAccessConfig | undefined, feature: RemoteFeature): boolean {
     return isUsableRecord(cfg?.[feature]?.password);
 }
@@ -151,9 +142,7 @@ export async function hashPassword(password: string): Promise<PasswordRecord> {
     };
 }
 
-/** Constant-time check of `password` against the stored record for `feature`.
- *  Each feature's password is checked only against its own record, so one
- *  never unlocks the other. */
+/** Constant-time check of `password` against the stored record for `feature`. */
 export async function verifyFeaturePassword(
     cfg: RemoteAccessConfig | undefined,
     feature: RemoteFeature,
