@@ -2,14 +2,11 @@
  * Contents of the show-folder lock file.
  *
  * The lock itself is advisory and owned by the locking library, which uses a
- * sibling directory; the target file's *contents* are ours. A running player
- * records what it bound there, which is the only way another process can learn
- * the port: it is chosen from a CLI flag, an environment variable or a stored
- * preference, and can differ from all three after an in-use port forces a
- * walk-up.
+ * sibling directory. A running player records what port it bound there,
+ * which is how another process can learn the port.
  *
- * MUST stay free of any `electron` import: the pure-Node CLI reads this to find
- * a running player, and the Electron main process writes it.
+ * As the pure-Node CLI reads this to find
+ * a running player, MUST stay free of any `electron` import.
  */
 
 import fs from 'fs/promises';
