@@ -29,7 +29,7 @@ The **first non-flag argument** decides what EZPlayer does:
 | _(none)_                             | Launch the desktop app (the normal GUI).                            |
 | A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
 | [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
-| `discover`, `interfaces`, `controllers`, `status`, `action`, `upload`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
+| `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
 | Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
 
 Note the distinction between the two window-less modes: `headless` is the
@@ -54,25 +54,34 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | ---------------------- | ----------------------------------------------------------- |
 | `discover`             | Scan LAN networks for lighting controllers.                 |
 | `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
-| `controllers`          | Show the controller reconcile state from a running player.  |
-| `status`               | Deep-read one controller and print its detail report.       |
-| `action`               | Run a management action (e.g. reboot) on a controller.      |
-| `upload`               | Upload xLights-derived config to a controller (via the app).|
+| `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
 | `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager). |
 | `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager). |
 | `help`                 | Print the command list. Also `--help`, `-h`.                |
 
-`discover`, `interfaces`, `status`, and `action` talk to devices directly and
-need no running player. `controllers` and `upload` query/drive a **running
-EZPlayer** over its LAN API (`--host`, default `127.0.0.1:3000`, honoring
-`EZPLAYER_WEB_PORT`) — the reconcile state and the xLights upload intent only
-exist inside the app.
+`discover`, `interfaces`, `controller status`, and `controller action` talk to
+devices directly and need no running player. `controller list` and
+`controller upload` query/drive a **running EZPlayer** over its LAN API
+(`--host`, default `127.0.0.1:3000`, honoring `EZPLAYER_WEB_PORT`) — the
+reconcile state and the xLights upload intent only exist inside the app.
+
+Everything that acts on a lighting controller is a **subcommand of
+`controller`**, which keeps the plain names free for what they sound like — the
+player's own status, or uploading show content:
+
+| Subcommand            | Purpose                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `controller list`     | Show the controller reconcile state from a running player.  |
+| `controller status`   | Deep-read one controller and print its detail report.       |
+| `controller action`   | Run a management action (e.g. reboot) on a controller.      |
+| `controller upload`   | Upload xLights-derived config to a controller (via the app).|
 
 Get top-level help or per-command help:
 
 ```bash
 EZPlayer help                 # list commands
 EZPlayer discover --help      # options for one command
+EZPlayer controller           # list the controller subcommands
 ```
 
 ### `discover`
@@ -145,14 +154,14 @@ EZPlayer interfaces
 Exit code is `0`. If no external IPv4 interface exists, it prints
 `(no external IPv4 interfaces)`.
 
-### `controllers`
+### `controller list`
 
 Print the running player's controller reconcile state: known controllers
 (xLights ∪ EZPlayer records) versus what the network scan found, plus recent
 operations and network policies.
 
 ```bash
-EZPlayer controllers [--host <host[:port]>] [--json]
+EZPlayer controller list [--host <host[:port]>] [--json]
 ```
 
 | Option              | Description                                                             |
@@ -161,11 +170,11 @@ EZPlayer controllers [--host <host[:port]>] [--json]
 | `--json`            | Emit the raw state as JSON instead of tables.                           |
 
 ```bash
-EZPlayer controllers                    # local player
-EZPlayer controllers --host pi5:3000    # a player elsewhere on the LAN
+EZPlayer controller list                    # local player
+EZPlayer controller list --host pi5:3000    # a player elsewhere on the LAN
 ```
 
-### `status`
+### `controller status`
 
 Deep-read one controller and print its detail report (identity, health,
 per-port config). Talks to the device **directly** — no running player needed.
@@ -173,22 +182,22 @@ A bare name (instead of an IP) is resolved through the running player's known
 controllers.
 
 ```bash
-EZPlayer status <ip-or-name> [--host <host[:port]>] [--json]
+EZPlayer controller status <ip-or-name> [--host <host[:port]>] [--json]
 ```
 
 ```bash
-EZPlayer status 192.168.11.61
-EZPlayer status "Mega Tree" --json
+EZPlayer controller status 192.168.11.61
+EZPlayer controller status "Mega Tree" --json
 ```
 
-### `action`
+### `controller action`
 
 Run a management action against one controller, or list the actions its driver
 offers. Talks to the device directly.
 
 ```bash
-EZPlayer action <ip-or-name> <actionId> [--host <host[:port]>]
-EZPlayer action <ip-or-name> --list
+EZPlayer controller action <ip-or-name> <actionId> [--host <host[:port]>]
+EZPlayer controller action <ip-or-name> --list
 ```
 
 Action ids are driver-specific — `--list` shows them (e.g. FPP offers
@@ -196,11 +205,11 @@ Action ids are driver-specific — `--list` shows them (e.g. FPP offers
 pixel controllers offer `reboot` only).
 
 ```bash
-EZPlayer action 192.168.11.63 --list
-EZPlayer action 192.168.11.63 reboot
+EZPlayer controller action 192.168.11.63 --list
+EZPlayer controller action 192.168.11.63 reboot
 ```
 
-### `upload`
+### `controller upload`
 
 Push the xLights-derived configuration (input universes and/or string outputs)
 to one controller, by known-record name. Runs **through the running player**:
@@ -208,7 +217,7 @@ the upload intent comes from the show's xLights files, and the app performs a
 post-upload read-back so every UI reflects the device's new state.
 
 ```bash
-EZPlayer upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]
+EZPlayer controller upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]
 ```
 
 | Option           | Description                                                                    |
@@ -217,8 +226,8 @@ EZPlayer upload <name> [--scope inputs|strings|full] [--full-control] [--host <h
 | `--full-control` | Settings xLights doesn't specify are reset to the controller defaults (brightness/gamma/color order), wiping per-port tweaks made on the device. |
 
 ```bash
-EZPlayer upload "Mega Tree" --scope strings
-EZPlayer upload GarageF16 --full-control
+EZPlayer controller upload "Mega Tree" --scope strings
+EZPlayer controller upload GarageF16 --full-control
 ```
 
 :::warning

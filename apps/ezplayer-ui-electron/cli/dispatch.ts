@@ -11,43 +11,45 @@ type CommandModule = { run: (args: string[]) => Promise<number> };
 /**
  * Single source of truth for verbs, in the order usage output lists them.
  */
-export const TOOL_VERBS = [
-    'discover',
-    'interfaces',
-    'controllers',
-    'status',
-    'action',
-    'upload',
-    'shell',
-    'files',
-    'help',
-] as const;
+export const TOOL_VERBS = ['discover', 'interfaces', 'controller', 'shell', 'files', 'help'] as const;
 
 export type ToolVerb = (typeof TOOL_VERBS)[number];
 
-/** `help` is answered inline rather than by a command module. */
-type DispatchableVerb = Exclude<ToolVerb, 'help'>;
+/** `help` is answered inline; `controller` dispatches to a subcommand. */
+type DispatchableVerb = Exclude<ToolVerb, 'help' | 'controller'>;
+
+/**
+ * Everything that acts on lighting controllers lives under one verb.
+ */
+export const CONTROLLER_SUBCOMMANDS = ['list', 'status', 'action', 'upload'] as const;
+export type ControllerSubcommand = (typeof CONTROLLER_SUBCOMMANDS)[number];
 
 const COMMANDS: Record<DispatchableVerb, () => Promise<CommandModule>> = {
     discover: () => import('./commands/discover.js'),
     interfaces: () => import('./commands/interfaces.js'),
-    controllers: () => import('./commands/controllers.js'),
-    status: () => import('./commands/status.js'),
-    action: () => import('./commands/action.js'),
-    upload: () => import('./commands/upload.js'),
     shell: () => import('./commands/shell.js'),
     files: () => import('./commands/files.js'),
 };
 
-const HELP_SUMMARY = 'Show help for a verb, e.g. `EZPlayer help discover`.';
+const CONTROLLER_COMMANDS: Record<ControllerSubcommand, () => Promise<CommandModule>> = {
+    list: () => import('./commands/controllers.js'),
+    status: () => import('./commands/status.js'),
+    action: () => import('./commands/action.js'),
+    upload: () => import('./commands/upload.js'),
+};
 
-/** One-line summary for any verb, including `help`. */
+const HELP_SUMMARY = 'Show help for a verb, e.g. `EZPlayer help discover`.';
+const CONTROLLER_SUMMARY = 'Inspect and manage lighting controllers.';
+
+/** One-line summary for any verb, including the ones answered inline. */
 export function toolVerbSummary(verb: ToolVerb): string {
-    return verb === 'help' ? HELP_SUMMARY : USAGE[verb].summary;
+    if (verb === 'help') return HELP_SUMMARY;
+    if (verb === 'controller') return CONTROLLER_SUMMARY;
+    return USAGE[verb].summary;
 }
 
 /** One-line + detailed usage per command, for `--help`. */
-const USAGE: Record<DispatchableVerb, { summary: string; detail: string }> = {
+const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; detail: string }> = {
     discover: {
         summary: 'Scan networks for lighting controllers.',
         detail:
@@ -66,10 +68,10 @@ const USAGE: Record<DispatchableVerb, { summary: string; detail: string }> = {
         summary: "List this host's networks (CIDRs to feed --networks).",
         detail: 'Usage: EZPlayer interfaces',
     },
-    controllers: {
+    list: {
         summary: 'Show the controller reconcile state (known vs. scanned).',
         detail:
-            'Usage: EZPlayer controllers [--host <host[:port]>] [--json]\n' +
+            'Usage: EZPlayer controller list [--host <host[:port]>] [--json]\n' +
             '\n' +
             'Prints the running app\'s controller state: known controllers (xLights ∪\n' +
             'records) joined against scanned devices — present/absent/unregistered —\n' +
@@ -82,7 +84,7 @@ const USAGE: Record<DispatchableVerb, { summary: string; detail: string }> = {
     status: {
         summary: 'Deep-read one controller and print its detail report.',
         detail:
-            'Usage: EZPlayer status <ip-or-name> [--host <host[:port]>] [--fpp-proxy <ip>] [--json]\n' +
+            'Usage: EZPlayer controller status <ip-or-name> [--host <host[:port]>] [--fpp-proxy <ip>] [--json]\n' +
             '\n' +
             'Probes the device directly (standalone for an IP target). A name is\n' +
             'resolved through the running app\'s known/scanned state (--host).\n' +
@@ -92,8 +94,8 @@ const USAGE: Record<DispatchableVerb, { summary: string; detail: string }> = {
     action: {
         summary: 'Run a management action (e.g. reboot) on a controller.',
         detail:
-            'Usage: EZPlayer action <ip-or-name> <actionId> [--host <host[:port]>] [--fpp-proxy <ip>]\n' +
-            '       EZPlayer action <ip-or-name> --list\n' +
+            'Usage: EZPlayer controller action <ip-or-name> <actionId> [--host <host[:port]>] [--fpp-proxy <ip>]\n' +
+            '       EZPlayer controller action <ip-or-name> --list\n' +
             '\n' +
             'Identifies the device, then dispatches the driver action directly.\n' +
             '      --list       enumerate the actions the device\'s driver offers\n' +
@@ -102,7 +104,7 @@ const USAGE: Record<DispatchableVerb, { summary: string; detail: string }> = {
     upload: {
         summary: 'Upload xLights-derived config to a controller (via the app).',
         detail:
-            'Usage: EZPlayer upload <name> [--scope inputs|strings|full] [--host <host[:port]>]\n' +
+            'Usage: EZPlayer controller upload <name> [--scope inputs|strings|full] [--host <host[:port]>]\n' +
             '\n' +
             'Pushes the show\'s xLights intent for the known controller <name> through\n' +
             'the running app (which owns the intent + does a post-upload read-back).\n' +
@@ -192,9 +194,49 @@ function printTopHelp(): void {
     console.log('Commands:');
     for (const verb of TOOL_VERBS) {
         console.log(`  ${verb.padEnd(12)} ${toolVerbSummary(verb)}`);
+        if (verb === 'controller') {
+            for (const sub of CONTROLLER_SUBCOMMANDS) {
+                console.log(`    ${sub.padEnd(10)} ${USAGE[sub].summary}`);
+            }
+        }
     }
     console.log('\nRun "EZPlayer <command> --help" for command options.');
     console.log('With no command (or `gui`), EZPlayer launches the desktop app.');
+}
+
+function printControllerHelp(): void {
+    console.log(`EZPlayer controller — ${CONTROLLER_SUMMARY}\n`);
+    console.log('Usage: EZPlayer controller <subcommand> [options]\n');
+    console.log('Subcommands:');
+    for (const sub of CONTROLLER_SUBCOMMANDS) {
+        console.log(`  ${sub.padEnd(10)} ${USAGE[sub].summary}`);
+    }
+    console.log('\nRun "EZPlayer controller <subcommand> --help" for its options.');
+}
+
+function isControllerSubcommand(name: string): name is ControllerSubcommand {
+    return Object.prototype.hasOwnProperty.call(CONTROLLER_COMMANDS, name);
+}
+
+/** Resolve `controller <sub>` to a loader, printing help or an error itself. */
+async function runControllerVerb(rest: string[]): Promise<number> {
+    const [sub, ...subRest] = rest;
+
+    if (!sub || HELP_FLAGS.has(sub)) {
+        printControllerHelp();
+        return sub ? 0 : 2;
+    }
+    if (!isControllerSubcommand(sub)) {
+        console.error(`Unknown controller subcommand "${sub}".\n`);
+        printControllerHelp();
+        return 2;
+    }
+    if (subRest.some((a) => HELP_FLAGS.has(a))) {
+        console.log(USAGE[sub].detail);
+        return 0;
+    }
+    const mod = await CONTROLLER_COMMANDS[sub]();
+    return mod.run(subRest);
 }
 
 /** True if `verb` should run headless. Any bareword is claimed by the CLI —
@@ -222,6 +264,8 @@ export async function runCli(args: string[]): Promise<number> {
         printTopHelp();
         return 2;
     }
+
+    if (verb === 'controller') return runControllerVerb(rest);
 
     if (!isDispatchable(verb)) {
         console.error(`Unknown command "${verb}".\n`);
