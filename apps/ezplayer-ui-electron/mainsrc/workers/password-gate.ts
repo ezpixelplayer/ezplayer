@@ -4,11 +4,9 @@
  *
  * Both endpoints enforce the same three things, in this order:
  *   1. The feature does not exist unless a password is configured for it in the
- *      open show's `.ezplayer/remote-access.json` — only the CLI can put one
- *      there.
+ *      open show's `.ezplayer/remote-access.json`.
  *   2. A freshly-opened socket may send exactly one kind of message: `auth`.
- *   3. Wrong passwords are throttled with escalating lockouts, so the password —
- *      not the network — is what an attacker has to beat.
+ *   3. Wrong passwords are throttled with escalating lockouts.
  *
  * Lockout state is per-feature and process-wide rather than per-IP: guessing
  * from a second address should not buy a fresh budget.
@@ -53,8 +51,7 @@ export type AuthResult =
  * Check a password for `feature` against the config in `showFolder`.
  *
  * The show folder is re-read on every attempt rather than cached, so clearing
- * the password (or switching shows) takes effect immediately, including for a
- * socket that is already mid-handshake.
+ * the password (or switching shows) takes effect immediately.
  */
 export async function authenticateFeature(
     feature: RemoteFeature,
@@ -95,8 +92,7 @@ export async function authenticateFeature(
     return { ok: true, showFolder };
 }
 
-/** True when the feature has a password configured — the gate for accepting an
- *  upgrade at all, so a disabled feature has nothing on the network. */
+/** True when the feature is enabled (has a password configured). */
 export async function featureEndpointEnabled(
     feature: RemoteFeature,
     showFolder: string | undefined,
@@ -104,7 +100,7 @@ export async function featureEndpointEnabled(
     return featureEnabled(await readRemoteAccessConfig(showFolder), feature);
 }
 
-/** Test seam: forget lockout state. */
+/** Test facility: forget lockout state. */
 export function resetAuthThrottleForTests(): void {
     attempts.clear();
 }
