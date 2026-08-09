@@ -97,6 +97,8 @@ import {
     broadcastToWebSocket,
     pushModelCoordinates,
     clearShowData,
+    getRemoteAccessAvailability,
+    publishRemoteAccessAvailability,
 } from './server-worker-manager.js';
 
 // Polyfill for `__dirname` in ES Modules
@@ -560,6 +562,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     // Broadcast via WebSocket (for React web app)
     broadcastToWebSocket('showFolder', showFolder);
+    void publishRemoteAccessAvailability();
     broadcastToWebSocket(
         'sequences',
         curSequences.filter((s) => !s.deleted),
@@ -767,6 +770,7 @@ export async function registerContentHandlers(
             cloudConfig: getCloudConfigCache(),
             cloudStatus: getCurrentCloudStatus(),
             controllerops: getControllerOpsState(),
+            remoteAccess: await getRemoteAccessAvailability(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {

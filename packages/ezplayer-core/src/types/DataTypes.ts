@@ -521,6 +521,8 @@ export interface UIConnectSnapshot {
     cloudConfig?: CloudConfig;
     cloudStatus?: CloudStatus;
     controllerops?: ControllerOpsState;
+    /** Which remote-access tiles to offer. */
+    remoteAccess?: RemoteAccessAvailability;
 }
 
 export type ScheduleDays =
@@ -735,7 +737,19 @@ export type FullPlayerState = {
     /** Shared network-controller discovery/status/action operations + known
      *  controllers. One atomic snapshot so late-joining clients get it all. */
     controllerops?: ControllerOpsState;
+    /** Which password-gated remote-access tiles this player offers. */
+    remoteAccess?: RemoteAccessAvailability;
 };
+
+/**
+ * Whether the player is offering each password-gated remote-access feature.
+ */
+export interface RemoteAccessAvailability {
+    /** Remote terminal. */
+    shell: boolean;
+    /** Show-folder files. */
+    files: boolean;
+}
 
 export type PlayerWebSocketSnapshot = {
     type: 'snapshot';

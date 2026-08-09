@@ -11,6 +11,7 @@ import type {
     ServerWorkerToMainMessage,
     MainToServerWorkerMessage,
     ServerWorkerRPCAPI,
+    RemoteAccessAvailability,
 } from './workers/serverworkertypes.js';
 import {
     updatePlaylistsHandler,
@@ -20,7 +21,19 @@ import {
     dispatchCloudCommand,
     putSequencesWithDurations,
 } from './ipcezplayer.js';
+import { getCurrentShowFolder } from '../showfolder.js';
+import { updateShowFolderLock } from './showfolder-lock.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
+import { isFeatureEnabled } from './remoteaccess.js';
+import {
+    killShellSession,
+    resizeShellSession,
+    setShellEventSink,
+    shellRuntimeAvailable,
+    shutdownShellSessions,
+    startShellSession,
+    writeToShellSession,
+} from './shell-session.js';
 import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
 import { ezpVersions } from '../versions.js';
 import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
@@ -109,7 +122,44 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
     },
+    shellStart: async (sessionId, cols, rows, showFolder) => {
+        return startShellSession(sessionId, cols, rows, showFolder);
+    },
+    shellInput: (sessionId, data) => {
+        writeToShellSession(sessionId, data);
+    },
+    shellResize: (sessionId, cols, rows) => {
+        resizeShellSession(sessionId, cols, rows);
+    },
+    shellKill: (sessionId) => {
+        killShellSession(sessionId);
+    },
+    remoteAccessReloadConfig: async () => {
+        return publishRemoteAccessAvailability();
+    },
 };
+
+/**
+ * Re-read the remote-access config and tell every connected UI which tiles to
+ * offer.
+ */
+export async function publishRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
+    const state = await getRemoteAccessAvailability();
+    broadcastToWebSocket('remoteAccess', state);
+    getMainWindowRef?.()?.webContents?.send('update:remoteaccess', state);
+    return state;
+}
+
+/** Which remote-access features are on offer for the open show. */
+export async function getRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
+    const showFolder = getCurrentShowFolder() ?? undefined;
+    const [shellConfigured, filesConfigured, ptyUsable] = await Promise.all([
+        isFeatureEnabled(showFolder, 'shell'),
+        isFeatureEnabled(showFolder, 'files'),
+        shellRuntimeAvailable(),
+    ]);
+    return { shell: shellConfigured && ptyUsable, files: filesConfigured };
+}
 
 /**
  * Sets up and starts the Koa server in a worker thread
@@ -139,6 +189,11 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     }
 
     serverWorker = new Worker(workerPath);
+
+    // pty output flows main -> worker -> the one authenticated /terminal socket.
+    setShellEventSink((event) => {
+        serverWorker?.postMessage({ type: 'shellEvent', event } satisfies MainToServerWorkerMessage);
+    });
 
     // Controller-ops state goes to both front-ends: WebSocket clients and the
     // electron renderer. refreshInterfaces() publishes the first snapshot.
@@ -172,6 +227,18 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
                         (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
                 );
+                if (msg.status === 'listening') {
+                    void publishRemoteAccessAvailability();
+                    // Record what we actually bound.
+                    const showFolder = getCurrentShowFolder();
+                    if (showFolder) {
+                        void updateShowFolderLock(showFolder, {
+                            pid: process.pid,
+                            webPort: msg.port,
+                            kioskPort: msg.kioskPort,
+                        }).catch((err) => console.warn('[server-worker-manager] could not record ports:', err));
+                    }
+                }
                 break;
             case 'request':
                 // Handle RPC request from server worker
@@ -446,6 +513,8 @@ export function pushModelCoordinates(
  * Shutdown the server worker
  */
 export async function shutdownServerWorker(): Promise<void> {
+    // No shell should outlive the player, even if the worker is already gone.
+    shutdownShellSessions();
     if (!serverWorker) return;
 
     const shutdownMessage: MainToServerWorkerMessage = {

@@ -16,6 +16,7 @@ import type {
     PlayerNStatusContent,
     PlayerCStatusContent,
     PlaybackSettings,
+    RemoteAccessAvailability,
 } from '@ezplayer/ezplayer-core';
 
 import {
@@ -34,6 +35,7 @@ import {
     cloudConfigActions,
     cloudStatusActions,
     controllerOpsActions,
+    remoteAccessActions,
 } from '@ezplayer/player-ui-components';
 
 /**
@@ -83,6 +85,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         window.electronAPI!.onControllerOpsUpdated((data: ControllerOpsState) => {
             if (!this.dispatch) return;
             this.dispatch(controllerOpsActions.setControllerOps(data));
+        });
+        window.electronAPI!.onRemoteAccessUpdated((state: RemoteAccessAvailability) => {
+            if (!this.dispatch) return;
+            this.dispatch(remoteAccessActions.setRemoteAccess(state));
         });
         window.electronAPI!.ipcRequestAudioDevices(async () => {
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -253,6 +259,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.cloudConfig) dispatch(cloudConfigActions.setCloudConfig(snapshot.cloudConfig));
             if (snapshot.cloudStatus) dispatch(cloudStatusActions.setCloudStatus(snapshot.cloudStatus));
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
+            dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
         }
         this.audioCtx = new AudioContext();
         ++this.audioCtxIncarnation;

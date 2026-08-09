@@ -5,7 +5,11 @@ import { defineConfig } from 'vitest/config';
 // live under `mainsrc/`.
 export default defineConfig({
     test: {
-        include: ['mainsrc/**/*.{test,spec}.?(c|m)[jt]s?(x)', 'src/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+        include: [
+            'mainsrc/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+            'src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+            'cli/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+        ],
         environment: 'node',
     },
 });

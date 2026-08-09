@@ -17,7 +17,7 @@ const LEGACY_FILES = [
     'cloud-config.json',
 ] as const;
 
-const SUBDIR_NAME = '.ezplayer';
+export const SUBDIR_NAME = '.ezplayer';
 
 /**
  * Ensure the show folder has a `.ezplayer/` subdirectory. If it didn't exist before,
