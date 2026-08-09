@@ -1416,12 +1416,7 @@ async function startServer(config: ServerWorkerData) {
     // API: POST /api/ezp/shell/reload — LOOPBACK ONLY
     //
     // The `EZPlayer shell` CLI calls this after changing the password so a
-    // running player picks it up without a restart. It must never be reachable
-    // from the LAN or the cloud: being able to call it is not itself dangerous
-    // (it only re-reads a file), but "who may arm the shell" is the whole
-    // security model, so we keep the surface to callers who are already on the
-    // box. Note this route is deliberately absent from `dispatchHttpProxy`,
-    // which is what the cloud bridge can reach.
+    // running player picks it up without a restart.
     // ----------------------------------------------
     router.post('/api/ezp/shell/reload', async (ctx) => {
         const remote = ctx.socket.remoteAddress ?? '';
@@ -2037,10 +2032,7 @@ async function startServer(config: ServerWorkerData) {
     wsBroadcaster.attach(wss);
 
     // The remote-access endpoints get their own sockets rather than channels on
-    // `/ws`, because the broadcaster there is lossy by design. Each upgrade is
-    // refused outright unless that feature's password has been configured via
-    // the CLI, so with a feature off there is nothing on the network to attack.
-    // Neither is attached to the kiosk server.
+    // `/ws`, because the broadcaster there is lossy by design.
     attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
     attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
 
