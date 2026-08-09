@@ -2,13 +2,11 @@
  * The `/terminal` WebSocket: the only way into the remote shell.
  *
  * Security posture, in order of enforcement:
- *   1. If no password is configured, the endpoint does not exist — upgrades are
- *      rejected outright. This is the master switch, and only the CLI can flip
- *      it.
+ *   1. If no password is configured, the endpoint does not exist and upgrades are
+ *      rejected outright.
  *   2. A freshly-opened socket may send exactly one kind of message: `auth`.
  *      Anything else, or silence past AUTH_TIMEOUT_MS, closes it.
- *   3. Wrong passwords are throttled process-wide with escalating lockouts, so
- *      the password — not the network — is what an attacker has to beat.
+ *   3. Wrong passwords are throttled process-wide with escalating lockouts.
  * Only after all three does main get asked to spawn a pty.
  *
  * Terminal bytes deliberately do NOT go through the state broadcaster: it
@@ -22,7 +20,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { AUTH_TIMEOUT_MS, authenticateFeature, featureEndpointEnabled } from './password-gate.js';
 import type { ShellEvent } from './serverworkertypes.js';
 
-/** Client → player. */
+/** Client -> player. */
 type TerminalClientMessage =
     | { type: 'auth'; password?: unknown; cols?: unknown; rows?: unknown }
     | { type: 'input'; data?: unknown }
@@ -54,8 +52,7 @@ interface Attached {
     sessionId: string;
 }
 
-/** The single authenticated terminal, if any. One at a time is a product
- *  decision, enforced here and again in main. */
+/** The single authenticated terminal, if any.  Intentionally one at a time. */
 let attached: Attached | undefined;
 
 /** Set by `createTerminalWss`, so revocation paths can reach into main too. */
@@ -135,9 +132,7 @@ export function createTerminalWss(host: TerminalHost): WebSocketServer {
 
         const handleAuth = async (msg: Extract<TerminalClientMessage, { type: 'auth' }>) => {
             // Read the folder once and reuse it: it must not change between the
-            // password check and the spawn. The gate re-reads the config on
-            // every attempt, so clearing the password (or switching shows)
-            // takes effect even for a socket already mid-handshake.
+            // password check and the spawn.
             const showFolder = host.getShowFolder();
             const auth = await authenticateFeature('shell', showFolder, msg.password);
             if (!auth.ok) {
@@ -163,10 +158,7 @@ export function createTerminalWss(host: TerminalHost): WebSocketServer {
                 previous.ws.close(4409, 'superseded by a new terminal');
             }
 
-            // Claim the session BEFORE asking main to spawn. The pty starts
-            // producing the shell banner the moment it exists, and those events
-            // race the RPC reply back to this thread; if we waited to record
-            // `attached`, the first bytes would be dropped on the floor.
+            // Claim the session BEFORE asking main to spawn.
             sessionId = id;
             attached = { ws, sessionId: id };
 
@@ -210,14 +202,12 @@ export function dispatchShellEvent(event: ShellEvent): void {
     ws.close(4409, 'superseded by a new terminal');
 }
 
-/** True when the open show has a password configured — the gate for accepting
- *  an upgrade at all. */
+/** True when the open show has a terminal configured. */
 export async function terminalEndpointEnabled(showFolder: string | undefined): Promise<boolean> {
     return featureEndpointEnabled('shell', showFolder);
 }
 
-/** Drop the active terminal and its pty — used when the CLI clears the
- *  password, so revoking access takes effect on sessions already in flight. */
+/** Drop the active terminal and its pty. */
 export function closeActiveTerminal(reason: string): void {
     if (!attached) return;
     const { ws, sessionId } = attached;
