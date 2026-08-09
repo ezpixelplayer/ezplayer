@@ -138,7 +138,7 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
                         >
                             <Checkbox
                                 size="small"
-                                sx={{ p: 0.25 }}
+                                sx={{ p: 0.25, flexShrink: 0 }}
                                 checked={selected.has(entry.path)}
                                 disabled={entry.protected}
                                 onClick={(e) => e.stopPropagation()}
@@ -151,7 +151,7 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
                                     e.stopPropagation();
                                     props.onToggleExpand(entry.path);
                                 }}
-                                style={{ display: 'flex', width: 20, justifyContent: 'center' }}
+                                style={{ display: 'flex', width: 20, flexShrink: 0, justifyContent: 'center' }}
                             >
                                 {isDir ? (
                                     isOpen ? (
@@ -162,9 +162,9 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
                                 ) : null}
                             </span>
                             {isDir ? (
-                                <FolderIcon fontSize="small" sx={{ color: 'warning.light' }} />
+                                <FolderIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
                             ) : (
-                                <InsertDriveFileIcon fontSize="small" sx={{ color: 'text.disabled' }} />
+                                <InsertDriveFileIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
                             )}
                             <Typography variant="body2" noWrap sx={{ flexGrow: 1, minWidth: 0 }}>
                                 {entry.name}

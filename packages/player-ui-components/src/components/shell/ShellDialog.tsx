@@ -46,8 +46,14 @@ export const ShellDialog: React.FC<ShellDialogProps> = ({ open, onClose }) => {
     const termRef = useRef<Terminal | undefined>(undefined);
     const fitRef = useRef<FitAddon | undefined>(undefined);
     const hostRef = useRef<HTMLDivElement | null>(null);
+    const resizeObsRef = useRef<ResizeObserver | undefined>(undefined);
+    const rafRef = useRef<number | undefined>(undefined);
 
     const teardown = useCallback(() => {
+        resizeObsRef.current?.disconnect();
+        resizeObsRef.current = undefined;
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = undefined;
         wsRef.current?.close();
         wsRef.current = undefined;
         termRef.current?.dispose();
@@ -68,47 +74,63 @@ export const ShellDialog: React.FC<ShellDialogProps> = ({ open, onClose }) => {
     // For unmount (e.g. navigating away with the dialog open).
     useEffect(() => () => teardown(), [teardown]);
 
-    /** Attach xterm once the terminal pane is actually in the DOM. */
-    const attachTerminal = useCallback((node: HTMLDivElement | null) => {
-        hostRef.current = node;
-        if (!node || termRef.current) return;
-
-        const term = new Terminal({
-            convertEol: false,
-            cursorBlink: true,
-            fontFamily: 'Consolas, "Courier New", monospace',
-            fontSize: 13,
-            theme: { background: '#101418' },
-        });
-        const fit = new FitAddon();
-        term.loadAddon(fit);
-        term.open(node);
-        fit.fit();
-        term.focus();
-        termRef.current = term;
-        fitRef.current = fit;
-
-        term.onData((data) => {
-            const ws = wsRef.current;
-            if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
-        });
-        term.onResize(({ cols, rows }) => {
-            const ws = wsRef.current;
-            if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
-        });
+    /**
+     * Re-measure and tell the pty. The send is unconditional rather than driven
+     * by xterm's resize event: full-screen programs draw against the size the
+     * pty reports, so if a fit lands back on the size already sent, the event
+     * never fires and the two silently disagree.
+     */
+    const syncSize = useCallback(() => {
+        const term = termRef.current;
+        const ws = wsRef.current;
+        if (!term || !fitRef.current) return;
+        try {
+            fitRef.current.fit();
+        } catch {
+            return; // pane not laid out yet; the observer fires again when it is
+        }
+        if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        }
     }, []);
 
-    // Keep the pty's idea of the window in step with the pane.
-    useEffect(() => {
-        if (phase !== 'ready') return;
-        const onResize = () => fitRef.current?.fit();
-        window.addEventListener('resize', onResize);
-        const id = window.setTimeout(onResize, 0);
-        return () => {
-            window.removeEventListener('resize', onResize);
-            window.clearTimeout(id);
-        };
-    }, [phase]);
+    /** Attach xterm once the terminal pane is actually in the DOM. */
+    const attachTerminal = useCallback(
+        (node: HTMLDivElement | null) => {
+            hostRef.current = node;
+            if (!node || termRef.current) return;
+
+            const term = new Terminal({
+                convertEol: false,
+                cursorBlink: true,
+                fontFamily: 'Consolas, "Courier New", monospace',
+                fontSize: 13,
+                theme: { background: '#101418' },
+            });
+            const fit = new FitAddon();
+            term.loadAddon(fit);
+            term.open(node);
+            term.focus();
+            termRef.current = term;
+            fitRef.current = fit;
+
+            term.onData((data) => {
+                const ws = wsRef.current;
+                if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
+            });
+
+            // Watch the pane, not the window: the dialog also changes size when
+            // a notice appears, and the first correct measurement only exists
+            // once its open transition has settled.
+            const observer = new ResizeObserver(() => {
+                if (rafRef.current) cancelAnimationFrame(rafRef.current);
+                rafRef.current = requestAnimationFrame(syncSize);
+            });
+            observer.observe(node);
+            resizeObsRef.current = observer;
+        },
+        [syncSize],
+    );
 
     const connect = useCallback(() => {
         if (!wsUrl) {
@@ -151,8 +173,9 @@ export const ShellDialog: React.FC<ShellDialogProps> = ({ open, onClose }) => {
                     authenticated = true;
                     setPassword('');
                     setPhase('ready');
-                    // Report the real size now that we're about to render.
-                    window.setTimeout(() => fitRef.current?.fit(), 0);
+                    // The pane mounts on this render; the observer fires once it
+                    // has a real size and reports it.
+                    window.setTimeout(syncSize, 0);
                     break;
                 case 'authFail':
                     setError(msg.reason || 'The player refused the connection.');
@@ -187,7 +210,7 @@ export const ShellDialog: React.FC<ShellDialogProps> = ({ open, onClose }) => {
         ws.onclose = () => {
             if (wsRef.current === ws) wsRef.current = undefined;
         };
-    }, [password, wsUrl]);
+    }, [password, syncSize, wsUrl]);
 
     const onSubmit = (e: React.FormEvent) => {
         e.preventDefault();

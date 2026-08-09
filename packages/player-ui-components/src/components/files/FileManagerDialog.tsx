@@ -61,6 +61,7 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [focused, setFocused] = useState<FileEntry | undefined>();
     const [renaming, setRenaming] = useState<{ entry: FileEntry; value: string } | undefined>();
+    const [creatingFolder, setCreatingFolder] = useState<{ parent: string; value: string } | undefined>();
     const [confirm, setConfirm] = useState<Confirm | undefined>();
     /** Folder under an in-progress drag, and whether a drag is happening at all. */
     const [dragOverPath, setDragOverPath] = useState<string | undefined>();
@@ -86,6 +87,7 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
         setSelected(new Set());
         setFocused(undefined);
         setRenaming(undefined);
+        setCreatingFolder(undefined);
         setConfirm(undefined);
         setProgress(undefined);
     }, [open, teardown]);
@@ -311,15 +313,16 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
 
     const doMkdir = useCallback(async () => {
         const client = clientRef.current;
-        if (!client) return;
-        const dir = currentFolder();
-        const name = window.prompt('New folder name');
-        if (!name?.trim()) return;
+        if (!client || !creatingFolder) return;
+        const name = creatingFolder.value.trim();
+        const dir = creatingFolder.parent;
+        setCreatingFolder(undefined);
+        if (!name) return;
         await withBusy('mkdir', async () => {
-            await client.mkdir(dir ? `${dir}/${name.trim()}` : name.trim());
+            await client.mkdir(dir ? `${dir}/${name}` : name);
             await loadDir(dir);
         });
-    }, [currentFolder, loadDir, withBusy]);
+    }, [creatingFolder, loadDir, withBusy]);
 
     const previewKind = focused ? previewKindFor(focused) : 'none';
     const anyBusy = busy !== undefined;
@@ -395,7 +398,12 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                                     </Button>
                                 </span>
                             </Tooltip>
-                            <Button size="small" startIcon={<CreateNewFolderIcon />} onClick={doMkdir} disabled={anyBusy}>
+                            <Button
+                                size="small"
+                                startIcon={<CreateNewFolderIcon />}
+                                onClick={() => setCreatingFolder({ parent: currentFolder(), value: '' })}
+                                disabled={anyBusy}
+                            >
                                 New folder
                             </Button>
                             {/* Only actions inherently about the ticked set belong here. */}
@@ -410,6 +418,13 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                                 disabled={anyBusy || selected.size === 0}
                             >
                                 Delete selected{selected.size ? ` (${selected.size})` : ''}
+                            </Button>
+                            <Button
+                                size="small"
+                                onClick={() => setSelected(new Set())}
+                                disabled={anyBusy || selected.size === 0}
+                            >
+                                Clear selection
                             </Button>
                             <Box sx={{ flexGrow: 1 }} />
                             <Tooltip title="Refresh">
@@ -552,6 +567,36 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                     <Button onClick={() => setRenaming(undefined)}>Cancel</Button>
                     <Button variant="contained" onClick={() => void doRename()}>
                         Rename
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={!!creatingFolder} onClose={() => setCreatingFolder(undefined)} maxWidth="xs" fullWidth>
+                <DialogTitle>New folder</DialogTitle>
+                <DialogContent>
+                    <Typography variant="caption" color="text.secondary">
+                        In {creatingFolder?.parent || 'Show folder'}
+                    </Typography>
+                    <TextField
+                        autoFocus
+                        fullWidth
+                        margin="dense"
+                        label="Folder name"
+                        value={creatingFolder?.value ?? ''}
+                        onChange={(e) => setCreatingFolder((c) => (c ? { ...c, value: e.target.value } : c))}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') void doMkdir();
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setCreatingFolder(undefined)}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        disabled={!creatingFolder?.value.trim()}
+                        onClick={() => void doMkdir()}
+                    >
+                        Create
                     </Button>
                 </DialogActions>
             </Dialog>
