@@ -22,6 +22,12 @@ device only.
 The desktop app and the LAN browser UI share the same settings sections, except
 where noted on each page.
 
+Two further tiles appear **only if you have deliberately enabled them** from the
+command line on the player machine: [Shell](./shell.md), a terminal on that
+machine, and [Files](./files.md), a file manager for the show folder. Each has
+its own password, and neither can be turned on from any UI — see
+[Remote access](../reference/cli.md#remote-access-terminal-and-file-manager).
+
 Some of these tiles map to Advanced Features pages:
 [Viewer Control](../advanced/viewer-control.md) and
 [Volume](../advanced/volume.md). The **Player** tile (background blend mode,

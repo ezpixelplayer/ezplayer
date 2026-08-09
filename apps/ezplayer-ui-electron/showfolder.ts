@@ -4,6 +4,7 @@ import lockfile from 'proper-lockfile';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { getMainWindow } from './main';
+import { showFolderLockPath, updateShowFolderLock } from './mainsrc/showfolder-lock.js';
 
 const store = new Store<{
     showFolder?: string;
@@ -188,9 +189,13 @@ async function getOrPickShowFolder(forcepick: boolean): Promise<string | null> {
 
 // Try to lock the folder itself; we lock a well-known file inside it.
 async function tryLockShowFolder(showFolder: string) {
-    const lockTarget = path.join(showFolder, '.ezplayer-folder.lock');
-    // Ensure the target exists (proper-lockfile locks an existing path)
-    await fsp.writeFile(lockTarget, 'ezplayer-folder-lock\n', { flag: 'a' });
+    const lockTarget = showFolderLockPath(showFolder);
+    // Ensure the target exists (proper-lockfile locks an existing path). The
+    // contents are ours: stamping the pid now lets a later reader tell a live
+    // holder from a leftover file. Ports are added once the server binds.
+    await fsp.writeFile(lockTarget, '', { flag: 'a' });
+    // Clear any ports left by an earlier run; this session has bound none yet.
+    await updateShowFolderLock(showFolder, { pid: process.pid, webPort: undefined, kioskPort: undefined });
     // Acquire lock; stale lock will auto-break after 30s unless renewed
     const release = await lockfile.lock(lockTarget, {
         realpath: false,

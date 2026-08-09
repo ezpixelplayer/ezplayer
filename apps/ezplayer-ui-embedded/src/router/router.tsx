@@ -23,6 +23,8 @@ import {
     UISettings,
     ViewerSettings,
     toRouteChildren,
+    useShellSection,
+    useFilesSection,
 } from '@ezplayer/player-ui-components';
 import type { MenuRoute, SettingsSection } from '@ezplayer/player-ui-components';
 
@@ -58,6 +60,8 @@ const getStatusArea = () => [];
 
 const EmbeddedSettingsPage = () => {
     const [cloudOpen, setCloudOpen] = useState(false);
+    const { section: shellSection, dialog: shellDialog } = useShellSection();
+    const { section: filesSection, dialog: filesDialog } = useFilesSection();
     // Embedded is a browser; show-folder selection isn't possible here.
     // Media folder can still be set as a path on the player machine.
     const sections: SettingsSection[] = [
@@ -106,11 +110,16 @@ const EmbeddedSettingsPage = () => {
             title: 'Player Settings',
             content: <PlayerSettings />,
         },
+        // Present only when available.
+        shellSection,
+        filesSection,
     ];
     return (
         <>
             <SettingsDrawer title="Settings" statusArea={getStatusArea()} sections={sections} />
             <PlayerCloudRegistrationDialog open={cloudOpen} onClose={() => setCloudOpen(false)} />
+            {shellDialog}
+            {filesDialog}
         </>
     );
 };

@@ -14,6 +14,7 @@ import type {
     EZPlayerCommand,
     PlaybackSettings,
     CloudCommand,
+    RemoteAccessAvailability,
 } from './DataTypes';
 import type { ControllerCommand, ControllerOpsState } from './ControllerOps';
 
@@ -147,6 +148,9 @@ export interface EZPElectronAPI {
      *  push via onControllerOpsUpdated. */
     controllerCommand: (command: ControllerCommand) => Promise<void>;
     onControllerOpsUpdated: (callback: (data: ControllerOpsState) => void) => void;
+
+    /** Pushed whenever remote-access availability changes. */
+    onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => void;
 
     // Set up / remove callbacks
     connect: () => Promise<UIConnectSnapshot | undefined>;

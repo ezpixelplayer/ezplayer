@@ -37,6 +37,13 @@ import type {
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
 import {
+    closeActiveTerminal,
+    createTerminalWss,
+    dispatchShellEvent,
+    terminalEndpointEnabled,
+} from './terminal-ws.js';
+import { closeFileManagerSessions, createFileManagerWss, fileManagerEndpointEnabled } from './filemanager-ws.js';
+import {
     createFileApiRouter,
     registerSequenceApiRoutes,
     listFileNamesCore,
@@ -55,6 +62,7 @@ import {
     parseTargetUrl,
     isLanProxyTarget,
 } from './proxy-middleware.js';
+import { http09Request, isHeaderlessResponse } from './http09-fallback.js';
 import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
@@ -195,6 +203,76 @@ const rpc = new MainThreadRPC();
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
+/** The port the web server actually bound (after any EADDRINUSE walk-up). Set
+ *  once the listener is up; used to dial our own remote-access sockets from the
+ *  cloud bridge. */
+let boundWebPort: number | undefined;
+
+/** Loopback WebSocket paths the cloud bridge may reach. Each is password-gated
+ *  behind its own endpoint; this set only says "this is one of ours, not a LAN
+ *  device address". */
+const REMOTE_ACCESS_WS_PATHS = new Set(['/terminal', '/filemanager']);
+
+// -- remote shell -------------------------------------------------------------
+// The pty itself lives in main (native addon, privileged operation); this
+// worker owns the socket and relays bytes; the password gate lives with the
+/** The show folder the player currently has open — where the shell password
+ *  lives. Read through the broadcaster so it always reflects the live value. */
+const currentShowFolder = (): string | undefined => wsBroadcaster.get('showFolder') as string | undefined;
+
+const terminalWss = createTerminalWss({
+    getShowFolder: currentShowFolder,
+    shellStart: (sessionId, cols, rows, showFolder) => rpc.call('shellStart', sessionId, cols, rows, showFolder),
+    shellInput: (sessionId, data) => {
+        void rpc.call('shellInput', sessionId, data).catch((err) => {
+            console.error('[terminal] shellInput failed:', err);
+        });
+    },
+    shellResize: (sessionId, cols, rows) => {
+        void rpc.call('shellResize', sessionId, cols, rows).catch((err) => {
+            console.error('[terminal] shellResize failed:', err);
+        });
+    },
+    shellKill: (sessionId) => {
+        void rpc.call('shellKill', sessionId).catch((err) => {
+            console.error('[terminal] shellKill failed:', err);
+        });
+    },
+});
+
+/** True only for the actual peer address of a loopback connection. Deliberately
+ *  ignores `X-Forwarded-For` and friends — a header a remote caller controls is
+ *  no basis for a "local only" decision. */
+function isLoopbackAddress(remote: string): boolean {
+    const addr = remote.startsWith('::ffff:') ? remote.slice(7) : remote;
+    return addr === '127.0.0.1' || addr === '::1' || addr.startsWith('127.');
+}
+
+const fileManagerWss = createFileManagerWss({ getShowFolder: currentShowFolder });
+
+/** Route a remote-access upgrade, refusing it unless that feature has a
+ *  password configured. Checked per-upgrade (not cached) so `--clear` shuts the
+ *  door immediately, whether or not the CLI managed to nudge us. */
+function attachRemoteAccessUpgrade(
+    server: ReturnType<typeof createServer>,
+    pathToMatch: string,
+    wss: WebSocketServer,
+    isEnabled: (showFolder: string | undefined) => Promise<boolean>,
+): void {
+    server.on('upgrade', (req, socket, head) => {
+        const pathname = (req.url ?? '').split('?')[0];
+        if (pathname !== pathToMatch) return; // leave for the other upgrade handlers
+        void isEnabled(currentShowFolder()).then((enabled) => {
+            if (!enabled) {
+                socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+                socket.destroy();
+                return;
+            }
+            wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+        });
+    });
+}
+
 // Forward client → server WebSocket commands to main via RPC. Main pushes
 // resulting state back to all clients via the broadcast channel. These three
 // branches let the cloud bridge drive everything the LAN HTTP endpoints can
@@ -271,6 +349,13 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'updateAudioBuffer') {
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
     } else if (msg.type === 'broadcast') {
+        // A remote-access session belongs to the show it was opened against —
+        // its password lives in that show's folder. Switching shows revokes it
+        // rather than carrying it into a show that may not permit it at all.
+        if (msg.key === 'showFolder' && msg.value !== wsBroadcaster.get('showFolder')) {
+            closeActiveTerminal('the player switched to a different show folder');
+            closeFileManagerSessions('the player switched to a different show folder');
+        }
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
     } else if (msg.type === 'clearShowData') {
@@ -293,6 +378,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         if (msg.movingHeads) {
             cachedMovingHeads = msg.movingHeads;
         }
+    } else if (msg.type === 'shellEvent') {
+        dispatchShellEvent(msg.event);
     } else if (msg.type === 'cloudBridgeOpen') {
         openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.audioWsUrl, msg.sessionId, msg.ttlSeconds);
     } else if (msg.type === 'cloudBridgeClose') {
@@ -463,24 +550,9 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
             /* already closing */
         }
     };
-    const openDeviceWs = (wsId: string, pathStr: string) => {
-        const fail = (reason: string) => wsSend({ type: 'wsProxyClose', wsId, reason });
-        if (deviceWs.size >= MAX_DEVICE_WS) return fail('too many device sockets');
-        if (!pathStr.startsWith('/proxy/')) return fail('not a device path');
-        const target = parseTargetUrl(pathStr);
-        if (!target) return fail('bad target');
-        if (!isLanProxyTarget(target.hostname)) return fail('target not on a LAN');
-        if (!proxyTargetAllowed(target.hostname)) return fail('network disallowed by policy');
-        const wsProto = target.protocol === 'https:' ? 'wss:' : 'ws:';
-        let t: WebSocket;
-        try {
-            t = new WebSocket(`${wsProto}//${target.host}${target.pathname}${target.search}`, {
-                rejectUnauthorized: false,
-                handshakeTimeout: 15_000,
-            });
-        } catch (e) {
-            return fail(`dial failed: ${(e as Error).message}`);
-        }
+    /** Wire an outbound socket into the cloud relay under `wsId`. Shared by the
+     *  LAN-device path and the loopback remote-access paths. */
+    const relayWs = (wsId: string, t: WebSocket) => {
         deviceWs.set(wsId, t);
         t.on('open', () => wsSend({ type: 'wsProxyOpened', wsId }));
         t.on('message', (data, isBinary) => {
@@ -499,6 +571,43 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
                 /* ignore */
             }
         });
+    };
+
+    const openDeviceWs = (wsId: string, pathStr: string) => {
+        const fail = (reason: string) => wsSend({ type: 'wsProxyClose', wsId, reason });
+        if (deviceWs.size >= MAX_DEVICE_WS) return fail('too many device sockets');
+
+        // These are us, not a LAN device: loop back to our own server so a cloud
+        // viewer lands on exactly the same endpoint, and the same password
+        // check, as a LAN viewer. Nothing is relaxed by routing here — every
+        // guard that protects these features lives behind those sockets.
+        if (REMOTE_ACCESS_WS_PATHS.has(pathStr)) {
+            if (boundWebPort === undefined) return fail('server not listening yet');
+            let t: WebSocket;
+            try {
+                t = new WebSocket(`ws://127.0.0.1:${boundWebPort}${pathStr}`, { handshakeTimeout: 15_000 });
+            } catch (e) {
+                return fail(`dial failed: ${(e as Error).message}`);
+            }
+            return relayWs(wsId, t);
+        }
+
+        if (!pathStr.startsWith('/proxy/')) return fail('not a device path');
+        const target = parseTargetUrl(pathStr);
+        if (!target) return fail('bad target');
+        if (!isLanProxyTarget(target.hostname)) return fail('target not on a LAN');
+        if (!proxyTargetAllowed(target.hostname)) return fail('network disallowed by policy');
+        const wsProto = target.protocol === 'https:' ? 'wss:' : 'ws:';
+        let t: WebSocket;
+        try {
+            t = new WebSocket(`${wsProto}//${target.host}${target.pathname}${target.search}`, {
+                rejectUnauthorized: false,
+                handshakeTimeout: 15_000,
+            });
+        } catch (e) {
+            return fail(`dial failed: ${(e as Error).message}`);
+        }
+        relayWs(wsId, t);
     };
 
     ws.on('open', () => {
@@ -940,10 +1049,34 @@ async function dispatchDeviceProxy(
             proxyReq.destroy();
             resolve({ status: 504 });
         });
-        proxyReq.on('error', () => resolve({ status: 502 }));
+        proxyReq.on('error', (err: NodeJS.ErrnoException) => {
+            // Header-less device (AlphaPix): redo the request on a raw socket.
+            if (!isHeaderlessResponse(err)) {
+                resolve({ status: 502 });
+                return;
+            }
+            void http09Request({
+                hostname: target.hostname,
+                port: Number(target.port) || (target.protocol === 'https:' ? 443 : 80),
+                path: target.pathname + target.search,
+                method,
+                contentType: findHeader(outHeaders, 'content-type'),
+                body,
+                maxBytes: DEVICE_PROXY_MAX_RESPONSE_BYTES,
+            }).then(
+                (res) => resolve({ status: res.status, headers: res.headers, body: res.body }),
+                () => resolve({ status: 502 }),
+            );
+        });
         if (body) proxyReq.write(body);
         proxyReq.end();
     });
+}
+
+/** Case-insensitive header lookup. */
+function findHeader(headers: Record<string, string>, name: string): string | undefined {
+    const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === name);
+    return entry?.[1];
 }
 
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
@@ -1296,6 +1429,27 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     router.get('/api/ezp/hello', async (ctx) => {
         ctx.body = { message: 'Hello from Koa + Electron!' };
+    });
+
+    // ----------------------------------------------
+    // API: POST /api/ezp/shell/reload — LOOPBACK ONLY
+    //
+    // The `EZPlayer shell` CLI calls this after changing the password so a
+    // running player picks it up without a restart.
+    // ----------------------------------------------
+    router.post('/api/ezp/shell/reload', async (ctx) => {
+        const remote = ctx.socket.remoteAddress ?? '';
+        if (!isLoopbackAddress(remote)) {
+            ctx.status = 403;
+            ctx.body = { error: 'this endpoint is loopback-only' };
+            return;
+        }
+        const state = await rpc.call('remoteAccessReloadConfig');
+        // Revoking should take effect on sessions already in flight, not just
+        // on the next login.
+        if (!state.shell) closeActiveTerminal('the remote shell was disabled');
+        if (!state.files) closeFileManagerSessions('the file manager was disabled');
+        ctx.body = state;
     });
 
     // ----------------------------------------------
@@ -1843,6 +1997,7 @@ async function startServer(config: ServerWorkerData) {
         } satisfies ServerWorkerToMainMessage);
         return;
     }
+    boundWebPort = boundPort;
     console.log(`[server-worker] Koa server running at http://localhost:${boundPort}`);
     console.log(`[server-worker] WebSocket server available at ws://localhost:${boundPort}/ws`);
     // Reused below so the post-kiosk status re-asserts the actual web port + source.
@@ -1894,6 +2049,11 @@ async function startServer(config: ServerWorkerData) {
 
     // Initialize WebSocket broadcaster with the WebSocket server
     wsBroadcaster.attach(wss);
+
+    // The remote-access endpoints get their own sockets rather than channels on
+    // `/ws`, because the broadcaster there is lossy by design.
+    attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
+    attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
 
     // ----------------------------
     // Kiosk server — second port, same API, limited sidebar

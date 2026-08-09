@@ -56,6 +56,10 @@ const nodeExternals = [
     // own dist/ at runtime — otherwise bindings walks up from the bundled
     // location and can't find the .node file.
     '@ezplayer/icmp-ping',
+    // node-pty (remote shell) resolves its prebuilt binary with a COMPUTED
+    // require — `@lydell/node-pty-${platform}-${arch}` — which esbuild cannot
+    // follow. It has to stay external and ship unbundled in node_modules.
+    '@lydell/node-pty',
     'ws',
     'http',
     'fs/promises',
