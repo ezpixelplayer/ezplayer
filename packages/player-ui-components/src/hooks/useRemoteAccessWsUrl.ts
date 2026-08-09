@@ -3,13 +3,7 @@ import { useFrameServerUrl } from './useFrameServerUrl';
 /**
  * WebSocket URL for one of the player's password-gated remote-access endpoints,
  * for whichever environment we're in. The environments differ
- * only in how you *reach* the player: the endpoint, the handshake and the
- * password check are identical, so the UI needs no environment-specific code.
- *
- *  • Cloud SPA — the base is `/api/enduserspa/proxy/<token>`, and the cloud
- *    relays a browser socket onto the player's own endpoint over the existing
- *    proxy bridge.
- *  • Electron / LAN browser — dial the player directly.
+ * only in how you reach the player.
  */
 export type RemoteAccessFeature = 'shell' | 'files';
 
