@@ -1,16 +1,9 @@
 /**
- * Shared implementation of `EZPlayer shell` and `EZPlayer files` — the only way
- * to turn either remote-access feature on.
- *
- * Writing a password is what makes that feature's tile appear in Settings;
- * clearing it makes the feature vanish and kills its endpoint. Deliberately
- * CLI-only: arming remote access should require access to the machine, not just
- * access to the UI. The two features have separate passwords, so granting the
- * file manager does not grant a shell.
+ * Shared implementation of `EZPlayer shell` and `EZPlayer files`, this is the way
+ * to turn either remote-access feature on: it writes a password to the config.
  *
  * Passwords live in the show folder (`<showFolder>/.ezplayer/remote-access.json`),
- * so the folder has to be named. Works with the player stopped — it only
- * touches that file. If a player IS running locally we then nudge it over
+ * so the folder has to be named. If a player IS running locally we then nudge it over
  * loopback so the change takes effect without a restart; that nudge is
  * best-effort and never fails the command.
  */
@@ -27,6 +20,7 @@ import {
     featureEnabled,
     type RemoteFeature,
 } from '../../mainsrc/remoteaccess.js';
+import { runningPlayerWebPort } from '../../mainsrc/showfolder-lock.js';
 
 const DEFAULT_PORT = 3000;
 const MIN_PASSWORD_LENGTH = 8;
@@ -47,18 +41,28 @@ function flagValue(args: string[], ...names: string[]): string | undefined {
     return undefined;
 }
 
-function localPort(args: string[]): number {
-    const n = parseInt(flagValue(args, '--port', '-p') ?? '', 10);
-    if (Number.isInteger(n) && n > 0) return n;
+/**
+ * Loopback port to nudge, and where that came from (worth reporting, since a
+ * nudge that misses is otherwise indistinguishable from no player running).
+ *
+ * The lock file beats the environment because it is what the player actually
+ * bound, which a busy-port walk-up can make differ from anything requested.
+ */
+async function localPort(args: string[], showFolder: string): Promise<{ port: number; source: string }> {
+    const flag = parseInt(flagValue(args, '--port', '-p') ?? '', 10);
+    if (Number.isInteger(flag) && flag > 0) return { port: flag, source: '--port' };
+
+    const locked = await runningPlayerWebPort(showFolder);
+    if (locked) return { port: locked, source: 'the running player' };
+
     const env = Number(process.env.EZPLAYER_WEB_PORT);
-    return Number.isInteger(env) && env > 0 ? env : DEFAULT_PORT;
+    if (Number.isInteger(env) && env > 0) return { port: env, source: 'EZPLAYER_WEB_PORT' };
+    return { port: DEFAULT_PORT, source: 'the default' };
 }
 
 /**
  * Which show folder to act on: `--show-folder` if given, else the current
- * directory when it already looks like a show folder. Never guessed further
- * than that — writing a password into the wrong show would be silently wrong in
- * exactly the way a security setting must not be.
+ * directory when it already looks like a show folder, otherwise error.
  */
 function resolveShowFolder(args: string[]): { showFolder: string } | { error: string } {
     const explicit = flagValue(args, '--show-folder', '--showfolder', '-s');
@@ -79,14 +83,11 @@ function resolveShowFolder(args: string[]): { showFolder: string } | { error: st
 }
 
 /**
- * Thrown when no password source is available at all, as opposed to being
- * handed a bad password. Carries the operator-facing explanation.
+ * Thrown when no password source is available.
  */
 class NoPasswordSource extends Error {}
 
-/** Read one line from stdin. Rejects rather than returning an empty string when
- *  stdin yields nothing, so "there was no input" never masquerades as "the
- *  password was blank". */
+/** Read one line from stdin, or rejects. */
 async function readLinePlain(): Promise<string> {
     const chunks: Buffer[] = [];
     try {
@@ -182,9 +183,7 @@ async function readSecret(prompt: string): Promise<string> {
 }
 
 /**
- * First line of a file, for `--password-file`. The recommended way to set a
- * password from the packaged Windows app: no stdin needed, and unlike
- * `--password` the value never reaches shell history or the process list.
+ * First line of a file, for `--password-file`.
  */
 function readPasswordFile(file: string): string {
     const resolved = path.resolve(file);
@@ -218,11 +217,14 @@ async function nudgeRunningPlayer(port: number): Promise<'applied' | 'not-runnin
     }
 }
 
-function reportNudge(result: 'applied' | 'not-running' | 'failed', port: number): void {
+function reportNudge(result: 'applied' | 'not-running' | 'failed', port: number, source: string): void {
     if (result === 'applied') {
         console.log('The running player picked up the change; no restart needed.');
     } else if (result === 'not-running') {
-        console.log(`No player answered on 127.0.0.1:${port}. The change applies the next time one starts.`);
+        console.log(
+            `No player answered on 127.0.0.1:${port} (port from ${source}). ` +
+                `The change applies the next time one starts.`,
+        );
     } else {
         console.log('A player answered but refused the reload. Restart it to pick up the change.');
     }
@@ -238,7 +240,7 @@ export async function runRemoteAccessCommand(feature: RemoteFeature, args: strin
     const { showFolder } = resolved;
     const configFile = remoteAccessConfigPath(showFolder);
     const label = FEATURE_LABEL[feature];
-    const port = localPort(args);
+    const { port, source: portSource } = await localPort(args, showFolder);
 
     if (args.includes('--status')) {
         const cfg = await readRemoteAccessConfig(showFolder);
@@ -258,7 +260,7 @@ export async function runRemoteAccessCommand(feature: RemoteFeature, args: strin
         }
         console.log(`${label} password cleared. It is now disabled entirely.`);
         console.log(`Config file: ${configFile}`);
-        reportNudge(await nudgeRunningPlayer(port), port);
+        reportNudge(await nudgeRunningPlayer(port), port, portSource);
         return 0;
     }
 
@@ -306,6 +308,6 @@ export async function runRemoteAccessCommand(feature: RemoteFeature, args: strin
     console.log(`${label} password set for ${showFolder}.`);
     console.log(`A ${tile} tile will now appear in this show's Settings screen.`);
     console.log(`Config file: ${configFile}`);
-    reportNudge(await nudgeRunningPlayer(port), port);
+    reportNudge(await nudgeRunningPlayer(port), port, portSource);
     return 0;
 }

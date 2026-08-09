@@ -3,15 +3,12 @@ import * as path from 'path';
 
 /**
  * Early CLI parsing: an optional verb as the first argument, then flags.
- * Must be the entry point's first import — `--user-data-dir=` has to apply
+ * Must be the entry point's first import as `--user-data-dir=` has to apply
  * before anything constructs an electron-store.
  */
 
 /**
- * Verbs that run text-only and exit *before* any Electron bootstrap — unlike
- * `headless`, a full player that merely has no windows. The dispatch table is
- * electron-free and its command modules are lazy `import()`s, so importing it
- * here loads nothing.
+ * Verbs that run text-only and exit *before* any Electron bootstrap.
  */
 import { isToolVerbName, TOOL_VERBS, toolVerbSummary, type ToolVerb } from '../cli/dispatch.js';
 

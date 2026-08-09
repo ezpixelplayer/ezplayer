@@ -3,10 +3,7 @@ import type { RemoteAccessAvailability } from '@ezplayer/ezplayer-core';
 
 /**
  * Which password-gated remote-access tiles this player offers.
- *
- * A feature is on only when a password for it was set with the CLI on the
- * player machine — no UI can turn one on. Defaults to everything off so the
- * tiles stay invisible until the player explicitly says otherwise.
+ * (A feature is on only when a password for it was set.)
  */
 const initialState: RemoteAccessAvailability = { shell: false, files: false };
 

@@ -562,8 +562,6 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     // Broadcast via WebSocket (for React web app)
     broadcastToWebSocket('showFolder', showFolder);
-    // Remote-access passwords live in this show's `.ezplayer/`, so which
-    // features exist at all is a per-show answer that has just changed.
     void publishRemoteAccessAvailability();
     broadcastToWebSocket(
         'sequences',

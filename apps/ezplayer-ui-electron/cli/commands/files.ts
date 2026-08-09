@@ -1,5 +1,4 @@
-/** `EZPlayer files` — set the password that enables the file manager.
- *  Body is shared with `EZPlayer shell`. */
+/** `EZPlayer files` — set the password that enables the file manager. */
 
 import { runRemoteAccessCommand } from './remoteaccess.js';
 

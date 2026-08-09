@@ -9,11 +9,7 @@
 type CommandModule = { run: (args: string[]) => Promise<number> };
 
 /**
- * Every text-only verb, in the order usage output lists them.
- *
- * THE single source of truth for verbs; everything else derives from it. The
- * `Record` types below make adding a name here a compile error until it has
- * both a command module and a usage entry.
+ * Single source of truth for verbs, in the order usage output lists them.
  */
 export const TOOL_VERBS = [
     'discover',

@@ -1,5 +1,4 @@
-/** `EZPlayer shell` — set the password that enables the remote terminal.
- *  Body is shared with `EZPlayer files`. */
+/** `EZPlayer shell` — set the password that enables the remote terminal.    */
 
 import { runRemoteAccessCommand } from './remoteaccess.js';
 

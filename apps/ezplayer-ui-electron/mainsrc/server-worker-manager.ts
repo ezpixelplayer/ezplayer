@@ -22,6 +22,7 @@ import {
     putSequencesWithDurations,
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
+import { updateShowFolderLock } from './showfolder-lock.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import { isFeatureEnabled } from './remoteaccess.js';
 import {
@@ -236,7 +237,20 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
                         (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
                 );
-                if (msg.status === 'listening') void publishRemoteAccessAvailability();
+                if (msg.status === 'listening') {
+                    void publishRemoteAccessAvailability();
+                    // Record what we actually bound. Only the running player
+                    // knows this: a busy port makes it walk up from the one
+                    // that was asked for.
+                    const showFolder = getCurrentShowFolder();
+                    if (showFolder) {
+                        void updateShowFolderLock(showFolder, {
+                            pid: process.pid,
+                            webPort: msg.port,
+                            kioskPort: msg.kioskPort,
+                        }).catch((err) => console.warn('[server-worker-manager] could not record ports:', err));
+                    }
+                }
                 break;
             case 'request':
                 // Handle RPC request from server worker
