@@ -29,11 +29,7 @@ import { FileTree, formatSize, formatWhen } from './FileTree';
 /**
  * Browse and edit the player's show folder.
  *
- * Only rendered when the player advertises the file manager, which happens only
- * when a password was set with `EZPlayer files` on the player machine. Scope is
- * the show folder and nothing above it; the player's own `.ezplayer/` settings
- * directory is refused server-side and never listed, since it holds the very
- * password records gating this dialog.
+ * Only rendered when the player advertises the file manager.
  */
 
 type Phase = 'password' | 'connecting' | 'ready';
@@ -245,9 +241,7 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
         [withBusy],
     );
 
-    /** One delete path for both the per-row button and the toolbar's bulk
-     *  action, so a single file is confirmed and refreshed the same way whether
-     *  it was ticked or acted on in place. */
+    /** One delete path for both the per-row button and the toolbar's bulk action */
     const confirmDelete = useCallback(
         (targets: FileEntry[]) => {
             const deletable = targets.filter((e) => !e.protected);
@@ -404,8 +398,7 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                             <Button size="small" startIcon={<CreateNewFolderIcon />} onClick={doMkdir} disabled={anyBusy}>
                                 New folder
                             </Button>
-                            {/* Only actions inherently about the ticked set belong here;
-                                rename and single-item delete live on the row. */}
+                            {/* Only actions inherently about the ticked set belong here. */}
                             <Button size="small" onClick={doMove} disabled={anyBusy || selected.size === 0}>
                                 {selected.size ? `Move ${selected.size} here` : 'Move here'}
                             </Button>
