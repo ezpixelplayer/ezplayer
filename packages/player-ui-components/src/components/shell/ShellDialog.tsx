@@ -17,19 +17,15 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRemoteAccessWsUrl } from '../../hooks/useRemoteAccessWsUrl';
-// The local Box pins `component="div"`; MUI's own Box widens into a union that
-// TypeScript can't represent once `sx` and a ref are both in play.
 import { Box } from '../box/Box';
 
 /**
- * The remote shell. Only rendered when the player advertises the shell as
- * available, which happens only when a password has been set from the CLI —
- * there is no way to enable this from the UI.
+ * The remote shell. Only rendered when the player advertises the shell as available.
  *
  * The dialog is a password prompt first and a terminal second. Nothing is
- * spawned on the player until the password is accepted, and only one terminal
- * exists player-wide: opening another displaces this one, which is reported
- * rather than left as a silently dead socket.
+ * spawned on the player until the password is accepted.
+ *
+ * Only one terminal exists player-wide: opening another displaces this one.
  */
 
 type Phase = 'password' | 'connecting' | 'ready';
@@ -59,8 +55,7 @@ export const ShellDialog: React.FC<ShellDialogProps> = ({ open, onClose }) => {
         fitRef.current = undefined;
     }, []);
 
-    // Closing the dialog must drop the socket: the player kills the pty when
-    // the viewer disconnects, so a leaked socket would leave a live shell.
+    // Closing the dialog must drop the socket.
     useEffect(() => {
         if (open) return;
         teardown();
@@ -70,7 +65,7 @@ export const ShellDialog: React.FC<ShellDialogProps> = ({ open, onClose }) => {
         setNotice(undefined);
     }, [open, teardown]);
 
-    // Same reasoning for unmount (e.g. navigating away with the dialog open).
+    // For unmount (e.g. navigating away with the dialog open).
     useEffect(() => () => teardown(), [teardown]);
 
     /** Attach xterm once the terminal pane is actually in the DOM. */

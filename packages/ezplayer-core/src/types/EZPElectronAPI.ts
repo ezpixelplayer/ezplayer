@@ -119,8 +119,7 @@ export interface EZPElectronAPI {
     controllerCommand: (command: ControllerCommand) => Promise<void>;
     onControllerOpsUpdated: (callback: (data: ControllerOpsState) => void) => void;
 
-    /** Pushed whenever remote-access availability changes, so the tiles appear
-     *  and disappear without a restart. */
+    /** Pushed whenever remote-access availability changes. */
     onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => void;
 
     // Set up / remove callbacks
