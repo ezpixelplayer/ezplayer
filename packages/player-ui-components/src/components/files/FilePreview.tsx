@@ -6,12 +6,7 @@ import type { FileEntry } from '../../services/fileManagerClient';
 /**
  * Preview for the handful of types where showing beats describing: images,
  * audio, and text-ish files (JSON, XML, logs). Anything else just gets its
- * details and a download button — guessing at binary formats would be worse
- * than saying nothing.
- *
- * Bytes arrive over the file-manager WebSocket and become a blob URL, so this
- * works the same on LAN and through the cloud relay, where there is no
- * directly-fetchable URL for a show-folder file.
+ * details and a download button.
  */
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg']);
@@ -130,8 +125,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ entry, kind, fetchBlob
     return null;
 };
 
-/** Pretty-print JSON so a minified config is actually readable; leave anything
- *  that doesn't parse exactly as it is on disk. */
+/** Pretty-print JSON so a minified config is actually readable. */
 function formatIfJson(name: string, text: string): string {
     if (!name.toLowerCase().endsWith('.json')) return text;
     try {

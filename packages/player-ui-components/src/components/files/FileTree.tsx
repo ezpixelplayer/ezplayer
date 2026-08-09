@@ -12,13 +12,9 @@ import { Box } from '../box/Box';
 import type { FileEntry } from '../../services/fileManagerClient';
 
 /**
- * Lazy directory tree for the show folder.
+ * Lazy directory tree for the show folder (Children are fetched only when a folder is opened).
  *
- * Deliberately built from plain MUI primitives: the tree-view package would
- * force a major MUI upgrade, which a checkbox tree is not worth.
- *
- * Children are fetched only when a folder is opened, so a show folder with a
- * large media directory costs nothing until you look inside it.
+ * Deliberately built from plain MUI primitives.
  */
 
 export interface FileTreeProps {
@@ -30,16 +26,14 @@ export interface FileTreeProps {
     focused?: string;
     /** Disables the per-row actions while an operation is in flight. */
     busy?: boolean;
-    /** Folder new uploads will land in ('' = the show folder root). Marked in
-     *  the tree so the destination is never a guess. */
+    /** Folder new uploads will land in ('' = the show folder root) */
     uploadTarget: string;
     /** Folder currently under a drag, highlighted as the drop destination. */
     dragOverPath?: string;
     onToggleExpand: (path: string) => void;
     onFocus: (entry: FileEntry) => void;
     onToggleSelect: (entry: FileEntry, selected: boolean) => void;
-    /** Act on this one row. The tick-boxes are for bulk actions only, so
-     *  single-item rename and delete never depend on what is checked. */
+    /** Act on this one row. The tick-boxes are for bulk actions only. */
     onRename: (entry: FileEntry) => void;
     onDelete: (entry: FileEntry) => void;
     onDragOverFolder: (path: string | undefined) => void;
@@ -109,9 +103,6 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
                                 pr: 1,
                                 cursor: 'pointer',
                                 borderRadius: 1,
-                                // NOT `action.hover`: the themes here define it as a
-                                // near-opaque brand colour rather than a subtle overlay,
-                                // which leaves the row text almost unreadable.
                                 backgroundColor: isDropTarget
                                     ? (theme: Theme) => alpha(theme.palette.primary.main, 0.32)
                                     : focused === entry.path
