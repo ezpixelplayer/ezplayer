@@ -8,11 +8,7 @@ import { FileManagerDialog } from './FileManagerDialog';
 /**
  * The Files tile for the Settings gallery, plus the dialog it opens.
  *
- * The tile is `available` only when the player reports the file manager as on,
- * which it does only when someone set a password with `EZPlayer files` on the
- * player machine. With no password there is no tile, and no endpoint either.
- *
- * Shared by every settings screen so they cannot drift on the gate.
+ * The tile is `available` only when the player reports the file manager as on.
  */
 export function useFilesSection(): { section: SettingsSection; dialog: React.ReactNode } {
     const available = useSelector((state: RootState) => state.remoteAccess.files);
