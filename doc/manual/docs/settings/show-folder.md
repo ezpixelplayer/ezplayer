@@ -39,15 +39,6 @@ LAN UI is a text field: type the folder path **as the player PC sees it**
 (for example `C:\Shows\Media`) and click **Save**, or **Clear** to stop
 searching that location.
 
-For missing audio during [Bulk Import](../basics/songs.md#bulk-import) you do
-not need the player-side path at all:
-
-1. In the Bulk Import Summary, click **Choose Media Folder**.
-2. Pick a folder **on the device running the LAN UI** that contains the matching
-   MP3 files.
-3. Those files are uploaded to the player and the failed sequences are
-   **retried automatically**.
-
 ### Search order
 
 1. Next to the `.fseq` (same folder as the sequence)
@@ -55,5 +46,5 @@ not need the player-side path at all:
 3. The show folder (for single **Add Song** auto-detect)
 
 Bulk import requires an exact audio basename match and will not use unrelated
-MP3s already sitting in the show folder unless they were part of the same LAN
-upload selection or found via the Media Folder / colocated folder.
+MP3s already sitting in the show folder — audio must be found next to the
+FSEQ or via the Media Folder.

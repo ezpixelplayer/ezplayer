@@ -90,10 +90,9 @@ export const MediaFolderSettings: React.FC = () => {
                     </>
                 ) : (
                     <>
-                        Extra folder <strong>on the player PC</strong> searched for companion MP3 files. Enter the
-                        path as the player sees it (e.g. <code>C:\Shows\Media</code>). During <strong>Bulk Import</strong>,
-                        if audio is missing, you can instead choose a folder in this browser — matching MP3s are
-                        uploaded and the failed sequences are retried.
+                        Extra folder <strong>on the player PC</strong> searched for companion MP3 files during song
+                        autodetection and import. Enter the path as the player sees it (e.g.{' '}
+                        <code>C:\Shows\Media</code>).
                     </>
                 )}
             </Typography>

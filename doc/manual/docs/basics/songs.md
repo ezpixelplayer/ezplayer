@@ -56,7 +56,7 @@ starts that song immediately, the same as pressing **Play** in the jukebox.
 | ---------------------------------- | ------------------ | ------------------------------ |
 | View song list                     | Yes                | Yes                            |
 | Add songs                          | Yes                | Yes                            |
-| Bulk import many `.fseq` files     | Yes                | Yes                            |
+| Bulk import many `.fseq` files     | Yes                | Not yet (desktop only for now) |
 | Edit metadata and settings         | Yes                | Yes                            |
 | Replace FSEQ / audio / image files | Yes (local picker) | Yes (upload or choose on player) |
 | Delete songs                       | Yes                | Yes                            |
@@ -116,7 +116,8 @@ use [Bulk import](#bulk-import) to bring in many at once.
 ## Bulk import
 
 Use **Bulk Import** on the Songs screen when you need to register many
-sequences at once instead of adding them one by one.
+sequences at once instead of adding them one by one. Bulk import is a
+**desktop app** feature for now; it is not shown in the LAN / cloud UI.
 
 1. Open **Songs** and click **Bulk Import**.
 2. Choose either:
@@ -125,19 +126,10 @@ sequences at once instead of adding them one by one.
 3. Wait for the **Bulk Import Summary** dialog. It lists each successful import
    (file name, title, artist) and each failure with a reason.
 
-### Desktop app
-
 Native file and folder dialogs open on the show PC. EZPlayer searches for
 companion audio next to each FSEQ and in the configured Media Folder.
 
-### LAN / cloud UI
-
-The browser picks files (or a folder) and uploads them to the player in a
-**single request**, then runs the same import logic on the player. Include the
-matching MP3 (and optional images) in the same selection when they are not
-already available via the Media Folder.
-
-### Rules (desktop and LAN)
+### Rules
 
 Bulk import is stricter than single **Add Song** about audio:
 
@@ -145,7 +137,7 @@ Bulk import is stricter than single **Add Song** about audio:
 | ---- | -------- |
 | Companion audio required | Each FSEQ must resolve to a matching audio file, or that file fails with **Audio file not found**. |
 | Exact basename match | Audio is matched by exact name (from the FSEQ header or the FSEQ basename), not a loose prefix match. |
-| Media Folder | Searched after the FSEQ’s own folder (desktop) or as the shared media location (LAN). |
+| Media Folder | Searched after the FSEQ’s own folder. |
 | One failure does not stop the rest | Other sequences in the same batch still import. |
 | Title / artist | Taken from audio tags when present; otherwise from FSEQ metadata; otherwise the FSEQ basename and **Unknown Artist**. |
 
@@ -155,11 +147,8 @@ Failed imports leave that sequence out of the catalog. Fix the missing audio
 When one or more failures are **Audio file not found**, the Bulk Import Summary
 dialog shows a tip to choose a Media Folder:
 
-1. Click **Choose Media Folder**.
-   - **Desktop app:** a native folder picker opens on this PC; the path is saved
-     as the Media Folder setting.
-   - **LAN UI:** a folder picker opens **in this browser**. Matching audio files
-     are uploaded to the player (you do not need to use the player PC).
+1. Click **Choose Media Folder** — a native folder picker opens on this PC and
+   the path is saved as the Media Folder setting.
 2. EZPlayer then **automatically retries** only the sequences that failed for
    missing audio.
 

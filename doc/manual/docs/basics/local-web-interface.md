@@ -46,8 +46,8 @@ toggles a live **audio stream** — useful for listening over the network when y
 | Show Status (full detail)            | Yes           | Yes                             |
 | HTTP Listener Status card            | Yes           | No                              |
 | Add / edit song files                | Yes           | Yes (upload / choose on player) |
-| Bulk import songs                    | Yes           | Yes                             |
-| Choose / set media folder            | Yes           | Yes (type player path; browser folder + upload on bulk-import retry) |
+| Bulk import songs                    | Yes           | Not yet (desktop only for now)  |
+| Choose / set media folder            | Yes           | Yes (type player path)          |
 | Choose show folder                   | Yes           | No                              |
 | Cloud registration dialog            | Yes           | Limited (Cloud tile)            |
 | Kiosk mode                           | Separate port | Yes (`__EZPLAYER_MODE__=kiosk`) |
