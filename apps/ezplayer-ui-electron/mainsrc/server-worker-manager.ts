@@ -143,8 +143,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
 
 /**
  * Re-read the remote-access config and tell every connected UI which tiles to
- * offer. Only the booleans cross the wire — the password hashes never leave the
- * main process. Returns the state it published.
+ * offer.
  */
 export async function publishRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
     const state = await getRemoteAccessAvailability();
@@ -153,11 +152,7 @@ export async function publishRemoteAccessAvailability(): Promise<RemoteAccessAva
     return state;
 }
 
-/**
- * Which remote-access features are on offer for the open show. The shell needs
- * a pty backend on top of its password — no point advertising a terminal we
- * cannot start — while the file manager only needs its password.
- */
+/** Which remote-access features are on offer for the open show. */
 export async function getRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
     const showFolder = getCurrentShowFolder() ?? undefined;
     const [shellConfigured, filesConfigured, ptyUsable] = await Promise.all([
@@ -198,9 +193,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
 
     serverWorker = new Worker(workerPath);
 
-    // pty output flows main → worker → the one authenticated /terminal socket.
-    // Deliberately NOT the state broadcaster: that coalesces and drops, which
-    // would silently corrupt a terminal stream.
+    // pty output flows main -> worker -> the one authenticated /terminal socket.
     setShellEventSink((event) => {
         serverWorker?.postMessage({ type: 'shellEvent', event } satisfies MainToServerWorkerMessage);
     });
@@ -239,9 +232,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                 );
                 if (msg.status === 'listening') {
                     void publishRemoteAccessAvailability();
-                    // Record what we actually bound. Only the running player
-                    // knows this: a busy port makes it walk up from the one
-                    // that was asked for.
+                    // Record what we actually bound.
                     const showFolder = getCurrentShowFolder();
                     if (showFolder) {
                         void updateShowFolderLock(showFolder, {

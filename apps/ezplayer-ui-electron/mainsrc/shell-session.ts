@@ -1,16 +1,11 @@
 /**
- * The pty that backs the remote shell. Lives in the Electron main process
- * rather than the server worker: node-pty is a native addon, and main already
- * owns every other privileged operation. The worker owns the WebSocket and
- * relays bytes here over the existing RPC channel.
+ * The pty that backs the remote shell. Lives in the Electron main process as
+ * node-pty is a native addon, and main already owns every other privileged
+ * operation. The worker owns the WebSocket and relays bytes here over the
+ * existing RPC channel.
  *
  * Exactly ONE session exists at a time, by design. Opening a new terminal
- * supersedes the old one — the previous pty is killed and its viewer told why.
- * That keeps the blast radius of the feature to a single process and makes
- * "who is on my player right now" answerable.
- *
- * node-pty is loaded lazily and defensively: a native module that fails to load
- * must degrade the shell to "unavailable", never take down the player.
+ * supersedes the old one; The previous pty is killed and its viewer told why.
  */
 
 import os from 'os';
@@ -38,7 +33,7 @@ type ShellEventSink = (event: ShellEvent) => void;
 
 let emit: ShellEventSink = () => {};
 
-/** Wire the main→worker relay. Called once during server-worker setup. */
+/** Wire the main -> worker relay. Called once during server-worker setup. */
 export function setShellEventSink(sink: ShellEventSink): void {
     emit = sink;
 }
@@ -147,10 +142,9 @@ export function resizeShellSession(sessionId: string, cols: number, rows: number
     }
 }
 
-/** Kill a session by id. Clearing `active` first means the pty's own exit
- *  handler sees it is no longer current, so a caller that is already telling
- *  the viewer something more specific isn't overridden by a generic exit. */
+/** Kill a session by id. */
 export function killShellSession(sessionId: string): void {
+    // Clearing `active` first means the pty's own exit handler sees it is no longer current.
     if (active?.sessionId !== sessionId) return;
     const { pty } = active;
     active = undefined;
@@ -161,7 +155,7 @@ export function killShellSession(sessionId: string): void {
     }
 }
 
-/** Tear down on app shutdown so no orphan shell outlives the player. */
+/** Tear down on app shutdown so no orphan shell process outlives the player. */
 export function shutdownShellSessions(): void {
     if (!active) return;
     const { pty } = active;
