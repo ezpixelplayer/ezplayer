@@ -1,8 +1,7 @@
 /**
- * File operations confined to the show folder, for the file manager.
- *
- * SECURITY: this module is the entire boundary. Everything above it takes a
- * caller-supplied relative path, so `resolveInShow` is what stops that path
+ * File operations for the file manager.
+ * 
+ * Confined to the show folder.  `resolveInShow` is what stops that path
  * from meaning anything outside the show folder. Two properties matter:
  *
  *  1. Containment is checked AFTER resolving symlinks (`fs.realpath`), not by
@@ -69,11 +68,6 @@ export class ShowFolderError extends Error {
 
 /**
  * Normalize a wire path to POSIX form.
- *
- * Absoluteness is judged BEFORE any trimming: silently turning `/etc/passwd`
- * into `etc/passwd` would still be contained, but quietly rewriting a caller's
- * path is the wrong reflex at a security boundary — an absolute path is either
- * a bug or a probe, and should be told so.
  */
 function normalizeRelative(input: string): string {
     const posix = input.replace(/\\/g, '/');
@@ -84,9 +78,7 @@ function normalizeRelative(input: string): string {
 }
 
 /**
- * Reject a path before it ever touches the filesystem. These are the cheap
- * structural checks; `resolveInShow` then does the authoritative containment
- * check against the real (symlink-resolved) location.
+ * Reject a path before it ever touches the filesystem.
  */
 function assertSafeRelative(rel: string): void {
     if (rel === '') return; // the root itself
@@ -111,12 +103,9 @@ function assertSafeRelative(rel: string): void {
 
 /**
  * Root-level names EZPlayer owns: the `.ezplayer/` settings directory (which
- * holds the very password records gating this feature, plus cloud credentials)
+ * holds the very password records enabling this feature, plus cloud credentials)
  * and the `.ezplayer-folder.lock*` files the show-folder lock uses. One prefix
  * rule covers both, and covers anything similar we add later.
- *
- * Other dotfiles are the user's own and stay visible — a file manager that
- * quietly hides things is worse than one that shows them.
  */
 function isPlayerInternal(rootSegment: string): boolean {
     return rootSegment.toLowerCase().startsWith(SUBDIR_NAME);
