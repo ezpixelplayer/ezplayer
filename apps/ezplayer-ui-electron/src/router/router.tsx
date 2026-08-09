@@ -115,7 +115,6 @@ const ElectronSettingsPage = () => {
             title: 'Player Settings',
             content: <PlayerSettings />,
         },
-        // Present only when that feature's password was set via the CLI.
         shellSection,
         filesSection,
     ];
