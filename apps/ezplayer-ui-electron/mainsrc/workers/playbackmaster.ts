@@ -2424,9 +2424,7 @@ async function processQueue() {
             }
 
             if (targetFrameNum < 0 || targetFrameNum >= header.ref.header.frames) {
-                // Lead/trail pad: the background still shows; with none, blank
-                // actively — a quiet wire would leave pixels holding the
-                // previous frame.
+                // Lead/trail pad: the background still shows
                 if (bframeRef?.frame) {
                     targetFrameRTC += await sender.sendNextFrameAt({
                         frame: bframeRef,
