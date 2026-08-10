@@ -63,7 +63,6 @@ const EmbeddedSettingsPage = () => {
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
     // Embedded is a browser; show-folder selection isn't possible here.
-    // Media folder can still be set as a path on the player machine.
     const sections: SettingsSection[] = [
         {
             key: 'mediaFolder',
@@ -141,8 +140,6 @@ const allMenuRoutes: MenuRoute[] = [
     {
         path: ROUTES.SONGS,
         element: (
-            // On LAN, Bulk Import registers FSEQs already in the show folder
-            // (no upload); the browser-upload variant stays parked for now.
             <SongList
                 title="Songs"
                 AddSongDialog={AddSongDialogBrowser}

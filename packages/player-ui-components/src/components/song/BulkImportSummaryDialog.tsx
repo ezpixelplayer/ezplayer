@@ -21,7 +21,8 @@ export interface BulkImportSummaryDialogProps {
     open: boolean;
     summary: BatchImportSummary | null;
     onClose: () => void;
-    /** Choose media folder then retry failed imports (native path on desktop; browser folder on LAN). */
+    /** When set, missing-audio failures offer a "Choose Media Folder" button
+     *  that invokes this and then retries those imports. */
     onChooseMediaFolderAndRetry?: () => void | Promise<void>;
     choosingMediaFolder?: boolean;
 }

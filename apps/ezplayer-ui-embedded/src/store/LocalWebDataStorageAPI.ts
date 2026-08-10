@@ -277,8 +277,8 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         if (importFseqNames?.length) {
             manifest.importFseqNames = importFseqNames;
         }
-        // Length-prefixed JSON manifest in the body (not a header) so large
-        // folder imports stay under Node's ~16KB request-header limit.
+        // Body framing: uint32BE manifest length, manifest JSON, then file bytes
+        // (see batch-upload-import in file-api.ts).
         const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
         const lengthPrefix = new Uint8Array(4);
         new DataView(lengthPrefix.buffer).setUint32(0, manifestBytes.byteLength, false);

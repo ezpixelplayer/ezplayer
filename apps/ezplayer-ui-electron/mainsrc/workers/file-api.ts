@@ -43,7 +43,7 @@ export interface FileApiDeps {
     getShowFolder: () => string | undefined;
     getSequences: () => SequenceRecord[] | undefined;
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
-    /** Playback-settings media folder — same fallback used by Electron bulk import. */
+    /** Playback-settings media folder for audio autodetection. */
     getMediaFolder?: () => string | undefined;
 }
 
@@ -930,8 +930,7 @@ export async function batchUploadImportSequencesCore(
             let backupPath: string | undefined;
             try {
                 // If a show-folder file already exists, move it aside before
-                // renaming the upload into place so failure cleanup can restore it
-                // instead of permanently deleting overwritten data.
+                // renaming the upload into place so failure cleanup can restore it.
                 try {
                     await fsp.access(file.target);
                     backupPath = path.join(staging, `batch-bak-${crypto.randomBytes(8).toString('hex')}`);

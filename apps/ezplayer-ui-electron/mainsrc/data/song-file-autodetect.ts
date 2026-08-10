@@ -18,7 +18,7 @@ const MIME_TO_EXT: Record<string, string> = {
 const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.ezplayer', '__MACOSX', '.Trash', '$RECYCLE.BIN']);
 
 export interface AutoDetectOptions {
-    /** Optional media folder — searched only after existing co-located lookup fails. */
+    /** Optional media folder — searched only after the co-located lookup fails. */
     mediaFolder?: string;
     /**
      * When true, only exact basename matches are accepted (no prefix matching).
@@ -151,7 +151,7 @@ async function findWithPrefix(dir: string, prefix: string, exts: string[]): Prom
     return undefined;
 }
 
-/** Existing co-located search: exact basename, then optional prefix match (non-recursive). */
+/** Co-located search: exact basename, then optional prefix match (non-recursive). */
 async function findAudioInDirectory(
     dir: string,
     baseNames: string[],
@@ -292,8 +292,7 @@ export async function autoDetectSongFilesFromFseq(
         return undefined;
     };
 
-    // --- Colocated search (FSEQ directory). On LAN bulk import this directory is
-    // the flat show folder — only allowlisted companions may be used. ---
+    // --- Colocated search (FSEQ directory) ---
     if (headerAudioName) {
         const direct = path.join(fseqDir, headerAudioName);
         if (await fileExists(direct)) {

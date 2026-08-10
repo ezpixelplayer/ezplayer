@@ -55,7 +55,6 @@ export interface SongListProps {
     showEditAction?: boolean;
     showDeleteAction?: boolean;
     showAddSongButton?: boolean;
-    /** Show Bulk Import (multi-file / folder). Electron uses native dialogs; LAN/web uploads then imports. */
     showBulkImportButton?: boolean;
 }
 
@@ -897,8 +896,6 @@ export function SongList({
                                 >
                                     Bulk Import
                                 </Button>
-                                {/* Electron picks with native dialogs; LAN/cloud (button above)
-                                    goes straight to the show-folder import dialog. */}
                                 <Menu
                                     anchorEl={bulkMenuAnchor}
                                     open={Boolean(bulkMenuAnchor)}
@@ -910,8 +907,7 @@ export function SongList({
                                     <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
                                     <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
                                 </Menu>
-                                {/* Dormant until the LAN upload variant returns: inputs for the
-                                    browser-upload flow, no longer reachable from the menu. */}
+                                {/* Hidden inputs for the browser-upload flow; not wired to any UI. */}
                                 {!isElectron() && (
                                     <>
                                         <input
@@ -980,8 +976,7 @@ export function SongList({
                 open={bulkSummaryOpen}
                 summary={bulkSummary}
                 onClose={() => setBulkSummaryOpen(false)}
-                // LAN/cloud retry would upload audio from the browser; that flow is
-                // parked for now, so the choose-and-retry affordance is desktop-only.
+                // The retry uploads audio from the browser, so it is desktop-only.
                 onChooseMediaFolderAndRetry={isElectron() ? handleChooseMediaFolderAndRetry : undefined}
                 choosingMediaFolder={choosingMediaFolder}
             />

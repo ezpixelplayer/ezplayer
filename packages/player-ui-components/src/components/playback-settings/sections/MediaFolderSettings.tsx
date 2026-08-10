@@ -13,11 +13,7 @@ declare global {
     }
 }
 
-/** Choose / set the optional media folder used by song auto-detect and bulk import.
- *  Desktop: native folder picker on this PC.
- *  LAN/cloud: type the player-side path directly (no remote directory browser
- *  yet); bulk-import retry separately picks a folder in the browser and
- *  uploads companion audio. */
+/** Choose / set the optional media folder used by song auto-detect and bulk import. */
 export const MediaFolderSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const mediaFolder = useSelector((s: RootState) => s.playbackSettings.settings.mediaFolder);

@@ -81,8 +81,6 @@ async function importOneFseq(
         const detected = await autoDetectSongFilesFromFseq(fseqPath, {
             mediaFolder: options.mediaFolder,
             exactAudioMatch: true,
-            // LAN passes [] or companion names; Electron IPC leaves this undefined
-            // so the real colocated folder next to the FSEQ is still searched.
             colocatedAudioAllowlist: options.colocatedAudioAllowlist,
         });
 
