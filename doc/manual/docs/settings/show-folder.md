@@ -25,27 +25,3 @@ adding a song or running [Bulk Import](../basics/songs.md#bulk-import).
 
 Use this when your `.mp3` files live outside the show folder — for example a
 shared media library or an xLights render output folder.
-
-### Desktop app
-
-1. Open **Settings → Show Folder**.
-2. Click **Choose Media Folder** and select the directory on this PC.
-3. Use **Clear** to stop searching that location.
-
-### LAN UI
-
-Browsers cannot browse the player's disk, so **Settings → Media Folder** in the
-LAN UI is a text field: type the folder path **as the player PC sees it**
-(for example `C:\Shows\Media`) and click **Save**, or **Clear** to stop
-searching that location.
-
-### Search order
-
-1. Next to the `.fseq` (same folder as the sequence)
-2. Subdirectories beneath the sequence's folder
-3. The **Media Folder** (if set), then its subdirectories
-
-Bulk import requires an exact audio basename match (from the FSEQ header or
-the FSEQ basename) wherever the audio is found. Well-known non-media
-directories (`.git`, `.ezplayer`, recycle bins, and similar) are skipped
-during the subdirectory walks.
