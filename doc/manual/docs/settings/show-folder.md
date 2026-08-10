@@ -42,9 +42,10 @@ searching that location.
 ### Search order
 
 1. Next to the `.fseq` (same folder as the sequence)
-2. The **Media Folder** (if set)
-3. The show folder (for single **Add Song** auto-detect)
+2. Subdirectories beneath the sequence's folder
+3. The **Media Folder** (if set), then its subdirectories
 
-Bulk import requires an exact audio basename match and will not use unrelated
-MP3s already sitting in the show folder — audio must be found next to the
-FSEQ or via the Media Folder.
+Bulk import requires an exact audio basename match (from the FSEQ header or
+the FSEQ basename) wherever the audio is found. Well-known non-media
+directories (`.git`, `.ezplayer`, recycle bins, and similar) are skipped
+during the subdirectory walks.

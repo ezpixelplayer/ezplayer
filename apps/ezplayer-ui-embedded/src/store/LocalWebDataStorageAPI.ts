@@ -233,11 +233,15 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return await response.json();
     }
 
-    async batchImportShowSequences(fseqNames: string[], companionAudioNames?: string[]) {
+    async batchImportShowSequences(fseqNames: string[], companionAudioNames?: string[], allowExistingAudio?: boolean) {
         const response = await fetch(`${this.apiUrl}ezp/sequences/batch-import`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fseqNames, companionAudioNames: companionAudioNames ?? [] }),
+            body: JSON.stringify({
+                fseqNames,
+                companionAudioNames: companionAudioNames ?? [],
+                allowExistingAudio: allowExistingAudio === true,
+            }),
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));

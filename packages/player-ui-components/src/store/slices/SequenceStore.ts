@@ -84,16 +84,18 @@ export const extractShowAudioMetadata = createAsyncThunk<
     return await extra.extractShowAudioMetadata(audioName);
 });
 
-/** Bulk-import fseq files already on the player (web/LAN). */
+/** Bulk-import fseq files already on the player (web/LAN). Pass
+ *  `allowExistingAudio: true` for the existing-files variant so show-folder
+ *  audio (root or subdirectory) may satisfy imports. */
 export const batchImportShowSequences = createAsyncThunk<
     BatchImportSummary,
-    { fseqNames: string[]; companionAudioNames?: string[] },
+    { fseqNames: string[]; companionAudioNames?: string[]; allowExistingAudio?: boolean },
     { extra: DataStorageAPI }
->('sequences/batchImportShowSequences', async ({ fseqNames, companionAudioNames }, { extra }) => {
+>('sequences/batchImportShowSequences', async ({ fseqNames, companionAudioNames, allowExistingAudio }, { extra }) => {
     if (!extra.batchImportShowSequences) {
         throw new Error('This player connection does not support bulk import');
     }
-    return await extra.batchImportShowSequences(fseqNames, companionAudioNames ?? []);
+    return await extra.batchImportShowSequences(fseqNames, companionAudioNames ?? [], allowExistingAudio);
 });
 
 /** LAN bulk import: upload files + import sequences in a single HTTP request. */

@@ -782,15 +782,19 @@ export async function audioMetadataCore(showFolder: string | undefined, audioNam
 }
 
 /** Bulk-import `.fseq` files already present in the show folder (LAN / web UI).
- *  Body: `{ fseqNames: string[], companionAudioNames?: string[] }`.
- *  Companion names are audio files uploaded in the same browser selection
- *  (Electron colocated equivalent). Without them, only the media folder may
- *  supply audio — never unrelated MP3s already sitting in the show folder. */
+ *  Body: `{ fseqNames: string[], companionAudioNames?: string[], allowExistingAudio?: boolean }`.
+ *  Two audio modes:
+ *  - Upload flow: `companionAudioNames` are audio files uploaded in the same
+ *    browser selection; only those (or the media folder) may supply audio —
+ *    never unrelated MP3s already sitting in the show folder.
+ *  - Existing-files flow: `allowExistingAudio: true` lifts that restriction so
+ *    any show-folder audio (root or subdirectory) can match, exact-name only. */
 export async function batchImportSequencesCore(
     showFolder: string | undefined,
     deps: FileApiDeps,
     fseqNames: unknown,
     companionAudioNames?: unknown,
+    allowExistingAudio?: unknown,
 ): Promise<ProxyResult> {
     if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
     if (!Array.isArray(fseqNames)) {
@@ -826,8 +830,10 @@ export async function batchImportSequencesCore(
     try {
         const summary = await batchImportSequences(unique, {
             mediaFolder: deps.getMediaFolder?.(),
-            // Always restrict show-folder audio on the LAN/HTTP path.
-            colocatedAudioAllowlist: allowlist,
+            // Upload flow: restrict show-folder audio to this request's
+            // companions. Existing-files flow: unrestricted (undefined),
+            // exact-match still applies.
+            colocatedAudioAllowlist: allowExistingAudio === true ? undefined : allowlist,
             exactAudioMatch: true,
             putSequences: async (recs) => (await deps.putSequences(recs)) as SequenceRecord[],
         });
@@ -1067,6 +1073,7 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
             deps,
             body?.fseqNames,
             body?.companionAudioNames,
+            body?.allowExistingAudio,
         );
         ctx.status = res.status;
         ctx.body = res.body;

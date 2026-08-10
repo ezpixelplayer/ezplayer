@@ -582,7 +582,8 @@ autodetect + register path as the desktop Bulk Import action.
 ```json
 {
     "fseqNames": ["SongA.fseq", "SongB.fseq"],
-    "companionAudioNames": ["SongA.mp3"]
+    "companionAudioNames": ["SongA.mp3"],
+    "allowExistingAudio": true
 }
 ```
 
@@ -590,6 +591,7 @@ autodetect + register path as the desktop Bulk Import action.
 | ----- | ------- |
 | `fseqNames` | Basenames of `.fseq` files in the show folder (required) |
 | `companionAudioNames` | Optional audio basenames from the same LAN selection. On the HTTP/LAN path, show-folder audio is restricted to this allowlist (plus the media folder). Omit or pass `[]` when relying only on the media folder. |
+| `allowExistingAudio` | Pass `true` for existing-files imports: any show-folder audio (root or subdirectory) may satisfy an import by exact name, ignoring the allowlist. Used by the LAN/cloud "Import from Show Folder" dialog. |
 
 Bulk import requires a resolved companion audio file for each FSEQ (exact
 basename match). Failures are per-file and do not abort the rest of the batch.

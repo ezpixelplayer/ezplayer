@@ -937,6 +937,7 @@ async function dispatchProxyWrite(
                     deps,
                     (parsed as any)?.fseqNames,
                     (parsed as any)?.companionAudioNames,
+                    (parsed as any)?.allowExistingAudio,
                 ),
             );
         }

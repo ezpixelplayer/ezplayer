@@ -141,8 +141,8 @@ const allMenuRoutes: MenuRoute[] = [
     {
         path: ROUTES.SONGS,
         element: (
-            // Bulk import is desktop-only until the file-manager work lands;
-            // revisit exposing it on LAN then.
+            // On LAN, Bulk Import registers FSEQs already in the show folder
+            // (no upload); the browser-upload variant stays parked for now.
             <SongList
                 title="Songs"
                 AddSongDialog={AddSongDialogBrowser}
@@ -150,7 +150,7 @@ const allMenuRoutes: MenuRoute[] = [
                 showEditAction={!isKiosk}
                 showDeleteAction={!isKiosk}
                 showAddSongButton={!isKiosk}
-                showBulkImportButton={false}
+                showBulkImportButton={!isKiosk}
             />
         ),
         sidebar: { icon: <MusicIcon />, label: 'Songs' },

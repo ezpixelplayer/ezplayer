@@ -169,7 +169,8 @@ async function findAudioInDirectory(
 }
 
 /** Recursive walk of `root` looking for an audio file whose basename (no ext)
- *  equals (or, when not exactOnly, starts with) any candidate. Used only as media-folder fallback. */
+ *  equals (or, when not exactOnly, starts with) any candidate. Used for the
+ *  deep show-folder pass and the media-folder fallback. */
 async function findAudioRecursive(
     root: string,
     baseNames: string[],
@@ -236,8 +237,8 @@ export async function extractAudioTagMetadata(audioFilePath: string): Promise<Au
 
 /**
  * Locate companion audio/image and title/artist for an FSEQ.
- * Optional `mediaFolder` is searched only after the existing same-directory
- * lookup fails — existing single-sequence behavior is unchanged when unset.
+ * Audio search order: the FSEQ's own directory (flat), then its
+ * subdirectories, then the optional `mediaFolder` (flat, then recursive).
  */
 export async function autoDetectSongFilesFromFseq(
     fseqFilePath: string,
@@ -315,14 +316,25 @@ export async function autoDetectSongFilesFromFseq(
         out.audioFile = acceptColocatedHit(hit);
     }
 
+    const fallbackBaseNames = [
+        ...new Set([headerAudioName ? path.parse(headerAudioName).name : undefined, fseqBase].filter(Boolean)),
+    ] as string[];
+
+    // --- Deeper colocated search: subdirectories under the FSEQ's folder
+    // (media stashed in a show-folder subdir). Same allowlist gate as the flat
+    // pass, so upload-restricted imports still only see their own companions. ---
+    if (!out.audioFile) {
+        out.audioFile = acceptColocatedHit(await findAudioRecursive(fseqDir, fallbackBaseNames, exactOnly));
+        if (out.audioFile) {
+            console.log(`[SongAutoDetect] Audio found under sequence folder: ${out.audioFile}`);
+        }
+    }
+
     // --- Additive fallback: optional Media Folder ---
     if (!out.audioFile && mediaFolder) {
-        const baseNames = [
-            ...new Set([headerAudioName ? path.parse(headerAudioName).name : undefined, fseqBase].filter(Boolean)),
-        ] as string[];
         out.audioFile =
-            (await findAudioInDirectory(mediaFolder, baseNames, exactOnly)) ??
-            (await findAudioRecursive(mediaFolder, baseNames, exactOnly));
+            (await findAudioInDirectory(mediaFolder, fallbackBaseNames, exactOnly)) ??
+            (await findAudioRecursive(mediaFolder, fallbackBaseNames, exactOnly));
         if (out.audioFile) {
             console.log(`[SongAutoDetect] Audio found in media folder: ${out.audioFile}`);
         }

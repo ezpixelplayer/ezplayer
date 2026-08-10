@@ -8,6 +8,7 @@ import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-co
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
 import {
+    batchImportShowSequences,
     batchUploadImportShowSequences,
 } from '../../store/slices/SequenceStore';
 import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
@@ -44,6 +45,7 @@ import { AddSongProps } from './AddSongDialogBrowser';
 import { BulkImportSummaryDialog } from './BulkImportSummaryDialog';
 import { DeleteSongDialog } from './DeleteSongDialog';
 import { EditSongDetailsDialog } from './EditSongDetailsDialog';
+import { ShowFolderImportDialog } from './ShowFolderImportDialog';
 
 export interface SongListProps {
     title: string;
@@ -231,6 +233,7 @@ export function SongList({
     const [bulkImporting, setBulkImporting] = useState(false);
     const [bulkSummary, setBulkSummary] = useState<BatchImportSummary | null>(null);
     const [bulkSummaryOpen, setBulkSummaryOpen] = useState(false);
+    const [showFolderImportOpen, setShowFolderImportOpen] = useState(false);
     const [choosingMediaFolder, setChoosingMediaFolder] = useState(false);
     /** LAN: companion audio names from the last selection (allowlist for retry). */
     const lanCompanionAudioRef = useRef<string[]>([]);
@@ -515,6 +518,17 @@ export function SongList({
             console.log(`[BulkImport] Selected folder: ${folder ?? '(none)'}`);
             if (!folder) return undefined;
             return api.batchImportSequencesFromFolder(folder);
+        });
+    };
+
+    /** LAN/cloud: import FSEQs already in the show folder (no upload).
+     *  `allowExistingAudio` lets exact-name show-folder audio (root or
+     *  subdirectory) satisfy each import, plus the media folder as usual. */
+    const handleShowFolderImport = async (fseqNames: string[]) => {
+        setShowFolderImportOpen(false);
+        await runBulkImport(async () => {
+            console.log(`[BulkImport] Importing ${fseqNames.length} existing show-folder sequence(s)…`);
+            return dispatch(batchImportShowSequences({ fseqNames, allowExistingAudio: true })).unwrap();
         });
     };
 
@@ -867,7 +881,11 @@ export function SongList({
                                     sx={{ pt: 1, pb: 1 }}
                                     className="letter-spacing"
                                     variant={'outlined'}
-                                    onClick={(e) => setBulkMenuAnchor(e.currentTarget)}
+                                    onClick={(e) =>
+                                        isElectron()
+                                            ? setBulkMenuAnchor(e.currentTarget)
+                                            : setShowFolderImportOpen(true)
+                                    }
                                     startIcon={
                                         bulkImporting ? (
                                             <CircularProgress size={16} color="inherit" />
@@ -879,6 +897,8 @@ export function SongList({
                                 >
                                     Bulk Import
                                 </Button>
+                                {/* Electron picks with native dialogs; LAN/cloud (button above)
+                                    goes straight to the show-folder import dialog. */}
                                 <Menu
                                     anchorEl={bulkMenuAnchor}
                                     open={Boolean(bulkMenuAnchor)}
@@ -887,39 +907,11 @@ export function SongList({
                                     transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                                     PaperProps={{ sx: { mt: 1.5 } }}
                                 >
-                                    {isElectron() ? (
-                                        <>
-                                            <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
-                                            <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <MenuItem
-                                                onClick={() => {
-                                                    const el = document.getElementById(
-                                                        'ezplayer-bulk-fseq-files',
-                                                    ) as HTMLInputElement | null;
-                                                    el?.click();
-                                                    setBulkMenuAnchor(null);
-                                                }}
-                                            >
-                                                Select .fseq files…
-                                            </MenuItem>
-                                            <MenuItem
-                                                onClick={() => {
-                                                    const el = document.getElementById(
-                                                        'ezplayer-bulk-fseq-folder',
-                                                    ) as HTMLInputElement | null;
-                                                    el?.click();
-                                                    setBulkMenuAnchor(null);
-                                                }}
-                                            >
-                                                Select folder…
-                                            </MenuItem>
-                                        </>
-                                    )}
+                                    <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
+                                    <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
                                 </Menu>
-                                {/* LAN only: inputs stay outside Menu so closing it does not cancel the dialog. */}
+                                {/* Dormant until the LAN upload variant returns: inputs for the
+                                    browser-upload flow, no longer reachable from the menu. */}
                                 {!isElectron() && (
                                     <>
                                         <input
@@ -988,8 +980,16 @@ export function SongList({
                 open={bulkSummaryOpen}
                 summary={bulkSummary}
                 onClose={() => setBulkSummaryOpen(false)}
-                onChooseMediaFolderAndRetry={handleChooseMediaFolderAndRetry}
+                // LAN/cloud retry would upload audio from the browser; that flow is
+                // parked for now, so the choose-and-retry affordance is desktop-only.
+                onChooseMediaFolderAndRetry={isElectron() ? handleChooseMediaFolderAndRetry : undefined}
                 choosingMediaFolder={choosingMediaFolder}
+            />
+
+            <ShowFolderImportDialog
+                open={showFolderImportOpen}
+                onClose={() => setShowFolderImportOpen(false)}
+                onImport={handleShowFolderImport}
             />
 
             <EditSongDetailsDialog

@@ -56,7 +56,7 @@ starts that song immediately, the same as pressing **Play** in the jukebox.
 | ---------------------------------- | ------------------ | ------------------------------ |
 | View song list                     | Yes                | Yes                            |
 | Add songs                          | Yes                | Yes                            |
-| Bulk import many `.fseq` files     | Yes                | Not yet (desktop only for now) |
+| Bulk import many `.fseq` files     | Yes                | Yes (from the show folder)     |
 | Edit metadata and settings         | Yes                | Yes                            |
 | Replace FSEQ / audio / image files | Yes (local picker) | Yes (upload or choose on player) |
 | Delete songs                       | Yes                | Yes                            |
@@ -116,8 +116,9 @@ use [Bulk import](#bulk-import) to bring in many at once.
 ## Bulk import
 
 Use **Bulk Import** on the Songs screen when you need to register many
-sequences at once instead of adding them one by one. Bulk import is a
-**desktop app** feature for now; it is not shown in the LAN / cloud UI.
+sequences at once instead of adding them one by one.
+
+### Desktop app
 
 1. Open **Songs** and click **Bulk Import**.
 2. Choose either:
@@ -128,6 +129,22 @@ sequences at once instead of adding them one by one. Bulk import is a
 
 Native file and folder dialogs open on the show PC. EZPlayer searches for
 companion audio next to each FSEQ and in the configured Media Folder.
+
+### LAN / cloud UI
+
+Over the network, **Bulk Import** registers `.fseq` files that are **already in
+the player's show folder** — nothing is uploaded. Files get there via xLights
+writing to the show folder, cloud sync, or the [file manager](../settings/files.md).
+
+1. Open **Songs** and click **Bulk Import**.
+2. The dialog lists every `.fseq` in the show folder. Sequences already in the
+   catalog are marked **Already imported**; new ones are pre-selected.
+3. Click **Import** and wait for the **Bulk Import Summary**.
+
+Companion audio must already be on the player too: in the show folder —
+including subdirectories — or in the configured
+[Media Folder](../settings/show-folder.md#media-folder), matched by exact
+name in both cases.
 
 ### Rules
 
