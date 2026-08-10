@@ -93,10 +93,10 @@ export class FrameSender {
         targetFramePN: number;
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
-        /** Send even when idle black frames are disabled (lead/trail pads). */
-        force?: boolean;
+        /** Set for idle black frames, which can be disabled */
+        onlyIfEnabled?: boolean;
     }) {
-        if (!this.blackFramesEnabled && !args.force) return;
+        if (!this.blackFramesEnabled && args.onlyIfEnabled) return;
         if (!this.blackFrame || !this.job || !this.state) return;
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
@@ -127,7 +127,7 @@ export class FrameSender {
                 // Send black
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({ targetFramePN: preSleepPN });
+                if (this.blackFrame) this.sendBlackFrame({ targetFramePN: preSleepPN, onlyIfEnabled: true });
                 return 0;
             }
 

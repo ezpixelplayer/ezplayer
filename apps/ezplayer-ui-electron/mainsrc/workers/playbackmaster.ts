@@ -1881,7 +1881,7 @@ async function processQueue() {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC), onlyIfEnabled: true });
                 multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
@@ -2343,7 +2343,10 @@ async function processQueue() {
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
                 multiSync.onIdle();
-                await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                await sender.sendBlackFrame({
+                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                    onlyIfEnabled: true,
+                });
                 targetFrameRTC += playbackParams.idleSleepInterval;
 
                 await sleepUntil(targetFrameRTC - 50);
@@ -2354,7 +2357,10 @@ async function processQueue() {
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
                 multiSync.onIdle();
-                await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                await sender.sendBlackFrame({
+                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                    onlyIfEnabled: true,
+                });
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
@@ -2438,7 +2444,6 @@ async function processQueue() {
                         targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
                         playbackStats,
                         playbackStatsAgg,
-                        force: true,
                     });
                     targetFrameRTC += frameInterval;
                     await sleepUntil(targetFrameRTC - 50);
