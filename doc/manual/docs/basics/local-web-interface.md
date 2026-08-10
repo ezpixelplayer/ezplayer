@@ -55,7 +55,7 @@ toggles a live **audio stream** — useful for listening over the network when y
 Show-folder selection stays on the show PC. Everything else — song management,
 playlist edits, schedule changes, jukebox requests, and API calls — can be done
 from the LAN UI once the server is **Listening**. See
-[Songs](./songs.md#desktop-app-vs-lan--cloud-ui) for the file-handling details.
+[Songs](./songs.md) for the file-handling details.
 
 ## Kiosk (public display)
 

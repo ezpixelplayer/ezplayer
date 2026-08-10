@@ -10,31 +10,25 @@ your song library and the [schedule](./simple-schedules.md): you group sequences
 into sets like "Christmas Favorites" or "Weeknight Show," then attach those sets
 to date and time windows.
 
-In addition to scheduling, there are a few other uses for playlists, such as
-intro/outro and making a list of songs that viewers may select, but the concept
-is the same.
+The same idea covers other uses — intro/outro lists, or a set of songs viewers
+may select — the concept is the same.
 
 ![Playlists](/img/playlists.png)
 
-Open **Playlists** from the main navigation bar. The table shows:
+Open **Playlists** from the main navigation. The table shows name, tags,
+duration, and song count. Use search and **Filter by tags** to find playlists
+in a large library.
 
-- **Playlist** name
-- **Tags** on the playlist
-- **Duration** — total linear play time
-- **Songs count** — number of entries in the playlist
+**Double-click** a row to open the editor. Row actions:
 
-Use **Search By Playlist Title** and **Filter by tags** to find playlists in a
-large library.
-
-**Double-click** a row to open the editor. Action buttons on each row:
-
-- **Play** — start the playlist immediately (once through, preempting whatever
-  is playing, like a jukebox pick)
+- **Play** — start the playlist immediately (once through)
 - **Edit** — open the create/edit screen
 - **Clone** — duplicate the playlist
 - **Delete** — soft-delete after confirmation
 
-Click the **Create Playlist** button in the upper corner to start a new one.
+Click **Create Playlist** to start a new one. Create, edit, clone, and delete
+are available in both the desktop app and the
+[LAN UI](./local-web-interface.md).
 
 ## Creating and editing a playlist
 
@@ -44,13 +38,12 @@ The create/edit screen has two panels:
 
 ### Left: Songs List
 
-Every **playable** song in your library — same filter as the Songs screen
-(not deleted, has an FSEQ file, not cloud-disabled). Use search, tag filters,
-and sort by title or artist to find what you need.
+Every **playable** song in your library (same filter as the
+[Songs](./songs.md) screen). Use search, tag filters, and sort by title or
+artist.
 
-- Click **->** on a song to add it to the playlist.
-- **Add All** adds every song that matches your current filters and is not
-  already in the playlist.
+- Click **->** on a song to add it, or use **Add All** for every song that
+  matches the current filters and is not already in the playlist.
 - **Drag** a song from this panel into the playlist on the right.
 
 Songs already in the playlist are shaded.
@@ -59,64 +52,28 @@ Songs already in the playlist are shaded.
 
 The ordered list of songs that will play when this playlist runs.
 
-- **Drag** songs to reorder.
-- **Drag** a song back to the left panel, or click remove, to take it out.
-- **Sort** by title or artist (A–Z or Z–A).
-- **Shuffle** randomizes the current order in the editor (this only changes the
-  saved playlist order; it is separate from schedule-level shuffle at runtime).
+- **Drag** to reorder, or drag back to the left / click remove to take a song
+  out.
+- **Sort** by title or artist, or **Shuffle** to randomize the saved order
+  (separate from schedule-level shuffle at runtime).
 
-At the top, set:
+At the top, set **Playlist Name** (required) and optional **Tags**. A playlist
+needs a name and at least one song before you can **Save Playlist**.
 
-- **Playlist Name** (required)
-- **Tags** (optional — type new tags or pick from existing playlist tags)
-
-Click **Save Playlist** when done. A playlist must have a **name** and at least
-**one song** before you can save.
-
-Use **Discard** to return to the list. If you have unsaved changes, EZPlayer
-warns you before navigating away or closing the browser tab.
+**Discard** returns to the list. Unsaved changes warn before you navigate away.
 
 ## Deleting a playlist
 
-Deletion is a **soft delete**: the record is marked `deleted` in storage and
-removed from the UI. Existing **schedule entries** that reference the deleted
-playlist will show a validation error until you pick a different playlist or
-remove the schedule entry.
+Deletion is a **soft delete**: the playlist disappears from the UI, but songs
+in it are not deleted. Schedule entries that still reference it show a
+validation error until you pick another playlist or remove the entry.
 
-Deleting a playlist does **not** delete the songs in it.
+## Using playlists
 
-## How playlists are used at runtime
-
-### Schedules
-
-This is the primary way playlists run. On the **Schedule** screen you attach a
-playlist to a time window as:
-
-- **Main playlist** — the core set of songs for that window
-- **Intro playlist** (optional) — plays once at the start
-- **Outro playlist** (optional) — plays as the window winds down
-
-When the window opens, EZPlayer plays the intro (if any), then the main playlist
-in order, then handles the outro according to the schedule's end policy. See
+Attach playlists to schedule windows as main, intro, or outro — see
 [Simple Schedules](./simple-schedules.md) and
-[Complex Schedules](../advanced/complex-schedules/overview.md) for recurrence,
-loop, shuffle, priority, and end-policy behavior.
+[Complex Schedules](../advanced/complex-schedules/overview.md).
 
-## Cloud-managed playlists
-
-When EZPlayer is registered with **EZRGB Cloud**, playlists can be delivered or
-updated from the cloud alongside sequences. Cloud-managed playlists are merged into
-your local playlists.
-
-For cloud registration and content sync, see
+When EZPlayer is registered with **EZRGB Cloud**, playlists can also be
+delivered or updated from the cloud — see
 [Getting Started (Cloud)](./getting-started-cloud.md).
-
-## Desktop app vs LAN UI
-
-**Playlist create, edit, clone, and delete** are
-available in both the desktop app and the [LAN UI](./local-web-interface.md). You
-can build or adjust a playlist from a phone or laptop on the same network without
-sitting at the show PC.
-
-Song **files** currently still need to be added on the desktop app — the playlist editor
-only picks from songs already in your library.
