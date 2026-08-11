@@ -83,7 +83,8 @@ show folder** (via xLights, cloud sync, or the
 
 Unlike single **Add Song**, bulk import requires a matching companion audio file
 for each FSEQ (exact name match next to the FSEQ or in the Media Folder). One
-failure does not stop the rest of the batch. If audio is missing, set a
+failure does not stop the rest of the batch. FSEQs that already have a song
+entry are skipped. If audio is missing, set a
 [Media Folder](../settings/show-folder.md#media-folder) and retry.
 
 ## Editing and deleting

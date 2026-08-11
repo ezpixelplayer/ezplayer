@@ -14,7 +14,12 @@ import {
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { useSelector } from 'react-redux';
 import { isElectron } from '@ezplayer/shared-ui-components';
-import type { BatchImportFailure, BatchImportSuccess, BatchImportSummary } from '@ezplayer/ezplayer-core';
+import type {
+    BatchImportFailure,
+    BatchImportSkipped,
+    BatchImportSuccess,
+    BatchImportSummary,
+} from '@ezplayer/ezplayer-core';
 import type { RootState } from '../..';
 
 export interface BulkImportSummaryDialogProps {
@@ -60,6 +65,11 @@ export function BulkImportSummaryDialog({
                 {summary.failed > 0 && (
                     <Typography color="error" sx={{ mb: 1 }}>
                         Failed: {summary.failed}
+                    </Typography>
+                )}
+                {(summary.skipped?.length ?? 0) > 0 && (
+                    <Typography color="text.secondary" sx={{ mb: 1 }}>
+                        Skipped (already imported): {summary.skipped!.length}
                     </Typography>
                 )}
 
@@ -128,6 +138,24 @@ export function BulkImportSummaryDialog({
                                         primary={f.fseqName}
                                         secondary={f.reason}
                                         primaryTypographyProps={{ fontWeight: 600 }}
+                                    />
+                                </ListItem>
+                            ))}
+                        </List>
+                    </>
+                )}
+
+                {(summary.skipped?.length ?? 0) > 0 && (
+                    <>
+                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">
+                            Skipped (already imported)
+                        </Typography>
+                        <List dense disablePadding>
+                            {summary.skipped!.map((s: BatchImportSkipped) => (
+                                <ListItem key={s.fseqPath || s.fseqName} alignItems="flex-start" sx={{ px: 0 }}>
+                                    <ListItemText
+                                        primary={s.fseqName}
+                                        secondary={s.existingTitle ? `Existing song: ${s.existingTitle}` : undefined}
                                     />
                                 </ListItem>
                             ))}

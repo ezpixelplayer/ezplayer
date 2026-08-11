@@ -132,6 +132,7 @@ export type {
     ImageInfo,
     AudioTagMetadata,
     BatchImportFailure,
+    BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
 } from './types/EZPElectronAPI';

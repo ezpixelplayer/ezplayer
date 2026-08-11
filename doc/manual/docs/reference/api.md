@@ -595,7 +595,8 @@ autodetect + register path as the desktop Bulk Import action.
 
 Bulk import requires a resolved companion audio file for each FSEQ (exact
 basename match). Failures are per-file and do not abort the rest of the batch.
-All successful records are persisted in **one** sequence commit.
+All successful records are persisted in **one** sequence commit. FSEQs that
+already have a song entry (matched by fseq basename) are skipped.
 
 **Response (200):** `BatchImportSummary`
 

@@ -87,12 +87,22 @@ export interface BatchImportSuccess {
     mediaFound: boolean;
 }
 
+/** An FSEQ left alone because a song entry for it already exists. */
+export interface BatchImportSkipped {
+    fseqPath: string;
+    fseqName: string;
+    /** Title of the existing song entry, when known. */
+    existingTitle?: string;
+}
+
 export interface BatchImportSummary {
     total: number;
     imported: number;
     failed: number;
     successes: BatchImportSuccess[];
     failures: BatchImportFailure[];
+    /** FSEQs skipped because they already have song entries. */
+    skipped?: BatchImportSkipped[];
 }
 
 // Node/coord types, color profile, channel mapping, and `GetNodeResult` now live in
