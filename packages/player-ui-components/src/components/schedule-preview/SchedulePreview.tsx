@@ -236,7 +236,7 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
             >
                 {/* Header */}
                 <Box sx={{ padding: 2, flexShrink: 0 }}>
-                    <PageHeader heading={title} children={statusArea} />
+                    <PageHeader heading={title} children={statusArea} showSidebarToggle={false} />
                 </Box>
 
                 {/* Settings Panel */}

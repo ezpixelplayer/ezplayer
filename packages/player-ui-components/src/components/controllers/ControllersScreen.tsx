@@ -116,7 +116,7 @@ function openUrl(url: string): void {
     else window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-/** One row action, rendered both as a kebab menu item and a fold-out button. */
+/** One row action, rendered as a kebab menu item. */
 interface RowAction {
     key: string;
     label: string;
@@ -547,15 +547,6 @@ const GridRow: React.FC<{
                     <TableCell colSpan={6} sx={{ p: 0, border: 0 }}>
                         <Collapse in={open} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, pl: 6, borderTop: '1px solid', borderColor: 'divider' }}>
-                                {actions.length > 0 && (
-                                    <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}>
-                                        {actions.map((a) => (
-                                            <Button key={a.key} size="small" color={a.color} startIcon={a.icon} onClick={a.onClick} disabled={a.disabled} title={a.title}>
-                                                {a.label}
-                                            </Button>
-                                        ))}
-                                    </Stack>
-                                )}
                                 {hasHealthDetail && health && (
                                     <Box sx={{ mb: 2 }}>
                                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

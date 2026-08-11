@@ -16,6 +16,8 @@ interface PageHeaderProps {
     icon?: React.ReactElement<SvgIconProps>;
     breadcrumbs?: any[];
     value?: string;
+    /** When false, hides the mobile sidebar menu button. Defaults to true. */
+    showSidebarToggle?: boolean;
 }
 
 export const PageHeader: FC<PageHeaderProps> = ({
@@ -25,6 +27,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
     icon,
     value,
     breadcrumbs = [],
+    showSidebarToggle = true,
     ...rest
 }) => {
     const { sidebarToggle, toggleSidebar } = useContext(SidebarContext);
@@ -87,7 +90,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
             </Box>
 
             {/* Right side: Children and Sidebar Toggle - Positioned absolutely */}
-            {(!isLg || (children ?? []).length > 0) && (
+            {((showSidebarToggle && !isLg) || (children ?? []).length > 0) && (
                 <Box
                     sx={{
                         position: 'absolute',
@@ -111,7 +114,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
                             {item}
                         </Box>
                     ))}
-                    {!isLg && (
+                    {showSidebarToggle && !isLg && (
                         <IconButton
                             color="primary"
                             onClick={(e) => {
