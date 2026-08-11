@@ -44,7 +44,6 @@ toggles a live **audio stream** — useful for listening over the network when y
 | ------------------------------------ | ------------- | ------------------------------- |
 | Player, Jukebox, Playlists, Schedule | Yes           | Yes                             |
 | Show Status (full detail)            | Yes           | Yes                             |
-| HTTP Listener Status card            | Yes           | No                              |
 | Add / edit song files                | Yes           | Yes (upload / choose on player) |
 | Bulk import songs                    | Yes           | Yes (from files in show folder) |
 | Choose / set media folder            | Yes           | Yes (type player path)          |
@@ -93,12 +92,6 @@ The card refreshes every few seconds and shows three fields:
 If the preferred port is busy, EZPlayer tries the next ports in sequence (up to
 10 attempts). When that happens, **Source** may note a fallback (for example
 `Default (fallback from 3000)`) and **Port** shows the port that actually bound.
-
-:::info
-The HTTP Listener Status card is available in the **Electron desktop app** only.
-The LAN UI itself does not display this card — you use it on the show PC to
-learn which URL to give guests and integrators.
-:::
 
 ### Configuring the LAN UI port
 

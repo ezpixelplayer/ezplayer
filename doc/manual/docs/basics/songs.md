@@ -93,7 +93,11 @@ lead/trail time, volume adjustment, and tags. Title and artist remain required.
 Unrelated edits do not interrupt a song that is currently playing.
 
 **Lead time** and **trail time** (seconds, −5.0 to 5.0) trim or extend the
-scheduled window around a sequence. **Volume adjustment** (−100 to +100)
+sequence.  You might want to do this if there is too much, or not enough, "dead time"
+at the start or end of the sequences.  Negative values remove sequence material, positive
+values add "dead time".
+
+**Volume adjustment** (−100 to +100)
 balances songs mastered at different levels; show-wide loudness is under
 [Volume](../advanced/volume.md).
 
@@ -107,13 +111,13 @@ hidden, but files on disk are not removed. Add the sequence again if you need it
 back.
 
 Only **playable** songs appear in the Songs list, jukebox, playlist editor, and
-scheduler — not deleted, not cloud-disabled, and with a real `.fseq` path. See
-[Jukebox](./jukebox.md#which-songs-appear) for the same filter.
+scheduler.  Sequences that are disabled in the cloud, or are missing a real `.fseq`
+path, are not displayed.
 
 ## Cloud-delivered songs
 
 When EZPlayer is registered with **EZRGB Cloud**, sequences can arrive from the
-cloud into your show folder. Placeholder records may exist while a sequence is
+cloud into your show folder. Placeholder song records may exist while a sequence is
 still rendering; the song appears in the Songs list only when the FSEQ is ready.
 
 See [Getting Started (Cloud)](./getting-started-cloud.md) and

@@ -10,8 +10,8 @@ your song library and the [schedule](./simple-schedules.md): you group sequences
 into sets like "Christmas Favorites" or "Weeknight Show," then attach those sets
 to date and time windows.
 
-The same idea covers other uses — intro/outro lists, or a set of songs viewers
-may select — the concept is the same.
+The same playlist concept covers other uses: intro/outro lists, or a set of songs viewers
+may select.
 
 ![Playlists](/img/playlists.png)
 
