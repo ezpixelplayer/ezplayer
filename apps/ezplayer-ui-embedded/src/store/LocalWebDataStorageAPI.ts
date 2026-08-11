@@ -7,6 +7,7 @@ import type {
     ControllerCommand,
     EZPlayerCommand,
     PlaybackSettings,
+    BatchImportSummary,
     PlayerWebSocketMessage,
 } from '@ezplayer/ezplayer-core';
 
@@ -230,6 +231,71 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         });
         if (!response.ok) throw new Error(`Audio metadata failed: ${response.statusText}`);
         return await response.json();
+    }
+
+    async batchImportShowSequences(fseqNames: string[], companionAudioNames?: string[], allowExistingAudio?: boolean) {
+        const response = await fetch(`${this.apiUrl}ezp/sequences/batch-import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fseqNames,
+                companionAudioNames: companionAudioNames ?? [],
+                allowExistingAudio: allowExistingAudio === true,
+            }),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error ?? `Batch import failed: ${response.statusText}`);
+        }
+        return (await response.json()) as BatchImportSummary;
+    }
+
+    /** Upload companions + fseqs and import in one request (avoids N sequence file uploads).
+     *  Pass `importFseqNames` with an audio-only upload to retry existing FSEQs
+     *  after choosing a media folder in the browser. */
+    async batchUploadImportShowSequences(
+        files: Array<{ name: string; data: Blob }>,
+        companionAudioNames?: string[],
+        importFseqNames?: string[],
+    ): Promise<BatchImportSummary> {
+        const byName = new Map<string, Blob>();
+        for (const f of files) {
+            if (f?.name && f.data) byName.set(f.name, f.data);
+        }
+        const unique = [...byName.entries()].map(([name, data]) => ({ name, data }));
+        if (!unique.length) {
+            throw new Error('No files to upload');
+        }
+        const manifest: {
+            files: Array<{ name: string; size: number }>;
+            companionAudioNames: string[];
+            importFseqNames?: string[];
+        } = {
+            files: unique.map((f) => ({ name: f.name, size: f.data.size })),
+            companionAudioNames: companionAudioNames ?? [],
+        };
+        if (importFseqNames?.length) {
+            manifest.importFseqNames = importFseqNames;
+        }
+        // Body framing: uint32BE manifest length, manifest JSON, then file bytes
+        // (see batch-upload-import in file-api.ts).
+        const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+        const lengthPrefix = new Uint8Array(4);
+        new DataView(lengthPrefix.buffer).setUint32(0, manifestBytes.byteLength, false);
+        const response = await fetch(`${this.apiUrl}ezp/sequences/batch-upload-import`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/octet-stream',
+            },
+            body: new Blob([lengthPrefix, manifestBytes, ...unique.map((f) => f.data)]),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(
+                (err as { error?: string }).error ?? `Batch upload-import failed: ${response.statusText}`,
+            );
+        }
+        return (await response.json()) as BatchImportSummary;
     }
 
     async listShowFiles(dir: string): Promise<string[]> {

@@ -31,6 +31,7 @@ export { useFilesSection } from './components/files/useFilesSection';
 export { LegalFooter } from './components/playback-settings/LegalFooter';
 export { TermsDialog } from './components/playback-settings/TermsDialog';
 export { ShowFolderSettings } from './components/playback-settings/sections/ShowFolderSettings';
+export { MediaFolderSettings } from './components/playback-settings/sections/MediaFolderSettings';
 export { UISettings } from './components/playback-settings/sections/UISettings';
 export { ViewerSettings } from './components/playback-settings/sections/ViewerSettings';
 export { JukeboxSettings } from './components/playback-settings/sections/JukeboxSettings';
@@ -90,6 +91,8 @@ export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {
     autodetectShowSequence,
+    batchImportShowSequences,
+    batchUploadImportShowSequences,
     extractShowAudioMetadata,
     canUploadShowFiles,
     listShowFiles,

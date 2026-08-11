@@ -6,6 +6,7 @@ import { isElectron, ToastMsgs } from '@ezplayer/shared-ui-components';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import type { RootState } from '../../../store/Store';
+import { MediaFolderSettings } from './MediaFolderSettings';
 
 declare global {
     interface Window {
@@ -81,7 +82,11 @@ export const ShowFolderSettings: React.FC = () => {
                 Select a directory containing your show files.
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Button variant="contained" onClick={handleSelectDirectory} sx={{ whiteSpace: 'nowrap' }}>
+                <Button
+                    variant="contained"
+                    onClick={handleSelectDirectory}
+                    sx={{ whiteSpace: 'nowrap', minWidth: 180, px: 2, py: 1 }}
+                >
                     Choose Show Folder
                 </Button>
                 <TextField
@@ -106,6 +111,11 @@ export const ShowFolderSettings: React.FC = () => {
             >
                 Download Cloud Show
             </Button>
+
+            <Typography variant="subtitle2" sx={{ mt: 4, mb: 0.5 }}>
+                Media Folder (optional)
+            </Typography>
+            <MediaFolderSettings />
         </Box>
     );
 };

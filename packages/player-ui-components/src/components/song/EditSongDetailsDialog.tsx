@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
@@ -121,6 +121,37 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             setNewFiles({});
         }
     }, [open, selectedSongId, sequenceData]);
+
+    const saveValidationMessages = useMemo(() => {
+        const messages: string[] = [];
+        if (formData.title.trim() === '') messages.push('Title is required.');
+        if (formData.artist.trim() === '') messages.push('Artist is required.');
+        if (
+            formData.lead_time === '' ||
+            isNaN(Number(formData.lead_time)) ||
+            Number(formData.lead_time) < -5 ||
+            Number(formData.lead_time) > 5
+        ) {
+            messages.push('Please enter a valid lead time between -5.0 and 5.0.');
+        }
+        if (
+            formData.trail_time === '' ||
+            isNaN(Number(formData.trail_time)) ||
+            Number(formData.trail_time) < -5 ||
+            Number(formData.trail_time) > 5
+        ) {
+            messages.push('Please enter a valid trail time between -5.0 and 5.0.');
+        }
+        if (
+            formData.volume_adj === '' ||
+            isNaN(Number(formData.volume_adj)) ||
+            Number(formData.volume_adj) < -100 ||
+            Number(formData.volume_adj) > 100
+        ) {
+            messages.push('Please enter a valid volume adjustment between -100 and 100.');
+        }
+        return messages;
+    }, [formData]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleChange = (e: any) => {
@@ -404,7 +435,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         fullWidth
                                         margin="normal"
                                         error={errors.title}
-                                        helperText={errors.title ? 'Song title is required.' : ''}
+                                        helperText={errors.title ? 'Song title is required.' : 'Required'}
                                         required
                                     />
                                 </Grid>
@@ -417,7 +448,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         fullWidth
                                         margin="normal"
                                         error={errors.artist}
-                                        helperText={errors.artist ? 'Artist name is required.' : ''}
+                                        helperText={errors.artist ? 'Artist name is required.' : 'Required'}
                                         required
                                     />
                                 </Grid>
@@ -468,7 +499,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                 </Typography>
                             </Box>
 
-                            {/* MP3 File */}
+                            {/* MP3 File (optional) */}
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                 {isElectron() ? (
                                     <FileSelectButton
@@ -627,6 +658,21 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </form>
                     </Grid>
                 </Grid>
+
+                {saveValidationMessages.length > 0 && (
+                    <Box sx={{ mt: 2 }} role="alert">
+                        {saveValidationMessages.map((message) => (
+                            <Typography key={message} variant="body2" color="error">
+                                {message}
+                            </Typography>
+                        ))}
+                        {saveValidationMessages.length > 1 && (
+                            <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
+                                Please complete all required fields before saving.
+                            </Typography>
+                        )}
+                    </Box>
+                )}
 
                 {/* Action Buttons */}
                 <Box
