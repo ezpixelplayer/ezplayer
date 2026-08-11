@@ -331,7 +331,13 @@ export async function autoDetectSongFilesFromFseq(
 
     // --- Additive fallback: optional Media Folder ---
     if (!out.audioFile && mediaFolder) {
-        out.audioFile =
+        // Honor the header-named file directly (any extension), matching the
+        // colocated search above.
+        if (headerAudioName) {
+            const direct = path.join(mediaFolder, headerAudioName);
+            if (await fileExists(direct)) out.audioFile = direct;
+        }
+        out.audioFile ??=
             (await findAudioInDirectory(mediaFolder, fallbackBaseNames, exactOnly)) ??
             (await findAudioRecursive(mediaFolder, fallbackBaseNames, exactOnly));
         if (out.audioFile) {
@@ -345,11 +351,19 @@ export async function autoDetectSongFilesFromFseq(
 
     if (out.audioFile) {
         const audioBase = path.parse(out.audioFile).name;
+        const audioDir = path.dirname(out.audioFile);
         out.imageFile =
             (await findWithBasename(fseqDir, audioBase, IMAGE_EXTENSIONS)) ??
             (await findWithPrefix(fseqDir, audioBase, IMAGE_EXTENSIONS)) ??
             (await findWithBasename(fseqDir, fseqBase, IMAGE_EXTENSIONS)) ??
             (await findWithPrefix(fseqDir, fseqBase, IMAGE_EXTENSIONS));
+        // Artwork next to the audio (e.g. in the media folder), when the audio
+        // did not come from the FSEQ's own directory.
+        if (!out.imageFile && audioDir !== fseqDir) {
+            out.imageFile =
+                (await findWithBasename(audioDir, audioBase, IMAGE_EXTENSIONS)) ??
+                (await findWithPrefix(audioDir, audioBase, IMAGE_EXTENSIONS));
+        }
 
         const metadata = await extractAudioTagMetadata(out.audioFile);
         out.detectedTitle = metadata.title;

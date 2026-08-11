@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type {
     BatchImportFailure,
+    BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
     SequenceRecord,
@@ -16,6 +17,8 @@ import {
 export interface BatchImportOptions extends AutoDetectOptions {
     /** Persist one or more SequenceRecords (typically putSequencesWithDurations). */
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
+    /** Current catalog. Basename matches are skipped. */
+    existingSequences?: SequenceRecord[];
 }
 
 /**
@@ -134,12 +137,28 @@ export async function batchImportSequences(
 ): Promise<BatchImportSummary> {
     const successes: BatchImportSuccess[] = [];
     const failures: BatchImportFailure[] = [];
+    const skipped: BatchImportSkipped[] = [];
     const unique = [...new Set(fseqPaths.filter(Boolean))];
+
+    // Existing song entries by fseq basename, so re-importing a folder does
+    // not create duplicate songs.
+    const existingByBasename = new Map<string, SequenceRecord>();
+    for (const rec of options.existingSequences ?? []) {
+        if (rec.deleted || !rec.files?.fseq) continue;
+        existingByBasename.set(path.basename(rec.files.fseq).toLowerCase(), rec);
+    }
 
     console.log(`[BatchImport] Starting import of ${unique.length} sequence(s)`);
 
     const recordsToSave: SequenceRecord[] = [];
     for (const fseqPath of unique) {
+        const fseqName = path.basename(fseqPath);
+        const existing = existingByBasename.get(fseqName.toLowerCase());
+        if (existing) {
+            skipped.push({ fseqPath, fseqName, existingTitle: existing.work?.title });
+            console.log(`[BatchImport] Skipped "${fseqName}" (already imported)`);
+            continue;
+        }
         const result = await importOneFseq(fseqPath, options);
         if (result.ok) {
             successes.push(result.success);
@@ -147,7 +166,7 @@ export async function batchImportSequences(
             console.log(`[BatchImport] Imported "${result.success.fseqName}"`);
         } else {
             failures.push(result.failure);
-            console.warn(`[BatchImport] Skipped "${result.failure.fseqName}": ${result.failure.reason}`);
+            console.warn(`[BatchImport] Failed "${result.failure.fseqName}": ${result.failure.reason}`);
         }
     }
 
@@ -161,8 +180,11 @@ export async function batchImportSequences(
         failed: failures.length,
         successes,
         failures,
+        skipped,
     };
-    console.log(`[BatchImport] Done: imported=${summary.imported}, failed=${summary.failed}`);
+    console.log(
+        `[BatchImport] Done: imported=${summary.imported}, failed=${summary.failed}, skipped=${skipped.length}`,
+    );
     return summary;
 }
 

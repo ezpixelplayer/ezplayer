@@ -835,6 +835,7 @@ export async function batchImportSequencesCore(
             // exact-match still applies.
             colocatedAudioAllowlist: allowExistingAudio === true ? undefined : allowlist,
             exactAudioMatch: true,
+            existingSequences: deps.getSequences(),
             putSequences: async (recs) => (await deps.putSequences(recs)) as SequenceRecord[],
         });
         return { status: 200, body: summary };

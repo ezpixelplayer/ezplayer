@@ -846,6 +846,7 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequences(fseqPaths ?? [], {
             mediaFolder,
+            existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
     });
@@ -853,6 +854,7 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequencesFromFolder(folderPath, {
             mediaFolder,
+            existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
     });
