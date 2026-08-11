@@ -15,8 +15,8 @@ or ambient effects.
 
 ## Creating a Background Schedule
 
-In the [schedule editor](../../basics/simple-schedules.md), use the **Main /
-Background** toggle at the top to switch to a background entry. A background entry
+In the [schedule editor](../../basics/simple-schedules.md), use the **FG / BG**
+(Main / Background) toggle at the top to switch to a background entry. A background entry
 has the same options as a main one — time window, intro/outro, loop or shuffle,
 priority, and [end-time behavior](./schedule-options.md).
 

@@ -11,7 +11,8 @@ exactly how it behaves. As there are many settings, it is recommended to use the
 [Schedule Preview](./schedule-preview.md) feature to make sure they will behave as
 expected.
 
-![Schedule options](/img/schedule-timings.png)
+![Schedule options](/img/schedule-timings-1.png)
+![Advanced Options](/img/schedule-timings-2.png)
 
 The schedule plays:
 
@@ -26,6 +27,11 @@ The schedule plays:
 
 You can pick **one** of these, not both — turning on one turns off the other.
 
+If you set a **To** time longer than the main playlist (plus intro/outro), **Loop**
+is enabled automatically so the window stays filled. A short warning appears when
+that happens. If you clear both Loop and Shuffle while the playlist is still too
+short, the editor warns that the playlist will not fill the whole schedule.
+
 ## End Time Behavior
 
 When doing a loop/shuffle, or if the time slot is too short to accommodate the full
@@ -37,14 +43,19 @@ there is enough time for another song, taking into account any outro playlist.
 
 **End Time Behavior** decides what happens when there is not time for exactly one more song:
 
-| Option                                     | What it does                                                                                                                                    |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **End Between Items, Before End Time**     | Do not take another song, always stop on or before the end time                                                                                 |
-| **End Between Items, After End Time**      | Take another song, always stop on or after the end time                                                                                         |
-| **End Between Items, Closest To End Time** | Play another song if the amount of time left is at least half its length, schedule may therefore end "half a song" before or after the end time |
-| **Hard Cutoff At End Time**                | Stop exactly at the end time, even mid-song (abruptly)                                                                                          |
+| Option                                                      | What it does                                                                                                           |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Finish before end time, between songs**                   | Do not take another song; always stop on or before the end time. Use when the show must be over by a promised time.    |
+| **Finish after end time, between songs**                    | Take another song; always stop on or after the end time. Use when the show should still be playing at a promised time. |
+| **Finish near end time, between songs**                     | Play another song if at least half of it fits; the schedule may end roughly half a song before or after the end time.  |
+| **Finish exactly at end time, even if a song gets cut off** | Stop exactly at the end time, even mid-song (abruptly).                                                                |
 
-## Priority and overlaps
+## Advanced Options
+
+Priority and interrupt settings live under the collapsible **Advanced Options**
+section in the schedule editor.
+
+### Priority and overlaps
 
 When two schedules overlap in time, **Priority** (Low, Normal, High) decides which one
 plays. If a higher-priority window takes over, the lower-priority one pauses
