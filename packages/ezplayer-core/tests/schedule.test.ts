@@ -177,6 +177,33 @@ const rec1: SequenceRecord = {
     files: { fseq: 'f1234' },
 };
 
+// Opposite sign cases from rec1: trim the start, pad the end
+const recTrimPad: SequenceRecord = {
+    id: '2345',
+    instanceId: 'bcde',
+    work: {
+        title: 'Trimmed',
+        length: 200,
+        artist: '',
+    },
+    settings: {
+        lead_time: -0.5,
+        trail_time: 0.3,
+    },
+    files: { fseq: 'f2345' },
+};
+
+const recNoSettings: SequenceRecord = {
+    id: '3456',
+    instanceId: 'cdef',
+    work: {
+        title: 'Plain',
+        length: 200,
+        artist: '',
+    },
+    files: { fseq: 'f3456' },
+};
+
 const pl1: PlaylistRecord = {
     id: 'pl1',
     title: 'PL1',
@@ -490,6 +517,28 @@ describe('calcschedule', () => {
             startTrimOffSeqMS: 0,
             endTrimOffSeqMS: 200,
             totalSeqTimeMS: 199900,
+        });
+    });
+
+    it('should trim start and pad end', () => {
+        expect(getTotalSeqTimeMS(recTrimPad)).toBe(199800);
+        expect(getSeqTimesMS(recTrimPad)).toStrictEqual({
+            startLeadToSeqMS: 0,
+            endTrailFromSeqMS: 300,
+            startTrimOffSeqMS: 500,
+            endTrimOffSeqMS: 0,
+            totalSeqTimeMS: 199800,
+        });
+    });
+
+    it('should default to no lead/trail without settings', () => {
+        expect(getTotalSeqTimeMS(recNoSettings)).toBe(200000);
+        expect(getSeqTimesMS(recNoSettings)).toStrictEqual({
+            startLeadToSeqMS: 0,
+            endTrailFromSeqMS: 0,
+            startTrimOffSeqMS: 0,
+            endTrimOffSeqMS: 0,
+            totalSeqTimeMS: 200000,
         });
     });
 

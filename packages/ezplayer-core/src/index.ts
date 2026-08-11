@@ -151,6 +151,7 @@ export {
     type UpcomingPlaybackActions,
     getPlaylistDurationMS,
     getScheduleTimes,
+    getSeqTimesMS,
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,

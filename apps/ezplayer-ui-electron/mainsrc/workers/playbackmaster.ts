@@ -41,6 +41,7 @@ import {
     getActiveViewerControlSchedule,
     getActiveVolumeSchedule,
     getScheduleTimes,
+    getSeqTimesMS,
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
@@ -902,6 +903,15 @@ type ResolvedPlay = {
     offsetMS: number;
     durationMS?: number;
 };
+
+/** Slot offset -> time into the material, applying lead/trail settings.
+ *  Negative while a positive lead pads; shifted forward when a negative
+ *  lead trims the start. May run past the material's end (trail pad). */
+function contentTimeMS(seq: SequenceRecord | undefined, slotOffsetMS: number): number {
+    if (!seq?.settings) return slotOffsetMS;
+    const t = getSeqTimesMS(seq);
+    return slotOffsetMS - t.startLeadToSeqMS + t.startTrimOffSeqMS;
+}
 
 /** Prefetch confidence tiers (lower = higher priority). */
 const PREFETCH_TIER = { HAPPY: 0, BACKGROUND: 1, SPECULATIVE: 2 } as const;
@@ -1871,7 +1881,7 @@ async function processQueue() {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC), onlyIfEnabled: true });
                 multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
@@ -2118,7 +2128,7 @@ async function processQueue() {
                         fseqCache!.prefetchSeqTimes({
                             fseqfile: fsf,
                             needByTime: play.atTime,
-                            startTime: play.offsetMS,
+                            startTime: Math.max(0, contentTimeMS(play.seq, play.offsetMS)),
                             durationms: ourDur,
                             tier,
                         });
@@ -2206,6 +2216,15 @@ async function processQueue() {
                     curAudioSyncNum++;
                 }
 
+                const audioContentMS = contentTimeMS(audioAction.seq, Math.floor(audioAction.offsetMS ?? 0));
+                if (audioContentMS < 0) {
+                    // Positive lead pad: silence until the material starts
+                    const padMs = Math.min(-audioContentMS, playbackParams.sendAudioChunkMs);
+                    sendSilence(startTime, padMs);
+                    audioPlayerRunTime += padMs;
+                    continue;
+                }
+
                 let audioref: ReturnType<MP3PrefetchCache['getMp3']> | undefined = undefined;
                 try {
                     const curAudioSeq = audioAction.seq;
@@ -2230,10 +2249,8 @@ async function processQueue() {
                         const channels = audio?.channelData?.length ?? 2;
                         const sampleRate = audio?.sampleRate ?? 48000;
                         if (audio) {
-                            // Send audio
-                            const sampleOffset = Math.floor(
-                                (Math.floor(audioAction.offsetMS ?? 0) * sampleRate) / 1000,
-                            );
+                            // Send audio (past-end offsets read as zeros — the trail pad)
+                            const sampleOffset = Math.floor((audioContentMS * sampleRate) / 1000);
                             const msToSend = playbackParams.sendAudioChunkMs; // hop
                             const hopFrames = Math.round((msToSend * audio.sampleRate) / 1000);
                             const overlapFrames = Math.round(
@@ -2326,7 +2343,10 @@ async function processQueue() {
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
                 multiSync.onIdle();
-                await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                await sender.sendBlackFrame({
+                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                    onlyIfEnabled: true,
+                });
                 targetFrameRTC += playbackParams.idleSleepInterval;
 
                 await sleepUntil(targetFrameRTC - 50);
@@ -2337,7 +2357,10 @@ async function processQueue() {
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
                 multiSync.onIdle();
-                await sender.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC) });
+                await sender.sendBlackFrame({
+                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                    onlyIfEnabled: true,
+                });
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
@@ -2353,7 +2376,7 @@ async function processQueue() {
                 continue;
             }
 
-            const frameTimeOffset = foregroundAction.offsetMS ?? 0;
+            const frameTimeOffset = contentTimeMS(curForegroundSeq, foregroundAction.offsetMS ?? 0);
             const header = fseqCache.getHeaderInfo({ fseqfile: fsf });
             if (!header?.ref) {
                 emitError(`Sequence header for ${fsf} was not ready.`);
@@ -2372,6 +2395,7 @@ async function processQueue() {
             );
             const backgroundAction = upcomingBackground.curPLActions?.actions[0];
             let bframeRef: FrameReference | undefined = undefined;
+            let bframeNum = 0;
             if (backgroundAction?.seqId) {
                 const curBackgroundSeq = backgroundAction.seq;
                 let bsf = curBackgroundSeq?.files?.fseq;
@@ -2379,19 +2403,50 @@ async function processQueue() {
                 if (!bsf) {
                     emitError(`Error: No FSEQ in scheduled background item`);
                 } else {
-                    const bframeTimeOffset = backgroundAction.offsetMS ?? 0;
+                    const bframeTimeOffset = contentTimeMS(curBackgroundSeq, backgroundAction.offsetMS ?? 0);
                     const header = fseqCache.getHeaderInfo({ fseqfile: bsf });
                     if (!header?.ref) {
                         emitError(`Sequence header for ${bsf} was not ready.`);
                         ++playbackStats.missedHeadersCumulative;
-                    } else {
+                    } else if (
+                        bframeTimeOffset >= 0 &&
+                        bframeTimeOffset < header.ref.header.frames * header.ref.header.msperframe
+                    ) {
                         const bres = fseqCache.getFrame(bsf, { time: bframeTimeOffset });
                         bframeRef = bres?.ref;
+                        bframeNum = Math.floor(bframeTimeOffset / header.ref.header.msperframe);
                         if (!bres?.ref?.frame) {
                             ++playbackStats.missedBackgroundFramesCumulative;
                         }
                     }
+                    // else: background is in its own lead/trail pad — contributes nothing
                 }
+            }
+
+            if (targetFrameNum < 0 || targetFrameNum >= header.ref.header.frames) {
+                // Lead/trail pad: the background still shows
+                if (bframeRef?.frame) {
+                    targetFrameRTC += await sender.sendNextFrameAt({
+                        frame: bframeRef,
+                        bframe: undefined,
+                        targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                        targetFrameNum: bframeNum,
+                        playbackStats,
+                        playbackStatsAgg,
+                        frameInterval,
+                        skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
+                        dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
+                    });
+                } else {
+                    await sender.sendBlackFrame({
+                        targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                        playbackStats,
+                        playbackStatsAgg,
+                    });
+                    targetFrameRTC += frameInterval;
+                    await sleepUntil(targetFrameRTC - 50);
+                }
+                continue;
             }
 
             // At this point, all housekeeping is done.
