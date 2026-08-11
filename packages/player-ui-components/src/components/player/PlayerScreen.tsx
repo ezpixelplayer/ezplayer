@@ -9,6 +9,7 @@ import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
+import { PlayerSystemTime } from './PlayerSystemTime';
 import { getControllerStats } from '../status/ControllerHelpers';
 
 interface PlayerScreenProps {
@@ -18,6 +19,8 @@ interface PlayerScreenProps {
     allowVolumeControl?: boolean;
     /** Allow End/Abort playback controls. False in kiosk so a public display can't stop the show. */
     allowStopControls?: boolean;
+    /** Optional API origin for player clock on LAN / cloud-proxy clients. */
+    apiBaseUrl?: string;
 }
 
 const StatusCards = ({
@@ -288,7 +291,7 @@ const TimelineView = () => {
     );
 };
 
-export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopControls }: PlayerScreenProps) => {
+export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopControls, apiBaseUrl }: PlayerScreenProps) => {
     return (
         <Box
             sx={{
@@ -300,7 +303,10 @@ export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopC
         >
             {/* Header */}
             <Box sx={{ padding: 2, flexShrink: 0 }}>
-                <PageHeader heading={title} children={statusArea} />
+                <PageHeader
+                    heading={title}
+                    children={[<PlayerSystemTime key="player-system-time" apiBaseUrl={apiBaseUrl} />, ...statusArea]}
+                />
             </Box>
 
             {/* Now Playing Card and Controller Status */}
