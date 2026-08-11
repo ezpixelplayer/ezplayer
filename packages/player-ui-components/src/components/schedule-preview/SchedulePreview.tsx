@@ -2,7 +2,6 @@ import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { CircularProgress, Alert, Stack, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import { useSelector } from 'react-redux';
-import { PageHeader } from '@ezplayer/shared-ui-components';
 import { RootState } from '../../store/Store';
 import SchedulePreviewSettings from './SchedulePreviewSettings';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
@@ -16,9 +15,7 @@ import GraphForSchedule from './GraphForSchedule';
 import { priorityToNumber, type ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 
 interface SchedulePreviewProps {
-    title: string;
     className?: string;
-    statusArea: React.ReactNode[];
 }
 
 const combineDateAndTime = (date: Date, time: string) => {
@@ -74,7 +71,7 @@ function splitAndSortSchedulesByType(filteredSchedules: ScheduledPlaylist[]) {
     };
 }
 
-export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusArea, className = '' }) => {
+export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ className = '' }) => {
     const [settings, setSettings] = useState<SettingsType>(DEFAULT_SCHEDULE_PREVIEW_SETTINGS);
     const [previewData, setPreviewData] = useState<ParallelSchedulePreviewData | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -234,11 +231,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                     overflow: 'hidden',
                 }}
             >
-                {/* Header */}
-                <Box sx={{ padding: 2, flexShrink: 0 }}>
-                    <PageHeader heading={title} children={statusArea} showSidebarToggle={false} />
-                </Box>
-
                 {/* Settings Panel */}
                 <Box sx={{ padding: 2, flexShrink: 0 }}>
                     <SchedulePreviewSettings
