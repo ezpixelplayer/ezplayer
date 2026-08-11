@@ -9,7 +9,6 @@ import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
-import { PlayerSystemTime } from './PlayerSystemTime';
 import { getControllerStats } from '../status/ControllerHelpers';
 
 interface PlayerScreenProps {
@@ -26,9 +25,11 @@ interface PlayerScreenProps {
 const StatusCards = ({
     allowVolumeControl,
     allowStopControls,
+    apiBaseUrl,
 }: {
     allowVolumeControl?: boolean;
     allowStopControls?: boolean;
+    apiBaseUrl?: string;
 }) => {
     const runtime = useSelector((state: RootState) => state.runtime);
 
@@ -43,6 +44,7 @@ const StatusCards = ({
                             compact={true}
                             allowVolumeControl={allowVolumeControl}
                             allowStopControls={allowStopControls}
+                            apiBaseUrl={apiBaseUrl}
                         />
                     ) : runtime.combined?.show ? (
                         <Card sx={{ height: '100%' }}>
@@ -303,14 +305,15 @@ export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopC
         >
             {/* Header */}
             <Box sx={{ padding: 2, flexShrink: 0 }}>
-                <PageHeader
-                    heading={title}
-                    children={[<PlayerSystemTime key="player-system-time" apiBaseUrl={apiBaseUrl} />, ...statusArea]}
-                />
+                <PageHeader heading={title} children={statusArea} />
             </Box>
 
             {/* Now Playing Card and Controller Status */}
-            <StatusCards allowVolumeControl={allowVolumeControl} allowStopControls={allowStopControls} />
+            <StatusCards
+                allowVolumeControl={allowVolumeControl}
+                allowStopControls={allowStopControls}
+                apiBaseUrl={apiBaseUrl}
+            />
 
             {/* Timeline View */}
             <TimelineView />

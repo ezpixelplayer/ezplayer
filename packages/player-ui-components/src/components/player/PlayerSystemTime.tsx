@@ -20,13 +20,10 @@ export const PlayerSystemTime = ({ className, apiBaseUrl }: PlayerSystemTimeProp
     } = usePlayerSystemTime(apiBaseUrl);
 
     return (
-        <Box className={className} sx={{ textAlign: 'right', minWidth: 0 }}>
-            <Typography variant="body2" color="text.primary" noWrap sx={{ fontVariantNumeric: 'tabular-nums' }} title={playerTimeZone}>
+        <Box className={className} sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ fontVariantNumeric: 'tabular-nums' }} title={playerTimeZone}>
                 {showLocalTime ? 'Player: ' : ''}
-                {playerTime}{' '}
-                <Typography component="span" variant="body2" color="text.secondary">
-                    {playerTimeZoneLabel}
-                </Typography>
+                {playerTime} {playerTimeZoneLabel}
             </Typography>
             {showLocalTime && localTime && localTimeZoneLabel && (
                 <Typography

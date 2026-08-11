@@ -20,6 +20,7 @@ import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { AppDispatch } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
 import { AudioSettings } from '../playback-settings/sections/AudioSettings';
+import { PlayerSystemTime } from './PlayerSystemTime';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
@@ -31,6 +32,8 @@ interface NowPlayingCardProps {
     allowVolumeControl?: boolean;
     /** When false (kiosk), the playback controls hide End/Abort. Defaults to true. */
     allowStopControls?: boolean;
+    /** Optional API origin for player clock on LAN / cloud-proxy clients. */
+    apiBaseUrl?: string;
 }
 
 const formatTime = (timestamp?: number | string) => {
@@ -51,6 +54,7 @@ export const NowPlayingCard = ({
     compact = false,
     allowVolumeControl = false,
     allowStopControls = true,
+    apiBaseUrl,
 }: NowPlayingCardProps) => {
     // Hooks must precede the ptype early-return to keep call order stable.
     const dispatch = useDispatch<AppDispatch>();
@@ -86,9 +90,7 @@ export const NowPlayingCard = ({
                         color={isPlaying ? 'success' : isPaused ? 'warning' : 'default'}
                         sx={{ fontWeight: 'bold' }}
                     />
-                    <Typography variant="caption" color="text.secondary">
-                        Last checkin: {formatTime(player.reported_time)}
-                    </Typography>
+                    <PlayerSystemTime apiBaseUrl={apiBaseUrl} />
                 </Box>
 
                 {/* The level is automated toward the default/scheduled target, so it's shown
