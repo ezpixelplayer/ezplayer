@@ -33,12 +33,17 @@ import {
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { addDays, addMonths, addWeeks, eachDayOfInterval, format, subDays, subMonths, subWeeks } from 'date-fns';
+import { addDays, addMonths, addWeeks, format, subDays, subMonths, subWeeks } from 'date-fns';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { postScheduledPlaylists } from '../../store/slices/ScheduleStore';
 import { formatDateStandard } from '../../util/dateUtils';
+import {
+    generateDailyOccurrences,
+    generateSelectedDaysOccurrences,
+    type RecurrenceOption,
+} from '../../util/scheduleRecurrence';
 import { AppDispatch, RootState } from '../../store/Store';
 import DailyView from './DailyView';
 import MonthlyView from './MonthlyView';
@@ -54,7 +59,6 @@ interface PlaylistSchedulerProps {
     onOpenPreview?: () => void;
 }
 
-type RecurrenceOption = 'once' | 'daily' | 'selectedDays';
 type EditMode = 'single' | 'all' | null;
 type PriorityOption = 'normal' | 'high' | 'low';
 type EndPolicyOption = 'seqboundearly' | 'seqboundlate' | 'seqboundnearest' | 'hardcut';
@@ -284,102 +288,6 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             endPolicy: 'seqboundearly',
             keepToScheduleWhenPreempted: false,
         });
-    };
-
-    // Update generateDailyOccurrences to ensure proper date handling
-    const generateDailyOccurrences = (
-        startDate: Date,
-        endDate: Date | null,
-        baseSchedule: Partial<ScheduledPlaylist>,
-    ): ScheduledPlaylist[] => {
-        if (!endDate) {
-            return [
-                {
-                    ...baseSchedule,
-                    date: convertDateToMilliseconds(startDate),
-                    scheduleType: baseSchedule.scheduleType || 'main',
-                } as ScheduledPlaylist,
-            ];
-        }
-
-        // Generate all dates between start and end
-        const dates = eachDayOfInterval({
-            start: startDate,
-            end: endDate,
-        });
-
-        // Create a schedule for each date
-        return dates.map(
-            (date) =>
-                ({
-                    ...baseSchedule,
-                    id: `${baseSchedule.id}-${format(date, 'yyyy-MM-dd')}`,
-                    date: convertDateToMilliseconds(date),
-                    baseScheduleId: baseSchedule.id,
-                    recurrence: 'daily' as RecurrenceOption,
-                    scheduleType: baseSchedule.scheduleType || 'main',
-                    recurrenceRule: {
-                        frequency: 'daily',
-                        startDate: convertDateToMilliseconds(startDate),
-                        endDate: convertDateToMilliseconds(endDate),
-                    },
-                }) as ScheduledPlaylist,
-        );
-    };
-
-    // Update generateSelectedDaysOccurrences to ensure proper date handling
-    const generateSelectedDaysOccurrences = (
-        startDate: Date,
-        endDate: Date | null,
-        selectedDays: string[],
-        baseSchedule: Partial<ScheduledPlaylist>,
-    ): ScheduledPlaylist[] => {
-        if (!endDate || selectedDays.length === 0) {
-            return [
-                {
-                    ...baseSchedule,
-                    date: convertDateToMilliseconds(startDate),
-                    scheduleType: baseSchedule.scheduleType || 'main',
-                } as ScheduledPlaylist,
-            ];
-        }
-
-        const dates = eachDayOfInterval({
-            start: startDate,
-            end: endDate,
-        });
-
-        const dayMap: { [key: string]: number } = {
-            Sun: 0,
-            Mon: 1,
-            Tue: 2,
-            Wed: 3,
-            Thu: 4,
-            Fri: 5,
-            Sat: 6,
-        };
-
-        const selectedDates = dates.filter((date) =>
-            selectedDays.includes(Object.keys(dayMap).find((key) => dayMap[key] === date.getDay()) || ''),
-        );
-
-        return selectedDates.map(
-            (date) =>
-                ({
-                    ...baseSchedule,
-                    id: `${baseSchedule.id}-${format(date, 'yyyy-MM-dd')}`,
-                    date: convertDateToMilliseconds(date),
-                    baseScheduleId: baseSchedule.id,
-                    recurrence: 'selectedDays' as RecurrenceOption,
-                    scheduleType: baseSchedule.scheduleType || 'main',
-                    recurrenceRule: {
-                        frequency: 'weekly',
-                        byWeekDay: selectedDays,
-                        startDate: convertDateToMilliseconds(startDate),
-                        endDate: convertDateToMilliseconds(endDate),
-                    },
-                }) as ScheduledPlaylist,
-        );
     };
 
     // Update handleSubmit to show confirmation dialog for recurring events

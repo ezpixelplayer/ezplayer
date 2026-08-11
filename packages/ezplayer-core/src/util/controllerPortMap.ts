@@ -198,7 +198,7 @@ export function portIntentFromModelIntents(intents: ControllerModelIntent[]): Co
 function expandSummaryIntent(intent: ControllerPortIntent[]): PortMapString[] {
     const out: PortMapString[] = [];
     for (const pi of intent) {
-        pi.models.forEach((m, i) => {
+        pi.models.forEach((m) => {
             out.push({
                 model: m,
                 stringIndex: 1,
