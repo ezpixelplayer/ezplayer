@@ -15,7 +15,7 @@ import {
     Slider,
     Typography,
 } from '@mui/material';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -43,10 +43,24 @@ const FRESH_ENTRY: Partial<VolumeScheduleEntry> = {
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
+    const savedDefaultVolume = settings.volumeControl.defaultVolume;
+    const savedAudioSyncAdjust = settings.audioSyncAdjust;
 
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    // Draft slider values so dragging stays visual-only. Dispatching on every
+    // onChange tick would hit playerSettingsAutoSaveMiddleware → POST /playback-settings.
+    const [draftDefaultVolume, setDraftDefaultVolume] = useState(savedDefaultVolume);
+    const [draftAudioSyncAdjust, setDraftAudioSyncAdjust] = useState(savedAudioSyncAdjust);
+
+    useEffect(() => {
+        setDraftDefaultVolume(savedDefaultVolume);
+    }, [savedDefaultVolume]);
+
+    useEffect(() => {
+        setDraftAudioSyncAdjust(savedAudioSyncAdjust);
+    }, [savedAudioSyncAdjust]);
 
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
@@ -101,8 +115,14 @@ export const AudioSettings: React.FC = () => {
                 </Typography>
                 <Box sx={{ px: 2 }}>
                     <Slider
-                        value={settings.volumeControl.defaultVolume}
-                        onChange={(_, value) => dispatch(playbackSettingsActions.setDefaultVolume(value as number))}
+                        value={draftDefaultVolume}
+                        onChange={(_, value) => setDraftDefaultVolume(value as number)}
+                        onChangeCommitted={(_, value) => {
+                            const next = value as number;
+                            if (next !== savedDefaultVolume) {
+                                dispatch(playbackSettingsActions.setDefaultVolume(next));
+                            }
+                        }}
                         min={0}
                         max={100}
                         step={1}
@@ -123,7 +143,7 @@ export const AudioSettings: React.FC = () => {
                     />
                 </Box>
                 <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                    Default Volume: {settings.volumeControl.defaultVolume}%
+                    Default Volume: {draftDefaultVolume}%
                 </Typography>
             </Box>
 
@@ -199,8 +219,14 @@ export const AudioSettings: React.FC = () => {
             </Typography>
             <Box sx={{ px: 2 }}>
                 <Slider
-                    value={settings.audioSyncAdjust}
-                    onChange={(_, value) => dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number))}
+                    value={draftAudioSyncAdjust}
+                    onChange={(_, value) => setDraftAudioSyncAdjust(value as number)}
+                    onChangeCommitted={(_, value) => {
+                        const next = value as number;
+                        if (next !== savedAudioSyncAdjust) {
+                            dispatch(playbackSettingsActions.setAudioSyncAdjust(next));
+                        }
+                    }}
                     min={-100}
                     max={100}
                     step={1}
@@ -224,7 +250,7 @@ export const AudioSettings: React.FC = () => {
                 Adjust audio synchronization. Negative values sync earlier, positive values sync later.
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                Current value: {settings.audioSyncAdjust}ms
+                Current value: {draftAudioSyncAdjust}ms
             </Typography>
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
