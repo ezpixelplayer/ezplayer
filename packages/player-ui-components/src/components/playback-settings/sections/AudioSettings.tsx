@@ -48,6 +48,10 @@ export const AudioSettings: React.FC = () => {
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+    // Slider values while dragging. The store is only updated on commit
+    const [draftVolume, setDraftVolume] = useState<number | null>(null);
+    const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
+
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
         setAddOpen(true);
@@ -101,8 +105,12 @@ export const AudioSettings: React.FC = () => {
                 </Typography>
                 <Box sx={{ px: 2 }}>
                     <Slider
-                        value={settings.volumeControl.defaultVolume}
-                        onChange={(_, value) => dispatch(playbackSettingsActions.setDefaultVolume(value as number))}
+                        value={draftVolume ?? settings.volumeControl.defaultVolume}
+                        onChange={(_, value) => setDraftVolume(value as number)}
+                        onChangeCommitted={(_, value) => {
+                            setDraftVolume(null);
+                            dispatch(playbackSettingsActions.setDefaultVolume(value as number));
+                        }}
                         min={0}
                         max={100}
                         step={1}
@@ -123,7 +131,7 @@ export const AudioSettings: React.FC = () => {
                     />
                 </Box>
                 <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                    Default Volume: {settings.volumeControl.defaultVolume}%
+                    Default Volume: {draftVolume ?? settings.volumeControl.defaultVolume}%
                 </Typography>
             </Box>
 
@@ -199,8 +207,12 @@ export const AudioSettings: React.FC = () => {
             </Typography>
             <Box sx={{ px: 2 }}>
                 <Slider
-                    value={settings.audioSyncAdjust}
-                    onChange={(_, value) => dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number))}
+                    value={draftSyncAdjust ?? settings.audioSyncAdjust}
+                    onChange={(_, value) => setDraftSyncAdjust(value as number)}
+                    onChangeCommitted={(_, value) => {
+                        setDraftSyncAdjust(null);
+                        dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number));
+                    }}
                     min={-100}
                     max={100}
                     step={1}
@@ -224,7 +236,7 @@ export const AudioSettings: React.FC = () => {
                 Adjust audio synchronization. Negative values sync earlier, positive values sync later.
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                Current value: {settings.audioSyncAdjust}ms
+                Current value: {draftSyncAdjust ?? settings.audioSyncAdjust}ms
             </Typography>
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
