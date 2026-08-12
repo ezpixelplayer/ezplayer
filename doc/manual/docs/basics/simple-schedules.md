@@ -33,12 +33,6 @@ Click a day on the calendar (or an existing block) to open the editor. Fill in:
 
 If the window is longer than the main playlist, **Loop** may turn on automatically so the slot stays filled. You can switch to **Shuffle** instead, or turn both off (the player will warn if the playlist is too short to fill the window).
 
-Use the **FG / BG** (Main / Background) toggle at the top to switch which kind of
-schedule you are editing (see
-[Background Schedule](../advanced/complex-schedules/background-schedule.md)).
-
-![FG-BG Toggle Button](/img/fg-bg-toggle.png)
-
 **Repeat** lets one entry recur:
 
 ![Recurring schedule](/img/schedule-recurring-1.png)
@@ -51,6 +45,12 @@ schedule you are editing (see
 ![Recurring end date](/img/schedule-recurring-3.png)
 
 When you edit or delete a recurring entry, choose **This Event** (only that occurrence) or **All Events** (the whole series).
+
+Use the **FG / BG** (Main / Background) toggle at the top to switch which kind of
+schedule you are editing (see
+[Background Schedule](../advanced/complex-schedules/background-schedule.md)).
+
+![FG-BG Toggle Button](/img/fg-bg-toggle.png)
 
 ## Going further
 
