@@ -48,9 +48,7 @@ export const AudioSettings: React.FC = () => {
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-    // Slider values while dragging. Dispatching per onChange tick would fire the
-    // settings auto-save (an API POST) on every thumb movement, so the store is
-    // only updated on commit; null = not dragging, show the stored value.
+    // Slider values while dragging. The store is only updated on commit
     const [draftVolume, setDraftVolume] = useState<number | null>(null);
     const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
 
