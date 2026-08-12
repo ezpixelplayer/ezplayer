@@ -220,6 +220,12 @@ export interface EZPElectronAPI {
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => void;
     onAudioChunk: (callback: (data: AudioChunk) => void) => void;
 
+    /** Whether sign-in startup can be configured (installed app only, not dev mode). */
+    isLoginItemSupported: () => Promise<boolean>;
+    /** Whether EZPlayer is configured to launch when the Windows user signs in. */
+    getOpenAtLogin: () => Promise<boolean>;
+    setOpenAtLogin: (openAtLogin: boolean) => Promise<boolean>;
+
     // Auto-update
     checkForUpdates: () => Promise<void>;
     downloadUpdate: () => Promise<void>;

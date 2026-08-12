@@ -7,6 +7,34 @@ title: Player
 
 The **Player** tile holds playback-engine behaviors.
 
+## Start EZPlayer when I sign in
+
+_(Desktop app only — Windows)_
+
+When enabled, Windows launches EZPlayer automatically **after you sign in** to
+your Windows user account. Turn it off to remove EZPlayer from automatic startup.
+
+This follows Windows **user sign-in**, not the moment the PC finishes powering
+on. If nobody is signed in yet (for example at the lock/login screen), EZPlayer
+does not start. Locking the screen and unlocking does **not** re-trigger
+startup; only a new sign-in (or a reboot that ends with you signing in) does.
+
+The checkbox reads and writes the OS login-item setting directly — there is no
+separate EZPlayer preference that can drift out of sync. You can confirm the
+same toggle in **Windows Settings → Apps → Startup** (or Task Manager → Startup
+apps).
+
+Notes:
+
+- Available only in the **installed** EZPlayer desktop app. It does not appear
+  in the LAN browser UI, and it is not offered while running from development
+  mode (`pnpm dev`).
+- Enabling it does not change how EZPlayer behaves once it is already running —
+  schedules, playback, and other settings work the same whether or not
+  auto-start is on.
+- This is **not** Windows Auto Login (signing into Windows without a password).
+  EZPlayer only starts after an existing user session has begun.
+
 ## Background Sequence
 
 Whether a background schedule blends **over** or **under** the main sequence.
