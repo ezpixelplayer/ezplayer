@@ -64,6 +64,7 @@ export const NowPlayingCard = ({
     const isPaused = player.status === 'Paused';
     const isActive = isPlaying || isPaused;
     const hasNowPlaying = !!player.now_playing;
+    const hasBackgroundPlaying = !!player.background_now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
     const volume = player.volume?.level ?? 100;
     const muted = player.volume?.muted ?? false;
@@ -176,6 +177,36 @@ export const NowPlayingCard = ({
                         <Typography variant="body2" color="text.secondary" fontStyle="italic">
                             No track currently playing
                         </Typography>
+                    </Box>
+                )}
+
+                {/* Background Sequence Section — same layout as Now Playing */}
+                {hasBackgroundPlaying && (
+                    <Box sx={{ mb: compact ? 1 : 1.5 }}>
+                        <Typography
+                            variant={compact ? 'body2' : 'body1'}
+                            fontWeight="bold"
+                            color="primary"
+                            sx={{ mb: 0.5 }}
+                        >
+                            Background
+                        </Typography>
+                        <Typography
+                            variant={compact ? 'body2' : 'body1'}
+                            sx={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%',
+                            }}
+                        >
+                            {player.background_now_playing?.title}
+                        </Typography>
+                        {player.background_now_playing?.until && (
+                            <Typography variant="caption" color="text.secondary">
+                                Until: {formatTime(player.background_now_playing?.until)}
+                            </Typography>
+                        )}
                     </Box>
                 )}
 

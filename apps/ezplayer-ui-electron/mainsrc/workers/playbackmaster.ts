@@ -20,6 +20,7 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     PlayAction,
+    PlaybackActions,
     PlaybackLogDetail,
     PrefetchCacheStats,
     PlaybackStatistics,
@@ -258,22 +259,50 @@ const handlers: PlayWorkerRPCAPI = {
     },
 };
 
-function playingItemDesc(item?: PlayAction) {
+function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
     if (!item?.seqId) return '<Unknown>';
-    const nps = foregroundPlayerRunState.sequencesById.get(item.seqId);
+    const nps = (runState ?? foregroundPlayerRunState).sequencesById.get(item.seqId);
     return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
 }
 
 // TODO: Should this move to the run state?
-function actionToPlayingItem(interactive: boolean, pla: PlayAction) {
+function actionToPlayingItem(interactive: boolean, pla: PlayAction, runState?: PlayerRunState) {
     return {
         type: interactive ? 'Immediate' : 'Scheduled',
         item: 'Song', // TODO
-        title: playingItemDesc(pla),
+        title: playingItemDesc(pla, runState),
         sequence_id: pla.seqId,
         at: pla.atTime,
         until: pla.atTime + (pla.durationMS ?? 0),
     } as PlayingItem;
+}
+
+function groupIdsForActions(group: PlaybackActions) {
+    return group.type === 'interactive'
+        ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
+        : { schedule_id: group.scheduleId };
+}
+
+/** Current/next background item. Foreground can surface a not-yet-started action
+ *  as upcoming ("Next Show"); background has no other slot, so a live stack or a
+ *  due heap entry is reported as background_now_playing. */
+function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingItem | undefined {
+    const ps = runState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    const firstAction = (group?: PlaybackActions, requireStarted?: boolean): PlayingItem | undefined => {
+        if (!group?.actions?.length) return undefined;
+        const groupIds = groupIdsForActions(group);
+        for (const pla of group.actions) {
+            if (pla.end) continue;
+            if (requireStarted && pla.atTime > runState.currentTime) continue;
+            return { ...actionToPlayingItem(false, pla, runState), ...groupIds };
+        }
+        return undefined;
+    };
+    return (
+        firstAction(ps.curPLActions, true) ??
+        firstAction(ps.curPLActions, false) ??
+        (ps.heapSchedules ?? []).map((g) => firstAction(g, false)).find((item) => !!item)
+    );
 }
 
 function sendPlayerStateUpdate() {
@@ -283,6 +312,7 @@ function sendPlayerStateUpdate() {
         status: 'Stopped',
         reported_time: Date.now(),
         now_playing: undefined,
+        background_now_playing: undefined,
         upcoming: [],
         volume: {
             level: volume,
@@ -292,10 +322,7 @@ function sendPlayerStateUpdate() {
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
         const group = ps.curPLActions;
-        const groupIds =
-            group.type === 'interactive'
-                ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
-                : { schedule_id: group.scheduleId };
+        const groupIds = groupIdsForActions(group);
         for (const pla of group.actions) {
             if (pla.end) continue;
             // Only "now playing" if it has actually started; a not-yet-started action
@@ -308,6 +335,7 @@ function sendPlayerStateUpdate() {
             }
         }
     }
+    playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
@@ -2042,6 +2070,15 @@ async function processQueue() {
                     );
                 }
 
+                // Rebuild stamps engine time to wall clock. If the frame clock is still
+                // behind, runUntil(targetFrameRTC) is a no-op and a background-only
+                // schedule stays on the heap — never stacked, never in pStatus — until a
+                // foreground Sequence Started snap catches the clock up. Catch up now so
+                // background shows immediately after scheduling, same as foreground.
+                targetFrameRTC = Math.max(targetFrameRTC, initializeTime + 1);
+                foregroundPlayerRunState.runUntil(targetFrameRTC);
+                backgroundPlayerRunState.runUntil(targetFrameRTC);
+
                 if (errs.length) {
                     emitError(`New schedule install errors: ${errs.join('\n')}`);
                 }
@@ -2327,10 +2364,22 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - runUntil done`);
 
-            // Get the background frame
+            // Same catch-up as foreground: keep stepping until a sequence starts (or
+            // nothing is pending). Otherwise a background-only schedule never promotes
+            // heap→stack and never appears in pStatus.
             while (true) {
-                backgroundPlayerRunState.runUntil(targetFrameRTC);
-                break;
+                const plog: PlaybackLogDetail[] = [];
+                backgroundPlayerRunState.runUntil(targetFrameRTC, 1, plog);
+                let foundTime = plog.length === 0;
+                for (const l of plog) {
+                    if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
+                        targetFrameRTC = backgroundPlayerRunState.currentTime;
+                        emitInfo(`Background sequence start in ${targetFrameRTC - Date.now()}`);
+                        foundTime = true;
+                        break;
+                    }
+                }
+                if (foundTime) break;
             }
 
             const upcomingForeground = foregroundPlayerRunState?.getUpcomingItems(
