@@ -49,18 +49,10 @@ export const AudioSettings: React.FC = () => {
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-    // Draft slider values so dragging stays visual-only. Dispatching on every
-    // onChange tick would hit playerSettingsAutoSaveMiddleware → POST /playback-settings.
-    const [draftDefaultVolume, setDraftDefaultVolume] = useState(savedDefaultVolume);
-    const [draftAudioSyncAdjust, setDraftAudioSyncAdjust] = useState(savedAudioSyncAdjust);
 
-    useEffect(() => {
-        setDraftDefaultVolume(savedDefaultVolume);
-    }, [savedDefaultVolume]);
-
-    useEffect(() => {
-        setDraftAudioSyncAdjust(savedAudioSyncAdjust);
-    }, [savedAudioSyncAdjust]);
+    // Slider values while dragging. The store is only updated on commit
+    const [draftVolume, setDraftVolume] = useState<number | null>(null);
+    const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
 
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
@@ -115,13 +107,11 @@ export const AudioSettings: React.FC = () => {
                 </Typography>
                 <Box sx={{ px: 2 }}>
                     <Slider
-                        value={draftDefaultVolume}
-                        onChange={(_, value) => setDraftDefaultVolume(value as number)}
+                        value={draftVolume ?? settings.volumeControl.defaultVolume}
+                        onChange={(_, value) => setDraftVolume(value as number)}
                         onChangeCommitted={(_, value) => {
-                            const next = value as number;
-                            if (next !== savedDefaultVolume) {
-                                dispatch(playbackSettingsActions.setDefaultVolume(next));
-                            }
+                            setDraftVolume(null);
+                            dispatch(playbackSettingsActions.setDefaultVolume(value as number));
                         }}
                         min={0}
                         max={100}
@@ -143,7 +133,7 @@ export const AudioSettings: React.FC = () => {
                     />
                 </Box>
                 <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                    Default Volume: {draftDefaultVolume}%
+                    Default Volume: {draftVolume ?? settings.volumeControl.defaultVolume}%
                 </Typography>
             </Box>
 
@@ -219,13 +209,11 @@ export const AudioSettings: React.FC = () => {
             </Typography>
             <Box sx={{ px: 2 }}>
                 <Slider
-                    value={draftAudioSyncAdjust}
-                    onChange={(_, value) => setDraftAudioSyncAdjust(value as number)}
+                    value={draftSyncAdjust ?? settings.audioSyncAdjust}
+                    onChange={(_, value) => setDraftSyncAdjust(value as number)}
                     onChangeCommitted={(_, value) => {
-                        const next = value as number;
-                        if (next !== savedAudioSyncAdjust) {
-                            dispatch(playbackSettingsActions.setAudioSyncAdjust(next));
-                        }
+                        setDraftSyncAdjust(null);
+                        dispatch(playbackSettingsActions.setAudioSyncAdjust(value as number));
                     }}
                     min={-100}
                     max={100}
@@ -250,7 +238,7 @@ export const AudioSettings: React.FC = () => {
                 Adjust audio synchronization. Negative values sync earlier, positive values sync later.
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                Current value: {draftAudioSyncAdjust}ms
+                Current value: {draftSyncAdjust ?? settings.audioSyncAdjust}ms
             </Typography>
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
