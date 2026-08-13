@@ -11,14 +11,18 @@ the same time, layered together with the main show. Use it for always-on
 elements such as informational loops (tune-to, parking, viewer control info)
 or ambient effects.
 
-![Background schedule](/img/background-schedule.png)
-
 ## Creating a Background Schedule
 
-In the [schedule editor](../../basics/simple-schedules.md), use the **Main /
-Background** toggle at the top to switch to a background entry. A background entry
+In the [schedule editor](../../basics/simple-schedules.md), use the **FG / BG**
+(Main / Background) toggle at the top to switch to a background entry.
+
+![FG-BG Toggle Button](/img/fg-bg-toggle.png)
+
+A background entry
 has the same options as a main one — time window, intro/outro, loop or shuffle,
 priority, and [end-time behavior](./schedule-options.md).
+
+![Background schedule](/img/background-schedule.png)
 
 The key difference is that a background schedule never replaces the foreground
 show. It always plays _alongside_ main, layered over or under it.
