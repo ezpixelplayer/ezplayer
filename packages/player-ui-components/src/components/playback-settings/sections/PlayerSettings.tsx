@@ -51,34 +51,49 @@ export const PlayerSettings: React.FC = () => {
     const onDesktop = isElectron();
     // Treat as Partial so we can detect older preload builds missing login-item APIs.
     const loginItemApi = window.electronAPI as Partial<EZPElectronAPI> | undefined;
-    const [loginItemSupported, setLoginItemSupported] = React.useState(false);
     const canControlLoginItem = Boolean(
         loginItemApi?.isLoginItemSupported && loginItemApi.getOpenAtLogin && loginItemApi.setOpenAtLogin,
     );
+    // Renderer hint only (for the rare "restart to pick up preload" path). Real gating uses main-process platform.
+    const loginItemOsHint =
+        typeof navigator !== 'undefined' && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent);
+    const [loginItemPlatformSupported, setLoginItemPlatformSupported] = React.useState(false);
+    const [loginItemSupported, setLoginItemSupported] = React.useState(false);
     const [openAtLogin, setOpenAtLogin] = React.useState(false);
     const [openAtLoginLoading, setOpenAtLoginLoading] = React.useState(onDesktop && canControlLoginItem);
     const [openAtLoginSaving, setOpenAtLoginSaving] = React.useState(false);
+    const showLoginItemUi = onDesktop && canControlLoginItem && loginItemPlatformSupported;
 
     React.useEffect(() => {
         if (!onDesktop || !canControlLoginItem || !loginItemApi?.isLoginItemSupported) {
+            setLoginItemPlatformSupported(false);
             setLoginItemSupported(false);
             setOpenAtLoginLoading(false);
             return;
         }
         let cancelled = false;
         setOpenAtLoginLoading(true);
-        loginItemApi
-            .isLoginItemSupported()
-            .then((supported) => {
-                if (cancelled) return;
+        const platformPromise = loginItemApi.isLoginItemPlatformSupported
+            ? loginItemApi.isLoginItemPlatformSupported()
+            : // Older preload: assume Windows/macOS desktop (feature was Win-focused).
+              Promise.resolve(true);
+        platformPromise
+            .then((platformSupported: boolean) => {
+                if (cancelled) return false;
+                setLoginItemPlatformSupported(platformSupported);
+                if (!platformSupported) return false;
+                return loginItemApi.isLoginItemSupported!();
+            })
+            .then((supported: boolean | void) => {
+                if (cancelled || typeof supported !== 'boolean') return;
                 setLoginItemSupported(supported);
                 if (!supported || !loginItemApi.getOpenAtLogin) return;
                 return loginItemApi.getOpenAtLogin();
             })
-            .then((enabled) => {
+            .then((enabled: boolean | void) => {
                 if (!cancelled && typeof enabled === 'boolean') setOpenAtLogin(enabled);
             })
-            .catch((error) => console.error('Failed to read login-item settings:', error))
+            .catch((error: unknown) => console.error('Failed to read login-item settings:', error))
             .finally(() => {
                 if (!cancelled) setOpenAtLoginLoading(false);
             });
@@ -108,7 +123,7 @@ export const PlayerSettings: React.FC = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Player runtime behaviors.
             </Typography>
-            {onDesktop && canControlLoginItem && loginItemSupported && (
+            {showLoginItemUi && loginItemSupported && (
                 <Box sx={{ mb: 2 }}>
                     <FormControlLabel
                         control={
@@ -121,17 +136,17 @@ export const PlayerSettings: React.FC = () => {
                         label="Start EZPlayer when I sign in"
                     />
                     <Typography variant="body2" color="text.secondary">
-                        Launch EZPlayer automatically when you sign in to Windows.
+                        Launch EZPlayer automatically when you sign in.
                     </Typography>
                 </Box>
             )}
-            {onDesktop && canControlLoginItem && !loginItemSupported && !openAtLoginLoading && (
+            {showLoginItemUi && !loginItemSupported && !openAtLoginLoading && (
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     Start at sign-in is available in the installed EZPlayer app, not while running from development
                     mode.
                 </Typography>
             )}
-            {onDesktop && !canControlLoginItem && (
+            {onDesktop && !canControlLoginItem && loginItemOsHint && (
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     Restart EZPlayer to enable the sign-in startup setting.
                 </Typography>

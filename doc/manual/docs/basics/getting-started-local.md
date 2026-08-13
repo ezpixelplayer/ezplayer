@@ -86,14 +86,6 @@ for URLs, port configuration, and troubleshooting.
 If you start with a local EZPlayer, you [can still connect to the cloud later](../settings/cloud.md). Connecting your player to the cloud allows you to see status and control the show from anywhere, via the internet. Connecting to the cloud also allows you to
 download songs directly to your show.
 
-## 8. Start EZPlayer when Windows signs in (optional)
-
-On the Windows desktop app, open **Settings → Player** and enable
-**Start EZPlayer when I sign in**. Windows then launches EZPlayer after you
-sign in to your user account — useful for show PCs that should come up with
-the display computer. See [Player Settings](../settings/player.md#start-ezplayer-when-i-sign-in)
-for what counts as sign-in and what does not.
-
 ## Where to next
 
 - [Songs](../basics/songs.md), [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) - How to set up songs, playlists, and schedules.
