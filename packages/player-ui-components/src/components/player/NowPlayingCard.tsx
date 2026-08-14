@@ -32,8 +32,6 @@ interface NowPlayingCardProps {
     allowVolumeControl?: boolean;
     /** When false (kiosk), the playback controls hide End/Abort. Defaults to true. */
     allowStopControls?: boolean;
-    /** Optional API origin for player clock on LAN / cloud-proxy clients. */
-    apiBaseUrl?: string;
 }
 
 const formatTime = (timestamp?: number | string) => {
@@ -54,7 +52,6 @@ export const NowPlayingCard = ({
     compact = false,
     allowVolumeControl = false,
     allowStopControls = true,
-    apiBaseUrl,
 }: NowPlayingCardProps) => {
     // Hooks must precede the ptype early-return to keep call order stable.
     const dispatch = useDispatch<AppDispatch>();
@@ -90,7 +87,7 @@ export const NowPlayingCard = ({
                         color={isPlaying ? 'success' : isPaused ? 'warning' : 'default'}
                         sx={{ fontWeight: 'bold' }}
                     />
-                    <PlayerSystemTime apiBaseUrl={apiBaseUrl} />
+                    <PlayerSystemTime />
                 </Box>
 
                 {/* The level is automated toward the default/scheduled target, so it's shown

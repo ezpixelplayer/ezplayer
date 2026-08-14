@@ -18,18 +18,14 @@ interface PlayerScreenProps {
     allowVolumeControl?: boolean;
     /** Allow End/Abort playback controls. False in kiosk so a public display can't stop the show. */
     allowStopControls?: boolean;
-    /** Optional API origin for player clock on LAN / cloud-proxy clients. */
-    apiBaseUrl?: string;
 }
 
 const StatusCards = ({
     allowVolumeControl,
     allowStopControls,
-    apiBaseUrl,
 }: {
     allowVolumeControl?: boolean;
     allowStopControls?: boolean;
-    apiBaseUrl?: string;
 }) => {
     const runtime = useSelector((state: RootState) => state.runtime);
 
@@ -44,7 +40,6 @@ const StatusCards = ({
                             compact={true}
                             allowVolumeControl={allowVolumeControl}
                             allowStopControls={allowStopControls}
-                            apiBaseUrl={apiBaseUrl}
                         />
                     ) : runtime.combined?.show ? (
                         <Card sx={{ height: '100%' }}>
@@ -293,7 +288,7 @@ const TimelineView = () => {
     );
 };
 
-export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopControls, apiBaseUrl }: PlayerScreenProps) => {
+export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopControls }: PlayerScreenProps) => {
     return (
         <Box
             sx={{
@@ -309,11 +304,7 @@ export const PlayerScreen = ({ title, statusArea, allowVolumeControl, allowStopC
             </Box>
 
             {/* Now Playing Card and Controller Status */}
-            <StatusCards
-                allowVolumeControl={allowVolumeControl}
-                allowStopControls={allowStopControls}
-                apiBaseUrl={apiBaseUrl}
-            />
+            <StatusCards allowVolumeControl={allowVolumeControl} allowStopControls={allowStopControls} />
 
             {/* Timeline View */}
             <TimelineView />

@@ -1,5 +1,6 @@
 import { isElectron } from '@ezplayer/shared-ui-components';
 import { useEffect, useState } from 'react';
+import { useApiBase } from '../util/ApiBaseProvider';
 import {
     formatClockTime,
     formatTimeZoneShortName,
@@ -24,8 +25,9 @@ export interface PlayerSystemTimeState {
     showLocalTime: boolean;
 }
 
-function resolveApiBaseUrl(apiBaseUrl?: string): string | undefined {
-    if (apiBaseUrl) return apiBaseUrl.replace(/\/+$/, '');
+function resolveApiBaseUrl(apiBase: string): string | undefined {
+    const trimmed = apiBase.replace(/\/+$/, '');
+    if (trimmed) return trimmed;
     if (typeof window !== 'undefined') return window.location.origin.replace(/\/+$/, '');
     return undefined;
 }
@@ -39,10 +41,12 @@ async function fetchPlayerTimeZone(apiBaseUrl: string): Promise<string | undefin
 
 /**
  * Live player + local clock for the Player screen.
- * Desktop Electron uses the host system timezone directly; LAN clients ask
- * `/api/ezp/time` for the player's IANA timezone.
+ * Desktop Electron uses the host system timezone directly; LAN / cloud clients ask
+ * `/api/ezp/time` for the player's IANA timezone, via `useApiBase()` (cloud proxy
+ * prefix) or same-origin.
  */
-export function usePlayerSystemTime(apiBaseUrl?: string): PlayerSystemTimeState {
+export function usePlayerSystemTime(): PlayerSystemTimeState {
+    const apiBase = useApiBase();
     const localTimeZone = getSystemTimeZone();
     const [now, setNow] = useState(() => new Date());
     const [playerTimeZone, setPlayerTimeZone] = useState<string | null>(() =>
@@ -57,7 +61,7 @@ export function usePlayerSystemTime(apiBaseUrl?: string): PlayerSystemTimeState 
     useEffect(() => {
         if (isElectron()) return;
 
-        const baseUrl = resolveApiBaseUrl(apiBaseUrl);
+        const baseUrl = resolveApiBaseUrl(apiBase);
         if (!baseUrl) return;
 
         let cancelled = false;
@@ -72,7 +76,7 @@ export function usePlayerSystemTime(apiBaseUrl?: string): PlayerSystemTimeState 
         return () => {
             cancelled = true;
         };
-    }, [apiBaseUrl, localTimeZone]);
+    }, [apiBase, localTimeZone]);
 
     const effectivePlayerTimeZone = playerTimeZone ?? localTimeZone;
     const showLocalTime = timeZonesDiffer(effectivePlayerTimeZone, localTimeZone);

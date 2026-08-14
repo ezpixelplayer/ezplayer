@@ -4,11 +4,9 @@ import { usePlayerSystemTime } from '../../hooks/usePlayerSystemTime';
 
 interface PlayerSystemTimeProps {
     className?: string;
-    /** Optional API origin for LAN / cloud-proxy clients. Defaults to `window.location.origin`. */
-    apiBaseUrl?: string;
 }
 
-export const PlayerSystemTime = ({ className, apiBaseUrl }: PlayerSystemTimeProps) => {
+export const PlayerSystemTime = ({ className }: PlayerSystemTimeProps) => {
     const {
         playerTime,
         playerTimeZone,
@@ -17,7 +15,7 @@ export const PlayerSystemTime = ({ className, apiBaseUrl }: PlayerSystemTimeProp
         localTimeZone,
         localTimeZoneLabel,
         showLocalTime,
-    } = usePlayerSystemTime(apiBaseUrl);
+    } = usePlayerSystemTime();
 
     return (
         <Box className={className} sx={{ minWidth: 0 }}>
