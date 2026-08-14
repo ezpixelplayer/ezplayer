@@ -283,9 +283,8 @@ function groupIdsForActions(group: PlaybackActions) {
         : { schedule_id: group.scheduleId };
 }
 
-/** Current/next background item. Foreground can surface a not-yet-started action
- *  as upcoming ("Next Show"); background has no other slot, so a live stack or a
- *  due heap entry is reported as background_now_playing. */
+/** Current/next background item for the existing Background slot. Same sources as
+ *  foreground now-playing + Next Show (stack, due heap, then upcoming schedules). */
 function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingItem | undefined {
     const ps = runState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const firstAction = (group?: PlaybackActions, requireStarted?: boolean): PlayingItem | undefined => {
@@ -298,10 +297,14 @@ function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingIte
         }
         return undefined;
     };
+    const firstFrom = (groups?: PlaybackActions[]) =>
+        (groups ?? []).map((g) => firstAction(g, false)).find((item) => !!item);
     return (
         firstAction(ps.curPLActions, true) ??
         firstAction(ps.curPLActions, false) ??
-        (ps.heapSchedules ?? []).map((g) => firstAction(g, false)).find((item) => !!item)
+        firstFrom(ps.heapSchedules) ??
+        firstFrom(ps.upcomingSchedules) ??
+        runState.getUpcomingSchedules()[0]
     );
 }
 
@@ -1568,7 +1571,15 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads, controllers: knownControllers });
+    send({
+        type: 'modelCoordinates',
+        coords3D,
+        coords2D,
+        viewObjects,
+        layoutSettings,
+        movingHeads,
+        controllers: knownControllers,
+    });
 }
 
 /** xLights controller record → the lean KnownController the reconcile grid
@@ -1909,7 +1920,10 @@ async function processQueue() {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC), onlyIfEnabled: true });
+                sender?.sendBlackFrame({
+                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                    onlyIfEnabled: true,
+                });
                 multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;

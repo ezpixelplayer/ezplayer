@@ -66,6 +66,9 @@ export const NowPlayingCard = ({
     const hasNowPlaying = !!player.now_playing;
     const hasBackgroundPlaying = !!player.background_now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
+    const backgroundItem = player.background_now_playing;
+    const backgroundNotStarted =
+        !!backgroundItem?.at && backgroundItem.at > (player.engine_time ?? player.reported_time);
     const volume = player.volume?.level ?? 100;
     const muted = player.volume?.muted ?? false;
     const openAudioSettings = () => setAudioSettingsOpen(true);
@@ -200,12 +203,18 @@ export const NowPlayingCard = ({
                                 maxWidth: '100%',
                             }}
                         >
-                            {player.background_now_playing?.title}
+                            {backgroundItem?.title}
                         </Typography>
-                        {player.background_now_playing?.until && (
+                        {backgroundNotStarted && backgroundItem?.at ? (
                             <Typography variant="caption" color="text.secondary">
-                                Until: {formatTime(player.background_now_playing?.until)}
+                                Starts: {formatTime(backgroundItem.at)}
                             </Typography>
+                        ) : (
+                            backgroundItem?.until && (
+                                <Typography variant="caption" color="text.secondary">
+                                    Until: {formatTime(backgroundItem.until)}
+                                </Typography>
+                            )
                         )}
                     </Box>
                 )}
