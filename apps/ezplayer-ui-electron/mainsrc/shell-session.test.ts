@@ -61,11 +61,19 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+    // Capture the folder now: if this hook is ever abandoned by a timeout and
+    // resumes later, the module-level variable already points at the NEXT
+    // test's folder.
+    const folder = showFolder;
     shutdownShellSessions();
     setShellEventSink(() => {});
+    // A failed test can leave client sockets open, and server.close() waits
+    // for every connection to drain. Terminate server-side so cleanup cannot
+    // hang into the hook timeout.
+    for (const ws of wss.clients) ws.terminate();
     wss?.close();
     await new Promise<void>((resolve) => server?.close(() => resolve()));
-    await fs.rm(showFolder, { recursive: true, force: true });
+    await fs.rm(folder, { recursive: true, force: true });
 });
 
 /** Open a terminal, authenticate, and collect everything the shell prints. */
@@ -111,15 +119,25 @@ async function openTerminal(): Promise<{ ws: WebSocket; output: () => string; wa
     };
 }
 
+/**
+ * An `echo` command whose typed form never contains `marker` assembled, so
+ * waiting for `marker` can only be satisfied by the shell's own output. The
+ * tty echoes typed input immediately — on Linux even before the shell has
+ * printed its first prompt — so waiting for an echoed marker is a race.
+ */
+function echoCommand(marker: string): string {
+    const gap = process.platform === 'win32' ? '^' : '""'; // cmd.exe caret / POSIX empty quotes
+    return `echo ${marker.slice(0, 4)}${gap}${marker.slice(4)}\r\n`;
+}
+
 const hasPty = await shellRuntimeAvailable();
 
 describe.skipIf(!hasPty)('remote shell end to end', () => {
     it('runs a command in a real shell and streams the output back', async () => {
         const term = await openTerminal();
-        term.ws.send(JSON.stringify({ type: 'input', data: 'echo EZP_E2E_MARKER\r\n' }));
+        term.ws.send(JSON.stringify({ type: 'input', data: echoCommand('EZP_E2E_MARKER') }));
+        // Only the command's output can contain the assembled marker.
         await term.waitFor('EZP_E2E_MARKER');
-        // Echoed input plus the command's own output — the marker appears twice.
-        expect(term.output().split('EZP_E2E_MARKER').length - 1).toBeGreaterThanOrEqual(2);
         term.ws.close();
     }, 30_000);
 
@@ -136,14 +154,14 @@ describe.skipIf(!hasPty)('remote shell end to end', () => {
         expect(await displaced).toBe('superseded');
 
         // The survivor is still a working shell.
-        second.ws.send(JSON.stringify({ type: 'input', data: 'echo EZP_SECOND\r\n' }));
+        second.ws.send(JSON.stringify({ type: 'input', data: echoCommand('EZP_SECOND') }));
         await second.waitFor('EZP_SECOND');
         second.ws.close();
     }, 40_000);
 
     it('closing the socket kills the pty', async () => {
         const term = await openTerminal();
-        term.ws.send(JSON.stringify({ type: 'input', data: 'echo EZP_ALIVE\r\n' }));
+        term.ws.send(JSON.stringify({ type: 'input', data: echoCommand('EZP_ALIVE') }));
         await term.waitFor('EZP_ALIVE');
         term.ws.close();
 
