@@ -15,7 +15,7 @@ import {
     Slider,
     Typography,
 } from '@mui/material';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -43,8 +43,6 @@ const FRESH_ENTRY: Partial<VolumeScheduleEntry> = {
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
-    const savedDefaultVolume = settings.volumeControl.defaultVolume;
-    const savedAudioSyncAdjust = settings.audioSyncAdjust;
 
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
