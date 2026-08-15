@@ -277,10 +277,15 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
 }
 
 // -- home-server election ------------------------------------------------------
-// Startup-only — the elected host holds in-RAM vc state; mid-session moves
-// would discard votes/queue.
+// Retries with backoff until the first successful bind — a fresh pairing 404s
+// candidateServers until the user claims the token, and registration flipping
+// true also kicks an immediate attempt. Once bound, the binding holds for the
+// rest of the session: the elected host keeps in-RAM vc state, so mid-session
+// moves would discard votes/queue.
 
 const ELECTION_PROBE_TIMEOUT_MS = 2_000;
+const ELECTION_RETRY_BASE_MS = 10_000;
+const ELECTION_RETRY_MAX_MS = 300_000;
 /** Soft cutoff: when every candidate exceeds it, fall through to the full
  *  set so the player still has somewhere to go. */
 const ELECTION_LOAD_CUTOFF = 0.95;
@@ -302,19 +307,22 @@ async function probeHealthzRttMs(serverUrl: string): Promise<number | undefined>
     }
 }
 
-async function electHomeServerOnce(): Promise<void> {
-    if (!cloudUrl || !playerIdToken) return;
+/** One election attempt. Returns true when a binding now exists (kept or
+ *  newly chosen); false means "retry later" (unclaimed token, no candidates,
+ *  transient failure). */
+async function electHomeServerOnce(): Promise<boolean> {
+    if (!cloudUrl || !playerIdToken) return false;
     try {
         const candUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CANDIDATE_SERVERS}${playerIdToken}`;
         const res = await fetch(candUrl);
         if (!res.ok) {
             log('warn', `electHomeServer: candidateServers ${res.status}`);
-            return;
+            return false;
         }
         const body = (await res.json()) as CandidateServersResponse;
         if (!body.candidates?.length) {
             log('info', 'electHomeServer: no candidates available');
-            return;
+            return false;
         }
         const probed = await Promise.all(
             body.candidates.map(async (c) => ({ ...c, rtt_ms: await probeHealthzRttMs(c.url) })),
@@ -322,7 +330,7 @@ async function electHomeServerOnce(): Promise<void> {
         const reachable = probed.filter((p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number');
         if (reachable.length === 0) {
             log('warn', 'electHomeServer: no candidates reachable');
-            return;
+            return false;
         }
         const underCutoff = reachable.filter((p) => p.load_hint < ELECTION_LOAD_CUTOFF);
         const pool = underCutoff.length > 0 ? underCutoff : reachable;
@@ -330,6 +338,7 @@ async function electHomeServerOnce(): Promise<void> {
         const winner = pool[0]!;
         // Announce on every election (including "kept current") so ezvc
         // re-targets after a worker restart.
+        electedHomeServerUrl = winner.url;
         post({ type: 'homeServerUrl', url: winner.url });
 
         if (winner.key === body.current_key) {
@@ -337,7 +346,7 @@ async function electHomeServerOnce(): Promise<void> {
                 'info',
                 `electHomeServer: keeping key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)}`,
             );
-            return;
+            return true;
         }
         const electUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.ELECT_HOME_SERVER}${playerIdToken}`;
         const electRes = await fetch(electUrl, {
@@ -347,14 +356,63 @@ async function electHomeServerOnce(): Promise<void> {
         });
         if (!electRes.ok) {
             log('warn', `electHomeServer: elect ${electRes.status}`);
-            return;
+            return false;
         }
         log(
             'info',
             `electHomeServer: chose key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)} (was ${body.current_key ?? 'unbound'})`,
         );
+        return true;
     } catch (e) {
         log('warn', `electHomeServer: ${(e as Error).message}`);
+        return false;
+    }
+}
+
+// Election session state — see the section comment above for the policy.
+let electionBound = false;
+let electionInFlight = false;
+let electionAttempts = 0;
+let electionRetryTimer: NodeJS.Timeout | undefined;
+let wasRegistered = false;
+/** Elected home server base URL, surfaced on cloudStatus so UIs can build the
+ *  cloud control URL against the regional host. */
+let electedHomeServerUrl: string | undefined;
+
+function cancelElectionRetry() {
+    if (electionRetryTimer) {
+        clearTimeout(electionRetryTimer);
+        electionRetryTimer = undefined;
+    }
+}
+
+function resetElectionState() {
+    cancelElectionRetry();
+    electionBound = false;
+    electionAttempts = 0;
+    wasRegistered = false;
+    electedHomeServerUrl = undefined;
+}
+
+async function runHomeServerElection(): Promise<void> {
+    if (electionBound || electionInFlight || stopped || !cloudUrl || !playerIdToken) return;
+    electionInFlight = true;
+    cancelElectionRetry();
+    try {
+        if (await electHomeServerOnce()) {
+            electionBound = true;
+            electionAttempts = 0;
+        } else {
+            const delay = Math.min(ELECTION_RETRY_BASE_MS * 2 ** electionAttempts, ELECTION_RETRY_MAX_MS);
+            electionAttempts += 1;
+            electionRetryTimer = setTimeout(() => {
+                electionRetryTimer = undefined;
+                void runHomeServerElection();
+            }, delay);
+            if (electionRetryTimer.unref) electionRetryTimer.unref();
+        }
+    } finally {
+        electionInFlight = false;
     }
 }
 
@@ -383,6 +441,7 @@ async function pollRegistration() {
             body: JSON.stringify(body),
         });
         if (!res.ok) {
+            wasRegistered = false;
             post({
                 type: 'cloudStatus',
                 status: {
@@ -394,12 +453,20 @@ async function pollRegistration() {
             return;
         }
         const reply = (await res.json()) as PlayerCheckinResponse;
+        const nowRegistered = !!reply.registered;
+        if (nowRegistered && !wasRegistered) {
+            // Just claimed (or checkin recovered) — bind a home server now
+            // instead of waiting out the retry backoff. No-op once bound.
+            void runHomeServerElection();
+        }
+        wasRegistered = nowRegistered;
         post({
             type: 'cloudStatus',
             status: {
-                playerIdIsRegistered: !!reply.registered,
+                playerIdIsRegistered: nowRegistered,
                 lastCheckedAt: Date.now(),
                 lastError: undefined,
+                homeServerUrl: electedHomeServerUrl,
             },
         });
         if (reply.commands && reply.commands.length > 0) {
@@ -427,6 +494,7 @@ async function pollRegistration() {
     } catch (e) {
         const err = e as Error;
         log('warn', `checkin error: ${err.message}`);
+        wasRegistered = false;
         post({
             type: 'cloudStatus',
             status: {
@@ -1654,7 +1722,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             log(
                 'info',
                 `setConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} ` +
-                    `playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} ` +
+                    `playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '...' : '(empty)'} ` +
                     `showFolder="${showFolder}" reg=${registrationIntervalMs}ms manifest=${manifestIntervalMs}ms` +
                     (sessionChanged ? '' : ' (soft)'),
             );
@@ -1665,12 +1733,20 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             }
             rescheduleTimers();
             if (sessionChanged) {
-                void electHomeServerOnce();
+                resetElectionState();
+                // Elect before the first checkin so the first openCloudWS
+                // reply already carries the regional bridge URLs; a failed
+                // election still lets the polls proceed immediately.
+                void runHomeServerElection().finally(() => {
+                    void pollRegistration();
+                    void pollManifest();
+                });
+            } else {
+                // Soft updates still tick immediately so poll-mode / interval
+                // changes take effect without waiting for the next cadence.
+                void pollRegistration();
+                void pollManifest();
             }
-            // Soft updates still tick immediately so poll-mode / interval
-            // changes take effect without waiting for the next cadence.
-            void pollRegistration();
-            void pollManifest();
             break;
         }
         case 'updateSequences': {
@@ -1704,6 +1780,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             log('info', 'stop requested');
             stopped = true;
             clearTimers();
+            cancelElectionRetry();
             break;
         }
     }

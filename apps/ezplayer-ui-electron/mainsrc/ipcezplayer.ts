@@ -70,7 +70,9 @@ import type {
 
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
-import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import { getDiagnosticsConsent, setDiagnosticsConsent } from './diagnostics.js';
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
@@ -620,8 +622,9 @@ const handlers: MainRPCAPI = {
 
 /** Single dispatcher for renderer-issued cloud commands. New verbs only need a
  *  variant on `CloudCommand` and a case here. The renderer hits this via either
- *  `ipcCloudCommand` (electron) or the koa server-worker's RPC route (embedded). */
-export function dispatchCloudCommand(cmd: CloudCommand): void {
+ *  `ipcCloudCommand` (electron) or the koa server-worker's RPC route (embedded).
+ *  Async verbs return a promise so the electron IPC path can surface errors. */
+export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
     switch (cmd.type) {
         case 'syncNow':
             // Pull the manifest. The worker auto-fetches layout at the head of each
@@ -640,6 +643,8 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
         case 'setPlayerIdToken':
             applyPlayerIdToken(cmd.token);
             break;
+        case 'rotatePlayerToken':
+            return applyRotatePlayerToken();
         case 'setCloudServiceUrl':
             applyCloudServiceUrl(cmd.url);
             break;
@@ -746,6 +751,27 @@ export function applyCloudServiceUrl(url: string) {
     const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
     reconfigureCloudWorker(cfg);
     broadcastCloudConfig(cfg);
+}
+
+/** One-click token rotation. Mints a fresh token, asks the cloud to move the
+ *  registration onto it (child rows and home-server binding follow), then
+ *  adopts it locally via the normal setPlayerIdToken path. The old token —
+ *  and any control URL/QR carrying it — stops working the moment the cloud
+ *  transaction lands. Throws on any failure; the local token is untouched. */
+export async function applyRotatePlayerToken(): Promise<void> {
+    const cfg = getCloudConfigCache();
+    const oldToken = cfg.playerIdToken;
+    const cloudUrl = cfg.cloudServiceUrl;
+    if (!oldToken || !cloudUrl) throw new Error('No registered player token to rotate');
+    const newToken = crypto.randomUUID();
+    const base = cloudUrl.endsWith('/') ? cloudUrl : `${cloudUrl}/`;
+    const res = await fetch(`${base}api/${CLOUD_API_ENDPOINTS.ROTATE_TOKEN}${oldToken}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ new_token: newToken }),
+    });
+    if (!res.ok) throw new Error(`Token rotation failed: HTTP ${res.status}`);
+    applyPlayerIdToken(newToken);
 }
 
 export async function registerContentHandlers(
@@ -894,8 +920,12 @@ export async function registerContentHandlers(
         return getCloudConfigCache();
     });
     ipcMain.handle('ipcCloudCommand', async (_event, cmd: CloudCommand) => {
-        dispatchCloudCommand(cmd);
+        await dispatchCloudCommand(cmd);
     });
+    ipcMain.handle('ipcGetDiagnosticsConsent', async () => getDiagnosticsConsent());
+    ipcMain.handle('ipcSetDiagnosticsConsent', async (_event, patch: Partial<DiagnosticsConsent>) =>
+        setDiagnosticsConsent(patch),
+    );
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
     });

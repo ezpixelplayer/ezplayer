@@ -74,6 +74,14 @@ export interface AudioTagMetadata {
 // of truth and don't drift when the upstream shape evolves.
 export type { GetNodeResult, ChannelRole, ChannelRoleKind, ImageInfo } from 'xllayoutcalcs';
 
+/** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
+ *  on (opt-out); `includePlayerId` defaults off (opt-in) since it ties a
+ *  report to a specific installation. */
+export interface DiagnosticsConsent {
+    uploadEnabled: boolean;
+    includePlayerId: boolean;
+}
+
 export type AutoUpdateStatus =
     | { state: 'checking' }
     | { state: 'available'; version: string; releaseDate: string; releaseNotes?: string }
@@ -104,6 +112,10 @@ export interface EZPElectronAPI {
      *  (which uses an EZPlayerCommand discriminated union). New verbs add a variant
      *  to `CloudCommand` and a case in main's dispatcher — no per-verb IPC plumbing. */
     cloudCommand: (cmd: CloudCommand) => Promise<void>;
+
+    // Diagnostics/crash-report consent (app-global, machine-wide).
+    getDiagnosticsConsent?: () => Promise<DiagnosticsConsent>;
+    setDiagnosticsConsent?: (patch: Partial<DiagnosticsConsent>) => Promise<DiagnosticsConsent>;
 
     /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
      *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */

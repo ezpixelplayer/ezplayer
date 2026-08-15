@@ -10,6 +10,7 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
+import { reportDiagEvent } from './mainsrc/diagnostics.js';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, loadShowFolder, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
@@ -59,6 +60,10 @@ console.log('Crash dumps directory:', dumpDir);
 //import { setProcessAffinity } from './mainsrc/affinity/affinity.js';
 //setProcessAffinity([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
 
+// Declared before the handlers below reference it — a crash during early
+// startup used to hit the TDZ inside the handler and silently lose the log.
+const mainCrashLogFile = path.join(app.getPath('logs'), 'main-crash.log');
+
 // catch as early as possible
 process.on('uncaughtException', (err) => {
     const msg = `[uncaughtException] ${err.stack || err.message}\n`;
@@ -68,6 +73,7 @@ process.on('uncaughtException', (err) => {
         /* best-effort crash log */
     }
     console.error(msg);
+    reportDiagEvent('uncaughtException', err.message, err.stack);
 });
 process.on('unhandledRejection', (reason: any) => {
     const msg = `[unhandledRejection] ${reason?.stack || String(reason)}\n`;
@@ -77,18 +83,20 @@ process.on('unhandledRejection', (reason: any) => {
         /* best-effort crash log */
     }
     console.error(msg);
+    reportDiagEvent('unhandledRejection', String(reason?.message ?? reason), reason?.stack);
 });
 
-const mainCrashLogFile = path.join(app.getPath('logs'), 'main-crash.log');
 // optional: also force console logging
 app.commandLine.appendSwitch('enable-logging', 'js-flags');
 
 app.on('render-process-gone', (_event, _webContents, details) => {
     console.error('app render-process-gone', details);
+    reportDiagEvent('render-process-gone', details.reason, undefined, details);
 });
 
 app.on('child-process-gone', (_event, details) => {
     console.error('app child-process-gone', details);
+    reportDiagEvent('child-process-gone', details.reason, undefined, details);
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -182,6 +190,16 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     });
     mainWindow.webContents.on('did-fail-load', (_event, code, desc, url) => {
         console.error('did-fail-load', { code, desc, url });
+        reportDiagEvent('did-fail-load', desc, undefined, { code, url });
+    });
+    // The "white screen" signal: the renderer's event loop stopped servicing
+    // input. render-process-gone catches crashes; this catches hangs.
+    mainWindow.webContents.on('unresponsive', () => {
+        console.error('main window unresponsive');
+        reportDiagEvent('unresponsive', 'main window unresponsive');
+    });
+    mainWindow.webContents.on('responsive', () => {
+        console.error('main window responsive again');
     });
 
     const url = !app.isPackaged

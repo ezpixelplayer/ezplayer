@@ -23,6 +23,7 @@ import {
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
+import { reportDiagEvent } from './diagnostics.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import { isFeatureEnabled } from './remoteaccess.js';
 import {
@@ -119,7 +120,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         mainWindow?.webContents?.send(channel, ...args);
     },
     cloudCommand: async (cmd) => {
-        dispatchCloudCommand(cmd);
+        await dispatchCloudCommand(cmd);
     },
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
@@ -266,6 +267,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
 
     serverWorker.on('error', (err) => {
         console.error('[server-worker-manager] Worker error:', err);
+        reportDiagEvent('worker-error', `server-worker: ${err.message}`, err.stack);
         currentServerStatus = {
             port,
             portSource,

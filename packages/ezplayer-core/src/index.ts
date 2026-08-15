@@ -124,6 +124,7 @@ export type {
     AudioDevice,
     AudioChunk,
     AutoUpdateStatus,
+    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,
