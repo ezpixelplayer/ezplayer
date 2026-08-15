@@ -1,5 +1,4 @@
 import { app, ipcMain } from 'electron';
-import { execSync } from 'node:child_process';
 
 /** Electron login items are available on Windows and macOS (not Linux). */
 export function isLoginItemPlatformSupported(): boolean {
@@ -19,40 +18,7 @@ function getLoginItemOptions(): { path: string; args: string[] } | null {
     return { path: process.execPath, args: [] };
 }
 
-/** Dev runs can accidentally register the bare Electron binary; clear that on startup. */
-function clearDevLoginItemIfNeeded() {
-    if (isLoginItemSupported() || process.platform !== 'win32') {
-        return;
-    }
-    app.setLoginItemSettings({ openAtLogin: false, path: process.execPath, args: [] });
-}
-
-/** Remove a mistaken dev-mode startup entry left in the Windows Run key. */
-function clearMistakenDevElectronStartupEntry() {
-    if (process.platform !== 'win32') {
-        return;
-    }
-    try {
-        const out = execSync(
-            'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "electron.app.Electron"',
-            { encoding: 'utf8' },
-        );
-        const match = out.match(/REG_SZ\s+(.+)/);
-        if (!match) return;
-        const exePath = match[1].trim().replace(/^"|"$/g, '');
-        if (!exePath.includes('node_modules') || !exePath.toLowerCase().includes('electron')) {
-            return;
-        }
-        app.setLoginItemSettings({ openAtLogin: false, path: exePath, args: [] });
-    } catch {
-        // Key missing or already removed.
-    }
-}
-
 export function registerLoginItemHandlers() {
-    clearDevLoginItemIfNeeded();
-    clearMistakenDevElectronStartupEntry();
-
     ipcMain.handle('login-item:isPlatformSupported', () => isLoginItemPlatformSupported());
     ipcMain.handle('login-item:isSupported', () => isLoginItemSupported());
 
