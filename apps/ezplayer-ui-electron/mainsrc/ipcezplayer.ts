@@ -53,6 +53,10 @@ import {
     uploadLayoutNow,
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
+import {
+    batchImportSequences,
+    batchImportSequencesFromFolder,
+} from './data/batch-sequence-import.js';
 
 import type {
     CloudCommand,
@@ -858,10 +862,27 @@ export async function registerContentHandlers(
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
-        return autoDetectSongFilesFromFseq(fseqPath);
+        const mediaFolder = getSettingsCache()?.mediaFolder;
+        return autoDetectSongFilesFromFseq(fseqPath, { mediaFolder });
     });
     ipcMain.handle('ipcExtractAudioTagMetadata', async (_event, audioPath: string) => {
         return extractAudioTagMetadata(audioPath);
+    });
+    ipcMain.handle('ipcBatchImportSequences', async (_event, fseqPaths: string[]) => {
+        const mediaFolder = getSettingsCache()?.mediaFolder;
+        return batchImportSequences(fseqPaths ?? [], {
+            mediaFolder,
+            existingSequences: curSequences,
+            putSequences: putSequencesWithDurations,
+        });
+    });
+    ipcMain.handle('ipcBatchImportSequencesFromFolder', async (_event, folderPath: string) => {
+        const mediaFolder = getSettingsCache()?.mediaFolder;
+        return batchImportSequencesFromFolder(folderPath, {
+            mediaFolder,
+            existingSequences: curSequences,
+            putSequences: putSequencesWithDurations,
+        });
     });
 
     ipcMain.handle('ipcGetCloudPlaylists', async (_event): Promise<PlaylistRecord[]> => {

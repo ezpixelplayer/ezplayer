@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Card, CardContent, TextField, Button, Grid, Typography, Collapse, IconButton, MenuItem } from '@mui/material';
+import { Card, CardContent, TextField, Button, Grid, Typography, MenuItem } from '@mui/material';
 import { Box } from '../box/Box';
-import { ExpandMore, ExpandLess, PlayArrow } from '@mui/icons-material';
+import { PlayArrow } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -22,7 +22,6 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
     hasData,
     className = '',
 }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
     const [localSettings, setLocalSettings] = useState<SettingsType>(settings);
 
     useEffect(() => {
@@ -106,9 +105,6 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
                         >
                             {isGenerating ? 'Generating...' : 'Generate Preview'}
                         </Button>
-                        <IconButton onClick={() => setIsExpanded(!isExpanded)} size="small">
-                            {isExpanded ? <ExpandLess /> : <ExpandMore />}
-                        </IconButton>
                     </Box>
                 </Box>
 
@@ -252,29 +248,6 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
                         </TextField>
                     </Grid>
                 </Grid>
-
-                {/* Advanced Settings - Collapsible */}
-                <Collapse in={isExpanded}>
-                    <Box sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-                        <Typography variant="subtitle2" gutterBottom>
-                            Advanced Options
-                        </Typography>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    label="Max Events"
-                                    type="number"
-                                    size="small"
-                                    fullWidth
-                                    value={localSettings.maxEvents}
-                                    onChange={(e) => handleInputChange('maxEvents', parseInt(e.target.value, 10))}
-                                    helperText="Maximum number of events to display"
-                                    inputProps={{ min: 1, max: 10000 }}
-                                />
-                            </Grid>
-                        </Grid>
-                    </Box>
-                </Collapse>
 
                 {!hasData && (
                     <Box sx={{ mt: 2 }}>

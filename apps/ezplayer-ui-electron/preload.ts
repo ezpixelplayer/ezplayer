@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
     autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),
     extractAudioTagMetadata: (audioPath: string) => ipcRenderer.invoke('ipcExtractAudioTagMetadata', audioPath),
+    batchImportSequences: (fseqPaths: string[]) => ipcRenderer.invoke('ipcBatchImportSequences', fseqPaths),
+    batchImportSequencesFromFolder: (folderPath: string) =>
+        ipcRenderer.invoke('ipcBatchImportSequencesFromFolder', folderPath),
 
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) =>
         ipcRenderer.invoke('dialog:openDirectory', options),
@@ -219,6 +222,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
+
+    isLoginItemPlatformSupported: () => ipcRenderer.invoke('login-item:isPlatformSupported'),
+    isLoginItemSupported: () => ipcRenderer.invoke('login-item:isSupported'),
+    getOpenAtLogin: () => ipcRenderer.invoke('login-item:get'),
+    setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
 
     // Auto-update
     checkForUpdates: () => ipcRenderer.invoke('autoupdate:check'),

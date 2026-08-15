@@ -2,7 +2,6 @@ import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { CircularProgress, Alert, Stack, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 import { useSelector } from 'react-redux';
-import { PageHeader } from '@ezplayer/shared-ui-components';
 import { RootState } from '../../store/Store';
 import SchedulePreviewSettings from './SchedulePreviewSettings';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
@@ -16,9 +15,7 @@ import GraphForSchedule from './GraphForSchedule';
 import { priorityToNumber, type ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 
 interface SchedulePreviewProps {
-    title: string;
     className?: string;
-    statusArea: React.ReactNode[];
 }
 
 const combineDateAndTime = (date: Date, time: string) => {
@@ -74,7 +71,7 @@ function splitAndSortSchedulesByType(filteredSchedules: ScheduledPlaylist[]) {
     };
 }
 
-export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusArea, className = '' }) => {
+export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ className = '' }) => {
     const [settings, setSettings] = useState<SettingsType>(DEFAULT_SCHEDULE_PREVIEW_SETTINGS);
     const [previewData, setPreviewData] = useState<ParallelSchedulePreviewData | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -234,11 +231,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                     overflow: 'hidden',
                 }}
             >
-                {/* Header */}
-                <Box sx={{ padding: 2, flexShrink: 0 }}>
-                    <PageHeader heading={title} children={statusArea} />
-                </Box>
-
                 {/* Settings Panel */}
                 <Box sx={{ padding: 2, flexShrink: 0 }}>
                     <SchedulePreviewSettings
@@ -248,24 +240,6 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                         hasData={hasData}
                     />
                 </Box>
-
-                {/* Errors and Warnings */}
-                <Stack spacing={1} sx={{ padding: 2, flexShrink: 0 }}>
-                    {error && (
-                        <Alert severity="error" onClose={() => setError(null)}>
-                            {error}
-                        </Alert>
-                    )}
-                    {warnings.map((warning, index) => (
-                        <Alert
-                            key={index}
-                            severity="warning"
-                            onClose={() => setWarnings((prev) => prev.filter((_, i) => i !== index))}
-                        >
-                            {warning}
-                        </Alert>
-                    ))}
-                </Stack>
 
                 {/* Loading Indicator */}
                 {isGenerating && (
@@ -283,15 +257,36 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                     </Box>
                 )}
 
-                {/* Timeline Display */}
-                {previewData && !isGenerating && (
-                    <Box
-                        sx={{
-                            flex: 1,
-                            overflow: 'auto',
-                            padding: 2,
-                        }}
-                    >
+                {/* Scrollable content: errors, warnings, and timeline */}
+                <Box
+                    sx={{
+                        flex: 1,
+                        overflow: 'auto',
+                        padding: 2,
+                    }}
+                >
+                    {(error || warnings.length > 0) && (
+                        <Stack spacing={1} sx={{ mb: 2 }}>
+                            {error && (
+                                <Alert severity="error" onClose={() => setError(null)}>
+                                    {error}
+                                </Alert>
+                            )}
+                            {warnings.map((warning, index) => (
+                                <Alert
+                                    key={index}
+                                    severity="warning"
+                                    onClose={() => setWarnings((prev) => prev.filter((_, i) => i !== index))}
+                                >
+                                    {warning}
+                                </Alert>
+                            ))}
+                        </Stack>
+                    )}
+
+                    {/* Timeline Display */}
+                    {previewData && !isGenerating && (
+                        <>
                         {/*
                     <Typography variant="h6">
                     Errors: {previewData.errors?.join('\n')+'\n'}
@@ -318,49 +313,49 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ title, statusA
                     }
                     </Box>
                     */}
-                        <GraphForSchedule
-                            data={previewData}
-                            onItemClick={handleTimelineItemClick}
-                            selectedStartTime={combineDateAndTime(settings.startDate, settings.startTime)}
-                            selectedEndTime={combineDateAndTime(settings.endDate, settings.endTime)}
-                        />
-                        {/* Show filtered scheduled playlists below the timeline */}
-                        {combinedPreviewData && (
-                            <Box ref={accordionRef} sx={{ mt: 3 }}>
-                                <ScheduledPlaylistsList
-                                    ref={scheduledPlaylistsRef}
-                                    data={combinedPreviewData as ScheduleData}
-                                />
-                            </Box>
-                        )}
+                            <GraphForSchedule
+                                data={previewData}
+                                onItemClick={handleTimelineItemClick}
+                                selectedStartTime={combineDateAndTime(settings.startDate, settings.startTime)}
+                                selectedEndTime={combineDateAndTime(settings.endDate, settings.endTime)}
+                            />
+                            {/* Show filtered scheduled playlists below the timeline */}
+                            {combinedPreviewData && (
+                                <Box ref={accordionRef} sx={{ mt: 3 }}>
+                                    <ScheduledPlaylistsList
+                                        ref={scheduledPlaylistsRef}
+                                        data={combinedPreviewData as ScheduleData}
+                                    />
+                                </Box>
+                            )}
 
-                        {/* Show message if no combined data */}
-                        {!combinedPreviewData && (
-                            <Box sx={{ mt: 3, p: 2, textAlign: 'center' }}>
-                                <Typography variant="body2" color="text.secondary">
-                                    No schedule events found in the selected time range.
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                )}
+                            {/* Show message if no combined data */}
+                            {!combinedPreviewData && (
+                                <Box sx={{ mt: 3, p: 2, textAlign: 'center' }}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        No schedule events found in the selected time range.
+                                    </Typography>
+                                </Box>
+                            )}
+                        </>
+                    )}
 
-                {/* No Data Message */}
-                {!hasData && !isGenerating && (
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            padding: 4,
-                            flex: 1,
-                        }}
-                    >
-                        <Alert severity="info">
-                            No schedule data available. Please configure sequences, playlists, and schedules first.
-                        </Alert>
-                    </Box>
-                )}
+                    {/* No Data Message */}
+                    {!hasData && !isGenerating && (
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                padding: 4,
+                            }}
+                        >
+                            <Alert severity="info">
+                                No schedule data available. Please configure sequences, playlists, and schedules first.
+                            </Alert>
+                        </Box>
+                    )}
+                </Box>
             </Box>
         </>
     );

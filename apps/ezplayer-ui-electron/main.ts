@@ -14,6 +14,7 @@ import { reportDiagEvent } from './mainsrc/diagnostics.js';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import { isScheduleActive, loadShowFolder, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
+import { registerLoginItemHandlers } from './mainsrc/ipcLoginItem.js';
 import {
     clearPersistedShowFolder,
     closeShowFolder,
@@ -330,6 +331,7 @@ async function startHeadless() {
     playWorker = await startPlaybackWorker();
 
     registerFileListHandlers();
+    registerLoginItemHandlers();
     await registerContentHandlers(null, null, playWorker);
 
     // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
@@ -440,6 +442,7 @@ if (isToolVerb()) {
     playWorker = await startPlaybackWorker();
 
     registerFileListHandlers();
+    registerLoginItemHandlers();
     createWindow(showFolderSpec ?? undefined, shouldShowWelcome);
 
     // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.

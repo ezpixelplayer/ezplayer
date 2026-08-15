@@ -51,6 +51,7 @@ import {
     putSequencesCore,
     autodetectSequenceCore,
     audioMetadataCore,
+    batchImportSequencesCore,
     type FileApiDeps,
 } from './file-api.js';
 import { registerFppCompatRoutes } from './fppcompat/fpp-api.js';
@@ -922,6 +923,24 @@ async function dispatchProxyWrite(
         if (pathStr === '/api/ezp/sequences/audio-metadata') {
             return proxyJson(await audioMetadataCore(showFolder, (parsed as any)?.audio));
         }
+        if (pathStr === '/api/ezp/sequences/batch-import') {
+            const deps: FileApiDeps = {
+                getShowFolder: () => showFolder,
+                getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
+                putSequences: async (recs) => await rpc.call('putSequences', recs),
+                getMediaFolder: () =>
+                    (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder,
+            };
+            return proxyJson(
+                await batchImportSequencesCore(
+                    showFolder,
+                    deps,
+                    (parsed as any)?.fseqNames,
+                    (parsed as any)?.companionAudioNames,
+                    (parsed as any)?.allowExistingAudio,
+                ),
+            );
+        }
     }
     return { status: 404 };
 }
@@ -1326,6 +1345,7 @@ async function startServer(config: ServerWorkerData) {
         getShowFolder: () => wsBroadcaster.get('showFolder') as string | undefined,
         getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
         putSequences: async (recs) => await rpc.call('putSequences', recs),
+        getMediaFolder: () => (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder,
     };
     const fileApiRouter = createFileApiRouter(fileApiDeps);
     webApp.use(fileApiRouter.routes());

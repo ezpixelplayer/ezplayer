@@ -11,6 +11,7 @@
     ],
     "exports": {
         ".": {
+            "types": "./dist/index.d.ts",
             "development": "./src/index.ts",
             "import": "./dist/index.js",
             "require": "./dist/index.js"
@@ -79,8 +80,8 @@
         "@ezplayer/shared-ui-components": "^1.0.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
-        "react-router": "^6.0.0",
-        "react-router-dom": "^6.0.0"
+        "react-router": "^6.0.0 || ^7.0.0",
+        "react-router-dom": "^6.0.0 || ^7.0.0"
     },
     "devDependencies": {
         "@eslint/js": "catalog:",
@@ -98,6 +99,8 @@
         "globals": "catalog:",
         "jsdom": "catalog:",
         "prettier": "catalog:",
+        "react-router": "catalog:",
+        "react-router-dom": "catalog:",
         "redux-mock-store": "catalog:",
         "tsup": "catalog:",
         "typescript": "catalog:",
