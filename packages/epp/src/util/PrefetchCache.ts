@@ -116,7 +116,7 @@ export interface CacheStats extends CacheStatCounters {
 class Deferred<T> {
     promise: Promise<T>;
     resolve!: (v: T) => void;
-    reject!: (e: any) => void;
+    reject!: (e: unknown) => void;
     constructor() {
         this.promise = new Promise<T>((res, rej) => {
             this.resolve = res;
@@ -182,7 +182,7 @@ export class RefHandle<V> {
     }
 
     get isReleased(): boolean {
-        return this._v == undefined;
+        return this._v === undefined;
     }
 }
 
@@ -533,7 +533,9 @@ export class PrefetchCache<K, V, P> {
                     item.fetchingSince = performance.now();
                     item.abort = new AbortController();
                     committed += item.estCost; // now in-flight memory
-                    this.fetchItem(item);
+                    // fetchItem never rejects (it catches internally and routes
+                    // errors to item.state / waiters), so fire-and-forget is safe.
+                    void this.fetchItem(item);
                 }
                 // else: leave it queued (live); retried next pass.
             }
@@ -617,7 +619,9 @@ export class PrefetchCache<K, V, P> {
 
         if (item.value && this.options.onDispose) {
             try {
-                this.options.onDispose(key, item.value);
+                const disposed = this.options.onDispose(key, item.value);
+                // Async dispose errors would otherwise escape this try/catch.
+                if (disposed) disposed.catch((error) => console.error('Error disposing cache item:', error));
             } catch (error) {
                 console.error('Error disposing cache item:', error);
             }
