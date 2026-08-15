@@ -2084,15 +2084,6 @@ async function processQueue() {
                     );
                 }
 
-                // Rebuild stamps engine time to wall clock. If the frame clock is still
-                // behind, runUntil(targetFrameRTC) is a no-op and a background-only
-                // schedule stays on the heap — never stacked, never in pStatus — until a
-                // foreground Sequence Started snap catches the clock up. Catch up now so
-                // background shows immediately after scheduling, same as foreground.
-                targetFrameRTC = Math.max(targetFrameRTC, initializeTime + 1);
-                foregroundPlayerRunState.runUntil(targetFrameRTC);
-                backgroundPlayerRunState.runUntil(targetFrameRTC);
-
                 if (errs.length) {
                     emitError(`New schedule install errors: ${errs.join('\n')}`);
                 }
@@ -2378,22 +2369,10 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - runUntil done`);
 
-            // Same catch-up as foreground: keep stepping until a sequence starts (or
-            // nothing is pending). Otherwise a background-only schedule never promotes
-            // heap→stack and never appears in pStatus.
+            // Get the background frame
             while (true) {
-                const plog: PlaybackLogDetail[] = [];
-                backgroundPlayerRunState.runUntil(targetFrameRTC, 1, plog);
-                let foundTime = plog.length === 0;
-                for (const l of plog) {
-                    if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
-                        targetFrameRTC = backgroundPlayerRunState.currentTime;
-                        emitInfo(`Background sequence start in ${targetFrameRTC - Date.now()}`);
-                        foundTime = true;
-                        break;
-                    }
-                }
-                if (foundTime) break;
+                backgroundPlayerRunState.runUntil(targetFrameRTC);
+                break;
             }
 
             const upcomingForeground = foregroundPlayerRunState?.getUpcomingItems(

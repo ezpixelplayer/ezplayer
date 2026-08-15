@@ -176,10 +176,8 @@ export interface PlayerPStatusContent {
         | 'Down'; // FPP: offline / unreachable
 
     reported_time: number;
-    /** Engine clock at status time; freezes during pause (reported_time doesn't). */
     engine_time?: number;
     now_playing?: PlayingItem;
-    /** Currently playing background-schedule item, if any. Independent of `now_playing`. */
     background_now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
