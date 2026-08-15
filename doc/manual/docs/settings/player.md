@@ -11,14 +11,18 @@ The **Player** tile holds playback-engine behaviors.
 
 _(Desktop app — Windows and Mac)_
 
-When enabled, the OS launches EZPlayer automatically **after you sign in** to
-your user account. Turn it off to remove EZPlayer from automatic startup.
+When enabled, the OS launches EZPlayer automatically after you sign in to
+your user account.  Turn it off to remove EZPlayer from automatic startup.
 
-This starts the app at sign-in, not at power-on. For a machine that should come
-up unattended (boot → signed-in session → EZPlayer), you also need the OS to
-sign in automatically. On Windows, confirm the same startup toggle in
-**Settings → Apps → Startup**; on Mac, check **System Settings → General →
-Login Items**.
+This starts the app at sign-in, not at power-on.  For a machine that should
+run EZPlayer completely unattended, you also need the OS to
+sign in automatically.
+
+To confirm the app is registered for startup on Windows, go to
+**Settings → Apps → Startup**.  On Mac, check **System Settings → General → Login Items**.
+
+This setting is not available on Linux.  The recommendation there is systemd
+services.
 
 ## Background Sequence
 
