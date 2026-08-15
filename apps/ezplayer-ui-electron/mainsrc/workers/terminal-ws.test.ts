@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { createServer, type Server } from 'http';
 import fs from 'fs/promises';
 import os from 'os';
@@ -9,19 +9,14 @@ import { setFeaturePassword } from '../remoteaccess.js';
 const PASSWORD = 'correct horse battery';
 
 type TerminalModule = typeof import('./terminal-ws.js');
+type TerminalHost = import('./terminal-ws.js').TerminalHost;
 
 let showFolder: string;
 let server: Server;
 let port: number;
 let mod: TerminalModule;
 let wss: WebSocketServer;
-let host: {
-    getShowFolder: ReturnType<typeof vi.fn>;
-    shellStart: ReturnType<typeof vi.fn>;
-    shellInput: ReturnType<typeof vi.fn>;
-    shellResize: ReturnType<typeof vi.fn>;
-    shellKill: ReturnType<typeof vi.fn>;
-};
+let host: { [K in keyof TerminalHost]: Mock<TerminalHost[K]> };
 
 /** Fresh module per test: terminal-ws intentionally keeps process-wide state
  *  (the single session, the lockout counter), so tests must not share it. */
@@ -29,11 +24,11 @@ async function startHarness(): Promise<void> {
     vi.resetModules();
     mod = await import('./terminal-ws.js');
     host = {
-        getShowFolder: vi.fn().mockReturnValue(showFolder),
-        shellStart: vi.fn().mockResolvedValue(undefined),
-        shellInput: vi.fn(),
-        shellResize: vi.fn(),
-        shellKill: vi.fn(),
+        getShowFolder: vi.fn<TerminalHost['getShowFolder']>().mockReturnValue(showFolder),
+        shellStart: vi.fn<TerminalHost['shellStart']>().mockResolvedValue(undefined),
+        shellInput: vi.fn<TerminalHost['shellInput']>(),
+        shellResize: vi.fn<TerminalHost['shellResize']>(),
+        shellKill: vi.fn<TerminalHost['shellKill']>(),
     };
     wss = mod.createTerminalWss(host);
     server = createServer();
