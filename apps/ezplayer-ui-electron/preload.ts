@@ -216,6 +216,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         });
     },
 
+    isLoginItemPlatformSupported: () => ipcRenderer.invoke('login-item:isPlatformSupported'),
+    isLoginItemSupported: () => ipcRenderer.invoke('login-item:isSupported'),
+    getOpenAtLogin: () => ipcRenderer.invoke('login-item:get'),
+    setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
+
     // Auto-update
     checkForUpdates: () => ipcRenderer.invoke('autoupdate:check'),
     downloadUpdate: () => ipcRenderer.invoke('autoupdate:download'),
