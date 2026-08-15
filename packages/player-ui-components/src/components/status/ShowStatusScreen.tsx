@@ -211,6 +211,16 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                         </Typography>
                                     </>
                                 )}
+                                {player.background_now_playing && (
+                                    <>
+                                        <Typography variant="body2">
+                                            Background: {player.background_now_playing.title}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            Until: {formatTime(player.background_now_playing.until)}
+                                        </Typography>
+                                    </>
+                                )}
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
