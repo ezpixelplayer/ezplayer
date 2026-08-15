@@ -1,6 +1,6 @@
 import dgram from 'dgram';
-import { SendBatch, UdpClient, UDPSender } from './UDP';
-import { Sender, SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
+import { UdpClient, UDPSender } from './UDP';
+import { SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
 import { toDataView } from '../../util/Utils';
 
 export const DDP_PORT_DEFAULT = 4048;
@@ -177,7 +177,8 @@ export class DDPSender extends UDPSender {
         if (!this.client || !connected) return true;
 
         const burst = job.burstSize;
-        let rlLeftToSend = burst;
+        // Rate-limit bookkeeping; only written until the write-back TODO below lands.
+        let _rlLeftToSend = burst;
 
         let bytesThisPacket = 0;
         let packetBufs: Uint8Array[] = [];
@@ -219,7 +220,7 @@ export class DDPSender extends UDPSender {
 
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
-                rlLeftToSend -= bytesThisPacket;
+                _rlLeftToSend -= bytesThisPacket;
                 sendOut(false);
                 continue;
             }

@@ -16,7 +16,8 @@
     "scripts": {
         "build": "tsc && tsup --format cjs,esm",
         "vitest": "vitest",
-        "lint": "eslint . --ext .ts,.tsx --fix",
+        "lint": "eslint .",
+        "lint:fix": "eslint --fix .",
         "prepack": "npm run build",
         "pack": "npm pack"
     },
@@ -30,10 +31,10 @@
         "zstddec": "^0.1.0"
     },
     "devDependencies": {
+        "@eslint/js": "catalog:",
         "@types/jest": "^29.5.14",
-        "@typescript-eslint/eslint-plugin": "^6.21.0",
-        "@typescript-eslint/parser": "^6.21.0",
         "eslint": "catalog:",
+        "typescript-eslint": "catalog:",
         "tsup": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",

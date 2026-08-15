@@ -194,7 +194,7 @@ export class FrameReference {
     }
 
     get isReleased(): boolean {
-        return this.underlyingHandle == undefined;
+        return this.underlyingHandle === undefined;
     }
 }
 
