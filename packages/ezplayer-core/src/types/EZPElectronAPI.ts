@@ -60,6 +60,10 @@ export interface AutoDetectedSongFiles {
     detectedTitle?: string;
     detectedArtist?: string;
     durationSecs?: number;
+    /** True when the FSEQ header names an audio file that must be resolved. */
+    audioRequired?: boolean;
+    /** Basename of the audio file named in the FSEQ header, when present. */
+    headerAudioName?: string;
 }
 
 export interface AudioTagMetadata {
@@ -67,6 +71,38 @@ export interface AudioTagMetadata {
     artist?: string;
     imageFile?: string;
     imageGeneratedFromAudio?: boolean;
+}
+
+export interface BatchImportFailure {
+    fseqPath: string;
+    fseqName: string;
+    reason: string;
+}
+
+export interface BatchImportSuccess {
+    fseqPath: string;
+    fseqName: string;
+    title: string;
+    artist: string;
+    mediaFound: boolean;
+}
+
+/** An FSEQ left alone because a song entry for it already exists. */
+export interface BatchImportSkipped {
+    fseqPath: string;
+    fseqName: string;
+    /** Title of the existing song entry, when known. */
+    existingTitle?: string;
+}
+
+export interface BatchImportSummary {
+    total: number;
+    imported: number;
+    failed: number;
+    successes: BatchImportSuccess[];
+    failures: BatchImportFailure[];
+    /** FSEQs skipped because they already have song entries. */
+    skipped?: BatchImportSkipped[];
 }
 
 // Node/coord types, color profile, channel mapping, and `GetNodeResult` now live in
@@ -90,6 +126,10 @@ export interface EZPElectronAPI {
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
     autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
     extractAudioTagMetadata: (audioPath: string) => Promise<AudioTagMetadata>;
+    /** Import many .fseq paths using the same autodetection as single-song add. */
+    batchImportSequences: (fseqPaths: string[]) => Promise<BatchImportSummary>;
+    /** Import every .fseq under a folder (recursive). */
+    batchImportSequencesFromFolder: (folderPath: string) => Promise<BatchImportSummary>;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;
@@ -179,6 +219,14 @@ export interface EZPElectronAPI {
     // Audio
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => void;
     onAudioChunk: (callback: (data: AudioChunk) => void) => void;
+
+    /** Whether this OS supports sign-in startup (Windows and macOS). */
+    isLoginItemPlatformSupported: () => Promise<boolean>;
+    /** Whether sign-in startup can be configured (installed Windows/macOS app only, not dev mode). */
+    isLoginItemSupported: () => Promise<boolean>;
+    /** Whether EZPlayer is configured to launch when the user signs in. */
+    getOpenAtLogin: () => Promise<boolean>;
+    setOpenAtLogin: (openAtLogin: boolean) => Promise<boolean>;
 
     // Auto-update
     checkForUpdates: () => Promise<void>;

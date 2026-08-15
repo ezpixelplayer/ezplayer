@@ -22,14 +22,16 @@ EZPlayer can be used completely locally, supporting:
 - DDP and E1.31 controllers on attached IPv4 networks
 - Live view of the show
 - Status screens
+- Network scan, controller status, and actions
 - Remote Falcon viewer control
 - Local (LAN) Web UI
 - Background sequences, volume control automation, etc.
+- Integrations API for advanced users
 
 With the (optional) EZPlayer cloud registration:
 
 - See the full EZPlayer UI for your show over the internet
-- A show page for your viewers
+- Configure show page for your viewers
 
 For sequences from EZRGB:
 
@@ -37,21 +39,6 @@ For sequences from EZRGB:
 - Layout sync
 
 You can also build and deploy your whole show through the cloud, directly to your EZPlayer.
-
-We are currently enhancing:
-
-- Controller status
-- [Background blending, brightness options, and other small issues](https://github.com/ezpixelplayer/ezplayer/issues)
-
-Later in 2026 we will be adding:
-
-- Sync packets
-- Documentation of the HTTP API for integration projects
-
-On the roadmap (dates not committed):
-
-- HDMI video playback
-- Interactivity
 
 EZPlayer doesn't support (and likely won't support):
 
@@ -119,6 +106,8 @@ EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required).
 
 ### Running EZPlayer
 
+For detailed documentation, see the [EZPlayer manual](https://docs.ezplayer.dev/).
+
 #### Running EZPlayer Locally
 
 When you first run EZPlayer, you will choose your show folder. This should contain your xLights files, which are needed for EZPlayer to find your controllers. You can change the show folder later from the "Settings" screen.
@@ -176,13 +165,14 @@ So, we started a new one, featuring:
 
 ### Roadmap
 
+August 2026: With 0.6 wrapping up, we expect 0.7 to contain one more round of architectural features related to the playback pipeline (pixel data and audio).  We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements).  October onward will be focused on stability and fixes.
+
 We have a lot of features planned for the coming years. We aim to simplify the way the xLights ecosystem works, while solving long-standing problems. We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
 
 Despite that broad scope, we want to avoid the complexity that currently plagues the xLights ecosystem, so there are a few things we do not expect we will ever implement:
 
 - USB controllers
 - Cape support (this is a player, not a controller firmware)
-- All the complexity and limitations of anything like FPP connect
 - A complex plugin architecture
 
 ### What Is The Relationship To EZRGB?

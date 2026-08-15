@@ -116,7 +116,7 @@ function openUrl(url: string): void {
     else window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-/** One row action, rendered both as a kebab menu item and a fold-out button. */
+/** One row action, rendered as a kebab menu item. */
 interface RowAction {
     key: string;
     label: string;
@@ -547,15 +547,6 @@ const GridRow: React.FC<{
                     <TableCell colSpan={6} sx={{ p: 0, border: 0 }}>
                         <Collapse in={open} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, pl: 6, borderTop: '1px solid', borderColor: 'divider' }}>
-                                {actions.length > 0 && (
-                                    <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}>
-                                        {actions.map((a) => (
-                                            <Button key={a.key} size="small" color={a.color} startIcon={a.icon} onClick={a.onClick} disabled={a.disabled} title={a.title}>
-                                                {a.label}
-                                            </Button>
-                                        ))}
-                                    </Stack>
-                                )}
                                 {hasHealthDetail && health && (
                                     <Box sx={{ mb: 2 }}>
                                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -1098,154 +1089,6 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         <Button size="small" startIcon={<AddIcon />} onClick={openNew}>
                             New record
                         </Button>
-                    </Box>
-                    {rows.length === 0 ? (
-                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                            No controllers known or discovered yet. Load a show layout, or pick networks and run a scan.
-                        </Typography>
-                    ) : (
-                        <Table size="small">
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell sx={{ width: 32 }} />
-                                    {(
-                                        [
-                                            ['state', 'State'],
-                                            ['name', 'Name'],
-                                            ['ip', 'IP'],
-                                            ['type', 'Type'],
-                                        ] as [SortKey, string][]
-                                    ).map(([key, label]) => (
-                                        <TableCell key={key} sortDirection={sortKey === key ? sortDir : false}>
-                                            <TableSortLabel
-                                                active={sortKey === key}
-                                                direction={sortKey === key ? sortDir : 'asc'}
-                                                onClick={() => toggleSort(key)}
-                                            >
-                                                {label}
-                                            </TableSortLabel>
-                                        </TableCell>
-                                    ))}
-                                    <TableCell sx={{ textAlign: 'right' }}>Actions</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {visibleRows.map((row) => (
-                                    <GridRow
-                                        key={row.key}
-                                        row={row}
-                                        busy={busyTargets.has(row.device?.id ?? `${row.address ?? ''}|direct`)}
-                                        serverBase={serverBase}
-                                        onStatus={loadDetail}
-                                        onAction={runDeviceAction}
-                                        onUpload={upload}
-                                        onActivate={setActive}
-                                        onEdit={openEdit}
-                                        onPromote={openPromote}
-                                        onDelete={deleteRecord}
-                                    />
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
-                </Card>
-
-                {/* Networks + scan — below the grid: finding controllers is the
-                     occasional task, reading the grid is the frequent one. */}
-                <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                        <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
-                            Networks
-                        </Typography>
-                        <Button size="small" startIcon={<RefreshIcon />} onClick={refresh}>
-                            Refresh
-                        </Button>
-                    </Box>
-
-                    {interfaces.length === 0 ? (
-                        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-                            No external networks found on this host.
-                        </Typography>
-                    ) : (
-                        <Table size="small" sx={{ mb: 2 }}>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell sx={{ width: 48 }}>Scan</TableCell>
-                                    <TableCell>Network</TableCell>
-                                    <TableCell>Interface</TableCell>
-                                    <TableCell sx={{ whiteSpace: 'nowrap' }}>Controllers expected</TableCell>
-                                    <TableCell sx={{ whiteSpace: 'nowrap' }}>Proxy Allowed</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {interfaces.map((n) => {
-                                    const pol = policyFor(n.network);
-                                    const allowed = pol?.allow !== false;
-                                    return (
-                                        <TableRow key={n.network} sx={{ opacity: allowed ? 1 : 0.55 }}>
-                                            <TableCell padding="checkbox">
-                                                <Checkbox
-                                                    size="small"
-                                                    checked={allowed && isChecked(n.network)}
-                                                    disabled={!allowed}
-                                                    onChange={() => toggle(n.network)}
-                                                />
-                                            </TableCell>
-                                            <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{n.network}</TableCell>
-                                            <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                                                {n.name}
-                                                <Typography
-                                                    variant="caption"
-                                                    sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
-                                                >
-                                                    {n.address}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Checkbox
-                                                    size="small"
-                                                    checked={!!pol?.expectControllers}
-                                                    disabled={!allowed}
-                                                    onChange={(e) =>
-                                                        setNetworkPolicy(n.network, { expectControllers: e.target.checked })
-                                                    }
-                                                    inputProps={{ 'aria-label': 'controllers expected on this network' }}
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Checkbox
-                                                    size="small"
-                                                    checked={allowed}
-                                                    onChange={(e) => setNetworkPolicy(n.network, { allow: e.target.checked })}
-                                                    inputProps={{ 'aria-label': 'allow scanning and proxying to this network' }}
-                                                />
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    )}
-
-                    <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
-                        <ToggleButtonGroup
-                            size="small"
-                            exclusive
-                            value={depth}
-                            onChange={(_e, v: Depth | null) => v && setDepth(v)}
-                        >
-                            <ToggleButton value="sweep">Sweep</ToggleButton>
-                            <ToggleButton value="identify">Identify</ToggleButton>
-                            <ToggleButton value="full">Full</ToggleButton>
-                        </ToggleButtonGroup>
-
-                        <FormControlLabel
-                            control={<Checkbox checked={fppProxy} onChange={(e) => setFppProxy(e.target.checked)} />}
-                            label="Follow FPP proxies"
-                        />
-
-                        <Box sx={{ flexGrow: 1 }} />
-
                         <Button
                             size="small"
                             color="warning"
@@ -1266,6 +1109,159 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         >
                             {bulkBusy === 'reboot' ? 'Rebooting…' : `Reboot all (${rebootAllRows.length})`}
                         </Button>
+                    </Box>
+                    {rows.length === 0 ? (
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            No controllers known or discovered yet. Load a show layout, or pick networks and run a scan.
+                        </Typography>
+                    ) : (
+                        // The Card clips overflow, which hid the Actions column on small displays.
+                        <Box sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ width: 32 }} />
+                                        {(
+                                            [
+                                                ['state', 'State'],
+                                                ['name', 'Name'],
+                                                ['ip', 'IP'],
+                                                ['type', 'Type'],
+                                            ] as [SortKey, string][]
+                                        ).map(([key, label]) => (
+                                            <TableCell key={key} sortDirection={sortKey === key ? sortDir : false}>
+                                                <TableSortLabel
+                                                    active={sortKey === key}
+                                                    direction={sortKey === key ? sortDir : 'asc'}
+                                                    onClick={() => toggleSort(key)}
+                                                >
+                                                    {label}
+                                                </TableSortLabel>
+                                            </TableCell>
+                                        ))}
+                                        <TableCell sx={{ textAlign: 'right' }}>Actions</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {visibleRows.map((row) => (
+                                        <GridRow
+                                            key={row.key}
+                                            row={row}
+                                            busy={busyTargets.has(row.device?.id ?? `${row.address ?? ''}|direct`)}
+                                            serverBase={serverBase}
+                                            onStatus={loadDetail}
+                                            onAction={runDeviceAction}
+                                            onUpload={upload}
+                                            onActivate={setActive}
+                                            onEdit={openEdit}
+                                            onPromote={openPromote}
+                                            onDelete={deleteRecord}
+                                        />
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </Box>
+                    )}
+                </Card>
+
+                {/* Networks + scan — below the grid: finding controllers is the
+                     occasional task, reading the grid is the frequent one. */}
+                <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                        <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
+                            Networks
+                        </Typography>
+                        <Button size="small" startIcon={<RefreshIcon />} onClick={refresh}>
+                            Refresh
+                        </Button>
+                    </Box>
+
+                    {interfaces.length === 0 ? (
+                        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                            No external networks found on this host.
+                        </Typography>
+                    ) : (
+                        // The Card clips overflow, which hid the right-hand columns on small displays.
+                        <Box sx={{ overflowX: 'auto', mb: 2 }}>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ width: 48 }}>Scan</TableCell>
+                                        <TableCell>Network</TableCell>
+                                        <TableCell>Interface</TableCell>
+                                        <TableCell sx={{ whiteSpace: 'nowrap' }}>Controllers expected</TableCell>
+                                        <TableCell sx={{ whiteSpace: 'nowrap' }}>Proxy Allowed</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {interfaces.map((n) => {
+                                        const pol = policyFor(n.network);
+                                        const allowed = pol?.allow !== false;
+                                        return (
+                                            <TableRow key={n.network} sx={{ opacity: allowed ? 1 : 0.55 }}>
+                                                <TableCell padding="checkbox">
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={allowed && isChecked(n.network)}
+                                                        disabled={!allowed}
+                                                        onChange={() => toggle(n.network)}
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{n.network}</TableCell>
+                                                <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                                    {n.name}
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
+                                                    >
+                                                        {n.address}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={!!pol?.expectControllers}
+                                                        disabled={!allowed}
+                                                        onChange={(e) =>
+                                                            setNetworkPolicy(n.network, { expectControllers: e.target.checked })
+                                                        }
+                                                        inputProps={{ 'aria-label': 'controllers expected on this network' }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={allowed}
+                                                        onChange={(e) => setNetworkPolicy(n.network, { allow: e.target.checked })}
+                                                        inputProps={{ 'aria-label': 'allow scanning and proxying to this network' }}
+                                                    />
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </Box>
+                    )}
+
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                        <ToggleButtonGroup
+                            size="small"
+                            exclusive
+                            value={depth}
+                            onChange={(_e, v: Depth | null) => v && setDepth(v)}
+                        >
+                            <ToggleButton value="sweep">Sweep</ToggleButton>
+                            <ToggleButton value="identify">Identify</ToggleButton>
+                            <ToggleButton value="full">Full</ToggleButton>
+                        </ToggleButtonGroup>
+
+                        <FormControlLabel
+                            control={<Checkbox checked={fppProxy} onChange={(e) => setFppProxy(e.target.checked)} />}
+                            label="Follow FPP proxies"
+                        />
+
+                        <Box sx={{ flexGrow: 1 }} />
 
                         <Button
                             variant="contained"

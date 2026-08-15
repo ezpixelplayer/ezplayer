@@ -131,6 +131,10 @@ export type {
     ChannelRoleKind,
     ImageInfo,
     AudioTagMetadata,
+    BatchImportFailure,
+    BatchImportSkipped,
+    BatchImportSuccess,
+    BatchImportSummary,
 } from './types/EZPElectronAPI';
 
 export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
@@ -148,6 +152,7 @@ export {
     type UpcomingPlaybackActions,
     getPlaylistDurationMS,
     getScheduleTimes,
+    getSeqTimesMS,
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,

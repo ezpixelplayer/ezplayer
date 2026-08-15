@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
     Autocomplete,
@@ -84,6 +84,14 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             length: 0,
         });
     }, [open]);
+
+    const saveValidationMessages = useMemo(() => {
+        const messages: string[] = [];
+        if (!newSongData.title.trim()) messages.push('Title is required.');
+        if (!newSongData.artist.trim()) messages.push('Artist is required.');
+        if (!(fseqFile || fseqPlayerName)) messages.push('A .fseq file is required.');
+        return messages;
+    }, [newSongData.title, newSongData.artist, fseqFile, fseqPlayerName]);
 
     const handleNewSongDataChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -297,7 +305,10 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                Upload .mp3 File
+                                Upload .mp3 File{' '}
+                                <Typography component="span" variant="body2" color="text.secondary">
+                                    (optional)
+                                </Typography>
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <FileButton
@@ -353,6 +364,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 fullWidth
                                 required
+                                helperText="Required"
                             />
                         </Grid>
                         <Grid item xs={6}>
@@ -363,6 +375,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 fullWidth
                                 required
+                                helperText="Required"
                             />
                         </Grid>
                         <Grid item xs={6}>
@@ -432,6 +445,20 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             <Typography variant="caption" color="text.secondary">
                                 Uploading {uploadingName}…
                             </Typography>
+                        </Box>
+                    )}
+                    {saveValidationMessages.length > 0 && (
+                        <Box sx={{ mt: 2 }} role="alert">
+                            {saveValidationMessages.map((message) => (
+                                <Typography key={message} variant="body2" color="error">
+                                    {message}
+                                </Typography>
+                            ))}
+                            {saveValidationMessages.length > 1 && (
+                                <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
+                                    Please complete all required fields before saving.
+                                </Typography>
+                            )}
                         </Box>
                     )}
                     <Box

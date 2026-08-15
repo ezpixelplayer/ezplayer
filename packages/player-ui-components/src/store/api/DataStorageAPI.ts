@@ -7,6 +7,7 @@ import type {
     ControllerCommand,
     EZPlayerCommand,
     PlaybackSettings,
+    BatchImportSummary,
 } from '@ezplayer/ezplayer-core';
 
 import { AppDispatch } from '../..';
@@ -156,4 +157,23 @@ export interface DataStorageAPI {
         artist?: string;
         imageFile?: string;
     }>;
+
+    /** Bulk-import `.fseq` files already in the show folder (web/LAN).
+     *  `companionAudioNames` = audio uploaded in the same selection (colocated
+     *  equivalent). `allowExistingAudio: true` (existing-files import) instead
+     *  lets any show-folder audio match — root or subdirectory, exact name. */
+    batchImportShowSequences?: (
+        fseqNames: string[],
+        companionAudioNames?: string[],
+        allowExistingAudio?: boolean,
+    ) => Promise<BatchImportSummary>;
+
+    /** LAN bulk import: upload companions + fseqs and import in one HTTP request.
+     *  Optional `importFseqNames` imports existing show-folder FSEQs after an
+     *  audio-only upload (media-folder retry from the browser). */
+    batchUploadImportShowSequences?: (
+        files: Array<{ name: string; data: Blob }>,
+        companionAudioNames?: string[],
+        importFseqNames?: string[],
+    ) => Promise<BatchImportSummary>;
 }

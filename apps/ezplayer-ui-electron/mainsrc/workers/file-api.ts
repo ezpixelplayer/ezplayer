@@ -15,6 +15,9 @@
  * EZPlayer-native additions (JSON bodies, behind jsonBody()):
  *   POST /api/ezp/sequences                  register SequenceRecords (RPC to main)
  *   POST /api/ezp/sequences/autodetect       find audio/metadata for an fseq
+ *   POST /api/ezp/sequences/batch-import     bulk-import fseq already in show folder
+ *   POST /api/ezp/sequences/batch-upload-import  upload many files + import in one request
+ *     Body: uint32BE manifestLen + UTF-8 JSON manifest + concatenated file bytes
  *
  * Show folders are flat, so each logical FPP directory is the show root plus
  * an extension filter. This router must mount BEFORE jsonBody() so upload
@@ -28,9 +31,11 @@ import * as fs from 'fs';
 import fsp from 'fs/promises';
 import * as crypto from 'crypto';
 import type { IncomingMessage } from 'http';
+import { Readable } from 'stream';
 import { send } from '@koa/send';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
+import { batchImportSequences } from '../data/batch-sequence-import.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
 import { fileBaseName } from './pathnames.js';
 
@@ -38,6 +43,8 @@ export interface FileApiDeps {
     getShowFolder: () => string | undefined;
     getSequences: () => SequenceRecord[] | undefined;
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
+    /** Playback-settings media folder for audio autodetection. */
+    getMediaFolder?: () => string | undefined;
 }
 
 const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac', '.wma']);
@@ -173,6 +180,159 @@ function streamToFile(req: IncomingMessage, filePath: string, append = false): P
         out.on('finish', () => resolve(written));
         out.on('error', reject);
         req.on('error', reject);
+    });
+}
+
+/** Read exactly `byteCount` bytes from `req` into a Buffer, leaving leftover
+ *  bytes on the stream for the next consumer (via unshift). */
+export function readExactBytes(req: IncomingMessage, byteCount: number): Promise<Buffer> {
+    if (byteCount < 0 || !Number.isFinite(byteCount)) {
+        return Promise.reject(Object.assign(new Error('Invalid byte count'), { status: 400 }));
+    }
+    if (byteCount === 0) {
+        return Promise.resolve(Buffer.alloc(0));
+    }
+    return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        let remaining = byteCount;
+        let settled = false;
+
+        const fail = (err: Error & { status?: number }) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(err);
+        };
+
+        const succeed = (buf: Buffer) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            req.pause();
+            resolve(buf);
+        };
+
+        const onData = (chunk: Buffer) => {
+            if (settled) return;
+            if (chunk.length <= remaining) {
+                remaining -= chunk.length;
+                chunks.push(chunk);
+                if (remaining === 0) succeed(Buffer.concat(chunks, byteCount));
+                return;
+            }
+            const needed = chunk.subarray(0, remaining);
+            const leftover = chunk.subarray(remaining);
+            remaining = 0;
+            req.pause();
+            (req as Readable).unshift(leftover);
+            chunks.push(needed);
+            succeed(Buffer.concat(chunks, byteCount));
+        };
+
+        const onEnd = () => {
+            if (settled) return;
+            if (remaining > 0) {
+                fail(Object.assign(new Error('Unexpected end of upload body'), { status: 400 }));
+            }
+        };
+
+        const onError = (err: Error) => fail(err);
+
+        const cleanup = () => {
+            req.off('data', onData);
+            req.off('end', onEnd);
+            req.off('error', onError);
+        };
+
+        req.on('data', onData);
+        req.on('end', onEnd);
+        req.on('error', onError);
+        req.resume();
+    });
+}
+
+/** Read exactly `byteCount` bytes from `req` into `filePath`, leaving any
+ *  leftover bytes on the stream for the next consumer (via unshift). */
+export function streamExactBytes(req: IncomingMessage, filePath: string, byteCount: number): Promise<void> {
+    if (byteCount < 0 || !Number.isFinite(byteCount)) {
+        return Promise.reject(Object.assign(new Error('Invalid byte count'), { status: 400 }));
+    }
+    if (byteCount === 0) {
+        return fsp.writeFile(filePath, Buffer.alloc(0));
+    }
+    return new Promise((resolve, reject) => {
+        const out = fs.createWriteStream(filePath);
+        let remaining = byteCount;
+        let settled = false;
+
+        const fail = (err: Error & { status?: number }) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            out.destroy();
+            try {
+                fs.unlinkSync(filePath);
+            } catch {
+                /* best-effort */
+            }
+            reject(err);
+        };
+
+        const succeed = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            // Pause so the next streamExactBytes call can attach listeners
+            // before more data is delivered (avoids dropped chunks).
+            req.pause();
+            out.end(() => resolve());
+        };
+
+        const onData = (chunk: Buffer) => {
+            if (settled) return;
+            if (chunk.length <= remaining) {
+                remaining -= chunk.length;
+                if (!out.write(chunk) && remaining > 0) {
+                    req.pause();
+                    out.once('drain', () => req.resume());
+                }
+                if (remaining === 0) succeed();
+                return;
+            }
+            const needed = chunk.subarray(0, remaining);
+            const leftover = chunk.subarray(remaining);
+            remaining = 0;
+            req.pause();
+            // Put unused bytes back for the next file in the concatenated body.
+            (req as Readable).unshift(leftover);
+            if (!out.write(needed)) {
+                out.once('drain', succeed);
+            } else {
+                succeed();
+            }
+        };
+
+        const onEnd = () => {
+            if (settled) return;
+            if (remaining > 0) {
+                fail(Object.assign(new Error('Unexpected end of upload body'), { status: 400 }));
+            }
+        };
+
+        const onError = (err: Error) => fail(err);
+
+        const cleanup = () => {
+            req.off('data', onData);
+            req.off('end', onEnd);
+            req.off('error', onError);
+            out.off('error', onError);
+        };
+
+        out.on('error', onError);
+        req.on('data', onData);
+        req.on('end', onEnd);
+        req.on('error', onError);
+        req.resume();
     });
 }
 
@@ -544,6 +704,20 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         }
     });
 
+    // ------------------------------------------------------------------
+    // Bulk upload + import (one HTTP request for LAN UI)
+    // Body: uint32BE manifestLen + UTF-8 JSON manifest + concatenated file
+    // bytes in manifest.files order. Manifest stays out of headers so large
+    // folder imports do not hit Node's ~16KB request-header limit.
+    // ------------------------------------------------------------------
+    router.post('/api/ezp/sequences/batch-upload-import', async (ctx) => {
+        const showFolder = requireShowFolder(ctx);
+        if (!showFolder) return;
+        const res = await batchUploadImportSequencesCore(showFolder, deps, ctx.req);
+        ctx.status = res.status;
+        ctx.body = res.body;
+    });
+
     return router;
 }
 
@@ -607,6 +781,241 @@ export async function audioMetadataCore(showFolder: string | undefined, audioNam
     };
 }
 
+/** Bulk-import `.fseq` files already present in the show folder (LAN / web UI).
+ *  Body: `{ fseqNames: string[], companionAudioNames?: string[], allowExistingAudio?: boolean }`.
+ *  Two audio modes:
+ *  - Upload flow: `companionAudioNames` are audio files uploaded in the same
+ *    browser selection; only those (or the media folder) may supply audio —
+ *    never unrelated MP3s already sitting in the show folder.
+ *  - Existing-files flow: `allowExistingAudio: true` lifts that restriction so
+ *    any show-folder audio (root or subdirectory) can match, exact-name only. */
+export async function batchImportSequencesCore(
+    showFolder: string | undefined,
+    deps: FileApiDeps,
+    fseqNames: unknown,
+    companionAudioNames?: unknown,
+    allowExistingAudio?: unknown,
+): Promise<ProxyResult> {
+    if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
+    if (!Array.isArray(fseqNames)) {
+        return { status: 400, body: { error: 'Body must include fseqNames array' } };
+    }
+
+    const paths: string[] = [];
+    for (const raw of fseqNames) {
+        if (typeof raw !== 'string' || !raw.trim()) continue;
+        const name = raw.trim();
+        if (path.extname(name).toLowerCase() !== '.fseq') continue;
+        const nameErr = checkName(name);
+        if (nameErr) continue;
+        const target = resolveInShow(showFolder, name);
+        if (target) paths.push(target);
+    }
+
+    const unique = [...new Set(paths)];
+    if (!unique.length) {
+        return { status: 400, body: { error: 'No valid .fseq file names provided' } };
+    }
+
+    const allowlist: string[] = [];
+    if (Array.isArray(companionAudioNames)) {
+        for (const raw of companionAudioNames) {
+            if (typeof raw !== 'string' || !raw.trim()) continue;
+            const name = path.basename(raw.trim());
+            if (checkName(name)) continue;
+            allowlist.push(name);
+        }
+    }
+
+    try {
+        const summary = await batchImportSequences(unique, {
+            mediaFolder: deps.getMediaFolder?.(),
+            // Upload flow: restrict show-folder audio to this request's
+            // companions. Existing-files flow: unrestricted (undefined),
+            // exact-match still applies.
+            colocatedAudioAllowlist: allowExistingAudio === true ? undefined : allowlist,
+            exactAudioMatch: true,
+            existingSequences: deps.getSequences(),
+            putSequences: async (recs) => (await deps.putSequences(recs)) as SequenceRecord[],
+        });
+        return { status: 200, body: summary };
+    } catch (err: any) {
+        return { status: 503, body: { error: err?.message ?? 'Batch import failed' } };
+    }
+}
+
+export interface BatchUploadManifestFile {
+    name: string;
+    size: number;
+}
+
+export interface BatchUploadManifest {
+    files: BatchUploadManifestFile[];
+    companionAudioNames?: string[];
+    /** Import these show-folder FSEQs after writing `files` (e.g. audio-only
+     *  media-folder upload on LAN retry). When omitted, every `.fseq` in
+     *  `files` is imported. */
+    importFseqNames?: string[];
+}
+
+/** Max UTF-8 size for the length-prefixed batch-upload manifest in the body. */
+const MAX_BATCH_MANIFEST_BYTES = 4 * 1024 * 1024;
+
+/** Stream concatenated file bytes into the show folder, then run batch import.
+ *  Used by LAN bulk import so the browser makes one HTTP call instead of
+ *  N `/api/file/sequences/...` uploads + a separate batch-import.
+ *
+ *  Body layout (avoids putting large manifests in HTTP headers):
+ *    uint32 BE manifest length | UTF-8 JSON BatchUploadManifest | file bytes… */
+export async function batchUploadImportSequencesCore(
+    showFolder: string | undefined,
+    deps: FileApiDeps,
+    req: IncomingMessage,
+): Promise<ProxyResult> {
+    if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
+
+    let manifest: BatchUploadManifest;
+    try {
+        const lenBuf = await readExactBytes(req, 4);
+        const manifestLen = lenBuf.readUInt32BE(0);
+        if (!Number.isInteger(manifestLen) || manifestLen <= 0 || manifestLen > MAX_BATCH_MANIFEST_BYTES) {
+            return { status: 400, body: { error: 'Invalid batch manifest length' } };
+        }
+        const manifestBuf = await readExactBytes(req, manifestLen);
+        manifest = JSON.parse(manifestBuf.toString('utf8')) as BatchUploadManifest;
+    } catch (err: unknown) {
+        const status =
+            err && typeof err === 'object' && 'status' in err && typeof (err as { status: unknown }).status === 'number'
+                ? (err as { status: number }).status
+                : 400;
+        const message = err instanceof Error ? err.message : 'Invalid batch manifest';
+        return { status, body: { error: message } };
+    }
+    if (!Array.isArray(manifest.files) || !manifest.files.length) {
+        return { status: 400, body: { error: 'Manifest must include a non-empty files array' } };
+    }
+
+    let totalBytes = 0;
+    const prepared: { name: string; size: number; target: string }[] = [];
+    for (const entry of manifest.files) {
+        if (!entry || typeof entry.name !== 'string' || typeof entry.size !== 'number') {
+            return { status: 400, body: { error: 'Each manifest file needs name and size' } };
+        }
+        const name = path.basename(entry.name.trim());
+        const nameErr = checkName(name);
+        if (nameErr) return { status: 400, body: { error: `${name}: ${nameErr}` } };
+        if (!Number.isInteger(entry.size) || entry.size < 0) {
+            return { status: 400, body: { error: `${name}: invalid size` } };
+        }
+        if (PROTECTED_NAMES.has(name.toLowerCase())) {
+            return { status: 403, body: { error: `${name} is protected` } };
+        }
+        const target = resolveInShow(showFolder, name);
+        if (!target) return { status: 403, body: { error: `Resolved path outside show folder: ${name}` } };
+        totalBytes += entry.size;
+        prepared.push({ name, size: entry.size, target });
+    }
+    if (totalBytes > MAX_UPLOAD_BYTES) {
+        return { status: 413, body: { error: 'Upload exceeds maximum size' } };
+    }
+
+    const staging = await ensureStagingDir(showFolder);
+    /** Files placed into the show folder during this request, with optional
+     *  displaced originals so mid-batch failure can restore them. */
+    const written: { name: string; target: string; backupPath?: string }[] = [];
+    try {
+        for (const file of prepared) {
+            const tmp = path.join(staging, `batch-${crypto.randomBytes(8).toString('hex')}`);
+            await streamExactBytes(req, tmp, file.size);
+
+            let backupPath: string | undefined;
+            try {
+                // If a show-folder file already exists, move it aside before
+                // renaming the upload into place so failure cleanup can restore it.
+                try {
+                    await fsp.access(file.target);
+                    backupPath = path.join(staging, `batch-bak-${crypto.randomBytes(8).toString('hex')}`);
+                    await fsp.rename(file.target, backupPath);
+                } catch (accessErr: unknown) {
+                    const code =
+                        accessErr && typeof accessErr === 'object' && 'code' in accessErr
+                            ? (accessErr as { code: unknown }).code
+                            : undefined;
+                    if (code !== 'ENOENT') throw accessErr;
+                }
+
+                await fsp.rename(tmp, file.target);
+                written.push({ name: file.name, target: file.target, backupPath });
+                console.log(`[BatchImport] Wrote uploaded "${file.name}" (${file.size} bytes)`);
+            } catch (placeErr: unknown) {
+                try {
+                    await fsp.unlink(tmp);
+                } catch {
+                    /* best-effort */
+                }
+                if (backupPath) {
+                    try {
+                        await fsp.rename(backupPath, file.target);
+                    } catch {
+                        /* best-effort */
+                    }
+                }
+                throw placeErr;
+            }
+        }
+    } catch (err: unknown) {
+        // Remove this request's uploads and restore any displaced originals.
+        for (const w of written) {
+            try {
+                await fsp.unlink(w.target);
+            } catch {
+                /* best-effort */
+            }
+            if (w.backupPath) {
+                try {
+                    await fsp.rename(w.backupPath, w.target);
+                } catch {
+                    /* best-effort */
+                }
+            }
+        }
+        const status =
+            err && typeof err === 'object' && 'status' in err && typeof (err as { status: unknown }).status === 'number'
+                ? (err as { status: number }).status
+                : 500;
+        const message = err instanceof Error ? err.message : 'Upload failed';
+        return { status, body: { error: message } };
+    }
+
+    // Uploads placed successfully — drop displaced originals.
+    for (const w of written) {
+        if (!w.backupPath) continue;
+        try {
+            await fsp.unlink(w.backupPath);
+        } catch {
+            /* best-effort */
+        }
+    }
+
+    const uploadedFseqs = prepared.filter((f) => path.extname(f.name).toLowerCase() === '.fseq').map((f) => f.name);
+    const fromManifest: string[] = [];
+    if (Array.isArray(manifest.importFseqNames)) {
+        for (const raw of manifest.importFseqNames) {
+            if (typeof raw !== 'string' || !raw.trim()) continue;
+            const name = path.basename(raw.trim());
+            if (path.extname(name).toLowerCase() !== '.fseq') continue;
+            if (checkName(name)) continue;
+            fromManifest.push(name);
+        }
+    }
+    const fseqNames = uploadedFseqs.length ? uploadedFseqs : [...new Set(fromManifest)];
+    if (!fseqNames.length) {
+        return { status: 400, body: { error: 'No .fseq files in upload' } };
+    }
+
+    return batchImportSequencesCore(showFolder, deps, fseqNames, manifest.companionAudioNames ?? []);
+}
+
 /** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */
 export async function listFileNamesCore(showFolder: string | undefined, dirName: string): Promise<ProxyResult> {
     if (!showFolder) return { status: 400, body: { status: 'error', error: 'Show folder not set' } };
@@ -653,6 +1062,19 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
 
     router.post('/api/ezp/sequences/audio-metadata', async (ctx) => {
         const res = await audioMetadataCore(deps.getShowFolder(), (ctx.request.body as any)?.audio);
+        ctx.status = res.status;
+        ctx.body = res.body;
+    });
+
+    router.post('/api/ezp/sequences/batch-import', async (ctx) => {
+        const body = ctx.request.body as any;
+        const res = await batchImportSequencesCore(
+            deps.getShowFolder(),
+            deps,
+            body?.fseqNames,
+            body?.companionAudioNames,
+            body?.allowExistingAudio,
+        );
         ctx.status = res.status;
         ctx.body = res.body;
     });

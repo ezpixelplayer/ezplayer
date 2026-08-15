@@ -167,6 +167,11 @@ const playbackSettingsSlice = createSlice({
             (state.settings.advanced ??= {}).ddpPort = action.payload;
         },
 
+        setMediaFolder(state, action: PayloadAction<string | undefined>) {
+            const next = action.payload?.trim();
+            state.settings.mediaFolder = next || undefined;
+        },
+
         // Volume control
         setDefaultVolume(state, action: PayloadAction<number>) {
             state.settings.volumeControl.defaultVolume = action.payload;
@@ -213,6 +218,7 @@ export const {
     setMultisyncPort,
     setMultisyncMulticastAddress,
     setAdvancedDdpPort,
+    setMediaFolder,
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,

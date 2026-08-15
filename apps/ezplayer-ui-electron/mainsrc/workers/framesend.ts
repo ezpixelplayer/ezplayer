@@ -93,8 +93,10 @@ export class FrameSender {
         frameInterval?: number;
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
+        /** Set for idle black frames, which can be disabled */
+        onlyIfEnabled?: boolean;
     }) {
-        if (!this.blackFramesEnabled) return;
+        if (!this.blackFramesEnabled && args.onlyIfEnabled) return;
         if (!this.blackFrame || !this.job || !this.state) return;
         if (this.sendInProgress) return; // A send is still running; skip this black frame
         this.releasePrevFrame();
@@ -130,6 +132,7 @@ export class FrameSender {
                     await this.sendBlackFrame({
                         targetFramePN: preSleepPN + args.frameInterval,
                         frameInterval: args.frameInterval,
+                        onlyIfEnabled: true,
                     });
                 return 0;
             }

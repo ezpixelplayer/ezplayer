@@ -5,6 +5,7 @@ import {
     CloudPage,
     ControllersScreen,
     JukeboxSettings,
+    MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
     ShowStatusScreen,
@@ -41,6 +42,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
+import FolderIcon from '@mui/icons-material/Folder';
 
 const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
 
@@ -62,6 +64,13 @@ const EmbeddedSettingsPage = () => {
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
     // Embedded is a browser; show-folder selection isn't possible here.
     const sections: SettingsSection[] = [
+        {
+            key: 'mediaFolder',
+            label: 'Media Folder',
+            icon: <FolderIcon sx={{ fontSize: 56 }} />,
+            title: 'Media Folder',
+            content: <MediaFolderSettings />,
+        },
         {
             key: 'ui',
             label: 'UI',
@@ -138,6 +147,7 @@ const allMenuRoutes: MenuRoute[] = [
                 showEditAction={!isKiosk}
                 showDeleteAction={!isKiosk}
                 showAddSongButton={!isKiosk}
+                showBulkImportButton={!isKiosk}
             />
         ),
         sidebar: { icon: <MusicIcon />, label: 'Songs' },
