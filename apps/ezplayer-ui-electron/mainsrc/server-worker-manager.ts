@@ -24,6 +24,7 @@ import {
 import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
 import { reportDiagEvent } from './diagnostics.js';
+import { safeSend } from './safe-send.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import { isFeatureEnabled } from './remoteaccess.js';
 import {
@@ -111,11 +112,11 @@ const rpcHandlers: ServerWorkerRPCAPI = {
             });
         }
         const mainWindow = getMainWindowRef?.();
-        mainWindow?.webContents?.send('update:playbacksettings', settings);
+        safeSend(mainWindow, 'update:playbacksettings', settings);
     },
     sendToMainWindow: (channel: string, ...args: unknown[]) => {
         const mainWindow = getMainWindowRef?.();
-        mainWindow?.webContents?.send(channel, ...args);
+        safeSend(mainWindow, channel, ...args);
     },
     cloudCommand: async (cmd) => {
         await dispatchCloudCommand(cmd);
@@ -147,7 +148,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
 export async function publishRemoteAccessAvailability(): Promise<RemoteAccessAvailability> {
     const state = await getRemoteAccessAvailability();
     broadcastToWebSocket('remoteAccess', state);
-    getMainWindowRef?.()?.webContents?.send('update:remoteaccess', state);
+    safeSend(getMainWindowRef?.(), 'update:remoteaccess', state);
     return state;
 }
 
@@ -200,7 +201,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     // electron renderer. refreshInterfaces() publishes the first snapshot.
     setControllerOpsBroadcaster((s) => {
         broadcastToWebSocket('controllerops', s);
-        getMainWindowRef?.()?.webContents?.send('update:controllerops', s);
+        safeSend(getMainWindowRef?.(), 'update:controllerops', s);
     });
     refreshInterfaces();
 
