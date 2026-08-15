@@ -129,6 +129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setDiagnosticsConsent(patch: Partial<DiagnosticsConsent>): Promise<DiagnosticsConsent> {
         return ipcRenderer.invoke('ipcSetDiagnosticsConsent', patch);
     },
+    reportRendererError(message: string, stack?: string): Promise<void> {
+        return ipcRenderer.invoke('ipcReportRendererError', message, stack);
+    },
     setZoomFactor(factor: number): Promise<void> {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);
     },

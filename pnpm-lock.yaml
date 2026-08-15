@@ -574,9 +574,6 @@ importers:
       uuid:
         specifier: 'catalog:'
         version: 14.0.1
-      xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
-        version: file:libs/xllayoutcalcs-0.3.1.tgz
     devDependencies:
       eslint:
         specifier: 'catalog:'
@@ -596,6 +593,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
+      xllayoutcalcs:
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
+        version: file:libs/xllayoutcalcs-0.3.1.tgz
 
   packages/icmp-ping:
     dependencies:

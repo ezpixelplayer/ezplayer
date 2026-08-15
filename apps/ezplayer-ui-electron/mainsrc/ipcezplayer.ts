@@ -76,7 +76,7 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
 import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
-import { getDiagnosticsConsent, setDiagnosticsConsent } from './diagnostics.js';
+import { getDiagnosticsConsent, reportDiagEvent, setDiagnosticsConsent } from './diagnostics.js';
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
@@ -947,6 +947,14 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcSetDiagnosticsConsent', async (_event, patch: Partial<DiagnosticsConsent>) =>
         setDiagnosticsConsent(patch),
     );
+    ipcMain.handle('ipcReportRendererError', async (_event, message: unknown, stack: unknown) => {
+        console.error('[renderer-error]', message, stack ?? '');
+        reportDiagEvent(
+            'renderer-error',
+            typeof message === 'string' ? message : String(message),
+            typeof stack === 'string' ? stack : undefined,
+        );
+    });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
     });

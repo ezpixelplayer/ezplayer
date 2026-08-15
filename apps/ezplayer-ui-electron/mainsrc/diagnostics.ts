@@ -39,7 +39,8 @@ export type DiagEventKind =
     | 'child-process-gone'
     | 'unresponsive'
     | 'did-fail-load'
-    | 'worker-error';
+    | 'worker-error'
+    | 'renderer-error';
 
 const MAX_REPORTS_PER_HOUR = 10;
 let sentTimestamps: number[] = [];

@@ -156,6 +156,10 @@ export interface EZPElectronAPI {
     // Diagnostics/crash-report consent (app-global, machine-wide).
     getDiagnosticsConsent?: () => Promise<DiagnosticsConsent>;
     setDiagnosticsConsent?: (patch: Partial<DiagnosticsConsent>) => Promise<DiagnosticsConsent>;
+    /** Forward an uncaught renderer JS error (incl. exceptions thrown during
+     *  React render) to main's diagnostics reporter, which applies the
+     *  consent gate and upload throttle. */
+    reportRendererError?: (message: string, stack?: string) => Promise<void>;
 
     /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
      *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */
