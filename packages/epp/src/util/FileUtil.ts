@@ -78,7 +78,7 @@ export async function readFileRange(path: string, opts: ReadFileRangeOptions) {
 
     function throwAbort(): never {
         const err = new Error('The operation was aborted');
-        (err as any).name = 'AbortError';
+        err.name = 'AbortError';
         throw err;
     }
 }
