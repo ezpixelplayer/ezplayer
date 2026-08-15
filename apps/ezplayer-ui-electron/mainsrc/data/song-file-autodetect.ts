@@ -94,6 +94,7 @@ function firstPrintableHeader(headers: Record<string, string>, keys: readonly st
         const val = raw.replace(/\0/g, '').trim();
         if (!val) continue;
         // Reject binary / control-heavy payloads (e.g. unresolved ED blobs).
+        // eslint-disable-next-line no-control-regex -- control characters are exactly what we're detecting
         if (/[\x00-\x08\x0E-\x1F]/.test(val)) continue;
         return val;
     }
