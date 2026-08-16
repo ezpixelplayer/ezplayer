@@ -627,7 +627,7 @@ const GridRow: React.FC<{
                 <CompactDialog
                     title={`Ports — xLights vs controller${row.name ? ` · ${row.name}` : ''}`}
                     onClose={() => setPortDialog(null)}
-                    maxWidth="md"
+                    fullScreen
                 >
                     <PortReconcileTable rows={portRows} />
                 </CompactDialog>

@@ -171,9 +171,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const disableModelSelection = embedded;
     const hideAudioControls = embedded;
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
-    // True once the mode came from somewhere deliberate (saved state or the
-    // user's toggle) — only an undecided mode may adopt the layout's 2D/3D
-    // annotation as its calculated default.
+    // True once the mode came from somewhere deliberate — an explicit
+    // "Set as Default" (the persisted top-level `mode`) or the user's live
+    // toggle. Only an undecided mode may adopt the layout's 2D/3D annotation
+    // as its calculated default; casual per-selection snapshots don't count.
     const modeChosenRef = useRef(false);
     const [showItemList, setShowItemList] = useState(showList && initialShowList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
@@ -295,8 +296,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         if (layoutGroupOptions.some((opt) => opt.value === pending.selection)) {
             setPreviewSelection(pending.selection);
             if (pending.viewState) {
+                // Snapshot restore, not a deliberate mode choice (see load effect).
                 setViewMode(pending.viewState.mode);
-                modeChosenRef.current = true;
                 setCameraState2D(pending.viewState.cameraState2D);
                 setCameraState3D(pending.viewState.cameraState3D);
             }
@@ -321,10 +322,13 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         brightnessMultiplier: clampedBrightness,
                     });
                 }
-                // Restore view mode if saved
+                // Restore view mode if saved. Only a mode written by an
+                // explicit "Set as Default" (marked modeExplicit) outranks the
+                // layout's 2D/3D annotation — legacy builds persisted `mode`
+                // on casual use, and those stale keys must not pin the mode.
                 if (parsed.mode === '2d' || parsed.mode === '3d') {
                     setViewMode(parsed.mode);
-                    modeChosenRef.current = true;
+                    if (parsed.modeExplicit === true) modeChosenRef.current = true;
                 }
                 // Restore camera states if saved
                 if (parsed.cameraState2D) {
@@ -350,8 +354,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 if (savedSelection === 'default' || savedSelection === 'all') {
                     setPreviewSelection(savedSelection);
                     if (restoreViewState) {
+                        // Casual per-selection snapshots restore the mode but do
+                        // NOT count as a deliberate choice — only an explicit
+                        // "Set as Default" (parsed.mode above) or a live toggle
+                        // outranks the layout's own 2D/3D annotation.
                         setViewMode(restoreViewState.mode);
-                        modeChosenRef.current = true;
                         setCameraState2D(restoreViewState.cameraState2D);
                         setCameraState3D(restoreViewState.cameraState3D);
                     }
@@ -789,11 +796,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             delete next[previewSelection];
             return next;
         });
+        // A reset also forgets the saved default mode, so the layout's own
+        // 2D/3D annotation decides again (escape hatch for a stale default).
+        modeChosenRef.current = false;
+        if (layoutSettings.layoutMode3D !== undefined) {
+            setViewMode(layoutSettings.layoutMode3D ? '3d' : '2d');
+        }
         // Clear legacy top-level camera fields; viewStateBySelection is handled by the sync effect.
         try {
             const saved = localStorage.getItem(previewSettingsStorageKey);
             if (saved) {
                 const parsed = JSON.parse(saved);
+                delete parsed.mode;
+                delete parsed.modeExplicit;
                 delete parsed.cameraState2D;
                 delete parsed.cameraState3D;
                 localStorage.setItem(previewSettingsStorageKey, JSON.stringify(parsed));
@@ -801,7 +816,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         } catch (err) {
             console.error('[Preview3D] Failed to clear camera state:', err);
         }
-    }, [previewSettingsStorageKey, previewSelection]);
+    }, [previewSettingsStorageKey, previewSelection, layoutSettings.layoutMode3D]);
 
     // Handle auto-fit complete
     const handleAutoFitComplete = useCallback(() => {
@@ -840,6 +855,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 JSON.stringify({
                     ...existing,
                     mode: viewMode,
+                    // Marks the mode as deliberately chosen, so it outranks the
+                    // layout's 2D/3D annotation on future loads.
+                    modeExplicit: true,
                     cameraState2D: currentCameraState2D,
                     cameraState3D: currentCameraState3D,
                     pixelSize: previewSettings.pixelSize,

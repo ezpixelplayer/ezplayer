@@ -86,7 +86,7 @@ export const PortVisualizerDialog: React.FC<{
     const haveActual = (actual?.length ?? 0) > 0;
 
     return (
-        <CompactDialog title={`Port map — ${title}`} onClose={onClose} maxWidth="lg">
+        <CompactDialog title={`Port map — ${title}`} onClose={onClose} fullScreen>
                 {map.rows.length === 0 ? (
                     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                         No port configuration known for this controller yet — no xLights models are assigned to it and no

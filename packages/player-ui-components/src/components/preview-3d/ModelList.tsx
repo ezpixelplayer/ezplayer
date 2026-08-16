@@ -186,7 +186,7 @@ export const ModelList = React.memo(function ModelList({
                             <>
                                 {' • '}
                                 <MuiBox component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
-                                    {selectedModelNames?.size} active
+                                    {selectedModelNames?.size} selected
                                 </MuiBox>
                             </>
                         )}
@@ -318,7 +318,7 @@ export const ModelList = React.memo(function ModelList({
                                                         {model.name}
                                                         {isSelected && (
                                                             <Chip
-                                                                label="Active"
+                                                                label="Selected"
                                                                 size="small"
                                                                 sx={{
                                                                     height: 18,

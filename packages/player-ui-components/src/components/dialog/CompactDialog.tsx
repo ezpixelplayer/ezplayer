@@ -20,13 +20,16 @@ export const CompactDialog: React.FC<{
     title: React.ReactNode;
     onClose: () => void;
     maxWidth?: Breakpoint;
+    /** Fill the entire window/page at every breakpoint, not just on phones —
+     *  for content that wants all the room it can get (e.g. the port map). */
+    fullScreen?: boolean;
     actions?: React.ReactNode;
     children: React.ReactNode;
-}> = ({ title, onClose, maxWidth = 'md', actions, children }) => {
+}> = ({ title, onClose, maxWidth = 'md', fullScreen = false, actions, children }) => {
     const theme = useTheme();
     const phone = useMediaQuery(theme.breakpoints.down('sm'));
     return (
-        <Dialog open onClose={onClose} maxWidth={maxWidth} fullWidth fullScreen={phone}>
+        <Dialog open onClose={onClose} maxWidth={maxWidth} fullWidth fullScreen={fullScreen || phone}>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, pr: 1 }}>
                 <MuiBox
                     component="span"
