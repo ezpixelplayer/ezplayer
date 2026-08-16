@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     ToggleButton,
     ToggleButtonGroup,
@@ -23,7 +23,6 @@ import View3DIcon from '@mui/icons-material/ViewInAr';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
 import ListIcon from '@mui/icons-material/List';
-import CloseIcon from '@mui/icons-material/Close';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { Viewer3D, type CameraState3D } from './Viewer3D';
@@ -171,8 +170,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const embedded = mode === 'embedded';
     const disableModelSelection = embedded;
     const hideAudioControls = embedded;
-    const showLayoutLabel = !embedded;
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+    // True once the mode came from somewhere deliberate (saved state or the
+    // user's toggle) — only an undecided mode may adopt the layout's 2D/3D
+    // annotation as its calculated default.
+    const modeChosenRef = useRef(false);
     const [showItemList, setShowItemList] = useState(showList && initialShowList);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
@@ -294,6 +296,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setPreviewSelection(pending.selection);
             if (pending.viewState) {
                 setViewMode(pending.viewState.mode);
+                modeChosenRef.current = true;
                 setCameraState2D(pending.viewState.cameraState2D);
                 setCameraState3D(pending.viewState.cameraState3D);
             }
@@ -321,6 +324,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 // Restore view mode if saved
                 if (parsed.mode === '2d' || parsed.mode === '3d') {
                     setViewMode(parsed.mode);
+                    modeChosenRef.current = true;
                 }
                 // Restore camera states if saved
                 if (parsed.cameraState2D) {
@@ -347,6 +351,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     setPreviewSelection(savedSelection);
                     if (restoreViewState) {
                         setViewMode(restoreViewState.mode);
+                        modeChosenRef.current = true;
                         setCameraState2D(restoreViewState.cameraState2D);
                         setCameraState3D(restoreViewState.cameraState3D);
                     }
@@ -361,6 +366,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setCameraStateLoaded(true);
         }
     }, [previewSettingsStorageKey]);
+
+    // With no deliberately chosen view mode, the calculated default follows
+    // the layout's own 2D/3D annotation (xLights LayoutMode3D) once known.
+    useEffect(() => {
+        if (!cameraStateLoaded || modeChosenRef.current) return;
+        if (layoutSettings.layoutMode3D === undefined) return;
+        setViewMode(layoutSettings.layoutMode3D ? '3d' : '2d');
+    }, [cameraStateLoaded, layoutSettings.layoutMode3D]);
 
     // Sync preview selection + per-selection view state to localStorage whenever they change.
     // Centralising the write avoids closure-staleness bugs that happened when individual handlers
@@ -669,6 +682,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const handleViewModeChange = useCallback(
         (_event: React.MouseEvent<HTMLElement>, newMode: ViewMode | null) => {
             if (newMode !== null) {
+                modeChosenRef.current = true;
                 // Snapshot the outgoing viewer's camera so it can be restored later
                 if (viewMode === '3d' && getCurrentCameraState3DRef.current) {
                     const state = getCurrentCameraState3DRef.current();
@@ -1222,11 +1236,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     {/* Right Side Controls */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {showLayoutLabel && renderedModelData?.name && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontStyle: 'italic' }}>
-                                {renderedModelData?.name}
-                            </Typography>
-                        )}
                         {!isElectron() && !hideAudioControls && (
                             <Tooltip title={audioEnabled ? 'Mute audio' : 'Play audio'}>
                                 <IconButton
@@ -1353,30 +1362,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             overflow: 'hidden',
                         }}
                     >
-                        <Box
-                            sx={{
-                                p: 1.5,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                borderBottom: `1px solid ${theme.palette.divider}`,
-                                backgroundColor:
-                                    theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[50],
-                                flexShrink: 0,
-                            }}
-                        >
-                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                Model Library
-                            </Typography>
-                            <IconButton size="small" onClick={() => setShowItemList(false)}>
-                                <CloseIcon fontSize="small" />
-                            </IconButton>
-                        </Box>
+                        {/* ModelList's own header carries the stats and close X — no
+                            separate title bar, so the scroll area gets the space. */}
                         <ModelList
                             selectedModelNames={selectedModelNames}
                             onModelSelect={handleModelSelect}
                             searchable={true}
                             modelData={renderedModelData}
+                            onClose={() => setShowItemList(false)}
                         />
                     </Paper>
                 )}

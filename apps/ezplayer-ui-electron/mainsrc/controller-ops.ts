@@ -244,7 +244,7 @@ const deviceKey = (d: { ip: string; source: DiscoveredController['source'] }): s
     return `${d.ip}|${d.source.via}`;
 };
 
-/** Driver per-port report → lean core ControllerPort (the "actual" side).
+/** Driver per-port report -> ControllerPort (the "actual" side).
  *  Per-model names: a structural `models` array if the lib provides one,
  *  else split the driver's " + "-joined `model` string. */
 function toControllerPort(p: PixelPortInfo): ControllerPort {
@@ -660,6 +660,12 @@ async function runUpload(
             const r = await probe.driver.setOutputs(derived.ports, []);
             if (!r.success) throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
+        }
+        try {
+            const applied = await probe.driver.applyConfig();
+            if (!applied.success) warnings.push(`apply step failed: ${applied.message ?? 'unknown error'}`);
+        } catch (e) {
+            warnings.push(`apply step failed: ${(e as Error).message}`);
         }
         if (warnings.length) {
             console.warn(`[controller-ops] upload warnings for ${rec.name}:`, warnings);

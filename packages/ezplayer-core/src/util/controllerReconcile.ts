@@ -136,6 +136,11 @@ export function reconcileControllers(
  * Model names compare as sets (case-insensitive match, case-preserving output)
  * and inform display only; pixel counts decide the drift kind.
  */
+/** Canonical form for model-set comparison: multi-string models upload as
+ *  "<model>-str-<n>" (xLights naming), so strip that suffix before matching
+ *  against the intent's bare model names. */
+const modelCompareKey = (name: string): string => name.toLowerCase().replace(/-str-\d+$/, '');
+
 export function reconcilePorts(
     intent: ControllerPortIntent[],
     actual: ControllerPort[],
@@ -163,10 +168,10 @@ export function reconcilePorts(
             row.actualModel = actualModel;
             row.actualModels = actualModels;
             if (actualModels) {
-                const actualSet = new Set(actualModels.map((m) => m.toLowerCase()));
-                const intendedSet = new Set(row.intendedModels.map((m) => m.toLowerCase()));
-                row.missingModels = row.intendedModels.filter((m) => !actualSet.has(m.toLowerCase()));
-                row.extraModels = actualModels.filter((m) => !intendedSet.has(m.toLowerCase()));
+                const actualSet = new Set(actualModels.map(modelCompareKey));
+                const intendedSet = new Set(row.intendedModels.map(modelCompareKey));
+                row.missingModels = row.intendedModels.filter((m) => !actualSet.has(modelCompareKey(m)));
+                row.extraModels = actualModels.filter((m) => !intendedSet.has(modelCompareKey(m)));
             }
             row.actualPixels = a.pixels;
             if (!active) row.drift = 'missing';

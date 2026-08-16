@@ -140,6 +140,8 @@ function Optimized2DPointCloud({
         manager.getPointObjects().forEach((pointsObj) => {
             nextGroup.add(pointsObj);
         });
+        // Wiring-order overlay for selected models (populated on selection).
+        nextGroup.add(manager.getWiringGroup());
         setGroup(nextGroup);
 
         return () => {

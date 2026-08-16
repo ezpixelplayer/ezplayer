@@ -135,6 +135,18 @@ describe('reconcilePorts', () => {
         expect(rows[0].drift).toBe('ok'); // pixels still the drift yardstick
     });
 
+    it('matches "-str-N" suffixed device names against the bare intent name', () => {
+        // Multi-string models upload as "<model>-str-<n>"; those must not read
+        // as missing+extra when the bare model is intended on the port.
+        const rows = reconcilePorts(
+            [{ port: 1, models: ['Matrix'], pixels: 100 }],
+            [{ port: 1, models: ['Matrix-str-2'], pixels: 100 }],
+        );
+        expect(rows[0].missingModels).toEqual([]);
+        expect(rows[0].extraModels).toEqual([]);
+        expect(rows[0].drift).toBe('ok');
+    });
+
     it('falls back to the single joined model string when no models array is given', () => {
         const rows = reconcilePorts(
             [{ port: 1, models: ['Tree'], pixels: 50 }],

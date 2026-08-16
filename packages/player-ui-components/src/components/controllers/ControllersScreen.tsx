@@ -51,6 +51,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
+import { CompactDialog } from '../dialog/CompactDialog';
 import { PortVisualizerDialog } from './PortVisualizerDialog';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
@@ -361,8 +362,11 @@ const GridRow: React.FC<{
     const ghost = row.state === 'unregistered';
     const known = !ghost && !!row.name;
     const hasDetail = !!d?.detail?.length;
+    // Drift is only meaningful once the device's port config has actually been
+    // read (depth=full); before that every intended port would read "missing".
+    const portsRead = d?.pixelPorts !== undefined;
     const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? []);
-    const portDrift = hasPortDrift(portRows);
+    const portDrift = portsRead && hasPortDrift(portRows);
     // Port knowledge on either side is enough for the port-map visualizer.
     const hasPortData =
         portRows.length > 0 || (row.modelIntents?.length ?? 0) > 0 || (d?.pixelPorts?.length ?? 0) > 0;
@@ -530,7 +534,15 @@ const GridRow: React.FC<{
                             <IconButton size="small" aria-label="actions" onClick={(e) => setMenuAnchor(e.currentTarget)}>
                                 <MoreVertIcon fontSize="small" />
                             </IconButton>
-                            <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
+                            <Menu
+                                anchorEl={menuAnchor}
+                                open={!!menuAnchor}
+                                onClose={() => setMenuAnchor(null)}
+                                // Grow leftward from the kebab — it sits in the right-most
+                                // column, so left-anchored growth ran off narrow screens.
+                                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                            >
                                 {actions.map((a) => (
                                     <MenuItem key={a.key} onClick={() => runAction(a)} disabled={a.disabled} title={a.title}>
                                         <ListItemIcon sx={{ color: a.color ? `${a.color}.main` : undefined }}>{a.icon}</ListItemIcon>
@@ -577,7 +589,11 @@ const GridRow: React.FC<{
                                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: hasDetail ? 2 : 0, flexWrap: 'wrap' }}>
                                         <Typography variant="subtitle2">Ports</Typography>
                                         {portRows.length > 0 &&
-                                            (portDrift ? (
+                                            (!portsRead ? (
+                                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                    device config not read yet
+                                                </Typography>
+                                            ) : portDrift ? (
                                                 <SyncProblemIcon
                                                     color="warning"
                                                     fontSize="small"
@@ -608,15 +624,13 @@ const GridRow: React.FC<{
                 </TableRow>
             )}
             {portDialog === 'compare' && (
-                <Dialog open onClose={() => setPortDialog(null)} maxWidth="md" fullWidth>
-                    <DialogTitle>Ports — xLights vs controller{row.name ? ` · ${row.name}` : ''}</DialogTitle>
-                    <DialogContent>
-                        <PortReconcileTable rows={portRows} />
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setPortDialog(null)}>Close</Button>
-                    </DialogActions>
-                </Dialog>
+                <CompactDialog
+                    title={`Ports — xLights vs controller${row.name ? ` · ${row.name}` : ''}`}
+                    onClose={() => setPortDialog(null)}
+                    maxWidth="md"
+                >
+                    <PortReconcileTable rows={portRows} />
+                </CompactDialog>
             )}
             {portDialog === 'map' && (
                 <PortVisualizerDialog
@@ -1068,8 +1082,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
                 )}
 
-                {/* Reconciliation grid */}
-                <Card sx={{ p: 3, mb: 3 }}>
+                {/* Reconciliation grid; slim padding on phones buys the table room. */}
+                <Card sx={{ p: { xs: 1, sm: 3 }, mb: 3 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
                         <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
                             Controllers

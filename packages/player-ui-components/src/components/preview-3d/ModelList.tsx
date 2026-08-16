@@ -7,6 +7,7 @@ import {
     ListItemText,
     Typography,
     Chip,
+    IconButton,
     TextField,
     InputAdornment,
     useTheme,
@@ -15,6 +16,7 @@ import {
     alpha,
 } from '@mui/material';
 import { Box } from '../box/Box';
+import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import { useSelector } from 'react-redux';
@@ -27,6 +29,8 @@ export interface ModelListProps {
     onModelSelect: (model: ModelMetadata | null) => void;
     searchable?: boolean;
     modelData?: Model3DData | null;
+    /** When set, the header shows a close X wired to this. */
+    onClose?: () => void;
 }
 
 /** Where a model plugs in, joined from known controllers' modelIntents by name. */
@@ -79,6 +83,7 @@ export const ModelList = React.memo(function ModelList({
     onModelSelect,
     searchable = true,
     modelData = null,
+    onClose,
 }: ModelListProps) {
     const theme = useTheme();
     const [searchQuery, setSearchQuery] = useState('');
@@ -161,27 +166,36 @@ export const ModelList = React.memo(function ModelList({
                     zIndex: 1,
                 }}
             >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: searchable ? 1.5 : 0 }}>
+                {/* Single slim row: stats (formerly a separate footer) + close X. */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: searchable ? 1 : 0 }}>
                     <ViewInArIcon
                         sx={{
                             fontSize: 20,
                             color: theme.palette.primary.main,
                         }}
                     />
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                        Models
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, flexGrow: 1 }}>
+                        {filteredModels.length} model{filteredModels.length !== 1 ? 's' : ''}
+                        {searchQuery && filteredModels.length !== allModels.length && (
+                            <>
+                                {' of '}
+                                {allModels.length}
+                            </>
+                        )}
+                        {selectedModelNames && (
+                            <>
+                                {' • '}
+                                <MuiBox component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                                    {selectedModelNames?.size} active
+                                </MuiBox>
+                            </>
+                        )}
                     </Typography>
-                    <Chip
-                        label={allModels.length}
-                        size="small"
-                        sx={{
-                            height: 20,
-                            fontSize: '0.7rem',
-                            fontWeight: 600,
-                            backgroundColor: theme.palette.primary.main + '20',
-                            color: theme.palette.primary.main,
-                        }}
-                    />
+                    {onClose && (
+                        <IconButton size="small" aria-label="close" onClick={onClose} sx={{ my: -0.5 }}>
+                            <CloseIcon fontSize="small" />
+                        </IconButton>
+                    )}
                 </Box>
 
                 {searchable && (
@@ -477,35 +491,6 @@ export const ModelList = React.memo(function ModelList({
                 </List>
             </Paper>
 
-            {/* Footer stats */}
-            <Paper
-                elevation={0}
-                sx={{
-                    p: 1.5,
-                    borderTop: `2px solid ${theme.palette.divider}`,
-                    backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[50],
-                    flexShrink: 0,
-                    zIndex: 1,
-                }}
-            >
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    {filteredModels.length} model{filteredModels.length !== 1 ? 's' : ''}
-                    {searchQuery && filteredModels.length !== allModels.length && (
-                        <>
-                            {' of '}
-                            {allModels.length}
-                        </>
-                    )}
-                    {selectedModelNames && (
-                        <>
-                            {' • '}
-                            <MuiBox component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
-                                {selectedModelNames?.size} active
-                            </MuiBox>
-                        </>
-                    )}
-                </Typography>
-            </Paper>
         </Box>
     );
 });
