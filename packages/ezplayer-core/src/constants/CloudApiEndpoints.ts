@@ -18,6 +18,10 @@ export const CLOUD_API_ENDPOINTS = {
      *  it onto the user_players row so subsequent checkins return the right
      *  WS URL on `openCloudWS`. */
     ELECT_HOME_SERVER: 'player/electHomeServer/',
+    /** POST ${cloudUrl}api/player/rotatetoken/<token>  body: { new_token }
+     *  Moves the registration onto a freshly minted token; the old token (and
+     *  any control URL carrying it) stops working immediately. */
+    ROTATE_TOKEN: 'player/rotatetoken/',
 
     /** User-facing browser URL: ${cloudUrl}${REGISTER_PLAYER}<playerId> opens the
      *  cloud-side claim flow on a logged-in browser. */

@@ -18,6 +18,10 @@
 
 import { parentPort } from 'worker_threads';
 import type { VcPlayingUpdate, VcScheduleEntry, VcSong } from '@ezplayer/ezplayer-core';
+import { trustSystemCAs } from '../trustSystemCAs.js';
+
+// Trust the OS cert store before any cloud fetch in this worker.
+trustSystemCAs();
 
 export interface EzvcConfig {
     /** The player's cloud base URL (same one the checkin/bridge uses). */

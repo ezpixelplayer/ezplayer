@@ -1,3 +1,4 @@
+import { safeSend } from './safe-send.js';
 import { app, BrowserWindow, OpenDialogOptions, shell, dialog, ipcMain } from 'electron';
 
 import * as path from 'path';
@@ -119,7 +120,7 @@ export async function invokeRenderIPC<Return, Arg>(
             resolve(data as Return);
         });
 
-        mainWindow.webContents.send(ipcname, {
+        safeSend(mainWindow, ipcname, {
             reqid: ccn,
             req: arg,
         });
