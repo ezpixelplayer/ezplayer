@@ -36,6 +36,7 @@ import {
     cloudStatusActions,
     controllerOpsActions,
     remoteAccessActions,
+    autoUpdateActions,
 } from '@ezplayer/player-ui-components';
 
 /**
@@ -184,6 +185,9 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
                         ? `: ${status.message}`
                         : '';
             console.log(`[AutoUpdate] ${status.state}${detail}`);
+            if (this.dispatch) {
+                this.dispatch(autoUpdateActions.setStatus(status));
+            }
         });
     }
     // TODO: Pull stuff down, etc.

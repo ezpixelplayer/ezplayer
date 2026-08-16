@@ -15,6 +15,8 @@ import {
     PlayerScreen,
     PlayerSettings,
     PlaylistList,
+    SoftwareUpdateSettings,
+    canControlUpdates,
     Routes as ROUTES,
     Schedule,
     SidebarLayout,
@@ -47,6 +49,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
 import { WelcomeScreen, WELCOME_ROUTE } from '../modules/Welcome/WelcomeScreen';
@@ -114,6 +117,14 @@ const ElectronSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: 'softwareUpdate',
+            label: 'Software Update',
+            icon: <SystemUpdateAltIcon sx={{ fontSize: 56 }} />,
+            title: 'Software Update',
+            available: canControlUpdates(),
+            content: <SoftwareUpdateSettings />,
         },
         shellSection,
         filesSection,

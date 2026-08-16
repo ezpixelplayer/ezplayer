@@ -10,6 +10,7 @@ import { Provider } from 'react-redux';
 import { ThemeProviderWrapper, InitialDataProvider } from '@ezplayer/player-ui-components';
 import { store, storeApi } from './store/configure-store';
 import { ToastContainer } from 'react-toastify';
+import { UpdateReminder } from './components/update/UpdateReminder';
 
 const App = () => {
     const content = useRoutes(router);
@@ -19,6 +20,7 @@ const App = () => {
             <Provider store={store}>
                 <InitialDataProvider api={storeApi}>
                     <ToastContainer />
+                    <UpdateReminder />
 
                     <StylesProvider injectFirst>
                         <ThemeProviderWrapper>

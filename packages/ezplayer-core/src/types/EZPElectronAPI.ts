@@ -126,6 +126,20 @@ export type AutoUpdateStatus =
     | { state: 'downloaded'; version: string }
     | { state: 'error'; message: string };
 
+/** 'auto-check': check at startup + idle pre-download, renderer shows a reminder.
+ *  'manual': no unsolicited checks; everything goes through the settings UI. */
+export type AutoUpdateMode = 'auto-check' | 'manual';
+
+/** Persisted auto-update settings plus the running app version (electron-store, machine-wide). */
+export interface AutoUpdateSettings {
+    mode: AutoUpdateMode;
+    currentVersion: string;
+    skippedVersions: string[];
+}
+
+/** 'deferred' = schedule active and not forced; install will happen on quit. */
+export type InstallUpdateResult = 'installing' | 'deferred';
+
 export interface EZPElectronAPI {
     shouldShowWelcomeOnLaunch: () => boolean;
 
@@ -244,10 +258,17 @@ export interface EZPElectronAPI {
     getOpenAtLogin: () => Promise<boolean>;
     setOpenAtLogin: (openAtLogin: boolean) => Promise<boolean>;
 
-    // Auto-update
+    // Auto-update. All interaction is in-UI; main pops no dialogs. Mutators
+    // return the updated settings so the caller can refresh local state.
+    getAutoUpdateSettings: () => Promise<AutoUpdateSettings>;
+    setAutoUpdateMode: (mode: AutoUpdateMode) => Promise<AutoUpdateSettings>;
+    skipUpdateVersion: (version: string) => Promise<AutoUpdateSettings>;
+    clearSkippedUpdateVersions: () => Promise<AutoUpdateSettings>;
     checkForUpdates: () => Promise<void>;
     downloadUpdate: () => Promise<void>;
-    installUpdateNow: () => Promise<void>;
+    /** Without `force`, defers to install-on-quit when a schedule is active.
+     *  The UI is expected to confirm before passing `force: true`. */
+    installUpdateNow: (force?: boolean) => Promise<InstallUpdateResult>;
     installUpdateOnQuit: () => void;
     onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => void;
 }
