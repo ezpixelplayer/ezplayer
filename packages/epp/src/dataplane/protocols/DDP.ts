@@ -1,6 +1,6 @@
 import dgram from 'dgram';
 import { UDP_WIRE_OVERHEAD, UdpClient, UDPSender } from './UDP';
-import { Sender, SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
+import { SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
 import { toDataView } from '../../util/Utils';
 
 export const DDP_PORT_DEFAULT = 4048;
