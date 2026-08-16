@@ -1,5 +1,9 @@
 // remoteFalconWorker.ts
 import { parentPort } from 'worker_threads';
+import { trustSystemCAs } from '../trustSystemCAs.js';
+
+// Trust the OS cert store before any outbound fetch in this worker.
+trustSystemCAs();
 
 export interface TypicalRFSettings {
     remotePlaylist: string; // Not processed here ... this is pulled and contents sent

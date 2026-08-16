@@ -454,7 +454,7 @@ function openCloudBridge(
 
     ws.on('open', () => {
         if (cloudBridge?.ws === ws) cloudBridge.open = true;
-        console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}… ttl=${ttlSeconds}s`);
+        console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}... ttl=${ttlSeconds}s`);
         // Hand the live socket to the broadcaster. From here it's just another
         // Conn — first round dumps a snapshot of every cached key, subsequent
         // updates fan out via the existing set() path. The cloud relay
@@ -612,7 +612,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
 
     ws.on('open', () => {
         if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
-        console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}…`);
+        console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}...`);
     });
     ws.on('message', (raw) => {
         // Errors at any layer become a 500 with the same reqId so the cloud's
@@ -750,7 +750,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         // Start clean — the listener can't replay history anyway; the next
         // chunks we read are what they'll hear first.
         cloudAudioBridge.afterSeq = curAudioRing?.latestSeq ?? 0;
-        console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}…`);
+        console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}...`);
 
         cloudAudioBridge.pumpTimer = setInterval(() => {
             const slot = cloudAudioBridge;

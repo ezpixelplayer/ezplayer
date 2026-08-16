@@ -8,7 +8,6 @@ export const E131_MAX_PAYLOAD = 512;
 
 const E131_PACKET_HEADERLEN = 126;
 const E131_SYNCPACKET_LEN = 49;
-const E131_PACKET_LEN_MAX = E131_PACKET_HEADERLEN + E131_MAX_PAYLOAD;
 const E131_DEFAULT_PRIORITY = 100;
 const E131_EZP_UUID = 'e4eaaaf2-d142-11e1-b3e4-080027620cdd';
 const E131_EZP_UUID_BUF = Buffer.from(E131_EZP_UUID.replace(/-/g, ''), 'hex');
@@ -183,7 +182,8 @@ export class E131Sender extends UDPSender {
         if (!this.client || !connected) return true;
 
         const burst = job.burstSize;
-        let rlLeftToSend = burst;
+        // Rate-limit bookkeeping; only written until the write-back TODO below lands.
+        let _rlLeftToSend = burst;
 
         let bytesThisPacket = 0;
         let packetBufs: Uint8Array[] = [];
@@ -220,7 +220,7 @@ export class E131Sender extends UDPSender {
 
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
-                rlLeftToSend -= bytesThisPacket;
+                _rlLeftToSend -= bytesThisPacket;
                 sendOut('blaBlaBLA', false);
                 continue;
             }
@@ -240,7 +240,7 @@ export class E131Sender extends UDPSender {
         return true;
     }
 
-    async sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): Promise<void> {
+    sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): void {
         if (this.pushAtEnd) {
             buildE131SyncPacket(this.syncPacket, this.syncUniverse, state.nextE131SeqNum());
             if (this.client?.isConnected()) {
