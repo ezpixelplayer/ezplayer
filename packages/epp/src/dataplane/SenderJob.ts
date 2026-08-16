@@ -49,9 +49,12 @@ export class SendJob {
 
     /** Fraction of the frame interval to stretch sends across; the rest is
      *  headroom for the push packet, socket callbacks, and next-frame prep.
+     *  The send holds the dispatch loop, so every millisecond spent pacing is a
+     *  millisecond the rest of the loop doesn't get; callers that can measure
+     *  their own overhead should set this per frame.
      * TODO: This is temporary until the send pipeline is fixed in .7
      */
-    slotFraction: number = 0.85;
+    slotFraction: number = 0.5;
 
     frameNumber: number = -1;
 }
@@ -120,6 +123,11 @@ export class SendJobState {
     job?: SendJob;
     sendHeap: SchedulerMinHeap<SendJobSenderState> = new SchedulerMinHeap();
 
+    /** Hard end of this frame's send slot (performance.now() basis). Past this
+     *  the scheduler stops pacing and flushes whatever is left, so a bad rate
+     *  estimate or a hiccup can't eat into the next frame. */
+    sendDeadline: number = Infinity;
+
     /**
      * Set up per-sender progress and the pacing plan for one frame.
      *
@@ -171,6 +179,7 @@ export class SendJobState {
         const slotStart = Math.max(sendTime, startNow);
         const deadline = sendTime + Math.max(1, frameIntervalMs) * job.slotFraction;
         const window = Math.max(1, deadline - slotStart);
+        this.sendDeadline = Math.max(deadline, slotStart + window);
         for (const s of this.states) {
             if (s.skippingThisFrame || s.senderIdx >= job.senders.length) continue;
             const senderJob = job.senders[s.senderIdx];

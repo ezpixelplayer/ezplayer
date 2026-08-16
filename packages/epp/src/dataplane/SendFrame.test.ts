@@ -1,9 +1,9 @@
 import dgram from 'dgram';
 import { describe, expect, it } from 'vitest';
-import { sendFull } from './SendFrame';
+import { endBatch, sendFull, startBatch, startFrame } from './SendFrame';
 import { Sender, SenderJob, SendJob, SendJobSenderState, SendJobState } from './SenderJob';
 import { DDPSender } from './protocols/DDP';
-import { busySleep } from '../util/Utils';
+import { busySleep, lpBusySleep } from '../util/Utils';
 
 /** Minimal Sender that "sends" bursts of abstract wire bytes and records when. */
 class FakeSender implements Sender {
@@ -58,6 +58,7 @@ describe('paced frame sending', () => {
         const events: { id: number; t: number; bytes: number }[] = [];
         const senders = [new FakeSender(0, 12000, events), new FakeSender(1, 12000, events)];
         const job = makeFakeJob(senders, 1000);
+        job.slotFraction = 0.85;
 
         const state = new SendJobState();
         const t0 = performance.now();
@@ -106,6 +107,25 @@ describe('paced frame sending', () => {
         expect(elapsed).toBeLessThan(50);
     });
 
+    it('flushes the remainder rather than running past the slot deadline', async () => {
+        const events: { id: number; t: number; bytes: number }[] = [];
+        const senders = [new FakeSender(0, 12000, events)];
+        const job = makeFakeJob(senders, 1000);
+        // A rate this low would need over a second to place 12000 bytes
+        job.senders[0].rateLimit = 10;
+
+        const state = new SendJobState();
+        const t0 = performance.now();
+        state.initialize(t0, job, 50); // 50ms frame -> 25ms slot
+        const res = await sendFull(state, busySleep);
+        const elapsed = performance.now() - t0;
+
+        expect(events.length).toBe(12); // everything still went out
+        expect(senders[0].pushes).toBe(1);
+        expect(elapsed).toBeLessThan(60); // bounded by the slot, not by the rate
+        expect(res.overrunMs).toBeGreaterThan(0); // and it says so
+    });
+
     it('skipping senders are left out of the pacing heap', () => {
         const events: { id: number; t: number; bytes: number }[] = [];
         const senders = [new FakeSender(0, 1000, events), new FakeSender(1, 1000, events)];
@@ -121,6 +141,174 @@ describe('paced frame sending', () => {
         expect(state.sendHeap.size).toBe(1);
         expect(state.sendHeap.top?.senderIdx).toBe(0);
     });
+});
+
+/** One 512x320 matrix per controller. */
+const MATRIX_PIXELS = 512 * 320;
+const MATRIX_CHANNELS = MATRIX_PIXELS * 3;
+
+describe('paced send at show scale', () => {
+    it('spreads two 512x320 matrices across the slot without bursting', async () => {
+        // Both controllers slice one frame buffer, as the real dispatch loop does.
+        const frameBuf = new Uint8Array(MATRIX_CHANNELS * 2);
+        for (let i = 0; i < frameBuf.length; ++i) frameBuf[i] = (i * 7) & 0xff;
+
+        const receivers: dgram.Socket[] = [];
+        const senders: DDPSender[] = [];
+        /** Received datagrams, per sender index. Best-effort: loopback drops. */
+        const received: { offset: number; payload: Buffer }[][] = [[], []];
+        /** Every addSendToBatch, captured as it happens. */
+        const sends: { id: number; t: number; offset: number; len: number; push: boolean }[] = [];
+
+        try {
+            for (let id = 0; id < 2; ++id) {
+                const rx = dgram.createSocket({ type: 'udp4', recvBufferSize: 8 * 1024 * 1024 });
+                receivers.push(rx);
+                await new Promise<void>((resolve) => rx.bind(0, '127.0.0.1', resolve));
+                rx.on('message', (msg) => {
+                    received[id].push({ offset: msg.readUInt32BE(4), payload: Buffer.from(msg.subarray(10)) });
+                });
+
+                const s = new DDPSender();
+                s.address = '127.0.0.1';
+                s.port = (rx.address() as { port: number }).port;
+                await s.connect();
+                senders.push(s);
+
+                // Record sends at the point they are handed to the socket; the
+                // header buffers are reused next frame, so read them now.
+                const client = s.client!;
+                const orig = client.addSendToBatch.bind(client);
+                client.addSendToBatch = (data: Uint8Array | Uint8Array[]) => {
+                    const parts = Array.isArray(data) ? data : [data];
+                    const hdr = parts[0];
+                    const hv = new DataView(hdr.buffer, hdr.byteOffset, hdr.byteLength);
+                    const len = hv.getUint16(8, false);
+                    sends.push({ id, t: performance.now(), offset: hv.getUint32(4, false), len, push: len === 0 });
+                    orig(data);
+                };
+            }
+
+            const job = new SendJob();
+            job.slotFraction = 0.5;
+            job.dataBuffers = [frameBuf];
+            for (let id = 0; id < 2; ++id) {
+                const sj = new SenderJob();
+                sj.sender = senders[id];
+                sj.parts.push({ bufIdx: 0, bufStart: id * MATRIX_CHANNELS, bufLen: MATRIX_CHANNELS });
+                job.senders.push(sj);
+            }
+
+            const frameInterval = 50;
+            const slot = frameInterval * job.slotFraction;
+            const state = new SendJobState();
+            const t0 = performance.now();
+            state.initialize(t0, job, frameInterval);
+            startFrame(state);
+            startBatch(state);
+            const paced = await sendFull(state, lpBusySleep);
+            const batches = endBatch(state);
+            const elapsed = performance.now() - t0;
+
+            // 491520ch @ 1440/packet = 342 packets, plus one push packet each
+            const expectedPackets = Math.ceil(MATRIX_CHANNELS / 1440);
+            const expectedWire = MATRIX_CHANNELS + expectedPackets * 76 + 76;
+            for (let id = 0; id < 2; ++id) {
+                const mine = sends.filter((s) => s.id === id);
+                expect(mine.length).toBe(expectedPackets + 1);
+                expect(state.states[id].wireBytesSent).toBe(expectedWire);
+                expect(senders[id].frameWireBytes(job.senders[id])).toBe(expectedWire);
+
+                // Whole matrix covered exactly once, in order, then the push
+                const data = mine.filter((s) => !s.push);
+                let expectOffset = 0;
+                for (const p of data) {
+                    expect(p.offset).toBe(expectOffset);
+                    expectOffset += p.len;
+                }
+                expect(expectOffset).toBe(MATRIX_CHANNELS);
+                expect(mine[mine.length - 1].push).toBe(true);
+                expect(mine[mine.length - 1].offset).toBe(MATRIX_CHANNELS);
+            }
+
+            // Interleaved: a burst is 2 packets. These two matrices are the same
+            // size, so their nextTimes stay tied and the heap's strict-less-than
+            // comparison hands out bursts in alternating pairs -- 4 packets (~6KB)
+            // contiguous at worst, which is still far below any switch's buffer.
+            let maxRun = 0;
+            let run = 0;
+            let prev = -1;
+            for (const s of sends) {
+                if (s.push) continue;
+                run = s.id === prev ? run + 1 : 1;
+                prev = s.id;
+                maxRun = Math.max(maxRun, run);
+            }
+            expect(maxRun).toBeLessThanOrEqual(4);
+
+            // Spread, not bursted: a burst would finish ~1MB in a few ms.
+            expect(elapsed).toBeGreaterThan(slot * 0.5);
+            // Bounded: the deadline flush caps how far past the slot it can run.
+            expect(elapsed).toBeLessThan(slot * 3);
+
+            // Each sender's packets span the slot rather than landing together.
+            for (let id = 0; id < 2; ++id) {
+                const ts = sends.filter((s) => s.id === id).map((s) => s.t);
+                expect(ts[ts.length - 1] - ts[0]).toBeGreaterThan(slot * 0.5);
+            }
+
+            // Not front-loaded either. Only the upper bound is asserted: how much
+            // has gone out by any given instant is dominated by host scheduling
+            // noise, but "most of the frame is already out" is a real regression.
+            const totalBytes = sends.reduce((n, s) => n + s.len, 0);
+            const byHalf = sends.filter((s) => s.t <= t0 + slot / 2).reduce((n, s) => n + s.len, 0);
+            expect(byHalf / totalBytes).toBeLessThan(0.75);
+
+            // Deliberately NOT awaiting the batch promises: at this point only
+            // about half of them have retired, and a sender that waited on the
+            // OS here would blow its next frame. Drain on delivery instead.
+            expect(batches.length).toBe(2);
+            const expectedRx = expectedPackets + 1;
+            const rxDeadline = Date.now() + 5000;
+            let settled = 0;
+            let prevRx = -1;
+            while (Date.now() < rxDeadline && settled < 5) {
+                await new Promise((r) => setTimeout(r, 20));
+                const n = received[0].length + received[1].length;
+                settled = n === prevRx ? settled + 1 : 0;
+                prevRx = n;
+            }
+
+            // This one is partly a measurement, so it reports. A nonzero overrun
+            // is not a failure: it means the plan asked for bursts closer together
+            // than the sleep can resolve, and the deadline flush cleaned up the tail.
+            console.log(
+                `[scale] elapsed ${elapsed.toFixed(1)}ms of ${slot}ms slot; ` +
+                    `${sends.length} packets, ${totalBytes} bytes, ${((byHalf / totalBytes) * 100).toFixed(0)}% out by halfway; ` +
+                    `active ${paced.activeMs.toFixed(1)}ms wait ${paced.waitMs.toFixed(1)}ms overrun ${paced.overrunMs.toFixed(1)}ms; ` +
+                    `rx ${received[0].length}+${received[1].length} of ${expectedRx * 2}`,
+            );
+
+            // Delivered, and intact -- including the second matrix's slice offset
+            // into the shared frame buffer, which nothing send-side would catch.
+            for (let id = 0; id < 2; ++id) {
+                expect(received[id].length).toBeGreaterThanOrEqual(Math.ceil(expectedRx * 0.95));
+                const seen = new Set<number>();
+                for (const pkt of received[id]) {
+                    seen.add(pkt.offset);
+                    if (pkt.payload.length === 0) continue; // push packet
+                    const base = id * MATRIX_CHANNELS + pkt.offset;
+                    expect(
+                        Buffer.compare(pkt.payload, Buffer.from(frameBuf.subarray(base, base + pkt.payload.length))),
+                    ).toBe(0);
+                }
+                expect(seen.size).toBe(received[id].length); // no duplicates
+            }
+        } finally {
+            for (const s of senders) await s.client?.disconnect();
+            for (const rx of receivers) await new Promise<void>((resolve) => rx.close(resolve));
+        }
+    }, 20000);
 });
 
 describe('DDP burst budget', () => {
