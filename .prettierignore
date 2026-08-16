@@ -7,3 +7,12 @@ pnpm-workspace.yaml
 json_examples/
 packages/shared-ui-components/
 **/index.ts
+
+# Machine-generated files (prettier does not read nested .gitignore files,
+# so doc/manual's ignore of .docusaurus does not reach it)
+doc/manual/.docusaurus/
+**/package-lock.json
+**/*.bundled.ts
+
+# Verbatim device-capture fixtures — must never be reformatted
+packages/epp-controllers/test/samples/

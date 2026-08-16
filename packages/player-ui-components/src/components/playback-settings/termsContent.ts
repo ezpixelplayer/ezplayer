@@ -20,7 +20,7 @@ Most of the "Letter" tab is the same blah-blah you've read on every other websit
 What these terms cover.
 
 Two different things wear the EZPlayer name:
-  - The home player. The desktop app you install on your own machine. Open source, AGPL-3.0. It runs on its own and does not talk to us unless you connect it. The AGPL is the primary license; it includes its own no-warranty disclaimer.
+  - The home player. The desktop app you install on your own machine. Open source, AGPL-3.0. It runs on its own and does not talk to us unless you connect it, with exactly one exception: it sends anonymous crash and error reports so we can find and fix problems. Those reports carry no show data, no files, and no personal information; sending them is on by default, and you can turn it off in Settings > Player > Diagnostics. The AGPL is the primary license; it includes its own no-warranty disclaimer.
   - The cloud service. EZRGB-hosted features — your account, layout processing, sequence rendering, scheduling, viewer pages, the music-rights system. These terms primarily govern this.
 
 Most of what's below (rights cooperation, transparency, privacy, deletion) only matters when you're using the cloud service.

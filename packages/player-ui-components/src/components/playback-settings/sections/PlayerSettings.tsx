@@ -2,7 +2,7 @@ import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Ty
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { isElectron, Select } from '@ezplayer/shared-ui-components';
-import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import type { DiagnosticsConsent, EZPElectronAPI } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
@@ -51,6 +51,33 @@ export const PlayerSettings: React.FC = () => {
     const onDesktop = isElectron();
     // Treat as Partial so we can detect older preload builds missing login-item APIs.
     const loginItemApi = window.electronAPI as Partial<EZPElectronAPI> | undefined;
+
+    // Diagnostics consent is app-global (electron-store in main), not part of
+    // PlaybackSettings — probe as Partial so older preload builds just hide it.
+    const diagApi = loginItemApi;
+    const canControlDiag = Boolean(diagApi?.getDiagnosticsConsent && diagApi.setDiagnosticsConsent);
+    const [diagConsent, setDiagConsent] = React.useState<DiagnosticsConsent | null>(null);
+    React.useEffect(() => {
+        if (!onDesktop || !canControlDiag || !diagApi?.getDiagnosticsConsent) return;
+        let cancelled = false;
+        diagApi
+            .getDiagnosticsConsent()
+            .then((c) => {
+                if (!cancelled) setDiagConsent(c);
+            })
+            .catch((error: unknown) => console.error('Failed to read diagnostics consent:', error));
+        return () => {
+            cancelled = true;
+        };
+    }, [onDesktop, canControlDiag, diagApi]);
+    const handleDiagChange = async (patch: Partial<DiagnosticsConsent>) => {
+        if (!diagApi?.setDiagnosticsConsent) return;
+        try {
+            setDiagConsent(await diagApi.setDiagnosticsConsent(patch));
+        } catch (error) {
+            console.error('Failed to update diagnostics consent:', error);
+        }
+    };
     const canControlLoginItem = Boolean(
         loginItemApi?.isLoginItemSupported && loginItemApi.getOpenAtLogin && loginItemApi.setOpenAtLogin,
     );
@@ -275,6 +302,45 @@ export const PlayerSettings: React.FC = () => {
                     onCommit={(v) => dispatch(playbackSettingsActions.setAdvancedDdpPort(v))}
                 />
             </Box>
+
+            {onDesktop && canControlDiag && diagConsent && (
+                <>
+                    <Divider sx={{ my: 3 }} />
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                        Diagnostics
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        Help improve EZPlayer by sending anonymous crash and error reports. No show data, files,
+                        or personal information is included.
+                    </Typography>
+                    <Box>
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={diagConsent.uploadEnabled}
+                                    onChange={(_e, checked) => void handleDiagChange({ uploadEnabled: checked })}
+                                />
+                            }
+                            label="Send anonymous crash reports"
+                        />
+                    </Box>
+                    <Box>
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={diagConsent.includePlayerId}
+                                    disabled={!diagConsent.uploadEnabled}
+                                    onChange={(_e, checked) => void handleDiagChange({ includePlayerId: checked })}
+                                />
+                            }
+                            label="Include my Player ID with reports"
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                            Lets support connect reports to your player when you ask for help. Off by default.
+                        </Typography>
+                    </Box>
+                </>
+            )}
         </Box>
     );
 };

@@ -1,3 +1,4 @@
+import { safeSend } from './safe-send.js';
 import { app, dialog, ipcMain, powerMonitor, BrowserWindow } from 'electron';
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
@@ -12,7 +13,7 @@ let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 let updateDownloaded = false;
 
 function sendStatus(status: AutoUpdateStatus) {
-    mainWin?.webContents.send('update:autoupdate-status', status);
+    safeSend(mainWin, 'update:autoupdate-status', status);
 }
 
 function getSkippedVersions(): string[] {

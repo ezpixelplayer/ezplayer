@@ -10,6 +10,7 @@ import {
     DialogTitle,
     IconButton,
     LinearProgress,
+    Link,
     Stack,
     Table,
     TableBody,
@@ -27,6 +28,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import EditIcon from '@mui/icons-material/Edit';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -37,7 +39,8 @@ import Tooltip from '@mui/material/Tooltip';
 import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { PageHeader } from '@ezplayer/shared-ui-components';
+import { QRCodeSVG } from 'qrcode.react';
+import { isElectron, PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
@@ -322,6 +325,24 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
     const [regDialogOpen, setRegDialogOpen] = useState(false);
     const [disconnectOpen, setDisconnectOpen] = useState(false);
 
+    // Token rotation — one click mints a new Player ID and moves the cloud
+    // registration to it, revoking every link/QR built on the old one.
+    const [rotateOpen, setRotateOpen] = useState(false);
+    const [rotating, setRotating] = useState(false);
+    const [rotateError, setRotateError] = useState<string | undefined>();
+    const handleRotate = async () => {
+        setRotating(true);
+        setRotateError(undefined);
+        try {
+            await dispatch(issueCloudCommand({ type: 'rotatePlayerToken' })).unwrap();
+            setRotateOpen(false);
+        } catch (e) {
+            setRotateError((e as Error)?.message || 'Rotation failed');
+        } finally {
+            setRotating(false);
+        }
+    };
+
     // Cloud-master "sync now" pulls layout AND content. xLights-master has the
     // user push the layout explicitly via the "Push Layout" button.
     const handleSyncCloudMaster = async () => {
@@ -349,6 +370,14 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
     };
 
     const isRegistered = cloudStatus.playerIdIsRegistered;
+
+    // Cloud remote-control URL — prefer the elected regional home server,
+    // fall back to the configured cloud service URL (central).
+    const controlBase = (cloudStatus.homeServerUrl ?? cloudConfig.cloudServiceUrl ?? '').replace(/\/+$/, '');
+    const controlUrl =
+        isRegistered && cloudConfig.playerIdToken && controlBase
+            ? `${controlBase}/ezpui/p/${cloudConfig.playerIdToken}`
+            : undefined;
     const anyDownloading = Object.values(cStatus?.files ?? {}).some((f) => f.status === 'downloading');
     const totalSeq = Object.keys(cStatus?.sequences ?? {}).length;
     const installedSeq = Object.values(cStatus?.sequences ?? {}).reduce((acc, s) => {
@@ -631,6 +660,66 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
                 </Card>
 
+                {controlUrl && (
+                    <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                            <Typography variant="h6" sx={{ color: 'primary.main' }}>
+                                Remote Control Link
+                            </Typography>
+                            <Box sx={{ flexGrow: 1 }} />
+                            <Tooltip title="Copy link">
+                                <IconButton size="small" onClick={() => void copyToClipboard(controlUrl)}>
+                                    <ContentCopyIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Box>
+                        <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap">
+                            <Box
+                                sx={{
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    borderRadius: 1,
+                                    p: 1,
+                                    bgcolor: 'background.paper',
+                                    lineHeight: 0,
+                                }}
+                            >
+                                <QRCodeSVG value={controlUrl} size={132} level="M" includeMargin={false} />
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 240 }}>
+                                <Typography
+                                    variant="body2"
+                                    sx={{ fontFamily: 'monospace', wordBreak: 'break-all', mb: 1 }}
+                                >
+                                    {isElectron() ? (
+                                        <Link
+                                            component="button"
+                                            underline="hover"
+                                            onClick={() => window.electronAPI?.openExternal(controlUrl)}
+                                            sx={{ textAlign: 'left' }}
+                                        >
+                                            {controlUrl}
+                                        </Link>
+                                    ) : (
+                                        <Link
+                                            href={controlUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            underline="hover"
+                                        >
+                                            {controlUrl}
+                                        </Link>
+                                    )}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Control this player from any browser — no sign-in needed. Anyone with this
+                                    link can control the player, so share it carefully.
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    </Card>
+                )}
+
                 <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                         <Typography variant="h6" sx={{ color: 'primary.main' }}>
@@ -735,6 +824,19 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                             Cloud Configuration
                         </Typography>
                         <Box sx={{ flexGrow: 1 }} />
+                        {allowRegistration && isRegistered && (
+                            <Button
+                                startIcon={<AutorenewIcon />}
+                                variant="outlined"
+                                size="small"
+                                onClick={() => {
+                                    setRotateError(undefined);
+                                    setRotateOpen(true);
+                                }}
+                            >
+                                Change Player ID
+                            </Button>
+                        )}
                         {allowRegistration && (
                             <Button
                                 startIcon={<EditIcon />}
@@ -752,6 +854,37 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
             </Box>
             {allowRegistration && (
                 <PlayerCloudRegistrationDialog open={regDialogOpen} onClose={() => setRegDialogOpen(false)} />
+            )}
+            {allowRegistration && (
+                <Dialog open={rotateOpen} onClose={() => !rotating && setRotateOpen(false)}>
+                    <DialogTitle>Change Player ID?</DialogTitle>
+                    <DialogContent>
+                        <DialogContentText>
+                            A new Player ID is generated and your cloud registration — sequences, settings, and
+                            server assignment — moves to it automatically. The current ID, and every
+                            remote-control link or QR code that uses it, stops working immediately. Do this if
+                            you shared your link with someone who should no longer have access.
+                        </DialogContentText>
+                        {rotateError && (
+                            <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+                                {rotateError}
+                            </Typography>
+                        )}
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setRotateOpen(false)} disabled={rotating}>
+                            Cancel
+                        </Button>
+                        <Button
+                            color="warning"
+                            variant="contained"
+                            onClick={() => void handleRotate()}
+                            disabled={rotating}
+                        >
+                            {rotating ? 'Changing…' : 'Change Player ID'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
             )}
             {allowRegistration && (
                 <Dialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)}>

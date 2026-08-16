@@ -33,13 +33,7 @@ import { trustSystemCAs } from '../trustSystemCAs.js';
 // Trust the OS cert store before any cloud fetch in this worker.
 trustSystemCAs();
 
-// Default poll cadences. Registration (5s) is the checkin / bridge-open heartbeat:
-// it keeps the cloud-bridge open signal (viewer-control + audio start) responsive
-// — worst-case bridge/audio start ≈ one interval — and refreshes the bridge TTL,
-// so it stays frequent on purpose. The cloud treats ~2× it as the live-freshness
-// cutoff. Manifest (5min) is the content poll — new sequences / layout / settings
-// — deliberately infrequent to limit cloud cost; user-initiated manifestNow /
-// fetchLayoutNow bypass it. Both overridable via cloud-config `cloudPollIntervals`.
+// Default poll cadences.
 const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
 const DEFAULT_MANIFEST_INTERVAL_MS = 300_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -71,8 +65,7 @@ function sessionKey(url: string, token: string, folder: string): string {
 }
 
 /** Returns true when content polling (manifest + sequence files + layout) is
- *  permitted right now. Always-true when not in scheduled mode. Registration
- *  heartbeat polls run regardless of this gate. */
+ *  permitted right now. Always-true when not in scheduled mode. */
 function isContentPollingAllowed(): boolean {
     if (pollMode !== 'scheduled') return true;
     if (pollSchedule.length === 0) return false;
@@ -94,22 +87,15 @@ let consecutiveFailures = 0;
 let halted = false;
 
 /** Wall-clock time the player last confirmed it had the layout the cloud
- *  manifest advertised — either it downloaded the new layout successfully
- *  or its persisted layoutMeta already matched. Sent on every checkin so
- *  central / admin / extapi can show "synced through". `undefined` until
- *  the first successful fetchLayout in this process. */
+ *  manifest advertised/ */
 let lastLayoutSyncAt: number | undefined;
 /** Wall-clock time the player last confirmed it had every file the cloud
- *  manifest listed (a reconcileManifest pass with zero per-entry failures).
- *  Sent on every checkin alongside `lastLayoutSyncAt`. */
+ *  manifest listed. */
 let lastContentSyncAt: number | undefined;
 
 const cStatus: PlayerCStatusContent = { files: {} };
 
-// Last serialized payloads we sent to the parent. We compare new fetches to these
-// and skip postMessage when identical — the parent's update path is disruptive to
-// playback even when nothing actually changed. Reset on session-changing setConfig
-// (folder/user change ⇒ different store, always push).
+// Last serialized payloads we sent to the parent
 let lastSentPlaylistsJson: string | undefined;
 let lastSentScheduleJson: string | undefined;
 let lastSentSettingsJson: string | undefined;
@@ -175,9 +161,7 @@ function rescheduleTimers() {
     if (manifestTimer.unref) manifestTimer.unref();
 }
 
-/** Cooling-off period after the circuit breaker trips. After this much time
- *  the player tries again on its own — so an overnight transient (rate spike,
- *  cloud outage) heals without requiring a user click or app restart. */
+/** Cooling-off period after the circuit breaker trips. */
 const HALT_AUTO_CLEAR_MS = 60 * 60 * 1000;
 let autoClearTimer: NodeJS.Timeout | undefined;
 
@@ -203,8 +187,7 @@ function recordFailure(reason: string) {
             clearInterval(manifestTimer);
             manifestTimer = null;
         }
-        // Schedule a one-shot auto-clear so the player self-recovers without
-        // user intervention. User-initiated sync or setConfig cancels this.
+        // Schedule a one-shot auto-clear.
         cancelAutoClearTimer();
         autoClearTimer = setTimeout(() => {
             autoClearTimer = undefined;
@@ -231,10 +214,7 @@ function recordSuccess() {
 }
 
 /** A user-initiated sync (manifestNow / fetchLayoutNow) should override any
- *  prior auto-halt: the user is explicitly asking for another attempt. Clears
- *  the consecutive-failure counter, drops the halted flag, and re-arms the
- *  periodic timers that the breaker had cleared. Cheap when nothing was
- *  wrong (typical case). */
+ *  prior auto-halt. */
 function clearAutoHaltOnUserSync() {
     const wasHalted = halted;
     cancelAutoClearTimer();
@@ -250,21 +230,17 @@ function clearAutoHaltOnUserSync() {
     }
 }
 
-/** Build the cloud-bridge WebSocket URL from our own configured cloudUrl.
- *  Uses URL parsing so we get scheme + host + any path prefix correctly,
- *  then swaps http→ws / https→wss. */
+/** Build the cloud-bridge WebSocket URL from our own configured cloudUrl. */
 function buildBridgeWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/wsBridge', token, sessionId);
 }
 
-/** Parallel WS for HTTP-over-WS proxy traffic. Same auth boundary, different
- *  path so big payloads don't share head-of-line with status snapshots. */
+/** Parallel WS for HTTP-over-WS proxy traffic. */
 function buildProxyWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/proxyBridge', token, sessionId);
 }
 
-/** Parallel WS for live-audio push. Player pushes binary chunk frames as
- *  they're produced; the cloud server fans out to attached listeners. */
+/** Parallel WS for live-audio push. */
 function buildAudioWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/audioBridge', token, sessionId);
 }
@@ -277,10 +253,11 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
 }
 
 // -- home-server election ------------------------------------------------------
-// Startup-only — the elected host holds in-RAM vc state; mid-session moves
-// would discard votes/queue.
+// Retries with backoff until the first successful bind.
 
 const ELECTION_PROBE_TIMEOUT_MS = 2_000;
+const ELECTION_RETRY_BASE_MS = 10_000;
+const ELECTION_RETRY_MAX_MS = 300_000;
 /** Soft cutoff: when every candidate exceeds it, fall through to the full
  *  set so the player still has somewhere to go. */
 const ELECTION_LOAD_CUTOFF = 0.95;
@@ -302,19 +279,22 @@ async function probeHealthzRttMs(serverUrl: string): Promise<number | undefined>
     }
 }
 
-async function electHomeServerOnce(): Promise<void> {
-    if (!cloudUrl || !playerIdToken) return;
+/** One election attempt. Returns true when a binding now exists (kept or
+ *  newly chosen); false means "retry later" (unclaimed token, no candidates,
+ *  transient failure). */
+async function electHomeServerOnce(): Promise<boolean> {
+    if (!cloudUrl || !playerIdToken) return false;
     try {
         const candUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CANDIDATE_SERVERS}${playerIdToken}`;
         const res = await fetch(candUrl);
         if (!res.ok) {
             log('warn', `electHomeServer: candidateServers ${res.status}`);
-            return;
+            return false;
         }
         const body = (await res.json()) as CandidateServersResponse;
         if (!body.candidates?.length) {
             log('info', 'electHomeServer: no candidates available');
-            return;
+            return false;
         }
         const probed = await Promise.all(
             body.candidates.map(async (c) => ({ ...c, rtt_ms: await probeHealthzRttMs(c.url) })),
@@ -322,7 +302,7 @@ async function electHomeServerOnce(): Promise<void> {
         const reachable = probed.filter((p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number');
         if (reachable.length === 0) {
             log('warn', 'electHomeServer: no candidates reachable');
-            return;
+            return false;
         }
         const underCutoff = reachable.filter((p) => p.load_hint < ELECTION_LOAD_CUTOFF);
         const pool = underCutoff.length > 0 ? underCutoff : reachable;
@@ -330,6 +310,7 @@ async function electHomeServerOnce(): Promise<void> {
         const winner = pool[0]!;
         // Announce on every election (including "kept current") so ezvc
         // re-targets after a worker restart.
+        electedHomeServerUrl = winner.url;
         post({ type: 'homeServerUrl', url: winner.url });
 
         if (winner.key === body.current_key) {
@@ -337,7 +318,7 @@ async function electHomeServerOnce(): Promise<void> {
                 'info',
                 `electHomeServer: keeping key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)}`,
             );
-            return;
+            return true;
         }
         const electUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.ELECT_HOME_SERVER}${playerIdToken}`;
         const electRes = await fetch(electUrl, {
@@ -347,14 +328,63 @@ async function electHomeServerOnce(): Promise<void> {
         });
         if (!electRes.ok) {
             log('warn', `electHomeServer: elect ${electRes.status}`);
-            return;
+            return false;
         }
         log(
             'info',
             `electHomeServer: chose key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)} (was ${body.current_key ?? 'unbound'})`,
         );
+        return true;
     } catch (e) {
         log('warn', `electHomeServer: ${(e as Error).message}`);
+        return false;
+    }
+}
+
+// Election session state — see the section comment above for the policy.
+let electionBound = false;
+let electionInFlight = false;
+let electionAttempts = 0;
+let electionRetryTimer: NodeJS.Timeout | undefined;
+let wasRegistered = false;
+/** Elected home server base URL, surfaced on cloudStatus so UIs can build the
+ *  cloud control URL against the regional host. */
+let electedHomeServerUrl: string | undefined;
+
+function cancelElectionRetry() {
+    if (electionRetryTimer) {
+        clearTimeout(electionRetryTimer);
+        electionRetryTimer = undefined;
+    }
+}
+
+function resetElectionState() {
+    cancelElectionRetry();
+    electionBound = false;
+    electionAttempts = 0;
+    wasRegistered = false;
+    electedHomeServerUrl = undefined;
+}
+
+async function runHomeServerElection(): Promise<void> {
+    if (electionBound || electionInFlight || stopped || !cloudUrl || !playerIdToken) return;
+    electionInFlight = true;
+    cancelElectionRetry();
+    try {
+        if (await electHomeServerOnce()) {
+            electionBound = true;
+            electionAttempts = 0;
+        } else {
+            const delay = Math.min(ELECTION_RETRY_BASE_MS * 2 ** electionAttempts, ELECTION_RETRY_MAX_MS);
+            electionAttempts += 1;
+            electionRetryTimer = setTimeout(() => {
+                electionRetryTimer = undefined;
+                void runHomeServerElection();
+            }, delay);
+            if (electionRetryTimer.unref) electionRetryTimer.unref();
+        }
+    } finally {
+        electionInFlight = false;
     }
 }
 
@@ -383,6 +413,7 @@ async function pollRegistration() {
             body: JSON.stringify(body),
         });
         if (!res.ok) {
+            wasRegistered = false;
             post({
                 type: 'cloudStatus',
                 status: {
@@ -394,12 +425,20 @@ async function pollRegistration() {
             return;
         }
         const reply = (await res.json()) as PlayerCheckinResponse;
+        const nowRegistered = !!reply.registered;
+        if (nowRegistered && !wasRegistered) {
+            // Just claimed (or checkin recovered) — bind a home server now
+            // instead of waiting out the retry backoff. No-op once bound.
+            void runHomeServerElection();
+        }
+        wasRegistered = nowRegistered;
         post({
             type: 'cloudStatus',
             status: {
-                playerIdIsRegistered: !!reply.registered,
+                playerIdIsRegistered: nowRegistered,
                 lastCheckedAt: Date.now(),
                 lastError: undefined,
+                homeServerUrl: electedHomeServerUrl,
             },
         });
         if (reply.commands && reply.commands.length > 0) {
@@ -427,6 +466,7 @@ async function pollRegistration() {
     } catch (e) {
         const err = e as Error;
         log('warn', `checkin error: ${err.message}`);
+        wasRegistered = false;
         post({
             type: 'cloudStatus',
             status: {
@@ -1654,7 +1694,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             log(
                 'info',
                 `setConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} ` +
-                    `playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} ` +
+                    `playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '...' : '(empty)'} ` +
                     `showFolder="${showFolder}" reg=${registrationIntervalMs}ms manifest=${manifestIntervalMs}ms` +
                     (sessionChanged ? '' : ' (soft)'),
             );
@@ -1665,12 +1705,20 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             }
             rescheduleTimers();
             if (sessionChanged) {
-                void electHomeServerOnce();
+                resetElectionState();
+                // Elect before the first checkin so the first openCloudWS
+                // reply already carries the regional bridge URLs; a failed
+                // election still lets the polls proceed immediately.
+                void runHomeServerElection().finally(() => {
+                    void pollRegistration();
+                    void pollManifest();
+                });
+            } else {
+                // Soft updates still tick immediately so poll-mode / interval
+                // changes take effect without waiting for the next cadence.
+                void pollRegistration();
+                void pollManifest();
             }
-            // Soft updates still tick immediately so poll-mode / interval
-            // changes take effect without waiting for the next cadence.
-            void pollRegistration();
-            void pollManifest();
             break;
         }
         case 'updateSequences': {
@@ -1704,6 +1752,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             log('info', 'stop requested');
             stopped = true;
             clearTimers();
+            cancelElectionRetry();
             break;
         }
     }

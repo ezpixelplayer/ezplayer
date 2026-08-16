@@ -4,6 +4,7 @@ import type {
     AutoUpdateStatus,
     CloudConfig,
     CloudStatus,
+    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -121,6 +122,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     cloudCommand(cmd: CloudCommand): Promise<void> {
         return ipcRenderer.invoke('ipcCloudCommand', cmd);
+    },
+    getDiagnosticsConsent(): Promise<DiagnosticsConsent> {
+        return ipcRenderer.invoke('ipcGetDiagnosticsConsent');
+    },
+    setDiagnosticsConsent(patch: Partial<DiagnosticsConsent>): Promise<DiagnosticsConsent> {
+        return ipcRenderer.invoke('ipcSetDiagnosticsConsent', patch);
+    },
+    reportRendererError(message: string, stack?: string): Promise<void> {
+        return ipcRenderer.invoke('ipcReportRendererError', message, stack);
     },
     setZoomFactor(factor: number): Promise<void> {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);

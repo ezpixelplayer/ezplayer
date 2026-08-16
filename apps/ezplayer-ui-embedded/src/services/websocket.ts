@@ -69,6 +69,15 @@ function buildConfig(): WebSocketConfig {
     };
 }
 
+/** The server heartbeats every 5s (websocket-broadcaster HEARTBEAT_MS); if we
+ *  see no traffic for 3 pings + margin the connection is half-open (hard-down
+ *  player, pulled cable) — browsers never TCP-keepalive a WebSocket, so
+ *  readyState stays OPEN forever and onclose alone can't detect it. */
+const STALE_CONNECTION_TIMEOUT_MS = 16_000;
+const WATCHDOG_INTERVAL_MS = 5_000;
+/** A socket stuck in CONNECTING (no SYN-ACK) never fires onclose either. */
+const CONNECT_TIMEOUT_MS = 10_000;
+
 class WebSocketService {
     private ws: WebSocket | null = null;
     private url: string;
@@ -80,6 +89,9 @@ class WebSocketService {
     private reconnectDelay = 1000; // Start with 1 second
     private maxReconnectDelay = 30000; // Max 30 seconds
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+    private connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    private lastActivityAt = 0;
     private messageHandlers: Map<string, Set<MessageHandler>> = new Map();
     private connectionHandlers: Set<ConnectionHandler> = new Set();
     private disconnectHandlers: Set<ConnectionHandler> = new Set();
@@ -147,14 +159,18 @@ class WebSocketService {
 
         try {
             this.ws = new WebSocket(this.url);
+            this.armConnectTimeout();
 
             this.ws.onopen = () => {
                 console.log('✅ WebSocket connected');
+                this.clearConnectTimeout();
                 this.isConnecting = false;
                 this.isConnected = true;
                 this.hasConnectedSuccessfully = true;
                 this.reconnectAttempts = 0;
                 this.reconnectDelay = 1000;
+                this.lastActivityAt = Date.now();
+                this.startWatchdog();
 
                 // Notify connection handlers
                 this.connectionHandlers.forEach((handler) => {
@@ -167,6 +183,7 @@ class WebSocketService {
             };
 
             this.ws.onmessage = (event) => {
+                this.lastActivityAt = Date.now();
                 try {
                     const message: PlayerWebSocketMessage = JSON.parse(event.data);
                     this.handleMessage(message);
@@ -192,12 +209,18 @@ class WebSocketService {
                 if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
                     console.log(`🔌 WebSocket disconnected (code: ${event.code})`);
                 }
+                this.clearConnectTimeout();
+                this.stopWatchdog();
                 const wasConnected = this.isConnected;
                 this.isConnecting = false;
                 this.isConnected = false;
                 this.ws = null;
 
-                if (wasConnected) {
+                // Notify on a real drop, and also when we have never managed
+                // to connect at all (after the port-candidate sweep) — a cold
+                // start against a dead player should surface too, not render
+                // a silent empty UI.
+                if (wasConnected || (!this.hasConnectedSuccessfully && this.reconnectAttempts >= 1)) {
                     this.disconnectHandlers.forEach((handler) => {
                         try {
                             handler();
@@ -237,6 +260,8 @@ class WebSocketService {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
+        this.clearConnectTimeout();
+        this.stopWatchdog();
 
         if (this.ws) {
             this.ws.close();
@@ -282,7 +307,9 @@ class WebSocketService {
     }
 
     /**
-     * Subscribe to disconnect events (only fired after a prior successful connect).
+     * Subscribe to disconnect events. Fired after a prior successful connect
+     * drops, and also once initial connection attempts are exhausted without
+     * ever connecting.
      */
     onDisconnect(handler: ConnectionHandler): () => void {
         this.disconnectHandlers.add(handler);
@@ -318,18 +345,17 @@ class WebSocketService {
     }
 
     /**
-     * Schedule reconnection attempt
+     * Schedule reconnection attempt. Never gives up — the backoff just caps at
+     * maxReconnectDelay, so a player that comes back hours later still
+     * reconnects without a manual page refresh.
      */
     private scheduleReconnect(): void {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.warn(
-                `⚠️  Max reconnection attempts (${this.maxReconnectAttempts}) reached. WebSocket will not reconnect automatically.`,
-            );
-            return;
-        }
-
         if (this.reconnectTimer) {
             return; // Already scheduled
+        }
+
+        if (this.reconnectAttempts === this.maxReconnectAttempts) {
+            console.warn(`⚠️  ${this.maxReconnectAttempts} reconnection attempts failed; continuing to retry every ${this.maxReconnectDelay}ms.`);
         }
 
         this.reconnectAttempts++;
@@ -343,6 +369,67 @@ class WebSocketService {
             this.reconnectTimer = null;
             this.connect();
         }, delay);
+    }
+
+    /** Abort a dial stuck in CONNECTING so the normal onclose/retry path runs. */
+    private armConnectTimeout(): void {
+        this.clearConnectTimeout();
+        this.connectTimeoutTimer = setTimeout(() => {
+            this.connectTimeoutTimer = null;
+            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+                console.warn(`⚠️  WebSocket connect timed out after ${CONNECT_TIMEOUT_MS}ms`);
+                this.ws.close();
+            }
+        }, CONNECT_TIMEOUT_MS);
+    }
+
+    private clearConnectTimeout(): void {
+        if (this.connectTimeoutTimer) {
+            clearTimeout(this.connectTimeoutTimer);
+            this.connectTimeoutTimer = null;
+        }
+    }
+
+    private startWatchdog(): void {
+        this.stopWatchdog();
+        this.watchdogTimer = setInterval(() => {
+            if (!this.isConnected) return;
+            if (Date.now() - this.lastActivityAt <= STALE_CONNECTION_TIMEOUT_MS) return;
+            console.warn(`⚠️  No WebSocket traffic for ${STALE_CONNECTION_TIMEOUT_MS}ms — treating connection as dead`);
+            // close() on a half-open socket can take the browser a long time
+            // to resolve, so detach the stale socket entirely (its late
+            // onclose must not clobber a fresh dial), notify, and reconnect.
+            this.stopWatchdog();
+            this.isConnected = false;
+            const stale = this.ws;
+            this.ws = null;
+            if (stale) {
+                stale.onopen = null;
+                stale.onmessage = null;
+                stale.onerror = null;
+                stale.onclose = null;
+                try {
+                    stale.close();
+                } catch {
+                    // ignore
+                }
+            }
+            this.disconnectHandlers.forEach((handler) => {
+                try {
+                    handler();
+                } catch (error) {
+                    console.error('Error in disconnect handler:', error);
+                }
+            });
+            this.scheduleReconnect();
+        }, WATCHDOG_INTERVAL_MS);
+    }
+
+    private stopWatchdog(): void {
+        if (this.watchdogTimer) {
+            clearInterval(this.watchdogTimer);
+            this.watchdogTimer = null;
+        }
     }
 
     send(msg: PlayerClientWebSocketMessage) {

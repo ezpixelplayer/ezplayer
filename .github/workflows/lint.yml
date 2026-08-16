@@ -1,0 +1,41 @@
+name: Lint
+
+on:
+    pull_request:
+        branches:
+            - main
+            - master
+            - production
+            - develop
+    push:
+        branches:
+            - main
+
+jobs:
+    lint:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+
+            - name: Set up pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 10
+                  run_install: false
+                  cache: true
+
+            # --ignore-scripts skips the native node-gyp builds and the electron
+            # binary download; eslint only needs sources and JS node_modules.
+            # (Errors fail the job; warnings — no-explicit-any etc. — do not.)
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --ignore-scripts
+
+            - name: Lint
+              run: pnpm lint

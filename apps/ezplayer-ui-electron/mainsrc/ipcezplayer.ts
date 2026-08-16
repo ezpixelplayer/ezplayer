@@ -74,7 +74,10 @@ import type {
 
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
-import { mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import { getDiagnosticsConsent, reportDiagEvent, setDiagnosticsConsent } from './diagnostics.js';
+import { safeSend } from './safe-send.js';
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
@@ -322,7 +325,7 @@ export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<Pl
     }
     curPlaylists = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
-    updateWindow?.webContents?.send('update:playlist', filtered);
+    safeSend(updateWindow, 'update:playlist', filtered);
     broadcastToWebSocket('playlists', filtered);
     scheduleUpdated();
     return filtered;
@@ -339,7 +342,7 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
     }
     curSchedule = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
-    updateWindow?.webContents?.send('update:schedule', filtered);
+    safeSend(updateWindow, 'update:schedule', filtered);
     broadcastToWebSocket('schedule', filtered);
     scheduleUpdated();
     return filtered;
@@ -401,7 +404,7 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
 
     applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
     await saveCloudSettingsMeta(metaPath, newMeta);
-    updateWindow?.webContents?.send('update:playbacksettings', next);
+    safeSend(updateWindow, 'update:playbacksettings', next);
     broadcastToWebSocket('playbackSettings', next);
     playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
     console.log(`[cloud-settings] adopted from cloud: ${adopted.join(', ')}`);
@@ -435,7 +438,7 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     }
     curSequences = updList;
     const filtered = updList.filter((r) => r.deleted !== true);
-    updateWindow?.webContents?.send('update:sequences', filtered);
+    safeSend(updateWindow, 'update:sequences', filtered);
     broadcastToWebSocket('sequences', filtered);
     scheduleUpdated();
     updateCloudWorkerSequences(curSequences);
@@ -540,29 +543,29 @@ export async function loadShowFolder(forceRestart?: boolean) {
         cloudConfig.cloudPollSchedule,
     );
 
-    updateWindow?.webContents?.send('update:cloudConfig', cloudConfig);
-    updateWindow?.webContents?.send('update:cloudStatus', getCurrentCloudStatus());
+    safeSend(updateWindow, 'update:cloudConfig', cloudConfig);
+    safeSend(updateWindow, 'update:cloudStatus', getCurrentCloudStatus());
     broadcastToWebSocket('cloudConfig', cloudConfig);
     broadcastToWebSocket('cloudStatus', getCurrentCloudStatus());
     // Web/cloud clients have no IPC getVersions — the snapshot carries it.
     broadcastToWebSocket('versions', ezpVersions);
 
-    updateWindow?.webContents?.send('update:showFolder', showFolder);
-    updateWindow?.webContents?.send(
+    safeSend(updateWindow, 'update:showFolder', showFolder);
+    safeSend(updateWindow, 
         'update:sequences',
         curSequences.filter((s) => !s.deleted),
     );
-    updateWindow?.webContents?.send(
+    safeSend(updateWindow, 
         'update:playlist',
         curPlaylists.filter((s) => !s.deleted),
     );
-    updateWindow?.webContents?.send(
+    safeSend(updateWindow, 
         'update:schedule',
         curSchedule.filter((s) => !s.deleted),
     );
     applyStatusSummary();
-    updateWindow?.webContents?.send('update:combinedstatus', curStatus);
-    updateWindow?.webContents?.send('update:playbacksettings', getSettingsCache());
+    safeSend(updateWindow, 'update:combinedstatus', curStatus);
+    safeSend(updateWindow, 'update:playbacksettings', getSettingsCache());
 
     // Broadcast via WebSocket (for React web app)
     broadcastToWebSocket('showFolder', showFolder);
@@ -624,8 +627,9 @@ const handlers: MainRPCAPI = {
 
 /** Single dispatcher for renderer-issued cloud commands. New verbs only need a
  *  variant on `CloudCommand` and a case here. The renderer hits this via either
- *  `ipcCloudCommand` (electron) or the koa server-worker's RPC route (embedded). */
-export function dispatchCloudCommand(cmd: CloudCommand): void {
+ *  `ipcCloudCommand` (electron) or the koa server-worker's RPC route (embedded).
+ *  Async verbs return a promise so the electron IPC path can surface errors. */
+export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
     switch (cmd.type) {
         case 'syncNow':
             // Pull the manifest. The worker auto-fetches layout at the head of each
@@ -644,6 +648,8 @@ export function dispatchCloudCommand(cmd: CloudCommand): void {
         case 'setPlayerIdToken':
             applyPlayerIdToken(cmd.token);
             break;
+        case 'rotatePlayerToken':
+            return applyRotatePlayerToken();
         case 'setCloudServiceUrl':
             applyCloudServiceUrl(cmd.url);
             break;
@@ -698,7 +704,7 @@ function reconfigureCloudWorker(cfg: CloudConfig) {
 }
 
 function broadcastCloudConfig(cfg: CloudConfig) {
-    updateWindow?.webContents?.send('update:cloudConfig', cfg);
+    safeSend(updateWindow, 'update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
 
@@ -750,6 +756,27 @@ export function applyCloudServiceUrl(url: string) {
     const cfg = updateCloudConfig({ cloudServiceUrl: url ?? '' });
     reconfigureCloudWorker(cfg);
     broadcastCloudConfig(cfg);
+}
+
+/** One-click token rotation. Mints a fresh token, asks the cloud to move the
+ *  registration onto it (child rows and home-server binding follow), then
+ *  adopts it locally via the normal setPlayerIdToken path. The old token —
+ *  and any control URL/QR carrying it — stops working the moment the cloud
+ *  transaction lands. Throws on any failure; the local token is untouched. */
+export async function applyRotatePlayerToken(): Promise<void> {
+    const cfg = getCloudConfigCache();
+    const oldToken = cfg.playerIdToken;
+    const cloudUrl = cfg.cloudServiceUrl;
+    if (!oldToken || !cloudUrl) throw new Error('No registered player token to rotate');
+    const newToken = crypto.randomUUID();
+    const base = cloudUrl.endsWith('/') ? cloudUrl : `${cloudUrl}/`;
+    const res = await fetch(`${base}api/${CLOUD_API_ENDPOINTS.ROTATE_TOKEN}${oldToken}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ new_token: newToken }),
+    });
+    if (!res.ok) throw new Error(`Token rotation failed: HTTP ${res.status}`);
+    applyPlayerIdToken(newToken);
 }
 
 export async function registerContentHandlers(
@@ -901,7 +928,7 @@ export async function registerContentHandlers(
             settings,
         } as PlayerCommand);
         // Broadcast to all clients (Electron renderer and web app)
-        updateWindow?.webContents?.send('update:playbacksettings', settings);
+        safeSend(updateWindow, 'update:playbacksettings', settings);
         broadcastToWebSocket('playbackSettings', settings);
         return true;
     });
@@ -915,7 +942,19 @@ export async function registerContentHandlers(
         return getCloudConfigCache();
     });
     ipcMain.handle('ipcCloudCommand', async (_event, cmd: CloudCommand) => {
-        dispatchCloudCommand(cmd);
+        await dispatchCloudCommand(cmd);
+    });
+    ipcMain.handle('ipcGetDiagnosticsConsent', async () => getDiagnosticsConsent());
+    ipcMain.handle('ipcSetDiagnosticsConsent', async (_event, patch: Partial<DiagnosticsConsent>) =>
+        setDiagnosticsConsent(patch),
+    );
+    ipcMain.handle('ipcReportRendererError', async (_event, message: unknown, stack: unknown) => {
+        console.error('[renderer-error]', message, stack ?? '');
+        reportDiagEvent(
+            'renderer-error',
+            typeof message === 'string' ? message : String(message),
+            typeof stack === 'string' ? stack : undefined,
+        );
     });
     ipcMain.handle('ipcGetCloudConnStatus', async (_event) => {
         return getCurrentCloudStatus();
@@ -925,7 +964,7 @@ export async function registerContentHandlers(
     });
 
     onCloudStatus((status) => {
-        updateWindow?.webContents?.send('update:cloudStatus', status);
+        safeSend(updateWindow, 'update:cloudStatus', status);
         broadcastToWebSocket('cloudStatus', status);
     });
 
@@ -934,8 +973,8 @@ export async function registerContentHandlers(
         // Status sees fresh sync times every poll, not only at scheduleUpdated.
         curStatus.content = { ...(curStatus.content ?? {}), ...cStatus };
         applyStatusSummary();
-        updateWindow?.webContents?.send('playback:cstatus', curStatus.content);
-        updateWindow?.webContents?.send('update:combinedstatus', curStatus);
+        safeSend(updateWindow, 'playback:cstatus', curStatus.content);
+        safeSend(updateWindow, 'update:combinedstatus', curStatus);
         broadcastToWebSocket('cStatus', curStatus.content);
         // Opportunistic gc — runs whenever the worker reports back, no-op when
         // queue is empty or player isn't idle.
@@ -946,7 +985,7 @@ export async function registerContentHandlers(
         // Persist the cloud meta so future fetches can short-circuit when nothing
         // has changed (the worker uses this on the next setConfig).
         const cfg = updateCloudConfig({ layoutMeta });
-        updateWindow?.webContents?.send('update:cloudConfig', cfg);
+        safeSend(updateWindow, 'update:cloudConfig', cfg);
         broadcastToWebSocket('cloudConfig', cfg);
 
         // Layout files (xlights_rgbeffects.xml / xlights_networks.xml plus anything
@@ -1028,8 +1067,8 @@ export async function registerContentHandlers(
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                //mainWindow?.webContents.send('audio:chunk', msg.chunk);
-                audioWindow?.webContents.send('audio:chunk', msg.chunk, [msg.chunk.buffer]);
+                //safeSend(mainWindow, 'audio:chunk', msg.chunk);
+                safeSend(audioWindow, 'audio:chunk', msg.chunk, [msg.chunk.buffer]);
                 break;
             }
             case 'pixelbuffer': {
@@ -1045,7 +1084,7 @@ export async function registerContentHandlers(
                 break;
             }
             case 'stats': {
-                mainWindow?.webContents.send('playback:stats', msg.stats);
+                safeSend(mainWindow, 'playback:stats', msg.stats);
                 broadcastToWebSocket('playbackStatistics', msg.stats);
                 break;
             }
@@ -1054,7 +1093,7 @@ export async function registerContentHandlers(
                 // curStatus.content survive playback's status updates.
                 const merged = { ...(curStatus.content ?? {}), ...msg.status };
                 curStatus = { ...curStatus, content: merged, content_updated: Date.now() };
-                mainWindow?.webContents.send('playback:cstatus', merged);
+                safeSend(mainWindow, 'playback:cstatus', merged);
                 broadcastToWebSocket('cStatus', merged);
                 break;
             }
@@ -1063,14 +1102,14 @@ export async function registerContentHandlers(
                 // cross-source controller info) survive playback's pushes.
                 const merged = { ...(curStatus.controller ?? {}), ...msg.status };
                 curStatus = { ...curStatus, controller: merged, controller_updated: Date.now() };
-                mainWindow?.webContents.send('playback:nstatus', merged);
+                safeSend(mainWindow, 'playback:nstatus', merged);
                 broadcastToWebSocket('nStatus', merged);
                 break;
             }
             case 'pstatus': {
                 // The worker's pstatus is a complete snapshot of playback state.
                 curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
-                mainWindow?.webContents.send('playback:pstatus', msg.status);
+                safeSend(mainWindow, 'playback:pstatus', msg.status);
                 broadcastToWebSocket('pStatus', msg.status);
                 break;
             }
