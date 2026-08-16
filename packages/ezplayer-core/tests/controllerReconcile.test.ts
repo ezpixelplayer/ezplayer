@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileControllers, reconcilePorts, hasPortDrift, overlayHealth, healthNeedsAttention, applyOverrides } from '../src/util/controllerReconcile';
+import { reconcileControllers, reconcilePorts, hasPortDrift, reconcileInputs, overlayHealth, healthNeedsAttention, applyOverrides } from '../src/util/controllerReconcile';
 import type { KnownController, DiscoveredController, EzpControllerRecord } from '../src/types/ControllerOps';
 
 const now = '2026-01-01T00:00:00.000Z';
@@ -302,5 +302,88 @@ describe('applyOverrides', () => {
     it('does not resurrect a soft-deleted own record', () => {
         const out = applyOverrides([], [rec({ name: 'Gone', own: true, deleted: true })]);
         expect(out).toHaveLength(0);
+    });
+});
+
+describe('reconcileInputs', () => {
+    const e131 = (universe: number, channels = 510, startChannel = 1) => ({
+        type: 'e131', universe, startChannel, channels,
+    });
+
+    it('no drift when the device matches the intended universe map', () => {
+        const r = reconcileInputs(
+            [e131(100), e131(101), e131(102)],
+            { protocol: 'e131', universes: [
+                { universe: 100, channels: 510 }, { universe: 101, channels: 510 }, { universe: 102, channels: 510 },
+            ] },
+        );
+        expect(r.drift).toBe(false);
+        expect(r.notes).toEqual([]);
+    });
+
+    it('flags missing, extra, and resized universes', () => {
+        const r = reconcileInputs(
+            [e131(100), e131(101)],
+            { protocol: 'e131', universes: [
+                { universe: 100, channels: 512 }, { universe: 7, channels: 510 },
+            ] },
+        );
+        expect(r.drift).toBe(true);
+        expect(r.notes.join(' | ')).toContain('missing on device: 101');
+        expect(r.notes.join(' | ')).toContain('not in xLights: 7');
+        expect(r.notes.join(' | ')).toContain('universe 100 size: xLights 510 vs device 512');
+    });
+
+    it('protocol mismatch short-circuits the finer checks', () => {
+        const r = reconcileInputs([e131(1)], { protocol: 'ddp', startChannel: 999 });
+        expect(r.drift).toBe(true);
+        expect(r.notes).toHaveLength(1);
+        expect(r.notes[0]).toContain('protocol');
+    });
+
+    it('treats E1.31 aliases as the same protocol', () => {
+        const r = reconcileInputs([{ type: 'E131', universe: 5, startChannel: 1, channels: 510 }], {
+            protocol: 'e1.31',
+            universes: [{ universe: 5, channels: 510 }],
+        });
+        expect(r.drift).toBe(false);
+    });
+
+    it('DDP tolerates device start of 1 or the absolute start, flags others', () => {
+        const intent = [{ type: 'ddp', startChannel: 5001, channels: 3000 }];
+        expect(reconcileInputs(intent, { protocol: 'ddp', startChannel: 1 }).drift).toBe(false);
+        expect(reconcileInputs(intent, { protocol: 'ddp', startChannel: 5001 }).drift).toBe(false);
+        const bad = reconcileInputs(intent, { protocol: 'ddp', startChannel: 777 });
+        expect(bad.drift).toBe(true);
+        expect(bad.notes[0]).toContain('DDP start');
+    });
+
+    it('DDP flags only a too-small device channel window', () => {
+        const intent = [{ type: 'ddp', startChannel: 1, channels: 3000 }];
+        expect(reconcileInputs(intent, { protocol: 'ddp', startChannel: 1, channelCount: 3000 }).drift).toBe(false);
+        expect(reconcileInputs(intent, { protocol: 'ddp', startChannel: 1, channelCount: 6000 }).drift).toBe(false);
+        const small = reconcileInputs(intent, { protocol: 'ddp', startChannel: 1, channelCount: 300 });
+        expect(small.drift).toBe(true);
+        expect(small.notes[0]).toContain('DDP channels');
+    });
+
+    it('partial devices compare only the first universe and size', () => {
+        const intent = [e131(100), e131(101), e131(102)];
+        expect(reconcileInputs(intent, {
+            universes: [{ universe: 100, channels: 510 }], partial: true,
+        }).drift).toBe(false);
+        const wrong = reconcileInputs(intent, {
+            universes: [{ universe: 55, channels: 512 }], partial: true,
+        });
+        expect(wrong.drift).toBe(true);
+        expect(wrong.notes.join(' | ')).toContain('start universe');
+    });
+
+    it('an unread device or an empty intent never alarms', () => {
+        expect(reconcileInputs([e131(1)], undefined).drift).toBe(false);
+        expect(reconcileInputs([], { protocol: 'e131' }).drift).toBe(false);
+        expect(reconcileInputs(undefined, { protocol: 'e131' }).drift).toBe(false);
+        // Device that reports no protocol and no map (nothing to contradict).
+        expect(reconcileInputs([e131(1)], {}).drift).toBe(false);
     });
 });

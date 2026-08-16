@@ -83,7 +83,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
             </Box>
 
             {/* Scrollable gallery */}
-            <Box sx={{ overflowY: 'auto', flexGrow: 1, padding: 2 }}>
+            <Box sx={{ overflowY: 'auto', flexGrow: 1, padding: 2, paddingTop: 0 }}>
                 <Box
                     sx={{
                         display: 'grid',

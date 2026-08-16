@@ -166,7 +166,7 @@ export const ModelList = React.memo(function ModelList({
                     zIndex: 1,
                 }}
             >
-                {/* Single slim row: stats (formerly a separate footer) + close X. */}
+                {/* Single slim row: stats + close X. */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: searchable ? 1 : 0 }}>
                     <ViewInArIcon
                         sx={{

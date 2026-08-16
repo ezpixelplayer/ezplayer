@@ -22,6 +22,8 @@ import { Box } from '../box/Box';
 import View3DIcon from '@mui/icons-material/ViewInAr';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import ListIcon from '@mui/icons-material/List';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
@@ -139,7 +141,8 @@ export interface Preview3DProps {
      * to avoid redundancy with the caller's own title/chrome.
      */
     mode?: 'standalone' | 'embedded';
-    /** When true, viewers use minHeight 0 so the preview fills a flex/dialog container instead of forcing 600px. */
+    /** Dialog/card hosting hints (tighter empty-state sizing). Viewers always
+     *  fill their container — every host provides a managed height. */
     compact?: boolean;
     /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
      *  storage-shaped JSON */
@@ -177,6 +180,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // as its calculated default; casual per-selection snapshots don't count.
     const modeChosenRef = useRef(false);
     const [showItemList, setShowItemList] = useState(showList && initialShowList);
+    // Expanded (pop-out) mode: the preview takes over the whole window — just
+    // the view and the model list, plus a small floating control cluster.
+    const [expanded, setExpanded] = useState(false);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
     // Lazy init from the prop so the first render already has live data when available.
@@ -373,6 +379,16 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setCameraStateLoaded(true);
         }
     }, [previewSettingsStorageKey]);
+
+    // Expanded mode: Esc exits.
+    useEffect(() => {
+        if (!expanded) return undefined;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setExpanded(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [expanded]);
 
     // With no deliberately chosen view mode, the calculated default follows
     // the layout's own 2D/3D annotation (xLights LayoutMode3D) once known.
@@ -797,7 +813,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             return next;
         });
         // A reset also forgets the saved default mode, so the layout's own
-        // 2D/3D annotation decides again (escape hatch for a stale default).
+        // 2D/3D annotation decides again.
         modeChosenRef.current = false;
         if (layoutSettings.layoutMode3D !== undefined) {
             setViewMode(layoutSettings.layoutMode3D ? '3d' : '2d');
@@ -1053,9 +1069,17 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 width: '100%',
                 minHeight: compact ? 0 : undefined,
                 overflow: 'hidden',
+                // Pop-out: cover the whole window with just view + model list.
+                ...(expanded && {
+                    position: 'fixed',
+                    inset: 0,
+                    height: '100%',
+                    zIndex: theme.zIndex.modal,
+                    backgroundColor: 'background.default',
+                }),
             }}
         >
-            {showControls && (
+            {showControls && !expanded && (
                 <Paper
                     elevation={2}
                     sx={{
@@ -1276,6 +1300,13 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 </IconButton>
                             </Tooltip>
                         )}
+                        {!embedded && (
+                            <Tooltip title="Expand preview (Esc exits)">
+                                <IconButton size="small" onClick={() => setExpanded(true)}>
+                                    <FullscreenIcon />
+                                </IconButton>
+                            </Tooltip>
+                        )}
                     </Box>
                 </Paper>
             )}
@@ -1287,7 +1318,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             sx={{
                                 width: '100%',
                                 height: '100%',
-                                minHeight: compact ? 0 : 600,
+                                minHeight: 0,
                                 display: 'flex',
                                 justifyContent: 'center',
                                 alignItems: 'center',
@@ -1328,7 +1359,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onAutoFitComplete={handleAutoFitComplete}
                                     cameraStateLoaded={cameraStateLoaded}
                                     onGetCurrentCameraState={handleGetCurrentCameraState3D}
-                                    fillContainer={compact}
+                                    fillContainer
                                     forceOrbitControls={preferOrbitControls}
                                 />
                             ) : (
@@ -1355,10 +1386,44 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onAutoFitComplete={handleAutoFitComplete}
                                     cameraStateLoaded={cameraStateLoaded}
                                     onGetCurrentCameraState={handleGetCurrentCameraState2D}
-                                    fillContainer={compact}
+                                    fillContainer
                                 />
                             );
                         })()
+                    )}
+                    {expanded && (
+                        <Paper
+                            elevation={3}
+                            sx={{
+                                position: 'absolute',
+                                top: 8,
+                                right: 8,
+                                zIndex: 10,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                px: 0.5,
+                                borderRadius: 2,
+                                opacity: 0.9,
+                            }}
+                        >
+                            {showList && (
+                                <Tooltip title={showItemList ? 'Hide model library' : 'Show model library'}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShowItemList(!showItemList)}
+                                        color={showItemList ? 'primary' : 'default'}
+                                    >
+                                        <ListIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                            <Tooltip title="Exit expanded preview">
+                                <IconButton size="small" onClick={() => setExpanded(false)}>
+                                    <FullscreenExitIcon />
+                                </IconButton>
+                            </Tooltip>
+                        </Paper>
                     )}
                 </Box>
 
@@ -1380,8 +1445,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             overflow: 'hidden',
                         }}
                     >
-                        {/* ModelList's own header carries the stats and close X — no
-                            separate title bar, so the scroll area gets the space. */}
                         <ModelList
                             selectedModelNames={selectedModelNames}
                             onModelSelect={handleModelSelect}

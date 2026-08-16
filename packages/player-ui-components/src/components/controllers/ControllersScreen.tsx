@@ -56,7 +56,7 @@ import { PortVisualizerDialog } from './PortVisualizerDialog';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
-import { reconcileControllers, reconcilePorts, hasPortDrift, overlayHealth } from '@ezplayer/ezplayer-core';
+import { reconcileControllers, reconcilePorts, hasPortDrift, reconcileInputs, overlayHealth } from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
     ControllerDetailNode,
@@ -367,12 +367,18 @@ const GridRow: React.FC<{
     const portsRead = d?.pixelPorts !== undefined;
     const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? []);
     const portDrift = portsRead && hasPortDrift(portRows);
+    // Same gating for the data-input side (protocol / universe map / DDP window).
+    const inputsRead = d?.inputs !== undefined;
+    const inputRec = reconcileInputs(row.outputs, d?.inputs);
+    const inputDrift = inputsRead && inputRec.drift;
+    const anyDrift = portDrift || inputDrift;
     // Port knowledge on either side is enough for the port-map visualizer.
     const hasPortData =
         portRows.length > 0 || (row.modelIntents?.length ?? 0) > 0 || (d?.pixelPorts?.length ?? 0) > 0;
+    const hasInputData = (row.outputs?.length ?? 0) > 0 || inputsRead;
     const health = row.health;
     const hasHealthDetail = !!(health && (health.pingSummary || health.errors?.length || health.notices?.length || health.status));
-    const expandable = hasDetail || hasPortData || hasHealthDetail;
+    const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail;
     // Fall back to the record's address so an unscanned row still gets Open.
     const url = (d ? controllerUrl(d, serverBase) : undefined) ?? addressUrl(row.address ?? '', serverBase);
     const canReboot = !!d?.driverType && d.driverType !== 'EZPlayer';
@@ -470,11 +476,11 @@ const GridRow: React.FC<{
                         }}
                     />
                     <Chip size="small" color={meta.color} label={meta.label} variant={ghost ? 'filled' : 'outlined'} />
-                    {portDrift && (
+                    {anyDrift && (
                         <IconButton
                             size="small"
                             onClick={() => setPortDialog('compare')}
-                            title="ports differ from xLights — reconfiguration needed (click to compare)"
+                            title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
                             sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
                         >
                             <SyncProblemIcon color="warning" fontSize="small" />
@@ -538,8 +544,7 @@ const GridRow: React.FC<{
                                 anchorEl={menuAnchor}
                                 open={!!menuAnchor}
                                 onClose={() => setMenuAnchor(null)}
-                                // Grow leftward from the kebab — it sits in the right-most
-                                // column, so left-anchored growth ran off narrow screens.
+                                // Right-anchored: the kebab sits in the right-most column.
                                 anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                                 transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                             >
@@ -558,7 +563,7 @@ const GridRow: React.FC<{
                 <TableRow>
                     <TableCell colSpan={6} sx={{ p: 0, border: 0 }}>
                         <Collapse in={open} timeout="auto" unmountOnExit>
-                            <Box sx={{ p: 2, pl: 6, borderTop: '1px solid', borderColor: 'divider' }}>
+                            <Box sx={{ p: 2, pl: 6, borderBottom: '1px solid', borderColor: 'divider' }}>
                                 {hasHealthDetail && health && (
                                     <Box sx={{ mb: 2 }}>
                                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -586,7 +591,12 @@ const GridRow: React.FC<{
                                     </Box>
                                 )}
                                 {hasPortData && (
-                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: hasDetail ? 2 : 0, flexWrap: 'wrap' }}>
+                                    <Stack
+                                        direction="row"
+                                        spacing={1}
+                                        alignItems="center"
+                                        sx={{ mb: hasInputData ? 1 : hasDetail ? 2 : 0, flexWrap: 'wrap' }}
+                                    >
                                         <Typography variant="subtitle2">Ports</Typography>
                                         {portRows.length > 0 &&
                                             (!portsRead ? (
@@ -617,6 +627,33 @@ const GridRow: React.FC<{
                                         )}
                                     </Stack>
                                 )}
+                                {hasInputData && (
+                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: hasDetail ? 2 : 0, flexWrap: 'wrap' }}>
+                                        <Typography variant="subtitle2">Input</Typography>
+                                        {!inputsRead ? (
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                device config not read yet
+                                            </Typography>
+                                        ) : inputDrift ? (
+                                            <SyncProblemIcon
+                                                color="warning"
+                                                fontSize="small"
+                                                titleAccess={inputRec.notes.join('; ')}
+                                            />
+                                        ) : (
+                                            <CheckCircleOutlineIcon
+                                                color="success"
+                                                fontSize="small"
+                                                titleAccess="input config matches xLights"
+                                            />
+                                        )}
+                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                            {inputsRead && inputRec.actualSummary
+                                                ? inputRec.actualSummary
+                                                : inputRec.intentSummary}
+                                        </Typography>
+                                    </Stack>
+                                )}
                                 {hasDetail && <DetailSections nodes={d!.detail!} />}
                             </Box>
                         </Collapse>
@@ -630,6 +667,27 @@ const GridRow: React.FC<{
                     fullScreen
                 >
                     <PortReconcileTable rows={portRows} />
+                    {hasInputData && (
+                        <Box sx={{ mt: 2 }}>
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                                Input config
+                            </Typography>
+                            <Typography variant="body2">xLights: {inputRec.intentSummary}</Typography>
+                            <Typography variant="body2">
+                                Controller: {inputsRead ? inputRec.actualSummary || '—' : 'not read yet'}
+                            </Typography>
+                            {inputRec.notes.map((n, i) => (
+                                <Typography key={i} variant="body2" sx={{ color: 'warning.main' }}>
+                                    {n}
+                                </Typography>
+                            ))}
+                            {inputsRead && !inputDrift && (
+                                <Typography variant="caption" sx={{ color: 'success.main' }}>
+                                    in sync
+                                </Typography>
+                            )}
+                        </Box>
+                    )}
                 </CompactDialog>
             )}
             {portDialog === 'map' && (
@@ -1057,7 +1115,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             <Box sx={{ flexShrink: 0, padding: 2 }}>
                 <PageHeader heading={`${title} (beta)`} children={statusArea} />
             </Box>
-            <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
+            <Box sx={{ padding: 2, paddingTop: 0, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Running operations + undismissed failures */}
                 {(running.length > 0 || errored.length > 0) && (
                     <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>
@@ -1082,7 +1140,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
                 )}
 
-                {/* Reconciliation grid; slim padding on phones buys the table room. */}
+                {/* Reconciliation grid */}
                 <Card sx={{ p: { xs: 1, sm: 3 }, mb: 3 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
                         <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>

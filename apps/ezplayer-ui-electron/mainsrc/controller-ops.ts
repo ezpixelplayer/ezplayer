@@ -286,6 +286,7 @@ function toController(d: DiscoveryDevice): DiscoveredController {
         detail: d.detail as DiscoveredController['detail'],
         // Structured per-port config (full depth only) — reconcile's "actual" side.
         pixelPorts: d.report?.pixelPorts?.map(toControllerPort),
+        inputs: d.report?.inputs,
         error: d.error,
         seenAt: nowIso(),
     };
@@ -301,6 +302,7 @@ function mergeDevice(d: DiscoveryDevice): void {
         // carries no driver identity — keep the previous values in that case.
         if (next.detail === undefined) next.detail = prev.detail;
         if (next.pixelPorts === undefined) next.pixelPorts = prev.pixelPorts;
+        if (next.inputs === undefined) next.inputs = prev.inputs;
         if (next.driverType === undefined) next.driverType = prev.driverType;
         if (next.vendor === undefined) next.vendor = prev.vendor;
         if (next.model === undefined) next.model = prev.model;
@@ -442,6 +444,7 @@ async function runStatus(
             firmwareVersion: probe.report.firmwareVersion ?? dev.firmwareVersion,
             detail: reportToTree(probe.report) as DiscoveredController['detail'],
             pixelPorts: probe.report.pixelPorts?.map(toControllerPort),
+            inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
             error: undefined,
             seenAt: nowIso(),
@@ -679,6 +682,7 @@ async function runUpload(
                     ...dev,
                     detail: reportToTree(verify.report) as DiscoveredController['detail'],
                     pixelPorts: verify.report.pixelPorts?.map(toControllerPort),
+                    inputs: verify.report.inputs,
                     error: undefined,
                     seenAt: nowIso(),
                 };

@@ -4,6 +4,7 @@ import { OrthographicCamera, MapControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
+import { ControlHints } from './ControlHints';
 import type { Point3D, Shape3D, ModelMetadata, LayoutSettings } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
@@ -1013,25 +1014,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
         >
             {/* Control hints overlay */}
             {!error && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        bottom: 16,
-                        left: 16,
-                        zIndex: 1000,
-                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                        color: 'white',
-                        padding: '8px 12px',
-                        borderRadius: 1,
-                        fontSize: '0.75rem',
-                        pointerEvents: 'none',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 0.5,
-                        userSelect: 'none',
-                        WebkitUserSelect: 'none',
-                    }}
-                >
+                <ControlHints>
                     <Typography
                         variant="caption"
                         sx={{ fontWeight: 600, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
@@ -1056,7 +1039,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                     >
                         🖱️ Right drag / Scroll: Zoom
                     </Typography>
-                </Box>
+                </ControlHints>
             )}
             {error ? (
                 <Box

@@ -185,7 +185,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
             <Box sx={{ padding: 2, flexShrink: 0 }}>
                 <PageHeader heading={`${title} - ${showName}`} children={statusArea} />
             </Box>
-            <Grid container spacing={2} padding={2}>
+            <Grid container spacing={2} sx={{ p: 2, pt: 0 }}>
                 {/* Player Status */}
                 {player && (
                     <Grid item xs={12}>
