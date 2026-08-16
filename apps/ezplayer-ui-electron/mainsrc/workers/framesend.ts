@@ -89,8 +89,10 @@ export class FrameSender {
     private warnedSendOverrun = false;
     private sendInProgress = false; // Guards SendJobState from concurrent send
 
-    /** Most the paced send may ever claim of a frame interval. */
-    maxSlotFraction = 0.5;
+    /** Most the paced send may ever claim of a frame interval. Zero disables
+     *  pacing entirely (one burst per frame) -- see SendJob.slotFraction for
+     *  why that is the default while sending runs on the dispatch loop. */
+    maxSlotFraction = 0;
     /** performance.now() when the last send finished, if the next call follows it directly. */
     private lastSendEndPN: number | undefined = undefined;
     /** Decaying max of the dispatch loop's non-send time per frame (ms). */
@@ -112,6 +114,7 @@ export class FrameSender {
      * the work -- pulls the finish back to where it was aimed.
      */
     private slotFractionFor(frameInterval: number): number {
+        if (this.maxSlotFraction <= 0) return 0; // Pacing off: send as one burst
         const iv = Math.max(1, frameInterval);
         const reserve = this.loopOverheadMs + this.sendActiveMs + iv * 0.1;
         return Math.min(this.maxSlotFraction, Math.max(0.05, (iv - reserve) / iv));
@@ -291,7 +294,7 @@ export class FrameSender {
             this.prevSendBatch = end;
             const sendTime = paced.activeMs;
             this.sendActiveMs = Math.max(paced.activeMs, this.sendActiveMs * 0.95);
-            if (paced.overrunMs > 1 && !this.warnedSendOverrun) {
+            if (this.maxSlotFraction > 0 && paced.overrunMs > 1 && !this.warnedSendOverrun) {
                 this.warnedSendOverrun = true;
                 this.emitWarning?.(
                     `[framesend] paced send overran its slot by ${paced.overrunMs.toFixed(1)}ms; ` +
