@@ -20,6 +20,7 @@ import type {
     PlaylistRecord,
     ScheduledPlaylist,
     PlayAction,
+    PlaybackActions,
     PlaybackLogDetail,
     PrefetchCacheStats,
     PlaybackStatistics,
@@ -258,22 +259,53 @@ const handlers: PlayWorkerRPCAPI = {
     },
 };
 
-function playingItemDesc(item?: PlayAction) {
+function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
     if (!item?.seqId) return '<Unknown>';
-    const nps = foregroundPlayerRunState.sequencesById.get(item.seqId);
+    const nps = (runState ?? foregroundPlayerRunState).sequencesById.get(item.seqId);
     return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
 }
 
 // TODO: Should this move to the run state?
-function actionToPlayingItem(interactive: boolean, pla: PlayAction) {
+function actionToPlayingItem(interactive: boolean, pla: PlayAction, runState?: PlayerRunState) {
     return {
         type: interactive ? 'Immediate' : 'Scheduled',
         item: 'Song', // TODO
-        title: playingItemDesc(pla),
+        title: playingItemDesc(pla, runState),
         sequence_id: pla.seqId,
         at: pla.atTime,
         until: pla.atTime + (pla.durationMS ?? 0),
     } as PlayingItem;
+}
+
+function groupIdsForActions(group: PlaybackActions) {
+    return group.type === 'interactive'
+        ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
+        : { schedule_id: group.scheduleId };
+}
+
+/** Current/next background item for the existing Background slot. Same sources as
+ *  foreground now-playing + Next Show (stack, due heap, then upcoming schedules). */
+function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingItem | undefined {
+    const ps = runState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    const firstAction = (group?: PlaybackActions, requireStarted?: boolean): PlayingItem | undefined => {
+        if (!group?.actions?.length) return undefined;
+        const groupIds = groupIdsForActions(group);
+        for (const pla of group.actions) {
+            if (pla.end) continue;
+            if (requireStarted && pla.atTime > runState.currentTime) continue;
+            return { ...actionToPlayingItem(false, pla, runState), ...groupIds };
+        }
+        return undefined;
+    };
+    const firstFrom = (groups?: PlaybackActions[]) =>
+        (groups ?? []).map((g) => firstAction(g, false)).find((item) => !!item);
+    return (
+        firstAction(ps.curPLActions, true) ??
+        firstAction(ps.curPLActions, false) ??
+        firstFrom(ps.heapSchedules) ??
+        firstFrom(ps.upcomingSchedules) ??
+        runState.getUpcomingSchedules()[0]
+    );
 }
 
 function sendPlayerStateUpdate() {
@@ -283,6 +315,7 @@ function sendPlayerStateUpdate() {
         status: 'Stopped',
         reported_time: Date.now(),
         now_playing: undefined,
+        background_now_playing: undefined,
         upcoming: [],
         volume: {
             level: volume,
@@ -292,10 +325,7 @@ function sendPlayerStateUpdate() {
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
         const group = ps.curPLActions;
-        const groupIds =
-            group.type === 'interactive'
-                ? { playlist_id: group.playlistId, schedule_id: group.scheduleId, request_id: group.requestId }
-                : { schedule_id: group.scheduleId };
+        const groupIds = groupIdsForActions(group);
         for (const pla of group.actions) {
             if (pla.end) continue;
             // Only "now playing" if it has actually started; a not-yet-started action
@@ -308,6 +338,7 @@ function sendPlayerStateUpdate() {
             }
         }
     }
+    playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
@@ -1540,7 +1571,15 @@ async function loadXmlCoordinates() {
     for (const [name, coord] of modelCoordinates2D.entries()) {
         coords2D[name] = coord;
     }
-    send({ type: 'modelCoordinates', coords3D, coords2D, viewObjects, layoutSettings, movingHeads, controllers: knownControllers });
+    send({
+        type: 'modelCoordinates',
+        coords3D,
+        coords2D,
+        viewObjects,
+        layoutSettings,
+        movingHeads,
+        controllers: knownControllers,
+    });
 }
 
 /** xLights controller record → the lean KnownController the reconcile grid
@@ -1881,7 +1920,10 @@ async function processQueue() {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
                 await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({ targetFramePN: rtcConverter.computePerfNow(targetFrameRTC), onlyIfEnabled: true });
+                sender?.sendBlackFrame({
+                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
+                    onlyIfEnabled: true,
+                });
                 multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
