@@ -33,13 +33,7 @@ import { trustSystemCAs } from '../trustSystemCAs.js';
 // Trust the OS cert store before any cloud fetch in this worker.
 trustSystemCAs();
 
-// Default poll cadences. Registration (5s) is the checkin / bridge-open heartbeat:
-// it keeps the cloud-bridge open signal (viewer-control + audio start) responsive
-// — worst-case bridge/audio start ≈ one interval — and refreshes the bridge TTL,
-// so it stays frequent on purpose. The cloud treats ~2× it as the live-freshness
-// cutoff. Manifest (5min) is the content poll — new sequences / layout / settings
-// — deliberately infrequent to limit cloud cost; user-initiated manifestNow /
-// fetchLayoutNow bypass it. Both overridable via cloud-config `cloudPollIntervals`.
+// Default poll cadences.
 const DEFAULT_REGISTRATION_INTERVAL_MS = 5_000;
 const DEFAULT_MANIFEST_INTERVAL_MS = 300_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -71,8 +65,7 @@ function sessionKey(url: string, token: string, folder: string): string {
 }
 
 /** Returns true when content polling (manifest + sequence files + layout) is
- *  permitted right now. Always-true when not in scheduled mode. Registration
- *  heartbeat polls run regardless of this gate. */
+ *  permitted right now. Always-true when not in scheduled mode. */
 function isContentPollingAllowed(): boolean {
     if (pollMode !== 'scheduled') return true;
     if (pollSchedule.length === 0) return false;
@@ -94,22 +87,15 @@ let consecutiveFailures = 0;
 let halted = false;
 
 /** Wall-clock time the player last confirmed it had the layout the cloud
- *  manifest advertised — either it downloaded the new layout successfully
- *  or its persisted layoutMeta already matched. Sent on every checkin so
- *  central / admin / extapi can show "synced through". `undefined` until
- *  the first successful fetchLayout in this process. */
+ *  manifest advertised/ */
 let lastLayoutSyncAt: number | undefined;
 /** Wall-clock time the player last confirmed it had every file the cloud
- *  manifest listed (a reconcileManifest pass with zero per-entry failures).
- *  Sent on every checkin alongside `lastLayoutSyncAt`. */
+ *  manifest listed. */
 let lastContentSyncAt: number | undefined;
 
 const cStatus: PlayerCStatusContent = { files: {} };
 
-// Last serialized payloads we sent to the parent. We compare new fetches to these
-// and skip postMessage when identical — the parent's update path is disruptive to
-// playback even when nothing actually changed. Reset on session-changing setConfig
-// (folder/user change ⇒ different store, always push).
+// Last serialized payloads we sent to the parent
 let lastSentPlaylistsJson: string | undefined;
 let lastSentScheduleJson: string | undefined;
 let lastSentSettingsJson: string | undefined;
@@ -175,9 +161,7 @@ function rescheduleTimers() {
     if (manifestTimer.unref) manifestTimer.unref();
 }
 
-/** Cooling-off period after the circuit breaker trips. After this much time
- *  the player tries again on its own — so an overnight transient (rate spike,
- *  cloud outage) heals without requiring a user click or app restart. */
+/** Cooling-off period after the circuit breaker trips. */
 const HALT_AUTO_CLEAR_MS = 60 * 60 * 1000;
 let autoClearTimer: NodeJS.Timeout | undefined;
 
@@ -203,8 +187,7 @@ function recordFailure(reason: string) {
             clearInterval(manifestTimer);
             manifestTimer = null;
         }
-        // Schedule a one-shot auto-clear so the player self-recovers without
-        // user intervention. User-initiated sync or setConfig cancels this.
+        // Schedule a one-shot auto-clear.
         cancelAutoClearTimer();
         autoClearTimer = setTimeout(() => {
             autoClearTimer = undefined;
@@ -231,10 +214,7 @@ function recordSuccess() {
 }
 
 /** A user-initiated sync (manifestNow / fetchLayoutNow) should override any
- *  prior auto-halt: the user is explicitly asking for another attempt. Clears
- *  the consecutive-failure counter, drops the halted flag, and re-arms the
- *  periodic timers that the breaker had cleared. Cheap when nothing was
- *  wrong (typical case). */
+ *  prior auto-halt. */
 function clearAutoHaltOnUserSync() {
     const wasHalted = halted;
     cancelAutoClearTimer();
@@ -250,21 +230,17 @@ function clearAutoHaltOnUserSync() {
     }
 }
 
-/** Build the cloud-bridge WebSocket URL from our own configured cloudUrl.
- *  Uses URL parsing so we get scheme + host + any path prefix correctly,
- *  then swaps http→ws / https→wss. */
+/** Build the cloud-bridge WebSocket URL from our own configured cloudUrl. */
 function buildBridgeWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/wsBridge', token, sessionId);
 }
 
-/** Parallel WS for HTTP-over-WS proxy traffic. Same auth boundary, different
- *  path so big payloads don't share head-of-line with status snapshots. */
+/** Parallel WS for HTTP-over-WS proxy traffic. */
 function buildProxyWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/proxyBridge', token, sessionId);
 }
 
-/** Parallel WS for live-audio push. Player pushes binary chunk frames as
- *  they're produced; the cloud server fans out to attached listeners. */
+/** Parallel WS for live-audio push. */
 function buildAudioWsUrl(cloudUrlIn: string, token: string, sessionId: string): string {
     return buildWsUrlAt(cloudUrlIn, '/api/player/audioBridge', token, sessionId);
 }
@@ -277,11 +253,7 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
 }
 
 // -- home-server election ------------------------------------------------------
-// Retries with backoff until the first successful bind — a fresh pairing 404s
-// candidateServers until the user claims the token, and registration flipping
-// true also kicks an immediate attempt. Once bound, the binding holds for the
-// rest of the session: the elected host keeps in-RAM vc state, so mid-session
-// moves would discard votes/queue.
+// Retries with backoff until the first successful bind.
 
 const ELECTION_PROBE_TIMEOUT_MS = 2_000;
 const ELECTION_RETRY_BASE_MS = 10_000;
