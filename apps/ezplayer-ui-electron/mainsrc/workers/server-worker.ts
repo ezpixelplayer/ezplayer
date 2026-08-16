@@ -1166,7 +1166,7 @@ async function dispatchHttpProxy(
 
     // /api/ezp/time — server-clock sample for client RTT/offset estimation.
     if (pathStr === '/api/ezp/time') {
-        return jsonResult({ now: Date.now() });
+        return jsonResult({ now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
     }
 
     return { status: 404 };
@@ -1805,7 +1805,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
         ctx.set('Cache-Control', 'no-store');
-        ctx.body = { now: Date.now() };
+        ctx.body = { now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     });
 
     // ----------------------------------------------
