@@ -302,6 +302,12 @@ export class GeometryManager {
     private viewPlane?: 'xy' | 'xz' | 'yz';
     private gamma: number;
     private pointIdToModelNameCache: Map<string, string | null> = new Map();
+    // Wiring-order overlay: one polyline per selected model, tracing its nodes
+    // in data order (node 1 → last). Lives in its own group the viewer adds
+    // alongside the point objects.
+    private wiringGroup: THREE.Group = new THREE.Group();
+    private wiringShownKey: string = '';
+    private modelPointsCache: Map<string, Point3D[]> | null = null;
     private modelPixelSizeMap: Map<string, number> = new Map();
     private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
     private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
@@ -471,6 +477,72 @@ export class GeometryManager {
         this.renderers.forEach((renderer) => {
             renderer.updateStates(selectedIds, hoveredId, hoveredModelName, selectedModelNames);
         });
+
+        this.updateWiringPaths(selectedModelNames);
+    }
+
+    /** Group holding the wiring-order overlay; add it to the scene next to
+     *  the point objects. Populated only while models are selected. */
+    getWiringGroup(): THREE.Group {
+        return this.wiringGroup;
+    }
+
+    private buildModelPointsCache(): Map<string, Point3D[]> {
+        const map = new Map<string, Point3D[]>();
+        for (const p of this.allPoints) {
+            const name = (p.metadata?.modelName as string | undefined) || undefined;
+            if (!name) continue;
+            let arr = map.get(name);
+            if (!arr) map.set(name, (arr = []));
+            arr.push(p);
+        }
+        map.forEach((arr) =>
+            arr.sort(
+                (a, b) =>
+                    (a.metadata?.nodeIndex ?? 0) - (b.metadata?.nodeIndex ?? 0) ||
+                    (a.metadata?.coordIndex ?? 0) - (b.metadata?.coordIndex ?? 0),
+            ),
+        );
+        return map;
+    }
+
+    /** Rebuild the per-model wiring polylines when the selected set changes. */
+    private updateWiringPaths(selectedModelNames?: Set<string>): void {
+        const key =
+            selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join(' ') : '';
+        if (key === this.wiringShownKey) return;
+        this.wiringShownKey = key;
+
+        for (const child of [...this.wiringGroup.children]) {
+            this.wiringGroup.remove(child);
+            const line = child as THREE.Line;
+            line.geometry?.dispose();
+            (line.material as THREE.Material | undefined)?.dispose();
+        }
+        if (!key) return;
+
+        this.modelPointsCache ??= this.buildModelPointsCache();
+        selectedModelNames!.forEach((name) => {
+            const pts = this.modelPointsCache!.get(name);
+            if (!pts || pts.length < 2) return;
+            // Mirror the point shader's 2D flattening so the line lies in the
+            // same plane as the flattened points.
+            const positions = new Float32Array(pts.length * 3);
+            pts.forEach((p, i) => {
+                positions[i * 3] = this.viewPlane === 'yz' ? 0 : p.x;
+                positions[i * 3 + 1] = this.viewPlane === 'xz' ? 0 : p.y;
+                positions[i * 3 + 2] = this.viewPlane === 'xy' ? 0 : p.z;
+            });
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const mat = new THREE.LineBasicMaterial({
+                color: 0x00c853, // matches the node-1 marker green
+                transparent: true,
+                opacity: 0.55,
+                depthWrite: false,
+            });
+            this.wiringGroup.add(new THREE.Line(geom, mat));
+        });
     }
 
     /**
@@ -497,5 +569,7 @@ export class GeometryManager {
     dispose(): void {
         this.renderers.forEach((renderer) => renderer.dispose());
         this.renderers.clear();
+        this.updateWiringPaths(undefined);
+        this.modelPointsCache = null;
     }
 }
