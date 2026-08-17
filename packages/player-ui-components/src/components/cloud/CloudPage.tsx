@@ -484,7 +484,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
             <Box sx={{ flexShrink: 0, padding: 2 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
-            <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
+            <Box sx={{ padding: 2, paddingTop: 0, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Top summary + state-driven actions. */}
                 <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
                     {/* Status row: green check / pause / help icon + headline + mode chip */}

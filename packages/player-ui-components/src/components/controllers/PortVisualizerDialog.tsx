@@ -1,17 +1,8 @@
 import React from 'react';
-import {
-    alpha,
-    Button,
-    Chip,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    Typography,
-    useTheme,
-} from '@mui/material';
+import { alpha, Chip, Typography, useTheme } from '@mui/material';
 import type { Theme } from '@mui/material';
 import { Box } from '../box/Box';
+import { CompactDialog } from '../dialog/CompactDialog';
 import { buildPortMap } from '@ezplayer/ezplayer-core';
 import type { ControllerModelIntent, ControllerPort, ControllerPortIntent, PortMapBox } from '@ezplayer/ezplayer-core';
 
@@ -95,9 +86,7 @@ export const PortVisualizerDialog: React.FC<{
     const haveActual = (actual?.length ?? 0) > 0;
 
     return (
-        <Dialog open onClose={onClose} maxWidth="lg" fullWidth>
-            <DialogTitle>Port map — {title}</DialogTitle>
-            <DialogContent>
+        <CompactDialog title={`Port map — ${title}`} onClose={onClose} fullScreen>
                 {map.rows.length === 0 ? (
                     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                         No port configuration known for this controller yet — no xLights models are assigned to it and no
@@ -167,10 +156,6 @@ export const PortVisualizerDialog: React.FC<{
                         </Typography>
                     </>
                 )}
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Close</Button>
-            </DialogActions>
-        </Dialog>
+        </CompactDialog>
     );
 };

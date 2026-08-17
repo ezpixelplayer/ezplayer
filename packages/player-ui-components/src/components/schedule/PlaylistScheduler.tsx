@@ -1219,7 +1219,10 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     }, [scheduledPlaylists]);
 
     return (
-        <Paper elevation={2} sx={{ height: '100%', display: 'flex', flexDirection: 'column', marginX: 2 }}>
+        <Paper
+            elevation={2}
+            sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', marginX: 2, overflow: 'auto' }}
+        >
             {loading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                     <CircularProgress />

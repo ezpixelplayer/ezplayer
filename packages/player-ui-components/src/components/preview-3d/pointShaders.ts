@@ -54,6 +54,8 @@ export interface PointShaderUniforms {
     selectedColor: THREE.Vector3;
     /** Hovered color (RGB) */
     hoveredColor: THREE.Vector3;
+    /** Node-1 (wire attach) marker color, shown while the model is highlighted */
+    firstNodeColor?: THREE.Vector3;
     /** Use live data (1.0) or procedural (0.0) */
     useLiveData: number;
     /** Total point count for procedural color calculation */
@@ -94,6 +96,7 @@ export const pointVertexShader = `
 attribute vec3 baseColor;
 attribute float selectionState;
 attribute float hoverState;
+attribute float firstNodeState;
 attribute float originalIndex;
 
 uniform float time;
@@ -112,6 +115,7 @@ uniform int viewPlane; // 0 = 3D, 1 = xy, 2 = xz, 3 = yz
 varying vec3 vColor;
 varying float vSelectionState;
 varying float vHoverState;
+varying float vFirstNodeState;
 varying vec3 vPosition;
 varying float vOriginalIndex;
 
@@ -199,6 +203,7 @@ void main() {
     vColor = color;
     vSelectionState = selectionState;
     vHoverState = hoverState;
+    vFirstNodeState = firstNodeState;
     vPosition = position;
     vOriginalIndex = originalIndex;
 }
@@ -212,12 +217,14 @@ export const pointFragmentShader = `
 uniform float gamma;
 uniform vec3 selectedColor;
 uniform vec3 hoveredColor;
+uniform vec3 firstNodeColor;
 uniform int pixelStyle; // 0 = square, 1 = circle/round, 2 = blended circle
 uniform float opacity; // 1.0 = fully opaque (default), 0.0 = fully transparent (from xLights Transparency)
 
 varying vec3 vColor;
 varying float vSelectionState;
 varying float vHoverState;
+varying float vFirstNodeState;
 
 void main() {
     // Handle pixel shape based on pixelStyle
@@ -265,7 +272,12 @@ void main() {
     else if (vHoverState > 0.5) {
         color = hoveredColor;
     }
-    
+    // While a model is highlighted, paint its node 1 (where the wire attaches)
+    // in the first-node color so the data-in end is identifiable.
+    if ((vSelectionState > 0.5 || vHoverState > 0.5) && vFirstNodeState > 0.5) {
+        color = firstNodeColor;
+    }
+
     // Apply gamma correction
     color = pow(color, vec3(1.0 / gamma));
     
@@ -306,6 +318,7 @@ export function createPointShaderMaterial(
         gamma: { value: gammaValue }, // Explicit gamma from parameter
         selectedColor: { value: new THREE.Vector3(1.0, 1.0, 0.0) }, // Yellow
         hoveredColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // White
+        firstNodeColor: { value: new THREE.Vector3(0.0, 1.0, 0.2) }, // Green — node 1 marker
         useLiveData: { value: 0.0 },
         totalPointCount: { value: 0.0 },
         size: { value: options?.size || 3.0 },
@@ -392,6 +405,14 @@ export function createPointBufferGeometry(
     const hoverStates = attributes.hoverState || new Float32Array(pointCount);
     geometry.setAttribute('hoverState', new THREE.BufferAttribute(hoverStates, 1));
 
+    // First-node marker (static): 1.0 on every coord of the model's node 1,
+    // i.e. the node the data wire attaches to. Shown while highlighted.
+    const firstNodeStates = new Float32Array(pointCount);
+    group.points.forEach((point, i) => {
+        if (point.metadata?.nodeIndex === 0) firstNodeStates[i] = 1.0;
+    });
+    geometry.setAttribute('firstNodeState', new THREE.BufferAttribute(firstNodeStates, 1));
+
     // Original index attribute (for live data mapping)
     const originalIndices = attributes.originalIndex || new Float32Array(pointCount);
     if (!attributes.originalIndex) {
@@ -419,6 +440,10 @@ export function createPointBufferGeometry(
     const hoverAttr = geometry.attributes.hoverState as THREE.BufferAttribute;
     if (hoverAttr) {
         hoverAttr.setUsage(THREE.DynamicDrawUsage);
+    }
+    const firstNodeAttr = geometry.attributes.firstNodeState as THREE.BufferAttribute;
+    if (firstNodeAttr) {
+        firstNodeAttr.setUsage(THREE.StaticDrawUsage);
     }
 
     return geometry;

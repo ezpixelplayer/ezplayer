@@ -244,8 +244,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/epp
       '@ezplayer/epp-controllers':
-        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.10.tgz
-        version: file:libs/ezplayer-epp-controllers-0.0.10.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
+        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.12.tgz
+        version: file:libs/ezplayer-epp-controllers-0.0.12.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
       '@ezplayer/ezplayer-core':
         specifier: workspace:*
         version: link:../../packages/ezplayer-core
@@ -376,8 +376,8 @@ importers:
         specifier: ^8.21.0
         version: 8.21.3
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
-        version: file:libs/xllayoutcalcs-0.3.1.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.2.tgz
+        version: file:libs/xllayoutcalcs-0.3.2.tgz
       zstd-codec:
         specifier: ^0.1.5
         version: 0.1.5
@@ -513,8 +513,8 @@ importers:
         specifier: 'catalog:'
         version: 10.0.6(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
-        version: file:libs/xllayoutcalcs-0.3.1.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.2.tgz
+        version: file:libs/xllayoutcalcs-0.3.2.tgz
     devDependencies:
       '@types/react':
         specifier: 'catalog:'
@@ -566,8 +566,8 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
-        version: file:libs/xllayoutcalcs-0.3.1.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.2.tgz
+        version: file:libs/xllayoutcalcs-0.3.2.tgz
 
   packages/ezplayer-core:
     dependencies:
@@ -594,8 +594,8 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
-        version: file:libs/xllayoutcalcs-0.3.1.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.2.tgz
+        version: file:libs/xllayoutcalcs-0.3.2.tgz
 
   packages/icmp-ping:
     dependencies:
@@ -845,8 +845,8 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.1.tgz
-        version: file:libs/xllayoutcalcs-0.3.1.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.2.tgz
+        version: file:libs/xllayoutcalcs-0.3.2.tgz
 
   packages/shared-ui-components:
     dependencies:
@@ -1592,9 +1592,9 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.10.tgz':
-    resolution: {integrity: sha512-S0+sBB60NoA+ydCjJlkoMLHLqxv2GMqTFDQob8EA4C75BJ4Ml5dcvyXdnYKi1DPpJEOihcXtzlYtJH17pkX9dQ==, tarball: file:libs/ezplayer-epp-controllers-0.0.10.tgz}
-    version: 0.0.10
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.12.tgz':
+    resolution: {integrity: sha512-VWnYHXMCevMns558XIhVxTjwdkPV+YKSqUuf6bSIX4hSOCbDE9fOSaHZAXi5rWOjgdkBq9Bza2g/9N4clFwo3w==, tarball: file:libs/ezplayer-epp-controllers-0.0.12.tgz}
+    version: 0.0.12
     peerDependencies:
       '@ezplayer/epp': 0.1.4
       '@ezplayer/icmp-ping': 0.1.1
@@ -5574,9 +5574,9 @@ packages:
       utf-8-validate:
         optional: true
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.1.tgz:
-    resolution: {integrity: sha512-k5BwDYYLHBrmAa/y+lrJvrTvLzS3lenvdhg9ggLxdRBIa3J33Q1ev6BeILpYJB/Ctkhwp45aCTOtw4K6/PyUaQ==, tarball: file:libs/xllayoutcalcs-0.3.1.tgz}
-    version: 0.3.1
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.2.tgz:
+    resolution: {integrity: sha512-VO98VETRYUFtrg/+mAwMm7fkGaDnELUxT5Yc9Ew75D6JoawaJ1EQ0r5svejYAmZogs7pNJVj0PzcYnCqKpQNCw==, tarball: file:libs/xllayoutcalcs-0.3.2.tgz}
+    version: 0.3.2
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -6276,7 +6276,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.10.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.12.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
     dependencies:
       '@ezplayer/epp': link:packages/epp
       '@xmldom/xmldom': 0.8.14
@@ -10387,7 +10387,7 @@ snapshots:
 
   ws@8.21.3: {}
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.1.tgz:
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.2.tgz:
     dependencies:
       gl-matrix: 3.4.4
 

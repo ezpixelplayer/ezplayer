@@ -46,6 +46,8 @@ export interface DiscoveredController {
     detail?: ControllerDetailNode[];
     /** Actual per-port config read from the device (full depth). */
     pixelPorts?: ControllerPort[];
+    /** Actual data-input config read from the device (full depth). */
+    inputs?: ControllerInputInfo;
     /** Actions the driver enumerated (filled on status deep-reads). */
     actions?: ControllerDeviceAction[];
     error?: string;
@@ -321,6 +323,8 @@ export interface ControllerGridRow {
     intent?: ControllerPortIntent[];
     /** Rich per-(model,string) intent; superset of `intent`. */
     modelIntents?: ControllerModelIntent[];
+    /** xLights output/universe intent, reconciled against the device's `inputs`. */
+    outputs?: ControllerOutputIntent[];
     /** Live health overlaid from the playback pipeline, joined by address/name. */
     health?: ControllerHealth;
 }
@@ -355,6 +359,29 @@ export interface ControllerPortIntent {
     pixels: number;
     /** Pixel protocol declared for the port, when present. */
     protocol?: string;
+}
+
+/** One input universe as configured on the device (E1.31/ArtNet). */
+export interface ControllerInputUniverseInfo {
+    universe: number;
+    channels: number;
+    /** Device-local start channel for this universe (1-based), when reported. */
+    startChannel?: number;
+}
+
+/** The device's ACTUAL data-input config, as read from the device. */
+export interface ControllerInputInfo {
+    /** Normalized: 'e131' | 'artnet' | 'ddp' | driver-specific string. */
+    protocol?: string;
+    /** DDP: start channel the device listens at (1 unless keep-channel-numbers). */
+    startChannel?: number;
+    /** DDP: total channels consumed, when reported. */
+    channelCount?: number;
+    /** E1.31/ArtNet: the universe map, when reported. */
+    universes?: ControllerInputUniverseInfo[];
+    /** True when the device exposes only part of its input config (e.g. just
+     *  the first universe + size) — compare only what's present. */
+    partial?: boolean;
 }
 
 /** A controller's ACTUAL per-port config as read from the device. */

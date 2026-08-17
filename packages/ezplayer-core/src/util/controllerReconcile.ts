@@ -7,6 +7,8 @@
 import type {
     KnownController,
     ControllerGridRow,
+    ControllerInputInfo,
+    ControllerOutputIntent,
     DiscoveredController,
     ControllerPortIntent,
     ControllerPort,
@@ -112,6 +114,7 @@ export function reconcileControllers(
             source: k.source,
             intent: k.ports,
             modelIntents: k.modelIntents,
+            outputs: k.outputs,
         });
     }
 
@@ -136,6 +139,11 @@ export function reconcileControllers(
  * Model names compare as sets (case-insensitive match, case-preserving output)
  * and inform display only; pixel counts decide the drift kind.
  */
+/** Canonical form for model-set comparison: multi-string models upload as
+ *  "<model>-str-<n>" (xLights naming), so strip that suffix before matching
+ *  against the intent's bare model names. */
+const modelCompareKey = (name: string): string => name.toLowerCase().replace(/-str-\d+$/, '');
+
 export function reconcilePorts(
     intent: ControllerPortIntent[],
     actual: ControllerPort[],
@@ -163,10 +171,10 @@ export function reconcilePorts(
             row.actualModel = actualModel;
             row.actualModels = actualModels;
             if (actualModels) {
-                const actualSet = new Set(actualModels.map((m) => m.toLowerCase()));
-                const intendedSet = new Set(row.intendedModels.map((m) => m.toLowerCase()));
-                row.missingModels = row.intendedModels.filter((m) => !actualSet.has(m.toLowerCase()));
-                row.extraModels = actualModels.filter((m) => !intendedSet.has(m.toLowerCase()));
+                const actualSet = new Set(actualModels.map(modelCompareKey));
+                const intendedSet = new Set(row.intendedModels.map(modelCompareKey));
+                row.missingModels = row.intendedModels.filter((m) => !actualSet.has(modelCompareKey(m)));
+                row.extraModels = actualModels.filter((m) => !intendedSet.has(modelCompareKey(m)));
             }
             row.actualPixels = a.pixels;
             if (!active) row.drift = 'missing';
@@ -192,6 +200,122 @@ export function reconcilePorts(
 /** True when any port is out of sync — the row-level "needs attention" flag. */
 export function hasPortDrift(rows: PortReconcile[]): boolean {
     return rows.some((r) => r.drift !== 'ok');
+}
+
+/** Input-config intent-vs-actual reconciliation result. */
+export interface InputReconcile {
+    drift: boolean;
+    /** Human-readable mismatch notes; empty when in sync. */
+    notes: string[];
+    intentSummary: string;
+    actualSummary: string;
+}
+
+const PROTOCOL_ALIASES: Record<string, string> = {
+    'e1.31': 'e131',
+    sacn: 'e131',
+    e131: 'e131',
+    artnet: 'artnet',
+    ddp: 'ddp',
+};
+const normalizeProtocol = (p?: string): string | undefined =>
+    p ? (PROTOCOL_ALIASES[p.toLowerCase()] ?? p.toLowerCase()) : undefined;
+
+const summarizeUniverses = (u: { universe: number; channels: number }[]): string => {
+    if (!u.length) return 'no universes';
+    const first = u[0].universe;
+    const last = u[u.length - 1].universe;
+    const contiguous = u.every((e, i) => e.universe === first + i);
+    const range = contiguous && u.length > 1 ? `U ${first}–${last}` : `U ${u.map((e) => e.universe).join(',')}`;
+    const sizes = new Set(u.map((e) => e.channels));
+    const size = sizes.size === 1 ? ` × ${u[0].channels} ch` : '';
+    return `${u.length} universe${u.length !== 1 ? 's' : ''} (${u.length > 6 && !contiguous ? `U ${first}…${last}` : range})${size}`;
+};
+
+/**
+ * Compare the xLights output/universe intent against the device's actual
+ * data-input config. Deliberately tolerant — it only flags what it can
+ * positively contradict, so an unreported field never alarms:
+ *  - protocol compared only when both sides report one;
+ *  - E1.31/ArtNet: universe numbers + per-universe sizes as a set (device
+ *    start channels are device-local and NOT compared); `partial` devices
+ *    compare only their first universe + base address;
+ *  - DDP: the device start channel may be 1 (plain DDP) or the controller's
+ *    absolute start (keep-channel-numbers) — anything else is drift; a
+ *    reported channel count only alarms when SMALLER than intended.
+ */
+export function reconcileInputs(
+    intent: ControllerOutputIntent[] | undefined,
+    actual: ControllerInputInfo | undefined,
+): InputReconcile {
+    const notes: string[] = [];
+    const intentList = intent ?? [];
+    const intentProto = normalizeProtocol(intentList[0]?.type);
+    const intentUniverses = intentList.filter((o) => o.universe !== undefined);
+    const intentSummary = !intentList.length
+        ? '—'
+        : intentProto === 'ddp' || !intentUniverses.length
+          ? `${(intentProto ?? intentList[0].type).toUpperCase()} @ ${intentList[0].startChannel} × ${intentList.reduce((n, o) => n + o.channels, 0)} ch`
+          : `${(intentProto ?? '').toUpperCase()} ${summarizeUniverses(intentUniverses.map((o) => ({ universe: o.universe!, channels: o.channels })))}`;
+
+    if (!actual || !intentList.length) {
+        return { drift: false, notes, intentSummary, actualSummary: actual ? '' : 'not read' };
+    }
+
+    const actualProto = normalizeProtocol(actual.protocol);
+    const actualSummary = [
+        actual.protocol?.toUpperCase(),
+        actual.universes?.length ? summarizeUniverses(actual.universes) : undefined,
+        actual.startChannel !== undefined ? `@ ${actual.startChannel}` : undefined,
+        actual.channelCount !== undefined ? `× ${actual.channelCount} ch` : undefined,
+    ]
+        .filter(Boolean)
+        .join(' ');
+
+    if (intentProto && actualProto && intentProto !== actualProto) {
+        notes.push(`protocol: xLights ${intentProto.toUpperCase()} vs device ${actualProto.toUpperCase()}`);
+        // Protocol wrong ⇒ finer comparisons are meaningless.
+        return { drift: true, notes, intentSummary, actualSummary };
+    }
+
+    if ((intentProto === 'e131' || intentProto === 'artnet') && intentUniverses.length && actual.universes) {
+        if (actual.partial) {
+            const iFirst = intentUniverses[0];
+            const aFirst = actual.universes[0];
+            if (aFirst && aFirst.universe !== iFirst.universe) {
+                notes.push(`start universe: xLights ${iFirst.universe} vs device ${aFirst.universe}`);
+            }
+            if (aFirst && aFirst.channels !== iFirst.channels) {
+                notes.push(`universe size: xLights ${iFirst.channels} vs device ${aFirst.channels}`);
+            }
+        } else {
+            const bySize = (list: { universe: number; channels: number }[]) =>
+                new Map(list.map((u) => [u.universe, u.channels]));
+            const iMap = bySize(intentUniverses.map((o) => ({ universe: o.universe!, channels: o.channels })));
+            const aMap = bySize(actual.universes);
+            const missing = [...iMap.keys()].filter((u) => !aMap.has(u));
+            const extra = [...aMap.keys()].filter((u) => !iMap.has(u));
+            const resized = [...iMap.keys()].filter((u) => aMap.has(u) && aMap.get(u) !== iMap.get(u));
+            if (missing.length) notes.push(`universes missing on device: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`);
+            if (extra.length) notes.push(`universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`);
+            for (const u of resized.slice(0, 4)) {
+                notes.push(`universe ${u} size: xLights ${iMap.get(u)} vs device ${aMap.get(u)}`);
+            }
+        }
+    }
+
+    if (intentProto === 'ddp') {
+        const intentStart = intentList[0].startChannel;
+        if (actual.startChannel !== undefined && actual.startChannel !== 1 && actual.startChannel !== intentStart) {
+            notes.push(`DDP start: device listens at ${actual.startChannel}, xLights sends at 1 or ${intentStart}`);
+        }
+        const intentChannels = intentList.reduce((n, o) => n + o.channels, 0);
+        if (actual.channelCount !== undefined && actual.channelCount > 0 && actual.channelCount < intentChannels) {
+            notes.push(`DDP channels: device accepts ${actual.channelCount}, xLights needs ${intentChannels}`);
+        }
+    }
+
+    return { drift: notes.length > 0, notes, intentSummary, actualSummary };
 }
 
 /**
