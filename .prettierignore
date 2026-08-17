@@ -16,3 +16,7 @@ doc/manual/.docusaurus/
 
 # Verbatim device-capture fixtures — must never be reformatted
 packages/epp-controllers/test/samples/
+
+# Markdown stays hand-formatted: prettier force-pads table cells to the
+# widest column entry (no option to disable), churning docs diffs.
+*.md

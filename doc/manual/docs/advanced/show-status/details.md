@@ -34,7 +34,7 @@ Play a test sequence on demand.
 The dropdown lists sequences carrying one of the configured test
 tags (default `test`; set under
 [Settings → Player](../../settings/player.md#test-sequences)), and **Play Test
-Sequence** starts the selection immediately. Unavailable when no test tags are configured.
+Sequence** starts the selection immediately.  Unavailable when no test tags are configured.
 
 ## Content & Schedule
 

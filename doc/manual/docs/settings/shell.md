@@ -28,7 +28,7 @@ If not enabled, the feature is completely inaccessible. See
 [Remote access](../reference/cli.md#remote-access-terminal-and-file-manager) in
 the CLI reference for the full command and for `--clear`.
 
-The shell and file manager have separate passwords. Passwords are saved per show folder.
+The shell and file manager have separate passwords.  Passwords are saved per show folder.
 
 ## Using it
 
@@ -45,7 +45,7 @@ your home directory, running your platform's normal shell (`cmd.exe` on Windows,
 
 A shell provides full control of the machine, so it is worth being deliberate:
 
-- **Over the cloud, your password is encrypted** end to end. A remote
+- **Over the cloud, your password is encrypted** end to end. A remote 
   user / attacker needs the cloud URL, the player token, and the password.
 - **LAN traffic is not encrypted.** The LAN UI is plain HTTP, so someone sniffing your
   local network as you log in could capture the password. That is true of the

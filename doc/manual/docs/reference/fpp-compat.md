@@ -14,20 +14,20 @@ dashboards) can usually be pointed at an EZPlayer with only a host/port
 change.
 
 Field names **and JSON types** mirror FPP exactly where tools are known to
-depend on them (e.g. `seconds_elapsed` is a _string_, `milliseconds_elapsed`
-an _int_). Endpoints not listed here return **404**, exactly like an FPP that
+depend on them (e.g. `seconds_elapsed` is a *string*, `milliseconds_elapsed`
+an *int*). Endpoints not listed here return **404**, exactly like an FPP that
 doesn't have the feature — write endpoints are never stubbed with a fake
 success.
 
 ## Identity & status
 
-| Method | Path                 | Notes                                                                                                                                                                                                                                                                                                                                                       |
-| ------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Method | Path                 | Notes |
+| ------ | -------------------- | ----- |
 | GET    | `/api/system/status` | Full FPP status JSON: `status`/`status_name` (0 idle, 1 playing, 2 stopping gracefully, 5 paused), `current_playlist{playlist,type,index,count}`, `current_sequence`, `current_song`, `seconds_played/elapsed/remaining` (strings), `milliseconds_elapsed` (int), `time_elapsed/remaining` (`MM:SS`), `repeat_mode`, `next_playlist`, `scheduler`, `volume` |
-| GET    | `/api/fppd/status`   | Same payload                                                                                                                                                                                                                                                                                                                                                |
-| GET    | `/api/system/info`   | `Platform: "EZPlayer"`, `Version: "8.0-EZPlayer-<version>"`, `majorVersion: 8`, `Mode: "player"`, persistent `uuid`, `IPs`                                                                                                                                                                                                                                  |
-| GET    | `/api/fppd/version`  | `{version, majorVersion, minorVersion, branch, fppdAPI: 4, Status: "OK"}`                                                                                                                                                                                                                                                                                   |
-| GET    | `/api/plugin`        | `[]` (probed by some discovery flows)                                                                                                                                                                                                                                                                                                                       |
+| GET    | `/api/fppd/status`   | Same payload |
+| GET    | `/api/system/info`   | `Platform: "EZPlayer"`, `Version: "8.0-EZPlayer-<version>"`, `majorVersion: 8`, `Mode: "player"`, persistent `uuid`, `IPs` |
+| GET    | `/api/fppd/version`  | `{version, majorVersion, minorVersion, branch, fppdAPI: 4, Status: "OK"}` |
+| GET    | `/api/plugin`        | `[]` (probed by some discovery flows) |
 
 EZPlayer identifies itself honestly (`Platform`/`Variant`/`branch` say
 EZPlayer) while keeping the shape FPP-parseable. The `uuid` persists in
@@ -35,39 +35,39 @@ EZPlayer) while keeping the shape FPP-parseable. The `uuid` persists in
 
 ## Playback commands
 
-| Method | Path                                                                              | Notes                                                                      |
-| ------ | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| GET    | `/api/command/{Name}[/{args...}]`                                                 | URL-encoded command name + args as path segments                           |
-| POST   | `/api/command`                                                                    | body `{"command": "...", "args": [...]}`                                   |
-| POST   | `/api/command/{Name}`                                                             | body = JSON array of args                                                  |
-| GET    | `/api/commands` / `/api/commands/{Name}`                                          | descriptors for the supported set                                          |
-| GET    | `/api/playlist/{Name}/start[/{Repeat}[/{SchedProtected}]]`                        | convenience                                                                |
-| GET    | `/api/playlists/stop` `stopgracefully` `stopgracefullyafterloop` `pause` `resume` | convenience                                                                |
-| GET    | `/api/system/volume`                                                              | read-only: `{status, volume}` (volume writes are settings/schedule-driven) |
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET    | `/api/command/{Name}[/{args...}]` | URL-encoded command name + args as path segments |
+| POST   | `/api/command` | body `{"command": "...", "args": [...]}` |
+| POST   | `/api/command/{Name}` | body = JSON array of args |
+| GET    | `/api/commands` / `/api/commands/{Name}` | descriptors for the supported set |
+| GET    | `/api/playlist/{Name}/start[/{Repeat}[/{SchedProtected}]]` | convenience |
+| GET    | `/api/playlists/stop` `stopgracefully` `stopgracefullyafterloop` `pause` `resume` | convenience |
+| GET    | `/api/system/volume` | read-only: `{status, volume}` (volume writes are settings/schedule-driven) |
 
 Supported commands and their EZPlayer semantics:
 
-| FPP command                                  | EZPlayer behavior                                                                                                                                                                                     |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FPP command | EZPlayer behavior |
+| ----------- | ----------------- |
 | `Start Playlist {name} {repeat} {startItem}` | Starts the playlist (title match, case-insensitive) or — like FPP — a bare sequence name/fseq. `repeat` loops until stopped. `startItem` is ignored (always starts at item 1, noted in the response). |
-| `Start Playlist At Item`                     | As above; the item argument is ignored.                                                                                                                                                               |
-| `Stop Now`                                   | Immediate stop                                                                                                                                                                                        |
-| `Stop Gracefully [true]`                     | Graceful stop (the after-loop variant behaves the same)                                                                                                                                               |
-| `Pause Playlist` / `Resume Playlist`         | Pause / resume                                                                                                                                                                                        |
-| `Next Playlist Item`                         | Skip to next item                                                                                                                                                                                     |
-| `Prev Playlist Item`                         | **Not supported** (500)                                                                                                                                                                               |
-| `All Lights Off`                             | Maps to an immediate stop                                                                                                                                                                             |
+| `Start Playlist At Item` | As above; the item argument is ignored. |
+| `Stop Now` | Immediate stop |
+| `Stop Gracefully [true]` | Graceful stop (the after-loop variant behaves the same) |
+| `Pause Playlist` / `Resume Playlist` | Pause / resume |
+| `Next Playlist Item` | Skip to next item |
+| `Prev Playlist Item` | **Not supported** (500) |
+| `All Lights Off` | Maps to an immediate stop |
 
 ## Playlists
 
-| Method | Path                      | Notes                                            |
-| ------ | ------------------------- | ------------------------------------------------ |
-| GET    | `/api/playlists`          | array of playlist names                          |
-| GET    | `/api/playlists/playable` | playlist names + registered `*.fseq` file names  |
-| GET    | `/api/playlist/{Name}`    | FPP playlist JSON (v4 shape with `playlistInfo`) |
-| POST   | `/api/playlist/{Name}`    | create/update from FPP playlist JSON             |
-| POST   | `/api/playlists`          | create (object body with `name`)                 |
-| DELETE | `/api/playlist/{Name}`    | delete                                           |
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET    | `/api/playlists` | array of playlist names |
+| GET    | `/api/playlists/playable` | playlist names + registered `*.fseq` file names |
+| GET    | `/api/playlist/{Name}` | FPP playlist JSON (v4 shape with `playlistInfo`) |
+| POST   | `/api/playlist/{Name}` | create/update from FPP playlist JSON |
+| POST   | `/api/playlists` | create (object body with `name`) |
+| DELETE | `/api/playlist/{Name}` | delete |
 
 EZPlayer playlists are ordered lists of sequences, so the FPP format maps with
 **documented lossy rules** (warnings are returned in `Message`):
@@ -85,12 +85,12 @@ EZPlayer playlists are ordered lists of sequences, so the FPP format maps with
 
 ## Schedule
 
-| Method | Path                   | Notes                                              |
-| ------ | ---------------------- | -------------------------------------------------- |
-| GET    | `/api/schedule`        | FPP schedule entry array                           |
-| POST   | `/api/schedule`        | **full replace** from an FPP entry array           |
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET    | `/api/schedule` | FPP schedule entry array |
+| POST   | `/api/schedule` | **full replace** from an FPP entry array |
 | POST   | `/api/schedule/reload` | 200 no-op — EZPlayer applies schedule changes live |
-| GET    | `/api/fppd/schedule`   | `{schedule: [...], Status: "OK"}`                  |
+| GET    | `/api/fppd/schedule` | `{schedule: [...], Status: "OK"}` |
 
 Mapping: `playlist` matches by title; `startTime`/`endTime` →
 `fromTime`/`toTime`; `repeat` → loop; `stopType` 0/1/2 → graceful / hard cut /
@@ -124,7 +124,7 @@ few so remotes lock on fast), and STOP on end/pause/idle. `remotes` is a list
 of `host[:port]`; an empty list broadcasts to the FPP multicast group
 239.70.80.80 (port and multicast address are overridable under Advanced).
 Media sync packets are not sent (audio plays on the master), and EZPlayer
-does not act as a sync _remote_. Default is **off** — sync-master is a
+does not act as a sync *remote*. Default is **off** — sync-master is a
 topology decision; exactly one master should exist on a network.
 
 ## System inventory

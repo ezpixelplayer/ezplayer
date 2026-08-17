@@ -26,12 +26,12 @@ app pulls the source and builds on Cloudflare's infrastructure. Push to `main`
 In the Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to
 Git**, select this repo, then set:
 
-| Setting                | Value                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| Production branch      | `main`                                                                               |
-| Root / base directory  | repository root (so the build can reach both `doc/manual` and `doc/slides`)          |
+| Setting                | Value                                                                     |
+| ---------------------- | ------------------------------------------------------------------------- |
+| Production branch      | `main`                                                                     |
+| Root / base directory  | repository root (so the build can reach both `doc/manual` and `doc/slides`) |
 | Build command          | `(cd doc/slides/build-tool && npm ci) && (cd doc/manual && npm ci && npm run build)` |
-| Build output directory | `doc/manual/build`                                                                   |
+| Build output directory | `doc/manual/build`                                                         |
 
 Deploy once so the project's `*.pages.dev` hostname exists.
 
@@ -41,9 +41,9 @@ Deploy once so the project's `*.pages.dev` hostname exists.
    `docs.ezplayer.dev`. Cloudflare shows a CNAME target like
    `ezplayer-docs.pages.dev` and marks the domain **pending**.
 2. In **GoDaddy DNS**, add a record:
-    - **Type:** `CNAME`
-    - **Name / Host:** `docs`
-    - **Value:** the `<project>.pages.dev` hostname Cloudflare gave you
+   - **Type:** `CNAME`
+   - **Name / Host:** `docs`
+   - **Value:** the `<project>.pages.dev` hostname Cloudflare gave you
 3. Wait for propagation. Cloudflare validates the CNAME and issues the TLS
    certificate automatically (usually minutes); the domain flips to **active**.
 

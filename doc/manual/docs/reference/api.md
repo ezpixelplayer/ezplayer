@@ -343,26 +343,26 @@ Remote file operations on the show folder. Paths and response shapes follow the
 work unchanged. EZPlayer show folders are flat, so every logical directory maps
 to the show folder root with an extension filter:
 
-| `:dirName`  | Contents                                     |
-| ----------- | -------------------------------------------- |
-| `sequences` | `*.fseq`                                     |
-| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma` |
-| `videos`    | `*.mp4 *.mkv *.avi *.mov *.mpg *.mpeg`       |
-| `images`    | `*.gif *.jpg *.jpeg *.png *.webp *.bmp`      |
-| `uploads`   | everything (minus protected/dot files)       |
+| `:dirName`  | Contents                                              |
+| ----------- | ----------------------------------------------------- |
+| `sequences` | `*.fseq`                                              |
+| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma`          |
+| `videos`    | `*.mp4 *.mkv *.avi *.mov *.mpg *.mpeg`                |
+| `images`    | `*.gif *.jpg *.jpeg *.png *.webp *.bmp`               |
+| `uploads`   | everything (minus protected/dot files)                |
 
-| Method   | Path                       | Purpose                                                                                                                   |
-| -------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/files/:dirName`      | List: `{status:"ok", files:[{name,mtime,sizeBytes,sizeHuman,playtimeSeconds}]}`; `?nameOnly=1` returns a plain name array |
-| `GET`    | `/api/file/:dirName/:name` | Download (attachment); `?play=1` streams inline with a media content type                                                 |
-| `POST`   | `/api/file/:dirName/:name` | Single-shot upload, file bytes as the raw request body                                                                    |
-| `POST`   | `/api/file/:dirName`       | Chunked-upload init; returns an id (plain text)                                                                           |
-| `PATCH`  | `/api/file/:dirName`       | Upload one chunk; headers `Upload-Name`, `Upload-Offset`, `Upload-Length` (raw body = chunk)                              |
-| `DELETE` | `/api/file/:dirName/:name` | Delete a file                                                                                                             |
-| `GET`    | `/api/media`               | Music + video file names (array)                                                                                          |
-| `GET`    | `/api/sequence`            | Sequence base names, no `.fseq` extension (array)                                                                         |
-| `GET`    | `/api/sequence/:name`      | Download `<name>.fseq`                                                                                                    |
-| `POST`   | `/api/sequence/:name`      | Upload `<name>.fseq` (raw body) → `{"Status":"OK","Message":""}`                                                          |
+| Method   | Path                        | Purpose                                                                                      |
+| -------- | --------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/files/:dirName`       | List: `{status:"ok", files:[{name,mtime,sizeBytes,sizeHuman,playtimeSeconds}]}`; `?nameOnly=1` returns a plain name array |
+| `GET`    | `/api/file/:dirName/:name`  | Download (attachment); `?play=1` streams inline with a media content type                     |
+| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body                                        |
+| `POST`   | `/api/file/:dirName`        | Chunked-upload init; returns an id (plain text)                                               |
+| `PATCH`  | `/api/file/:dirName`        | Upload one chunk; headers `Upload-Name`, `Upload-Offset`, `Upload-Length` (raw body = chunk)  |
+| `DELETE` | `/api/file/:dirName/:name`  | Delete a file                                                                                 |
+| `GET`    | `/api/media`                | Music + video file names (array)                                                              |
+| `GET`    | `/api/sequence`             | Sequence base names, no `.fseq` extension (array)                                             |
+| `GET`    | `/api/sequence/:name`       | Download `<name>.fseq`                                                                        |
+| `POST`   | `/api/sequence/:name`       | Upload `<name>.fseq` (raw body) → `{"Status":"OK","Message":""}`                              |
 
 Uploads are **raw request bodies** (not multipart). Chunked uploads assemble in
 `.ezplayer/tmp-uploads/` and move into place atomically on completion, so a
@@ -395,10 +395,10 @@ request. Internal and link-local (`169.254.x.x`) addresses are excluded.
 
 ```json
 {
-    "interfaces": [
-        { "name": "eth0", "address": "192.168.25.11", "network": "192.168.25.0/24" },
-        { "name": "wlan0", "address": "192.168.11.123", "network": "192.168.11.0/24" }
-    ]
+  "interfaces": [
+    { "name": "eth0", "address": "192.168.25.11", "network": "192.168.25.0/24" },
+    { "name": "wlan0", "address": "192.168.11.123", "network": "192.168.11.0/24" }
+  ]
 }
 ```
 
@@ -406,11 +406,11 @@ request. Internal and link-local (`169.254.x.x`) addresses are excluded.
 
 Run a discovery and return the full result. Body (all fields optional):
 
-| Field               | Type                          | Default      | Meaning                                                                                                                              |
-| ------------------- | ----------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `networks`          | `[{ "cidr": "…" }]`           | host's own   | Networks to scan. **Omit to scan this host's own networks** — which is what a federated scan wants.                                  |
+| Field               | Type                        | Default      | Meaning                                                        |
+| ------------------- | --------------------------- | ------------ | -------------------------------------------------------------- |
+| `networks`          | `[{ "cidr": "…" }]`         | host's own   | Networks to scan. **Omit to scan this host's own networks** — which is what a federated scan wants. |
 | `depth`             | `"sweep"｜"identify"｜"full"` | `"identify"` | `sweep` = liveness (IP/MAC/OUI/protocols); `identify` = + driver-confirmed vendor/model/firmware; `full` = + per-device detail tree. |
-| `recurseFppProxies` | `boolean`                     | `false`      | Recurse one level through FPP proxies (identify/full only).                                                                          |
+| `recurseFppProxies` | `boolean`                   | `false`      | Recurse one level through FPP proxies (identify/full only).    |
 
 There is intentionally **no `recurseEzpProxies`** here: a federated scan must
 not chain onward, so EZPlayer federation stays strictly one level.
@@ -429,21 +429,17 @@ The response is a `DiscoveryResult`:
 
 ```json
 {
-    "request": { "networks": [{ "cidr": "192.168.1.0/24" }], "depth": "identify" },
-    "devices": [
-        {
-            "ip": "192.168.1.58",
-            "source": { "via": "direct" },
-            "mac": "b8:27:eb:…",
-            "oui": "Raspberry Pi",
-            "driverType": "FPP",
-            "vendor": "FPP",
-            "model": "WB1616",
-            "firmwareVersion": "pre-7"
-        }
-    ],
-    "startedAt": "2026-06-28T15:00:00.000Z",
-    "finishedAt": "2026-06-28T15:00:12.000Z"
+  "request": { "networks": [{ "cidr": "192.168.1.0/24" }], "depth": "identify" },
+  "devices": [
+    {
+      "ip": "192.168.1.58",
+      "source": { "via": "direct" },
+      "mac": "b8:27:eb:…", "oui": "Raspberry Pi",
+      "driverType": "FPP", "vendor": "FPP", "model": "WB1616", "firmwareVersion": "pre-7"
+    }
+  ],
+  "startedAt": "2026-06-28T15:00:00.000Z",
+  "finishedAt": "2026-06-28T15:00:12.000Z"
 }
 ```
 
@@ -476,11 +472,11 @@ The full controller-ops state in one snapshot:
 
 ```json
 {
-    "interfaces": [{ "name": "Ethernet 2", "address": "…", "network": "…" }],
-    "devices": { "<ip>|direct": { "id": "…", "ip": "…", "driverType": "Falcon", "…": "…" } },
-    "operations": { "op_…": { "kind": "status", "status": "done", "…": "…" } },
-    "known": [{ "name": "Mega Tree", "address": "…", "ports": [], "…": "…" }],
-    "networkPolicies": [{ "cidr": "192.168.1.0/24", "allow": false }]
+  "interfaces":      [ { "name": "Ethernet 2", "address": "…", "network": "…" } ],
+  "devices":         { "<ip>|direct": { "id": "…", "ip": "…", "driverType": "Falcon", "…": "…" } },
+  "operations":      { "op_…": { "kind": "status", "status": "done", "…": "…" } },
+  "known":           [ { "name": "Mega Tree", "address": "…", "ports": [], "…": "…" } ],
+  "networkPolicies": [ { "cidr": "192.168.1.0/24", "allow": false } ]
 }
 ```
 
@@ -497,15 +493,15 @@ One device by its state key (URL-encode the `|`, e.g.
 The generic command endpoint — the body is one `ControllerCommand`, identical
 to what the desktop/LAN/cloud UIs issue. One endpoint covers every verb:
 
-| `cmd`               | Purpose                                                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scan`              | Discover controllers (same options as `/api/ezp/scan/discover`); returns the scan result.                                                  |
-| `status`            | Deep-read one controller: `{ "cmd": "status", "id": "<ip>\|direct", "address": "<ip>" }`. `address` lets it work with no prior scan.       |
+| `cmd`               | Purpose                                                            |
+| ------------------- | ------------------------------------------------------------------ |
+| `scan`              | Discover controllers (same options as `/api/ezp/scan/discover`); returns the scan result. |
+| `status`            | Deep-read one controller: `{ "cmd": "status", "id": "<ip>\|direct", "address": "<ip>" }`. `address` lets it work with no prior scan. |
 | `action`            | Run a driver action: `{ "cmd": "action", "id": "…", "action": "reboot" }`. Action ids are driver-enumerated (see each device's `actions`). |
-| `upload`            | Push xLights config: `{ "cmd": "upload", "id": "…", "scope": "inputs"\|"strings"\|"full", "fullControl": true\|false }`.                   |
-| `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`.                                           |
-| `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`.                                             |
-| `refreshInterfaces` | Re-enumerate this host's networks.                                                                                                         |
+| `upload`            | Push xLights config: `{ "cmd": "upload", "id": "…", "scope": "inputs"\|"strings"\|"full", "fullControl": true\|false }`. |
+| `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`. |
+| `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`. |
+| `refreshInterfaces` | Re-enumerate this host's networks.                                 |
 
 Verbs other than `scan` return `{"ok":true}` immediately; results and progress
 ride the shared `controllerops` state (WebSocket broadcast, or re-poll the GET).
@@ -549,12 +545,7 @@ missing `work.length` is filled from the FSEQ header.
 **Request:**
 
 ```json
-[
-    {
-        "files": { "fseq": "MySong.fseq", "audio": "MySong.mp3" },
-        "work": { "title": "My Song", "artist": "Artist", "length": 0 }
-    }
-]
+[{ "files": { "fseq": "MySong.fseq", "audio": "MySong.mp3" }, "work": { "title": "My Song", "artist": "Artist", "length": 0 } }]
 ```
 
 **Response:** `{ "success": true, "sequences": [ ...updated records... ] }`
@@ -596,11 +587,11 @@ autodetect + register path as the desktop Bulk Import action.
 }
 ```
 
-| Field                 | Meaning                                                                                                                                                                                                         |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fseqNames`           | Basenames of `.fseq` files in the show folder (required)                                                                                                                                                        |
+| Field | Meaning |
+| ----- | ------- |
+| `fseqNames` | Basenames of `.fseq` files in the show folder (required) |
 | `companionAudioNames` | Optional audio basenames from the same LAN selection. On the HTTP/LAN path, show-folder audio is restricted to this allowlist (plus the media folder). Omit or pass `[]` when relying only on the media folder. |
-| `allowExistingAudio`  | Pass `true` for existing-files imports: any show-folder audio (root or subdirectory) may satisfy an import by exact name, ignoring the allowlist. Used by the LAN/cloud "Import from Show Folder" dialog.       |
+| `allowExistingAudio` | Pass `true` for existing-files imports: any show-folder audio (root or subdirectory) may satisfy an import by exact name, ignoring the allowlist. Used by the LAN/cloud "Import from Show Folder" dialog. |
 
 Bulk import requires a resolved companion audio file for each FSEQ (exact
 basename match). Failures are per-file and do not abort the rest of the batch.

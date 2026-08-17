@@ -24,13 +24,13 @@ show folder, LAN web server ports, and first-run behavior.
 
 The **first non-flag argument** decides what EZPlayer does:
 
-| First argument                                                   | What happens                                                                                                                             |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| _(none)_                                                         | Launch the desktop app (the normal GUI).                                                                                                 |
-| A leading-dash flag (`--show-folder`, `--web-port`, …)           | Launch the desktop app, configured by that flag and any others.                                                                          |
-| [`headless`](#headless-mode)                                     | Run the **full player with no windows** — it still plays the show and serves the web API.                                                |
-| `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show.                                                      |
-| Any other bareword                                               | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
+| First argument                       | What happens                                                        |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| _(none)_                             | Launch the desktop app (the normal GUI).                            |
+| A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
+| [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
+| `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
+| Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
 
 Note the distinction between the two window-less modes: `headless` is the
 **player** running without a UI, while the text-only commands are
@@ -50,14 +50,14 @@ configure the desktop app. The next section describes the **text-only commands**
 These commands print plain text and exit; they never open a window or start
 the show. They are useful for setup, network diagnostics, and scripting.
 
-| Command      | Purpose                                                                                        |
-| ------------ | ---------------------------------------------------------------------------------------------- |
-| `discover`   | Scan LAN networks for lighting controllers.                                                    |
-| `interfaces` | List this host's networks (the CIDRs to feed `discover`).                                      |
-| `controller` | Inspect and manage lighting controllers — see its four subcommands below.                      |
-| `shell`      | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager). |
-| `files`      | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager).    |
-| `help`       | Print the command list. Also `--help`, `-h`.                                                   |
+| Command                | Purpose                                                     |
+| ---------------------- | ----------------------------------------------------------- |
+| `discover`             | Scan LAN networks for lighting controllers.                 |
+| `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
+| `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
+| `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager). |
+| `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager). |
+| `help`                 | Print the command list. Also `--help`, `-h`.                |
 
 `discover`, `interfaces`, `controller status`, and `controller action` talk to
 devices directly and need no running player. `controller list` and
@@ -69,12 +69,12 @@ Everything that acts on a lighting controller is a **subcommand of
 `controller`**, which keeps the plain names free for what they sound like — the
 player's own status, or uploading show content:
 
-| Subcommand          | Purpose                                                      |
-| ------------------- | ------------------------------------------------------------ |
-| `controller list`   | Show the controller reconcile state from a running player.   |
-| `controller status` | Deep-read one controller and print its detail report.        |
-| `controller action` | Run a management action (e.g. reboot) on a controller.       |
-| `controller upload` | Upload xLights-derived config to a controller (via the app). |
+| Subcommand            | Purpose                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `controller list`     | Show the controller reconcile state from a running player.  |
+| `controller status`   | Deep-read one controller and print its detail report.       |
+| `controller action`   | Run a management action (e.g. reboot) on a controller.      |
+| `controller upload`   | Upload xLights-derived config to a controller (via the app).|
 
 Get top-level help or per-command help:
 
@@ -92,19 +92,19 @@ Scan one or more networks for lighting controllers and print what is found.
 EZPlayer discover [--networks <cidr[,cidr…]>] [--depth sweep|identify|full] [--fpp-proxy]
 ```
 
-| Option              | Alias | Description                                                                                                                                 |
-| ------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Option              | Alias | Description                                                                                   |
+| ------------------- | ----- | --------------------------------------------------------------------------------------------- |
 | `--networks <cidr>` | `-n`  | Comma-separated CIDRs to scan (e.g. `192.168.1.0/24,10.0.0.0/24`). Omit to scan every external host network (run `interfaces` to see them). |
-| `--depth <level>`   | `-d`  | How hard to look — see the table below. Default: `identify`.                                                                                |
-| `--fpp-proxy`       |       | Recurse one level through FPP proxies to find controllers behind them. Needs `identify` or `full`; ignored (with a warning) on `sweep`.     |
+| `--depth <level>`   | `-d`  | How hard to look — see the table below. Default: `identify`.                                  |
+| `--fpp-proxy`       |       | Recurse one level through FPP proxies to find controllers behind them. Needs `identify` or `full`; ignored (with a warning) on `sweep`. |
 
 **Depth levels**
 
-| Depth      | What you get                                                                          |
-| ---------- | ------------------------------------------------------------------------------------- |
-| `sweep`    | Liveness only — IP, MAC/OUI, mDNS hostname, and detected protocols.                   |
-| `identify` | _(default)_ Everything in `sweep`, plus driver-confirmed vendor, model, and firmware. |
-| `full`     | Everything in `identify`, plus a per-device detail tree.                              |
+| Depth      | What you get                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `sweep`    | Liveness only — IP, MAC/OUI, mDNS hostname, and detected protocols.                        |
+| `identify` | _(default)_ Everything in `sweep`, plus driver-confirmed vendor, model, and firmware.      |
+| `full`     | Everything in `identify`, plus a per-device detail tree.                                   |
 
 **Output** adapts to where it is going:
 
@@ -164,10 +164,10 @@ operations and network policies.
 EZPlayer controller list [--host <host[:port]>] [--json]
 ```
 
-| Option                 | Description                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------- |
+| Option              | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
 | `--host <host[:port]>` | The running player's LAN API. Default `127.0.0.1:3000` (`EZPLAYER_WEB_PORT` honored). |
-| `--json`               | Emit the raw state as JSON instead of tables.                                         |
+| `--json`            | Emit the raw state as JSON instead of tables.                           |
 
 ```bash
 EZPlayer controller list                    # local player
@@ -220,9 +220,9 @@ post-upload read-back so every UI reflects the device's new state.
 EZPlayer controller upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]
 ```
 
-| Option           | Description                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--scope`        | `inputs` (universes), `strings` (port outputs), or `full` (both — the default).                                                                  |
+| Option           | Description                                                                    |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `--scope`        | `inputs` (universes), `strings` (port outputs), or `full` (both — the default). |
 | `--full-control` | Settings xLights doesn't specify are reset to the controller defaults (brightness/gamma/color order), wiping per-port tweaks made on the device. |
 
 ```bash
@@ -263,10 +263,10 @@ EZPlayer files --show-folder "D:\Shows\MyShow" --clear    # disable it entirely
 :::caution
 For Windows, use `ezplayer.cmd`, not `EZPlayer.exe`.
 `EZPlayer.exe` is a **GUI-subsystem binary**, with limited ability to use the
-console. `--stdin` does not work directly with `EZPlayer.exe`.
+console.  `--stdin` does not work directly with `EZPlayer.exe`.
 
 The Windows installer therefore places a small console launcher,
-**`ezplayer.cmd`**, next to it. Use that for every text-only command.
+**`ezplayer.cmd`**, next to it.  Use that for every text-only command.
 :::
 
 There are separate passwords for `files` and `shell`; each is independently on or off.
@@ -282,7 +282,7 @@ it is nudged over loopback so the change takes effect without a restart.
 
 :::warning
 Enabling shell access on a machine provides siginificant power over both that machine,
-and anything reachable over the attached networks. You should only enable this if the
+and anything reachable over the attached networks.  You should only enable this if the
 diagnostic benefits of full remote access outweigh the potential for damage or loss of
 sensitive information.
 
@@ -292,19 +292,19 @@ sensitive files.
 Ensure that your passwords are appropriately secure.
 :::
 
-There is deliberately no way to set either password from any UI. Enabling remote
+There is deliberately no way to set either password from any UI.  Enabling remote
 access requires the ability to run commands on the player already, which keeps
 the decision with whoever owns the machine.
 
-| Option            | Meaning                                                                                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--show-folder`   | Which show to set the password for. Defaults to the current directory when that is already a show folder (it has a `.ezplayer/` directory); otherwise required. |
-| `--password-file` | Read the password from the first line of a file (recommended option).                                                                                           |
-| `--password`      | The new password, given inline. Convenient, but see the caution below.                                                                                          |
-| `--stdin`         | Read the password from stdin. (Requires `ezplayer.cmd` on Windows.)                                                                                             |
-| `--clear`         | Remove the password. Anything open at the time is closed immediately.                                                                                           |
-| `--status`        | Report whether the feature is enabled for this show, and the file in use.                                                                                       |
-| `--port`          | Loopback port of the running player. (Defaults to checking the lockfile)                                                                                        |
+| Option          | Meaning                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `--show-folder` | Which show to set the password for. Defaults to the current directory when that is already a show folder (it has a `.ezplayer/` directory); otherwise required. |
+| `--password-file` | Read the password from the first line of a file (recommended option). |
+| `--password`    | The new password, given inline. Convenient, but see the caution below.  |
+| `--stdin`       | Read the password from stdin. (Requires `ezplayer.cmd` on Windows.)     |
+| `--clear`       | Remove the password. Anything open at the time is closed immediately.      |
+| `--status`      | Report whether the feature is enabled for this show, and the file in use.  |
+| `--port`        | Loopback port of the running player.  (Defaults to checking the lockfile) |
 
 :::caution
 `--password` puts the password in your shell history, and on most systems it is
@@ -343,12 +343,12 @@ Things worth knowing before you enable either:
 
 ### Exit codes
 
-| Code | Meaning                                                           |
-| ---- | ----------------------------------------------------------------- |
-| `0`  | Success, or a help request.                                       |
-| `2`  | Usage error within a command — bad option or invalid argument.    |
-| `64` | Unknown verb (rejected by the launcher before the app starts).    |
-| `1`  | Unexpected failure (an uncaught error while running the command). |
+| Code | Meaning                                                              |
+| ---- | ------------------------------------------------------------------- |
+| `0`  | Success, or a help request.                                         |
+| `2`  | Usage error within a command — bad option or invalid argument.      |
+| `64` | Unknown verb (rejected by the launcher before the app starts).      |
+| `1`  | Unexpected failure (an uncaught error while running the command).   |
 
 ## Launch flags
 
@@ -416,11 +416,11 @@ EZPlayer.exe headless --show-folder=D:\Shows\2025 --web-port=3000
 
 Anything that would normally raise a dialog fails fast instead:
 
-| Exit code | Meaning                                                     |
-| --------- | ----------------------------------------------------------- |
-| `2`       | No show folder configured, or the folder is missing/invalid |
-| `3`       | The show folder is locked by another EZPlayer instance      |
-| `64`      | Unrecognized verb                                           |
+| Exit code | Meaning                                                             |
+| --------- | ------------------------------------------------------------------- |
+| `2`       | No show folder configured, or the folder is missing/invalid         |
+| `3`       | The show folder is locked by another EZPlayer instance              |
+| `64`      | Unrecognized verb                                                   |
 
 A headless run **never modifies persisted preferences** — the show folder and
 ports passed on the command line apply to that run only, so it can coexist with
