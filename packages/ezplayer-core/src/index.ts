@@ -84,6 +84,8 @@ export type {
     ControllerModelIntent,
     ControllerOutputIntent,
     ControllerPort,
+    ControllerInputInfo,
+    ControllerInputUniverseInfo,
     PortDriftKind,
     PortReconcile,
     ControllerHealth,
@@ -93,10 +95,12 @@ export {
     reconcileControllers,
     reconcilePorts,
     hasPortDrift,
+    reconcileInputs,
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
 } from './util/controllerReconcile';
+export type { InputReconcile } from './util/controllerReconcile';
 
 export {
     buildPortMap,

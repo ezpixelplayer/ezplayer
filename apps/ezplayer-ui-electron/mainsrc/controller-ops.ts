@@ -244,7 +244,7 @@ const deviceKey = (d: { ip: string; source: DiscoveredController['source'] }): s
     return `${d.ip}|${d.source.via}`;
 };
 
-/** Driver per-port report → lean core ControllerPort (the "actual" side).
+/** Driver per-port report -> ControllerPort (the "actual" side).
  *  Per-model names: a structural `models` array if the lib provides one,
  *  else split the driver's " + "-joined `model` string. */
 function toControllerPort(p: PixelPortInfo): ControllerPort {
@@ -286,6 +286,7 @@ function toController(d: DiscoveryDevice): DiscoveredController {
         detail: d.detail as DiscoveredController['detail'],
         // Structured per-port config (full depth only) — reconcile's "actual" side.
         pixelPorts: d.report?.pixelPorts?.map(toControllerPort),
+        inputs: d.report?.inputs,
         error: d.error,
         seenAt: nowIso(),
     };
@@ -301,6 +302,7 @@ function mergeDevice(d: DiscoveryDevice): void {
         // carries no driver identity — keep the previous values in that case.
         if (next.detail === undefined) next.detail = prev.detail;
         if (next.pixelPorts === undefined) next.pixelPorts = prev.pixelPorts;
+        if (next.inputs === undefined) next.inputs = prev.inputs;
         if (next.driverType === undefined) next.driverType = prev.driverType;
         if (next.vendor === undefined) next.vendor = prev.vendor;
         if (next.model === undefined) next.model = prev.model;
@@ -442,6 +444,7 @@ async function runStatus(
             firmwareVersion: probe.report.firmwareVersion ?? dev.firmwareVersion,
             detail: reportToTree(probe.report) as DiscoveredController['detail'],
             pixelPorts: probe.report.pixelPorts?.map(toControllerPort),
+            inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
             error: undefined,
             seenAt: nowIso(),
@@ -661,6 +664,12 @@ async function runUpload(
             if (!r.success) throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
         }
+        try {
+            const applied = await probe.driver.applyConfig();
+            if (!applied.success) warnings.push(`apply step failed: ${applied.message ?? 'unknown error'}`);
+        } catch (e) {
+            warnings.push(`apply step failed: ${(e as Error).message}`);
+        }
         if (warnings.length) {
             console.warn(`[controller-ops] upload warnings for ${rec.name}:`, warnings);
             op.label += ` (${warnings.length} warning${warnings.length > 1 ? 's' : ''}: ${warnings.join('; ')})`;
@@ -673,6 +682,7 @@ async function runUpload(
                     ...dev,
                     detail: reportToTree(verify.report) as DiscoveredController['detail'],
                     pixelPorts: verify.report.pixelPorts?.map(toControllerPort),
+                    inputs: verify.report.inputs,
                     error: undefined,
                     seenAt: nowIso(),
                 };

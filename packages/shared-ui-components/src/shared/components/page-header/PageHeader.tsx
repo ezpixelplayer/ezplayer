@@ -46,9 +46,10 @@ export const PageHeader: FC<PageHeaderProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 width: '100%',
-                minHeight: '64px',
+                // The header is context, not content — keep it slim.
+                minHeight: '36px',
                 px: 2,
-                py: 1,
+                py: 0.5,
             }}
             {...rest}
         >
@@ -68,7 +69,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
                 {breadcrumbs?.map((breadcrumb) => (
                     <Link
                         underline={breadcrumb.route ? 'hover' : 'none'}
-                        variant="h3"
+                        variant="h4"
                         component="h3"
                         sx={{ cursor: breadcrumb.route ? 'pointer' : 'default', flexShrink: 0 }}
                         color="inherit"
@@ -78,7 +79,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
                         {t(breadcrumb?.name)}
                     </Link>
                 ))}
-                <Typography variant="h3" component="h3" noWrap sx={{ flexShrink: 0 }}>
+                <Typography variant="h4" component="h3" noWrap sx={{ flexShrink: 0 }}>
                     {heading}
                 </Typography>
                 <Typography variant="subtitle2" noWrap sx={{ color: 'text.secondary', flexShrink: 0 }}>

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     ToggleButton,
     ToggleButtonGroup,
@@ -22,8 +22,9 @@ import { Box } from '../box/Box';
 import View3DIcon from '@mui/icons-material/ViewInAr';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import ListIcon from '@mui/icons-material/List';
-import CloseIcon from '@mui/icons-material/Close';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { Viewer3D, type CameraState3D } from './Viewer3D';
@@ -140,7 +141,8 @@ export interface Preview3DProps {
      * to avoid redundancy with the caller's own title/chrome.
      */
     mode?: 'standalone' | 'embedded';
-    /** When true, viewers use minHeight 0 so the preview fills a flex/dialog container instead of forcing 600px. */
+    /** Dialog/card hosting hints (tighter empty-state sizing). Viewers always
+     *  fill their container — every host provides a managed height. */
     compact?: boolean;
     /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
      *  storage-shaped JSON */
@@ -171,9 +173,16 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const embedded = mode === 'embedded';
     const disableModelSelection = embedded;
     const hideAudioControls = embedded;
-    const showLayoutLabel = !embedded;
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+    // True once the mode came from somewhere deliberate — an explicit
+    // "Set as Default" (the persisted top-level `mode`) or the user's live
+    // toggle. Only an undecided mode may adopt the layout's 2D/3D annotation
+    // as its calculated default; casual per-selection snapshots don't count.
+    const modeChosenRef = useRef(false);
     const [showItemList, setShowItemList] = useState(showList && initialShowList);
+    // Expanded (pop-out) mode: the preview takes over the whole window — just
+    // the view and the model list, plus a small floating control cluster.
+    const [expanded, setExpanded] = useState(false);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
     // Lazy init from the prop so the first render already has live data when available.
@@ -293,6 +302,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         if (layoutGroupOptions.some((opt) => opt.value === pending.selection)) {
             setPreviewSelection(pending.selection);
             if (pending.viewState) {
+                // Snapshot restore, not a deliberate mode choice (see load effect).
                 setViewMode(pending.viewState.mode);
                 setCameraState2D(pending.viewState.cameraState2D);
                 setCameraState3D(pending.viewState.cameraState3D);
@@ -318,9 +328,13 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         brightnessMultiplier: clampedBrightness,
                     });
                 }
-                // Restore view mode if saved
+                // Restore view mode if saved. Only a mode written by an
+                // explicit "Set as Default" (marked modeExplicit) outranks the
+                // layout's 2D/3D annotation — legacy builds persisted `mode`
+                // on casual use, and those stale keys must not pin the mode.
                 if (parsed.mode === '2d' || parsed.mode === '3d') {
                     setViewMode(parsed.mode);
+                    if (parsed.modeExplicit === true) modeChosenRef.current = true;
                 }
                 // Restore camera states if saved
                 if (parsed.cameraState2D) {
@@ -346,6 +360,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 if (savedSelection === 'default' || savedSelection === 'all') {
                     setPreviewSelection(savedSelection);
                     if (restoreViewState) {
+                        // Casual per-selection snapshots restore the mode but do
+                        // NOT count as a deliberate choice — only an explicit
+                        // "Set as Default" (parsed.mode above) or a live toggle
+                        // outranks the layout's own 2D/3D annotation.
                         setViewMode(restoreViewState.mode);
                         setCameraState2D(restoreViewState.cameraState2D);
                         setCameraState3D(restoreViewState.cameraState3D);
@@ -361,6 +379,24 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             setCameraStateLoaded(true);
         }
     }, [previewSettingsStorageKey]);
+
+    // Expanded mode: Esc exits.
+    useEffect(() => {
+        if (!expanded) return undefined;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setExpanded(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [expanded]);
+
+    // With no deliberately chosen view mode, the calculated default follows
+    // the layout's own 2D/3D annotation (xLights LayoutMode3D) once known.
+    useEffect(() => {
+        if (!cameraStateLoaded || modeChosenRef.current) return;
+        if (layoutSettings.layoutMode3D === undefined) return;
+        setViewMode(layoutSettings.layoutMode3D ? '3d' : '2d');
+    }, [cameraStateLoaded, layoutSettings.layoutMode3D]);
 
     // Sync preview selection + per-selection view state to localStorage whenever they change.
     // Centralising the write avoids closure-staleness bugs that happened when individual handlers
@@ -669,6 +705,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     const handleViewModeChange = useCallback(
         (_event: React.MouseEvent<HTMLElement>, newMode: ViewMode | null) => {
             if (newMode !== null) {
+                modeChosenRef.current = true;
                 // Snapshot the outgoing viewer's camera so it can be restored later
                 if (viewMode === '3d' && getCurrentCameraState3DRef.current) {
                     const state = getCurrentCameraState3DRef.current();
@@ -775,11 +812,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             delete next[previewSelection];
             return next;
         });
+        // A reset also forgets the saved default mode, so the layout's own
+        // 2D/3D annotation decides again.
+        modeChosenRef.current = false;
+        if (layoutSettings.layoutMode3D !== undefined) {
+            setViewMode(layoutSettings.layoutMode3D ? '3d' : '2d');
+        }
         // Clear legacy top-level camera fields; viewStateBySelection is handled by the sync effect.
         try {
             const saved = localStorage.getItem(previewSettingsStorageKey);
             if (saved) {
                 const parsed = JSON.parse(saved);
+                delete parsed.mode;
+                delete parsed.modeExplicit;
                 delete parsed.cameraState2D;
                 delete parsed.cameraState3D;
                 localStorage.setItem(previewSettingsStorageKey, JSON.stringify(parsed));
@@ -787,7 +832,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         } catch (err) {
             console.error('[Preview3D] Failed to clear camera state:', err);
         }
-    }, [previewSettingsStorageKey, previewSelection]);
+    }, [previewSettingsStorageKey, previewSelection, layoutSettings.layoutMode3D]);
 
     // Handle auto-fit complete
     const handleAutoFitComplete = useCallback(() => {
@@ -826,6 +871,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 JSON.stringify({
                     ...existing,
                     mode: viewMode,
+                    // Marks the mode as deliberately chosen, so it outranks the
+                    // layout's 2D/3D annotation on future loads.
+                    modeExplicit: true,
                     cameraState2D: currentCameraState2D,
                     cameraState3D: currentCameraState3D,
                     pixelSize: previewSettings.pixelSize,
@@ -1021,9 +1069,17 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 width: '100%',
                 minHeight: compact ? 0 : undefined,
                 overflow: 'hidden',
+                // Pop-out: cover the whole window with just view + model list.
+                ...(expanded && {
+                    position: 'fixed',
+                    inset: 0,
+                    height: '100%',
+                    zIndex: theme.zIndex.modal,
+                    backgroundColor: 'background.default',
+                }),
             }}
         >
-            {showControls && (
+            {showControls && !expanded && (
                 <Paper
                     elevation={2}
                     sx={{
@@ -1222,11 +1278,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
                     {/* Right Side Controls */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {showLayoutLabel && renderedModelData?.name && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontStyle: 'italic' }}>
-                                {renderedModelData?.name}
-                            </Typography>
-                        )}
                         {!isElectron() && !hideAudioControls && (
                             <Tooltip title={audioEnabled ? 'Mute audio' : 'Play audio'}>
                                 <IconButton
@@ -1249,6 +1300,13 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 </IconButton>
                             </Tooltip>
                         )}
+                        {!embedded && (
+                            <Tooltip title="Expand preview (Esc exits)">
+                                <IconButton size="small" onClick={() => setExpanded(true)}>
+                                    <FullscreenIcon />
+                                </IconButton>
+                            </Tooltip>
+                        )}
                     </Box>
                 </Paper>
             )}
@@ -1260,7 +1318,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             sx={{
                                 width: '100%',
                                 height: '100%',
-                                minHeight: compact ? 0 : 600,
+                                minHeight: 0,
                                 display: 'flex',
                                 justifyContent: 'center',
                                 alignItems: 'center',
@@ -1301,7 +1359,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onAutoFitComplete={handleAutoFitComplete}
                                     cameraStateLoaded={cameraStateLoaded}
                                     onGetCurrentCameraState={handleGetCurrentCameraState3D}
-                                    fillContainer={compact}
+                                    fillContainer
                                     forceOrbitControls={preferOrbitControls}
                                 />
                             ) : (
@@ -1328,10 +1386,44 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onAutoFitComplete={handleAutoFitComplete}
                                     cameraStateLoaded={cameraStateLoaded}
                                     onGetCurrentCameraState={handleGetCurrentCameraState2D}
-                                    fillContainer={compact}
+                                    fillContainer
                                 />
                             );
                         })()
+                    )}
+                    {expanded && (
+                        <Paper
+                            elevation={3}
+                            sx={{
+                                position: 'absolute',
+                                top: 8,
+                                right: 8,
+                                zIndex: 10,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                px: 0.5,
+                                borderRadius: 2,
+                                opacity: 0.9,
+                            }}
+                        >
+                            {showList && (
+                                <Tooltip title={showItemList ? 'Hide model library' : 'Show model library'}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShowItemList(!showItemList)}
+                                        color={showItemList ? 'primary' : 'default'}
+                                    >
+                                        <ListIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                            <Tooltip title="Exit expanded preview">
+                                <IconButton size="small" onClick={() => setExpanded(false)}>
+                                    <FullscreenExitIcon />
+                                </IconButton>
+                            </Tooltip>
+                        </Paper>
                     )}
                 </Box>
 
@@ -1353,30 +1445,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             overflow: 'hidden',
                         }}
                     >
-                        <Box
-                            sx={{
-                                p: 1.5,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                borderBottom: `1px solid ${theme.palette.divider}`,
-                                backgroundColor:
-                                    theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[50],
-                                flexShrink: 0,
-                            }}
-                        >
-                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                Model Library
-                            </Typography>
-                            <IconButton size="small" onClick={() => setShowItemList(false)}>
-                                <CloseIcon fontSize="small" />
-                            </IconButton>
-                        </Box>
                         <ModelList
                             selectedModelNames={selectedModelNames}
                             onModelSelect={handleModelSelect}
                             searchable={true}
                             modelData={renderedModelData}
+                            onClose={() => setShowItemList(false)}
                         />
                     </Paper>
                 )}
