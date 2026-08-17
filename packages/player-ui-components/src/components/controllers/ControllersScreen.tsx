@@ -1113,7 +1113,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             <Box sx={{ flexShrink: 0, padding: 2 }}>
-                <PageHeader heading={`${title} (beta)`} children={statusArea} />
+                <PageHeader heading={`${title} (alpha)`} children={statusArea} />
             </Box>
             <Box sx={{ padding: 2, paddingTop: 0, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Running operations + undismissed failures */}
