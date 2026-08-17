@@ -1,6 +1,6 @@
 /**
  * File operations for the file manager.
- * 
+ *
  * Confined to the show folder.  `resolveInShow` is what stops that path
  * from meaning anything outside the show folder. Two properties matter:
  *

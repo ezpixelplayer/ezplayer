@@ -368,7 +368,7 @@ export class FSeqPrefetchCache {
             return;
         }
 
-        for (let cframe = req.startFrame; cframe < req.startFrame + req.nFrames; ) {
+        for (let cframe = req.startFrame; cframe < req.startFrame + req.nFrames;) {
             const fk = this.getFrameKey(req.fseqfile, { num: cframe });
             if (!fk) return;
             //console.log(`Prefetch chunk: ${fk.dk.chunknum} ${fk.hdr.chunkMap.index[fk.dk.chunknum].startFrame}-${fk.hdr.chunkMap.index[fk.dk.chunknum].endFrame}`);

@@ -29,7 +29,7 @@ If not enabled, the feature is completely inaccessible. See
 [Remote access](../reference/cli.md#remote-access-terminal-and-file-manager) in
 the CLI reference for the full command and for `--clear`.
 
-The file manager and shell have separate passwords.  Passwords are saved per show folder.
+The file manager and shell have separate passwords. Passwords are saved per show folder.
 Switching the player to a different show folder closes any open session, since
 it was authorized against the previous show's password.
 

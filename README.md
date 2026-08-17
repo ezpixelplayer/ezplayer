@@ -165,7 +165,7 @@ So, we started a new one, featuring:
 
 ### Roadmap
 
-August 2026: With 0.6 wrapping up, we expect 0.7 to contain one more round of architectural features related to the playback pipeline (pixel data and audio).  We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements).  October onward will be focused on stability and fixes.
+August 2026: With 0.6 wrapping up, we expect 0.7 to contain one more round of architectural features related to the playback pipeline (pixel data and audio). We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements). October onward will be focused on stability and fixes.
 
 We have a lot of features planned for the coming years. We aim to simplify the way the xLights ecosystem works, while solving long-standing problems. We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
 

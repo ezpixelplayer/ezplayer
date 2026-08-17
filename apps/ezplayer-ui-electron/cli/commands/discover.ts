@@ -8,13 +8,7 @@
 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-    discover,
-    DiscoveryDepth,
-    DiscoveryDevice,
-    DiscoveryNode,
-    DiscoveryProgress,
-} from '@ezplayer/epp-controllers';
+import { discover, DiscoveryDepth, DiscoveryDevice, DiscoveryNode, DiscoveryProgress } from '@ezplayer/epp-controllers';
 import { hostNetworks } from '../net.js';
 
 const DEPTHS: readonly DiscoveryDepth[] = ['sweep', 'identify', 'full'];
@@ -40,7 +34,10 @@ function parseArgs(args: string[]): ParsedArgs {
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === '--networks' || a === '-n') {
-            networks = (args[++i] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+            networks = (args[++i] ?? '')
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
         } else if (a === '--depth' || a === '-d') {
             const v = args[++i];
             if (!v || !DEPTHS.includes(v as DiscoveryDepth)) {
@@ -159,10 +156,14 @@ export async function run(args: string[]): Promise<number> {
     };
 
     if (parsed.fppProxy && depth === 'sweep') {
-        process.stderr.write('discover: --fpp-proxy needs --depth identify or full (no FPP is identified in a sweep); ignoring\n');
+        process.stderr.write(
+            'discover: --fpp-proxy needs --depth identify or full (no FPP is identified in a sweep); ignoring\n',
+        );
     }
     if (parsed.ezpProxy && depth === 'sweep') {
-        process.stderr.write('discover: --ezp-proxy needs --depth identify or full (no EZPlayer is identified in a sweep); ignoring\n');
+        process.stderr.write(
+            'discover: --ezp-proxy needs --depth identify or full (no EZPlayer is identified in a sweep); ignoring\n',
+        );
     }
 
     const job = discover(
@@ -177,13 +178,20 @@ export async function run(args: string[]): Promise<number> {
 
     job.onProgress((p) => {
         progress = p;
-        if (stream) { process.stdout.write(JSON.stringify({ ev: 'progress', progress: p }) + '\n'); return; }
+        if (stream) {
+            process.stdout.write(JSON.stringify({ ev: 'progress', progress: p }) + '\n');
+            return;
+        }
         if (live) redraw();
-        else if (!json) process.stderr.write(`\r[${p.phase}] ${p.scanned}/${p.total} · ${p.alive} alive · ${p.identified} id   `);
+        else if (!json)
+            process.stderr.write(`\r[${p.phase}] ${p.scanned}/${p.total} · ${p.alive} alive · ${p.identified} id   `);
     });
     job.onDevice((d) => {
         devices.set(deviceKey(d), d);
-        if (stream) { process.stdout.write(JSON.stringify({ ev: 'device', device: d }) + '\n'); return; }
+        if (stream) {
+            process.stdout.write(JSON.stringify({ ev: 'device', device: d }) + '\n');
+            return;
+        }
         if (live) redraw();
     });
 
@@ -226,7 +234,9 @@ export async function run(args: string[]): Promise<number> {
         const rows = sorted.map(formatRow);
         if (rows.length) process.stdout.write(rows.join('\n') + '\n');
     }
-    console.log(`\n${result.devices.length} device(s), ${result.devices.filter((d) => d.driverType).length} identified.`);
+    console.log(
+        `\n${result.devices.length} device(s), ${result.devices.filter((d) => d.driverType).length} identified.`,
+    );
     if (result.errors?.length) console.error(`errors: ${result.errors.join('; ')}`);
     return 0;
 }

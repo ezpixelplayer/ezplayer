@@ -135,11 +135,7 @@ export const NowPlayingCard = ({
                     </Typography>
                     {allowVolumeControl && (
                         <Tooltip title="Volume settings">
-                            <IconButton
-                                size="small"
-                                aria-label="Open volume settings"
-                                onClick={openAudioSettings}
-                            >
+                            <IconButton size="small" aria-label="Open volume settings" onClick={openAudioSettings}>
                                 <Tune fontSize="small" />
                             </IconButton>
                         </Tooltip>

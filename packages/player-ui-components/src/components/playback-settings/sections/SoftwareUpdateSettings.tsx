@@ -62,9 +62,7 @@ export const SoftwareUpdateSettings: React.FC = () => {
 
     const availableVersion =
         status?.state === 'available' || status?.state === 'downloaded' ? status.version : undefined;
-    const isSkipped = Boolean(
-        settings && availableVersion && settings.skippedVersions.includes(availableVersion),
-    );
+    const isSkipped = Boolean(settings && availableVersion && settings.skippedVersions.includes(availableVersion));
 
     const handleSkip = async () => {
         if (!api?.skipUpdateVersion || !availableVersion) return;
@@ -120,9 +118,7 @@ export const SoftwareUpdateSettings: React.FC = () => {
                     itemValue="id"
                     label="Update Mode"
                     value={settings?.mode ?? 'auto-check'}
-                    onChange={(e) =>
-                        void handleModeChange((e.target as HTMLSelectElement).value as AutoUpdateMode)
-                    }
+                    onChange={(e) => void handleModeChange((e.target as HTMLSelectElement).value as AutoUpdateMode)}
                 />
             </FormControl>
 
@@ -176,8 +172,7 @@ export const SoftwareUpdateSettings: React.FC = () => {
             {status?.state === 'downloading' && (
                 <Box>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                        Downloading… {status.percent.toFixed(0)}% ({(status.bytesPerSecond / 1024).toFixed(0)}{' '}
-                        KB/s)
+                        Downloading… {status.percent.toFixed(0)}% ({(status.bytesPerSecond / 1024).toFixed(0)} KB/s)
                     </Typography>
                     <LinearProgress variant="determinate" value={status.percent} />
                 </Box>
@@ -209,8 +204,8 @@ export const SoftwareUpdateSettings: React.FC = () => {
                 <DialogTitle>Schedule Is Running</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        A show schedule is active right now. Restarting will interrupt playback until EZPlayer
-                        comes back up. If you wait, the update installs automatically when you quit.
+                        A show schedule is active right now. Restarting will interrupt playback until EZPlayer comes
+                        back up. If you wait, the update installs automatically when you quit.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>

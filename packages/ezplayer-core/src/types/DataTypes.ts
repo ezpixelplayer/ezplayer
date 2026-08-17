@@ -786,10 +786,7 @@ export type PlayerWebSocketBridgeStatus = {
 };
 
 export type PlayerWebSocketMessage =
-    | PlayerWebSocketSnapshot
-    | PlayerWebSocketPing
-    | PlayerWebSocketKick
-    | PlayerWebSocketBridgeStatus;
+    PlayerWebSocketSnapshot | PlayerWebSocketPing | PlayerWebSocketKick | PlayerWebSocketBridgeStatus;
 
 /** HTTP-over-WS proxy: lazy fetch of binary/large artifacts (thumbnails,
  *  3D meshes, layout XML caches) over a dedicated WS that's separate from

@@ -71,9 +71,9 @@ Installing never restarts the player on its own. If a schedule is active, instal
 
 ## Raspberry Pi 5 (ARM64 Linux) Builds
 
-This is supported.  The app's native addons (`win_hirez_timer`, `affinity`, `icmp_ping`) all have Linux/POSIX code paths and will compile natively on ARM64. The `mpg123-decoder-ezp` dependency is WASM-based, so it's architecture-independent.
+This is supported. The app's native addons (`win_hirez_timer`, `affinity`, `icmp_ping`) all have Linux/POSIX code paths and will compile natively on ARM64. The `mpg123-decoder-ezp` dependency is WASM-based, so it's architecture-independent.
 
-GitHub Actions doesn't have native ARM64 Linux runners on the free tier, so Pi builds need to be done locally on the Pi itself.  We currently have a self-hosted runner on a Pi for this: the release workflow's `build-pi` job builds arm64 on it automatically, and its AppImage/`.deb` land in the same prerelease as the other platforms — no manual steps needed.
+GitHub Actions doesn't have native ARM64 Linux runners on the free tier, so Pi builds need to be done locally on the Pi itself. We currently have a self-hosted runner on a Pi for this: the release workflow's `build-pi` job builds arm64 on it automatically, and its AppImage/`.deb` land in the same prerelease as the other platforms — no manual steps needed.
 
 The rest of this section is the manual fallback for when the runner is down (or for local testing).
 

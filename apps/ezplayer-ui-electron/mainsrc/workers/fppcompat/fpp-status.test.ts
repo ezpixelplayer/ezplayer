@@ -100,11 +100,7 @@ describe('buildFppStatus', () => {
     });
 
     it('produces the exact FPP idle shape', () => {
-        const s = buildFppStatus(
-            { pStatus: { ptype: 'EZP', status: 'Stopped', reported_time: NOW } },
-            identity,
-            NOW,
-        );
+        const s = buildFppStatus({ pStatus: { ptype: 'EZP', status: 'Stopped', reported_time: NOW } }, identity, NOW);
         expect(s).toMatchObject({
             status: 0,
             status_name: 'idle',
@@ -139,11 +135,7 @@ describe('buildFppStatus', () => {
     });
 
     it('maps graceful stop and suppressed', () => {
-        const stopping = buildFppStatus(
-            { pStatus: { ...playingPStatus(), status: 'Stopping' } },
-            identity,
-            NOW,
-        );
+        const stopping = buildFppStatus({ pStatus: { ...playingPStatus(), status: 'Stopping' } }, identity, NOW);
         expect(stopping.status).toBe(2);
         expect(stopping.status_name).toBe('stopping gracefully');
 

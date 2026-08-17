@@ -40,9 +40,9 @@ describe('resolveShowAssetPath', () => {
     });
 
     test('absolute ref inside the show folder is relativized (case-insensitive)', () => {
-        expect(
-            resolveShowAssetPath('C:\\Shows\\My Show\\images\\snowman.jpg', 'C:\\shows\\my show', new Map()),
-        ).toBe('images/snowman.jpg');
+        expect(resolveShowAssetPath('C:\\Shows\\My Show\\images\\snowman.jpg', 'C:\\shows\\my show', new Map())).toBe(
+            'images/snowman.jpg',
+        );
         expect(resolveShowAssetPath('/home/pi/show/images/snowman.jpg', '/home/pi/show', new Map())).toBe(
             'images/snowman.jpg',
         );
@@ -59,8 +59,6 @@ describe('resolveShowAssetPath', () => {
     });
 
     test('UNC ref rebases by basename', () => {
-        expect(resolveShowAssetPath('\\\\nas\\share\\snowman.jpg', '/home/pi/show', index)).toBe(
-            'images/snowman.jpg',
-        );
+        expect(resolveShowAssetPath('\\\\nas\\share\\snowman.jpg', '/home/pi/show', index)).toBe('images/snowman.jpg');
     });
 });

@@ -17,7 +17,7 @@ function toNetworkCidr(hostCidr: string): string {
     const [ip, bitsStr] = hostCidr.split('/');
     const bits = parseInt(bitsStr ?? '24', 10);
     const ipInt = ip.split('.').reduce((acc, o) => acc * 256 + Number(o), 0) >>> 0;
-    const mask = bits <= 0 ? 0 : bits >= 32 ? 0xffffffff : (~((1 << (32 - bits)) - 1)) >>> 0;
+    const mask = bits <= 0 ? 0 : bits >= 32 ? 0xffffffff : ~((1 << (32 - bits)) - 1) >>> 0;
     const net = (ipInt & mask) >>> 0;
     return `${[net >>> 24, (net >>> 16) & 255, (net >>> 8) & 255, net & 255].join('.')}/${bits}`;
 }

@@ -110,7 +110,7 @@ function log(msg: string) {
         console.log(`[audio-window] ${msg}`);
     } else {
         // Fallback if element not found
-         
+
         console.log(`[audio-window] ${msg}`);
     }
 }

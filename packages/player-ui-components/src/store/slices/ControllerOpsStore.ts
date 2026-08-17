@@ -11,8 +11,7 @@ const controllerOpsSlice = createSlice({
     reducers: {
         // Explicit return type: this replace-style reducer otherwise makes RTK/immer
         // surface an un-nameable draft type in the generated .d.ts (TS4023).
-        setControllerOps: (_state, action: PayloadAction<ControllerOpsState>): ControllerOpsState =>
-            action.payload,
+        setControllerOps: (_state, action: PayloadAction<ControllerOpsState>): ControllerOpsState => action.payload,
     },
 });
 

@@ -508,8 +508,7 @@ export class GeometryManager {
 
     /** Rebuild the per-model wiring polylines when the selected set changes. */
     private updateWiringPaths(selectedModelNames?: Set<string>): void {
-        const key =
-            selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join(' ') : '';
+        const key = selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join(' ') : '';
         if (key === this.wiringShownKey) return;
         this.wiringShownKey = key;
 

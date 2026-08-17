@@ -24,10 +24,7 @@ import type { ControllerStatus } from '../types/DataTypes';
  * `deleted` record hides the entry, and an unmatched record is added as
  * 'ezp'-sourced.
  */
-export function applyOverrides(
-    xlights: KnownController[],
-    records: EzpControllerRecord[],
-): KnownController[] {
+export function applyOverrides(xlights: KnownController[], records: EzpControllerRecord[]): KnownController[] {
     const byName = new Map(records.map((r) => [r.name, r]));
     const seen = new Set<string>();
     const out: KnownController[] = [];
@@ -76,10 +73,7 @@ function deviceKey(d: DiscoveredController): string {
     return d.id || d.ip;
 }
 
-export function reconcileControllers(
-    known: KnownController[],
-    devices: DiscoveredController[],
-): ControllerGridRow[] {
+export function reconcileControllers(known: KnownController[], devices: DiscoveredController[]): ControllerGridRow[] {
     // Index by IP and lowercased hostname; first-seen wins so a device reached
     // both directly and via a proxy (two rows, same IP) doesn't double-claim.
     const byIp = new Map<string, DiscoveredController>();
@@ -99,7 +93,7 @@ export function reconcileControllers(
     // Known records → present (address matched a scan) or absent.
     for (const k of known) {
         const addr = k.address?.trim();
-        const device = addr ? byIp.get(addr) ?? byHost.get(addr.toLowerCase()) : undefined;
+        const device = addr ? (byIp.get(addr) ?? byHost.get(addr.toLowerCase())) : undefined;
         if (device) claimedIps.add(device.ip);
         rows.push({
             key: k.name,
@@ -144,10 +138,7 @@ export function reconcileControllers(
  *  against the intent's bare model names. */
 const modelCompareKey = (name: string): string => name.toLowerCase().replace(/-str-\d+$/, '');
 
-export function reconcilePorts(
-    intent: ControllerPortIntent[],
-    actual: ControllerPort[],
-): PortReconcile[] {
+export function reconcilePorts(intent: ControllerPortIntent[], actual: ControllerPort[]): PortReconcile[] {
     const byPort = new Map<number, PortReconcile>();
 
     for (const i of intent) {
@@ -296,8 +287,12 @@ export function reconcileInputs(
             const missing = [...iMap.keys()].filter((u) => !aMap.has(u));
             const extra = [...aMap.keys()].filter((u) => !iMap.has(u));
             const resized = [...iMap.keys()].filter((u) => aMap.has(u) && aMap.get(u) !== iMap.get(u));
-            if (missing.length) notes.push(`universes missing on device: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`);
-            if (extra.length) notes.push(`universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`);
+            if (missing.length)
+                notes.push(
+                    `universes missing on device: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`,
+                );
+            if (extra.length)
+                notes.push(`universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`);
             for (const u of resized.slice(0, 4)) {
                 notes.push(`universe ${u} size: xLights ${iMap.get(u)} vs device ${aMap.get(u)}`);
             }

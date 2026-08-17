@@ -199,7 +199,10 @@ describe('playback', () => {
         await waitForPStatus((p) => !!p?.now_playing, 'now_playing set during short show');
 
         // Let it run out on its own, then the pushed status must go fully idle.
-        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'idle after natural end', timeoutMs: 30_000 });
+        await fpp.waitForStatus((s) => s.status_name === 'idle', {
+            label: 'idle after natural end',
+            timeoutMs: 30_000,
+        });
         const ended = await waitForPStatus(
             (p) => p?.status === 'Stopped' && !p?.now_playing,
             'now_playing cleared after natural end',

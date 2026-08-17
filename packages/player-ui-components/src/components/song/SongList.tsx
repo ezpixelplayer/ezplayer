@@ -7,10 +7,7 @@ import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-u
 import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
-import {
-    batchImportShowSequences,
-    batchUploadImportShowSequences,
-} from '../../store/slices/SequenceStore';
+import { batchImportShowSequences, batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
 import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
@@ -348,9 +345,7 @@ export function SongList({
         console.log(
             `[BulkImport] Uploading+importing ${fseqFiles.length} fseq(s), ${companionAudioNames.length} companion audio(s) in one request…`,
         );
-        return dispatch(
-            batchUploadImportShowSequences({ files: toUpload, companionAudioNames }),
-        ).unwrap();
+        return dispatch(batchUploadImportShowSequences({ files: toUpload, companionAudioNames })).unwrap();
     };
 
     const handleChooseMediaFolderAndRetry = async () => {
@@ -382,9 +377,7 @@ export function SongList({
             dispatch(setMediaFolder(chosen));
             await dispatch(savePlayerSettings()).unwrap();
 
-            const missingAudio = (bulkSummary?.failures ?? []).filter((f) =>
-                /audio file not found/i.test(f.reason),
-            );
+            const missingAudio = (bulkSummary?.failures ?? []).filter((f) => /audio file not found/i.test(f.reason));
             if (!missingAudio.length) return;
 
             setBulkSummaryOpen(false);
@@ -407,9 +400,7 @@ export function SongList({
         event.target.value = '';
         if (!fileArray.length) return;
 
-        const companions = collectCompanionUploadFiles(fileArray).filter((f) =>
-            AUDIO_UPLOAD_EXTS.has(pathExt(f.name)),
-        );
+        const companions = collectCompanionUploadFiles(fileArray).filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
         if (!companions.length) {
             ToastMsgs.showErrorMessage('No audio files found in the selected folder', {
                 theme: 'colored',
@@ -419,15 +410,11 @@ export function SongList({
             return;
         }
 
-        const missingAudio = (bulkSummary?.failures ?? []).filter((f) =>
-            /audio file not found/i.test(f.reason),
-        );
+        const missingAudio = (bulkSummary?.failures ?? []).filter((f) => /audio file not found/i.test(f.reason));
         const importFseqNames = missingAudio.map((f) => f.fseqName).filter(Boolean);
         if (!importFseqNames.length) return;
 
-        const companionAudioNames = [
-            ...new Set([...lanCompanionAudioRef.current, ...companions.map((f) => f.name)]),
-        ];
+        const companionAudioNames = [...new Set([...lanCompanionAudioRef.current, ...companions.map((f) => f.name)])];
         lanCompanionAudioRef.current = companionAudioNames;
 
         setChoosingMediaFolder(true);

@@ -29,7 +29,13 @@ export const PlayerSystemTime = ({ className }: PlayerSystemTimeProps) => {
 
     return (
         <Box className={className} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ fontVariantNumeric: 'tabular-nums' }} title={playerTimeZone}>
+            <Typography
+                variant="caption"
+                color="text.secondary"
+                noWrap
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+                title={playerTimeZone}
+            >
                 {showLocalTime ? 'Player: ' : ''}
                 {playerTime} {playerTimeZoneLabel}
             </Typography>

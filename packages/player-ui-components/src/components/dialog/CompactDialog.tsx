@@ -33,7 +33,13 @@ export const CompactDialog: React.FC<{
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, pr: 1 }}>
                 <MuiBox
                     component="span"
-                    sx={{ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    sx={{
+                        flexGrow: 1,
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}
                 >
                     {title}
                 </MuiBox>

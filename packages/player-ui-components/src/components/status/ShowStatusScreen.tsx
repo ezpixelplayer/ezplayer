@@ -383,9 +383,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                             getOptionLabel={(seq) => seq.work?.title || seq.id}
                                             isOptionEqualToValue={(a, b) => a.id === b.id}
                                             onChange={(_, seq) => setTestSongId(seq?.id ?? null)}
-                                            renderInput={(params) => (
-                                                <TextField {...params} label="Test Sequence" />
-                                            )}
+                                            renderInput={(params) => <TextField {...params} label="Test Sequence" />}
                                         />
                                         <Button
                                             variant="contained"

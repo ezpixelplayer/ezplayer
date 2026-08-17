@@ -219,7 +219,9 @@ describe('/filemanager endpoint', () => {
 
         expect((await client.send({ type: 'mkdir', path: 'images' })).type).toBe('ok');
         expect((await client.send({ type: 'move', from: 'notes.txt', to: 'images/notes.txt' })).type).toBe('ok');
-        expect((await client.send({ type: 'move', from: 'images/notes.txt', to: 'images/readme.txt' })).type).toBe('ok');
+        expect((await client.send({ type: 'move', from: 'images/notes.txt', to: 'images/readme.txt' })).type).toBe(
+            'ok',
+        );
 
         const listed = await client.send({ type: 'list', path: 'images' });
         expect((listed.entries as Array<{ name: string }>).map((e) => e.name)).toEqual(['readme.txt']);

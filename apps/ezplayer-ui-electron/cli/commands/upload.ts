@@ -65,14 +65,18 @@ export async function run(args: string[]): Promise<number> {
 
     // The dispatcher targets a scanned-device id. Prefer an existing direct
     // entry; otherwise deep-read by address to materialize one.
-    let id = Object.values(state.devices).find((d) => d.source.via === 'direct' && (d.ip === addr || d.hostname === addr))?.id;
+    let id = Object.values(state.devices).find(
+        (d) => d.source.via === 'direct' && (d.ip === addr || d.hostname === addr),
+    )?.id;
     try {
         if (!id) {
             id = `${addr}|direct`;
             process.stderr.write(`No scanned entry for ${addr}; reading it first…\n`);
             await postCommand(host, { cmd: 'status', id, address: addr });
         }
-        process.stderr.write(`Uploading ${scope} config to '${known.name}' (${addr})${fullControl ? ' [full control]' : ''}…\n`);
+        process.stderr.write(
+            `Uploading ${scope} config to '${known.name}' (${addr})${fullControl ? ' [full control]' : ''}…\n`,
+        );
         await postCommand(host, { cmd: 'upload', id, scope, fullControl });
     } catch (e) {
         console.error(`upload: ${(e as Error).message}`);

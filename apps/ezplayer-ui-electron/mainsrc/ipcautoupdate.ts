@@ -4,7 +4,12 @@ import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import Store from 'electron-store';
 import { isScheduleActive } from './ipcezplayer.js';
-import type { AutoUpdateMode, AutoUpdateSettings, AutoUpdateStatus, InstallUpdateResult } from '@ezplayer/ezplayer-core';
+import type {
+    AutoUpdateMode,
+    AutoUpdateSettings,
+    AutoUpdateStatus,
+    InstallUpdateResult,
+} from '@ezplayer/ezplayer-core';
 
 const store = new Store<{ skippedUpdateVersions: string[]; autoUpdateMode: AutoUpdateMode }>();
 

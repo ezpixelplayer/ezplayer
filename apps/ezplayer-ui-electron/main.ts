@@ -12,7 +12,12 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 trustSystemCAs();
 import { reportDiagEvent } from './mainsrc/diagnostics.js';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
-import { isScheduleActive, loadShowFolder, registerContentHandlers, stopPlayerPlayback } from './mainsrc/ipcezplayer.js';
+import {
+    isScheduleActive,
+    loadShowFolder,
+    registerContentHandlers,
+    stopPlayerPlayback,
+} from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import { registerLoginItemHandlers } from './mainsrc/ipcLoginItem.js';
 import {
@@ -376,100 +381,101 @@ if (isToolVerb()) {
         console.error(e);
         exitFlushed(1);
     });
-} else app.whenReady().then(async () => {
-    console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
+} else
+    app.whenReady().then(async () => {
+        console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
-    // Reset CLI flags — wipe persisted state and quit. Variants differ in what
-    // welcome-screen cloud-CTA value they leave persisted for the next launch.
-    //   --reset          : clear state, cloud-CTA enabled afterwards (current default)
-    //   --reset-cloud    : clear state, cloud-CTA enabled afterwards (explicit alias of --reset)
-    //   --reset-nocloud  : clear state, cloud-CTA disabled (pin for local-only first run)
-    const wantResetCloud = process.argv.includes('--reset-cloud');
-    const wantResetNoCloud = process.argv.includes('--reset-nocloud');
-    const wantReset = process.argv.includes('--reset') || wantResetCloud || wantResetNoCloud;
-    if (wantReset) {
-        try {
-            clearPersistedShowFolder();
-            await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
-            // Write the cloud-CTA flag AFTER clearing storage. (The flag is in
-            // electron-store, separate from localStorage, but order doesn't hurt.)
-            // Cloud is the default now; only --reset-nocloud pins local-only.
-            const showCloudAfterReset = !wantResetNoCloud;
-            setWelcomeShowCloud(showCloudAfterReset);
-            console.log(
-                `[reset] cleared show-folder + localStorage; welcomeShowCloud=${showCloudAfterReset} (mode=${
-                    wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
-                })`,
-            );
-        } catch (e: any) {
-            console.warn('[reset] failed:', e.message);
-        }
-        app.quit();
-        return;
-    }
-
-    const unknownVerb = getUnknownVerb();
-    if (unknownVerb) {
-        console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
-        app.exit(64);
-        return;
-    }
-
-    if (isHeadless()) {
-        await startHeadless();
-        return;
-    }
-
-    const shouldShowWelcome = !(await hasValidConfiguredShowFolder());
-    let showFolderSpec: string | null = null;
-    if (!shouldShowWelcome) {
-        // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
-        showFolderSpec = await ensureExclusiveFolder();
-        if (!showFolderSpec) {
+        // Reset CLI flags — wipe persisted state and quit. Variants differ in what
+        // welcome-screen cloud-CTA value they leave persisted for the next launch.
+        //   --reset          : clear state, cloud-CTA enabled afterwards (current default)
+        //   --reset-cloud    : clear state, cloud-CTA enabled afterwards (explicit alias of --reset)
+        //   --reset-nocloud  : clear state, cloud-CTA disabled (pin for local-only first run)
+        const wantResetCloud = process.argv.includes('--reset-cloud');
+        const wantResetNoCloud = process.argv.includes('--reset-nocloud');
+        const wantReset = process.argv.includes('--reset') || wantResetCloud || wantResetNoCloud;
+        if (wantReset) {
+            try {
+                clearPersistedShowFolder();
+                await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
+                // Write the cloud-CTA flag AFTER clearing storage. (The flag is in
+                // electron-store, separate from localStorage, but order doesn't hurt.)
+                // Cloud is the default now; only --reset-nocloud pins local-only.
+                const showCloudAfterReset = !wantResetNoCloud;
+                setWelcomeShowCloud(showCloudAfterReset);
+                console.log(
+                    `[reset] cleared show-folder + localStorage; welcomeShowCloud=${showCloudAfterReset} (mode=${
+                        wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
+                    })`,
+                );
+            } catch (e: any) {
+                console.warn('[reset] failed:', e.message);
+            }
             app.quit();
             return;
         }
-    }
 
-    const portInfo = getWebPort();
-    const port = portInfo.port;
-    const portSource = portInfo.source;
+        const unknownVerb = getUnknownVerb();
+        if (unknownVerb) {
+            console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
+            app.exit(64);
+            return;
+        }
 
-    const kioskPortInfo = getKioskPort();
-    const kioskPort = kioskPortInfo?.port;
-    const kioskPortSource = kioskPortInfo?.source;
+        if (isHeadless()) {
+            await startHeadless();
+            return;
+        }
 
-    playWorker = await startPlaybackWorker();
+        const shouldShowWelcome = !(await hasValidConfiguredShowFolder());
+        let showFolderSpec: string | null = null;
+        if (!shouldShowWelcome) {
+            // Allow multiple Electron instances (do NOT call requestSingleInstanceLock)
+            showFolderSpec = await ensureExclusiveFolder();
+            if (!showFolderSpec) {
+                app.quit();
+                return;
+            }
+        }
 
-    registerFileListHandlers();
-    registerLoginItemHandlers();
-    createWindow(showFolderSpec ?? undefined, shouldShowWelcome);
+        const portInfo = getWebPort();
+        const port = portInfo.port;
+        const portSource = portInfo.source;
 
-    // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.
-    ipcMain.handle('ipcGetWelcomeShowCloud', async () => getWelcomeShowCloud());
+        const kioskPortInfo = getKioskPort();
+        const kioskPort = kioskPortInfo?.port;
+        const kioskPortSource = kioskPortInfo?.source;
 
-    await registerContentHandlers(mainWindow, audioWindow, playWorker);
+        playWorker = await startPlaybackWorker();
 
-    if (app.isPackaged) {
-        registerAutoUpdateHandlers(mainWindow!);
-    }
+        registerFileListHandlers();
+        registerLoginItemHandlers();
+        createWindow(showFolderSpec ?? undefined, shouldShowWelcome);
 
-    // Start web server / WebSocket in worker thread
-    try {
-        await setUpServerWorker({
-            port,
-            portSource,
-            playWorker,
-            mainWindow,
-            getMainWindow,
-            distDir: __dirname, // Pass __dirname from main.ts to ensure correct path resolution
-            kioskPort,
-            kioskPortSource,
-        });
-    } catch (e) {
-        console.error(e);
-    }
-});
+        // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.
+        ipcMain.handle('ipcGetWelcomeShowCloud', async () => getWelcomeShowCloud());
+
+        await registerContentHandlers(mainWindow, audioWindow, playWorker);
+
+        if (app.isPackaged) {
+            registerAutoUpdateHandlers(mainWindow!);
+        }
+
+        // Start web server / WebSocket in worker thread
+        try {
+            await setUpServerWorker({
+                port,
+                portSource,
+                playWorker,
+                mainWindow,
+                getMainWindow,
+                distDir: __dirname, // Pass __dirname from main.ts to ensure correct path resolution
+                kioskPort,
+                kioskPortSource,
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    });
 
 app.on('before-quit', async () => {
     cleanupAutoUpdate();

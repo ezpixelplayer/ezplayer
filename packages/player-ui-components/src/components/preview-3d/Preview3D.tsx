@@ -437,7 +437,15 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         return () => {
             captureViewStateRef.current = null;
         };
-    }, [captureViewStateRef, viewMode, cameraState2D, cameraState3D, previewSelection, viewStateBySelection, previewSettings]);
+    }, [
+        captureViewStateRef,
+        viewMode,
+        cameraState2D,
+        cameraState3D,
+        previewSelection,
+        viewStateBySelection,
+        previewSettings,
+    ]);
 
     // Resolve the server URL (auto-detects Electron port or falls back to same-origin).
     const { url: effectiveFrameServerUrl } = useFrameServerUrl({ frameServerUrl });

@@ -59,7 +59,15 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
 
     if (loading.has(parentPath) && !entries) {
         return (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: `${depth * INDENT + 34}px`, height: ROW_HEIGHT }}>
+            <Box
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    pl: `${depth * INDENT + 34}px`,
+                    height: ROW_HEIGHT,
+                }}
+            >
                 <CircularProgress size={14} />
                 <Typography variant="caption" color="text.secondary">
                     Loading…
@@ -73,7 +81,12 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
             <Typography
                 variant="caption"
                 color="text.secondary"
-                sx={{ display: 'block', pl: `${depth * INDENT + 34}px`, height: ROW_HEIGHT, lineHeight: `${ROW_HEIGHT}px` }}
+                sx={{
+                    display: 'block',
+                    pl: `${depth * INDENT + 34}px`,
+                    height: ROW_HEIGHT,
+                    lineHeight: `${ROW_HEIGHT}px`,
+                }}
             >
                 Empty folder
             </Typography>
@@ -171,7 +184,10 @@ const TreeLevel: React.FC<FileTreeProps & { parentPath: string; depth: number }>
                             </Typography>
                             {isUploadTarget && (
                                 <Tooltip title="Uploads and dropped files land in this folder">
-                                    <FileDownloadIcon fontSize="inherit" sx={{ color: 'primary.main', flexShrink: 0 }} />
+                                    <FileDownloadIcon
+                                        fontSize="inherit"
+                                        sx={{ color: 'primary.main', flexShrink: 0 }}
+                                    />
                                 </Tooltip>
                             )}
                             {entry.protected && (

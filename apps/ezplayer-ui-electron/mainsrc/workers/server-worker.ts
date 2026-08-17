@@ -36,12 +36,7 @@ import type {
     ServerWorkerRPCAPI,
 } from './serverworkertypes.js';
 import { WebSocketBroadcaster } from '../websocket-broadcaster.js';
-import {
-    closeActiveTerminal,
-    createTerminalWss,
-    dispatchShellEvent,
-    terminalEndpointEnabled,
-} from './terminal-ws.js';
+import { closeActiveTerminal, createTerminalWss, dispatchShellEvent, terminalEndpointEnabled } from './terminal-ws.js';
 import { closeFileManagerSessions, createFileManagerWss, fileManagerEndpointEnabled } from './filemanager-ws.js';
 import {
     createFileApiRouter,
@@ -956,8 +951,7 @@ function proxyTargetAllowed(hostname: string): boolean {
     const m = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
     if (!m) return true;
     const ops = wsBroadcaster.get('controllerops') as
-        | { networkPolicies?: { cidr: string; allow?: boolean }[] }
-        | undefined;
+        { networkPolicies?: { cidr: string; allow?: boolean }[] } | undefined;
     const policies = ops?.networkPolicies;
     if (!policies?.length) return true;
     const ipNum = hostname.split('.').reduce((a, o) => ((a << 8) + (Number(o) & 0xff)) >>> 0, 0);
@@ -1000,7 +994,8 @@ async function dispatchDeviceProxy(
     const outHeaders: Record<string, string> = {};
     for (const [k, v] of Object.entries(req?.headers ?? {})) {
         const lower = k.toLowerCase();
-        if (lower === 'host' || lower === 'connection' || lower === 'transfer-encoding' || lower === 'upgrade') continue;
+        if (lower === 'host' || lower === 'connection' || lower === 'transfer-encoding' || lower === 'upgrade')
+            continue;
         outHeaders[k] = v;
     }
     outHeaders['host'] = target.host;
@@ -1883,8 +1878,10 @@ async function startServer(config: ServerWorkerData) {
     // LAN, controller commands mutate state/devices, and /api/proxies pairs
     // with the web-only /proxy/ bridge.
     const scanRouter = new Router();
-    const controllerCommandRpc = (command: Parameters<ServerWorkerRPCAPI['controllerCommand']>[0], origin: Parameters<ServerWorkerRPCAPI['controllerCommand']>[1]) =>
-        rpc.call('controllerCommand', command, origin);
+    const controllerCommandRpc = (
+        command: Parameters<ServerWorkerRPCAPI['controllerCommand']>[0],
+        origin: Parameters<ServerWorkerRPCAPI['controllerCommand']>[1],
+    ) => rpc.call('controllerCommand', command, origin);
     registerScanApiRoutes(scanRouter, {
         controllerCommand: controllerCommandRpc,
     });
