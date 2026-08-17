@@ -10,6 +10,7 @@ import cloudConfigReducer from './slices/CloudConfigStore';
 import cloudStatusReducer from './slices/CloudStatusStore';
 import controllerOpsReducer from './slices/ControllerOpsStore';
 import remoteAccessReducer from './slices/RemoteAccessStore';
+import autoUpdateReducer from './slices/AutoUpdateStore';
 
 import { DataStorageAPI } from './api/DataStorageAPI';
 import { playerSettingsAutoSaveMiddleware } from './slices/PlayerStatusMiddleware';
@@ -25,6 +26,7 @@ export const playerReducers = {
     cloudStatus: cloudStatusReducer,
     controllerOps: controllerOpsReducer,
     remoteAccess: remoteAccessReducer,
+    autoUpdate: autoUpdateReducer,
 };
 
 export function createAppStore(thunkAPI: DataStorageAPI) {
