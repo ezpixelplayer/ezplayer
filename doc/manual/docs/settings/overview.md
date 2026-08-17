@@ -20,7 +20,8 @@ pushed to the playback engine right away. You can also change them from the
 device only.
 
 The desktop app and the LAN browser UI share the same settings sections, except
-where noted on each page.
+where noted on each page: the desktop app has **Show Folder** (which includes
+Media Folder); the LAN UI replaces that with a standalone **Media Folder** tile.
 
 Two further tiles appear **only if you have deliberately enabled them** from the
 command line on the player machine: [Shell](./shell.md), a terminal on that

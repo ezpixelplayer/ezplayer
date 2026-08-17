@@ -12,6 +12,11 @@ _Opens the Player Cloud Registration dialog instead of an inline panel._
 Use this tile to manage EZPlayer's connection to EZRGB Cloud. The same
 registration flow appears on first launch and on the **Cloud** sidebar screen.
 
+After you claim the player on [EZRGB](https://ezrgb.com), it appears under
+**EZPlayer** on your account — open **Manage Player** for the full remote UI.
+See [Registering](../cloud/registering.md) and
+[Using Full Cloud Control](../cloud/full-cloud-control.md).
+
 ## Status
 
 The header shows one of:
@@ -30,17 +35,17 @@ playlists, schedule, layout):
 
 - **Always** — content polling runs continuously while cloud is enabled.
 - **During scheduled times** — content polling runs only inside the **Allowed
-  Windows** you define. Outside those windows, downloads are suspended.
+  Times** you define. Outside those windows, downloads are suspended.
 
 Registration heartbeat polling **always runs** while cloud is enabled, even in
 scheduled mode — this keeps the player visible to the cloud and responsive to
 remote commands.
 
-If you choose **During scheduled times** but define no windows, content polling
-is suspended entirely.
+If you choose **During scheduled times** but define no allowed times, content
+polling is suspended entirely.
 
-Add windows with **Add Window** (days + start/end time, same day/time format as
-viewer control).
+Add windows with **Add Sync Time Window to Schedule** (days + start/end time,
+same day/time format as viewer control).
 
 ## Advanced
 
@@ -55,7 +60,8 @@ Expand **Advanced** for infrequently changed options:
   removes the current ID.
 - **Set a specific Player ID** — paste an existing token to reconnect this
   folder to a player already registered in the cloud.
-- **Polling Interval** — how often the player checks in with the cloud:
-    - **Registration** (default 5 seconds) — heartbeat and command pickup.
-    - **Manifest** (default 300 seconds / 5 minutes) — sequence list, downloads,
-      layout, playlists, and schedule sync.
+- **Polling Interval** — how often the player checks in with the cloud
+  (**Save Intervals** to apply):
+    - **Registration poll** (default 5 seconds) — heartbeat and command pickup.
+    - **Manifest poll** (default 300 seconds / 5 minutes) — sequence list,
+      downloads, layout, playlists, and schedule sync.
