@@ -16,24 +16,33 @@ If you set up your show with xLights and have a show folder on the player machin
 You'll need:
 
 - EZPlayer installed (Windows, macOS, or Linux). See [releases](https://ezrgb.com/ezplayer).
-- A location for your **show folder** — storage space for your layout, sequences, and audio.
+- A location for your **show folder** — permanent storage for your layout,
+  sequences, and audio (an empty folder is fine for a new cloud-managed show).
 - Eventually you will need your controllers reachable on the network, with lights wired up, but you can skip this at first.
 
 ## 1. Point EZPlayer at your show folder
 
-On first launch, choose "Connect to EZRGB Cloud".
+On first launch, choose **Connect to EZRGB Cloud**.
 ![Cloud Registration Choice Screen](/img/FirstRunWithCloud.png)
 
-Choose a **show folder** for temporary storage.
+Choose a **show folder** for this install.
 
-When the registration appears, click the URL to sign in to EZRGB and register your player,
-or scan the QR code with another device to complete registration.
+When the registration screen appears, click the URL to sign in to EZRGB and
+register your player, or scan the QR code with another device to complete
+registration.
 
 ![Cloud Registration Screen](/img/FirstRunCloudReg.png)
 
+When EZRGB confirms the claim, EZPlayer pulls your layout and opens the main
+app. Your player also appears under **EZPlayer** on your EZRGB account — use
+**Manage Player** there later for remote control over the internet.
+
 ## 2. Wait for content
 
-Open the **Cloud** screen and watch your content download.
+Open the **Cloud** screen and watch your content download. You should see
+**Cloud connected** with a **Cloud master** chip. Use **Sync Layout + Content**
+if you just changed something on EZRGB and do not want to wait for the next
+automatic poll.
 
 ## 3. Play it
 
@@ -53,6 +62,9 @@ the left into your playlist on the right, set a name, and save. Schedules play
 playlists — not individual songs — so group your sequences into at least one
 playlist before you set show times.
 
+You can also create and edit playlists from EZRGB via **Manage Player**, or on
+the website itself for a fully cloud-managed show.
+
 See [Playlists](./playlists.md) for sorting, tags, and cloning.
 
 ## 5. Schedule the show
@@ -71,17 +83,23 @@ behavior, and previewing a schedule, see
 
 ## 6. Drive it from your phone, tablet, or other computers
 
-EZPlayer serves a **LAN UI**: open the player's address from any phone or laptop
-on the same network to check status and make changes — no remote desktop, no
-running back inside to the show PC.
+**On the show network** — EZPlayer serves a **LAN UI**: open the player's
+address from any phone or laptop on the same network. The default port is 3000;
+confirm under **Show Status → HTTP Listener Status**. See
+[Local Web Interface](./local-web-interface.md).
 
-The default port is 3000, but to confirm, open **Show Status** to see **HTTP Listener Status** (port and
-whether the server is listening). See [Local Web Interface](./local-web-interface.md)
-for URLs, port configuration, and troubleshooting.
+**Over the internet** — on [EZRGB](https://ezrgb.com), open your account →
+**EZPlayer** → **Manage Player** for the full remote player UI (playlists,
+schedule, playback, and more). Prefer a new browser tab.
 
 ## 7. Use cloud features
 
-Go to [EZRGB](https://ezrgb.com) to adjust your layout, get more songs, and control your player from the internet.
+Go to [EZRGB](https://ezrgb.com) to adjust your layout, get more songs, and
+manage the show from anywhere. Details:
+[Registering](../cloud/registering.md),
+[Cloud Status / Control UI](../cloud/status-control-ui.md),
+[Getting Sequences](../cloud/getting-sequences.md), and
+[Full Cloud Control](../cloud/full-cloud-control.md).
 
 ## Where to next
 

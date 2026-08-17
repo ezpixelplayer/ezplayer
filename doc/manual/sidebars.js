@@ -75,6 +75,7 @@ const sidebars = {
                 'settings/show-folder',
                 'settings/ui',
                 'settings/audio',
+                'settings/player',
                 'settings/jukebox',
                 'settings/cloud',
                 'settings/shell',

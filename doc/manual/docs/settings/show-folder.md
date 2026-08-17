@@ -8,6 +8,7 @@ title: Show Folder
 ![Show Folder](/img/show-folder.png)
 
 _Desktop app only for choosing the show folder — not shown in the LAN UI._
+_In the LAN UI, **Media Folder** appears as its own Settings tile instead._
 
 Point EZPlayer at the folder that holds your show data.
 
@@ -22,6 +23,10 @@ Point EZPlayer at the folder that holds your show data.
 
 Optional extra directory searched for companion audio (and related media) when
 adding a song or running [Bulk Import](../basics/songs.md#bulk-import).
+
+On the **desktop app**, this lives inside the Show Folder dialog (**Choose Media
+Folder** / **Clear**). On the **LAN UI**, open the separate **Media Folder**
+tile and type the path as the player PC sees it (then **Save**).
 
 Use this when your `.mp3` files live outside the show folder — for example a
 shared media library or an xLights render output folder.

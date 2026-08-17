@@ -14,7 +14,7 @@ and adds them to your library.
 
 Make sure:
 
-- EZPlayer is installed and is registered and shows **Cloud connected** on the
+- EZPlayer is registered and shows **Cloud connected** on the
   [Cloud screen](./status-control-ui.md).
 - Cloud is not paused.
 
@@ -23,17 +23,21 @@ may wait until the next allowed window. See [Cloud settings](../settings/cloud.m
 
 ## On EZRGB
 
-Use the EZRGB website to add sequences to your show, using the same account as
-the player. Check that the sequences are active (you may choose to disable
-sequences that you do not want in your show, perhaps due to the season).
+Use the EZRGB website to add or assign sequences to your show, using the same
+account as the player. Check that the sequences are active (you may disable
+sequences you do not want in the show — for example, out-of-season titles).
+
+EZRGB can map and render sequences for your layout; once they are ready, the
+player picks them up automatically.
 
 ## On EZPlayer
 
-After you purchase content on EZRGB, any registered EZPlayer with an internet
-connection will pick it up automatically.
+After content is available in your EZRGB account, any registered EZPlayer with
+an internet connection will pick it up on the next content poll.
 
 For status, open the **Cloud** screen and check **Cloud Content** to see each
-sequence and whether it is **downloading**, **installed**, or still being prepared.
+sequence and whether it is **downloading**, **installed**, **pending** /
+**rendering**, **disabled**, or in **error**.
 
 If you just made a change and do not want to wait, click **Sync Content Now**
 (or **Sync Layout + Content** on a cloud-managed show) on the Cloud screen.
@@ -45,12 +49,14 @@ sequence file is ready, you may see it on the Cloud screen with a status like
 
 ## If nothing downloads
 
-- Confirm that the sequence is in your EZRGB account.
+- Confirm that the sequence is in your EZRGB account and assigned / active for
+  this show.
 - Confirm the player is registered to the same account as the sequence.
 - Check **Cloud Status** on the Cloud screen — **Cloud Reachable** should be
   **yes**, and **Last Error** should be **(none)**.
 - Make sure cloud is not paused and your player has internet access.
-- Try **Sync Content Now** once to force a refresh.
+- Try **Sync Content Now** (or **Sync Layout + Content**) once to force a
+  refresh.
 
 For registration problems, see [Registering](./registering.md). For connection
 and sync progress, see [Cloud Status / Control UI](./status-control-ui.md).
