@@ -1,4 +1,5 @@
 import { TextField } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material';
 import React from 'react';
 import type { ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
 
@@ -20,7 +21,7 @@ export const TimeInput: React.FC<{
     onChange: (value: string) => void;
     label: string;
     size?: 'small' | 'medium';
-    sx?: any;
+    sx?: SxProps<Theme>;
     disabled?: boolean;
     isFromTime?: boolean;
 }> = React.memo(({ value, onChange, label, size = 'small', sx, disabled, isFromTime = false }) => {

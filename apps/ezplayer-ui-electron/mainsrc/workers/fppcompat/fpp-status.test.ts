@@ -93,9 +93,11 @@ describe('buildFppStatus', () => {
         expect(typeof s.status).toBe('number');
         expect(typeof s.volume).toBe('number');
         expect(typeof s.milliseconds_elapsed).toBe('number');
-        expect((s.next_playlist as any).playlist).toBe('Late Show');
-        expect((s.scheduler as any).status).toBe('playing');
-        expect((s.scheduler as any).nextPlaylist.playlistName).toBe('Late Show');
+        expect((s.next_playlist as { playlist?: unknown }).playlist).toBe('Late Show');
+        expect((s.scheduler as { status?: unknown }).status).toBe('playing');
+        expect((s.scheduler as { nextPlaylist: { playlistName?: unknown } }).nextPlaylist.playlistName).toBe(
+            'Late Show',
+        );
         expect(s.version).toBe('8.0-EZPlayer-0.5.3');
     });
 
@@ -163,7 +165,7 @@ describe('identity endpoints', () => {
             IPs: ['192.168.1.50'],
         });
         expect(typeof info.majorVersion).toBe('number');
-        expect((info.Utilization as any).Memory).toBeCloseTo(50);
+        expect((info.Utilization as { Memory: number }).Memory).toBeCloseTo(50);
     });
 
     it('fppd/version matches FPP shape', () => {

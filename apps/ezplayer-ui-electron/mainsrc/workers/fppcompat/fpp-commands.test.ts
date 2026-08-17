@@ -35,7 +35,7 @@ describe('runFppCommand', () => {
             loop: true,
             priority: 1,
         });
-        expect((sent[0] as any).requestId).toBeTruthy();
+        expect((sent[0] as { requestId?: unknown }).requestId).toBeTruthy();
     });
 
     it('Start Playlist falls back to a bare sequence name (fseq basename)', async () => {

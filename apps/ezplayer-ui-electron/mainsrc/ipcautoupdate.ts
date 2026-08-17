@@ -168,16 +168,16 @@ function registerIPCHandlers() {
     ipcMain.handle('autoupdate:check', async () => {
         try {
             await autoUpdater.checkForUpdates();
-        } catch (err: any) {
-            sendStatus({ state: 'error', message: err.message });
+        } catch (err) {
+            sendStatus({ state: 'error', message: (err as Error).message });
         }
     });
 
     ipcMain.handle('autoupdate:download', async () => {
         try {
             await autoUpdater.downloadUpdate();
-        } catch (err: any) {
-            sendStatus({ state: 'error', message: err.message });
+        } catch (err) {
+            sendStatus({ state: 'error', message: (err as Error).message });
         }
     });
 

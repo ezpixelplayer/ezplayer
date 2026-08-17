@@ -514,10 +514,10 @@ function FreelookCameraController({ points, hoveredId }: { points: Point3D[]; ho
         });
 
         controlsRef.current = controlsObj;
-        set({ controls: controlsObj as any });
+        set({ controls: controlsObj as unknown as THREE.EventDispatcher });
 
         return () => {
-            set({ controls: null as any });
+            set({ controls: null });
         };
     }, [camera, set]);
 

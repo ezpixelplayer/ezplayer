@@ -115,7 +115,10 @@ export class GeometryGroupRenderer {
             // Perspective: pixels = worldSize * (H / (2*tan(fov/2))) / distance
             // Ortho: pixels = worldSize * (H / frustumHeight) * zoom
             let scale = 1.0;
-            const anyCam = camera as any;
+            const anyCam = camera as THREE.Camera & {
+                isPerspectiveCamera?: boolean;
+                isOrthographicCamera?: boolean;
+            };
             if (anyCam?.isPerspectiveCamera) {
                 const cam = camera as THREE.PerspectiveCamera;
                 const fovRad = (cam.fov * Math.PI) / 180;

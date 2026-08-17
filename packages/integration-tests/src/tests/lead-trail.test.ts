@@ -39,7 +39,7 @@ function hms(d: Date): string {
 
 /** Upsert lead/trail onto the LT.fseq sequence record via the native API. */
 async function setLeadTrail(lead: number, trail: number): Promise<void> {
-    const sequences = (await fpp.currentShow()).sequences as Array<Record<string, any>>;
+    const sequences = (await fpp.currentShow()).sequences;
     const seq = sequences.find((s) => s.files?.fseq?.replace(/\\/g, '/').endsWith('LT.fseq'));
     expect(seq).toBeTruthy();
     const res = await fetch(`${app.base}/api/ezp/sequences`, {

@@ -24,14 +24,15 @@ export const Select = <T = string,>({
 }: CombinedProps<T>) => {
     const [data, _setData] = React.useState<string[]>([]);
 
-    const renderCheckboxes = (option: any) => (
+    // Multiple mode renders plain string options; single mode renders keyed objects.
+    const renderCheckboxes = (option: string) => (
         <MenuItem key={option} value={option}>
             <Checkbox checked={data.indexOf(option) > -1} />
             <ListItemText primary={option} />
         </MenuItem>
     );
 
-    const renderOption = (option: any) => (
+    const renderOption = (option: Record<string, string | number>) => (
         <MenuItem key={option[itemValue]} value={option[itemValue]}>
             {option[itemText]}
         </MenuItem>
@@ -46,7 +47,11 @@ export const Select = <T = string,>({
                 defaultValue={defaultValue}
                 input={<OutlinedInput label={label} />}
             >
-                {options.map((option) => (isMultiple ? renderCheckboxes(option) : renderOption(option)))}
+                {options.map((option) =>
+                    isMultiple
+                        ? renderCheckboxes(option as string)
+                        : renderOption(option as Record<string, string | number>),
+                )}
             </MuiSelect>
             <FormHelperText className="errorState">{helperText}</FormHelperText>
         </FormControl>

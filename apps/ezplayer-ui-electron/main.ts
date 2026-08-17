@@ -81,15 +81,16 @@ process.on('uncaughtException', (err) => {
     console.error(msg);
     reportDiagEvent('uncaughtException', err.message, err.stack);
 });
-process.on('unhandledRejection', (reason: any) => {
-    const msg = `[unhandledRejection] ${reason?.stack || String(reason)}\n`;
+process.on('unhandledRejection', (reason) => {
+    const r = reason as Error | undefined;
+    const msg = `[unhandledRejection] ${r?.stack || String(reason)}\n`;
     try {
         fs.appendFileSync(mainCrashLogFile, msg);
     } catch {
         /* best-effort crash log */
     }
     console.error(msg);
-    reportDiagEvent('unhandledRejection', String(reason?.message ?? reason), reason?.stack);
+    reportDiagEvent('unhandledRejection', String(r?.message ?? reason), r?.stack);
 });
 
 // optional: also force console logging
@@ -306,7 +307,7 @@ async function startPlaybackWorker(): Promise<Worker> {
         } satisfies PlaybackWorkerData,
     });
     await new Promise<void>((resolve) => {
-        const onMessage = (msg: any) => {
+        const onMessage = (msg: { type?: string }) => {
             if (msg.type === 'ready') {
                 worker.off('message', onMessage);
                 resolve();
@@ -407,8 +408,8 @@ if (isToolVerb()) {
                         wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
                     })`,
                 );
-            } catch (e: any) {
-                console.warn('[reset] failed:', e.message);
+            } catch (e) {
+                console.warn('[reset] failed:', (e as Error).message);
             }
             app.quit();
             return;

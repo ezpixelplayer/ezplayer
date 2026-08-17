@@ -1,4 +1,5 @@
 import type { AudioChunk, AudioDevice, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import type { IpcRendererEvent } from 'electron';
 
 export interface M2RIPC<Payload> {
     reqid: number;
@@ -15,14 +16,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('ipcUIDisconnect');
     },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
-        ipcRenderer.on('audio:get-devices', async (_event: any, req: M2RIPC<void>) => {
+        ipcRenderer.on('audio:get-devices', async (_event: IpcRendererEvent, req: M2RIPC<void>) => {
             const devices = await callback();
             const respch = `audio:get-devices-response#${req.reqid}`;
             ipcRenderer.send(respch, devices);
         });
     },
     onAudioChunk: (callback: (data: AudioChunk) => void) => {
-        ipcRenderer.on('audio:chunk', (_event: any, data: AudioChunk) => {
+        ipcRenderer.on('audio:chunk', (_event: IpcRendererEvent, data: AudioChunk) => {
             callback(data);
         });
     },

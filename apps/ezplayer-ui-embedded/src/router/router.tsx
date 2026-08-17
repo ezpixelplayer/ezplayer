@@ -44,7 +44,14 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
 import FolderIcon from '@mui/icons-material/Folder';
 
-const isKiosk = (window as any).__EZPLAYER_MODE__ === 'kiosk';
+declare global {
+    interface Window {
+        /** Injected by the Electron kiosk server when serving this SPA. */
+        __EZPLAYER_MODE__?: string;
+    }
+}
+
+const isKiosk = window.__EZPLAYER_MODE__ === 'kiosk';
 
 /** Routes excluded in kiosk mode. */
 const KIOSK_HIDDEN_ROUTES = new Set<string>([

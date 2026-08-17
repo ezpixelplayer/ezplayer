@@ -352,7 +352,7 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
             closeFileManagerSessions('the player switched to a different show folder');
         }
         // Forward broadcast from main thread to WebSocket clients
-        wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as any);
+        wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as FullPlayerState[keyof FullPlayerState]);
     } else if (msg.type === 'clearShowData') {
         // Show folder changed — clear all cached data so stale data is never served
         cachedModelCoordinates3D = {};
@@ -913,10 +913,12 @@ async function dispatchProxyWrite(
             return proxyJson(await putSequencesCore(deps, parsed));
         }
         if (pathStr === '/api/ezp/sequences/autodetect') {
-            return proxyJson(await autodetectSequenceCore(showFolder, (parsed as any)?.fseq));
+            return proxyJson(
+                await autodetectSequenceCore(showFolder, (parsed as { fseq?: unknown } | undefined)?.fseq),
+            );
         }
         if (pathStr === '/api/ezp/sequences/audio-metadata') {
-            return proxyJson(await audioMetadataCore(showFolder, (parsed as any)?.audio));
+            return proxyJson(await audioMetadataCore(showFolder, (parsed as { audio?: unknown } | undefined)?.audio));
         }
         if (pathStr === '/api/ezp/sequences/batch-import') {
             const deps: FileApiDeps = {
@@ -926,13 +928,15 @@ async function dispatchProxyWrite(
                 getMediaFolder: () =>
                     (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder,
             };
+            const p = parsed as
+                { fseqNames?: unknown; companionAudioNames?: unknown; allowExistingAudio?: unknown } | undefined;
             return proxyJson(
                 await batchImportSequencesCore(
                     showFolder,
                     deps,
-                    (parsed as any)?.fseqNames,
-                    (parsed as any)?.companionAudioNames,
-                    (parsed as any)?.allowExistingAudio,
+                    p?.fseqNames,
+                    p?.companionAudioNames,
+                    p?.allowExistingAudio,
                 ),
             );
         }
@@ -1377,7 +1381,7 @@ async function startServer(config: ServerWorkerData) {
     // query-string variant. Both shapes are accepted so a new browser
     // bundle against an old player still resolves, and vice versa.
     // ----------------------------------------------
-    const serveGetImage = async (ctx: any, sequenceId: string | undefined) => {
+    const serveGetImage = async (ctx: Koa.Context, sequenceId: string | undefined) => {
         if (!sequenceId) {
             ctx.status = 400;
             ctx.body = { error: 'Sequence ID is required' };
@@ -1960,7 +1964,7 @@ async function startServer(config: ServerWorkerData) {
     );
 
     // JavaScript MIME type middleware
-    webApp.use(async (ctx: any, next: () => Promise<any>) => {
+    webApp.use(async (ctx, next) => {
         await next();
         if ((ctx.path.endsWith('.js') || ctx.path.endsWith('.mjs')) && ctx.status === 200) {
             ctx.type = 'application/javascript; charset=utf-8';
@@ -1968,7 +1972,7 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // Fallback to index.html for SPA routing
-    webApp.use(async (ctx: any) => {
+    webApp.use(async (ctx) => {
         if (ctx.path.startsWith('/api/') || ctx.path.startsWith('/assets/')) {
             return;
         }
@@ -2090,7 +2094,7 @@ async function startServer(config: ServerWorkerData) {
         kioskApp.use(serve(staticPath, { index: false }));
 
         // JavaScript MIME type middleware
-        kioskApp.use(async (ctx: any, next: () => Promise<any>) => {
+        kioskApp.use(async (ctx, next) => {
             await next();
             if ((ctx.path.endsWith('.js') || ctx.path.endsWith('.mjs')) && ctx.status === 200) {
                 ctx.type = 'application/javascript; charset=utf-8';
@@ -2098,7 +2102,7 @@ async function startServer(config: ServerWorkerData) {
         });
 
         // SPA fallback — inject kiosk mode flag into index.html
-        kioskApp.use(async (ctx: any) => {
+        kioskApp.use(async (ctx) => {
             if (ctx.path.startsWith('/api/') || ctx.path.startsWith('/assets/')) {
                 return;
             }

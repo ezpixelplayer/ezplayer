@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startMockController, type MockController } from '@ezplayer/epp-mock-controller';
 import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
-import { FppClient } from '../harness/fpp-client.js';
+import { FppClient, type EzpPStatus } from '../harness/fpp-client.js';
 import { createFixtureShow, type FixtureShow } from '../fixtures/showfolder.js';
 import { buildFseq } from '../fixtures/fseq.js';
 
@@ -17,14 +17,14 @@ let fpp: FppClient;
  *  This is the same object the electron UI and the LAN web viewers render, so
  *  staleness here is exactly what a user sees on screen. */
 async function waitForPStatus(
-    pred: (p: Record<string, any> | undefined) => boolean,
+    pred: (p: EzpPStatus | undefined) => boolean,
     label: string,
     timeoutMs = 15_000,
-): Promise<Record<string, any>> {
+): Promise<EzpPStatus> {
     const deadline = Date.now() + timeoutMs;
-    let last: Record<string, any> | undefined;
+    let last: EzpPStatus | undefined;
     for (;;) {
-        last = (await fpp.currentShow()).pStatus as Record<string, any> | undefined;
+        last = (await fpp.currentShow()).pStatus;
         if (pred(last)) return last ?? {};
         if (Date.now() > deadline) {
             throw new Error(`waitForPStatus (${label}) timed out; last=${JSON.stringify(last).slice(0, 400)}`);

@@ -875,7 +875,10 @@ function Scene2DContent({
             }, 100);
         };
 
-        const controlsObj = controls as any;
+        const controlsObj = controls as unknown as {
+            addEventListener?: (type: string, listener: () => void) => void;
+            removeEventListener?: (type: string, listener: () => void) => void;
+        };
         if (controlsObj.addEventListener) {
             controlsObj.addEventListener('change', throttledUpdate);
         }

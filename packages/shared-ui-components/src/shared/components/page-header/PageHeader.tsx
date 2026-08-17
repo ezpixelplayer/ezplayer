@@ -9,12 +9,17 @@ import CloseTwoToneIcon from '@mui/icons-material/CloseTwoTone';
 import { SidebarContext } from '../../providers/SidebarContext';
 import { PageHeaderLogoContext } from '../../providers/PageHeaderLogoContext';
 
+interface Breadcrumb {
+    name: string;
+    route?: string;
+}
+
 interface PageHeaderProps {
     children?: React.ReactNode[];
     heading?: string;
     subHeading?: string;
     icon?: React.ReactElement<SvgIconProps>;
-    breadcrumbs?: any[];
+    breadcrumbs?: Breadcrumb[];
     value?: string;
 }
 
@@ -33,7 +38,7 @@ export const PageHeader: FC<PageHeaderProps> = ({
     const isLg = useMediaQuery(theme.breakpoints.up('lg'));
     const navigate = useNavigate();
     const { t } = useTranslation('lang');
-    const handleBreadcrumbsRoute = (link: string) => {
+    const handleBreadcrumbsRoute = (link?: string) => {
         if (link) {
             navigate(link);
         }
