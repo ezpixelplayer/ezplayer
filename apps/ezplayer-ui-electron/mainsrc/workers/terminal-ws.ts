@@ -171,7 +171,7 @@ export function createTerminalWss(host: TerminalHost): WebSocketServer {
                 return;
             }
             send(ws, { type: 'authOk' });
-            console.log(`[terminal] shell session opened (${id.slice(0, 8)}…)`);
+            console.log(`[terminal] shell session opened (${id.slice(0, 8)}...)`);
         };
 
         ws.on('close', finish);

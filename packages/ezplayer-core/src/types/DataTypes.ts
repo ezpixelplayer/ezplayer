@@ -723,6 +723,10 @@ export interface CloudStatus {
     lastCheckedAt?: number;
     /** Last error string from the polling loop. Cleared on the next success. */
     lastError?: string;
+    /** Base URL of the elected home player server, when one is bound this
+     *  session. UIs building the cloud control URL should prefer this and
+     *  fall back to the configured cloud service URL. */
+    homeServerUrl?: string;
 }
 
 /// Player full state & websocket sync
@@ -845,6 +849,7 @@ export type CloudCommand =
     | { type: 'uploadLayoutNow' } // immediate layout upload
     | { type: 'pollNow' } // immediate registration heartbeat
     | { type: 'setPlayerIdToken'; token: string } // persist + reconfigure
+    | { type: 'rotatePlayerToken' } // mint new token, move cloud registration, adopt locally
     | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity

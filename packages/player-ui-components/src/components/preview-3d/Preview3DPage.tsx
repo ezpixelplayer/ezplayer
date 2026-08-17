@@ -48,7 +48,9 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea,
                 },
             }}
         >
-            <PageHeader heading={title} children={statusArea} />
+            <Box sx={{ padding: 2, flexShrink: 0 }}>
+                <PageHeader heading={title} children={statusArea} />
+            </Box>
             <Box
                 sx={{
                     flex: 1,
@@ -56,6 +58,7 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea,
                     display: 'flex',
                     flexDirection: 'column',
                     p: 2,
+                    pt: 0,
                     overflow: 'hidden',
                 }}
             >

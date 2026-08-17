@@ -62,7 +62,12 @@ You can also trigger the workflow manually from the Actions tab using **workflow
 
 ### Auto-update
 
-The app includes an auto-update mechanism (`electron-updater`) that checks for new GitHub releases on startup and periodically when the system is idle. Users are prompted to download and install updates. If a schedule is active, the update is deferred until the app is quit.
+The app includes an auto-update mechanism (`electron-updater`) that follows stable GitHub releases. All interaction is in-app (Settings → Software Update — mode, current vs. latest version, check/download/install actions); the main process pops no native dialogs. Two modes, persisted in electron-store:
+
+- **Check automatically** (default): checks on startup and pre-downloads when the system is idle with no schedule running; an in-app toast reminds the user when a version is available (skipped versions stay quiet).
+- **Manual**: no unsolicited checks; everything is driven from the settings pane.
+
+Installing never restarts the player on its own. If a schedule is active, install defers to quit; the settings pane asks for explicit confirmation before a forced restart. The `--no-update-check` switch suppresses both the startup check and the idle watcher (useful in dev).
 
 ## Raspberry Pi 5 (ARM64 Linux) Builds
 

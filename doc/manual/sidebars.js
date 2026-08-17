@@ -9,7 +9,7 @@ const sidebars = {
             type: 'category',
             label: 'Introduction',
             collapsed: false,
-            items: ['introduction/what-is-ezplayer'],
+            items: ['introduction/what-is-ezplayer', 'introduction/privacy'],
         },
         {
             type: 'category',
@@ -75,6 +75,7 @@ const sidebars = {
                 'settings/show-folder',
                 'settings/ui',
                 'settings/audio',
+                'settings/player',
                 'settings/jukebox',
                 'settings/cloud',
                 'settings/shell',

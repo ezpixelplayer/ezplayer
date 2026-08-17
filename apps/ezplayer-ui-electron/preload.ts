@@ -1,9 +1,11 @@
 import type {
     AudioChunk,
     AudioDevice,
+    AutoUpdateMode,
     AutoUpdateStatus,
     CloudConfig,
     CloudStatus,
+    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -122,6 +124,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cloudCommand(cmd: CloudCommand): Promise<void> {
         return ipcRenderer.invoke('ipcCloudCommand', cmd);
     },
+    getDiagnosticsConsent(): Promise<DiagnosticsConsent> {
+        return ipcRenderer.invoke('ipcGetDiagnosticsConsent');
+    },
+    setDiagnosticsConsent(patch: Partial<DiagnosticsConsent>): Promise<DiagnosticsConsent> {
+        return ipcRenderer.invoke('ipcSetDiagnosticsConsent', patch);
+    },
+    reportRendererError(message: string, stack?: string): Promise<void> {
+        return ipcRenderer.invoke('ipcReportRendererError', message, stack);
+    },
     setZoomFactor(factor: number): Promise<void> {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);
     },
@@ -222,9 +233,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
 
     // Auto-update
+    getAutoUpdateSettings: () => ipcRenderer.invoke('autoupdate:get-settings'),
+    setAutoUpdateMode: (mode: AutoUpdateMode) => ipcRenderer.invoke('autoupdate:set-mode', mode),
+    skipUpdateVersion: (version: string) => ipcRenderer.invoke('autoupdate:skip-version', version),
+    clearSkippedUpdateVersions: () => ipcRenderer.invoke('autoupdate:clear-skipped'),
     checkForUpdates: () => ipcRenderer.invoke('autoupdate:check'),
     downloadUpdate: () => ipcRenderer.invoke('autoupdate:download'),
-    installUpdateNow: () => ipcRenderer.invoke('autoupdate:install-now'),
+    installUpdateNow: (force?: boolean) => ipcRenderer.invoke('autoupdate:install-now', force),
     installUpdateOnQuit: () => ipcRenderer.invoke('autoupdate:install-on-quit'),
     onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => {
         ipcRenderer.on('update:autoupdate-status', (_event: any, status: AutoUpdateStatus) => {

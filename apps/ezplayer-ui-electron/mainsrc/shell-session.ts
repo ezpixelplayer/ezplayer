@@ -106,14 +106,14 @@ export async function startShellSession(
 
     const session: ActiveSession = { sessionId, pty: proc };
     active = session;
-    console.log(`[shell] session ${sessionId.slice(0, 8)}… started (${file}, pid ${proc.pid})`);
+    console.log(`[shell] session ${sessionId.slice(0, 8)}... started (${file}, pid ${proc.pid})`);
 
     proc.onData((data) => {
         if (active === session) emit({ type: 'data', sessionId, data });
     });
     proc.onExit(({ exitCode }) => {
         if (active === session) active = undefined;
-        console.log(`[shell] session ${sessionId.slice(0, 8)}… exited (code ${exitCode})`);
+        console.log(`[shell] session ${sessionId.slice(0, 8)}... exited (code ${exitCode})`);
         emit({ type: 'exit', sessionId, code: exitCode });
     });
     return undefined;

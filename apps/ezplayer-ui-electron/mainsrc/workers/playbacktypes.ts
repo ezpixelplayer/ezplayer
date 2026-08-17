@@ -40,6 +40,8 @@ export interface LayoutSettings {
     backgroundBrightness?: number; // 0-100 brightness for the background image
     previewWidth?: number; // Layout preview canvas width in pixels
     previewHeight?: number; // Layout preview canvas height in pixels
+    /** xLights LayoutMode3D: true = 3D layout, false = 2D, absent = unspecified. */
+    layoutMode3D?: boolean;
     layoutGroups?: LayoutGroupInfo[];
     viewpoints?: ViewpointsResult;
 }

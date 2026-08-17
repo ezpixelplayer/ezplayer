@@ -1,18 +1,23 @@
-import { app, dialog, ipcMain, powerMonitor, BrowserWindow } from 'electron';
+import { safeSend } from './safe-send.js';
+import { app, ipcMain, powerMonitor, BrowserWindow } from 'electron';
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import Store from 'electron-store';
 import { isScheduleActive } from './ipcezplayer.js';
-import type { AutoUpdateStatus } from '@ezplayer/ezplayer-core';
+import type { AutoUpdateMode, AutoUpdateSettings, AutoUpdateStatus, InstallUpdateResult } from '@ezplayer/ezplayer-core';
 
-const store = new Store<{ skippedUpdateVersions: string[] }>();
+const store = new Store<{ skippedUpdateVersions: string[]; autoUpdateMode: AutoUpdateMode }>();
 
 let mainWin: BrowserWindow | null = null;
 let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 let updateDownloaded = false;
 
 function sendStatus(status: AutoUpdateStatus) {
-    mainWin?.webContents.send('update:autoupdate-status', status);
+    safeSend(mainWin, 'update:autoupdate-status', status);
+}
+
+function getMode(): AutoUpdateMode {
+    return store.get('autoUpdateMode', 'auto-check');
 }
 
 function getSkippedVersions(): string[] {
@@ -29,6 +34,14 @@ function addSkippedVersion(version: string) {
 
 function isVersionSkipped(version: string): boolean {
     return getSkippedVersions().includes(version);
+}
+
+function getSettings(): AutoUpdateSettings {
+    return {
+        mode: getMode(),
+        currentVersion: app.getVersion(),
+        skippedVersions: getSkippedVersions(),
+    };
 }
 
 // ── electron-updater event wiring ──────────────────────────────────
@@ -74,88 +87,30 @@ function wireUpdaterEvents() {
 
 // ── Startup check ──────────────────────────────────────────────────
 
+// No dialogs here: the check emits status events and the renderer decides
+// whether to surface a reminder (auto-check mode, version not skipped).
 async function startupCheck() {
     if (app.commandLine.hasSwitch('no-update-check')) return;
+    if (getMode() !== 'auto-check') return;
 
     // Delay the check so the UI has time to settle
     await new Promise((resolve) => setTimeout(resolve, 10_000));
 
-    let result;
     try {
-        result = await autoUpdater.checkForUpdates();
+        await autoUpdater.checkForUpdates();
     } catch {
-        return; // Network error, offline, etc. — silently skip
+        // Network error, offline, etc. — silently skip
     }
-
-    // checkForUpdates() populates `updateInfo` with the feed's latest version even
-    // when we're already on it. `isUpdateAvailable` is the only field that means
-    // "a newer version exists" — gating on `updateInfo` alone re-prompted on every
-    // launch at the same version.
-    if (!result?.isUpdateAvailable) return;
-
-    const version = result.updateInfo.version;
-    if (isVersionSkipped(version)) return;
-
-    if (!mainWin) return;
-
-    const { response } = await dialog.showMessageBox(mainWin, {
-        type: 'info',
-        buttons: ['Download && Install', 'Remind Me Later', 'Skip This Version'],
-        defaultId: 0,
-        cancelId: 1,
-        title: 'Update Available',
-        message: `EZPlayer ${version} is available (you have ${app.getVersion()}).`,
-        detail: 'Would you like to download and install this update?',
-        noLink: true,
-        normalizeAccessKeys: true,
-    });
-
-    if (response === 0) {
-        // Download & Install
-        try {
-            await autoUpdater.downloadUpdate();
-        } catch (err) {
-            // Surface the failure instead of swallowing it — a silent return here is why
-            // "Download & Install" could look like it did nothing (e.g. the release's
-            // latest.yml references an installer/blockmap that isn't attached, a sha512
-            // mismatch, or a mid-download network error).
-            const detail = err instanceof Error ? err.message : String(err);
-            sendStatus({ state: 'error', message: detail });
-            if (mainWin) {
-                await dialog.showMessageBox(mainWin, {
-                    type: 'error',
-                    buttons: ['OK'],
-                    title: 'Update Download Failed',
-                    message: `Could not download EZPlayer ${version}.`,
-                    detail,
-                });
-            }
-            return;
-        }
-        // If a schedule is active, defer to quit-time install
-        if (isScheduleActive()) {
-            if (mainWin) {
-                await dialog.showMessageBox(mainWin, {
-                    type: 'info',
-                    buttons: ['OK'],
-                    title: 'Update Ready',
-                    message: 'A schedule is running. The update will install when you quit EZPlayer.',
-                });
-            }
-        } else {
-            autoUpdater.quitAndInstall();
-        }
-    } else if (response === 2) {
-        // Skip This Version
-        addSkippedVersion(version);
-    }
-    // response === 1 → Remind Me Later — do nothing
 }
 
 // ── Idle auto-download ─────────────────────────────────────────────
 
 function startIdleWatcher() {
+    if (app.commandLine.hasSwitch('no-update-check')) return;
+
     idleCheckInterval = setInterval(async () => {
+        // Mode is re-read each tick so a settings change applies without restart
+        if (getMode() !== 'auto-check') return;
         // Only act if system idle >5min, no schedule running, update not yet downloaded
         if (updateDownloaded) return;
         if (isScheduleActive()) return;
@@ -170,6 +125,9 @@ function startIdleWatcher() {
             return;
         }
 
+        // checkForUpdates() populates `updateInfo` with the feed's latest version even
+        // when we're already on it. `isUpdateAvailable` is the only field that means
+        // "a newer version exists".
         if (!result?.isUpdateAvailable) return;
         if (isVersionSkipped(result.updateInfo.version)) return;
 
@@ -185,6 +143,23 @@ function startIdleWatcher() {
 // ── IPC handlers ───────────────────────────────────────────────────
 
 function registerIPCHandlers() {
+    ipcMain.handle('autoupdate:get-settings', (): AutoUpdateSettings => getSettings());
+
+    ipcMain.handle('autoupdate:set-mode', (_event, mode: AutoUpdateMode): AutoUpdateSettings => {
+        store.set('autoUpdateMode', mode);
+        return getSettings();
+    });
+
+    ipcMain.handle('autoupdate:skip-version', (_event, version: string): AutoUpdateSettings => {
+        addSkippedVersion(version);
+        return getSettings();
+    });
+
+    ipcMain.handle('autoupdate:clear-skipped', (): AutoUpdateSettings => {
+        store.set('skippedUpdateVersions', []);
+        return getSettings();
+    });
+
     ipcMain.handle('autoupdate:check', async () => {
         try {
             await autoUpdater.checkForUpdates();
@@ -201,20 +176,15 @@ function registerIPCHandlers() {
         }
     });
 
-    ipcMain.handle('autoupdate:install-now', async () => {
-        if (isScheduleActive()) {
-            if (mainWin) {
-                await dialog.showMessageBox(mainWin, {
-                    type: 'info',
-                    buttons: ['OK'],
-                    title: 'Update Deferred',
-                    message: 'A schedule is running. The update will install when you quit EZPlayer.',
-                });
-            }
+    ipcMain.handle('autoupdate:install-now', (_event, force?: boolean): InstallUpdateResult => {
+        // The renderer confirms with the user before forcing past an active
+        // schedule; this guard is the last line against an unconfirmed restart.
+        if (isScheduleActive() && !force) {
             autoUpdater.autoInstallOnAppQuit = true;
-            return;
+            return 'deferred';
         }
         autoUpdater.quitAndInstall();
+        return 'installing';
     });
 
     ipcMain.handle('autoupdate:install-on-quit', () => {

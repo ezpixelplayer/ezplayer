@@ -20,6 +20,7 @@ import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { AppDispatch } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
 import { AudioSettings } from '../playback-settings/sections/AudioSettings';
+import { PlayerSystemTime } from './PlayerSystemTime';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
@@ -90,9 +91,7 @@ export const NowPlayingCard = ({
                         color={isPlaying ? 'success' : isPaused ? 'warning' : 'default'}
                         sx={{ fontWeight: 'bold' }}
                     />
-                    <Typography variant="caption" color="text.secondary">
-                        Last checkin: {formatTime(player.reported_time)}
-                    </Typography>
+                    <PlayerSystemTime />
                 </Box>
 
                 {/* The level is automated toward the default/scheduled target, so it's shown

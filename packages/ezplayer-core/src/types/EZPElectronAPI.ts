@@ -110,6 +110,14 @@ export interface BatchImportSummary {
 // of truth and don't drift when the upstream shape evolves.
 export type { GetNodeResult, ChannelRole, ChannelRoleKind, ImageInfo } from 'xllayoutcalcs';
 
+/** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
+ *  on (opt-out); `includePlayerId` defaults off (opt-in) since it ties a
+ *  report to a specific installation. */
+export interface DiagnosticsConsent {
+    uploadEnabled: boolean;
+    includePlayerId: boolean;
+}
+
 export type AutoUpdateStatus =
     | { state: 'checking' }
     | { state: 'available'; version: string; releaseDate: string; releaseNotes?: string }
@@ -117,6 +125,20 @@ export type AutoUpdateStatus =
     | { state: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
     | { state: 'downloaded'; version: string }
     | { state: 'error'; message: string };
+
+/** 'auto-check': check at startup + idle pre-download, renderer shows a reminder.
+ *  'manual': no unsolicited checks; everything goes through the settings UI. */
+export type AutoUpdateMode = 'auto-check' | 'manual';
+
+/** Persisted auto-update settings plus the running app version (electron-store, machine-wide). */
+export interface AutoUpdateSettings {
+    mode: AutoUpdateMode;
+    currentVersion: string;
+    skippedVersions: string[];
+}
+
+/** 'deferred' = schedule active and not forced; install will happen on quit. */
+export type InstallUpdateResult = 'installing' | 'deferred';
 
 export interface EZPElectronAPI {
     shouldShowWelcomeOnLaunch: () => boolean;
@@ -144,6 +166,14 @@ export interface EZPElectronAPI {
      *  (which uses an EZPlayerCommand discriminated union). New verbs add a variant
      *  to `CloudCommand` and a case in main's dispatcher — no per-verb IPC plumbing. */
     cloudCommand: (cmd: CloudCommand) => Promise<void>;
+
+    // Diagnostics/crash-report consent (app-global, machine-wide).
+    getDiagnosticsConsent?: () => Promise<DiagnosticsConsent>;
+    setDiagnosticsConsent?: (patch: Partial<DiagnosticsConsent>) => Promise<DiagnosticsConsent>;
+    /** Forward an uncaught renderer JS error (incl. exceptions thrown during
+     *  React render) to main's diagnostics reporter, which applies the
+     *  consent gate and upload throttle. */
+    reportRendererError?: (message: string, stack?: string) => Promise<void>;
 
     /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
      *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */
@@ -228,10 +258,17 @@ export interface EZPElectronAPI {
     getOpenAtLogin: () => Promise<boolean>;
     setOpenAtLogin: (openAtLogin: boolean) => Promise<boolean>;
 
-    // Auto-update
+    // Auto-update. All interaction is in-UI; main pops no dialogs. Mutators
+    // return the updated settings so the caller can refresh local state.
+    getAutoUpdateSettings: () => Promise<AutoUpdateSettings>;
+    setAutoUpdateMode: (mode: AutoUpdateMode) => Promise<AutoUpdateSettings>;
+    skipUpdateVersion: (version: string) => Promise<AutoUpdateSettings>;
+    clearSkippedUpdateVersions: () => Promise<AutoUpdateSettings>;
     checkForUpdates: () => Promise<void>;
     downloadUpdate: () => Promise<void>;
-    installUpdateNow: () => Promise<void>;
+    /** Without `force`, defers to install-on-quit when a schedule is active.
+     *  The UI is expected to confirm before passing `force: true`. */
+    installUpdateNow: (force?: boolean) => Promise<InstallUpdateResult>;
     installUpdateOnQuit: () => void;
     onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => void;
 }

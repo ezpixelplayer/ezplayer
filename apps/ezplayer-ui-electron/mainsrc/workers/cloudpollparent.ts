@@ -14,6 +14,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { cloudBridgeOpen, cloudBridgeClose } from '../server-worker-manager.js';
+import { reportDiagEvent } from '../diagnostics.js';
 
 // cloudpollparent gets bundled into the parent file that imports it (e.g. dist/main.js),
 // so __dirname at runtime is the parent's location — not this source file's location.
@@ -81,6 +82,7 @@ function ensureWorker() {
     worker = new Worker(workerPath);
     worker.on('error', (err) => {
         console.error('[cloudpoll] worker error:', err);
+        reportDiagEvent('worker-error', `cloudpoll: ${err.message}`, err.stack);
     });
     worker.on('exit', (code) => {
         console.log('[cloudpoll] worker exited with code', code);
@@ -151,7 +153,7 @@ export function setCloudWorkerConfig(
     pollSchedule?: CloudPollScheduleEntry[],
 ) {
     console.log(
-        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '…' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
+        `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '...' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
     );
     const nextKey = sessionKey(cloudUrl, playerIdToken, showFolder);
     const sessionChanged = lastSessionKey !== nextKey;

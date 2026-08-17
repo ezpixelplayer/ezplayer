@@ -37,6 +37,10 @@ export { ViewerSettings } from './components/playback-settings/sections/ViewerSe
 export { JukeboxSettings } from './components/playback-settings/sections/JukeboxSettings';
 export { AudioSettings } from './components/playback-settings/sections/AudioSettings';
 export { PlayerSettings } from './components/playback-settings/sections/PlayerSettings';
+export {
+    SoftwareUpdateSettings,
+    canControlUpdates,
+} from './components/playback-settings/sections/SoftwareUpdateSettings';
 export { PlayerCloudRegistrationDialog } from './components/player-cloud-registration/PlayerCloudRegistrationDialog';
 export { PlayerCloudRegistrationPanel } from './components/player-cloud-registration/PlayerCloudRegistrationPanel';
 export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/PlayerCloudWelcomePanel';
@@ -63,6 +67,7 @@ export { useOrbitPreference, setOrbitPreference } from './util/orbitPreference';
 
 export type { AuthState } from './store/slices/AuthStore';
 export type { RuntimeState } from './store/slices/RuntimeStore';
+export type { AutoUpdateState } from './store/slices/AutoUpdateStore';
 export type { PlaybackSettingsState } from './store/slices/PlaybackSettingsStore';
 export type { PlaylistState } from './store/slices/PlaylistStore';
 export type { ScheduleState } from './store/slices/ScheduleStore';
@@ -139,6 +144,7 @@ export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 export { remoteAccessActions } from './store/slices/RemoteAccessStore';
+export { autoUpdateActions } from './store/slices/AutoUpdateStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

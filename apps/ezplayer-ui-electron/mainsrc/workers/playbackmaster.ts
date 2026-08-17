@@ -1503,6 +1503,9 @@ async function loadXmlCoordinates() {
                 if (parsedSettings.previewHeight !== undefined) {
                     layoutSettings.previewHeight = parsedSettings.previewHeight;
                 }
+                if (parsedSettings.layoutMode3D !== undefined) {
+                    layoutSettings.layoutMode3D = parsedSettings.layoutMode3D;
+                }
 
                 if (layoutSettings.backgroundImage) {
                     emitInfo(
@@ -1652,6 +1655,10 @@ function modelIntentOf(m: XlModelChannelInfo): ControllerModelIntent {
         nodeCount: m.nodeCount,
         channels: m.channelCount,
     };
+    // Downstream sizing (per-string channel spans) must not guess 3 for RGBW.
+    if (m.nodeCount > 0 && m.channelCount % m.nodeCount === 0) {
+        intent.channelsPerPixel = m.channelCount / m.nodeCount;
+    }
     if (cc) {
         if (cc.brightness !== undefined) intent.brightness = cc.brightness;
         if (cc.gamma !== undefined) intent.gamma = cc.gamma;
