@@ -376,7 +376,7 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 | `--user-data-dir=<p>`  | Isolate all persisted app state to the given directory          |
 | `--reset`              | Clear persisted state, then quit (cloud welcome on next launch) |
 | `--reset-nocloud`      | Clear persisted state, pin local-only welcome, then quit        |
-| `--no-update-check`    | Skip the startup check for a newer EZPlayer release             |
+| `--no-update-check`    | Skip automatic update checks (startup and idle pre-download)    |
 
 ## Show folder
 
@@ -424,7 +424,9 @@ Anything that would normally raise a dialog fails fast instead:
 
 A headless run **never modifies persisted preferences** — the show folder and
 ports passed on the command line apply to that run only, so it can coexist with
-an interactive install on the same machine. To fully isolate state (e.g. for
+an interactive install on the same machine. Headless also **does not check for
+or install EZPlayer updates**; use the windowed app's
+[Software Update](../settings/software-update.md) pane for that. To fully isolate state (e.g. for
 automated testing, or a second independent player), add `--user-data-dir=`:
 
 ```bash
@@ -529,12 +531,23 @@ To open DevTools in a **packaged** build, use the environment variable
 
 ## Updates
 
-EZPlayer checks for a newer release a few seconds after launch. To suppress that
-check on locked-down or offline show machines:
+The windowed **installed** desktop app can check for a newer EZPlayer release
+from [Settings → Software Update](../settings/software-update.md). With
+**Check automatically and remind me** (the default), EZPlayer checks about ten
+seconds after launch and may download in the background after five minutes of
+system idle with no schedule running. A finished download installs the next
+time you quit; EZPlayer does not quit on its own. **Manual — only check when I
+ask** turns those automatic checks off.
 
-| Flag                | Description                              |
-| ------------------- | ---------------------------------------- |
-| `--no-update-check` | Skip the automatic startup update check. |
+To suppress automatic checks without opening the UI — for example on a
+locked-down or offline show machine:
+
+| Flag                | Description                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `--no-update-check` | Skip the startup check and idle pre-download. **Check for Updates** in Settings still works.        |
+
+[Headless mode](#headless-mode) does not run the updater at all. Development
+(unpackaged) runs do not either.
 
 ## Certificates and TLS
 
