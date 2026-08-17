@@ -24,10 +24,9 @@ export const UpdateReminder: React.FC = () => {
                 if (settings.mode !== 'auto-check') return;
                 if (settings.skippedVersions.includes(version)) return;
                 remindedRef.current.add(version);
-                ToastMsgs.showSuccessMessage(
-                    `EZPlayer ${version} is available — see Settings → Software Update.`,
-                    { autoClose: 10000 },
-                );
+                ToastMsgs.showSuccessMessage(`EZPlayer ${version} is available — see Settings → Software Update.`, {
+                    autoClose: 10000,
+                });
             })
             .catch(() => {});
         return () => {

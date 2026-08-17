@@ -1,6 +1,14 @@
 import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
-import { CalendarViewDay, CalendarViewMonth, CalendarViewWeek, ChevronLeft, ChevronRight, ExpandLess, ExpandMore } from '@mui/icons-material';
+import {
+    CalendarViewDay,
+    CalendarViewMonth,
+    CalendarViewWeek,
+    ChevronLeft,
+    ChevronRight,
+    ExpandLess,
+    ExpandMore,
+} from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PreviewIcon from '@mui/icons-material/Preview';
 import { Box } from '../box/Box';
@@ -777,12 +785,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 const endHours = Math.floor(endTotalMinutes / 60);
                 const endMinutes = endTotalMinutes % 60;
                 const toTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-                const loopUpdates = getLoopAutoToggleUpdates(
-                    formattedValue,
-                    toTime,
-                    formData,
-                    isLoopAutoEnabled,
-                );
+                const loopUpdates = getLoopAutoToggleUpdates(formattedValue, toTime, formData, isLoopAutoEnabled);
 
                 setFormData((prev) => ({
                     ...prev,
@@ -1280,8 +1283,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         {onScheduleTypeChange && (
                             <Tooltip
                                 title={
-                                    <Typography component="span" sx={{ fontSize: 11, lineHeight: 1.3, display: 'block', maxWidth: 180 }}>
-                                        Choose FG to see the foreground schedule or BG to see the background schedule.  Background runs while foreground schedules are running.
+                                    <Typography
+                                        component="span"
+                                        sx={{ fontSize: 11, lineHeight: 1.3, display: 'block', maxWidth: 180 }}
+                                    >
+                                        Choose FG to see the foreground schedule or BG to see the background schedule.
+                                        Background runs while foreground schedules are running.
                                     </Typography>
                                 }
                             >
@@ -1519,19 +1526,20 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         {isLoopAutoEnabled &&
                             formData.loop &&
                             isToTimeLongerThanScheduleDuration(formData.fromTime, formData.toTime, formData) && (
-                            <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
-                                The Loop option has been enabled automatically because the schedule duration does not match the selected end time.
-                            </Typography>
-                        )}
+                                <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
+                                    The Loop option has been enabled automatically because the schedule duration does
+                                    not match the selected end time.
+                                </Typography>
+                            )}
                         {/* Advisory only: the schedule is still allowed to be submitted. */}
                         {!formData.loop &&
                             !formData.shuffle &&
                             isToTimeLongerThanScheduleDuration(formData.fromTime, formData.toTime, formData) && (
-                            <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
-                                NOTE: Playlist is too short to fill the scheduled time. Choose loop or shuffle to fill
-                                the whole schedule.
-                            </Typography>
-                        )}
+                                <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
+                                    NOTE: Playlist is too short to fill the scheduled time. Choose loop or shuffle to
+                                    fill the whole schedule.
+                                </Typography>
+                            )}
 
                         <Box sx={{ display: 'flex', gap: 2 }}>
                             <FormControl fullWidth sx={{ mt: 1 }}>

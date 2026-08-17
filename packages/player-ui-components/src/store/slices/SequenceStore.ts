@@ -112,11 +112,7 @@ export const batchUploadImportShowSequences = createAsyncThunk<
     if (!extra.batchUploadImportShowSequences) {
         throw new Error('This player connection does not support bulk upload-import');
     }
-    return await extra.batchUploadImportShowSequences(
-        files,
-        companionAudioNames ?? [],
-        importFseqNames,
-    );
+    return await extra.batchUploadImportShowSequences(files, companionAudioNames ?? [], importFseqNames);
 });
 
 /** True when the connected backing store can receive file uploads (web/LAN

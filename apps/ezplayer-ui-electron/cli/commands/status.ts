@@ -50,9 +50,7 @@ export async function run(args: string[]): Promise<number> {
         return 0;
     }
 
-    const head = [report.driverType, report.vendor, report.model, report.firmwareVersion]
-        .filter(Boolean)
-        .join(' ');
+    const head = [report.driverType, report.vendor, report.model, report.firmwareVersion].filter(Boolean).join(' ');
     console.log(`${ip}  ${head}${report.hostname ? `  (${report.hostname})` : ''}`);
     renderTree(reportToTree(report), '    ');
     return 0;

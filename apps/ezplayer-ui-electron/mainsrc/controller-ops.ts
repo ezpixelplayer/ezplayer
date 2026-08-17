@@ -29,7 +29,15 @@ import type {
     OutputConfig,
     PixelPortInfo,
 } from '@ezplayer/epp-controllers';
-import { discover, probeController, reportToTree, deriveXlightsPortConfigs, expandModelStrings, getCapabilities, checkUpload } from '@ezplayer/epp-controllers';
+import {
+    discover,
+    probeController,
+    reportToTree,
+    deriveXlightsPortConfigs,
+    expandModelStrings,
+    getCapabilities,
+    checkUpload,
+} from '@ezplayer/epp-controllers';
 import { hostNetworks } from '../cli/net.js';
 import * as fsp from 'fs/promises';
 
@@ -177,9 +185,7 @@ export async function loadNetworkPolicies(showFolder: string): Promise<void> {
         const raw = await fsp.readFile(networksFile(showFolder), 'utf-8');
         const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-            state.networkPolicies = parsed
-                .map(parseNetworkPolicy)
-                .filter((p): p is NetworkPolicy => p !== null);
+            state.networkPolicies = parsed.map(parseNetworkPolicy).filter((p): p is NetworkPolicy => p !== null);
         }
     } catch (e) {
         if ((e as { code?: string }).code !== 'ENOENT') {
@@ -530,9 +536,7 @@ function toLibIntents(mis: ControllerModelIntent[]): ModelPortIntent[] {
                     protocol: mi.protocol,
                     stringStartChannels: mi.stringStartChannels,
                     stringNodeCounts: mi.stringNodeCounts,
-                    stringChannels:
-                        mi.stringChannels ??
-                        mi.stringNodeCounts.map((n) => n * (mi.channelsPerPixel ?? 3)),
+                    stringChannels: mi.stringChannels ?? mi.stringNodeCounts.map((n) => n * (mi.channelsPerPixel ?? 3)),
                     smartRemote: mi.smartRemote,
                     srCascadeOnPort: mi.srCascadeOnPort,
                     srMaxCascade: mi.srMaxCascade,
@@ -566,9 +570,7 @@ async function runUpload(
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
     if (findRunningOp('upload', command.id)) return;
 
-    const rec = (state.known ?? []).find(
-        (k) => k.address === dev.ip || (dev.hostname && k.address === dev.hostname),
-    );
+    const rec = (state.known ?? []).find((k) => k.address === dev.ip || (dev.hostname && k.address === dev.hostname));
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
     const wantStrings = command.scope !== 'inputs';
     const wantInputs = command.scope !== 'strings';
@@ -599,9 +601,7 @@ async function runUpload(
         const warnings: string[] = [];
         // Pre-upload capability gate: errors abort before anything is written;
         // warnings ride along.
-        const caps = rec.vendor && rec.model
-            ? getCapabilities(rec.vendor, rec.model, rec.variant ?? '')
-            : undefined;
+        const caps = rec.vendor && rec.model ? getCapabilities(rec.vendor, rec.model, rec.variant ?? '') : undefined;
         const capCheck = (input: Parameters<typeof checkUpload>[1]): void => {
             if (!caps) return;
             const res = checkUpload(caps, input);
@@ -619,18 +619,17 @@ async function runUpload(
             }));
             capCheck({ inputUniverses: cfg });
             const r = await probe.driver.setInputUniverses(cfg);
-            if (!r.success) throw new Error(`input upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
+            if (!r.success)
+                throw new Error(`input upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
         }
         if (wantStrings) {
-            const outputs = (rec.outputs ?? []).map(
-                (o): OutputConfig => ({
-                    type: o.type,
-                    universe: o.universe,
-                    startChannel: o.startChannel,
-                    channels: o.channels,
-                }),
-            );
+            const outputs = (rec.outputs ?? []).map((o): OutputConfig => ({
+                type: o.type,
+                universe: o.universe,
+                startChannel: o.startChannel,
+                channels: o.channels,
+            }));
             const derived = deriveXlightsPortConfigs(toLibIntents(rec.modelIntents ?? []), {
                 outputs: outputs.length ? outputs : undefined,
                 controllerStartChannel: rec.startChannel,
@@ -640,9 +639,20 @@ async function runUpload(
                 // instead of "keep whatever the device has".
                 const defBrightness = rec.defaultBrightness ?? 100;
                 const defGamma = rec.defaultGamma ?? 1.0;
-                const stamp = <T extends { brightness?: number; gamma?: number; colorOrder?: string;
-                    nullPixels?: number; endNullPixels?: number; groupCount?: number;
-                    zigZag?: number; reverse?: boolean }>(s: T): void => {
+                const stamp = <
+                    T extends {
+                        brightness?: number;
+                        gamma?: number;
+                        colorOrder?: string;
+                        nullPixels?: number;
+                        endNullPixels?: number;
+                        groupCount?: number;
+                        zigZag?: number;
+                        reverse?: boolean;
+                    },
+                >(
+                    s: T,
+                ): void => {
                     s.brightness ??= defBrightness;
                     s.gamma ??= defGamma;
                     s.colorOrder ??= 'RGB';
@@ -661,7 +671,8 @@ async function runUpload(
             if (derived.ports.length === 0) throw new Error('derivation produced no uploadable ports');
             capCheck({ pixelPorts: derived.ports, serialPorts: [] });
             const r = await probe.driver.setOutputs(derived.ports, []);
-            if (!r.success) throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
+            if (!r.success)
+                throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
         }
         try {
@@ -781,8 +792,7 @@ async function runScan(
 // ---------------------------------------------------------------------------
 
 type ScanEvent =
-    | { ev: 'progress'; progress: NonNullable<ControllerOp['progress']> }
-    | { ev: 'device'; device: DiscoveryDevice };
+    { ev: 'progress'; progress: NonNullable<ControllerOp['progress']> } | { ev: 'device'; device: DiscoveryDevice };
 
 /** Start a discovery in-process, streaming events to `onEvent`. */
 function startScanJob(request: DiscoveryRequest, onEvent: (ev: ScanEvent) => void): DiscoveryJob {

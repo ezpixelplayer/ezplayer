@@ -1,10 +1,50 @@
 /** Thin typed helpers for the endpoints under test. */
 
+/** Subset of the FPP /api/system/status payload the tests consume. */
+export interface FppStatus {
+    status_name: string;
+    current_sequence: string;
+    current_playlist: { playlist: string; index: string; count: string };
+    seconds_elapsed: string;
+    milliseconds_elapsed: number;
+    time_elapsed: string;
+    [key: string]: unknown;
+}
+
+/** Subset of an FPP playlist GET payload. */
+export interface FppPlaylist {
+    name?: string;
+    mainPlaylist: Array<{ type?: string; sequenceName?: string; [key: string]: unknown }>;
+    playlistInfo: { total_items: number; total_duration: number };
+    [key: string]: unknown;
+}
+
+/** Raw pushed player status carried in /api/ezp/current-show. */
+export interface EzpPStatus {
+    status?: string;
+    now_playing?: unknown;
+    [key: string]: unknown;
+}
+
+/** Subset of the native /api/ezp/current-show payload the tests consume. */
+export interface EzpCurrentShow {
+    playlists: Array<{ id: string; title: string; [key: string]: unknown }>;
+    sequences: Array<{
+        id: string;
+        files?: { fseq?: string };
+        settings?: Record<string, unknown>;
+        [key: string]: unknown;
+    }>;
+    schedule: Array<Record<string, unknown>>;
+    pStatus?: EzpPStatus;
+    [key: string]: unknown;
+}
+
 export class FppClient {
     constructor(readonly base: string) {}
 
-    async status(): Promise<Record<string, any>> {
-        return (await fetch(`${this.base}/api/system/status`)).json() as Promise<Record<string, any>>;
+    async status(): Promise<FppStatus> {
+        return (await fetch(`${this.base}/api/system/status`)).json() as Promise<FppStatus>;
     }
 
     async command(name: string, ...args: (string | number)[]): Promise<Response> {
@@ -55,10 +95,8 @@ export class FppClient {
         });
     }
 
-    async getPlaylist(name: string): Promise<Record<string, any>> {
-        return (await fetch(`${this.base}/api/playlist/${encodeURIComponent(name)}`)).json() as Promise<
-            Record<string, any>
-        >;
+    async getPlaylist(name: string): Promise<FppPlaylist> {
+        return (await fetch(`${this.base}/api/playlist/${encodeURIComponent(name)}`)).json() as Promise<FppPlaylist>;
     }
 
     async playlistNames(): Promise<string[]> {
@@ -73,8 +111,8 @@ export class FppClient {
         });
     }
 
-    async getSchedule(): Promise<Record<string, any>[]> {
-        return (await fetch(`${this.base}/api/schedule`)).json() as Promise<Record<string, any>[]>;
+    async getSchedule(): Promise<Record<string, unknown>[]> {
+        return (await fetch(`${this.base}/api/schedule`)).json() as Promise<Record<string, unknown>[]>;
     }
 
     async ezpCommand(cmd: Record<string, unknown>): Promise<Response> {
@@ -85,18 +123,18 @@ export class FppClient {
         });
     }
 
-    async currentShow(): Promise<Record<string, any>> {
-        return (await fetch(`${this.base}/api/ezp/current-show`)).json() as Promise<Record<string, any>>;
+    async currentShow(): Promise<EzpCurrentShow> {
+        return (await fetch(`${this.base}/api/ezp/current-show`)).json() as Promise<EzpCurrentShow>;
     }
 
     /** Poll status until pred passes (or throw at timeout). Returns the status. */
     async waitForStatus(
-        pred: (s: Record<string, any>) => boolean,
+        pred: (s: FppStatus) => boolean,
         opts?: { timeoutMs?: number; label?: string },
-    ): Promise<Record<string, any>> {
+    ): Promise<FppStatus> {
         const timeoutMs = opts?.timeoutMs ?? 30_000;
         const deadline = Date.now() + timeoutMs;
-        let last: Record<string, any> = {};
+        let last: FppStatus | undefined;
         for (;;) {
             last = await this.status();
             if (pred(last)) return last;

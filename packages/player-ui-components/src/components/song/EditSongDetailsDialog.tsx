@@ -27,7 +27,7 @@ const FileSelectButton = ({
     onFileSelect: (file: string | undefined) => void;
 }) => {
     const handleFileSelect = async () => {
-        if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        if (typeof window !== 'undefined' && window.electronAPI) {
             try {
                 const options = {
                     types: [
@@ -44,7 +44,7 @@ const FileSelectButton = ({
                     multi: false,
                 };
 
-                const filePaths = await (window as any).electronAPI.selectFiles(options);
+                const filePaths = await window.electronAPI.selectFiles(options);
                 if (filePaths && filePaths.length > 0) {
                     onFileSelect(filePaths[0]);
                 }
@@ -222,13 +222,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file }));
 
-            if (
-                type === 'fseq' &&
-                typeof window !== 'undefined' &&
-                (window as any).electronAPI?.autoDetectSongFilesFromFseq
-            ) {
+            if (type === 'fseq' && typeof window !== 'undefined' && window.electronAPI?.autoDetectSongFilesFromFseq) {
                 try {
-                    const detected = await (window as any).electronAPI.autoDetectSongFilesFromFseq(file);
+                    const detected = await window.electronAPI.autoDetectSongFilesFromFseq(file);
                     setNewFiles((prev) => {
                         const next = { ...prev };
                         if (!next.audio && detected?.audioFile) {
@@ -251,14 +247,10 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 }
             }
 
-            if (
-                type === 'mp3' &&
-                typeof window !== 'undefined' &&
-                (window as any).electronAPI?.extractAudioTagMetadata
-            ) {
+            if (type === 'mp3' && typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
                 try {
                     console.log(`[EditSong][MP3] Starting metadata extraction for: "${file}"`);
-                    const metadata = await (window as any).electronAPI.extractAudioTagMetadata(file);
+                    const metadata = await window.electronAPI.extractAudioTagMetadata(file);
                     console.log(
                         `[EditSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
                     );

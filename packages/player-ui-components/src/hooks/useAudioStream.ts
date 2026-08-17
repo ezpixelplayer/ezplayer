@@ -92,7 +92,9 @@ export function useAudioStream(options: UseAudioStreamOptions): UseAudioStreamRe
             const next = !prev;
             if (next) {
                 if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-                    const AC = window.AudioContext || (window as any).webkitAudioContext;
+                    const AC =
+                        window.AudioContext ||
+                        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
                     // Pin to 48 kHz to match the curated/normalized source rate (clean seams
                     // for 48 kHz audio; stray 44.1 kHz is resampled here but masked by the
                     // per-chunk crossfade baked into the stream).

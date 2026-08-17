@@ -45,7 +45,11 @@ function resolvePlayable(
     if (pl) return { playlistId: pl.id };
     const seq = sequences?.find((s) => {
         if (s.deleted || s.render_enabled === false) return false;
-        const fseqBase = s.files?.fseq ? fileBaseName(s.files.fseq).toLowerCase().replace(/\.fseq$/, '') : undefined;
+        const fseqBase = s.files?.fseq
+            ? fileBaseName(s.files.fseq)
+                  .toLowerCase()
+                  .replace(/\.fseq$/, '')
+            : undefined;
         return fseqBase === base || s.work?.title?.toLowerCase() === base;
     });
     if (seq) return { songId: seq.id };
@@ -102,7 +106,8 @@ async function startPlaylist(
             requestId,
         });
     }
-    const warn = startItem && startItem !== '0' && startItem !== '1' ? ' (start item not supported, starting at 1)' : '';
+    const warn =
+        startItem && startItem !== '0' && startItem !== '1' ? ' (start item not supported, starting at 1)' : '';
     return ok(`Playlist ${target} started${warn}`);
 }
 

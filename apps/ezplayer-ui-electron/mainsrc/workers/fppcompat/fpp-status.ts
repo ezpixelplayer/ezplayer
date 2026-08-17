@@ -86,7 +86,8 @@ function fppDateTimeStr(ms: number | undefined): string {
 export function buildFppStatus(src: FppStatusSources, identity: FppIdentity, now: number): Record<string, unknown> {
     const p = src.pStatus;
     const { status, status_name } = mapStatus(p);
-    const playing = status === FPP_STATUS.PLAYING || status === FPP_STATUS.PAUSED || status === FPP_STATUS.STOPPING_GRACEFULLY;
+    const playing =
+        status === FPP_STATUS.PLAYING || status === FPP_STATUS.PAUSED || status === FPP_STATUS.STOPPING_GRACEFULLY;
     const np = playing ? p?.now_playing : undefined;
 
     // Idle defaults — exactly FPP's idle shape (Playlist.cpp GetCurrentStatus).
@@ -214,7 +215,10 @@ function buildSchedulerBlock(src: FppStatusSources, now: number): Record<string,
 }
 
 /** GET /api/system/info payload. */
-export function buildSystemInfo(identity: FppIdentity, os: { freemem: number; totalmem: number }): Record<string, unknown> {
+export function buildSystemInfo(
+    identity: FppIdentity,
+    os: { freemem: number; totalmem: number },
+): Record<string, unknown> {
     const uptimeSeconds = Math.floor(process.uptime());
     return {
         HostName: identity.hostName,

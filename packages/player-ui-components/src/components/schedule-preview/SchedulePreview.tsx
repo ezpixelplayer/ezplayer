@@ -287,7 +287,7 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ className = ''
                     {/* Timeline Display */}
                     {previewData && !isGenerating && (
                         <>
-                        {/*
+                            {/*
                     <Typography variant="h6">
                     Errors: {previewData.errors?.join('\n')+'\n'}
                     </Typography>

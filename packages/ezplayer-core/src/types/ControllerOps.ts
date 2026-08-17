@@ -13,10 +13,7 @@ export interface ControllerDetailNode {
 }
 
 /** How a controller was reached (1 level max), for dedup + display. */
-export type ControllerSource =
-    | { via: 'direct' }
-    | { via: 'fpp-proxy'; proxy: string }
-    | { via: 'ezp'; host: string };
+export type ControllerSource = { via: 'direct' } | { via: 'fpp-proxy'; proxy: string } | { via: 'ezp'; host: string };
 
 /** A management action the driver offers — builds the per-device actions menu. */
 export interface ControllerDeviceAction {
@@ -85,9 +82,9 @@ export interface ControllerOp {
 
 /** One of this host's external IPv4 networks — the pickable scan targets. */
 export interface ControllerNetwork {
-    name: string;       // interface name, e.g. "eth0" / "Wi-Fi"
-    address: string;    // the interface's own IPv4
-    network: string;    // network CIDR, e.g. "192.168.1.0/24"
+    name: string; // interface name, e.g. "eth0" / "Wi-Fi"
+    address: string; // the interface's own IPv4
+    network: string; // network CIDR, e.g. "192.168.1.0/24"
 }
 
 /** Persisted per-network policy, keyed by CIDR. */

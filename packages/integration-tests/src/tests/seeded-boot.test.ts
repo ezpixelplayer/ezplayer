@@ -56,7 +56,13 @@ beforeAll(async () => {
         JSON.stringify({
             data: {
                 playlists: [
-                    { id: 'seedpl1', title: 'Seeded Show', tags: [], createdAt: 0, items: [{ id: 'seedseq1', sequence: 1 }] },
+                    {
+                        id: 'seedpl1',
+                        title: 'Seeded Show',
+                        tags: [],
+                        createdAt: 0,
+                        items: [{ id: 'seedseq1', sequence: 1 }],
+                    },
                 ],
             },
         }),

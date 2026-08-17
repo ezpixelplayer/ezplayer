@@ -291,9 +291,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
-            throw new Error(
-                (err as { error?: string }).error ?? `Batch upload-import failed: ${response.statusText}`,
-            );
+            throw new Error((err as { error?: string }).error ?? `Batch upload-import failed: ${response.statusText}`);
         }
         return (await response.json()) as BatchImportSummary;
     }

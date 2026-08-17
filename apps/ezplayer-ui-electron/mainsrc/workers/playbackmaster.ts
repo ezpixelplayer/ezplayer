@@ -130,7 +130,7 @@ process.on('uncaughtException', (err) => {
         name: err.name,
         message: err.message,
         stack: err.stack,
-        cause: (err as any).cause,
+        cause: err.cause,
     });
     // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
     process.exitCode = 1;

@@ -8,6 +8,9 @@ interface TimelineBoundaryLinesProps {
     className?: string;
 }
 
+/** Log events may carry schedule metadata beyond the base PlaybackLogDetail shape. */
+type BoundaryLogEvent = PlaybackLogDetail & { scheduleType?: string; priority?: string };
+
 interface ScheduleBoundary {
     scheduleId: string;
     scheduleName: string;
@@ -26,7 +29,7 @@ const TimelineBoundaryLines: React.FC<TimelineBoundaryLinesProps> = ({ data, cla
         if (!data.length) return [];
 
         const boundaries: ScheduleBoundary[] = [];
-        const scheduleEventMap = new Map<string, any[]>();
+        const scheduleEventMap = new Map<string, BoundaryLogEvent[]>();
 
         // Filter to only schedule events
         const scheduleEvents = data.filter((event) => event.eventType.includes('Schedule') && event.scheduleId);

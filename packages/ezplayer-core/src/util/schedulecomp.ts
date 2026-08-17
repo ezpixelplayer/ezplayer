@@ -2182,7 +2182,7 @@ export class PlayerRunState {
         this.upcomingById = nmap;
 
         // Search the stack
-        for (let i = 0; i < this.stack.length; ) {
+        for (let i = 0; i < this.stack.length;) {
             if (this.stack[i].itemId === id) {
                 this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i + 1)];
             } else {

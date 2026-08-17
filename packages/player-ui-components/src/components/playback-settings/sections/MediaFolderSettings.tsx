@@ -87,8 +87,8 @@ export const MediaFolderSettings: React.FC = () => {
                 ) : (
                     <>
                         Extra folder <strong>on the player PC</strong> searched for companion MP3 files during song
-                        autodetection and import. Enter the path as the player sees it (e.g.{' '}
-                        <code>C:\Shows\Media</code>).
+                        autodetection and import. Enter the path as the player sees it (e.g. <code>C:\Shows\Media</code>
+                        ).
                     </>
                 )}
             </Typography>

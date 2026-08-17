@@ -38,7 +38,13 @@ import {
 } from './shell-session.js';
 import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
 import { ezpVersions } from '../versions.js';
-import type { PlaybackSettings, EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import type {
+    PlaybackSettings,
+    EZPlayerCommand,
+    PlaylistRecord,
+    ScheduledPlaylist,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
 
 // Polyfill for `__dirname` in ES Modules
@@ -79,13 +85,13 @@ export function getServerStatus(): ServerStatus | null {
 // RPC handlers for server worker requests (write operations only — reads use pushed cache)
 const rpcHandlers: ServerWorkerRPCAPI = {
     updatePlaylistsHandler: async (playlists: unknown[]) => {
-        return await updatePlaylistsHandler(playlists as any[]);
+        return await updatePlaylistsHandler(playlists as PlaylistRecord[]);
     },
     updateScheduleHandler: async (schedules: unknown[]) => {
-        return await updateScheduleHandler(schedules as any[]);
+        return await updateScheduleHandler(schedules as ScheduledPlaylist[]);
     },
     putSequences: async (recs: unknown[]) => {
-        return await putSequencesWithDurations(recs as any[]);
+        return await putSequencesWithDurations(recs as SequenceRecord[]);
     },
     applySettingsFromRenderer: (settingsPath: string, settings: unknown) => {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
@@ -376,18 +382,18 @@ async function handleRPCRequest(id: string, method: string, args: unknown[]) {
             throw new Error(`Unknown RPC method: ${method}`);
         }
 
-        const result = await (handler as any)(...args);
+        const result = await (handler as (...args: unknown[]) => unknown)(...args);
         const response: MainToServerWorkerMessage = {
             type: 'response',
             id,
             result,
         };
         serverWorker.postMessage(response);
-    } catch (error: any) {
+    } catch (error) {
         const response: MainToServerWorkerMessage = {
             type: 'response',
             id,
-            error: error?.message || 'Unknown error',
+            error: (error as Error | undefined)?.message || 'Unknown error',
         };
         serverWorker.postMessage(response);
     }

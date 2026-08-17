@@ -13,10 +13,23 @@ import {
 import { Box } from '../box/Box';
 import CloseIcon from '@mui/icons-material/Close';
 import { useThemeContext } from '../../theme/ThemeBase';
+import type { Theme } from '@mui/material';
 
 interface ColorPaletteDialogProps {
     open: boolean;
     onClose: () => void;
+}
+
+type ThemeAlphaShades = Partial<Record<100 | 70 | 50 | 30 | 10 | 5, string>>;
+
+/** Custom color extension some themes attach to the MUI theme object. */
+interface ThemeCustomColors {
+    gradients?: Partial<Record<'blue1' | 'blue2' | 'blue3' | 'blue4' | 'blue5', string>>;
+    alpha?: {
+        black?: ThemeAlphaShades;
+        white?: ThemeAlphaShades;
+        trueWhite?: ThemeAlphaShades;
+    };
 }
 
 interface ColorSwatchProps {
@@ -212,21 +225,22 @@ export const ColorPaletteDialog: React.FC<ColorPaletteDialogProps> = ({ open, on
         }
 
         // Custom Theme Colors
+        const extColors = (theme as Theme & { colors?: ThemeCustomColors }).colors;
         const customColors: Array<{ name: string; value: string }> = [];
-        if ((theme as any).colors?.gradients?.blue1) {
-            customColors.push({ name: 'colors.gradients.blue1', value: (theme as any).colors.gradients.blue1 });
+        if (extColors?.gradients?.blue1) {
+            customColors.push({ name: 'colors.gradients.blue1', value: extColors.gradients.blue1 });
         }
-        if ((theme as any).colors?.gradients?.blue2) {
-            customColors.push({ name: 'colors.gradients.blue2', value: (theme as any).colors.gradients.blue2 });
+        if (extColors?.gradients?.blue2) {
+            customColors.push({ name: 'colors.gradients.blue2', value: extColors.gradients.blue2 });
         }
-        if ((theme as any).colors?.gradients?.blue3) {
-            customColors.push({ name: 'colors.gradients.blue3', value: (theme as any).colors.gradients.blue3 });
+        if (extColors?.gradients?.blue3) {
+            customColors.push({ name: 'colors.gradients.blue3', value: extColors.gradients.blue3 });
         }
-        if ((theme as any).colors?.gradients?.blue4) {
-            customColors.push({ name: 'colors.gradients.blue4', value: (theme as any).colors.gradients.blue4 });
+        if (extColors?.gradients?.blue4) {
+            customColors.push({ name: 'colors.gradients.blue4', value: extColors.gradients.blue4 });
         }
-        if ((theme as any).colors?.gradients?.blue5) {
-            customColors.push({ name: 'colors.gradients.blue5', value: (theme as any).colors.gradients.blue5 });
+        if (extColors?.gradients?.blue5) {
+            customColors.push({ name: 'colors.gradients.blue5', value: extColors.gradients.blue5 });
         }
 
         if (customColors.length > 0) {
@@ -235,67 +249,67 @@ export const ColorPaletteDialog: React.FC<ColorPaletteDialogProps> = ({ open, on
 
         // Alpha Colors
         const alphaColors: Array<{ name: string; value: string }> = [];
-        if ((theme as any).colors?.alpha?.black?.[100]) {
-            alphaColors.push({ name: 'colors.alpha.black.100', value: (theme as any).colors.alpha.black[100] });
+        if (extColors?.alpha?.black?.[100]) {
+            alphaColors.push({ name: 'colors.alpha.black.100', value: extColors.alpha.black[100] });
         }
-        if ((theme as any).colors?.alpha?.black?.[70]) {
-            alphaColors.push({ name: 'colors.alpha.black.70', value: (theme as any).colors.alpha.black[70] });
+        if (extColors?.alpha?.black?.[70]) {
+            alphaColors.push({ name: 'colors.alpha.black.70', value: extColors.alpha.black[70] });
         }
-        if ((theme as any).colors?.alpha?.black?.[50]) {
-            alphaColors.push({ name: 'colors.alpha.black.50', value: (theme as any).colors.alpha.black[50] });
+        if (extColors?.alpha?.black?.[50]) {
+            alphaColors.push({ name: 'colors.alpha.black.50', value: extColors.alpha.black[50] });
         }
-        if ((theme as any).colors?.alpha?.black?.[30]) {
-            alphaColors.push({ name: 'colors.alpha.black.30', value: (theme as any).colors.alpha.black[30] });
+        if (extColors?.alpha?.black?.[30]) {
+            alphaColors.push({ name: 'colors.alpha.black.30', value: extColors.alpha.black[30] });
         }
-        if ((theme as any).colors?.alpha?.black?.[10]) {
-            alphaColors.push({ name: 'colors.alpha.black.10', value: (theme as any).colors.alpha.black[10] });
+        if (extColors?.alpha?.black?.[10]) {
+            alphaColors.push({ name: 'colors.alpha.black.10', value: extColors.alpha.black[10] });
         }
-        if ((theme as any).colors?.alpha?.black?.[5]) {
-            alphaColors.push({ name: 'colors.alpha.black.5', value: (theme as any).colors.alpha.black[5] });
-        }
-
-        if ((theme as any).colors?.alpha?.white) {
-            if ((theme as any).colors.alpha.white?.[100]) {
-                alphaColors.push({ name: 'colors.alpha.white.100', value: (theme as any).colors.alpha.white[100] });
-            }
-            if ((theme as any).colors.alpha.white?.[70]) {
-                alphaColors.push({ name: 'colors.alpha.white.70', value: (theme as any).colors.alpha.white[70] });
-            }
-            if ((theme as any).colors.alpha.white?.[50]) {
-                alphaColors.push({ name: 'colors.alpha.white.50', value: (theme as any).colors.alpha.white[50] });
-            }
-            if ((theme as any).colors.alpha.white?.[30]) {
-                alphaColors.push({ name: 'colors.alpha.white.30', value: (theme as any).colors.alpha.white[30] });
-            }
-            if ((theme as any).colors.alpha.white?.[10]) {
-                alphaColors.push({ name: 'colors.alpha.white.10', value: (theme as any).colors.alpha.white[10] });
-            }
-            if ((theme as any).colors.alpha.white?.[5]) {
-                alphaColors.push({ name: 'colors.alpha.white.5', value: (theme as any).colors.alpha.white[5] });
-            }
+        if (extColors?.alpha?.black?.[5]) {
+            alphaColors.push({ name: 'colors.alpha.black.5', value: extColors.alpha.black[5] });
         }
 
-        if ((theme as any).colors?.alpha?.trueWhite) {
-            if ((theme as any).colors.alpha.trueWhite?.[100]) {
+        if (extColors?.alpha?.white) {
+            if (extColors.alpha.white?.[100]) {
+                alphaColors.push({ name: 'colors.alpha.white.100', value: extColors.alpha.white[100] });
+            }
+            if (extColors.alpha.white?.[70]) {
+                alphaColors.push({ name: 'colors.alpha.white.70', value: extColors.alpha.white[70] });
+            }
+            if (extColors.alpha.white?.[50]) {
+                alphaColors.push({ name: 'colors.alpha.white.50', value: extColors.alpha.white[50] });
+            }
+            if (extColors.alpha.white?.[30]) {
+                alphaColors.push({ name: 'colors.alpha.white.30', value: extColors.alpha.white[30] });
+            }
+            if (extColors.alpha.white?.[10]) {
+                alphaColors.push({ name: 'colors.alpha.white.10', value: extColors.alpha.white[10] });
+            }
+            if (extColors.alpha.white?.[5]) {
+                alphaColors.push({ name: 'colors.alpha.white.5', value: extColors.alpha.white[5] });
+            }
+        }
+
+        if (extColors?.alpha?.trueWhite) {
+            if (extColors.alpha.trueWhite?.[100]) {
                 alphaColors.push({
                     name: 'colors.alpha.trueWhite.100',
-                    value: (theme as any).colors.alpha.trueWhite[100],
+                    value: extColors.alpha.trueWhite[100],
                 });
             }
-            if ((theme as any).colors.alpha.trueWhite?.[70]) {
+            if (extColors.alpha.trueWhite?.[70]) {
                 alphaColors.push({
                     name: 'colors.alpha.trueWhite.70',
-                    value: (theme as any).colors.alpha.trueWhite[70],
+                    value: extColors.alpha.trueWhite[70],
                 });
             }
-            if ((theme as any).colors.alpha.trueWhite?.[50]) {
+            if (extColors.alpha.trueWhite?.[50]) {
                 alphaColors.push({
                     name: 'colors.alpha.trueWhite.50',
-                    value: (theme as any).colors.alpha.trueWhite[50],
+                    value: extColors.alpha.trueWhite[50],
                 });
             }
-            if ((theme as any).colors.alpha.trueWhite?.[5]) {
-                alphaColors.push({ name: 'colors.alpha.trueWhite.5', value: (theme as any).colors.alpha.trueWhite[5] });
+            if (extColors.alpha.trueWhite?.[5]) {
+                alphaColors.push({ name: 'colors.alpha.trueWhite.5', value: extColors.alpha.trueWhite[5] });
             }
         }
 

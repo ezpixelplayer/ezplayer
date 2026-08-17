@@ -11,7 +11,9 @@ export class RealTimeChunkPlayer {
     private audioPlayAtNextACT: number | undefined = undefined;
 
     constructor() {
-        const AC = window.AudioContext || (window as any).webkitAudioContext;
+        const AC =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         // Pin the context to 48 kHz so it matches the curated/normalized audio rate.
         // Source PCM already at 48 kHz then needs no per-chunk resampling (clean seams);
         // any stray 44.1 kHz content is resampled here but masked by the chunk crossfade.
@@ -110,7 +112,7 @@ function log(msg: string) {
         console.log(`[audio-window] ${msg}`);
     } else {
         // Fallback if element not found
-         
+
         console.log(`[audio-window] ${msg}`);
     }
 }

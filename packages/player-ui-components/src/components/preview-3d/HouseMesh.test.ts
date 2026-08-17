@@ -39,9 +39,7 @@ describe('createAssetLoadingManager — MTL texture resolution', () => {
     it('recovers the filename behind a path-only cloud proxy base', () => {
         const base = '/api/enduserspa/proxy/tok123';
         const lm = createAssetLoadingManager(echoResolver, OBJ_DIR, base);
-        expect(lm.resolveURL(`${base}${SERVED_DIR}texture_1002.png`)).toBe(
-            'resolved:HouseModel/texture_1002.png',
-        );
+        expect(lm.resolveURL(`${base}${SERVED_DIR}texture_1002.png`)).toBe('resolved:HouseModel/texture_1002.png');
     });
 
     it('resolves a plain relative texture name against the OBJ directory', () => {

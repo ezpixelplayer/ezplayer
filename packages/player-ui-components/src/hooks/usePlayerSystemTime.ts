@@ -84,12 +84,8 @@ export function usePlayerSystemTime(): PlayerSystemTimeState {
     const apiBase = useApiBase();
     const localTimeZone = getSystemTimeZone();
     const [now, setNow] = useState(() => new Date());
-    const [playerTimeZone, setPlayerTimeZone] = useState<string | null>(() =>
-        isElectron() ? localTimeZone : null,
-    );
-    const [clockOffsetMs, setClockOffsetMs] = useState<number | undefined>(() =>
-        isElectron() ? 0 : undefined,
-    );
+    const [playerTimeZone, setPlayerTimeZone] = useState<string | null>(() => (isElectron() ? localTimeZone : null));
+    const [clockOffsetMs, setClockOffsetMs] = useState<number | undefined>(() => (isElectron() ? 0 : undefined));
 
     useEffect(() => {
         const timer = window.setInterval(() => setNow(new Date()), TICK_INTERVAL_MS);
@@ -123,8 +119,7 @@ export function usePlayerSystemTime(): PlayerSystemTimeState {
     const playerNow = clockOffsetMs ? new Date(now.getTime() + clockOffsetMs) : now;
     const skewSeverity = clockOffsetMs !== undefined ? classifyClockSkew(clockOffsetMs) : 'none';
     // A skewed clock in the same zone still warrants showing both wall times.
-    const showLocalTime =
-        timeZonesDiffer(effectivePlayerTimeZone, localTimeZone) || skewSeverity !== 'none';
+    const showLocalTime = timeZonesDiffer(effectivePlayerTimeZone, localTimeZone) || skewSeverity !== 'none';
 
     return {
         playerTime: formatClockTime(playerNow, effectivePlayerTimeZone),
@@ -136,9 +131,6 @@ export function usePlayerSystemTime(): PlayerSystemTimeState {
         showLocalTime,
         clockOffsetMs,
         skewSeverity,
-        skewLabel:
-            skewSeverity !== 'none' && clockOffsetMs !== undefined
-                ? formatClockSkew(clockOffsetMs)
-                : undefined,
+        skewLabel: skewSeverity !== 'none' && clockOffsetMs !== undefined ? formatClockSkew(clockOffsetMs) : undefined,
     };
 }

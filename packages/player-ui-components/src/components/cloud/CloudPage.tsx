@@ -712,8 +712,8 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                     )}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    Control this player from any browser — no sign-in needed. Anyone with this
-                                    link can control the player, so share it carefully.
+                                    Control this player from any browser — no sign-in needed. Anyone with this link can
+                                    control the player, so share it carefully.
                                 </Typography>
                             </Box>
                         </Stack>
@@ -860,10 +860,10 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <DialogTitle>Change Player ID?</DialogTitle>
                     <DialogContent>
                         <DialogContentText>
-                            A new Player ID is generated and your cloud registration — sequences, settings, and
-                            server assignment — moves to it automatically. The current ID, and every
-                            remote-control link or QR code that uses it, stops working immediately. Do this if
-                            you shared your link with someone who should no longer have access.
+                            A new Player ID is generated and your cloud registration — sequences, settings, and server
+                            assignment — moves to it automatically. The current ID, and every remote-control link or QR
+                            code that uses it, stops working immediately. Do this if you shared your link with someone
+                            who should no longer have access.
                         </DialogContentText>
                         {rotateError && (
                             <Typography variant="body2" color="error" sx={{ mt: 2 }}>

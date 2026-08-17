@@ -1,10 +1,10 @@
 import { RPCRequest, RPCResponse, RPCHandler } from './rpctypes';
 
 export type MessageEndpoint = {
-    postMessage(value: any): void;
+    postMessage(value: unknown): void;
 };
 
-export class RPCClient<Methods extends Record<string, (...args: any[]) => any>> {
+export class RPCClient<Methods extends Record<string, (...args: never[]) => unknown>> {
     private requestId = 1;
     private pending = new Map<number, { resolve: (result: unknown) => void; reject: (e: Error) => void }>();
 
@@ -31,7 +31,7 @@ export class RPCClient<Methods extends Record<string, (...args: any[]) => any>> 
     }
 }
 
-export class RPCServer<Methods extends Record<string, (...args: any[]) => any>> {
+export class RPCServer<Methods extends Record<string, (...args: never[]) => unknown>> {
     constructor(
         private port: MessageEndpoint,
         private handlers: RPCHandler<Methods>,
@@ -43,15 +43,16 @@ export class RPCServer<Methods extends Record<string, (...args: any[]) => any>> 
         const { id, method, params } = msg;
 
         try {
-            const handler = this.handlers[method as keyof Methods];
+            const handler = this.handlers[method as keyof Methods] as
+                ((args: unknown) => unknown | Promise<unknown>) | undefined;
             if (!handler) throw new Error(`Unknown method: ${method}`);
 
-            const result = await handler(params as any);
+            const result = await handler(params);
             this.port.postMessage({ type: 'rpc-response', response: { id, result } as RPCResponse });
-        } catch (err: any) {
+        } catch (err) {
             this.port.postMessage({
                 type: 'rpc-response',
-                response: { id, error: err.message || 'Unknown error' } as RPCResponse,
+                response: { id, error: (err as Error).message || 'Unknown error' } as RPCResponse,
             });
         }
     }

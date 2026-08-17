@@ -637,18 +637,16 @@ export function JukeboxScreen({
                             includedTags: jukeboxSettings?.includedTags,
                         }),
                 )
-                .map(
-                    (song: SequenceItem): Song => ({
-                        isMusical: song.work?.music_url ? true : false,
-                        title: song.work?.title || '',
-                        artist: song.work?.artist || '',
-                        urlPart: song.files?.fseq || '',
-                        id: song.id,
-                        artwork: song.work?.artwork,
-                        localImagePath: song.files?.thumb,
-                        vendor: song.sequence?.vendor || '',
-                    }),
-                ) || [];
+                .map((song: SequenceItem): Song => ({
+                    isMusical: song.work?.music_url ? true : false,
+                    title: song.work?.title || '',
+                    artist: song.work?.artist || '',
+                    urlPart: song.files?.fseq || '',
+                    id: song.id,
+                    artwork: song.work?.artwork,
+                    localImagePath: song.files?.thumb,
+                    vendor: song.sequence?.vendor || '',
+                })) || [];
 
         if (selectedPlaylist === 'all') {
             return allSongs;

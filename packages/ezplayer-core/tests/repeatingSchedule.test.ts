@@ -106,11 +106,7 @@ describe('repeating schedule simulation', () => {
 
         // Single 100s song, no loop: each occurrence ends at its sequence end
         const ends = logs.filter((l) => l.eventType === 'Schedule Ended');
-        expect(ends.map((l) => l.eventTime)).toEqual([
-            at(0, 18, 1, 40),
-            at(1, 18, 1, 40),
-            at(2, 18, 1, 40),
-        ]);
+        expect(ends.map((l) => l.eventTime)).toEqual([at(0, 18, 1, 40), at(1, 18, 1, 40), at(2, 18, 1, 40)]);
     });
 
     it('a selected-days gap is silent — nothing plays on the missing day', () => {
@@ -146,7 +142,9 @@ describe('editing a repeating schedule loaded into a running state', () => {
         const plr = runningState(series, 3);
         expect(plr.upcomingById.get('ser-2026-08-11')?.schedStart).toBe(at(1, 18));
 
-        const edited = series.map((s) => (s.id === 'ser-2026-08-11' ? { ...s, fromTime: '20:00', toTime: '21:00' } : s));
+        const edited = series.map((s) =>
+            s.id === 'ser-2026-08-11' ? { ...s, fromTime: '20:00', toTime: '21:00' } : s,
+        );
         apply(plr, edited, 3);
 
         expect(plr.upcomingById.get('ser-2026-08-11')?.schedStart).toBe(at(1, 20));
@@ -172,11 +170,19 @@ describe('editing a repeating schedule loaded into a running state', () => {
         expect(top.item.scheduleId).toBe('ser-2026-08-10');
 
         // End moved: accepted live
-        apply(plr, series.map((s) => (s.id === 'ser-2026-08-10' ? { ...s, toTime: '19:30' } : s)), 3);
+        apply(
+            plr,
+            series.map((s) => (s.id === 'ser-2026-08-10' ? { ...s, toTime: '19:30' } : s)),
+            3,
+        );
         expect(top.item.schedEnd).toBe(at(0, 19, 30));
 
         // Start moved (with end): frozen — reload applies it
-        apply(plr, series.map((s) => (s.id === 'ser-2026-08-10' ? { ...s, fromTime: '17:00', toTime: '20:00' } : s)), 3);
+        apply(
+            plr,
+            series.map((s) => (s.id === 'ser-2026-08-10' ? { ...s, fromTime: '17:00', toTime: '20:00' } : s)),
+            3,
+        );
         expect(top.item.schedStart).toBe(at(0, 18));
         expect(top.item.schedEnd).toBe(at(0, 19, 30));
     });
@@ -187,10 +193,7 @@ describe('editing a repeating schedule loaded into a running state', () => {
         const top = plr.stack[plr.stack.length - 1];
 
         // The UI replaces a series wholesale: old rows deleted, new base id, new times
-        const replaced = [
-            ...series.map((s) => ({ ...s, deleted: true })),
-            ...dailySeries('ser2', 3, '18:30', '19:30'),
-        ];
+        const replaced = [...series.map((s) => ({ ...s, deleted: true })), ...dailySeries('ser2', 3, '18:30', '19:30')];
         apply(plr, replaced, 3);
 
         // Old active occurrence is wound down (its id no longer exists)
@@ -211,10 +214,7 @@ describe('editing a repeating schedule loaded into a running state', () => {
         const series = dailySeries('ser', 3, '18:00', '19:00');
         const plr = runningState(series, 3);
 
-        const replaced = [
-            ...series.map((s) => ({ ...s, deleted: true })),
-            ...dailySeries('ser2', 3, '17:30', '19:30'),
-        ];
+        const replaced = [...series.map((s) => ({ ...s, deleted: true })), ...dailySeries('ser2', 3, '17:30', '19:30')];
         apply(plr, replaced, 3);
 
         // The covering window loads as immediately runnable (heap, not upcoming)

@@ -207,7 +207,7 @@ export class E131Sender extends UDPSender {
         // Outer loop - go through all the parts
         //  When to return: all done, or budget hit and we're about to enqueue
         // OK go through and do it ALL... and update the next send time based on the token bucket
-        for (; state.curPart < job.parts.length; ) {
+        for (; state.curPart < job.parts.length;) {
             const part = job.parts[state.curPart];
             const leftThisJob = part.bufLen - state.curOffset;
             if (!leftThisJob) {

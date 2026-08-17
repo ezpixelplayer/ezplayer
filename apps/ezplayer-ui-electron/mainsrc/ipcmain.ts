@@ -90,7 +90,7 @@ export function registerFileListHandlers() {
         }
     });
 
-    ipcMain.handle('open-external-url', async (event: any, url: string) => {
+    ipcMain.handle('open-external-url', async (event, url: string) => {
         shell.openExternal(url);
     });
 

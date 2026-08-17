@@ -47,7 +47,11 @@ export function findSequenceByName(sequences: SequenceRecord[] | undefined, name
     const base = name.toLowerCase().replace(/\.fseq$/, '');
     return sequences?.find((s) => {
         if (s.deleted) return false;
-        const fseqBase = s.files?.fseq ? fileBaseName(s.files.fseq).toLowerCase().replace(/\.fseq$/, '') : undefined;
+        const fseqBase = s.files?.fseq
+            ? fileBaseName(s.files.fseq)
+                  .toLowerCase()
+                  .replace(/\.fseq$/, '')
+            : undefined;
         return fseqBase === base || s.work?.title?.toLowerCase() === base;
     });
 }
@@ -65,7 +69,9 @@ export function fppPlaylistToRecord(
 
     const entries: FppPlaylistEntry[] = [...(fpp.leadIn ?? []), ...(fpp.mainPlaylist ?? []), ...(fpp.leadOut ?? [])];
     if ((fpp.leadIn?.length ?? 0) > 0 || (fpp.leadOut?.length ?? 0) > 0) {
-        warnings.push('leadIn/leadOut entries were flattened into the playlist (EZPlayer handles pre/post shows at the schedule level)');
+        warnings.push(
+            'leadIn/leadOut entries were flattened into the playlist (EZPlayer handles pre/post shows at the schedule level)',
+        );
     }
 
     const items: { id: string; sequence: number }[] = [];
@@ -87,7 +93,9 @@ export function fppPlaylistToRecord(
                 break;
             }
             case 'media':
-                warnings.push(`audio-only entry '${entry.mediaName ?? ''}' skipped (EZPlayer playlist items are sequence-driven)`);
+                warnings.push(
+                    `audio-only entry '${entry.mediaName ?? ''}' skipped (EZPlayer playlist items are sequence-driven)`,
+                );
                 break;
             case 'pause':
                 warnings.push(`pause entry (${entry.duration ?? 0}s) skipped (no EZPlayer equivalent)`);
@@ -104,7 +112,9 @@ export function fppPlaylistToRecord(
     }
 
     if (fpp.repeat || fpp.loopCount) {
-        warnings.push('repeat/loopCount are not stored on EZPlayer playlists — pass repeat to Start Playlist or set loop on the schedule');
+        warnings.push(
+            'repeat/loopCount are not stored on EZPlayer playlists — pass repeat to Start Playlist or set loop on the schedule',
+        );
     }
 
     const prior = existing?.find((p) => p.title.toLowerCase() === name.toLowerCase());

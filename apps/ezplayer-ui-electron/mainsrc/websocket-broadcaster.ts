@@ -40,13 +40,13 @@ const LO_WATER = 256 * 1024;
 
 function waitForDrain(ws: WebSocket, loWater = LO_WATER): Promise<void> {
     return new Promise((resolve) => {
-        const buffered = (ws as any).bufferedAmount ?? 0;
+        const buffered = ws.bufferedAmount ?? 0;
         if (buffered <= loWater) return resolve();
 
-        const sock = (ws as any)._socket as import('net').Socket | undefined;
+        const sock = (ws as unknown as { _socket?: import('net').Socket })._socket;
         if (!sock) {
             const t = setInterval(() => {
-                const b = (ws as any).bufferedAmount ?? 0;
+                const b = ws.bufferedAmount ?? 0;
                 if (b <= loWater) {
                     clearInterval(t);
                     resolve();
@@ -56,7 +56,7 @@ function waitForDrain(ws: WebSocket, loWater = LO_WATER): Promise<void> {
         }
 
         const onDrain = () => {
-            const b = (ws as any).bufferedAmount ?? 0;
+            const b = ws.bufferedAmount ?? 0;
             if (b <= loWater) {
                 sock.off('drain', onDrain);
                 resolve();
@@ -155,7 +155,7 @@ export class WebSocketBroadcaster {
                 const data: Partial<FullPlayerState> = {};
                 for (const k of keys) {
                     // latest state wins; this is the drop semantics
-                    (data as any)[k] = this.state[k];
+                    (data as Partial<Record<keyof FullPlayerState, unknown>>)[k] = this.state[k];
                 }
 
                 const msg = {
@@ -269,7 +269,7 @@ export class WebSocketBroadcaster {
         if (c.closed) return;
 
         // backpressure guard
-        const buffered = (c.ws as any).bufferedAmount ?? 0;
+        const buffered = c.ws.bufferedAmount ?? 0;
         if (buffered > this.MAX_BUFFERED_BYTES) {
             // for state-convergence systems: best is to kick and let reconnect/resync
             this.kick(c, `backpressure: buffered=${buffered}`);

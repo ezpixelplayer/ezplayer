@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { EZPElectronAPI } from '@ezplayer/ezplayer-core';
 import { useApiBase } from '../util/ApiBaseProvider';
 
 export interface UseFrameServerUrlOptions {
@@ -35,7 +34,7 @@ export function useFrameServerUrl({ frameServerUrl }: UseFrameServerUrlOptions =
         }
 
         const detectUrl = async () => {
-            const electronAPI = (window as any).electronAPI as EZPElectronAPI;
+            const electronAPI = window.electronAPI;
 
             if (electronAPI?.getServerStatus) {
                 try {

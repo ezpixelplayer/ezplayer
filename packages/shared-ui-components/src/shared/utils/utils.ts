@@ -113,14 +113,13 @@ export const getDate = () => {
  * @returns converted rgba value
  */
 export const hexToRgbA = (hex: string, opacity: number) => {
-    let colorData: any;
     if (/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)) {
-        colorData = hex.substring(1).split('');
+        let colorData = hex.substring(1).split('');
         if (colorData.length == 3) {
             colorData = [colorData[0], colorData[0], colorData[1], colorData[1], colorData[2], colorData[2]];
         }
-        colorData = '0x' + colorData.join('');
-        return 'rgba(' + [(colorData >> 16) & 255, (colorData >> 8) & 255, colorData & 255].join(',') + `,${opacity})`;
+        const colorValue = Number('0x' + colorData.join(''));
+        return 'rgba(' + [(colorValue >> 16) & 255, (colorValue >> 8) & 255, colorValue & 255].join(',') + `,${opacity})`;
     }
     throw new Error('Bad Hex');
 };

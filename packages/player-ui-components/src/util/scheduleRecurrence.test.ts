@@ -58,23 +58,14 @@ describe('generateDailyOccurrences', () => {
 
     it('crosses a month boundary', () => {
         const rows = generateDailyOccurrences(new Date(2026, 7, 30), new Date(2026, 8, 2), base);
-        expect(rows.map((r) => r.id)).toEqual([
-            'ser-2026-08-30',
-            'ser-2026-08-31',
-            'ser-2026-09-01',
-            'ser-2026-09-02',
-        ]);
+        expect(rows.map((r) => r.id)).toEqual(['ser-2026-08-30', 'ser-2026-08-31', 'ser-2026-09-01', 'ser-2026-09-02']);
     });
 
     it('crosses a DST transition with one row per calendar day at local midnight', () => {
         // US fall-back is Nov 1 2026; in DST zones that day is 25h long
         const rows = generateDailyOccurrences(new Date(2026, 9, 31), new Date(2026, 10, 2), base);
         expect(rows.map((r) => r.id)).toEqual(['ser-2026-10-31', 'ser-2026-11-01', 'ser-2026-11-02']);
-        expect(rows.map((r) => r.date)).toEqual([
-            midnight(2026, 9, 31),
-            midnight(2026, 10, 1),
-            midnight(2026, 10, 2),
-        ]);
+        expect(rows.map((r) => r.date)).toEqual([midnight(2026, 9, 31), midnight(2026, 10, 1), midnight(2026, 10, 2)]);
     });
 });
 

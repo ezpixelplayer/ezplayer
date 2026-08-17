@@ -26,10 +26,7 @@ export interface BatchImportOptions extends AutoDetectOptions {
  * Bulk import requires companion audio to be resolved first; title/artist
  * still fall back to the fseq basename / "Unknown Artist" when tags are absent.
  */
-export function buildSequenceRecordFromDetected(
-    fseqPath: string,
-    detected: AutoDetectedSongFiles,
-): SequenceRecord {
+export function buildSequenceRecordFromDetected(fseqPath: string, detected: AutoDetectedSongFiles): SequenceRecord {
     const id = crypto.randomUUID();
     const fseqBase = path.parse(fseqPath).name;
     return {
@@ -72,8 +69,7 @@ async function importOneFseq(
     fseqPath: string,
     options: AutoDetectOptions,
 ): Promise<
-    | { ok: true; success: BatchImportSuccess; record: SequenceRecord }
-    | { ok: false; failure: BatchImportFailure }
+    { ok: true; success: BatchImportSuccess; record: SequenceRecord } | { ok: false; failure: BatchImportFailure }
 > {
     const fseqName = path.basename(fseqPath);
     try {

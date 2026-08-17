@@ -143,7 +143,8 @@ function cannotPromptMessage(): string {
     }
     return (
         'cannot prompt for a password: standard input is not a terminal, so echo\n' +
-        'cannot be turned off.\n\n' + USE_INSTEAD
+        'cannot be turned off.\n\n' +
+        USE_INSTEAD
     );
 }
 
@@ -246,7 +247,9 @@ export async function runRemoteAccessCommand(feature: RemoteFeature, args: strin
         const cfg = await readRemoteAccessConfig(showFolder);
         console.log(`Show folder:  ${showFolder}`);
         console.log(`Config file:  ${configFile}`);
-        console.log(`${label}: ${featureEnabled(cfg, feature) ? 'ENABLED (password set)' : 'disabled (no password set)'}`);
+        console.log(
+            `${label}: ${featureEnabled(cfg, feature) ? 'ENABLED (password set)' : 'disabled (no password set)'}`,
+        );
         const updated = cfg?.[feature]?.updatedAt;
         if (updated) console.log(`Last changed: ${updated}`);
         if (feature === 'shell' && cfg?.shell?.command) console.log(`Shell override: ${cfg.shell.command}`);

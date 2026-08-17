@@ -39,6 +39,9 @@ import { batchImportSequences } from '../data/batch-sequence-import.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
 import { fileBaseName } from './pathnames.js';
 
+/** Loose view of caught errors: fs/upload failures carry optional status/code/message. */
+type ErrLike = { status?: number; code?: string; message?: string } | undefined;
+
 export interface FileApiDeps {
     getShowFolder: () => string | undefined;
     getSequences: () => SequenceRecord[] | undefined;
@@ -441,11 +444,12 @@ export async function applyUploadChunk(
             await fsp.rename(session.tmpPath, target);
         }
         return { status: 200, body: { status: 'OK', file: name, dir: dirKey, size: session.received } };
-    } catch (err: any) {
+    } catch (err) {
+        const e = err as ErrLike;
         await dropSession(key);
         return {
-            status: err?.status ?? 500,
-            body: { status: 'failed', file: name, dir: dirKey, error: err?.message ?? 'Upload failed' },
+            status: e?.status ?? 500,
+            body: { status: 'failed', file: name, dir: dirKey, error: e?.message ?? 'Upload failed' },
         };
     }
 }
@@ -626,14 +630,15 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
                 size: written,
                 offset: 0,
             };
-        } catch (err: any) {
+        } catch (err) {
+            const e = err as ErrLike;
             try {
                 await fsp.unlink(tmp);
             } catch {
                 /* best-effort cleanup */
             }
-            ctx.status = err?.status ?? 500;
-            ctx.body = { status: 'error', error: err?.message ?? 'Upload failed' };
+            ctx.status = e?.status ?? 500;
+            ctx.body = { status: 'error', error: e?.message ?? 'Upload failed' };
         }
     }
 
@@ -654,7 +659,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const target = requireTarget(ctx, showFolder, true);
         if (!target) return;
         await singleShotUpload(ctx, showFolder, target);
-        if (ctx.status === 200 && ctx.body && (ctx.body as any).status === 'OK') {
+        if (ctx.status === 200 && ctx.body && (ctx.body as { status?: unknown }).status === 'OK') {
             ctx.body = { Status: 'OK', Message: '' }; // FPP sequence.php shape
         }
     });
@@ -698,9 +703,10 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         try {
             await fsp.unlink(target);
             ctx.body = { status: 'OK', file: path.basename(target) };
-        } catch (err: any) {
-            ctx.status = err?.code === 'ENOENT' ? 404 : 500;
-            ctx.body = { status: 'error', error: err?.message ?? 'Delete failed' };
+        } catch (err) {
+            const e = err as ErrLike;
+            ctx.status = e?.code === 'ENOENT' ? 404 : 500;
+            ctx.body = { status: 'error', error: e?.message ?? 'Delete failed' };
         }
     });
 
@@ -737,8 +743,8 @@ export async function putSequencesCore(deps: FileApiDeps, recs: unknown): Promis
     try {
         const sequences = await deps.putSequences(recs);
         return { status: 200, body: { success: true, sequences } };
-    } catch (err: any) {
-        return { status: 503, body: { error: err?.message ?? 'Sequence update failed' } };
+    } catch (err) {
+        return { status: 503, body: { error: (err as ErrLike)?.message ?? 'Sequence update failed' } };
     }
 }
 
@@ -839,8 +845,8 @@ export async function batchImportSequencesCore(
             putSequences: async (recs) => (await deps.putSequences(recs)) as SequenceRecord[],
         });
         return { status: 200, body: summary };
-    } catch (err: any) {
-        return { status: 503, body: { error: err?.message ?? 'Batch import failed' } };
+    } catch (err) {
+        return { status: 503, body: { error: (err as ErrLike)?.message ?? 'Batch import failed' } };
     }
 }
 
@@ -1055,19 +1061,26 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
     });
 
     router.post('/api/ezp/sequences/autodetect', async (ctx) => {
-        const res = await autodetectSequenceCore(deps.getShowFolder(), (ctx.request.body as any)?.fseq);
+        const res = await autodetectSequenceCore(
+            deps.getShowFolder(),
+            (ctx.request.body as { fseq?: unknown } | undefined)?.fseq,
+        );
         ctx.status = res.status;
         ctx.body = res.body;
     });
 
     router.post('/api/ezp/sequences/audio-metadata', async (ctx) => {
-        const res = await audioMetadataCore(deps.getShowFolder(), (ctx.request.body as any)?.audio);
+        const res = await audioMetadataCore(
+            deps.getShowFolder(),
+            (ctx.request.body as { audio?: unknown } | undefined)?.audio,
+        );
         ctx.status = res.status;
         ctx.body = res.body;
     });
 
     router.post('/api/ezp/sequences/batch-import', async (ctx) => {
-        const body = ctx.request.body as any;
+        const body = ctx.request.body as
+            { fseqNames?: unknown; companionAudioNames?: unknown; allowExistingAudio?: unknown } | undefined;
         const res = await batchImportSequencesCore(
             deps.getShowFolder(),
             deps,

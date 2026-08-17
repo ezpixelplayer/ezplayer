@@ -4,7 +4,12 @@ import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import Store from 'electron-store';
 import { isScheduleActive } from './ipcezplayer.js';
-import type { AutoUpdateMode, AutoUpdateSettings, AutoUpdateStatus, InstallUpdateResult } from '@ezplayer/ezplayer-core';
+import type {
+    AutoUpdateMode,
+    AutoUpdateSettings,
+    AutoUpdateStatus,
+    InstallUpdateResult,
+} from '@ezplayer/ezplayer-core';
 
 const store = new Store<{ skippedUpdateVersions: string[]; autoUpdateMode: AutoUpdateMode }>();
 
@@ -163,16 +168,16 @@ function registerIPCHandlers() {
     ipcMain.handle('autoupdate:check', async () => {
         try {
             await autoUpdater.checkForUpdates();
-        } catch (err: any) {
-            sendStatus({ state: 'error', message: err.message });
+        } catch (err) {
+            sendStatus({ state: 'error', message: (err as Error).message });
         }
     });
 
     ipcMain.handle('autoupdate:download', async () => {
         try {
             await autoUpdater.downloadUpdate();
-        } catch (err: any) {
-            sendStatus({ state: 'error', message: err.message });
+        } catch (err) {
+            sendStatus({ state: 'error', message: (err as Error).message });
         }
     });
 

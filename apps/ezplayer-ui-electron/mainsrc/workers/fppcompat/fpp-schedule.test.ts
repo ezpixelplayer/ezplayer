@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlaylistRecord } from '@ezplayer/ezplayer-core';
 import { fppDayToWeekdays, fppScheduleToRecords, recordsToFppSchedule, weekdaysToFppDay } from './fpp-schedule';
 
-const playlists: PlaylistRecord[] = [
-    { id: 'pl1', title: 'Main Show', tags: [], createdAt: 0, items: [] },
-];
+const playlists: PlaylistRecord[] = [{ id: 'pl1', title: 'Main Show', tags: [], createdAt: 0, items: [] }];
 
 // Wed 2026-07-15 12:00 local
 const NOW = new Date(2026, 6, 15, 12, 0, 0).getTime();
@@ -88,7 +86,11 @@ describe('fppScheduleToRecords', () => {
             NOW,
         );
         expect(records.length).toBe(4); // Jul 18,19,25,26
-        expect(records.every((r) => ['Sat', 'Sun'].includes(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(r.date).getDay()]))).toBe(true);
+        expect(
+            records.every((r) =>
+                ['Sat', 'Sun'].includes(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(r.date).getDay()]),
+            ),
+        ).toBe(true);
         expect(records[0].endPolicy).toBe('hardcut');
         expect(records[0].loop).toBe(false);
     });

@@ -1,5 +1,6 @@
 // import { Button as MuiButton } from '@mui/material';
 
+import type { ChangeEvent } from 'react';
 import { CombinedProps } from './services/fileButtonInterface';
 
 export const FILE_TYPES = [
@@ -28,7 +29,7 @@ export const FileButton = ({
     // Use the explicitly provided acceptedFileTypes, or fall back to fileType
     const acceptedTypes = fileType ? fileType.join(',') : FILE_TYPES.join(',');
 
-    const handleChangeFile = (event: any): void => {
+    const handleChangeFile = (event: ChangeEvent<HTMLInputElement>): void => {
         // Simply pass the event directly to parent component to handle validation
         onChange(event);
     };

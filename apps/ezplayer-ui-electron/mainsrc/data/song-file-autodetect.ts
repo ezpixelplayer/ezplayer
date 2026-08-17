@@ -153,11 +153,7 @@ async function findWithPrefix(dir: string, prefix: string, exts: string[]): Prom
 }
 
 /** Co-located search: exact basename, then optional prefix match (non-recursive). */
-async function findAudioInDirectory(
-    dir: string,
-    baseNames: string[],
-    exactOnly = false,
-): Promise<string | undefined> {
+async function findAudioInDirectory(dir: string, baseNames: string[], exactOnly = false): Promise<string | undefined> {
     for (const base of baseNames) {
         const hit = await findWithBasename(dir, base, AUDIO_EXTENSIONS);
         if (hit) return hit;
@@ -172,11 +168,7 @@ async function findAudioInDirectory(
 /** Recursive walk of `root` looking for an audio file whose basename (no ext)
  *  equals (or, when not exactOnly, starts with) any candidate. Used for the
  *  deep show-folder pass and the media-folder fallback. */
-async function findAudioRecursive(
-    root: string,
-    baseNames: string[],
-    exactOnly = false,
-): Promise<string | undefined> {
+async function findAudioRecursive(root: string, baseNames: string[], exactOnly = false): Promise<string | undefined> {
     const lowerBases = baseNames.map((b) => b.toLowerCase());
     const extSet = new Set(AUDIO_EXTENSIONS);
     const stack = [root];
@@ -256,9 +248,7 @@ export async function autoDetectSongFilesFromFseq(
     const exactOnly = options?.exactAudioMatch === true;
     const colocatedAllowlist = options?.colocatedAudioAllowlist;
     const colocatedRestricted = colocatedAllowlist !== undefined;
-    const colocatedAllowed = new Set(
-        (colocatedAllowlist ?? []).map((n) => path.basename(n).toLowerCase()),
-    );
+    const colocatedAllowed = new Set((colocatedAllowlist ?? []).map((n) => path.basename(n).toLowerCase()));
 
     let headerAudioName: string | undefined;
     let fseqMeta: { title?: string; artist?: string } = {};
@@ -287,9 +277,7 @@ export async function autoDetectSongFilesFromFseq(
         if (!colocatedRestricted) return hit;
         const base = path.basename(hit).toLowerCase();
         if (colocatedAllowed.has(base)) return hit;
-        console.log(
-            `[SongAutoDetect] Ignoring show-folder audio "${hit}" (not in this import's companion allowlist)`,
-        );
+        console.log(`[SongAutoDetect] Ignoring show-folder audio "${hit}" (not in this import's companion allowlist)`);
         return undefined;
     };
 
