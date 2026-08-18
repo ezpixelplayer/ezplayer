@@ -1,5 +1,6 @@
-import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
+import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, getScheduleTimes, priorityToNumber } from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
+import { ScheduleChip, type CalendarViewMode } from './ScheduleChip/ScheduleChip';
 import {
     CalendarViewDay,
     CalendarViewMonth,
@@ -38,11 +39,12 @@ import {
     Typography,
     styled,
 } from '@mui/material';
+import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { addDays, addMonths, addWeeks, format, subDays, subMonths, subWeeks } from 'date-fns';
-import React, { useEffect, useMemo, useState } from 'react';
+import { addDays, addMonths, addWeeks, format, isSameDay, subDays, subMonths, subWeeks } from 'date-fns';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { postScheduledPlaylists } from '../../store/slices/ScheduleStore';
@@ -145,6 +147,40 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const [scheduledPlaylists, setScheduledPlaylists] = useState<ScheduledPlaylist[]>(initialSchedules);
     const [selectedSchedule, setSelectedSchedule] = useState<ScheduledPlaylist | null>(null);
+    const isDnDDraggingRef = useRef(false);
+
+    const [dayErrorKeys, setDayErrorKeys] = useState<Record<string, boolean>>({});
+
+    const [dragDropDialogState, setDragDropDialogState] = useState<{
+        open: boolean;
+        sourceSchedule: ScheduledPlaylist | null;
+        destinationDate: Date | null;
+        destinationDateKey: string | null;
+    }>({
+        open: false,
+        sourceSchedule: null,
+        destinationDate: null,
+        destinationDateKey: null,
+    });
+
+    const [conflictConfirmDialogState, setConflictConfirmDialogState] = useState<{
+        open: boolean;
+        operation: 'copy' | 'move' | null;
+        sourceSchedule: ScheduledPlaylist | null;
+        destinationDate: Date | null;
+        destinationDateKey: string | null;
+        candidateSchedules: ScheduledPlaylist[];
+        conflictErrors: string[];
+    }>({
+        open: false,
+        operation: null,
+        sourceSchedule: null,
+        destinationDate: null,
+        destinationDateKey: null,
+        candidateSchedules: [],
+        conflictErrors: [],
+    });
+    const [activeDragSchedule, setActiveDragSchedule] = useState<ScheduledPlaylist | null>(null);
 
     // Helper function to combine date and time into a timestamp
     const combineDateAndTime = (date: Date, time: string) => {
@@ -215,6 +251,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     };
 
     const handleDateSelect = (date: Date, time: string) => {
+        if (isDnDDraggingRef.current) return;
         setSelectedDate(date);
         setIsLoopAutoEnabled(false);
         // Apply 2-minute start buffer to the selected time
@@ -1099,92 +1136,199 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     const renderScheduledPlaylist = (scheduleItem: ScheduledPlaylist) => {
         const selectedPlaylist = availablePlaylists.find((p) => p.id === scheduleItem.playlistId);
-        const isBackground = scheduleType === 'background';
-        const backgroundColor = isBackground ? 'secondary.main' : 'primary.main';
-        const textColor = isBackground ? 'secondary.contrastText' : 'primary.contrastText';
-        const hoverColor = isBackground ? 'secondary.dark' : 'primary.dark';
+        const sourceDateKey = format(timestampToDate(scheduleItem.date), 'yyyy-MM-dd');
 
-        if (view === 'monthly') {
-            return (
-                <Box
-                    key={scheduleItem.id}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        handleScheduleClick(scheduleItem);
-                    }}
-                    sx={{
-                        position: 'relative',
-                        width: '100%',
-                        backgroundColor: backgroundColor,
-                        borderRadius: 1,
-                        p: 0.5,
-                        marginTop: 0.5,
-                        cursor: 'pointer',
-                    }}
-                >
-                    <Typography variant="body2" sx={{ display: 'block', margin: '0 2px', color: textColor }}>
-                        {scheduleItem.title}
-                    </Typography>
-                    <Typography
-                        variant="caption"
-                        sx={{ display: 'block', margin: '0 2px', color: textColor, opacity: 0.8 }}
-                    >
-                        {scheduleItem.fromTime} - {scheduleItem.toTime}
-                    </Typography>
-                </Box>
+        return (
+            <ScheduleChip
+                key={scheduleItem.id}
+                scheduleItem={scheduleItem}
+                view={view as CalendarViewMode}
+                scheduleType={scheduleType}
+                resolvedPlaylistTitle={selectedPlaylist?.title}
+                sourceDateKey={sourceDateKey}
+                onScheduleClick={handleScheduleClick}
+                draggable={view !== 'daily'}
+            />
+        );
+    };
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+    );
+
+    const dateKeyToDate = (dateKey: string) => {
+        const [y, m, d] = dateKey.split('-').map((v) => Number(v));
+        return new Date(y, m - 1, d);
+    };
+
+    const applyDragScheduleOperation = async (operation: 'copy' | 'move', proceedAfterConflict: boolean) => {
+        const sourceSchedule = dragDropDialogState.sourceSchedule;
+        const destinationDate = dragDropDialogState.destinationDate;
+        const destinationDateKey = dragDropDialogState.destinationDateKey;
+
+        if (!sourceSchedule || !destinationDate || !destinationDateKey) return;
+
+        const destinationDateMS = convertDateToMilliseconds(destinationDate);
+
+        const candidateSchedule: ScheduledPlaylist =
+            operation === 'copy'
+                ? {
+                      ...sourceSchedule,
+                      id: uuidv4(),
+                      date: destinationDateMS,
+                      updatedAt: Date.now(),
+                      deleted: false,
+                  }
+                : {
+                      ...sourceSchedule,
+                      date: destinationDateMS,
+                      updatedAt: Date.now(),
+                      deleted: false,
+                  };
+
+        const destinationExistingSchedules = scheduledPlaylists.filter((s) =>
+            isSameDay(timestampToDate(s.date), destinationDate),
+        );
+
+        const mergedDestinationSchedules = [
+            ...destinationExistingSchedules.filter((s) => s.id !== candidateSchedule.id),
+            candidateSchedule,
+        ];
+
+        let conflictErrors: string[] = [];
+        let hasConflict = false;
+
+        try {
+            const candidateTimes = getScheduleTimes(candidateSchedule);
+            const overlappingSchedules = mergedDestinationSchedules.filter((existing) => {
+                if (existing.id === candidateSchedule.id) return false;
+
+                const existingTimes = getScheduleTimes(existing);
+                return (
+                    candidateTimes.startTimeMS < existingTimes.endTimeMS &&
+                    candidateTimes.endTimeMS > existingTimes.startTimeMS
+                );
+            });
+
+            hasConflict = overlappingSchedules.length > 0;
+            conflictErrors = overlappingSchedules.map(
+                (existing) => `${existing.title || existing.playlistTitle} (${existing.fromTime} - ${existing.toTime})`,
             );
+        } catch (e) {
+            console.error('Drag-drop conflict check failed:', e);
+            hasConflict = false;
+            conflictErrors = [];
         }
 
-        // Daily and Weekly view rendering
-        return (
-            <Box
-                key={scheduleItem.id}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    handleScheduleClick(scheduleItem);
-                }}
-                sx={{
-                    backgroundColor: backgroundColor,
-                    borderRadius: '4px',
-                    '&:hover': {
-                        backgroundColor: hoverColor,
-                    },
-                    padding: '2px 4px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                }}
-            >
-                <Typography
-                    variant="body2"
-                    sx={{
-                        fontWeight: 'bold',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        margin: 0,
-                        color: textColor,
-                        display: 'block',
-                    }}
-                >
-                    {scheduleItem.title || selectedPlaylist?.title}
-                </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        margin: 0,
-                        color: textColor,
-                        opacity: 0.8,
-                        display: 'block',
-                    }}
-                >
-                    {scheduleItem.fromTime} - {scheduleItem.toTime}
-                </Typography>
-            </Box>
-        );
+        if (hasConflict && !proceedAfterConflict) {
+            setDayErrorKeys((prev) => ({ ...prev, [destinationDateKey]: true }));
+            setDragDropDialogState((prev) => ({ ...prev, open: false }));
+            setConflictConfirmDialogState({
+                open: true,
+                operation,
+                sourceSchedule,
+                destinationDate,
+                destinationDateKey,
+                candidateSchedules: [candidateSchedule],
+                conflictErrors: conflictErrors.length ? conflictErrors : ['Schedule conflict detected on this day.'],
+            });
+            return;
+        }
+
+        try {
+            await dispatch(postScheduledPlaylists([candidateSchedule])).unwrap();
+            setDayErrorKeys((prev) => {
+                const next = { ...prev };
+                delete next[destinationDateKey];
+                return next;
+            });
+            setConflictConfirmDialogState((prev) => ({ ...prev, open: false }));
+            setDragDropDialogState((prev) => ({ ...prev, open: false }));
+
+            ToastMsgs.showSuccessMessage(
+                `${operation === 'copy' ? 'Schedule copied' : 'Schedule moved'} to ${formatDateStandard(destinationDate)}`,
+                {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 2000,
+                },
+            );
+        } catch (error) {
+            console.error(`Drag-drop ${operation} failed:`, error);
+            ToastMsgs.showErrorMessage(
+                `${operation === 'copy' ? 'Copy' : 'Move'} failed. Please try again.`,
+                {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 4000,
+                },
+            );
+        }
+    };
+
+    const handleDragStart = (_event: DragStartEvent) => {
+        isDnDDraggingRef.current = true;
+        setSelectedSchedule(null);
+        setEditConfirmDialogState({ open: false });
+        setDeleteDialogState({ open: false });
+        setDragDropDialogState({
+            open: false,
+            sourceSchedule: null,
+            destinationDate: null,
+            destinationDateKey: null,
+        });
+        setConflictConfirmDialogState((prev) => ({ ...prev, open: false }));
+
+        const activeData = _event.active.data?.current as any;
+        const schedule = activeData?.scheduleItem as ScheduledPlaylist | undefined;
+        setActiveDragSchedule(schedule ?? null);
+    };
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        isDnDDraggingRef.current = false;
+        setActiveDragSchedule(null);
+
+        const overId = event.over?.id;
+        if (!overId || typeof overId !== 'string') return;
+
+        const activeData = event.active.data?.current as any;
+        const sourceSchedule = activeData?.scheduleItem as ScheduledPlaylist | undefined;
+        const sourceDateKey = activeData?.sourceDateKey as string | undefined;
+
+        if (!sourceSchedule || !sourceDateKey) return;
+        if (sourceDateKey === overId) return;
+
+        const destinationDate = dateKeyToDate(overId);
+        setDragDropDialogState({
+            open: true,
+            sourceSchedule,
+            destinationDate,
+            destinationDateKey: overId,
+        });
+    };
+
+    const handleCancelDragDrop = () => {
+        setActiveDragSchedule(null);
+        setDragDropDialogState({
+            open: false,
+            sourceSchedule: null,
+            destinationDate: null,
+            destinationDateKey: null,
+        });
+    };
+
+    const clearConflictHighlight = () => {
+        const key = conflictConfirmDialogState.destinationDateKey;
+        if (!key) return;
+        setDayErrorKeys((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+        });
     };
 
     // Create a memoized sorted version of scheduledPlaylists for display
@@ -1333,40 +1477,73 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 </Box>
             )}
 
-            <Box
-                sx={{
-                    flex: 1,
-                    overflow: 'auto',
-                    p: 2,
-                    m: 2,
-                    bgcolor: 'background.default',
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragCancel={() => {
+                    isDnDDraggingRef.current = false;
+                    handleCancelDragDrop();
+                    setConflictConfirmDialogState((prev) => ({ ...prev, open: false }));
                 }}
             >
-                {view === 'monthly' && (
-                    <MonthlyView
-                        currentDate={currentDate}
-                        onDateSelect={handleDateSelect}
-                        scheduledPlaylists={sortedScheduledPlaylists}
-                        renderScheduledPlaylist={renderScheduledPlaylist}
-                    />
-                )}
-                {view === 'weekly' && (
-                    <WeeklyView
-                        currentDate={currentDate}
-                        onDateSelect={handleDateSelect}
-                        scheduledPlaylists={sortedScheduledPlaylists}
-                        renderScheduledPlaylist={renderScheduledPlaylist}
-                    />
-                )}
-                {view === 'daily' && (
-                    <DailyView
-                        currentDate={currentDate}
-                        onDateSelect={handleDateSelect}
-                        scheduledPlaylists={sortedScheduledPlaylists}
-                        renderScheduledPlaylist={renderScheduledPlaylist}
-                    />
-                )}
-            </Box>
+                <Box
+                    sx={{
+                        flex: 1,
+                        overflow: 'auto',
+                        p: 2,
+                        m: 2,
+                        bgcolor: 'background.default',
+                    }}
+                >
+                    {view === 'monthly' && (
+                        <MonthlyView
+                            currentDate={currentDate}
+                            onDateSelect={handleDateSelect}
+                            scheduledPlaylists={sortedScheduledPlaylists}
+                            renderScheduledPlaylist={renderScheduledPlaylist}
+                            dayErrorKeys={dayErrorKeys}
+                        />
+                    )}
+                    {view === 'weekly' && (
+                        <WeeklyView
+                            currentDate={currentDate}
+                            onDateSelect={handleDateSelect}
+                            scheduledPlaylists={sortedScheduledPlaylists}
+                            renderScheduledPlaylist={renderScheduledPlaylist}
+                            dayErrorKeys={dayErrorKeys}
+                        />
+                    )}
+                    {view === 'daily' && (
+                        <DailyView
+                            currentDate={currentDate}
+                            onDateSelect={handleDateSelect}
+                            scheduledPlaylists={sortedScheduledPlaylists}
+                            renderScheduledPlaylist={renderScheduledPlaylist}
+                        />
+                    )}
+                </Box>
+
+                <DragOverlay dropAnimation={null}>
+                    {activeDragSchedule && (
+                        <ScheduleChip
+                            draggable={false}
+                            isDragOverlay
+                            scheduleItem={activeDragSchedule}
+                            view={view as CalendarViewMode}
+                            scheduleType={scheduleType}
+                            resolvedPlaylistTitle={
+                                availablePlaylists.find((p) => p.id === activeDragSchedule.playlistId)?.title
+                            }
+                            sourceDateKey={format(timestampToDate(activeDragSchedule.date), 'yyyy-MM-dd')}
+                            onScheduleClick={() => {
+                                /* overlay: ignore click */
+                            }}
+                        />
+                    )}
+                </DragOverlay>
+            </DndContext>
 
             {/* Playlist Selection Dialog */}
             <Dialog open={isDialogOpen} onClose={handleClose} maxWidth="sm" fullWidth>
@@ -1947,6 +2124,98 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         </>
                     )}
                 </DialogContent>
+            </Dialog>
+
+            {/* Drag-drop confirmation dialog */}
+            <Dialog
+                open={dragDropDialogState.open}
+                onClose={handleCancelDragDrop}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>Schedule</DialogTitle>
+                <DialogContent>
+                    <Typography gutterBottom>
+                        Would you like to copy or move this schedule to{' '}
+                        <b>{dragDropDialogState.destinationDate ? formatDateStandard(dragDropDialogState.destinationDate) : ''}</b>
+                        ?
+                    </Typography>
+                    {dragDropDialogState.sourceSchedule && (
+                        <Typography variant="body2" color="text.secondary">
+                            {dragDropDialogState.sourceSchedule.title} ({dragDropDialogState.sourceSchedule.fromTime} - {dragDropDialogState.sourceSchedule.toTime})
+                        </Typography>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCancelDragDrop}>Cancel</Button>
+                    <Button
+                        onClick={() => applyDragScheduleOperation('copy', false)}
+                        variant="outlined"
+                    >
+                        Copy Schedule
+                    </Button>
+                    <Button
+                        onClick={() => applyDragScheduleOperation('move', false)}
+                        variant="contained"
+                        color="primary"
+                    >
+                        Move Schedule
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Conflict confirmation dialog */}
+            <Dialog
+                open={conflictConfirmDialogState.open}
+                onClose={() => {
+                    setConflictConfirmDialogState((prev) => ({ ...prev, open: false }));
+                    clearConflictHighlight();
+                    handleCancelDragDrop();
+                }}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>Schedule Conflict</DialogTitle>
+                <DialogContent>
+                    <Typography gutterBottom>
+                        This destination day has unresolved schedule conflicts. You must explicitly confirm the operation.
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        {conflictConfirmDialogState.operation === 'copy' ? 'Copy' : 'Move'} to{' '}
+                        {conflictConfirmDialogState.destinationDate
+                            ? formatDateStandard(conflictConfirmDialogState.destinationDate)
+                            : ''}
+                        .
+                    </Typography>
+                    {conflictConfirmDialogState.conflictErrors.length > 0 && (
+                        <Box sx={{ mt: 1 }}>
+                            {conflictConfirmDialogState.conflictErrors.slice(0, 3).map((err, i) => (
+                                <Typography key={i} variant="caption" color="error.main" sx={{ display: 'block' }}>
+                                    ERR: {err}
+                                </Typography>
+                            ))}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => {
+                            setConflictConfirmDialogState((prev) => ({ ...prev, open: false }));
+                            clearConflictHighlight();
+                            handleCancelDragDrop();
+                        }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => applyDragScheduleOperation(conflictConfirmDialogState.operation!, true)}
+                        variant="contained"
+                        color="primary"
+                        disabled={!conflictConfirmDialogState.operation}
+                    >
+                        {conflictConfirmDialogState.operation === 'copy' ? 'Copy Anyway' : 'Move Anyway'}
+                    </Button>
+                </DialogActions>
             </Dialog>
         </Paper>
     );

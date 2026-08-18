@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useDroppable } from '@dnd-kit/core';
 import { startOfWeek, addDays, format, isSameDay } from 'date-fns';
 import { Typography, styled } from '@mui/material';
 import { Box } from '../box/Box';
@@ -13,6 +14,7 @@ interface WeeklyViewProps {
         index: number,
         array: ScheduledPlaylist[],
     ) => React.ReactNode;
+    dayErrorKeys?: Record<string, boolean>;
 }
 
 // Shared column template for BOTH the header row and the body time grid so the
@@ -31,11 +33,132 @@ const TimeSlot = styled(Box)(({ theme }) => ({
     },
 }));
 
+interface WeeklyDayColumnProps {
+    day: Date;
+    onDateSelect: (date: Date, time: string) => void;
+    scheduledPlaylists: ScheduledPlaylist[];
+    renderScheduledPlaylist: (
+        playlist: ScheduledPlaylist,
+        index: number,
+        array: ScheduledPlaylist[],
+    ) => React.ReactNode;
+    processScheduledPlaylists: (playlists: ScheduledPlaylist[]) => Array<ScheduledPlaylist & { width?: string; left?: string }>;
+    dayErrorKeys?: Record<string, boolean>;
+}
+
+const WeeklyDayColumn: React.FC<WeeklyDayColumnProps> = ({
+    day,
+    onDateSelect,
+    scheduledPlaylists,
+    renderScheduledPlaylist,
+    processScheduledPlaylists,
+    dayErrorKeys,
+}) => {
+    const dateKey = format(day, 'yyyy-MM-dd');
+    const hasError = Boolean(dayErrorKeys?.[dateKey]);
+
+    const { setNodeRef } = useDroppable({
+        id: dateKey,
+    });
+
+    return (
+        <Box
+            ref={setNodeRef}
+            sx={{
+                minWidth: 0,
+                borderRight: 1,
+                borderColor: hasError ? 'error.main' : 'divider',
+                position: 'relative',
+                bgcolor: hasError ? 'error.light' : undefined,
+            }}
+        >
+            {/* Time slots */}
+            <Box sx={{ position: 'relative' }}>
+                {Array.from({ length: 24 }, (_, i) => (
+                    <TimeSlot
+                        key={`${day}-${i}`}
+                        onClick={() => {
+                            const timeString = `${i.toString().padStart(2, '0')}:00`;
+                            onDateSelect(day, timeString);
+                        }}
+                    />
+                ))}
+
+                {/* Scheduled playlists */}
+                {processScheduledPlaylists(
+                    scheduledPlaylists
+                        .filter((schedule: ScheduledPlaylist) => isSameDay(new Date(schedule.date), day))
+                        .sort((a: ScheduledPlaylist, b: ScheduledPlaylist) => {
+                            const [hourA, minutesA] = a.fromTime.split(':').map(Number);
+                            const [hourB, minutesB] = b.fromTime.split(':').map(Number);
+                            return hourA * 60 + minutesA - (hourB * 60 + minutesB);
+                        }),
+                ).map((playlist, index) => {
+                    const [fromHour, fromMinutes] = playlist.fromTime.split(':').map(Number);
+                    const [toHour, toMinutes] = playlist.toTime.split(':').map(Number);
+                    const startTimeInMinutes = fromHour * 60 + fromMinutes;
+                    const endTimeInMinutes = toHour * 60 + toMinutes;
+                    const durationInMinutes = endTimeInMinutes - startTimeInMinutes;
+
+                    // Define a minimum height for events to ensure text visibility
+                    const MIN_EVENT_HEIGHT_PX = 50;
+
+                    return (
+                        <Box
+                            key={index}
+                            sx={{
+                                position: 'absolute',
+                                top: `${startTimeInMinutes}px`,
+                                height: `${Math.max(durationInMinutes, MIN_EVENT_HEIGHT_PX)}px`,
+                                left: (playlist as any).left,
+                                width: (playlist as any).width,
+                                zIndex: 1,
+                                cursor: 'pointer',
+                                '& > *': {
+                                    height: '100%',
+                                },
+                            }}
+                        >
+                            {renderScheduledPlaylist(playlist, index, scheduledPlaylists)}
+                        </Box>
+                    );
+                })}
+            </Box>
+
+            {hasError && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: 6,
+                        right: 8,
+                        zIndex: 4,
+                    }}
+                >
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            bgcolor: 'error.main',
+                            color: 'error.contrastText',
+                            borderRadius: 0.5,
+                            px: 0.5,
+                            fontWeight: 'bold',
+                            fontSize: 10,
+                        }}
+                    >
+                        ERR
+                    </Typography>
+                </Box>
+            )}
+        </Box>
+    );
+};
+
 const WeeklyView: React.FC<WeeklyViewProps> = ({
     currentDate,
     onDateSelect,
     scheduledPlaylists,
     renderScheduledPlaylist,
+    dayErrorKeys,
 }: WeeklyViewProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 }); // Sunday as start of week
@@ -212,68 +335,15 @@ const WeeklyView: React.FC<WeeklyViewProps> = ({
 
                 {/* Days columns */}
                 {days.map((day) => (
-                    <Box
+                    <WeeklyDayColumn
                         key={day.toString()}
-                        sx={{
-                            minWidth: 0,
-                            borderRight: 1,
-                            borderColor: 'divider',
-                            position: 'relative',
-                        }}
-                    >
-                        {/* Time slots */}
-                        <Box sx={{ position: 'relative' }}>
-                            {Array.from({ length: 24 }, (_, i) => (
-                                <TimeSlot
-                                    key={`${day}-${i}`}
-                                    onClick={() => {
-                                        const timeString = `${i.toString().padStart(2, '0')}:00`;
-                                        onDateSelect(day, timeString);
-                                    }}
-                                />
-                            ))}
-
-                            {/* Scheduled playlists */}
-                            {processScheduledPlaylists(
-                                scheduledPlaylists
-                                    .filter((schedule: ScheduledPlaylist) => isSameDay(new Date(schedule.date), day))
-                                    .sort((a: ScheduledPlaylist, b: ScheduledPlaylist) => {
-                                        const [hourA, minutesA] = a.fromTime.split(':').map(Number);
-                                        const [hourB, minutesB] = b.fromTime.split(':').map(Number);
-                                        return hourA * 60 + minutesA - (hourB * 60 + minutesB);
-                                    }),
-                            ).map((playlist, index) => {
-                                const [fromHour, fromMinutes] = playlist.fromTime.split(':').map(Number);
-                                const [toHour, toMinutes] = playlist.toTime.split(':').map(Number);
-                                const startTimeInMinutes = fromHour * 60 + fromMinutes;
-                                const endTimeInMinutes = toHour * 60 + toMinutes;
-                                const durationInMinutes = endTimeInMinutes - startTimeInMinutes;
-
-                                // Define a minimum height for events to ensure text visibility
-                                const MIN_EVENT_HEIGHT_PX = 50; // Adjust as needed
-
-                                return (
-                                    <Box
-                                        key={index}
-                                        sx={{
-                                            position: 'absolute',
-                                            top: `${startTimeInMinutes}px`,
-                                            height: `${Math.max(durationInMinutes, MIN_EVENT_HEIGHT_PX)}px`,
-                                            left: playlist.left,
-                                            width: playlist.width,
-                                            zIndex: 1,
-                                            cursor: 'pointer',
-                                            '& > *': {
-                                                height: '100%',
-                                            },
-                                        }}
-                                    >
-                                        {renderScheduledPlaylist(playlist, index, scheduledPlaylists)}
-                                    </Box>
-                                );
-                            })}
-                        </Box>
-                    </Box>
+                        day={day}
+                        onDateSelect={onDateSelect}
+                        scheduledPlaylists={scheduledPlaylists}
+                        renderScheduledPlaylist={renderScheduledPlaylist}
+                        processScheduledPlaylists={processScheduledPlaylists}
+                        dayErrorKeys={dayErrorKeys}
+                    />
                 ))}
             </Box>
         </Box>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDroppable } from '@dnd-kit/core';
 import {
     startOfMonth,
     endOfMonth,
@@ -22,6 +23,7 @@ interface MonthlyViewProps {
         index: number,
         array: ScheduledPlaylist[],
     ) => React.ReactNode;
+    dayErrorKeys?: Record<string, boolean>;
 }
 
 const DayCell = styled(Box)(({ theme }) => ({
@@ -35,11 +37,140 @@ const DayCell = styled(Box)(({ theme }) => ({
     },
 }));
 
+type CalendarDayObj = {
+    date: Date;
+    isEmpty: boolean;
+    gridRow: number;
+    gridColumn: number;
+};
+
+interface DayCellDroppableProps {
+    dayObj: CalendarDayObj;
+    index: number;
+    currentDate: Date;
+    scheduledPlaylists: ScheduledPlaylist[];
+    renderScheduledPlaylist: (
+        playlist: ScheduledPlaylist,
+        index: number,
+        array: ScheduledPlaylist[],
+    ) => React.ReactNode;
+    onDateSelect: (date: Date, time: string) => void;
+    dayErrorKeys?: Record<string, boolean>;
+}
+
+const DayCellDroppable: React.FC<DayCellDroppableProps> = ({
+    dayObj,
+    index,
+    scheduledPlaylists,
+    renderScheduledPlaylist,
+    onDateSelect,
+    dayErrorKeys,
+}) => {
+    const dateKey = format(dayObj.date, 'yyyy-MM-dd');
+    const hasError = Boolean(dayErrorKeys?.[dateKey]);
+
+    const { setNodeRef } = useDroppable({
+        id: dateKey,
+        disabled: dayObj.isEmpty,
+    });
+
+    const getCurrentTime = () => {
+        const now = new Date();
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
+    };
+
+    return (
+        <DayCell
+            ref={setNodeRef}
+            key={`${dayObj.date.toString()}-${index}`}
+            onClick={() => !dayObj.isEmpty && onDateSelect(dayObj.date, getCurrentTime())}
+            sx={{
+                bgcolor: dayObj.isEmpty ? 'action.disabledBackground' : hasError ? 'error.light' : 'background.paper',
+                cursor: dayObj.isEmpty ? 'default' : 'pointer',
+                gridRow: dayObj.gridRow,
+                gridColumn: dayObj.gridColumn,
+                borderColor: hasError ? 'error.main' : undefined,
+                position: 'relative',
+            }}
+        >
+            {hasError && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 6,
+                        zIndex: 3,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                    }}
+                >
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            bgcolor: 'error.main',
+                            color: 'error.contrastText',
+                            borderRadius: 0.5,
+                            px: 0.5,
+                            fontWeight: 'bold',
+                            fontSize: 10,
+                        }}
+                    >
+                        ERR
+                    </Typography>
+                </Box>
+            )}
+
+            <Box
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                }}
+            >
+                <Typography
+                    variant="body2"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        backgroundColor:
+                            !dayObj.isEmpty && isSameDay(dayObj.date, new Date())
+                                ? 'primary.main'
+                                : 'transparent',
+                        color:
+                            !dayObj.isEmpty && isSameDay(dayObj.date, new Date())
+                                ? 'primary.contrastText'
+                                : dayObj.isEmpty
+                                  ? 'text.disabled'
+                                  : 'text.primary',
+                    }}
+                >
+                    {format(dayObj.date, 'd')}
+                </Typography>
+            </Box>
+            <Box sx={{ mt: 1 }}>
+                {scheduledPlaylists
+                    .filter((schedule) => isSameDay(new Date(schedule.date), dayObj.date))
+                    .map((playlist, playlistIndex, array) =>
+                        renderScheduledPlaylist(playlist, playlistIndex, array),
+                    )}
+            </Box>
+        </DayCell>
+    );
+};
+
 const MonthlyView: React.FC<MonthlyViewProps> = ({
     currentDate,
     onDateSelect,
     scheduledPlaylists,
     renderScheduledPlaylist,
+    dayErrorKeys,
 }) => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(monthStart);
@@ -62,13 +193,6 @@ const MonthlyView: React.FC<MonthlyViewProps> = ({
             gridColumn,
         };
     });
-
-    const getCurrentTime = () => {
-        const now = new Date();
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
-    };
 
     return (
         <Box>
@@ -106,55 +230,16 @@ const MonthlyView: React.FC<MonthlyViewProps> = ({
                 }}
             >
                 {days.map((dayObj, index) => (
-                    <DayCell
+                    <DayCellDroppable
                         key={`${dayObj.date.toString()}-${index}`}
-                        onClick={() => !dayObj.isEmpty && onDateSelect(dayObj.date, getCurrentTime())}
-                        sx={{
-                            bgcolor: dayObj.isEmpty ? 'action.disabledBackground' : 'background.paper',
-                            cursor: dayObj.isEmpty ? 'default' : 'pointer',
-                            gridRow: dayObj.gridRow,
-                            gridColumn: dayObj.gridColumn,
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.5,
-                            }}
-                        >
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    width: '24px',
-                                    height: '24px',
-                                    borderRadius: '50%',
-                                    backgroundColor:
-                                        !dayObj.isEmpty && isSameDay(dayObj.date, new Date())
-                                            ? 'primary.main'
-                                            : 'transparent',
-                                    color:
-                                        !dayObj.isEmpty && isSameDay(dayObj.date, new Date())
-                                            ? 'primary.contrastText'
-                                            : dayObj.isEmpty
-                                              ? 'text.disabled'
-                                              : 'text.primary',
-                                }}
-                            >
-                                {format(dayObj.date, 'd')}
-                            </Typography>
-                        </Box>
-                        <Box sx={{ mt: 1 }}>
-                            {scheduledPlaylists
-                                .filter((schedule) => isSameDay(new Date(schedule.date), dayObj.date))
-                                .map((playlist, playlistIndex, array) =>
-                                    renderScheduledPlaylist(playlist, playlistIndex, array),
-                                )}
-                        </Box>
-                    </DayCell>
+                        dayObj={dayObj}
+                        index={index}
+                        currentDate={currentDate}
+                        scheduledPlaylists={scheduledPlaylists}
+                        renderScheduledPlaylist={renderScheduledPlaylist}
+                        onDateSelect={onDateSelect}
+                        dayErrorKeys={dayErrorKeys}
+                    />
                 ))}
             </Box>
         </Box>
