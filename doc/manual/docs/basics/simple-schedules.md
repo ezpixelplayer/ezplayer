@@ -52,6 +52,60 @@ schedule you are editing (see
 
 ![FG-BG Toggle Button](/img/fg-bg-toggle.png)
 
+## Calendar views
+
+Use the view toggle above the calendar to switch between:
+
+- **Month** — full-month grid. Days from the previous or next month may appear
+  at the edges of the grid (shown with a muted background).
+- **Week** — seven-day timeline with hourly slots.
+- **Day** — a single-day hourly timeline.
+
+Month and Week views support drag-and-drop (see below). Day view does not.
+
+## Moving schedules by drag-and-drop
+
+In **Month** or **Week** view, you can drag a schedule block to another day.
+After you drop it, a dialog asks what you want to do — nothing is changed until
+you pick an action.
+
+### One-time schedules (Occurs Once)
+
+When you drag a schedule that does **not** repeat, the dialog offers:
+
+| Action | What it does |
+| ------ | ------------ |
+| **Move** | Move this entry to the dropped date. The time window and all other settings stay the same. |
+| **Copy** | Leave the original entry in place and create a copy on the dropped date. |
+| **Repeat** | Turn this entry into a **daily** repeating series from one date through the other. If you drag to an **earlier** date, that date becomes the series start and the original date becomes the end. If you drag to a **later** date, the original date is the start and the dropped date is the end. All other schedule settings are preserved. |
+| **Cancel** | Close the dialog and leave the schedule unchanged. |
+
+### Repeating schedules (Occurs Daily or Occurs for Selected Days)
+
+Repeating entries behave differently depending on **which occurrence** you drag:
+
+| Occurrence | Can drag? | Available actions |
+| ---------- | --------- | ----------------- |
+| **First** date in the series | Yes | **Change Start Date** — move the series start to the dropped date (the end date stays the same), or **Cancel**. |
+| **Last** date in the series | Yes | **Change End Date** — move the series end to the dropped date (the start date stays the same), or **Cancel**. |
+| **Middle** dates | No | These occurrences cannot be dragged. The series is left unchanged. |
+
+Only the boundary you change is updated — other occurrences and settings in the
+series are not modified.
+
+### Dropping on adjacent-month dates
+
+In **Month** view, the grid may show a few days from the previous or next month
+(muted cells at the start or end of the grid). You can drag schedules onto those
+visible dates without switching months first. The schedule is placed on the
+**actual calendar date** shown in that cell.
+
+### Schedule conflicts
+
+If the dropped date already has a schedule that overlaps in time, the destination
+day is highlighted with an **ERR** marker and you must confirm before the change
+is applied. You can cancel to keep everything as it was.
+
 ## Going further
 
 For background layers, runtime behavior (end policies, priority, loop, shuffle),

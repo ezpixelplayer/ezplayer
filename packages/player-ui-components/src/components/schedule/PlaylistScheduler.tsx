@@ -1,4 +1,4 @@
-import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, getScheduleTimes, priorityToNumber } from '@ezplayer/ezplayer-core';
+import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { ScheduleChip, type CalendarViewMode } from './ScheduleChip/ScheduleChip';
 import {
@@ -43,7 +43,7 @@ import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragSta
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { addDays, addMonths, addWeeks, format, isSameDay, subDays, subMonths, subWeeks } from 'date-fns';
+import { addDays, addMonths, addWeeks, format, subDays, subMonths, subWeeks } from 'date-fns';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
@@ -54,6 +54,15 @@ import {
     generateSelectedDaysOccurrences,
     type RecurrenceOption,
 } from '../../util/scheduleRecurrence';
+import {
+    buildDragOperationPayload,
+    dateKeyToDate,
+    findScheduleConflicts,
+    getDragDialogType,
+    isScheduleDragAllowed,
+    type ScheduleDragDialogType,
+    type ScheduleDragOperation,
+} from '../../util/scheduleDragDrop';
 import { AppDispatch, RootState } from '../../store/Store';
 import DailyView from './DailyView';
 import MonthlyView from './MonthlyView';
@@ -153,11 +162,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     const [dragDropDialogState, setDragDropDialogState] = useState<{
         open: boolean;
+        dialogType: ScheduleDragDialogType;
         sourceSchedule: ScheduledPlaylist | null;
         destinationDate: Date | null;
         destinationDateKey: string | null;
     }>({
         open: false,
+        dialogType: 'single',
         sourceSchedule: null,
         destinationDate: null,
         destinationDateKey: null,
@@ -165,7 +176,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
     const [conflictConfirmDialogState, setConflictConfirmDialogState] = useState<{
         open: boolean;
-        operation: 'copy' | 'move' | null;
+        operation: ScheduleDragOperation | null;
         sourceSchedule: ScheduledPlaylist | null;
         destinationDate: Date | null;
         destinationDateKey: string | null;
@@ -1137,6 +1148,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const renderScheduledPlaylist = (scheduleItem: ScheduledPlaylist) => {
         const selectedPlaylist = availablePlaylists.find((p) => p.id === scheduleItem.playlistId);
         const sourceDateKey = format(timestampToDate(scheduleItem.date), 'yyyy-MM-dd');
+        const canDrag = view !== 'daily' && isScheduleDragAllowed(scheduleItem, scheduledPlaylists);
 
         return (
             <ScheduleChip
@@ -1147,7 +1159,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 resolvedPlaylistTitle={selectedPlaylist?.title}
                 sourceDateKey={sourceDateKey}
                 onScheduleClick={handleScheduleClick}
-                draggable={view !== 'daily'}
+                draggable={canDrag}
             />
         );
     };
@@ -1160,69 +1172,74 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         }),
     );
 
-    const dateKeyToDate = (dateKey: string) => {
-        const [y, m, d] = dateKey.split('-').map((v) => Number(v));
-        return new Date(y, m - 1, d);
+    const getDragOperationSuccessMessage = (operation: ScheduleDragOperation, destinationDate: Date) => {
+        switch (operation) {
+            case 'copy':
+                return `Schedule copied to ${formatDateStandard(destinationDate)}`;
+            case 'move':
+                return `Schedule moved to ${formatDateStandard(destinationDate)}`;
+            case 'fill':
+                return `Schedule repeated through ${formatDateStandard(destinationDate)}`;
+            case 'changeStartDate':
+                return `Repeating schedule start date changed to ${formatDateStandard(destinationDate)}`;
+            case 'changeEndDate':
+                return `Repeating schedule end date changed to ${formatDateStandard(destinationDate)}`;
+            default:
+                return 'Schedule updated';
+        }
     };
 
-    const applyDragScheduleOperation = async (operation: 'copy' | 'move', proceedAfterConflict: boolean) => {
-        const sourceSchedule = dragDropDialogState.sourceSchedule;
-        const destinationDate = dragDropDialogState.destinationDate;
-        const destinationDateKey = dragDropDialogState.destinationDateKey;
+    const getDragOperationErrorMessage = (operation: ScheduleDragOperation) => {
+        switch (operation) {
+            case 'copy':
+                return 'Copy failed. Please try again.';
+            case 'move':
+                return 'Move failed. Please try again.';
+            case 'fill':
+                return 'Repeat failed. Please try again.';
+            case 'changeStartDate':
+                return 'Start date change failed. Please try again.';
+            case 'changeEndDate':
+                return 'End date change failed. Please try again.';
+            default:
+                return 'Schedule update failed. Please try again.';
+        }
+    };
+
+    const applyDragScheduleOperation = async (operation: ScheduleDragOperation, proceedAfterConflict: boolean) => {
+        const sourceSchedule = dragDropDialogState.sourceSchedule ?? conflictConfirmDialogState.sourceSchedule;
+        const destinationDate = dragDropDialogState.destinationDate ?? conflictConfirmDialogState.destinationDate;
+        const destinationDateKey = dragDropDialogState.destinationDateKey ?? conflictConfirmDialogState.destinationDateKey;
 
         if (!sourceSchedule || !destinationDate || !destinationDateKey) return;
 
-        const destinationDateMS = convertDateToMilliseconds(destinationDate);
+        const payload = buildDragOperationPayload(operation, sourceSchedule, destinationDate, scheduledPlaylists);
+        if (!payload) {
+            ToastMsgs.showErrorMessage('This schedule change is not valid for the selected date.', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 4000,
+            });
+            return;
+        }
 
-        const candidateSchedule: ScheduledPlaylist =
-            operation === 'copy'
-                ? {
-                      ...sourceSchedule,
-                      id: uuidv4(),
-                      date: destinationDateMS,
-                      updatedAt: Date.now(),
-                      deleted: false,
-                  }
-                : {
-                      ...sourceSchedule,
-                      date: destinationDateMS,
-                      updatedAt: Date.now(),
-                      deleted: false,
-                  };
-
-        const destinationExistingSchedules = scheduledPlaylists.filter((s) =>
-            isSameDay(timestampToDate(s.date), destinationDate),
+        const candidateSchedules =
+            'singleSchedule' in payload
+                ? [payload.singleSchedule]
+                : [...payload.schedulesToCreate, ...payload.schedulesToUpdate];
+        const excludeIds = new Set<string>(
+            'singleSchedule' in payload
+                ? operation === 'move'
+                    ? [sourceSchedule.id]
+                    : []
+                : [
+                    ...payload.schedulesToDelete.map((schedule) => schedule.id),
+                    ...payload.schedulesToUpdate.map((schedule) => schedule.id),
+                ],
         );
 
-        const mergedDestinationSchedules = [
-            ...destinationExistingSchedules.filter((s) => s.id !== candidateSchedule.id),
-            candidateSchedule,
-        ];
-
-        let conflictErrors: string[] = [];
-        let hasConflict = false;
-
-        try {
-            const candidateTimes = getScheduleTimes(candidateSchedule);
-            const overlappingSchedules = mergedDestinationSchedules.filter((existing) => {
-                if (existing.id === candidateSchedule.id) return false;
-
-                const existingTimes = getScheduleTimes(existing);
-                return (
-                    candidateTimes.startTimeMS < existingTimes.endTimeMS &&
-                    candidateTimes.endTimeMS > existingTimes.startTimeMS
-                );
-            });
-
-            hasConflict = overlappingSchedules.length > 0;
-            conflictErrors = overlappingSchedules.map(
-                (existing) => `${existing.title || existing.playlistTitle} (${existing.fromTime} - ${existing.toTime})`,
-            );
-        } catch (e) {
-            console.error('Drag-drop conflict check failed:', e);
-            hasConflict = false;
-            conflictErrors = [];
-        }
+        const conflictErrors = findScheduleConflicts(candidateSchedules, scheduledPlaylists, excludeIds);
+        const hasConflict = conflictErrors.length > 0;
 
         if (hasConflict && !proceedAfterConflict) {
             setDayErrorKeys((prev) => ({ ...prev, [destinationDateKey]: true }));
@@ -1233,14 +1250,19 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 sourceSchedule,
                 destinationDate,
                 destinationDateKey,
-                candidateSchedules: [candidateSchedule],
-                conflictErrors: conflictErrors.length ? conflictErrors : ['Schedule conflict detected on this day.'],
+                candidateSchedules,
+                conflictErrors,
             });
             return;
         }
 
+        const schedulesToSubmit =
+            'singleSchedule' in payload
+                ? [payload.singleSchedule]
+                : [...payload.schedulesToDelete, ...payload.schedulesToCreate, ...payload.schedulesToUpdate];
+
         try {
-            await dispatch(postScheduledPlaylists([candidateSchedule])).unwrap();
+            await dispatch(postScheduledPlaylists(schedulesToSubmit)).unwrap();
             setDayErrorKeys((prev) => {
                 const next = { ...prev };
                 delete next[destinationDateKey];
@@ -1249,24 +1271,18 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             setConflictConfirmDialogState((prev) => ({ ...prev, open: false }));
             setDragDropDialogState((prev) => ({ ...prev, open: false }));
 
-            ToastMsgs.showSuccessMessage(
-                `${operation === 'copy' ? 'Schedule copied' : 'Schedule moved'} to ${formatDateStandard(destinationDate)}`,
-                {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 2000,
-                },
-            );
+            ToastMsgs.showSuccessMessage(getDragOperationSuccessMessage(operation, destinationDate), {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
         } catch (error) {
             console.error(`Drag-drop ${operation} failed:`, error);
-            ToastMsgs.showErrorMessage(
-                `${operation === 'copy' ? 'Copy' : 'Move'} failed. Please try again.`,
-                {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 4000,
-                },
-            );
+            ToastMsgs.showErrorMessage(getDragOperationErrorMessage(operation), {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 4000,
+            });
         }
     };
 
@@ -1277,6 +1293,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         setDeleteDialogState({ open: false });
         setDragDropDialogState({
             open: false,
+            dialogType: 'single',
             sourceSchedule: null,
             destinationDate: null,
             destinationDateKey: null,
@@ -1305,6 +1322,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         const destinationDate = dateKeyToDate(overId);
         setDragDropDialogState({
             open: true,
+            dialogType: getDragDialogType(sourceSchedule, scheduledPlaylists),
             sourceSchedule,
             destinationDate,
             destinationDateKey: overId,
@@ -1315,6 +1333,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         setActiveDragSchedule(null);
         setDragDropDialogState({
             open: false,
+            dialogType: 'single',
             sourceSchedule: null,
             destinationDate: null,
             destinationDateKey: null,
@@ -1653,8 +1672,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 }}
                                 helperText={
                                     formData.fromTime &&
-                                    formData.toTime &&
-                                    !isToTimeAfterFromTime(formData.fromTime, formData.toTime)
+                                        formData.toTime &&
+                                        !isToTimeAfterFromTime(formData.fromTime, formData.toTime)
                                         ? `To Time must be after From Time. Try ${suggestValidToTime(formData.fromTime)} or later.`
                                         : 'Extended time format (e.g., 14:30, 25:00, 26:30). Use 25:00 for 1:00 AM next day, 48:00 for midnight 2 days later.'
                                 }
@@ -2094,8 +2113,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 <DialogTitle>Delete Schedule</DialogTitle>
                 <DialogContent>
                     {selectedSchedule &&
-                    ['daily', 'selectedDays'].includes(formData.recurrence) &&
-                    !deleteDialogState.mode ? (
+                        ['daily', 'selectedDays'].includes(formData.recurrence) &&
+                        !deleteDialogState.mode ? (
                         <>
                             <Typography gutterBottom>
                                 Would you like to delete this event or all related events?
@@ -2135,32 +2154,83 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             >
                 <DialogTitle>Schedule</DialogTitle>
                 <DialogContent>
-                    <Typography gutterBottom>
-                        Would you like to copy or move this schedule to{' '}
-                        <b>{dragDropDialogState.destinationDate ? formatDateStandard(dragDropDialogState.destinationDate) : ''}</b>
-                        ?
-                    </Typography>
+                    {dragDropDialogState.dialogType === 'single' && (
+                        <Typography gutterBottom>
+                            Choose an action for this schedule on{' '}
+                            <b>
+                                {dragDropDialogState.destinationDate
+                                    ? formatDateStandard(dragDropDialogState.destinationDate)
+                                    : ''}
+                            </b>
+                            .
+                        </Typography>
+                    )}
+                    {dragDropDialogState.dialogType === 'recurring-first' && (
+                        <Typography gutterBottom>
+                            Change the repeating schedule start date to{' '}
+                            <b>
+                                {dragDropDialogState.destinationDate
+                                    ? formatDateStandard(dragDropDialogState.destinationDate)
+                                    : ''}
+                            </b>
+                            ?
+                        </Typography>
+                    )}
+                    {dragDropDialogState.dialogType === 'recurring-last' && (
+                        <Typography gutterBottom>
+                            Change the repeating schedule end date to{' '}
+                            <b>
+                                {dragDropDialogState.destinationDate
+                                    ? formatDateStandard(dragDropDialogState.destinationDate)
+                                    : ''}
+                            </b>
+                            ?
+                        </Typography>
+                    )}
                     {dragDropDialogState.sourceSchedule && (
                         <Typography variant="body2" color="text.secondary">
-                            {dragDropDialogState.sourceSchedule.title} ({dragDropDialogState.sourceSchedule.fromTime} - {dragDropDialogState.sourceSchedule.toTime})
+                            {dragDropDialogState.sourceSchedule.title} ({dragDropDialogState.sourceSchedule.fromTime} -{' '}
+                            {dragDropDialogState.sourceSchedule.toTime})
                         </Typography>
                     )}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
                     <Button onClick={handleCancelDragDrop}>Cancel</Button>
-                    <Button
-                        onClick={() => applyDragScheduleOperation('copy', false)}
-                        variant="outlined"
-                    >
-                        Copy Schedule
-                    </Button>
-                    <Button
-                        onClick={() => applyDragScheduleOperation('move', false)}
-                        variant="contained"
-                        color="primary"
-                    >
-                        Move Schedule
-                    </Button>
+                    {dragDropDialogState.dialogType === 'single' && (
+                        <>
+                            <Button onClick={() => applyDragScheduleOperation('copy', false)} variant="outlined">
+                                Copy
+                            </Button>
+                            <Button onClick={() => applyDragScheduleOperation('move', false)} variant="outlined">
+                                Move
+                            </Button>
+                            <Button
+                                onClick={() => applyDragScheduleOperation('fill', false)}
+                                variant="contained"
+                                color="primary"
+                            >
+                                Repeat
+                            </Button>
+                        </>
+                    )}
+                    {dragDropDialogState.dialogType === 'recurring-first' && (
+                        <Button
+                            onClick={() => applyDragScheduleOperation('changeStartDate', false)}
+                            variant="contained"
+                            color="primary"
+                        >
+                            Change Start Date
+                        </Button>
+                    )}
+                    {dragDropDialogState.dialogType === 'recurring-last' && (
+                        <Button
+                            onClick={() => applyDragScheduleOperation('changeEndDate', false)}
+                            variant="contained"
+                            color="primary"
+                        >
+                            Change End Date
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
 
@@ -2181,7 +2251,18 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         This destination day has unresolved schedule conflicts. You must explicitly confirm the operation.
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        {conflictConfirmDialogState.operation === 'copy' ? 'Copy' : 'Move'} to{' '}
+                        {conflictConfirmDialogState.operation === 'copy'
+                            ? 'Copy'
+                            : conflictConfirmDialogState.operation === 'move'
+                                ? 'Move'
+                                : conflictConfirmDialogState.operation === 'fill'
+                                    ? 'Fill'
+                                    : conflictConfirmDialogState.operation === 'changeStartDate'
+                                        ? 'Change start date'
+                                        : conflictConfirmDialogState.operation === 'changeEndDate'
+                                            ? 'Change end date'
+                                            : 'Update'}{' '}
+                        to{' '}
                         {conflictConfirmDialogState.destinationDate
                             ? formatDateStandard(conflictConfirmDialogState.destinationDate)
                             : ''}
@@ -2213,7 +2294,17 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         color="primary"
                         disabled={!conflictConfirmDialogState.operation}
                     >
-                        {conflictConfirmDialogState.operation === 'copy' ? 'Copy Anyway' : 'Move Anyway'}
+                        {conflictConfirmDialogState.operation === 'copy'
+                            ? 'Copy Anyway'
+                            : conflictConfirmDialogState.operation === 'move'
+                                ? 'Move Anyway'
+                                : conflictConfirmDialogState.operation === 'fill'
+                                    ? 'Fill Anyway'
+                                    : conflictConfirmDialogState.operation === 'changeStartDate'
+                                        ? 'Change Start Date Anyway'
+                                        : conflictConfirmDialogState.operation === 'changeEndDate'
+                                            ? 'Change End Date Anyway'
+                                            : 'Confirm Anyway'}
                     </Button>
                 </DialogActions>
             </Dialog>

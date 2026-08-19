@@ -71,7 +71,6 @@ const DayCellDroppable: React.FC<DayCellDroppableProps> = ({
 
     const { setNodeRef } = useDroppable({
         id: dateKey,
-        disabled: dayObj.isEmpty,
     });
 
     const getCurrentTime = () => {
