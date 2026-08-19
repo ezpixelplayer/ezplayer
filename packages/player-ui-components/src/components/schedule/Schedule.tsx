@@ -64,14 +64,14 @@ export const Schedule = ({ title, statusArea, initialScheduleType = 'main' }: Sc
             <Box sx={{ padding: 2, flexShrink: 0 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
-            {/* The calendar scrolls inside the card, keeping its top border anchored. */}
+            {/* The calendar scrolls inside the card, keeping its top border anchored.
+                No overflow here — clipping at this edge would cut the card's top shadow. */}
             <Box
                 sx={{
                     flex: 1,
                     minHeight: 0,
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden',
                 }}
             >
                 <PlaylistScheduler
