@@ -124,7 +124,12 @@ export const TimeInput: React.FC<{
             onKeyDown={handleTimeKeyDown}
             onFocus={handleTimeFocus}
             onPaste={handleTimePaste}
-            onDoubleClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+            onDoubleClick={(e) => {
+                // The handler sits on the TextField root div, so reach for the actual input.
+                if (e.target instanceof HTMLInputElement) {
+                    e.target.select();
+                }
+            }}
             disabled={disabled}
             type="text"
             InputLabelProps={{ shrink: true }}
