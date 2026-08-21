@@ -748,9 +748,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         }));
     };
 
-    // Handle time field double-click to select all text
-    const handleTimeDoubleClick = (event: React.MouseEvent<HTMLInputElement>) => {
-        event.currentTarget.select();
+    // Handle time field double-click to select all text.
+    // The handler sits on the TextField root div, so reach for the actual input.
+    const handleTimeDoubleClick = (event: React.MouseEvent<HTMLElement>) => {
+        if (event.target instanceof HTMLInputElement) {
+            event.target.select();
+        }
     };
 
     // Handle time field paste operations

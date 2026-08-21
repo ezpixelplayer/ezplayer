@@ -1231,10 +1231,11 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-            <Box sx={{ flexShrink: 0, padding: 2 }}>
+            <Box sx={{ flexShrink: 0, padding: 2, paddingBottom: 0 }}>
                 <PageHeader heading={`${title} (alpha)`} children={statusArea} />
             </Box>
-            <Box sx={{ padding: 2, paddingTop: 0, overflowY: 'auto', flexGrow: 1 }}>
+            {/* Gap lives inside the scroll box so the first card's top edge isn't clipped. */}
+            <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Running operations + undismissed failures */}
                 {(running.length > 0 || errored.length > 0) && (
                     <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>

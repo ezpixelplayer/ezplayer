@@ -13,6 +13,44 @@ import { ezpVersions } from '../versions';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/** Last directory accepted in a file/folder picker this session. Used so
+ *  subsequent dialogs (especially GTK on Linux) open where the user left off
+ *  instead of $HOME. */
+let lastPickerDir: string | undefined;
+
+async function existingDirectory(dir?: string | null): Promise<string | undefined> {
+    if (!dir) return undefined;
+    try {
+        return (await fsp.stat(dir)).isDirectory() ? dir : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** Caller `defaultPath` wins; else last accepted folder; else the show folder. */
+async function resolveDialogDefaultPath(explicit?: string): Promise<string | undefined> {
+    if (explicit) return explicit;
+    const last = await existingDirectory(lastPickerDir);
+    if (last) return last;
+    // Lazy import: ipcmain <-> main <-> showfolder would otherwise cycle at load.
+    const { getCurrentShowFolder } = await import('../showfolder.js');
+    return existingDirectory(getCurrentShowFolder());
+}
+
+function rememberPickerDir(filePaths: string[], pickedDirectory: boolean) {
+    const first = filePaths[0];
+    if (!first) return;
+    lastPickerDir = pickedDirectory ? first : path.dirname(first);
+}
+
+async function showNativeOpenDialog(props: OpenDialogOptions, pickedDirectory: boolean): Promise<string[]> {
+    const w = getMainWindow();
+    const result = w ? await dialog.showOpenDialog(w, props) : await dialog.showOpenDialog(props);
+    if (result.canceled || result.filePaths.length === 0) return [];
+    rememberPickerDir(result.filePaths, pickedDirectory);
+    return result.filePaths;
+}
+
 //// IPC Main
 export function registerFileListHandlers() {
     ipcMain.handle('dialog:openFile', async (_event, options: FileSelectOptions) => {
@@ -29,18 +67,11 @@ export function registerFileListHandlers() {
             filters,
             buttonLabel: options.buttonLabel,
             title: options.title,
-            defaultPath: options.defaultPath,
+            defaultPath: await resolveDialogDefaultPath(options.defaultPath),
         };
         if (options.multi) props.properties!.push('multiSelections');
 
-        const w = getMainWindow();
-        if (w) {
-            const result = await dialog.showOpenDialog(w, props);
-            return result.canceled ? [] : result.filePaths;
-        } else {
-            const result = await dialog.showOpenDialog(props);
-            return result.canceled ? [] : result.filePaths;
-        }
+        return showNativeOpenDialog(props, false);
     });
 
     ipcMain.handle('ipcSetZoomFactor', async (_event, factor: number) => {
@@ -54,18 +85,11 @@ export function registerFileListHandlers() {
             properties: ['openDirectory'],
             buttonLabel: options.buttonLabel,
             title: options.title,
-            defaultPath: options.defaultPath,
+            defaultPath: await resolveDialogDefaultPath(options.defaultPath),
         };
         if (options.multi) props.properties!.push('multiSelections');
 
-        const w = getMainWindow();
-        if (w) {
-            const result = await dialog.showOpenDialog(w, props);
-            return result.canceled ? [] : result.filePaths;
-        } else {
-            const result = await dialog.showOpenDialog(props);
-            return result.canceled ? [] : result.filePaths;
-        }
+        return showNativeOpenDialog(props, true);
     });
 
     ipcMain.handle('write-file', async (_, filename: string, content: string): Promise<string> => {

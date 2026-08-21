@@ -1271,17 +1271,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     {/* Settings Button */}
                     <SettingsButton onClick={handleSettingsClick} />
 
-                    <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
-
-                    {/* Selection Info & Color Picker */}
-                    {!disableModelSelection && selectionState.selectedIds.size > 0 && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
-                                {selectionState.selectedIds.size} selected
-                            </Typography>
-                        </Box>
-                    )}
-
                     <Box sx={{ flex: 1 }} />
 
                     {/* Right Side Controls */}

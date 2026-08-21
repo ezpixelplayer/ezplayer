@@ -78,12 +78,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
                 overflow: 'hidden',
             }}
         >
-            <Box sx={{ flexShrink: 0, padding: 2 }}>
+            <Box sx={{ flexShrink: 0, padding: 2, paddingBottom: 0 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
 
-            {/* Scrollable gallery */}
-            <Box sx={{ overflowY: 'auto', flexGrow: 1, padding: 2, paddingTop: 0 }}>
+            {/* Scrollable gallery; gap lives inside the scroll box so card top edges aren't clipped. */}
+            <Box sx={{ overflowY: 'auto', flexGrow: 1, padding: 2 }}>
                 <Box
                     sx={{
                         display: 'grid',
