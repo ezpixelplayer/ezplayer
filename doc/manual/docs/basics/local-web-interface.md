@@ -48,6 +48,7 @@ toggles a live **audio stream** — useful for listening over the network when y
 | Bulk import songs                    | Yes           | Yes (from files in show folder) |
 | Choose / set media folder            | Yes           | Yes (type player path)          |
 | Choose show folder                   | Yes           | No                              |
+| Software Update                      | Yes           | No                              |
 | Cloud registration dialog            | Yes           | Limited (Cloud tile)            |
 | Kiosk mode                           | Separate port | Yes (`__EZPLAYER_MODE__=kiosk`) |
 
