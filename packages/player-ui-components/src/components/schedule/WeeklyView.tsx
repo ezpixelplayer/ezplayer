@@ -57,7 +57,7 @@ const WeeklyDayColumn: React.FC<WeeklyDayColumnProps> = ({
     const dateKey = format(day, 'yyyy-MM-dd');
     const hasError = Boolean(dayErrorKeys?.[dateKey]);
 
-    const { setNodeRef } = useDroppable({
+    const { setNodeRef, isOver } = useDroppable({
         id: dateKey,
     });
 
@@ -69,7 +69,9 @@ const WeeklyDayColumn: React.FC<WeeklyDayColumnProps> = ({
                 borderRight: 1,
                 borderColor: hasError ? 'error.main' : 'divider',
                 position: 'relative',
-                bgcolor: hasError ? 'error.light' : undefined,
+                bgcolor: hasError ? 'error.light' : isOver ? 'action.selected' : undefined,
+                outline: isOver ? (theme) => `2px solid ${theme.palette.primary.main}` : undefined,
+                outlineOffset: isOver ? -2 : undefined,
             }}
         >
             {/* Time slots */}

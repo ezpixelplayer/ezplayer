@@ -69,7 +69,7 @@ const DayCellDroppable: React.FC<DayCellDroppableProps> = ({
     const dateKey = format(dayObj.date, 'yyyy-MM-dd');
     const hasError = Boolean(dayErrorKeys?.[dateKey]);
 
-    const { setNodeRef } = useDroppable({
+    const { setNodeRef, isOver } = useDroppable({
         id: dateKey,
     });
 
@@ -86,12 +86,20 @@ const DayCellDroppable: React.FC<DayCellDroppableProps> = ({
             key={`${dayObj.date.toString()}-${index}`}
             onClick={() => !dayObj.isEmpty && onDateSelect(dayObj.date, getCurrentTime())}
             sx={{
-                bgcolor: dayObj.isEmpty ? 'action.disabledBackground' : hasError ? 'error.light' : 'background.paper',
+                bgcolor: hasError
+                    ? 'error.light'
+                    : isOver
+                      ? 'action.selected'
+                      : dayObj.isEmpty
+                        ? 'action.disabledBackground'
+                        : 'background.paper',
                 cursor: dayObj.isEmpty ? 'default' : 'pointer',
                 gridRow: dayObj.gridRow,
                 gridColumn: dayObj.gridColumn,
                 borderColor: hasError ? 'error.main' : undefined,
                 position: 'relative',
+                outline: isOver ? (theme) => `2px solid ${theme.palette.primary.main}` : undefined,
+                outlineOffset: isOver ? -2 : undefined,
             }}
         >
             {hasError && (
