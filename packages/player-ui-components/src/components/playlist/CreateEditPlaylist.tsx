@@ -943,25 +943,27 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
 
     return (
         <Box sx={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <PageHeader
-                heading={id === '-1' ? 'Create Playlist' : 'Edit Playlist'}
-                children={[
-                    <Button key="discard" variant="outlined" color="secondary" onClick={handleDiscardClick}>
-                        Discard
-                    </Button>,
-                    <Button
-                        key="save"
-                        variant="contained"
-                        color="primary"
-                        onClick={handleSaveClick}
-                        disabled={!isPlaylistValid().isValid}
-                        sx={{ whiteSpace: 'nowrap', ml: 2 }}
-                    >
-                        Save Playlist
-                    </Button>,
-                    ...statusArea,
-                ]}
-            />
+            <Box sx={{ padding: 2, flexShrink: 0 }}>
+                <PageHeader
+                    heading={id === '-1' ? 'Create Playlist' : 'Edit Playlist'}
+                    children={[
+                        <Button key="discard" variant="outlined" color="secondary" onClick={handleDiscardClick}>
+                            Discard
+                        </Button>,
+                        <Button
+                            key="save"
+                            variant="contained"
+                            color="primary"
+                            onClick={handleSaveClick}
+                            disabled={!isPlaylistValid().isValid}
+                            sx={{ whiteSpace: 'nowrap', ml: 2 }}
+                        >
+                            Save Playlist
+                        </Button>,
+                        ...statusArea,
+                    ]}
+                />
+            </Box>
 
             {/* Unified navigation dialog */}
             <Dialog
