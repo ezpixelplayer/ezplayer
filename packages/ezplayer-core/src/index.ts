@@ -58,6 +58,12 @@ export type {
     CloudLayoutInfo,
     CloudLayoutStatus,
     CloudCommand,
+    AutoUpdateStatus,
+    AutoUpdateMode,
+    AutoUpdateSettings,
+    ReleaseInfo,
+    UpdateCommand,
+    AutoUpdateOpsState,
 } from './types/DataTypes';
 
 export type {
@@ -99,8 +105,10 @@ export {
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
+    ipInCidr,
+    findOffNetworkControllers,
 } from './util/controllerReconcile';
-export type { InputReconcile } from './util/controllerReconcile';
+export type { InputReconcile, OffNetworkGroup } from './util/controllerReconcile';
 
 export {
     buildPortMap,
@@ -127,10 +135,6 @@ export type {
     AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
-    AutoUpdateStatus,
-    AutoUpdateMode,
-    AutoUpdateSettings,
-    InstallUpdateResult,
     DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,

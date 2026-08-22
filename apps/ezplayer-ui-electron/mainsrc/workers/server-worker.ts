@@ -308,10 +308,16 @@ wsBroadcaster.setClientMessageHandler((msg) => {
             console.error('[server-worker] updateSchedule failed:', err);
         });
     } else if (msg.type === 'controllerCommand') {
-        // LAN WS trigger for a controller op. Fire-and-forget: results flow
+        // LAN WS trigger for a controller op. Results flow
         // back via the broadcast `controllerops` state.
         void rpc.call('controllerCommand', msg.command, 'lan').catch((err) => {
             console.error('[server-worker] controllerCommand failed:', err);
+        });
+    } else if (msg.type === 'updateCommand') {
+        // Software-update verb. Results flow back via the
+        // broadcast `autoUpdateOps` state.
+        void rpc.call('updateCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] updateCommand failed:', err);
         });
     }
 });

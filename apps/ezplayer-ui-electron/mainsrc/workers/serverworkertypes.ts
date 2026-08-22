@@ -3,7 +3,7 @@
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
-import type { CloudCommand, RemoteAccessAvailability } from '@ezplayer/ezplayer-core';
+import type { CloudCommand, RemoteAccessAvailability, UpdateCommand } from '@ezplayer/ezplayer-core';
 
 export type { RemoteAccessAvailability };
 import type { DiscoveryResult } from '@ezplayer/epp-controllers';
@@ -104,6 +104,8 @@ export interface ServerWorkerRPCAPI {
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;
+    /** Software-update verb from a LAN/cloud viewer. */
+    updateCommand(cmd: UpdateCommand): Promise<void>;
     /** Resolves with the DiscoveryResult for a `scan`; other kinds resolve
      *  undefined and report through the broadcast state. */
     controllerCommand(command: ControllerCommand, origin: ControllerOpOrigin): Promise<DiscoveryResult | undefined>;
