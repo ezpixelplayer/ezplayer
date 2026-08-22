@@ -38,8 +38,6 @@ interface SettingsDrawerProps {
     sections: SettingsSection[];
 }
 
-// Module-level on purpose: defined inside the render function, React would see a
-// new component type on every drawer re-render and remount the open dialog.
 const SectionDialog: React.FC<{ open: boolean; title: string; onClose: () => void; children: React.ReactNode }> = ({
     open,
     title,
