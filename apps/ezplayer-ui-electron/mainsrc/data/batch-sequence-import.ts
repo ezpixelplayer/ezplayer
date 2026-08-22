@@ -83,15 +83,12 @@ async function importOneFseq(
             colocatedAudioAllowlist: options.colocatedAudioAllowlist,
         });
 
-        // `audioRequired` is only undefined when the header couldn't be read at
-        // all — nothing to import from then.
+        // `audioRequired` is only undefined when the header couldn't be read.
         if (detected.audioRequired === undefined) {
             return { ok: false, failure: { fseqPath, fseqName, reason: 'Could not read FSEQ header' } };
         }
 
-        // Audio is required only when the FSEQ header names a media file; an
-        // animation (no media in the header) imports without audio. Same rule
-        // for Electron IPC and LAN HTTP so both UIs stay in lockstep.
+        // Audio is required only when the FSEQ header names a media file.
         if (detected.audioRequired && !detected.audioFile) {
             const wanted = detected.headerAudioName ? ` (${detected.headerAudioName})` : '';
             return {
