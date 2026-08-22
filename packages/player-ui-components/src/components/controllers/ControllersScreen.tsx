@@ -62,6 +62,7 @@ import {
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
+    findOffNetworkControllers,
 } from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
@@ -1042,6 +1043,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     );
 
     const rows = overlayHealth(reconcileControllers(known ?? [], deviceList), statusesRaw ?? []);
+    // Enabled-but-unreachable controllers on networks this player has no interface on.
+    const offNetwork = findOffNetworkControllers(rows, interfaces);
+    const hostNetworkList = interfaces.map((i) => i.network).join(', ');
     const sortVal = (r: ControllerGridRow): string | number => {
         switch (sortKey) {
             case 'state':
@@ -1236,11 +1240,11 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             </Box>
             {/* Gap lives inside the scroll box so the first card's top edge isn't clipped. */}
             <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
-                {/* Running operations + undismissed failures */}
-                {(running.length > 0 || errored.length > 0) && (
+                {/* Running operations, undismissed failures, and off-network controllers */}
+                {(running.length > 0 || errored.length > 0 || offNetwork.length > 0) && (
                     <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>
                         <Typography variant="subtitle1" sx={{ mb: 2 }}>
-                            Operations
+                            {running.length > 0 || errored.length > 0 ? 'Operations' : 'Network'}
                         </Typography>
                         {running.map((op) => (
                             <OpProgress key={op.id} op={op} onCancel={op.kind === 'scan' ? cancelOp : undefined} />
@@ -1254,6 +1258,20 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                 <Button size="small" onClick={() => dismissError(op.id)}>
                                     Dismiss
                                 </Button>
+                            </Box>
+                        ))}
+                        {/* One row per missing network, citing one controller; clears itself
+                            once the controller answers or its address changes. */}
+                        {offNetwork.map((g) => (
+                            <Box key={g.network} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                <WarningAmberIcon color="warning" fontSize="small" />
+                                <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                                    {`${g.example.name} (${g.example.address}) ${
+                                        g.others > 0
+                                            ? `and ${g.others} other controller${g.others > 1 ? 's' : ''} are`
+                                            : 'is'
+                                    } not on any network this player is connected to (${hostNetworkList}). Check the controller's IP or this player's networks.`}
+                                </Typography>
                             </Box>
                         ))}
                     </Card>
