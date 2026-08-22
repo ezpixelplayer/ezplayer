@@ -101,6 +101,9 @@ describe('playback', () => {
         // the track as now playing.
         await waitForPStatus((p) => !!p?.now_playing, 'now_playing set while playing');
 
+        // Reset first so only post-stop frames satisfy the dark check: the prior
+        // test's Resume can leave a stale pause-black as the last frame on the wire.
+        mock.ddp.reset();
         expect((await fpp.command('Stop Now')).status).toBe(200);
         const idle = await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'idle' });
         // FPP idle shape

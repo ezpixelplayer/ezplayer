@@ -7,8 +7,16 @@ import {
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
+    ipInCidr,
+    findOffNetworkControllers,
 } from '../src/util/controllerReconcile';
-import type { KnownController, DiscoveredController, EzpControllerRecord } from '../src/types/ControllerOps';
+import type {
+    KnownController,
+    DiscoveredController,
+    EzpControllerRecord,
+    ControllerGridRow,
+    ControllerNetwork,
+} from '../src/types/ControllerOps';
 
 const now = '2026-01-01T00:00:00.000Z';
 
@@ -418,5 +426,83 @@ describe('reconcileInputs', () => {
         expect(reconcileInputs(undefined, { protocol: 'e131' }).drift).toBe(false);
         // Device that reports no protocol and no map (nothing to contradict).
         expect(reconcileInputs([e131(1)], {}).drift).toBe(false);
+    });
+});
+
+describe('ipInCidr', () => {
+    it('matches inside and rejects outside a /24', () => {
+        expect(ipInCidr('192.168.1.77', '192.168.1.0/24')).toBe(true);
+        expect(ipInCidr('192.168.2.10', '192.168.1.0/24')).toBe(false);
+    });
+    it('handles wider masks and the /0 catch-all', () => {
+        expect(ipInCidr('10.200.3.4', '10.0.0.0/8')).toBe(true);
+        expect(ipInCidr('11.0.0.1', '10.0.0.0/8')).toBe(false);
+        expect(ipInCidr('8.8.8.8', '0.0.0.0/0')).toBe(true);
+    });
+    it('is false for malformed input rather than throwing', () => {
+        expect(ipInCidr('lights.local', '192.168.1.0/24')).toBe(false);
+        expect(ipInCidr('192.168.1.5', 'garbage')).toBe(false);
+        expect(ipInCidr('192.168.1.5', '192.168.1.0/40')).toBe(false);
+        expect(ipInCidr('300.1.1.1', '192.168.1.0/24')).toBe(false);
+    });
+});
+
+describe('findOffNetworkControllers', () => {
+    const nets: ControllerNetwork[] = [{ name: 'eth0', address: '192.168.1.5', network: '192.168.1.0/24' }];
+    const row = (p: Partial<ControllerGridRow> & { name: string }): ControllerGridRow => ({
+        key: p.name,
+        state: 'absent',
+        active: true,
+        ...p,
+    });
+
+    it('flags an absent, enabled controller whose address is on no host network', () => {
+        const out = findOffNetworkControllers([row({ name: 'Front Yard', address: '192.168.2.10' })], nets);
+        expect(out).toEqual([
+            { network: '192.168.2.0/24', example: { name: 'Front Yard', address: '192.168.2.10' }, others: 0 },
+        ]);
+    });
+
+    it('groups by /24 with the lowest address as the example and counts the rest', () => {
+        const out = findOffNetworkControllers(
+            [
+                row({ name: 'Roof', address: '192.168.2.40' }),
+                row({ name: 'Front Yard', address: '192.168.2.10' }),
+                row({ name: 'Garage', address: '192.168.2.20' }),
+                row({ name: 'Barn', address: '10.0.0.9' }),
+            ],
+            nets,
+        );
+        expect(out).toEqual([
+            { network: '10.0.0.0/24', example: { name: 'Barn', address: '10.0.0.9' }, others: 0 },
+            { network: '192.168.2.0/24', example: { name: 'Front Yard', address: '192.168.2.10' }, others: 2 },
+        ]);
+    });
+
+    it('ignores on-subnet, present, ping-Up, disabled, xlightsOnly, hostname, and addressless rows', () => {
+        const out = findOffNetworkControllers(
+            [
+                row({ name: 'OnNet', address: '192.168.1.40' }),
+                row({ name: 'Present', address: '192.168.2.1', state: 'present' }),
+                row({ name: 'Routed', address: '10.0.0.1', health: { connectivity: 'Up' } }),
+                row({ name: 'Off', address: '10.0.0.2', active: false }),
+                row({ name: 'Off2', address: '10.0.0.3', enableState: 'disabled' }),
+                row({ name: 'XL', address: '10.0.0.4', enableState: 'xlightsOnly' }),
+                row({ name: 'ByName', address: 'lights.local' }),
+                row({ name: 'NoAddr' }),
+                row({ name: 'Ghost', address: '10.0.0.5', state: 'unregistered' }),
+            ],
+            nets,
+        );
+        expect(out).toEqual([]);
+    });
+
+    it('is silent when the host networks are unknown', () => {
+        expect(findOffNetworkControllers([row({ name: 'A', address: '192.168.2.10' })], [])).toEqual([]);
+    });
+
+    it('respects wider host masks', () => {
+        const wide: ControllerNetwork[] = [{ name: 'eth0', address: '10.1.2.3', network: '10.0.0.0/8' }];
+        expect(findOffNetworkControllers([row({ name: 'A', address: '10.9.9.9' })], wide)).toEqual([]);
     });
 });
