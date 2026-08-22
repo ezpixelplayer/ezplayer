@@ -272,8 +272,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
         }
-        // Initial update state comes from an invoke for the same reason the
-        // snapshot does: a push can race this renderer's listener registration.
+        // Initial update state comes from an invoke.
         try {
             dispatch(autoUpdateActions.setOps(await window.electronAPI!.getAutoUpdateOps()));
         } catch (e) {
