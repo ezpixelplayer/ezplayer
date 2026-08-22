@@ -37,6 +37,7 @@ import {
     writeToShellSession,
 } from './shell-session.js';
 import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
+import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
 import { ezpVersions } from '../versions.js';
 import type {
     PlaybackSettings,
@@ -127,6 +128,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     cloudCommand: async (cmd) => {
         await dispatchCloudCommand(cmd);
     },
+    updateCommand: async (cmd) => {
+        await dispatchUpdateCommand(cmd);
+    },
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
     },
@@ -211,6 +215,12 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     });
     refreshInterfaces();
 
+    // Software-update ops state goes to LAN/cloud WS clients the same way.
+    // (The Electron push channel is handled inside ipcautoupdate itself.)
+    setAutoUpdateOpsBroadcaster((s) => {
+        broadcastToWebSocket('autoUpdateOps', s);
+    });
+
     // Handle messages from server worker
     let readyReceived = false;
     serverWorker.on('message', (msg: ServerWorkerToMainMessage) => {
@@ -237,6 +247,9 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                 );
                 if (msg.status === 'listening') {
                     void publishRemoteAccessAvailability();
+                    // Seed the broadcaster's key cache so late-joining LAN/cloud
+                    // clients get update state in their first snapshot.
+                    publishAutoUpdateOps();
                     // Record what we actually bound.
                     const showFolder = getCurrentShowFolder();
                     if (showFolder) {

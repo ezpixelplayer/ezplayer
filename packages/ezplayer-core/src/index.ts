@@ -58,6 +58,12 @@ export type {
     CloudLayoutInfo,
     CloudLayoutStatus,
     CloudCommand,
+    AutoUpdateStatus,
+    AutoUpdateMode,
+    AutoUpdateSettings,
+    ReleaseInfo,
+    UpdateCommand,
+    AutoUpdateOpsState,
 } from './types/DataTypes';
 
 export type {
@@ -127,10 +133,6 @@ export type {
     AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
-    AutoUpdateStatus,
-    AutoUpdateMode,
-    AutoUpdateSettings,
-    InstallUpdateResult,
     DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,

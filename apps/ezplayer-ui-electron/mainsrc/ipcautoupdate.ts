@@ -6,20 +6,34 @@ import Store from 'electron-store';
 import { isScheduleActive } from './ipcezplayer.js';
 import type {
     AutoUpdateMode,
+    AutoUpdateOpsState,
     AutoUpdateSettings,
     AutoUpdateStatus,
-    InstallUpdateResult,
+    ReleaseInfo,
+    UpdateCommand,
 } from '@ezplayer/ezplayer-core';
 
 const store = new Store<{ skippedUpdateVersions: string[]; autoUpdateMode: AutoUpdateMode }>();
+
+// Matches the electron-builder publish target (root package.json `repository`).
+const GH_OWNER = 'ezpixelplayer';
+const GH_REPO = 'ezplayer';
 
 let mainWin: BrowserWindow | null = null;
 let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 let updateDownloaded = false;
 
-function sendStatus(status: AutoUpdateStatus) {
-    safeSend(mainWin, 'update:autoupdate-status', status);
-}
+// ── Pushed ops state ───────────────────────────────────────────────
+// One atomic snapshot, same shape on every transport. The Electron renderer
+// gets it via safeSend; LAN/cloud viewers via the injected WS broadcaster
+// (dependency-injected by server-worker-manager to avoid an import cycle).
+
+let curStatus: AutoUpdateStatus | null = null;
+let curReleases: ReleaseInfo[] | undefined = undefined;
+let curReleasesError: string | undefined = undefined;
+let installArmedOnQuit = false;
+
+let opsBroadcaster: ((state: AutoUpdateOpsState) => void) | null = null;
 
 function getMode(): AutoUpdateMode {
     return store.get('autoUpdateMode', 'auto-check');
@@ -49,15 +63,43 @@ function getSettings(): AutoUpdateSettings {
     };
 }
 
+export function getAutoUpdateOpsState(): AutoUpdateOpsState {
+    return {
+        settings: getSettings(),
+        status: curStatus,
+        releases: curReleases,
+        releasesError: curReleasesError,
+        installArmedOnQuit,
+    };
+}
+
+export function publishAutoUpdateOps() {
+    const state = getAutoUpdateOpsState();
+    safeSend(mainWin, 'update:autoupdate-ops', state);
+    opsBroadcaster?.(state);
+}
+
+/** Injected by server-worker-manager so ops state reaches LAN/cloud WS
+ *  clients without a module cycle. Publishes current state on injection. */
+export function setAutoUpdateOpsBroadcaster(fn: (state: AutoUpdateOpsState) => void) {
+    opsBroadcaster = fn;
+    publishAutoUpdateOps();
+}
+
+function setStatus(status: AutoUpdateStatus) {
+    curStatus = status;
+    publishAutoUpdateOps();
+}
+
 // ── electron-updater event wiring ──────────────────────────────────
 
 function wireUpdaterEvents() {
     autoUpdater.on('checking-for-update', () => {
-        sendStatus({ state: 'checking' });
+        setStatus({ state: 'checking' });
     });
 
     autoUpdater.on('update-available', (info) => {
-        sendStatus({
+        setStatus({
             state: 'available',
             version: info.version,
             releaseDate: info.releaseDate ?? '',
@@ -66,11 +108,11 @@ function wireUpdaterEvents() {
     });
 
     autoUpdater.on('update-not-available', (info) => {
-        sendStatus({ state: 'not-available', version: info.version });
+        setStatus({ state: 'not-available', version: info.version });
     });
 
     autoUpdater.on('download-progress', (progress) => {
-        sendStatus({
+        setStatus({
             state: 'downloading',
             percent: progress.percent,
             bytesPerSecond: progress.bytesPerSecond,
@@ -82,17 +124,144 @@ function wireUpdaterEvents() {
     autoUpdater.on('update-downloaded', (info) => {
         updateDownloaded = true;
         autoUpdater.autoInstallOnAppQuit = true;
-        sendStatus({ state: 'downloaded', version: info.version });
+        setStatus({ state: 'downloaded', version: info.version });
     });
 
     autoUpdater.on('error', (err) => {
-        sendStatus({ state: 'error', message: err.message });
+        setStatus({ state: 'error', message: err.message });
     });
+}
+
+// ── Version picker (manual mode) ───────────────────────────────────
+
+// While pinned, the feed points at one specific release instead of "latest".
+let pinnedTag: string | null = null;
+
+function restoreDefaultFeed() {
+    if (!pinnedTag) return;
+    pinnedTag = null;
+    autoUpdater.allowDowngrade = false;
+    autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO });
+}
+
+async function listReleases() {
+    try {
+        const resp = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases?per_page=30`, {
+            headers: { Accept: 'application/vnd.github+json' },
+        });
+        if (!resp.ok) throw new Error(`GitHub releases request failed: ${resp.status}`);
+        const releases = (await resp.json()) as {
+            tag_name: string;
+            draft: boolean;
+            prerelease: boolean;
+            published_at: string | null;
+            body: string | null;
+            assets: { name: string }[];
+        }[];
+        curReleases = releases
+            .filter((r) => !r.draft && r.assets.some((a) => /^latest.*\.yml$/.test(a.name)))
+            .map((r) => ({
+                version: r.tag_name.replace(/^v/, ''),
+                tag: r.tag_name,
+                publishedAt: r.published_at ?? '',
+                prerelease: r.prerelease,
+                releaseNotes: r.body ?? undefined,
+            }));
+        curReleasesError = undefined;
+    } catch (err) {
+        curReleasesError = (err as Error).message;
+    }
+    publishAutoUpdateOps();
+}
+
+// Point the updater at one release's own latest*.yml and download it. Any
+// version is fair game — downgrades and prereleases included — because this
+// only runs on an explicit user pick in manual mode.
+async function updateToVersion(tag: string) {
+    if (getMode() !== 'manual') {
+        setStatus({ state: 'error', message: 'Installing a specific version requires manual update mode.' });
+        return;
+    }
+    pinnedTag = tag;
+    autoUpdater.allowDowngrade = true;
+    autoUpdater.setFeedURL({
+        provider: 'generic',
+        url: `https://github.com/${GH_OWNER}/${GH_REPO}/releases/download/${tag}`,
+    });
+    installArmedOnQuit = false;
+    try {
+        const result = await autoUpdater.checkForUpdates();
+        // Same-version picks report 'not-available'; nothing to download.
+        if (!result?.isUpdateAvailable) return;
+        await autoUpdater.downloadUpdate();
+    } catch (err) {
+        setStatus({ state: 'error', message: (err as Error).message });
+    }
+}
+
+// ── Command dispatch ───────────────────────────────────────────────
+
+/** Single entry point for every transport: Electron IPC, LAN WS, cloud bridge.
+ *  Fire and forget — outcomes flow back through the published ops state. */
+export function dispatchUpdateCommand(cmd: UpdateCommand): void | Promise<void> {
+    switch (cmd.type) {
+        case 'setUpdateMode':
+            store.set('autoUpdateMode', cmd.mode);
+            // Leaving manual mode ends any version pin — auto checks track latest.
+            if (cmd.mode !== 'manual') restoreDefaultFeed();
+            publishAutoUpdateOps();
+            break;
+        case 'skipVersion':
+            addSkippedVersion(cmd.version);
+            publishAutoUpdateOps();
+            break;
+        case 'clearSkippedVersions':
+            store.set('skippedUpdateVersions', []);
+            publishAutoUpdateOps();
+            break;
+        case 'checkNow':
+            // An explicit check always means "latest", never the pin.
+            restoreDefaultFeed();
+            return autoUpdater.checkForUpdates().then(
+                () => undefined,
+                (err) => setStatus({ state: 'error', message: (err as Error).message }),
+            );
+        case 'downloadNow':
+            return autoUpdater.downloadUpdate().then(
+                () => undefined,
+                (err) => setStatus({ state: 'error', message: (err as Error).message }),
+            );
+        case 'installNow':
+            // The UI confirms with the user before forcing past an active
+            // schedule; this guard is the last line against an unconfirmed
+            // restart. The deferral is visible as installArmedOnQuit.
+            if (isScheduleActive() && !cmd.force) {
+                autoUpdater.autoInstallOnAppQuit = true;
+                installArmedOnQuit = true;
+                publishAutoUpdateOps();
+                break;
+            }
+            autoUpdater.quitAndInstall();
+            break;
+        case 'installOnQuit':
+            autoUpdater.autoInstallOnAppQuit = true;
+            installArmedOnQuit = true;
+            publishAutoUpdateOps();
+            break;
+        case 'listReleases':
+            return listReleases();
+        case 'updateToVersion':
+            return updateToVersion(cmd.tag);
+        default: {
+            const _exhaustive: never = cmd;
+            console.warn('[AutoUpdate] unknown update command', _exhaustive);
+        }
+    }
 }
 
 // ── Startup check ──────────────────────────────────────────────────
 
-// No dialogs here: the check emits status events and the renderer decides
+// No dialogs here: the check publishes ops state and the renderer decides
 // whether to surface a reminder (auto-check mode, version not skipped).
 async function startupCheck() {
     if (app.commandLine.hasSwitch('no-update-check')) return;
@@ -148,53 +317,11 @@ function startIdleWatcher() {
 // ── IPC handlers ───────────────────────────────────────────────────
 
 function registerIPCHandlers() {
-    ipcMain.handle('autoupdate:get-settings', (): AutoUpdateSettings => getSettings());
+    // Initial load: the invoke reply cannot be lost, unlike a push racing
+    // the renderer's listener registration.
+    ipcMain.handle('autoupdate:get-ops', (): AutoUpdateOpsState => getAutoUpdateOpsState());
 
-    ipcMain.handle('autoupdate:set-mode', (_event, mode: AutoUpdateMode): AutoUpdateSettings => {
-        store.set('autoUpdateMode', mode);
-        return getSettings();
-    });
-
-    ipcMain.handle('autoupdate:skip-version', (_event, version: string): AutoUpdateSettings => {
-        addSkippedVersion(version);
-        return getSettings();
-    });
-
-    ipcMain.handle('autoupdate:clear-skipped', (): AutoUpdateSettings => {
-        store.set('skippedUpdateVersions', []);
-        return getSettings();
-    });
-
-    ipcMain.handle('autoupdate:check', async () => {
-        try {
-            await autoUpdater.checkForUpdates();
-        } catch (err) {
-            sendStatus({ state: 'error', message: (err as Error).message });
-        }
-    });
-
-    ipcMain.handle('autoupdate:download', async () => {
-        try {
-            await autoUpdater.downloadUpdate();
-        } catch (err) {
-            sendStatus({ state: 'error', message: (err as Error).message });
-        }
-    });
-
-    ipcMain.handle('autoupdate:install-now', (_event, force?: boolean): InstallUpdateResult => {
-        // The renderer confirms with the user before forcing past an active
-        // schedule; this guard is the last line against an unconfirmed restart.
-        if (isScheduleActive() && !force) {
-            autoUpdater.autoInstallOnAppQuit = true;
-            return 'deferred';
-        }
-        autoUpdater.quitAndInstall();
-        return 'installing';
-    });
-
-    ipcMain.handle('autoupdate:install-on-quit', () => {
-        autoUpdater.autoInstallOnAppQuit = true;
-    });
+    ipcMain.handle('autoupdate:command', (_event, cmd: UpdateCommand) => dispatchUpdateCommand(cmd));
 }
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -205,8 +332,7 @@ export function registerAutoUpdateHandlers(win: BrowserWindow) {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     // Auto-update follows the stable channel only — a prerelease never trumps the
-    // latest full release. Prereleases stay opt-in via a manual download from the
-    // GitHub releases page.
+    // latest full release. Prereleases stay opt-in via the manual-mode version picker.
     autoUpdater.allowPrerelease = false;
 
     // Quiet one-line logger.  electron-updater's default emits full stack

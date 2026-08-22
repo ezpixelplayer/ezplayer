@@ -144,7 +144,7 @@ export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 export { remoteAccessActions } from './store/slices/RemoteAccessStore';
-export { autoUpdateActions } from './store/slices/AutoUpdateStore';
+export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

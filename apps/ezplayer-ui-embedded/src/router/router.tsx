@@ -1,5 +1,6 @@
 import { Navigate, RouteObject } from 'react-router-dom';
 import { useState } from 'react';
+import { useSelector } from 'react-redux';
 import {
     AudioSettings,
     CloudPage,
@@ -20,13 +21,14 @@ import {
     CreateEditPlaylist,
     SettingsDrawer,
     Preview3DPage,
+    SoftwareUpdateSettings,
     UISettings,
     ViewerSettings,
     toRouteChildren,
     useShellSection,
     useFilesSection,
 } from '@ezplayer/player-ui-components';
-import type { MenuRoute, SettingsSection } from '@ezplayer/player-ui-components';
+import type { MenuRoute, RootState, SettingsSection } from '@ezplayer/player-ui-components';
 
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
 import PlayArrow from '@mui/icons-material/PlayArrow';
@@ -43,6 +45,7 @@ import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
 import FolderIcon from '@mui/icons-material/Folder';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 
 declare global {
     interface Window {
@@ -69,6 +72,9 @@ const EmbeddedSettingsPage = () => {
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
+    // Availability advertised by the player in the snapshot (like remoteAccess);
+    // older players never push autoUpdateOps, so the tile stays hidden for them.
+    const canUpdate = useSelector((s: RootState) => s.autoUpdate.ops) != null;
     // Embedded is a browser; show-folder selection isn't possible here.
     const sections: SettingsSection[] = [
         {
@@ -115,6 +121,14 @@ const EmbeddedSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: 'softwareUpdate',
+            label: 'Software Update',
+            icon: <SystemUpdateAltIcon sx={{ fontSize: 56 }} />,
+            title: 'Software Update',
+            available: canUpdate,
+            content: <SoftwareUpdateSettings />,
         },
         // Present only when available.
         shellSection,

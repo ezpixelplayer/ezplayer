@@ -313,6 +313,12 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('controllerCommand', msg.command, 'lan').catch((err) => {
             console.error('[server-worker] controllerCommand failed:', err);
         });
+    } else if (msg.type === 'updateCommand') {
+        // Software-update verb. Fire-and-forget: results flow back via the
+        // broadcast `autoUpdateOps` state.
+        void rpc.call('updateCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] updateCommand failed:', err);
+        });
     }
 });
 
