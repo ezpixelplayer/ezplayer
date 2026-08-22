@@ -5,6 +5,7 @@ import type {
     CombinedPlayerStatus,
     CloudCommand,
     ControllerCommand,
+    UpdateCommand,
     EZPlayerCommand,
     PlaybackSettings,
     BatchImportSummary,
@@ -126,6 +127,10 @@ export interface DataStorageAPI {
     /** Single umbrella for controller ops (discovery / status / action). Fire and
      *  forget: progress + results arrive via the pushed `controllerops` state. */
     issueControllerCommand: (command: ControllerCommand) => Promise<void>;
+
+    /** Single umbrella for software-update verbs. Fire and forget: results and
+     *  progress arrive via the pushed `autoUpdateOps` state. */
+    issueUpdateCommand?: (cmd: UpdateCommand) => Promise<void>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
