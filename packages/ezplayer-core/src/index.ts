@@ -105,8 +105,10 @@ export {
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
+    ipInCidr,
+    findOffNetworkControllers,
 } from './util/controllerReconcile';
-export type { InputReconcile } from './util/controllerReconcile';
+export type { InputReconcile, OffNetworkGroup } from './util/controllerReconcile';
 
 export {
     buildPortMap,

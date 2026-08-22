@@ -48,9 +48,10 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea,
                 },
             }}
         >
-            <Box sx={{ padding: 2, flexShrink: 0 }}>
+            <Box sx={{ padding: 2, paddingBottom: 0, flexShrink: 0 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
+            {/* Gap lives inside the clipping box so the panel's top shadow isn't cut off. */}
             <Box
                 sx={{
                     flex: 1,
@@ -58,7 +59,6 @@ export const Preview3DPage: React.FC<Preview3DPageProps> = ({ title, statusArea,
                     display: 'flex',
                     flexDirection: 'column',
                     p: 2,
-                    pt: 0,
                     overflow: 'hidden',
                 }}
             >
