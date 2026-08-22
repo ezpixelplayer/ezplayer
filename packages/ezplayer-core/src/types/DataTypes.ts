@@ -729,6 +729,73 @@ export interface CloudStatus {
     homeServerUrl?: string;
 }
 
+/// Auto-update (software update) types — shared by Electron IPC, LAN WS, and cloud.
+
+export type AutoUpdateStatus =
+    | { state: 'checking' }
+    | { state: 'available'; version: string; releaseDate: string; releaseNotes?: string }
+    | { state: 'not-available'; version: string }
+    | { state: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
+    | { state: 'downloaded'; version: string }
+    | { state: 'error'; message: string };
+
+/** 'auto-check': check at startup + idle pre-download, renderer shows a reminder.
+ *  'manual': no unsolicited checks; everything goes through the settings UI. */
+export type AutoUpdateMode = 'auto-check' | 'manual';
+
+/** Persisted auto-update settings plus the running app version (electron-store, machine-wide). */
+export interface AutoUpdateSettings {
+    mode: AutoUpdateMode;
+    currentVersion: string;
+    skippedVersions: string[];
+}
+
+/** One GitHub release, as shown in the manual-mode version picker. */
+export interface ReleaseInfo {
+    /** Semver without the leading 'v', e.g. '0.6.5'. */
+    version: string;
+    /** Git tag, e.g. 'v0.6.5' — the handle passed in an updateToVersion command. */
+    tag: string;
+    publishedAt: string;
+    prerelease: boolean;
+    releaseNotes?: string;
+}
+
+/** Verbs any update UI can send the player. Modeled on `ControllerCommand`: fire
+ *  and forget over every transport; results and progress come back through the
+ *  pushed `AutoUpdateOpsState`. New verbs add a variant here plus a case in
+ *  main's `dispatchUpdateCommand`. */
+export type UpdateCommand =
+    | { type: 'setUpdateMode'; mode: AutoUpdateMode }
+    | { type: 'skipVersion'; version: string }
+    | { type: 'clearSkippedVersions' }
+    | { type: 'checkNow' }
+    | { type: 'downloadNow' }
+    // Without `force`, main defers to install-on-quit when a schedule is active
+    // (the deferral shows up as `installArmedOnQuit` in the pushed state). The
+    // UI confirms with the user before re-sending with `force: true`.
+    | { type: 'installNow'; force?: boolean }
+    | { type: 'installOnQuit' }
+    // Populates `releases` in the pushed state (manual-mode version picker).
+    | { type: 'listReleases' }
+    // Download a specific release — downgrades and prereleases included.
+    // Manual mode only; an explicit pick bypasses the skip list.
+    | { type: 'updateToVersion'; tag: string };
+
+/** One atomic auto-update snapshot, pushed to all UIs (Electron push channel,
+ *  LAN WS broadcast, cloud bridge) whenever anything changes. */
+export interface AutoUpdateOpsState {
+    settings: AutoUpdateSettings;
+    status: AutoUpdateStatus | null;
+    /** Set after a listReleases command; newest first. */
+    releases?: ReleaseInfo[];
+    /** Last listReleases failure; cleared on the next success. */
+    releasesError?: string;
+    /** True once the user chose install-on-quit, or an unforced installNow was
+     *  deferred by an active schedule. */
+    installArmedOnQuit: boolean;
+}
+
 /// Player full state & websocket sync
 export type FullPlayerState = {
     showFolder?: string;
@@ -748,6 +815,8 @@ export type FullPlayerState = {
     controllerops?: ControllerOpsState;
     /** Which password-gated remote-access tiles this player offers. */
     remoteAccess?: RemoteAccessAvailability;
+    /** Software-update settings/status/releases. One atomic snapshot. */
+    autoUpdateOps?: AutoUpdateOpsState;
 };
 
 /**
@@ -876,7 +945,10 @@ export type PlayerClientWebSocketMessage =
     | { type: 'updateSchedule'; data: ScheduledPlaylist[] }
     // Drive controller discovery/status/actions over the LAN WS (same shape the
     // HTTP /api/ezp endpoints and cloud commands use — one command, any transport).
-    | { type: 'controllerCommand'; command: ControllerCommand };
+    | { type: 'controllerCommand'; command: ControllerCommand }
+    // Software-update verbs. Fire and forget; results flow back via the
+    // broadcast `autoUpdateOps` state.
+    | { type: 'updateCommand'; cmd: UpdateCommand };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 
