@@ -74,7 +74,8 @@ const EmbeddedSettingsPage = () => {
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
     // Availability advertised by the player in the snapshot (like remoteAccess);
     // older players never push autoUpdateOps, so the tile stays hidden for them.
-    const canUpdate = useSelector((s: RootState) => s.autoUpdate.ops) != null;
+    // Boolean selector: progress pushes must not re-render the whole page.
+    const canUpdate = useSelector((s: RootState) => s.autoUpdate.ops != null);
     // Embedded is a browser; show-folder selection isn't possible here.
     const sections: SettingsSection[] = [
         {

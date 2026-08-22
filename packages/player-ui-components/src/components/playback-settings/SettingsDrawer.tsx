@@ -38,36 +38,32 @@ interface SettingsDrawerProps {
     sections: SettingsSection[];
 }
 
+// Module-level on purpose: defined inside the render function, React would see a
+// new component type on every drawer re-render and remount the open dialog.
+const SectionDialog: React.FC<{ open: boolean; title: string; onClose: () => void; children: React.ReactNode }> = ({
+    open,
+    title,
+    onClose,
+    children,
+}) => (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth PaperProps={{ sx: { maxHeight: '90vh' } }}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h5">{title}</Typography>
+            <Tooltip title="Close">
+                <IconButton onClick={onClose} size="small" aria-label="close">
+                    <CloseIcon />
+                </IconButton>
+            </Tooltip>
+        </DialogTitle>
+        <DialogContent dividers>{children}</DialogContent>
+    </Dialog>
+);
+
 export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusArea, sections }) => {
     const [activeDialog, setActiveDialog] = useState<string | null>(null);
     const closeActiveDialog = () => setActiveDialog(null);
 
     const effectiveSections = sections.filter((s) => s.available !== false);
-
-    // Wraps each section's content in a uniform Dialog frame with a close button.
-    const SectionDialog: React.FC<{ open: boolean; title: string; children: React.ReactNode }> = ({
-        open,
-        title,
-        children,
-    }) => (
-        <Dialog
-            open={open}
-            onClose={closeActiveDialog}
-            maxWidth="md"
-            fullWidth
-            PaperProps={{ sx: { maxHeight: '90vh' } }}
-        >
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="h5">{title}</Typography>
-                <Tooltip title="Close">
-                    <IconButton onClick={closeActiveDialog} size="small" aria-label="close">
-                        <CloseIcon />
-                    </IconButton>
-                </Tooltip>
-            </DialogTitle>
-            <DialogContent dividers>{children}</DialogContent>
-        </Dialog>
-    );
 
     return (
         <Box
@@ -127,7 +123,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
             {/* Section dialogs (one per content-bearing section) */}
             {effectiveSections.map((s) =>
                 'content' in s ? (
-                    <SectionDialog key={s.key} open={activeDialog === s.key} title={s.title ?? s.label}>
+                    <SectionDialog
+                        key={s.key}
+                        open={activeDialog === s.key}
+                        title={s.title ?? s.label}
+                        onClose={closeActiveDialog}
+                    >
                         {s.content}
                     </SectionDialog>
                 ) : null,
