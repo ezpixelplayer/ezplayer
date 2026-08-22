@@ -23,11 +23,7 @@ let mainWin: BrowserWindow | null = null;
 let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 let updateDownloaded = false;
 
-// ── Pushed ops state ───────────────────────────────────────────────
-// One atomic snapshot, same shape on every transport. The Electron renderer
-// gets it via safeSend; LAN/cloud viewers via the injected WS broadcaster
-// (dependency-injected by server-worker-manager to avoid an import cycle).
-
+// Auto updater atomic status snapshot
 let curStatus: AutoUpdateStatus | null = null;
 let curReleases: ReleaseInfo[] | undefined = undefined;
 let curReleasesError: string | undefined = undefined;
