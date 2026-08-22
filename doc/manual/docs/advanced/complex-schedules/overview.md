@@ -11,6 +11,9 @@ also gives you:
 
 - **Background layers** — run a second playlist alongside the main show, blended
   over or under it. See [Background Schedule](./background-schedule.md).
+- **Drag-and-drop on the calendar** — move, copy, repeat, or adjust the start/end
+  of a series by dragging schedule blocks in Month or Week view. See
+  [Simple Schedules — Moving schedules by drag-and-drop](../../basics/simple-schedules.md#moving-schedules-by-drag-and-drop).
 - **Runtime behavior** — control how a schedule window is filled (loop or shuffle),
   preferences for ending gracefully between songs, and which schedule window "wins" when two
   overlap. See [Schedule Options](./schedule-options.md).
