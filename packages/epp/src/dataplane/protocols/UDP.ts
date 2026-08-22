@@ -226,10 +226,6 @@ export class UdpClient {
      */
     addSendToBatch(data: Uint8Array | Uint8Array[]): void {
         if (this._suspended || !this.sendBatch || this._connAttemptInProgress || !this._isConnected || !this.socket) {
-            // The packet is discarded after its protocol sequence number was
-            // already assigned, so the receiver sees a sequence gap and counts
-            // an error.  Count it here too: otherwise our own drops are
-            // indistinguishable from loss on the wire.
             ++this.nSkipped;
             return;
         }

@@ -415,9 +415,7 @@ export interface PlaybackStatistics {
     cframesSkippedDueToIncompletePriorCumulative: number;
     /**
      * Packets discarded by a sender after their protocol sequence number was
-     * assigned — the socket was suspended, unconnected, or reconnecting.  The
-     * receiving controller counts each as a sequence error, so without this
-     * our own drops look identical to loss on the wire.
+     * assigned.
      */
     cpacketsDroppedBySenderCumulative: number;
 
