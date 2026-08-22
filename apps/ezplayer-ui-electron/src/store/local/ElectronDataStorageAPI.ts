@@ -175,8 +175,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             }
         });
         window.electronAPI!.onAutoUpdateOpsUpdated((state: AutoUpdateOpsState) => {
-            // Single-line status log; the full object would render as
-            // "[object Object]" and obscure the actual state/version/message.
+            // Single-line status log
             const status = state.status;
             if (status) {
                 const detail =
