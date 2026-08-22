@@ -94,6 +94,18 @@ function buildBaseScheduleFromOccurrence(
     };
 }
 
+/**
+ * Turn a schedule into a standalone, non-repeating one.
+ */
+function detachFromSeries(schedule: ScheduledPlaylist): ScheduledPlaylist {
+    const { recurrenceRule: _rule, ...rest } = schedule;
+    return {
+        ...rest,
+        baseScheduleId: '',
+        recurrence: 'once' as RecurrenceOption,
+    };
+}
+
 export function buildMoveOrCopySchedule(
     sourceSchedule: ScheduledPlaylist,
     destinationDate: Date,
@@ -102,7 +114,7 @@ export function buildMoveOrCopySchedule(
     const destinationDateMS = convertDateToMilliseconds(destinationDate);
     if (operation === 'copy') {
         return {
-            ...sourceSchedule,
+            ...detachFromSeries(sourceSchedule),
             id: uuidv4(),
             date: destinationDateMS,
             updatedAt: Date.now(),
@@ -110,8 +122,11 @@ export function buildMoveOrCopySchedule(
         };
     }
 
+    // Move is only offered for a standalone schedule or the sole remaining
+    // occurrence of a repeating series.
+    const moved = isRecurringSchedule(sourceSchedule) ? detachFromSeries(sourceSchedule) : sourceSchedule;
     return {
-        ...sourceSchedule,
+        ...moved,
         date: destinationDateMS,
         updatedAt: Date.now(),
         deleted: false,
