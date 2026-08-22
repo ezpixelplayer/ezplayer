@@ -74,6 +74,20 @@ export interface ControllerSendStats {
 
 export class FrameSender {
     job: SendJob | undefined = undefined;
+
+    /**
+     * Packets every sender discarded before they reached its socket, summed.
+     * Cumulative on the clients, so it is assigned rather than accumulated.
+     */
+    senderDroppedTotal(): number {
+        let n = 0;
+        for (const sj of this.job?.senders ?? []) {
+            const client = (sj.sender as { client?: { nSkipped: number } } | undefined)?.client;
+            if (client) n += client.nSkipped;
+        }
+        return n;
+    }
+
     state: SendJobState = new SendJobState();
     outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
@@ -194,6 +208,7 @@ export class FrameSender {
                 const res = this.state.initialize(args.targetFramePN, this.job);
                 args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
                 args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
+                args.playbackStats.cpacketsDroppedBySenderCumulative = this.senderDroppedTotal();
                 if (this.outstandingFrames.has(args.frame)) {
                     this.emitWarning?.('WARNING: THIS FRAME HANDLE ALREADY BEING SENT');
                     ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;

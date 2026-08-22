@@ -156,7 +156,7 @@ const DetailTree: React.FC<{ nodes: ControllerDetailNode[]; depth?: number }> = 
 );
 
 /** Canonical section order for the detail fold-out. */
-const SECTION_ORDER = ['Basic', 'Operational', 'Show stats', 'Models & Ports', 'Errors', 'Other'];
+const SECTION_ORDER = ['Basic', 'Losing data', 'Operational', 'Show stats', 'Models & Ports', 'Errors', 'Other'];
 
 /** Label → section fallback for detail trees without `kind: 'section'`. */
 const LABEL_SECTION: Record<string, string> = {
