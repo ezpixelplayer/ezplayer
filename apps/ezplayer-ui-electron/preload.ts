@@ -1,8 +1,8 @@
 import type {
     AudioChunk,
     AudioDevice,
-    AutoUpdateMode,
-    AutoUpdateStatus,
+    AutoUpdateOpsState,
+    UpdateCommand,
     CloudConfig,
     CloudStatus,
     DiagnosticsConsent,
@@ -235,17 +235,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
 
     // Auto-update
-    getAutoUpdateSettings: () => ipcRenderer.invoke('autoupdate:get-settings'),
-    setAutoUpdateMode: (mode: AutoUpdateMode) => ipcRenderer.invoke('autoupdate:set-mode', mode),
-    skipUpdateVersion: (version: string) => ipcRenderer.invoke('autoupdate:skip-version', version),
-    clearSkippedUpdateVersions: () => ipcRenderer.invoke('autoupdate:clear-skipped'),
-    checkForUpdates: () => ipcRenderer.invoke('autoupdate:check'),
-    downloadUpdate: () => ipcRenderer.invoke('autoupdate:download'),
-    installUpdateNow: (force?: boolean) => ipcRenderer.invoke('autoupdate:install-now', force),
-    installUpdateOnQuit: () => ipcRenderer.invoke('autoupdate:install-on-quit'),
-    onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => {
-        ipcRenderer.on('update:autoupdate-status', (_event: IpcRendererEvent, status: AutoUpdateStatus) => {
-            callback(status);
+    updateCommand: (cmd: UpdateCommand) => ipcRenderer.invoke('autoupdate:command', cmd),
+    getAutoUpdateOps: () => ipcRenderer.invoke('autoupdate:get-ops'),
+    onAutoUpdateOpsUpdated: (callback: (state: AutoUpdateOpsState) => void) => {
+        ipcRenderer.on('update:autoupdate-ops', (_event: IpcRendererEvent, state: AutoUpdateOpsState) => {
+            callback(state);
         });
     },
 } satisfies EZPElectronAPI);

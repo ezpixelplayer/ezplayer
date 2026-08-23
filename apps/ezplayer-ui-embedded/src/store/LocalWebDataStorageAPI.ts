@@ -5,6 +5,7 @@ import type {
     CombinedPlayerStatus,
     CloudCommand,
     ControllerCommand,
+    UpdateCommand,
     EZPlayerCommand,
     PlaybackSettings,
     BatchImportSummary,
@@ -16,6 +17,7 @@ import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/
 import {
     AppDispatch,
     authSliceActions,
+    autoUpdateActions,
     cloudConfigActions,
     remoteAccessActions,
     cloudStatusActions,
@@ -102,6 +104,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
             if (data.remoteAccess !== undefined) {
                 dispatch(remoteAccessActions.setRemoteAccess(data.remoteAccess));
+            }
+            if (data.autoUpdateOps !== undefined) {
+                dispatch(autoUpdateActions.setOps(data.autoUpdateOps));
             }
         });
 
@@ -420,6 +425,10 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async issueControllerCommand(command: ControllerCommand): Promise<void> {
         wsService.send({ type: 'controllerCommand', command });
+    }
+
+    async issueUpdateCommand(cmd: UpdateCommand): Promise<void> {
+        wsService.send({ type: 'updateCommand', cmd });
     }
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {

@@ -1,6 +1,7 @@
 import type {
     AudioDevice,
-    AutoUpdateStatus,
+    AutoUpdateOpsState,
+    UpdateCommand,
     CloudCommand,
     ControllerCommand,
     ControllerOpsState,
@@ -173,20 +174,22 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
                 this.dispatch(setPStatus(data));
             }
         });
-        window.electronAPI!.onAutoUpdateStatus((status: AutoUpdateStatus) => {
-            // Single-line log; full status object would render as "[object Object]"
-            // and obscure the actual state/version/message.
-            const detail =
-                status.state === 'available' || status.state === 'downloaded' || status.state === 'not-available'
-                    ? ` v${status.version}`
-                    : status.state === 'downloading'
-                      ? ` ${status.percent.toFixed(0)}% (${(status.bytesPerSecond / 1024).toFixed(0)} KB/s)`
-                      : status.state === 'error'
-                        ? `: ${status.message}`
-                        : '';
-            console.log(`[AutoUpdate] ${status.state}${detail}`);
+        window.electronAPI!.onAutoUpdateOpsUpdated((state: AutoUpdateOpsState) => {
+            // Single-line status log
+            const status = state.status;
+            if (status) {
+                const detail =
+                    status.state === 'available' || status.state === 'downloaded' || status.state === 'not-available'
+                        ? ` v${status.version}`
+                        : status.state === 'downloading'
+                          ? ` ${status.percent.toFixed(0)}% (${(status.bytesPerSecond / 1024).toFixed(0)} KB/s)`
+                          : status.state === 'error'
+                            ? `: ${status.message}`
+                            : '';
+                console.log(`[AutoUpdate] ${status.state}${detail}`);
+            }
             if (this.dispatch) {
-                this.dispatch(autoUpdateActions.setStatus(status));
+                this.dispatch(autoUpdateActions.setOps(state));
             }
         });
     }
@@ -240,6 +243,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         await window.electronAPI!.controllerCommand(command);
     }
 
+    async issueUpdateCommand(cmd: UpdateCommand): Promise<void> {
+        await window.electronAPI!.updateCommand(cmd);
+    }
+
     async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;
         // Retry: on a cold start the invoke can beat main's handler registration.
@@ -264,6 +271,12 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.cloudStatus) dispatch(cloudStatusActions.setCloudStatus(snapshot.cloudStatus));
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
+        }
+        // Initial update state comes from an invoke.
+        try {
+            dispatch(autoUpdateActions.setOps(await window.electronAPI!.getAutoUpdateOps()));
+        } catch (e) {
+            console.error('[AutoUpdate] initial ops fetch failed:', e);
         }
         this.audioCtx = new AudioContext();
         ++this.audioCtxIncarnation;
