@@ -20,7 +20,7 @@ The network scan can proceed at three levels of detail:
 - **Identify**: For responsive IP addresses, attempt to identify if the device is a supported light controller
 - **Full**: Refresh full details for supported light controllers
 
-If **Follow FPP proxies** is checked, any FPP or similar devices will be queried to see if light controllers are attached to them
+If **Follow FPP proxies** is checked, any FPP or similar devices will be queried to see if light controllers are attached to them.
 
 Once selections have been made, press the **Scan** button.  The status of the scan and the resulting discoveries will be populated in the cards above.
 
@@ -29,5 +29,5 @@ Once selections have been made, press the **Scan** button.  The status of the sc
 To enable proxy access to the controllers on a network, check the "Proxy Allowed" box for that network.
 
 :::warning
-On a cloud-registered machine, enabling the proxy allows remote access to controllers (or other web pages) by anyone with your secret player registration token.  Please keep your player id token safe, and only enable proxy for your controller "show" networks.
+On a cloud-registered machine, enabling the proxy allows remote access to controllers (or other web pages) by anyone with your secret player registration token.  Please keep your registration token safe, and only enable proxy for your controller "show" networks.
 :::

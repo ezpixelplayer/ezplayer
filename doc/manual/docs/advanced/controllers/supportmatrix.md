@@ -9,7 +9,7 @@ title: Support Matrix
 This support matrix pertains to [detailed controller status](controllerlist.md) and [controller actions](controlleractions.md).  DDP and E1.31 controllers that have already been configured and respond to pings will work with EZPlayer even if detailed status and configuration actions are not available.
 :::
 
-As there are innumerable combinations of controller model, firmware version, and test scenario, this documentation will never be complete.  Please contact the team if you have any issues, or to request additional controller support.  We do our best to automate testing of boards we have as lab samples, but this doesn't preclude issues related to model and firmware differences, or nuances only apparent during manual testing.
+As there are innumerable combinations of controller model, firmware version, and test scenario, this documentation will never be complete.  Please contact the team if you have any issues, or to request additional controller support.  We do our best to automate testing of boards we have as lab samples, but this doesn't rule out issues related to model and firmware differences, or nuances only apparent during manual testing.
 
 | Driver | Model(s) | Firmware | Test Status | As Of | Support Level |
 | - | - | - | - | - | - |
@@ -27,12 +27,12 @@ As there are innumerable combinations of controller model, firmware version, and
 | HinksPix | PRO V1, V2, V3 (80) | Various | Lab + Field | 0.6.6 | CVS |
 | ILightThat | B8, B17 | 3.5 | Lab | 0.6.6 | CV |
 | ILightThat | Input8, Signals, DMX, Switchy |  | Obtained | | |
-| J1Sys |  |  | Unplanned | | |
+| J1Sys |  |  | Not Planned | | |
 | LoR | Aurora | | Planned | | |
-| Minleon |  |  | Unplanned | | |
+| Minleon |  |  | Not Planned | | |
 | Pixlite | | | Obtained | | |
 | San Devices | | | Obtained | | |
-| Twinkly |  |  | Unplanned | | |
+| Twinkly |  |  | Not Planned | | |
 | Vivid | | | Planned | | |
 | WLED | Dig Quad | Latest | Lab | 0.6.6 | CV |
 | WLED | GLEDOPTO |  | Obtained | | |

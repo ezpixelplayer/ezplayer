@@ -9,7 +9,7 @@ The **Software Update** tile manages EZPlayer releases on this machine. These
 settings are stored on the player PC, not in the show folder.
 
 The pane shows the installed version.  Updates come from official EZPlayer
-releases on github, either automatically or by user request, depending on the update mode.
+releases on GitHub, either automatically or by user request, depending on the update mode.
 
 ![Software Update](/img/softupdate.png)
 
@@ -18,13 +18,15 @@ releases on github, either automatically or by user request, depending on the up
 - **Check automatically and remind me** _(default)_ — about ten seconds after
   launch, EZPlayer looks for a newer release.  If the PC then sits idle for at
   least five minutes with no show schedule running, EZPlayer may download the
-  update in the background.
-  A finished download is queued to install the next time you quit.
+  update in the background. A finished download is queued to install the next
+  time you quit.
 - **Manual — only check when I ask** — no startup check, idle download, or
   prompts. Use **Check for Updates** on this pane to initiate all updates.
 
 Changing the mode takes effect without restarting. Engaging "Manual" mode stops
 any downloads that were automatically initiated.
+
+Automatic checks and downloads run only in the **installed** desktop app.
 
 ## Check for Updates
 
@@ -40,7 +42,6 @@ download is running, the button is disabled. The pane then shows:
 - An error if the check or download failed (offline, blocked network, and so
   on).
 
-Automatic checks and downloads run only in the **installed** desktop app.
 
 ## Skip This Version
 
@@ -54,7 +55,7 @@ skip marker and restores the version's eligibility for automatic download.
 
 ## Manual Version Selection
 
-In "Manual" mode, the "Check For Updates" button retrieves a list of all
+In "Manual" mode, the "Check for Updates" button retrieves a list of all
 versions available, including old versions and betas.  Selecting one and
 pressing "Get This Version" initiates a download.  Once the download is
 complete, the version can be [installed](#install--restart--install-on-quit).

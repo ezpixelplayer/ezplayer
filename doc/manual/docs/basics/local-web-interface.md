@@ -54,8 +54,7 @@ toggles a live **audio stream** — useful for listening over the network when y
 
 Show-folder selection stays on the show PC. Everything else — song management,
 playlist edits, schedule changes, jukebox requests, status, controller setup, and
-most settings — can be done
-from the LAN UI once the server is listening.
+most settings — can be done from the LAN UI once the server is listening.
 
 ## Kiosk (public display)
 
@@ -99,7 +98,7 @@ If the preferred port is busy, EZPlayer tries the next ports in sequence (up to
 The main LAN UI port is chosen in this priority order:
 
 1. **CLI argument** — `--web-port=3000` (highest priority)
-2. **Environment variable** — `EZPLAYER_WEB_PORT`; See [Environment Variables](../reference/env-variables.md) for all runtime variables.
+2. **Environment variable** — `EZPLAYER_WEB_PORT`; see [Environment Variables](../reference/env-variables.md) for all runtime variables.
 3. **Stored preference** — remembered from a previous successful launch
 4. **Default** — `3000`
 

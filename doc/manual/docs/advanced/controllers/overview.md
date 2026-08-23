@@ -11,7 +11,7 @@ The EZPlayer "Controllers" screen provides deep integration with your show contr
 - Network proxy (the ability to access controller web pages and APIs from remote networks) can be turned on / off
 - Detailed controller settings and statistics can be retrieved and viewed
 - Controller management actions (reset, upload config, etc.) can be taken
-- Configuration overrides (vs. an external system such as xLights) can be made
+- Overrides of configuration imported from an external system (such as xLights) can be made
 - The physical "Port Map" topology can be viewed
 
 ![Controllers Screen](/img/controlleroverview.png)

@@ -9,7 +9,7 @@ title: Controller List
 
 The Controller List on the Controllers screen shows a combination of all configured and detected controller devices.
 
-Above the table header, a summary of controller [status](#present--absent--unregistered) is shown, and global actions ("Upload all" and "reboot All") are offered if applicable.
+Above the table header, a summary of controller [status](#present--absent--unregistered) is shown, and global actions ("Upload all" and "Reboot all") are offered if applicable.
 
 If the "Show unidentified" checkbox is checked, network devices that are not known to be controllers are shown in the table, otherwise they are not.
 
@@ -24,11 +24,11 @@ Below this is a table with records for each network device / controller:
 ### Enabled / Disabled
 *Enabled* ![Controller Enabled](/img/ctrlenabled.png) means that the controller is configured for sending live data as part of the show; *Disabled* ![Controller Disabled](/img/ctrldisabled.png) means that it is not.  The controller is usually disabled by marking it as "Inactive" in xLights.
 
-### Red / Green/ Unlit
+### Red / Green / Unlit
 Red ![Controller Red](/img/ctrlred.png) / Green ![Controller Green](/img/ctrlgreen.png) / Unlit ![Controller Unlit](/img/ctrlunlit.png) status light - Unlit means the controller is disabled.  Green indicates that the controller is responding to pings.  Red means no ping response.
 
 ### Present / Absent / Unregistered
-A *Present* ![Controller Present](/img/ctrlpresent.png) controller is enabled in the controller configuration and is responding to pings.  An *Absent* ![Controller Absent](/img/ctrlabsent.png) controller is in the configuration but is not responding.  An *Unregistered* ![Controller Absent](/img/ctrlunregistered.png) controller was found during network scan only, and may be responding to pings, but is not in the configuration.
+A *Present* ![Controller Present](/img/ctrlpresent.png) controller is enabled in the controller configuration and is responding to pings.  An *Absent* ![Controller Absent](/img/ctrlabsent.png) controller is in the configuration but is not responding.  An *Unregistered* ![Controller Unregistered](/img/ctrlunregistered.png) controller was found during network scan only, and may be responding to pings, but is not in the configuration.
 
 ### Warning Alert
 A warning ![Controller Alert](/img/ctrlalert.png) indicator is presented when a controller needs attention.  Hovering or expanding the controller details will reveal more about the warning.
@@ -46,7 +46,7 @@ Refreshing controller details may be disruptive, and is not done automatically. 
 :::
 
 ### Health
-This section reports high-level health of the controller and its description.  It also indicates whether the controller's input and output maps match the player configuration.
+This section reports high-level health and a description of the controller.  It also indicates whether the controller's input and output maps match the player configuration.
 
 ### Basic
 This section provides information about the device type, network address, and installed firmware.
@@ -58,4 +58,4 @@ This section provides modes, uptimes, voltages, temperatures, fan speeds, etc.
 This section includes network and protocol information for the controller.
 
 ### Models & Ports
-This section details the controller's configured pixel ports and models.  Note that this is the controller's information, the "Compare" option at the top can be used to compare the configuration to that in the [port map](./portmap.md).
+This section details the controller's configured pixel ports and models.  Note that this is the controller's information; the **Compare** option at the top can be used to compare the configuration to that in the [port map](./portmap.md).

@@ -25,7 +25,7 @@ show folder. See [Software Update](./software-update.md).
 The desktop app and the LAN browser UI share the same settings sections, except
 where noted on each page: the desktop app has **Show Folder** (which includes
 Media Folder); the LAN UI replaces Show Folder with a
-standalone **Media Folder** tile and has no update pane.
+standalone **Media Folder** tile.
 
 Two further tiles appear **only if you have deliberately enabled them** from the
 command line on the player machine: [Shell](./shell.md), a terminal on that
