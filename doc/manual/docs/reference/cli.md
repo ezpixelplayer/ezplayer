@@ -235,7 +235,7 @@ Uploads rewrite the controller's port configuration. There is no undo beyond
 uploading again.
 :::
 
-### Remote access: terminal and file manager
+### Remote access: terminal and file manager setup
 
 EZPlayer optionally offers two features:
 
@@ -425,8 +425,9 @@ Anything that would normally raise a dialog fails fast instead:
 A headless run **never modifies persisted preferences** — the show folder and
 ports passed on the command line apply to that run only, so it can coexist with
 an interactive install on the same machine. Headless also **does not check for
-or install EZPlayer updates**; use the windowed app's
-[Software Update](../settings/software-update.md) pane for that. To fully isolate state (e.g. for
+or install EZPlayer updates** without explicit user intervention.
+
+To fully isolate state (e.g. for
 automated testing, or a second independent player), add `--user-data-dir=`:
 
 ```bash
@@ -531,13 +532,8 @@ To open DevTools in a **packaged** build, use the environment variable
 
 ## Updates
 
-The windowed **installed** desktop app can check for a newer EZPlayer release
-from [Settings → Software Update](../settings/software-update.md). With
-**Check automatically and remind me** (the default), EZPlayer checks about ten
-seconds after launch and may download in the background after five minutes of
-system idle with no schedule running. A finished download installs the next
-time you quit; EZPlayer does not quit on its own. **Manual — only check when I
-ask** turns those automatic checks off.
+**Installed** versions of EZPlayer check for updates as set in
+[Settings → Software Update](../settings/software-update.md).
 
 To suppress automatic checks without opening the UI — for example on a
 locked-down or offline show machine:
@@ -551,7 +547,7 @@ locked-down or offline show machine:
 
 ## Certificates and TLS
 
-EZPlayer talks to the EZRGB cloud over HTTPS from the Node side. It
+EZPlayer talks to the EZRGB cloud over HTTPS. It
 **automatically trusts the operating-system certificate store**, so an
 OS-trusted corporate proxy or self-signed root that works in your browser works
 here too. To add a CA that isn't in the OS store, set the standard Node.js
