@@ -1,6 +1,7 @@
 import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
 import {
     Accordion,
     AccordionDetails,
@@ -104,6 +105,8 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const testSequenceTags = useSelector((s: RootState) => s.playbackSettings.settings.testSequenceTags);
     const sequenceData = useSelector((s: RootState) => s.sequences.sequenceData);
     const [testSongId, setTestSongId] = useState<string | null>(null);
+    /** The test request we started, so Stop can target only our own. */
+    const [testRequest, setTestRequest] = useState<{ songId: string; requestId: string } | null>(null);
 
     const testTags = useMemo(() => normalizeTagList(testSequenceTags, []), [testSequenceTags]);
     const testSequences = useMemo(
@@ -117,6 +120,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
 
     const handlePlayTestSequence = async () => {
         if (!selectedTestSequence) return;
+        const requestId = uuidv4();
         try {
             await dispatch(
                 callImmediateCommand({
@@ -124,9 +128,10 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                     songId: selectedTestSequence.id,
                     immediate: true,
                     priority: 5,
-                    requestId: uuidv4(),
+                    requestId,
                 }),
             ).unwrap();
+            setTestRequest({ songId: selectedTestSequence.id, requestId });
             ToastMsgs.showSuccessMessage(`Playing "${selectedTestSequence.work?.title || 'test sequence'}"`, {
                 theme: 'colored',
                 position: 'bottom-right',
@@ -135,6 +140,32 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
         } catch (error) {
             console.error('Error starting test sequence:', error);
             ToastMsgs.showErrorMessage('Failed to start test sequence', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        }
+    };
+
+    /**
+     * Stop the test sequence we started.
+     */
+    const handleStopTestSequence = async () => {
+        if (!testRequest) return;
+        try {
+            await dispatch(
+                callImmediateCommand({ command: 'deleterequest', requestId: testRequest.requestId }),
+            ).unwrap();
+            await dispatch(callImmediateCommand({ command: 'endsong', songId: testRequest.songId })).unwrap();
+            setTestRequest(null);
+            ToastMsgs.showSuccessMessage('Test sequence stopped', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+        } catch (error) {
+            console.error('Error stopping test sequence:', error);
+            ToastMsgs.showErrorMessage('Failed to stop test sequence', {
                 theme: 'colored',
                 position: 'bottom-right',
                 autoClose: 2000,
@@ -394,6 +425,21 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                             onClick={handlePlayTestSequence}
                                         >
                                             Play Test Sequence
+                                        </Button>
+                                        <Button
+                                            variant="outlined"
+                                            color="warning"
+                                            size="small"
+                                            startIcon={<StopIcon />}
+                                            disabled={!testRequest}
+                                            onClick={handleStopTestSequence}
+                                            title={
+                                                testRequest
+                                                    ? 'Stop the test sequence started here'
+                                                    : 'No test sequence started from this screen'
+                                            }
+                                        >
+                                            Stop
                                         </Button>
                                     </Box>
                                 )}

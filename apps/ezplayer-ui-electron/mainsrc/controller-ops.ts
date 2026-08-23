@@ -160,7 +160,8 @@ function publish(): void {
 
 // ---------------------------------------------------------------------------
 // Network policies — persisted per-network allow/expect flags, one JSON file
-// (`<showFolder>/.ezplayer/networks.json`), enforced by scan + device proxy.
+// (`<showFolder>/.ezplayer/networks.json`). `allow` gates the device proxy
+// only; `expectControllers` marks the networks a show's controllers live on.
 // ---------------------------------------------------------------------------
 
 function networksFile(showFolder: string): string {
@@ -221,8 +222,13 @@ function policyForIp(ip: string): NetworkPolicy | undefined {
     return best;
 }
 
-/** Whether scanning/proxying into this network/IP is administratively allowed. */
-export function isNetworkAllowed(cidrOrIp: string): boolean {
+/**
+ * Whether this network/IP may be reached *through us* by a remote client — the
+ * device-proxy gate, enforced in the server worker. Scanning and discovery are
+ * deliberately not gated by it: a network we will not proxy into is still one
+ * we look at, and still one that can have controllers on it.
+ */
+export function isNetworkProxyAllowed(cidrOrIp: string): boolean {
     const ip = cidrOrIp.includes('/') ? cidrOrIp.split('/')[0] : cidrOrIp;
     const exact = (state.networkPolicies ?? []).find((p) => p.cidr === cidrOrIp);
     const p = exact ?? policyForIp(ip);
@@ -728,11 +734,6 @@ async function runScan(
     }
     if (findRunningOp('scan', scanTarget(command))) {
         throw new Error('an identical scan is already running');
-    }
-    // Refuse scans into policy-disallowed networks outright.
-    const denied = (command.networks ?? []).filter((n) => !isNetworkAllowed(n.cidr));
-    if (denied.length > 0) {
-        throw new Error(`network(s) disallowed by policy: ${denied.map((n) => n.cidr).join(', ')}`);
     }
 
     const op: ControllerOp = {

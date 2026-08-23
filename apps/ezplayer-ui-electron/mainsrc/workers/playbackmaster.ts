@@ -1074,6 +1074,7 @@ const playbackStats: PlaybackStatistics = {
     skippedAudioChunksCumulative: 0,
     cframesSkippedDueToDirectiveCumulative: 0,
     cframesSkippedDueToIncompletePriorCumulative: 0,
+    cpacketsDroppedBySenderCumulative: 0,
     lastError: undefined as string | undefined,
 
     measurementPeriod: 0,
@@ -1134,6 +1135,7 @@ function resetCumulativeCounters() {
 
     playbackStats.cframesSkippedDueToDirectiveCumulative = 0;
     playbackStats.cframesSkippedDueToIncompletePriorCumulative = 0;
+    playbackStats.cpacketsDroppedBySenderCumulative = 0;
 
     playbackStats.sentAudioChunksCumulative = 0;
     playbackStats.skippedAudioChunksCumulative = 0;
