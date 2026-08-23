@@ -55,8 +55,8 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | `discover`             | Scan LAN networks for lighting controllers.                 |
 | `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
 | `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
-| `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager). |
-| `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager). |
+| `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager-setup). |
+| `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager-setup). |
 | `help`                 | Print the command list. Also `--help`, `-h`.                |
 
 `discover`, `interfaces`, `controller status`, and `controller action` talk to
@@ -540,7 +540,7 @@ locked-down or offline show machine:
 
 | Flag                | Description                                                                                         |
 | ------------------- | --------------------------------------------------------------------------------------------------- |
-| `--no-update-check` | Skip the startup check and idle pre-download. **Check for Updates** in Settings still works.        |
+| `--no-update-check` | Skip the automatic checks.  (**Check for Updates** in Settings still works.)                        |
 
 [Headless mode](#headless-mode) does not run the updater at all. Development
 (unpackaged) runs do not either.
