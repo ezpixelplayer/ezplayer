@@ -57,8 +57,8 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | `discover`             | Scan LAN networks for lighting controllers.                 |
 | `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
 | `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
-| `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager). |
-| `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager). |
+| `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager-setup). |
+| `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager-setup). |
 | `help`                 | Print the command list. Also `--help`, `-h`.                |
 
 `discover`, `interfaces`, `controller status`, and `controller action` talk to
@@ -324,7 +324,7 @@ Uploads rewrite the controller's port configuration. There is no undo beyond
 uploading again.
 :::
 
-### Remote access: terminal and file manager
+### Remote access: terminal and file manager setup
 
 EZPlayer optionally offers two features:
 
@@ -465,7 +465,7 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 | `--user-data-dir=<p>`  | Isolate all persisted app state to the given directory          |
 | `--reset`              | Clear persisted state, then quit (cloud welcome on next launch) |
 | `--reset-nocloud`      | Clear persisted state, pin local-only welcome, then quit        |
-| `--no-update-check`    | Skip the startup check for a newer EZPlayer release             |
+| `--no-update-check`    | Skip automatic update checks (startup and idle pre-download)    |
 
 ## Show folder
 
@@ -513,7 +513,10 @@ Anything that would normally raise a dialog fails fast instead:
 
 A headless run **never modifies persisted preferences** — the show folder and
 ports passed on the command line apply to that run only, so it can coexist with
-an interactive install on the same machine. To fully isolate state (e.g. for
+an interactive install on the same machine. Headless also **does not check for
+or install EZPlayer updates** without explicit user intervention.
+
+To fully isolate state (e.g. for
 automated testing, or a second independent player), add `--user-data-dir=`:
 
 ```bash
@@ -618,16 +621,22 @@ To open DevTools in a **packaged** build, use the environment variable
 
 ## Updates
 
-EZPlayer checks for a newer release a few seconds after launch. To suppress that
-check on locked-down or offline show machines:
+**Installed** versions of EZPlayer check for updates as set in
+[Settings → Software Update](../settings/software-update.md).
 
-| Flag                | Description                              |
-| ------------------- | ---------------------------------------- |
-| `--no-update-check` | Skip the automatic startup update check. |
+To suppress automatic checks without opening the UI — for example on a
+locked-down or offline show machine:
+
+| Flag                | Description                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `--no-update-check` | Skip the automatic checks.  (**Check for Updates** in Settings still works.)                        |
+
+[Headless mode](#headless-mode) does not run the updater at all. Development
+(unpackaged) runs do not either.
 
 ## Certificates and TLS
 
-EZPlayer talks to the EZRGB cloud over HTTPS from the Node side. It
+EZPlayer talks to the EZRGB cloud over HTTPS. It
 **automatically trusts the operating-system certificate store**, so an
 OS-trusted corporate proxy or self-signed root that works in your browser works
 here too. To add a CA that isn't in the OS store, set the standard Node.js

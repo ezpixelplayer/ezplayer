@@ -19,21 +19,26 @@ pushed to the playback engine right away. You can also change them from the
 **UI settings** (theme, scale, 3D controls) are stored in the browser on that
 device only.
 
+**Software Update** settings are stored on the machine, not in the
+show folder. See [Software Update](./software-update.md).
+
 The desktop app and the LAN browser UI share the same settings sections, except
 where noted on each page: the desktop app has **Show Folder** (which includes
-Media Folder); the LAN UI replaces that with a standalone **Media Folder** tile.
+Media Folder); the LAN UI replaces Show Folder with a
+standalone **Media Folder** tile.
 
 Two further tiles appear **only if you have deliberately enabled them** from the
 command line on the player machine: [Shell](./shell.md), a terminal on that
 machine, and [Files](./files.md), a file manager for the show folder. Each has
 its own password, and neither can be turned on from any UI — see
-[Remote access](../reference/cli.md#remote-access-terminal-and-file-manager).
+[Remote access](../reference/cli.md#remote-access-terminal-and-file-manager-setup).
 
 Some of these tiles map to Advanced Features pages:
 [Viewer Control](../advanced/viewer-control.md) and
 [Volume](../advanced/volume.md). The **Player** tile (start at sign-in,
 background blend mode, idle blackout, sync output, advanced overrides) has
-[its own page](./player.md).
+[its own page](./player.md). The **Software Update** tile (check, download,
+install, skip) has [its own page](./software-update.md).
 
 ## About, License, and Terms
 
