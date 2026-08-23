@@ -10,6 +10,6 @@ export type RPCResponse = {
     error?: string;
 };
 
-export type RPCHandler<Methods extends Record<string, (...args: any[]) => any>> = {
+export type RPCHandler<Methods extends Record<string, (...args: never[]) => unknown>> = {
     [K in keyof Methods]: (args: Parameters<Methods[K]>[0]) => ReturnType<Methods[K]> | Promise<ReturnType<Methods[K]>>;
 };

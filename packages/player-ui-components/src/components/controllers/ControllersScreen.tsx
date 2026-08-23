@@ -56,7 +56,14 @@ import { PortVisualizerDialog } from './PortVisualizerDialog';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
-import { reconcileControllers, reconcilePorts, hasPortDrift, reconcileInputs, overlayHealth } from '@ezplayer/ezplayer-core';
+import {
+    reconcileControllers,
+    reconcilePorts,
+    hasPortDrift,
+    reconcileInputs,
+    overlayHealth,
+    findOffNetworkControllers,
+} from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
     ControllerDetailNode,
@@ -153,13 +160,28 @@ const SECTION_ORDER = ['Basic', 'Operational', 'Show stats', 'Models & Ports', '
 
 /** Label → section fallback for detail trees without `kind: 'section'`. */
 const LABEL_SECTION: Record<string, string> = {
-    Vendor: 'Basic', Model: 'Basic', Driver: 'Basic', Firmware: 'Basic', 'Firmware available': 'Basic',
-    Hostname: 'Basic', IP: 'Basic',
-    Mode: 'Operational', Operation: 'Operational', 'Uptime (s)': 'Operational', Uptime: 'Operational',
-    CPU: 'Operational', Temperature: 'Operational', Voltage: 'Operational', Memory: 'Operational',
-    Fans: 'Operational', Storage: 'Operational',
-    Network: 'Show stats', Streaming: 'Show stats',
-    Boards: 'Models & Ports', 'Pixel Ports': 'Models & Ports', Models: 'Models & Ports',
+    Vendor: 'Basic',
+    Model: 'Basic',
+    Driver: 'Basic',
+    Firmware: 'Basic',
+    'Firmware available': 'Basic',
+    Hostname: 'Basic',
+    IP: 'Basic',
+    Mode: 'Operational',
+    Operation: 'Operational',
+    'Uptime (s)': 'Operational',
+    Uptime: 'Operational',
+    CPU: 'Operational',
+    Temperature: 'Operational',
+    Voltage: 'Operational',
+    Memory: 'Operational',
+    Fans: 'Operational',
+    Storage: 'Operational',
+    Network: 'Show stats',
+    Streaming: 'Show stats',
+    Boards: 'Models & Ports',
+    'Pixel Ports': 'Models & Ports',
+    Models: 'Models & Ports',
     Errors: 'Errors',
 };
 
@@ -204,7 +226,9 @@ const DetailSection: React.FC<{ node: ControllerDetailNode }> = ({ node }) => {
                 </Typography>
                 {!open && (
                     <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
-                        {node.value !== undefined && node.value !== '' ? String(node.value) : `${count} item${count === 1 ? '' : 's'}`}
+                        {node.value !== undefined && node.value !== ''
+                            ? String(node.value)
+                            : `${count} item${count === 1 ? '' : 's'}`}
                     </Typography>
                 )}
             </Box>
@@ -288,7 +312,12 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
         <TableBody>
             {rows.map((r) => (
                 <TableRow key={r.port}>
-                    <TableCell sx={{ borderLeft: '3px solid', borderLeftColor: r.drift !== 'ok' ? 'warning.main' : 'transparent' }}>
+                    <TableCell
+                        sx={{
+                            borderLeft: '3px solid',
+                            borderLeftColor: r.drift !== 'ok' ? 'warning.main' : 'transparent',
+                        }}
+                    >
                         {r.port}
                     </TableCell>
                     <TableCell>
@@ -373,11 +402,13 @@ const GridRow: React.FC<{
     const inputDrift = inputsRead && inputRec.drift;
     const anyDrift = portDrift || inputDrift;
     // Port knowledge on either side is enough for the port-map visualizer.
-    const hasPortData =
-        portRows.length > 0 || (row.modelIntents?.length ?? 0) > 0 || (d?.pixelPorts?.length ?? 0) > 0;
+    const hasPortData = portRows.length > 0 || (row.modelIntents?.length ?? 0) > 0 || (d?.pixelPorts?.length ?? 0) > 0;
     const hasInputData = (row.outputs?.length ?? 0) > 0 || inputsRead;
     const health = row.health;
-    const hasHealthDetail = !!(health && (health.pingSummary || health.errors?.length || health.notices?.length || health.status));
+    const hasHealthDetail = !!(
+        health &&
+        (health.pingSummary || health.errors?.length || health.notices?.length || health.status)
+    );
     const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail;
     // Fall back to the record's address so an unscanned row still gets Open.
     const url = (d ? controllerUrl(d, serverBase) : undefined) ?? addressUrl(row.address ?? '', serverBase);
@@ -406,7 +437,13 @@ const GridRow: React.FC<{
             onClick: () => onStatus(statusId, d ? undefined : row.address),
             disabled: busy,
         });
-    if (url) actions.push({ key: 'open', label: 'Open', icon: <OpenInNewIcon fontSize="small" />, onClick: () => openUrl(url) });
+    if (url)
+        actions.push({
+            key: 'open',
+            label: 'Open',
+            icon: <OpenInNewIcon fontSize="small" />,
+            onClick: () => openUrl(url),
+        });
     // Driver-enumerated actions, or reboot-only fallback when no deep read has run.
     const deviceActions: ControllerDeviceAction[] =
         d?.actions ?? (canReboot && d ? [{ id: 'reboot', label: 'Reboot', dangerous: true }] : []);
@@ -439,10 +476,27 @@ const GridRow: React.FC<{
             icon: <PowerSettingsNewIcon fontSize="small" />,
             onClick: () => onActivate(row.name!, enable),
         });
-        actions.push({ key: 'edit', label: 'Edit record', icon: <EditIcon fontSize="small" />, onClick: () => onEdit(row) });
-        actions.push({ key: 'delete', label: 'Delete record', icon: <DeleteOutlineIcon fontSize="small" />, color: 'error', onClick: () => onDelete(row.name!) });
+        actions.push({
+            key: 'edit',
+            label: 'Edit record',
+            icon: <EditIcon fontSize="small" />,
+            onClick: () => onEdit(row),
+        });
+        actions.push({
+            key: 'delete',
+            label: 'Delete record',
+            icon: <DeleteOutlineIcon fontSize="small" />,
+            color: 'error',
+            onClick: () => onDelete(row.name!),
+        });
     }
-    if (ghost) actions.push({ key: 'promote', label: 'Promote…', icon: <PublishIcon fontSize="small" />, onClick: () => onPromote(row) });
+    if (ghost)
+        actions.push({
+            key: 'promote',
+            label: 'Promote…',
+            icon: <PublishIcon fontSize="small" />,
+            onClick: () => onPromote(row),
+        });
 
     const runAction = (a: RowAction) => {
         setMenuAnchor(null);
@@ -453,7 +507,9 @@ const GridRow: React.FC<{
         <>
             <TableRow hover sx={{ '& > *': { borderBottom: 'unset' } }}>
                 {/* Left accent bar marks unregistered ghosts. */}
-                <TableCell sx={{ width: 32, borderLeft: '3px solid', borderLeftColor: ghost ? 'warning.main' : 'transparent' }}>
+                <TableCell
+                    sx={{ width: 32, borderLeft: '3px solid', borderLeftColor: ghost ? 'warning.main' : 'transparent' }}
+                >
                     {expandable && (
                         <IconButton size="small" onClick={() => setOpen((o) => !o)}>
                             {open ? <KeyboardArrowDownIcon /> : <KeyboardArrowRightIcon />}
@@ -491,7 +547,11 @@ const GridRow: React.FC<{
                     {row.name ? (
                         row.name
                     ) : (
-                        <Typography component="span" variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                        <Typography
+                            component="span"
+                            variant="body2"
+                            sx={{ fontStyle: 'italic', color: 'text.secondary' }}
+                        >
                             {d?.hostname ?? 'unregistered'}
                         </Typography>
                     )}
@@ -523,7 +583,10 @@ const GridRow: React.FC<{
                 <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                     {ip ?? '—'}
                     {via && (
-                        <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontFamily: 'inherit' }}>
+                        <Typography
+                            variant="caption"
+                            sx={{ display: 'block', color: 'text.secondary', fontFamily: 'inherit' }}
+                        >
                             {via}
                         </Typography>
                     )}
@@ -531,13 +594,22 @@ const GridRow: React.FC<{
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {typeLabel ?? '—'}
                     {d?.error && (
-                        <WarningAmberIcon color="warning" fontSize="small" titleAccess={d.error} sx={{ ml: 0.5, verticalAlign: 'middle' }} />
+                        <WarningAmberIcon
+                            color="warning"
+                            fontSize="small"
+                            titleAccess={d.error}
+                            sx={{ ml: 0.5, verticalAlign: 'middle' }}
+                        />
                     )}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                     {actions.length > 0 && (
                         <>
-                            <IconButton size="small" aria-label="actions" onClick={(e) => setMenuAnchor(e.currentTarget)}>
+                            <IconButton
+                                size="small"
+                                aria-label="actions"
+                                onClick={(e) => setMenuAnchor(e.currentTarget)}
+                            >
                                 <MoreVertIcon fontSize="small" />
                             </IconButton>
                             <Menu
@@ -549,9 +621,20 @@ const GridRow: React.FC<{
                                 transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                             >
                                 {actions.map((a) => (
-                                    <MenuItem key={a.key} onClick={() => runAction(a)} disabled={a.disabled} title={a.title}>
-                                        <ListItemIcon sx={{ color: a.color ? `${a.color}.main` : undefined }}>{a.icon}</ListItemIcon>
-                                        <ListItemText primaryTypographyProps={{ color: a.color ? `${a.color}.main` : undefined }}>{a.label}</ListItemText>
+                                    <MenuItem
+                                        key={a.key}
+                                        onClick={() => runAction(a)}
+                                        disabled={a.disabled}
+                                        title={a.title}
+                                    >
+                                        <ListItemIcon sx={{ color: a.color ? `${a.color}.main` : undefined }}>
+                                            {a.icon}
+                                        </ListItemIcon>
+                                        <ListItemText
+                                            primaryTypographyProps={{ color: a.color ? `${a.color}.main` : undefined }}
+                                        >
+                                            {a.label}
+                                        </ListItemText>
                                     </MenuItem>
                                 ))}
                             </Menu>
@@ -584,7 +667,11 @@ const GridRow: React.FC<{
                                             </Typography>
                                         ))}
                                         {health.notices?.map((n, i) => (
-                                            <Typography key={`n${i}`} variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                            <Typography
+                                                key={`n${i}`}
+                                                variant="caption"
+                                                sx={{ display: 'block', color: 'text.secondary' }}
+                                            >
                                                 {n}
                                             </Typography>
                                         ))}
@@ -628,7 +715,12 @@ const GridRow: React.FC<{
                                     </Stack>
                                 )}
                                 {hasInputData && (
-                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: hasDetail ? 2 : 0, flexWrap: 'wrap' }}>
+                                    <Stack
+                                        direction="row"
+                                        spacing={1}
+                                        alignItems="center"
+                                        sx={{ mb: hasDetail ? 2 : 0, flexWrap: 'wrap' }}
+                                    >
                                         <Typography variant="subtitle2">Input</Typography>
                                         {!inputsRead ? (
                                             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -728,7 +820,12 @@ const OpProgress: React.FC<{ op: ControllerOp; onCancel?: (opId: string) => void
                 )}
                 <Box sx={{ flexGrow: 1 }} />
                 {onCancel && (
-                    <Button size="small" startIcon={<StopIcon />} onClick={() => onCancel(op.id)} sx={{ flexShrink: 0 }}>
+                    <Button
+                        size="small"
+                        startIcon={<StopIcon />}
+                        onClick={() => onCancel(op.id)}
+                        sx={{ flexShrink: 0 }}
+                    >
                         Stop
                     </Button>
                 )}
@@ -754,8 +851,8 @@ const UploadDialog: React.FC<{
             <DialogTitle>Upload configuration to {name}?</DialogTitle>
             <DialogContent>
                 <Typography variant="body2" sx={{ mb: 2 }}>
-                    Sends this show&rsquo;s xLights port configuration to the controller. The controller
-                    stops outputting for a moment while it applies the change.
+                    Sends this show&rsquo;s xLights port configuration to the controller. The controller stops
+                    outputting for a moment while it applies the change.
                 </Typography>
                 <FormControlLabel
                     control={<Checkbox checked={setAll} onChange={(e) => setSetAll(e.target.checked)} />}
@@ -823,7 +920,11 @@ const RecordDialog: React.FC<{
                         autoFocus={!nameLocked}
                         fullWidth
                         size="small"
-                        helperText={nameLocked ? 'The name is the record key and is fixed here.' : 'Must match the xLights controller name to bind to it.'}
+                        helperText={
+                            nameLocked
+                                ? 'The name is the record key and is fixed here.'
+                                : 'Must match the xLights controller name to bind to it.'
+                        }
                     />
                     <TextField
                         label="IP / hostname"
@@ -835,13 +936,28 @@ const RecordDialog: React.FC<{
                         placeholder="192.168.1.50"
                     />
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        Identity override (optional) — corrects the vendor/model/variant used for
-                        capability lookup when xLights/detection has it wrong or incomplete.
+                        Identity override (optional) — corrects the vendor/model/variant used for capability lookup when
+                        xLights/detection has it wrong or incomplete.
                     </Typography>
                     <Stack direction="row" spacing={1}>
-                        <TextField label="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} size="small" />
-                        <TextField label="Model" value={model} onChange={(e) => setModel(e.target.value)} size="small" />
-                        <TextField label="Variant" value={variant} onChange={(e) => setVariant(e.target.value)} size="small" />
+                        <TextField
+                            label="Vendor"
+                            value={vendor}
+                            onChange={(e) => setVendor(e.target.value)}
+                            size="small"
+                        />
+                        <TextField
+                            label="Model"
+                            value={model}
+                            onChange={(e) => setModel(e.target.value)}
+                            size="small"
+                        />
+                        <TextField
+                            label="Variant"
+                            value={variant}
+                            onChange={(e) => setVariant(e.target.value)}
+                            size="small"
+                        />
                     </Stack>
                 </Stack>
             </DialogContent>
@@ -921,13 +1037,15 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         .filter((o) => o.status === 'error' && !dismissedErrors.has(o.id))
         .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))
         .slice(0, 5);
-    const dismissError = (id: string) =>
-        setDismissedErrors((prev) => new Set(prev).add(id));
+    const dismissError = (id: string) => setDismissedErrors((prev) => new Set(prev).add(id));
     const deviceList = Object.values(devices).sort(
         (a, b) => ipKey(a.ip) - ipKey(b.ip) || sourceRank(a) - sourceRank(b),
     );
 
     const rows = overlayHealth(reconcileControllers(known ?? [], deviceList), statusesRaw ?? []);
+    // Enabled-but-unreachable controllers on networks this player has no interface on.
+    const offNetwork = findOffNetworkControllers(rows, interfaces);
+    const hostNetworkList = interfaces.map((i) => i.network).join(', ');
     const sortVal = (r: ControllerGridRow): string | number => {
         switch (sortKey) {
             case 'state':
@@ -949,7 +1067,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         return sortDir === 'asc' ? cmp : -cmp;
     });
     // A ghost with a driver is a real controller find and always shows.
-    const visibleRows = sortedRows.filter((r) => showUnidentified || r.state !== 'unregistered' || !!r.device?.driverType);
+    const visibleRows = sortedRows.filter(
+        (r) => showUnidentified || r.state !== 'unregistered' || !!r.device?.driverType,
+    );
     const hiddenCount = sortedRows.length - visibleRows.length;
     const count = (s: ControllerRecordState) => rows.filter((r) => r.state === s).length;
     const toggleSort = (key: SortKey) => {
@@ -996,9 +1116,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     operationsRef.current = operations;
 
     // Eligible: present, scan-backed, and not known to be Down.
-    const bulkRows = rows.filter(
-        (r) => r.state === 'present' && !!r.device && r.health?.connectivity !== 'Down',
-    );
+    const bulkRows = rows.filter((r) => r.state === 'present' && !!r.device && r.health?.connectivity !== 'Down');
     // Mirror the per-row Upload gate: identified non-player device + xLights intent.
     const uploadAllRows = bulkRows.filter(
         (r) => !!r.name && !!r.device!.driverType && r.device!.driverType !== 'EZPlayer' && (r.intent?.length ?? 0) > 0,
@@ -1087,10 +1205,15 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     };
 
     // Record actions — write name-keyed overrides in the show folder.
-    const setRecord = (name: string, patch: EzpControllerRecordPatch) => dispatch(issueControllerCommand({ cmd: 'record', name, patch }));
+    const setRecord = (name: string, patch: EzpControllerRecordPatch) =>
+        dispatch(issueControllerCommand({ cmd: 'record', name, patch }));
     const setActive = (name: string, active: boolean) => setRecord(name, { active });
     const deleteRecord = (name: string) => {
-        if (window.confirm(`Remove the EZPlayer record for "${name}"? The controller stays in xLights; this only drops our entry/override.`))
+        if (
+            window.confirm(
+                `Remove the EZPlayer record for "${name}"? The controller stays in xLights; this only drops our entry/override.`,
+            )
+        )
             setRecord(name, { deleted: true });
     };
     const openEdit = (row: ControllerGridRow) =>
@@ -1112,15 +1235,16 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-            <Box sx={{ flexShrink: 0, padding: 2 }}>
+            <Box sx={{ flexShrink: 0, padding: 2, paddingBottom: 0 }}>
                 <PageHeader heading={`${title} (alpha)`} children={statusArea} />
             </Box>
-            <Box sx={{ padding: 2, paddingTop: 0, overflowY: 'auto', flexGrow: 1 }}>
-                {/* Running operations + undismissed failures */}
-                {(running.length > 0 || errored.length > 0) && (
+            {/* Gap lives inside the scroll box so the first card's top edge isn't clipped. */}
+            <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
+                {/* Running operations, undismissed failures, and off-network controllers */}
+                {(running.length > 0 || errored.length > 0 || offNetwork.length > 0) && (
                     <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>
                         <Typography variant="subtitle1" sx={{ mb: 2 }}>
-                            Operations
+                            {running.length > 0 || errored.length > 0 ? 'Operations' : 'Network'}
                         </Typography>
                         {running.map((op) => (
                             <OpProgress key={op.id} op={op} onCancel={op.kind === 'scan' ? cancelOp : undefined} />
@@ -1136,8 +1260,21 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                 </Button>
                             </Box>
                         ))}
+                        {/* One row per missing network, citing one controller; clears itself
+                            once the controller answers or its address changes. */}
+                        {offNetwork.map((g) => (
+                            <Box key={g.network} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                <WarningAmberIcon color="warning" fontSize="small" />
+                                <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                                    {`${g.example.name} (${g.example.address}) ${
+                                        g.others > 0
+                                            ? `and ${g.others} other controller${g.others > 1 ? 's' : ''} are`
+                                            : 'is'
+                                    } not on any network this player is connected to (${hostNetworkList}). Check the controller's IP or this player's networks.`}
+                                </Typography>
+                            </Box>
+                        ))}
                     </Card>
-
                 )}
 
                 {/* Reconciliation grid */}
@@ -1148,10 +1285,21 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         </Typography>
                         <Chip size="small" color="success" variant="outlined" label={`${count('present')} present`} />
                         <Chip size="small" label={`${count('absent')} absent`} />
-                        <Chip size="small" color="warning" variant="outlined" label={`${count('unregistered')} unregistered`} />
+                        <Chip
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                            label={`${count('unregistered')} unregistered`}
+                        />
                         <FormControlLabel
                             sx={{ ml: 1 }}
-                            control={<Checkbox size="small" checked={showUnidentified} onChange={(e) => setShowUnidentified(e.target.checked)} />}
+                            control={
+                                <Checkbox
+                                    size="small"
+                                    checked={showUnidentified}
+                                    onChange={(e) => setShowUnidentified(e.target.checked)}
+                                />
+                            }
                             label={
                                 <Typography variant="body2">
                                     Show unidentified{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ''}
@@ -1279,12 +1427,18 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                                         onChange={() => toggle(n.network)}
                                                     />
                                                 </TableCell>
-                                                <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{n.network}</TableCell>
+                                                <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                                                    {n.network}
+                                                </TableCell>
                                                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                                                     {n.name}
                                                     <Typography
                                                         variant="caption"
-                                                        sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
+                                                        sx={{
+                                                            display: 'block',
+                                                            color: 'text.secondary',
+                                                            fontFamily: 'monospace',
+                                                        }}
                                                     >
                                                         {n.address}
                                                     </Typography>
@@ -1295,17 +1449,25 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                                         checked={!!pol?.expectControllers}
                                                         disabled={!allowed}
                                                         onChange={(e) =>
-                                                            setNetworkPolicy(n.network, { expectControllers: e.target.checked })
+                                                            setNetworkPolicy(n.network, {
+                                                                expectControllers: e.target.checked,
+                                                            })
                                                         }
-                                                        inputProps={{ 'aria-label': 'controllers expected on this network' }}
+                                                        inputProps={{
+                                                            'aria-label': 'controllers expected on this network',
+                                                        }}
                                                     />
                                                 </TableCell>
                                                 <TableCell>
                                                     <Checkbox
                                                         size="small"
                                                         checked={allowed}
-                                                        onChange={(e) => setNetworkPolicy(n.network, { allow: e.target.checked })}
-                                                        inputProps={{ 'aria-label': 'allow scanning and proxying to this network' }}
+                                                        onChange={(e) =>
+                                                            setNetworkPolicy(n.network, { allow: e.target.checked })
+                                                        }
+                                                        inputProps={{
+                                                            'aria-label': 'allow scanning and proxying to this network',
+                                                        }}
                                                     />
                                                 </TableCell>
                                             </TableRow>

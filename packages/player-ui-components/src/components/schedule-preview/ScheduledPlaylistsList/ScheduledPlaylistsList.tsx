@@ -1,4 +1,5 @@
 import { PlaylistRecord, priorityToNumber, ScheduledPlaylist } from '@ezplayer/ezplayer-core';
+import type { PlaybackStateSnapshot } from '@ezplayer/ezplayer-core';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PersonIcon from '@mui/icons-material/Person';
@@ -37,11 +38,11 @@ export interface LogEvent {
 }
 
 export interface ScheduleData {
-    currentState: any[];
+    currentState: PlaybackStateSnapshot[];
     logs: LogEvent[];
     startTime: number;
     endTime: number;
-    errors: any[];
+    errors: string[];
 }
 
 interface ScheduledPlaylistsListProps {

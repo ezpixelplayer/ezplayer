@@ -355,7 +355,9 @@ class WebSocketService {
         }
 
         if (this.reconnectAttempts === this.maxReconnectAttempts) {
-            console.warn(`⚠️  ${this.maxReconnectAttempts} reconnection attempts failed; continuing to retry every ${this.maxReconnectDelay}ms.`);
+            console.warn(
+                `⚠️  ${this.maxReconnectAttempts} reconnection attempts failed; continuing to retry every ${this.maxReconnectDelay}ms.`,
+            );
         }
 
         this.reconnectAttempts++;

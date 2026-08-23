@@ -490,7 +490,6 @@ export const ModelList = React.memo(function ModelList({
                     )}
                 </List>
             </Paper>
-
         </Box>
     );
 });

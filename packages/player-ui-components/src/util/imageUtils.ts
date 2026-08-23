@@ -19,7 +19,7 @@ function toFileUrl(maybePath: string): string {
 
 function isElectronRenderer(): boolean {
     if (typeof window === 'undefined') return false;
-    return Boolean((window as any).electronAPI);
+    return Boolean(window.electronAPI);
 }
 
 /** Resolve the best image URL for display. React components should prefer

@@ -83,7 +83,9 @@ export const generateSelectedDaysOccurrences = (
     });
 
     const selectedDates = dates.filter((date) =>
-        selectedDays.includes(Object.keys(DAY_NAME_TO_INDEX).find((key) => DAY_NAME_TO_INDEX[key] === date.getDay()) || ''),
+        selectedDays.includes(
+            Object.keys(DAY_NAME_TO_INDEX).find((key) => DAY_NAME_TO_INDEX[key] === date.getDay()) || '',
+        ),
     );
 
     return selectedDates.map(

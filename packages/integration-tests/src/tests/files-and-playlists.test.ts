@@ -63,7 +63,7 @@ describe('FPP playlists + schedule', () => {
 
         expect(await fpp.playlistNames()).toEqual(['Main Show']);
         const round = await fpp.getPlaylist('Main Show');
-        expect(round.mainPlaylist.map((e: any) => e.sequenceName)).toEqual(['SongA.fseq', 'SongB.fseq']);
+        expect(round.mainPlaylist.map((e) => e.sequenceName)).toEqual(['SongA.fseq', 'SongB.fseq']);
         expect(round.playlistInfo.total_items).toBe(2);
         expect(round.playlistInfo.total_duration).toBe(20);
     });

@@ -82,8 +82,7 @@ export const PlayerSettings: React.FC = () => {
         loginItemApi?.isLoginItemSupported && loginItemApi.getOpenAtLogin && loginItemApi.setOpenAtLogin,
     );
     // Renderer hint only (for the rare "restart to pick up preload" path). Real gating uses main-process platform.
-    const loginItemOsHint =
-        typeof navigator !== 'undefined' && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent);
+    const loginItemOsHint = typeof navigator !== 'undefined' && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent);
     const [loginItemPlatformSupported, setLoginItemPlatformSupported] = React.useState(false);
     const [loginItemSupported, setLoginItemSupported] = React.useState(false);
     const [openAtLogin, setOpenAtLogin] = React.useState(false);
@@ -202,16 +201,14 @@ export const PlayerSettings: React.FC = () => {
                     control={
                         <Switch
                             checked={settings.sendIdleBlackFrames !== false}
-                            onChange={(e) =>
-                                dispatch(playbackSettingsActions.setSendIdleBlackFrames(e.target.checked))
-                            }
+                            onChange={(e) => dispatch(playbackSettingsActions.setSendIdleBlackFrames(e.target.checked))}
                         />
                     }
                     label="Blackout when idle"
                 />
                 <Typography variant="body2" color="text.secondary">
-                    Send black frames while nothing is playing so lights go dark. Turn off when another player
-                    drives the same controllers — lights then hold their last frame when playback stops.
+                    Send black frames while nothing is playing so lights go dark. Turn off when another player drives
+                    the same controllers — lights then hold their last frame when playback stops.
                 </Typography>
             </Box>
 
@@ -258,8 +255,8 @@ export const PlayerSettings: React.FC = () => {
                 Test Sequences
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Sequences carrying any of these tags are offered in the Show Status test area. Clear the list to
-                hide the test area.
+                Sequences carrying any of these tags are offered in the Show Status test area. Clear the list to hide
+                the test area.
             </Typography>
             <TagListInput
                 label="Test Sequence Tags"
@@ -310,8 +307,8 @@ export const PlayerSettings: React.FC = () => {
                         Diagnostics
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        Help improve EZPlayer by sending anonymous crash and error reports. No show data, files,
-                        or personal information is included.
+                        Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or
+                        personal information is included.
                     </Typography>
                     <Box>
                         <FormControlLabel

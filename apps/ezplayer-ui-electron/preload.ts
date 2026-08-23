@@ -1,8 +1,8 @@
 import type {
     AudioChunk,
     AudioDevice,
-    AutoUpdateMode,
-    AutoUpdateStatus,
+    AutoUpdateOpsState,
+    UpdateCommand,
     CloudConfig,
     CloudStatus,
     DiagnosticsConsent,
@@ -26,6 +26,8 @@ import type {
     PlayerNStatusContent,
     PlayerPStatusContent,
 } from '@ezplayer/ezplayer-core';
+
+import type { IpcRendererEvent } from 'electron';
 
 export interface M2RIPC<Payload> {
     reqid: number;
@@ -137,7 +139,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);
     },
     onCloudConfigUpdated: (callback: (data: CloudConfig) => void) => {
-        ipcRenderer.on('update:cloudConfig', (_event: any, data: CloudConfig) => {
+        ipcRenderer.on('update:cloudConfig', (_event: IpcRendererEvent, data: CloudConfig) => {
             callback(data);
         });
     },
@@ -145,7 +147,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('ipcGetCloudConnStatus');
     },
     onCloudStatusUpdated: (callback: (data: CloudStatus) => void) => {
-        ipcRenderer.on('update:cloudStatus', (_event: any, data: CloudStatus) => {
+        ipcRenderer.on('update:cloudStatus', (_event: IpcRendererEvent, data: CloudStatus) => {
             callback(data);
         });
     },
@@ -153,48 +155,48 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('ipcControllerCommand', command);
     },
     onControllerOpsUpdated: (callback: (data: ControllerOpsState) => void) => {
-        ipcRenderer.on('update:controllerops', (_event: any, data: ControllerOpsState) => {
+        ipcRenderer.on('update:controllerops', (_event: IpcRendererEvent, data: ControllerOpsState) => {
             callback(data);
         });
     },
     onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => {
-        ipcRenderer.on('update:remoteaccess', (_event: any, state: RemoteAccessAvailability) => {
+        ipcRenderer.on('update:remoteaccess', (_event: IpcRendererEvent, state: RemoteAccessAvailability) => {
             callback(state);
         });
     },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
-        ipcRenderer.on('update:showFolder', (_event: any, data: string) => {
+        ipcRenderer.on('update:showFolder', (_event: IpcRendererEvent, data: string) => {
             callback(data);
         });
     },
     onSequencesUpdated: (callback: (data: SequenceRecord[]) => void) => {
-        ipcRenderer.on('update:sequences', (_event: any, data: SequenceRecord[]) => {
+        ipcRenderer.on('update:sequences', (_event: IpcRendererEvent, data: SequenceRecord[]) => {
             callback(data);
         });
     },
     onPlaylistsUpdated: (callback: (data: PlaylistRecord[]) => void) => {
-        ipcRenderer.on('update:playlist', (_event: any, data: PlaylistRecord[]) => {
+        ipcRenderer.on('update:playlist', (_event: IpcRendererEvent, data: PlaylistRecord[]) => {
             callback(data);
         });
     },
     onScheduleUpdated: (callback: (data: ScheduledPlaylist[]) => void) => {
-        ipcRenderer.on('update:schedule', (_event: any, data: ScheduledPlaylist[]) => {
+        ipcRenderer.on('update:schedule', (_event: IpcRendererEvent, data: ScheduledPlaylist[]) => {
             callback(data);
         });
     },
     onStatusUpdated: (callback: (data: CombinedPlayerStatus) => void) => {
-        ipcRenderer.on('update:combinedstatus', (_event: any, data: CombinedPlayerStatus) => {
+        ipcRenderer.on('update:combinedstatus', (_event: IpcRendererEvent, data: CombinedPlayerStatus) => {
             callback(data);
         });
     },
     onPlaybackSettingsUpdated: (callback: (data: PlaybackSettings) => void) => {
-        ipcRenderer.on('update:playbacksettings', (_event: any, data: PlaybackSettings) => {
+        ipcRenderer.on('update:playbacksettings', (_event: IpcRendererEvent, data: PlaybackSettings) => {
             callback(data);
         });
     },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
-        ipcRenderer.on('audio:get-devices', async (_event: any, req: M2RIPC<void>) => {
+        ipcRenderer.on('audio:get-devices', async (_event: IpcRendererEvent, req: M2RIPC<void>) => {
             const devices = await callback();
             const respch = `audio:get-devices-response#${req.reqid}`;
             ipcRenderer.send(respch, devices);
@@ -202,27 +204,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     onAudioChunk: (callback: (data: AudioChunk) => void) => {
-        ipcRenderer.on('audio:chunk', (_event: any, data: AudioChunk) => {
+        ipcRenderer.on('audio:chunk', (_event: IpcRendererEvent, data: AudioChunk) => {
             callback(data);
         });
     },
     onStatsUpdated: (callback: (data: PlaybackStatistics) => void) => {
-        ipcRenderer.on('playback:stats', (_event: any, data: PlaybackStatistics) => {
+        ipcRenderer.on('playback:stats', (_event: IpcRendererEvent, data: PlaybackStatistics) => {
             callback(data);
         });
     },
     onCStatusUpdated: (callback: (data: PlayerCStatusContent) => void) => {
-        ipcRenderer.on('playback:cstatus', (_event: any, data: PlayerCStatusContent) => {
+        ipcRenderer.on('playback:cstatus', (_event: IpcRendererEvent, data: PlayerCStatusContent) => {
             callback(data);
         });
     },
     onNStatusUpdated: (callback: (data: PlayerNStatusContent) => void) => {
-        ipcRenderer.on('playback:nstatus', (_event: any, data: PlayerNStatusContent) => {
+        ipcRenderer.on('playback:nstatus', (_event: IpcRendererEvent, data: PlayerNStatusContent) => {
             callback(data);
         });
     },
     onPStatusUpdated: (callback: (data: PlayerPStatusContent) => void) => {
-        ipcRenderer.on('playback:pstatus', (_event: any, data: PlayerPStatusContent) => {
+        ipcRenderer.on('playback:pstatus', (_event: IpcRendererEvent, data: PlayerPStatusContent) => {
             callback(data);
         });
     },
@@ -233,17 +235,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
 
     // Auto-update
-    getAutoUpdateSettings: () => ipcRenderer.invoke('autoupdate:get-settings'),
-    setAutoUpdateMode: (mode: AutoUpdateMode) => ipcRenderer.invoke('autoupdate:set-mode', mode),
-    skipUpdateVersion: (version: string) => ipcRenderer.invoke('autoupdate:skip-version', version),
-    clearSkippedUpdateVersions: () => ipcRenderer.invoke('autoupdate:clear-skipped'),
-    checkForUpdates: () => ipcRenderer.invoke('autoupdate:check'),
-    downloadUpdate: () => ipcRenderer.invoke('autoupdate:download'),
-    installUpdateNow: (force?: boolean) => ipcRenderer.invoke('autoupdate:install-now', force),
-    installUpdateOnQuit: () => ipcRenderer.invoke('autoupdate:install-on-quit'),
-    onAutoUpdateStatus: (callback: (status: AutoUpdateStatus) => void) => {
-        ipcRenderer.on('update:autoupdate-status', (_event: any, status: AutoUpdateStatus) => {
-            callback(status);
+    updateCommand: (cmd: UpdateCommand) => ipcRenderer.invoke('autoupdate:command', cmd),
+    getAutoUpdateOps: () => ipcRenderer.invoke('autoupdate:get-ops'),
+    onAutoUpdateOpsUpdated: (callback: (state: AutoUpdateOpsState) => void) => {
+        ipcRenderer.on('update:autoupdate-ops', (_event: IpcRendererEvent, state: AutoUpdateOpsState) => {
+            callback(state);
         });
     },
 } satisfies EZPElectronAPI);

@@ -37,9 +37,7 @@ export class MultiSyncSender {
     private lastSyncFrame = -1;
 
     configure(
-        settings:
-            | { enabled?: boolean; remotes?: string[]; port?: number; multicastAddress?: string }
-            | undefined,
+        settings: { enabled?: boolean; remotes?: string[]; port?: number; multicastAddress?: string } | undefined,
     ): void {
         const enabled = !!settings?.enabled;
         if (!enabled) {

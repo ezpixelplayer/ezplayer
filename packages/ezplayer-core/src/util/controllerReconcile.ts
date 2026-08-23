@@ -14,6 +14,7 @@ import type {
     ControllerPort,
     PortReconcile,
     ControllerHealth,
+    ControllerNetwork,
     EzpControllerRecord,
 } from '../types/ControllerOps';
 import type { ControllerStatus } from '../types/DataTypes';
@@ -24,10 +25,7 @@ import type { ControllerStatus } from '../types/DataTypes';
  * `deleted` record hides the entry, and an unmatched record is added as
  * 'ezp'-sourced.
  */
-export function applyOverrides(
-    xlights: KnownController[],
-    records: EzpControllerRecord[],
-): KnownController[] {
+export function applyOverrides(xlights: KnownController[], records: EzpControllerRecord[]): KnownController[] {
     const byName = new Map(records.map((r) => [r.name, r]));
     const seen = new Set<string>();
     const out: KnownController[] = [];
@@ -76,10 +74,7 @@ function deviceKey(d: DiscoveredController): string {
     return d.id || d.ip;
 }
 
-export function reconcileControllers(
-    known: KnownController[],
-    devices: DiscoveredController[],
-): ControllerGridRow[] {
+export function reconcileControllers(known: KnownController[], devices: DiscoveredController[]): ControllerGridRow[] {
     // Index by IP and lowercased hostname; first-seen wins so a device reached
     // both directly and via a proxy (two rows, same IP) doesn't double-claim.
     const byIp = new Map<string, DiscoveredController>();
@@ -99,7 +94,7 @@ export function reconcileControllers(
     // Known records → present (address matched a scan) or absent.
     for (const k of known) {
         const addr = k.address?.trim();
-        const device = addr ? byIp.get(addr) ?? byHost.get(addr.toLowerCase()) : undefined;
+        const device = addr ? (byIp.get(addr) ?? byHost.get(addr.toLowerCase())) : undefined;
         if (device) claimedIps.add(device.ip);
         rows.push({
             key: k.name,
@@ -144,10 +139,7 @@ export function reconcileControllers(
  *  against the intent's bare model names. */
 const modelCompareKey = (name: string): string => name.toLowerCase().replace(/-str-\d+$/, '');
 
-export function reconcilePorts(
-    intent: ControllerPortIntent[],
-    actual: ControllerPort[],
-): PortReconcile[] {
+export function reconcilePorts(intent: ControllerPortIntent[], actual: ControllerPort[]): PortReconcile[] {
     const byPort = new Map<number, PortReconcile>();
 
     for (const i of intent) {
@@ -296,8 +288,12 @@ export function reconcileInputs(
             const missing = [...iMap.keys()].filter((u) => !aMap.has(u));
             const extra = [...aMap.keys()].filter((u) => !iMap.has(u));
             const resized = [...iMap.keys()].filter((u) => aMap.has(u) && aMap.get(u) !== iMap.get(u));
-            if (missing.length) notes.push(`universes missing on device: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`);
-            if (extra.length) notes.push(`universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`);
+            if (missing.length)
+                notes.push(
+                    `universes missing on device: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`,
+                );
+            if (extra.length)
+                notes.push(`universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`);
             for (const u of resized.slice(0, 4)) {
                 notes.push(`universe ${u} size: xLights ${iMap.get(u)} vs device ${aMap.get(u)}`);
             }
@@ -355,4 +351,76 @@ export function overlayHealth(rows: ControllerGridRow[], statuses: ControllerSta
 export function healthNeedsAttention(health: ControllerHealth | undefined): boolean {
     if (!health) return false;
     return health.connectivity === 'Down' || health.status === 'error' || !!health.errors?.length;
+}
+
+/** Dotted IPv4 -> uint32, or null if it isn't a well-formed IPv4 literal. */
+function ipv4ToInt(ip: string): number | null {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip.trim());
+    if (!m) return null;
+    let n = 0;
+    for (let i = 1; i <= 4; i++) {
+        const o = Number(m[i]);
+        if (o > 255) return null;
+        n = n * 256 + o;
+    }
+    return n >>> 0;
+}
+
+/** True when `ip` lies inside `cidr` ("a.b.c.d/bits"); false for anything malformed. */
+export function ipInCidr(ip: string, cidr: string): boolean {
+    const [net, bitsStr] = cidr.split('/');
+    const ipN = ipv4ToInt(ip);
+    const netN = ipv4ToInt(net ?? '');
+    const bits = bitsStr === undefined ? 32 : Number(bitsStr);
+    if (ipN === null || netN === null || !Number.isInteger(bits) || bits < 0 || bits > 32) return false;
+    const mask = bits === 0 ? 0 : ~((1 << (32 - bits)) - 1) >>> 0;
+    return ((ipN & mask) >>> 0) === ((netN & mask) >>> 0);
+}
+
+/** Controllers that would need a network this player has no interface on. */
+export interface OffNetworkGroup {
+    /** The /24 the offenders share, e.g. "192.168.2.0/24". */
+    network: string;
+    /** Lowest-addressed offender, quoted as the example in the message. */
+    example: { name: string; address: string };
+    /** Further offenders on the same /24. */
+    others: number;
+}
+
+/**
+ * Group enabled, unreachable controllers by the /24 they would need when that
+ * network isn't among the host's interfaces. A routed controller that answers
+ * pings (or was found by a scan) is never flagged - only "absent AND
+ * off-subnet", which points at a wrong address or a missing network rather
+ * than a powered-off box. Empty when the host's networks are unknown.
+ */
+export function findOffNetworkControllers(rows: ControllerGridRow[], interfaces: ControllerNetwork[]): OffNetworkGroup[] {
+    if (!interfaces.length) return [];
+    const hostNets = interfaces.map((i) => i.network);
+    const groups = new Map<string, { example: { name: string; address: string; ipN: number }; others: number }>();
+    for (const r of rows) {
+        if (r.state !== 'absent' || r.health?.connectivity === 'Up') continue;
+        const enabled = r.enableState ? r.enableState === 'enabled' : r.active !== false;
+        if (!enabled) continue;
+        const address = r.address?.trim();
+        if (!address) continue;
+        const ipN = ipv4ToInt(address);
+        if (ipN === null) continue; // hostnames can't be placed on a subnet
+        if (hostNets.some((n) => ipInCidr(address, n))) continue;
+        const net24 = `${[ipN >>> 24, (ipN >>> 16) & 255, (ipN >>> 8) & 255].join('.')}.0/24`;
+        const name = r.name ?? address;
+        const g = groups.get(net24);
+        if (!g) groups.set(net24, { example: { name, address, ipN }, others: 0 });
+        else {
+            g.others++;
+            if (ipN < g.example.ipN) g.example = { name, address, ipN };
+        }
+    }
+    return [...groups.entries()]
+        .sort(([a], [b]) => (ipv4ToInt(a.split('/')[0]) ?? 0) - (ipv4ToInt(b.split('/')[0]) ?? 0))
+        .map(([network, g]) => ({
+            network,
+            example: { name: g.example.name, address: g.example.address },
+            others: g.others,
+        }));
 }

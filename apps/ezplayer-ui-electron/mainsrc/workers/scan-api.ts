@@ -12,12 +12,7 @@
  */
 
 import Router, { RouterContext } from '@koa/router';
-import {
-    DiscoveryDepth,
-    DiscoveryResult,
-    ScanDiscoverBody,
-    ScanInterfacesResponse,
-} from '@ezplayer/epp-controllers';
+import { DiscoveryDepth, DiscoveryResult, ScanDiscoverBody, ScanInterfacesResponse } from '@ezplayer/epp-controllers';
 import type { ControllerCommand, ControllerOpOrigin } from '@ezplayer/ezplayer-core';
 import { hostNetworks } from '../../cli/net.js';
 import { dispatchErrorStatus } from './controllers-api.js';
@@ -48,9 +43,8 @@ function resolveParams(input: {
     }
     // Omitted networks → scan this host's own networks ("discover on your
     // side", the federated-request case).
-    const networks = input.networks && input.networks.length > 0
-        ? input.networks
-        : hostNetworks().map((n) => ({ cidr: n.network }));
+    const networks =
+        input.networks && input.networks.length > 0 ? input.networks : hostNetworks().map((n) => ({ cidr: n.network }));
     if (networks.length === 0) {
         return { ...base, error: 'no networks to scan (host has no external IPv4 networks)' };
     }
@@ -70,7 +64,11 @@ export function registerScanApiRoutes(router: Router, deps: ScanApiDeps): void {
         const csv = typeof q.networks === 'string' ? q.networks : undefined;
         const params = resolveParams({
             networks: csv
-                ? csv.split(',').map((s) => s.trim()).filter(Boolean).map((cidr) => ({ cidr }))
+                ? csv
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                      .map((cidr) => ({ cidr }))
                 : undefined,
             depth: typeof q.depth === 'string' ? q.depth : undefined,
             recurseFppProxies: q.fppProxy === '1' || q.fppProxy === 'true',

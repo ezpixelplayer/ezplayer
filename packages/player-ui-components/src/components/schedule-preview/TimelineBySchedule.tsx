@@ -362,7 +362,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
         });
 
         // Group events by schedule to track their lifecycle
-        const scheduleEventMap = new Map<string, any[]>();
+        const scheduleEventMap = new Map<string, PlaybackLogDetail[]>();
         scheduleEvents.forEach((event) => {
             if (!scheduleEventMap.has(event.scheduleId!)) {
                 scheduleEventMap.set(event.scheduleId!, []);
@@ -777,7 +777,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                 // Set scroll boundaries to prevent scrolling beyond user-defined limits
                 min: scrollBoundaries.minTime,
                 max: scrollBoundaries.maxTime,
-                order: (a: any, b: any) => {
+                order: (a: TimelineItem, b: TimelineItem) => {
                     // Order by start time to ensure chronological placement
                     return new Date(a.start).getTime() - new Date(b.start).getTime();
                 },
@@ -813,7 +813,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
             timelineInstanceRef.current = timeline;
 
             // Event handlers
-            timeline.on('select', (properties: any) => {
+            timeline.on('select', (properties: { items: (string | number)[] }) => {
                 if (properties.items.length > 0) {
                     const selectedItemData = items.get(properties.items[0]) as unknown as TimelineItem;
 
@@ -831,10 +831,10 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
 
             // Apply priority and type labels to timeline groups
             const applyPriorityLabels = () => {
-                const visLabels = container.querySelectorAll('.vis-label');
+                const visLabels = container.querySelectorAll<HTMLElement>('.vis-label');
 
-                visLabels.forEach((labelElement: any) => {
-                    const htmlLabel = labelElement as HTMLElement;
+                visLabels.forEach((labelElement) => {
+                    const htmlLabel = labelElement;
 
                     // Get the full label text including hidden schedule ID
                     const fullLabelText = htmlLabel.textContent || '';
@@ -867,12 +867,12 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                         // Find the group data by schedule ID (this ensures correct matching even with duplicate names)
                         const groupData = scheduleId ? timelineData.groups.find((g) => g.id === scheduleId) : null;
 
-                        if (groupData && (groupData as any).priorityLabel && (groupData as any).priorityClass) {
+                        if (groupData && groupData.priorityLabel && groupData.priorityClass) {
                             // Create type badge element first (appears before priority badge)
-                            if ((groupData as any).typeLabel && (groupData as any).typeClass) {
+                            if (groupData.typeLabel && groupData.typeClass) {
                                 const typeBadge = document.createElement('span');
-                                typeBadge.className = `type-badge ${(groupData as any).typeClass}`;
-                                typeBadge.textContent = (groupData as any).typeLabel;
+                                typeBadge.className = `type-badge ${groupData.typeClass}`;
+                                typeBadge.textContent = groupData.typeLabel;
 
                                 // Insert the type badge after the existing content
                                 const existingContent = htmlLabel.querySelector('.vis-label-content') || htmlLabel;
@@ -881,8 +881,8 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
 
                             // Create priority badge element
                             const priorityBadge = document.createElement('span');
-                            priorityBadge.className = `priority-badge ${(groupData as any).priorityClass}`;
-                            priorityBadge.textContent = (groupData as any).priorityLabel;
+                            priorityBadge.className = `priority-badge ${groupData.priorityClass}`;
+                            priorityBadge.textContent = groupData.priorityLabel;
 
                             // Insert the priority badge after the type badge
                             const existingContent = htmlLabel.querySelector('.vis-label-content') || htmlLabel;
@@ -894,10 +894,10 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
 
             // Apply timeline colors using hidden color markers
             const applyTimelineColors = () => {
-                const visItems = container.querySelectorAll('.vis-item');
+                const visItems = container.querySelectorAll<HTMLElement>('.vis-item');
 
-                visItems.forEach((element: any) => {
-                    const htmlElement = element as HTMLElement;
+                visItems.forEach((element) => {
+                    const htmlElement = element;
                     const itemContent = htmlElement.textContent || '';
 
                     // Extract color from hidden marker and clean up display text
@@ -944,8 +944,8 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                         }
 
                         // Apply to child content elements
-                        const contentElements = htmlElement.querySelectorAll('.vis-item-content');
-                        contentElements.forEach((contentEl: any) => {
+                        const contentElements = htmlElement.querySelectorAll<HTMLElement>('.vis-item-content');
+                        contentElements.forEach((contentEl) => {
                             if (isScheduledOnly || isScheduledMarker) {
                                 // For scheduled-only items: let CSS handle the styling completely
                                 return;

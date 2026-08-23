@@ -73,7 +73,7 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
         detail:
             'Usage: EZPlayer controller list [--host <host[:port]>] [--json]\n' +
             '\n' +
-            'Prints the running app\'s controller state: known controllers (xLights ∪\n' +
+            "Prints the running app's controller state: known controllers (xLights ∪\n" +
             'records) joined against scanned devices — present/absent/unregistered —\n' +
             'plus recent operations and network policies.\n' +
             '\n' +
@@ -87,7 +87,7 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
             'Usage: EZPlayer controller status <ip-or-name> [--host <host[:port]>] [--fpp-proxy <ip>] [--json]\n' +
             '\n' +
             'Probes the device directly (standalone for an IP target). A name is\n' +
-            'resolved through the running app\'s known/scanned state (--host).\n' +
+            "resolved through the running app's known/scanned state (--host).\n" +
             '      --fpp-proxy  route the probe through an FPP-style /proxy bridge\n' +
             '      --json       raw ControllerReport JSON on stdout',
     },
@@ -98,7 +98,7 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
             '       EZPlayer controller action <ip-or-name> --list\n' +
             '\n' +
             'Identifies the device, then dispatches the driver action directly.\n' +
-            '      --list       enumerate the actions the device\'s driver offers\n' +
+            "      --list       enumerate the actions the device's driver offers\n" +
             '      --fpp-proxy  route the probe through an FPP-style /proxy bridge',
     },
     upload: {
@@ -106,7 +106,7 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
         detail:
             'Usage: EZPlayer controller upload <name> [--scope inputs|strings|full] [--host <host[:port]>]\n' +
             '\n' +
-            'Pushes the show\'s xLights intent for the known controller <name> through\n' +
+            "Pushes the show's xLights intent for the known controller <name> through\n" +
             'the running app (which owns the intent + does a post-upload read-back).\n' +
             '      --scope  inputs  = input/universe config only\n' +
             '               strings = string/port outputs only\n' +
@@ -128,8 +128,7 @@ function remoteAccessUsage(verb: 'shell' | 'files'): string {
     const what =
         verb === 'shell'
             ? 'a terminal on the player machine'
-            : "a file manager for the player's show folder (browse, upload,\n" +
-              'download, rename, move and delete)';
+            : "a file manager for the player's show folder (browse, upload,\n" + 'download, rename, move and delete)';
     const tile = verb === 'shell' ? 'Shell' : 'Files';
     const pad = ' '.repeat(5 - verb.length);
     return (

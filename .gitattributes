@@ -1,3 +1,9 @@
+# Normalize all text files to LF — in the repo AND the working tree — so the
+# public/private mirrors stop diverging on line endings and Windows checkouts
+# stop producing "LF will be replaced by CRLF" churn. Matches prettier's
+# endOfLine: 'lf'.
+* text=auto eol=lf
+
 # Windows batch files MUST keep CRLF endings. cmd.exe mis-parses an LF-only
 # .cmd — you get errors like "'m' is not recognized" as it chops REM lines —
 # and the failure is baffling because the script still half-works. Without this

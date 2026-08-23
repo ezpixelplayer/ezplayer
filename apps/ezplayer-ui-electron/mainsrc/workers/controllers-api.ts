@@ -20,7 +20,16 @@ import { hostNetworks } from '../../cli/net.js';
 
 const DEPTHS: readonly DiscoveryDepth[] = ['sweep', 'identify', 'full'];
 const UPLOAD_SCOPES = ['inputs', 'strings', 'full'] as const;
-const COMMAND_VERBS = ['scan', 'status', 'action', 'upload', 'record', 'network', 'refreshInterfaces', 'cancel'] as const;
+const COMMAND_VERBS = [
+    'scan',
+    'status',
+    'action',
+    'upload',
+    'record',
+    'network',
+    'refreshInterfaces',
+    'cancel',
+] as const;
 
 export interface ControllersApiDeps {
     /** Issue a command to the main-process controller-ops dispatcher. */
@@ -105,9 +114,7 @@ export function registerControllersApiRoutes(router: Router, deps: ControllersAp
         const id = String(ctx.params.id);
         const state = deps.getControllerOpsState();
         const dev: DiscoveredController | undefined =
-            state.devices[id] ??
-            state.devices[`${id}|direct`] ??
-            Object.values(state.devices).find((d) => d.ip === id);
+            state.devices[id] ?? state.devices[`${id}|direct`] ?? Object.values(state.devices).find((d) => d.ip === id);
         if (!dev) {
             ctx.status = 404;
             ctx.body = { error: `unknown controller: ${id}` };

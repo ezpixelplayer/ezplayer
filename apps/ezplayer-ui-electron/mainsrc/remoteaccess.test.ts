@@ -26,9 +26,7 @@ afterEach(async () => {
 
 describe('remote-access config', () => {
     it('lives in the show folder .ezplayer directory', () => {
-        expect(remoteAccessConfigPath(showFolder)).toBe(
-            path.join(showFolder, '.ezplayer', 'remote-access.json'),
-        );
+        expect(remoteAccessConfigPath(showFolder)).toBe(path.join(showFolder, '.ezplayer', 'remote-access.json'));
     });
 
     it('reports everything off when no config exists, or no show is open', async () => {

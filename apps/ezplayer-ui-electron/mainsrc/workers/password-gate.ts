@@ -12,12 +12,7 @@
  * from a second address should not buy a fresh budget.
  */
 
-import {
-    featureEnabled,
-    readRemoteAccessConfig,
-    verifyFeaturePassword,
-    type RemoteFeature,
-} from '../remoteaccess.js';
+import { featureEnabled, readRemoteAccessConfig, verifyFeaturePassword, type RemoteFeature } from '../remoteaccess.js';
 
 /** How long an unauthenticated socket may sit there. */
 export const AUTH_TIMEOUT_MS = 20_000;
@@ -44,8 +39,7 @@ function stateFor(feature: RemoteFeature): Attempts {
 }
 
 export type AuthResult =
-    | { ok: true; showFolder: string | undefined }
-    | { ok: false; reason: string; code: 4401 | 4403 | 4429 };
+    { ok: true; showFolder: string | undefined } | { ok: false; reason: string; code: 4401 | 4403 | 4429 };
 
 /**
  * Check a password for `feature` against the config in `showFolder`.
@@ -80,9 +74,7 @@ export async function authenticateFeature(
             const step = state.failures - FREE_ATTEMPTS - 1;
             const delay = Math.min(BASE_LOCKOUT_MS * 2 ** step, MAX_LOCKOUT_MS);
             state.lockedUntil = Date.now() + delay;
-            console.warn(
-                `[${feature}] ${state.failures} failed logins; locked out for ${Math.round(delay / 1000)}s`,
-            );
+            console.warn(`[${feature}] ${state.failures} failed logins; locked out for ${Math.round(delay / 1000)}s`);
         }
         return { ok: false, code: 4401, reason: 'incorrect password' };
     }
@@ -93,10 +85,7 @@ export async function authenticateFeature(
 }
 
 /** True when the feature is enabled (has a password configured). */
-export async function featureEndpointEnabled(
-    feature: RemoteFeature,
-    showFolder: string | undefined,
-): Promise<boolean> {
+export async function featureEndpointEnabled(feature: RemoteFeature, showFolder: string | undefined): Promise<boolean> {
     return featureEnabled(await readRemoteAccessConfig(showFolder), feature);
 }
 

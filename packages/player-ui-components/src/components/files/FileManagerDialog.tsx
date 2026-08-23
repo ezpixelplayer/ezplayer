@@ -429,7 +429,11 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                             <Box sx={{ flexGrow: 1 }} />
                             <Tooltip title="Refresh">
                                 <span>
-                                    <IconButton size="small" onClick={() => void loadDir(currentFolder())} disabled={anyBusy}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => void loadDir(currentFolder())}
+                                        disabled={anyBusy}
+                                    >
                                         <RefreshIcon fontSize="small" />
                                     </IconButton>
                                 </span>
@@ -515,7 +519,11 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                                             {focused.kind === 'directory' ? 'Folder' : formatSize(focused.sizeBytes)} ·
                                             modified {formatWhen(focused.modified)}
                                         </Typography>
-                                        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+                                        <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            sx={{ wordBreak: 'break-all' }}
+                                        >
                                             {focused.path}
                                         </Typography>
                                         {focused.kind === 'file' && (
@@ -533,8 +541,8 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                                     </Box>
                                 ) : (
                                     <Typography variant="body2" color="text.secondary">
-                                        Select a file to see its details and preview. Drag files onto the tree to
-                                        upload them.
+                                        Select a file to see its details and preview. Drag files onto the tree to upload
+                                        them.
                                     </Typography>
                                 )}
                             </Box>
@@ -591,11 +599,7 @@ export const FileManagerDialog: React.FC<FileManagerDialogProps> = ({ open, onCl
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setCreatingFolder(undefined)}>Cancel</Button>
-                    <Button
-                        variant="contained"
-                        disabled={!creatingFolder?.value.trim()}
-                        onClick={() => void doMkdir()}
-                    >
+                    <Button variant="contained" disabled={!creatingFolder?.value.trim()} onClick={() => void doMkdir()}>
                         Create
                     </Button>
                 </DialogActions>

@@ -14,9 +14,25 @@ import * as path from 'path';
 import * as fs from 'fs';
 import fsp from 'fs/promises';
 import * as crypto from 'crypto';
-import type { ControllerOpsState, EZPlayerCommand, PlayerPStatusContent, PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '@ezplayer/ezplayer-core';
+import type {
+    ControllerOpsState,
+    EZPlayerCommand,
+    PlayerPStatusContent,
+    PlaylistRecord,
+    ScheduledPlaylist,
+    SequenceRecord,
+} from '@ezplayer/ezplayer-core';
 import { fileBaseName } from '../pathnames.js';
-import { buildFppStatus, buildFppdVersion, buildSystemInfo, fppCompatVersion, FPP_COMPAT_MAJOR, FPP_COMPAT_MINOR, type FppIdentity, type FppStatusSources } from './fpp-status.js';
+import {
+    buildFppStatus,
+    buildFppdVersion,
+    buildSystemInfo,
+    fppCompatVersion,
+    FPP_COMPAT_MAJOR,
+    FPP_COMPAT_MINOR,
+    type FppIdentity,
+    type FppStatusSources,
+} from './fpp-status.js';
 import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
 import { fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
 import { fppScheduleToRecords, recordsToFppSchedule, type FppScheduleEntry } from './fpp-schedule.js';
@@ -129,20 +145,22 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     // omitted — they don't speak the FPP systems protocol.
     router.get('/api/fppd/multiSyncSystems', async (ctx) => {
         const identity = await identityOf(deps);
-        const systems: Record<string, unknown>[] = [{
-            address: identity.ips[0] ?? '127.0.0.1',
-            hostname: identity.hostName,
-            type: 'EZPlayer',
-            model: 'EZPlayer',
-            version: fppCompatVersion(identity.appVersion),
-            majorVersion: FPP_COMPAT_MAJOR,
-            minorVersion: FPP_COMPAT_MINOR,
-            typeId: 0xee,
-            fppModeString: 'player',
-            multisync: false,
-            local: true,
-            uuid: identity.uuid,
-        }];
+        const systems: Record<string, unknown>[] = [
+            {
+                address: identity.ips[0] ?? '127.0.0.1',
+                hostname: identity.hostName,
+                type: 'EZPlayer',
+                model: 'EZPlayer',
+                version: fppCompatVersion(identity.appVersion),
+                majorVersion: FPP_COMPAT_MAJOR,
+                minorVersion: FPP_COMPAT_MINOR,
+                typeId: 0xee,
+                fppModeString: 'player',
+                multisync: false,
+                local: true,
+                uuid: identity.uuid,
+            },
+        ];
         const devices = deps.getControllerOps?.()?.devices ?? {};
         const seen = new Set<string>();
         for (const dev of Object.values(devices)) {
@@ -239,11 +257,13 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     router.get('/api/playlist/:name/start/:repeat', startPlaylist);
     router.get('/api/playlist/:name/start/:repeat/:scheduleProtected', startPlaylist);
 
-    const simpleCommand = (command: string, args: string[] = []) => async (ctx: RouterContext) => {
-        const result = await runFppCommand(command, args, cmdDeps);
-        ctx.status = result.status;
-        ctx.body = result.status === 200 ? okJson : { Status: 'Error', Message: result.message };
-    };
+    const simpleCommand =
+        (command: string, args: string[] = []) =>
+        async (ctx: RouterContext) => {
+            const result = await runFppCommand(command, args, cmdDeps);
+            ctx.status = result.status;
+            ctx.body = result.status === 200 ? okJson : { Status: 'Error', Message: result.message };
+        };
     router.get('/api/playlists/stop', simpleCommand('Stop Now'));
     router.get('/api/playlists/stopgracefully', simpleCommand('Stop Gracefully'));
     router.get('/api/playlists/stopgracefullyafterloop', simpleCommand('Stop Gracefully', ['true']));
@@ -334,7 +354,8 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
             ctx.status = 400;
             ctx.body = {
                 Status: 'Error',
-                Message: 'Body must be an FPP playlist object with a name. (EZPlayer bulk playlist writes moved to POST /api/ezp/playlists.)',
+                Message:
+                    'Body must be an FPP playlist object with a name. (EZPlayer bulk playlist writes moved to POST /api/ezp/playlists.)',
             };
             return;
         }
@@ -391,6 +412,9 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     // Volume writes are settings/schedule-driven in EZPlayer; see fpp-commands.ts.
     router.post('/api/system/volume', (ctx) => {
         ctx.status = 500;
-        ctx.body = { status: 'error', error: 'Volume is schedule/settings-driven in EZPlayer; set it via playback settings' };
+        ctx.body = {
+            status: 'error',
+            error: 'Volume is schedule/settings-driven in EZPlayer; set it via playback settings',
+        };
     });
 }

@@ -52,6 +52,37 @@ schedule you are editing (see
 
 ![FG-BG Toggle Button](/img/fg-bg-toggle.png)
 
+## Calendar views
+
+Use the view toggle above the calendar to switch between:
+
+- **Month** — full-month grid. Days from the previous or next month may appear
+  at the edges of the grid (shown with a muted background).
+- **Week** — seven-day timeline with hourly slots.
+- **Day** — a single-day hourly timeline.
+
+Month and Week views support drag-and-drop (see below). Day view does not.
+
+## Moving schedules by drag-and-drop
+
+In the **Month** and **Week** views, you can drag a schedule block to another day.
+After you drop it, a dialog asks what you want to do: move, copy, or repeat the schedule.
+
+### One-time schedules (Occurs Once)
+
+When you drag a schedule that does not repeat, the dialog offers:
+
+| Action | What it does |
+| ------ | ------------ |
+| **Move** | Move this entry to the dropped date. The time window and all other settings stay the same. |
+| **Copy** | Leave the original entry in place and create a copy on the dropped date. |
+| **Repeat** | Turn this entry into a **daily** repeating series from one date through the other. |
+| **Cancel** | Close the dialog and leave the schedule unchanged. |
+
+### Repeating schedules (Occurs Daily or Occurs for Selected Days)
+
+For repeating schedules, only the start and end date can be dragged, altering the schedule start / end date.
+
 ## Going further
 
 For background layers, runtime behavior (end policies, priority, loop, shuffle),

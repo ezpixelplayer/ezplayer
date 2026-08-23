@@ -43,9 +43,7 @@ describe('fppPlaylistToRecord', () => {
     });
 
     it('keeps id/createdAt when upserting an existing title', () => {
-        const existing: PlaylistRecord[] = [
-            { id: 'pl-old', title: 'Show', tags: ['x'], createdAt: 123, items: [] },
-        ];
+        const existing: PlaylistRecord[] = [{ id: 'pl-old', title: 'Show', tags: ['x'], createdAt: 123, items: [] }];
         const res = fppPlaylistToRecord(
             { name: 'Show', mainPlaylist: [{ type: 'sequence', sequenceName: 'Carol' }] },
             'show',
@@ -67,12 +65,7 @@ describe('fppPlaylistToRecord', () => {
         expect(unresolved.unresolved).toEqual(['Missing.fseq']);
         expect(unresolved.record!.items).toEqual([]);
 
-        const nested = fppPlaylistToRecord(
-            { mainPlaylist: [{ type: 'playlist', name: 'Inner' }] },
-            'P',
-            [],
-            sequences,
-        );
+        const nested = fppPlaylistToRecord({ mainPlaylist: [{ type: 'playlist', name: 'Inner' }] }, 'P', [], sequences);
         expect(nested.error).toContain('nested playlist');
     });
 });

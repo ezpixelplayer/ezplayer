@@ -28,7 +28,7 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
         setLocalSettings(settings);
     }, [settings]);
 
-    const handleInputChange = useCallback((field: keyof SettingsType, value: any) => {
+    const handleInputChange = useCallback(<K extends keyof SettingsType>(field: K, value: SettingsType[K]) => {
         setLocalSettings((prev) => ({ ...prev, [field]: value }));
     }, []);
 
@@ -238,7 +238,12 @@ const SchedulePreviewSettings: React.FC<SchedulePreviewSettingsProps> = ({
                             size="small"
                             fullWidth
                             value={localSettings.scheduleTypeFilter}
-                            onChange={(e) => handleInputChange('scheduleTypeFilter', e.target.value)}
+                            onChange={(e) =>
+                                handleInputChange(
+                                    'scheduleTypeFilter',
+                                    e.target.value as SettingsType['scheduleTypeFilter'],
+                                )
+                            }
                             select
                             InputLabelProps={{ shrink: true }}
                         >

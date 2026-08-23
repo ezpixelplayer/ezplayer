@@ -7,10 +7,7 @@ import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-u
 import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
-import {
-    batchImportShowSequences,
-    batchUploadImportShowSequences,
-} from '../../store/slices/SequenceStore';
+import { batchImportShowSequences, batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
 import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 
@@ -59,7 +56,7 @@ export interface SongListProps {
 }
 
 interface SongListRow {
-    tags: any;
+    tags: string[];
     id: string;
     title: string;
     artist: string;
@@ -74,7 +71,7 @@ type SongTableColumn = {
     headerName: string;
     flex?: number;
     minWidth?: number;
-    renderCell?: (params: { row: SongListRow; value: any }) => React.ReactNode;
+    renderCell?: (params: { row: SongListRow; value: unknown }) => React.ReactNode;
     sortable?: boolean;
     renderHeader?: () => React.ReactNode;
 };
@@ -109,8 +106,8 @@ function SongTable({ rows, columns, onRowDoubleClick, getRowId }: SongTableProps
         const { field, direction } = sortState;
         const copy = [...rows];
         copy.sort((a, b) => {
-            const av = (a as any)?.[field];
-            const bv = (b as any)?.[field];
+            const av = (a as unknown as Record<string, unknown>)?.[field];
+            const bv = (b as unknown as Record<string, unknown>)?.[field];
             if (av === bv) return 0;
             if (av === undefined || av === null) return 1;
             if (bv === undefined || bv === null) return -1;
@@ -177,7 +174,7 @@ function SongTable({ rows, columns, onRowDoubleClick, getRowId }: SongTableProps
                                 onDoubleClick={() => onRowDoubleClick?.({ row })}
                             >
                                 {columns.map((col) => {
-                                    const value = (row as any)?.[col.field];
+                                    const value = (row as unknown as Record<string, unknown>)?.[col.field];
                                     return (
                                         <TableCell
                                             key={`${rowId}-${col.field}`}
@@ -195,7 +192,7 @@ function SongTable({ rows, columns, onRowDoubleClick, getRowId }: SongTableProps
                                                 col.renderCell({ row, value })
                                             ) : (
                                                 <Typography variant="body2" noWrap>
-                                                    {value}
+                                                    {value as React.ReactNode}
                                                 </Typography>
                                             )}
                                         </TableCell>
@@ -348,9 +345,7 @@ export function SongList({
         console.log(
             `[BulkImport] Uploading+importing ${fseqFiles.length} fseq(s), ${companionAudioNames.length} companion audio(s) in one request…`,
         );
-        return dispatch(
-            batchUploadImportShowSequences({ files: toUpload, companionAudioNames }),
-        ).unwrap();
+        return dispatch(batchUploadImportShowSequences({ files: toUpload, companionAudioNames })).unwrap();
     };
 
     const handleChooseMediaFolderAndRetry = async () => {
@@ -367,7 +362,7 @@ export function SongList({
         }
         setChoosingMediaFolder(true);
         try {
-            const api = (window as any).electronAPI;
+            const api = window.electronAPI;
             if (!api?.selectDirectory) {
                 console.warn('[BulkImport] selectDirectory unavailable');
                 return;
@@ -382,9 +377,7 @@ export function SongList({
             dispatch(setMediaFolder(chosen));
             await dispatch(savePlayerSettings()).unwrap();
 
-            const missingAudio = (bulkSummary?.failures ?? []).filter((f) =>
-                /audio file not found/i.test(f.reason),
-            );
+            const missingAudio = (bulkSummary?.failures ?? []).filter((f) => /audio file not found/i.test(f.reason));
             if (!missingAudio.length) return;
 
             setBulkSummaryOpen(false);
@@ -407,9 +400,7 @@ export function SongList({
         event.target.value = '';
         if (!fileArray.length) return;
 
-        const companions = collectCompanionUploadFiles(fileArray).filter((f) =>
-            AUDIO_UPLOAD_EXTS.has(pathExt(f.name)),
-        );
+        const companions = collectCompanionUploadFiles(fileArray).filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
         if (!companions.length) {
             ToastMsgs.showErrorMessage('No audio files found in the selected folder', {
                 theme: 'colored',
@@ -419,15 +410,11 @@ export function SongList({
             return;
         }
 
-        const missingAudio = (bulkSummary?.failures ?? []).filter((f) =>
-            /audio file not found/i.test(f.reason),
-        );
+        const missingAudio = (bulkSummary?.failures ?? []).filter((f) => /audio file not found/i.test(f.reason));
         const importFseqNames = missingAudio.map((f) => f.fseqName).filter(Boolean);
         if (!importFseqNames.length) return;
 
-        const companionAudioNames = [
-            ...new Set([...lanCompanionAudioRef.current, ...companions.map((f) => f.name)]),
-        ];
+        const companionAudioNames = [...new Set([...lanCompanionAudioRef.current, ...companions.map((f) => f.name)])];
         lanCompanionAudioRef.current = companionAudioNames;
 
         setChoosingMediaFolder(true);
@@ -471,7 +458,7 @@ export function SongList({
 
     const handleBulkImportFiles = () => {
         startBulkImportAfterMenuClose(async () => {
-            const api = (window as any).electronAPI;
+            const api = window.electronAPI;
             if (!api?.selectFiles) {
                 console.warn('[BulkImport] electronAPI.selectFiles is unavailable');
                 return undefined;
@@ -496,7 +483,7 @@ export function SongList({
 
     const handleBulkImportFolder = () => {
         startBulkImportAfterMenuClose(async () => {
-            const api = (window as any).electronAPI;
+            const api = window.electronAPI;
             if (!api?.selectDirectory) {
                 console.warn('[BulkImport] electronAPI.selectDirectory is unavailable');
                 return undefined;
@@ -702,11 +689,11 @@ export function SongList({
             flex: 0.8,
             minWidth: 150,
             renderHeader: () => <Typography fontWeight="bold">TAGS</Typography>,
-            renderCell: (params: any) => (
+            renderCell: (params: { row: SongListRow; value: unknown }) => (
                 <RowWrapper>
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                        {params.value && params.value.length > 0
-                            ? params.value.map((tag: string, index: number) => (
+                        {params.row.tags && params.row.tags.length > 0
+                            ? params.row.tags.map((tag: string, index: number) => (
                                   <Typography
                                       key={`${params.row.id}-tag-${index}-${tag}`}
                                       variant="body2"
@@ -744,7 +731,7 @@ export function SongList({
                   headerName: '',
                   flex: 0.8,
                   minWidth: 140,
-                  renderCell: (params: any) => {
+                  renderCell: (params: RowParams) => {
                       const canShowPlay = showPlayAction;
                       const canShowEdit = showEditAction;
                       const canShowDelete = showDeleteAction && params.row.isDeletableSong;

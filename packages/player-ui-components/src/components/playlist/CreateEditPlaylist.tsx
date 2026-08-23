@@ -499,7 +499,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                     playlistName !== existingPlaylist.title ||
                     JSON.stringify(selectedTags) !== JSON.stringify(existingPlaylist.tags) ||
                     JSON.stringify(playlistSongs.map((song) => song.id)) !==
-                    JSON.stringify(existingPlaylist.items.map((item) => item.id));
+                        JSON.stringify(existingPlaylist.items.map((item) => item.id));
 
                 setHasUnsavedChanges(hasChanges);
             }
@@ -700,8 +700,8 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
             over.id === 'available'
                 ? 'available'
                 : over.id === 'playlist'
-                    ? 'playlist'
-                    : over.data.current?.containerId;
+                  ? 'playlist'
+                  : over.data.current?.containerId;
 
         // Handle reordering within playlist container
         if (sourceContainerId === 'playlist' && destinationContainerId === 'playlist') {
@@ -943,25 +943,27 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
 
     return (
         <Box sx={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <PageHeader
-                heading={id === '-1' ? 'Create Playlist' : 'Edit Playlist'}
-                children={[
-                    <Button key="discard" variant="outlined" color="secondary" onClick={handleDiscardClick}>
-                        Discard
-                    </Button>,
-                    <Button
-                        key="save"
-                        variant="contained"
-                        color="primary"
-                        onClick={handleSaveClick}
-                        disabled={!isPlaylistValid().isValid}
-                        sx={{ whiteSpace: 'nowrap', ml: 2 }}
-                    >
-                        Save Playlist
-                    </Button>,
-                    ...statusArea,
-                ]}
-            />
+            <Box sx={{ padding: 2, flexShrink: 0 }}>
+                <PageHeader
+                    heading={id === '-1' ? 'Create Playlist' : 'Edit Playlist'}
+                    children={[
+                        <Button key="discard" variant="outlined" color="secondary" onClick={handleDiscardClick}>
+                            Discard
+                        </Button>,
+                        <Button
+                            key="save"
+                            variant="contained"
+                            color="primary"
+                            onClick={handleSaveClick}
+                            disabled={!isPlaylistValid().isValid}
+                            sx={{ whiteSpace: 'nowrap', ml: 2 }}
+                        >
+                            Save Playlist
+                        </Button>,
+                        ...statusArea,
+                    ]}
+                />
+            </Box>
 
             {/* Unified navigation dialog */}
             <Dialog

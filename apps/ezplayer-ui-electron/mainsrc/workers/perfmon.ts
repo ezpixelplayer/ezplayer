@@ -142,7 +142,7 @@ async function captureProfile(log: (msg: string) => void, tag: string) {
     const traceStream = tracing ? createWriteStream(tracePath) : undefined;
 
     // Route trace events to file
-    (tracing as any).stream = traceStream; // supported in Node 20+; otherwise run with --trace-event-file-pattern
+    (tracing as unknown as { stream: typeof traceStream }).stream = traceStream; // supported in Node 20+; otherwise run with --trace-event-file-pattern
 
     setTimeout(async () => {
         // Stop profiler

@@ -87,75 +87,78 @@ export const PortVisualizerDialog: React.FC<{
 
     return (
         <CompactDialog title={`Port map — ${title}`} onClose={onClose} fullScreen>
-                {map.rows.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        No port configuration known for this controller yet — no xLights models are assigned to it and no
-                        device port config has been read.
-                    </Typography>
-                ) : (
-                    <>
-                        <Box sx={{ overflowX: 'auto', pb: 1 }}>
-                            <div
-                                style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: `max-content repeat(${Math.max(1, map.columns)}, max-content)`,
-                                    gap: 6,
-                                    alignItems: 'stretch',
-                                    width: 'max-content',
-                                }}
-                            >
-                                {map.rows.map((r) => (
-                                    <div
-                                        key={r.port}
-                                        style={{
-                                            gridColumn: 1,
-                                            gridRow: r.port,
-                                            padding: '4px 12px 4px 6px',
-                                            borderLeft: `3px solid ${r.drift ? theme.palette.warning.main : 'transparent'}`,
-                                            minWidth: 96,
-                                        }}
-                                    >
-                                        <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                            Port {r.port}
+            {map.rows.length === 0 ? (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    No port configuration known for this controller yet — no xLights models are assigned to it and no
+                    device port config has been read.
+                </Typography>
+            ) : (
+                <>
+                    <Box sx={{ overflowX: 'auto', pb: 1 }}>
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: `max-content repeat(${Math.max(1, map.columns)}, max-content)`,
+                                gap: 6,
+                                alignItems: 'stretch',
+                                width: 'max-content',
+                            }}
+                        >
+                            {map.rows.map((r) => (
+                                <div
+                                    key={r.port}
+                                    style={{
+                                        gridColumn: 1,
+                                        gridRow: r.port,
+                                        padding: '4px 12px 4px 6px',
+                                        borderLeft: `3px solid ${r.drift ? theme.palette.warning.main : 'transparent'}`,
+                                        minWidth: 96,
+                                    }}
+                                >
+                                    <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                        Port {r.port}
+                                    </Typography>
+                                    {r.intendedPixels !== undefined && (
+                                        <Typography
+                                            variant="caption"
+                                            sx={{ display: 'block', color: 'text.secondary' }}
+                                        >
+                                            plan {r.intendedPixels} px
                                         </Typography>
-                                        {r.intendedPixels !== undefined && (
-                                            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
-                                                plan {r.intendedPixels} px
-                                            </Typography>
-                                        )}
-                                        {haveActual && (
-                                            <Typography
-                                                variant="caption"
-                                                title={r.actualModel ? `device model: ${r.actualModel}` : undefined}
-                                                sx={{
-                                                    display: 'block',
-                                                    // amber = drift, green = matches plan, neutral = no plan.
-                                                    color: r.drift
-                                                        ? 'warning.main'
-                                                        : r.intendedPixels !== undefined
-                                                          ? 'success.main'
-                                                          : 'text.secondary',
-                                                }}
-                                            >
-                                                device {r.actualPixels ?? 0} px
-                                            </Typography>
-                                        )}
-                                    </div>
-                                ))}
-                                {map.boxes.map((b) => (
-                                    <PropBox key={b.model} box={b} drifted={boxDrifted(b)} theme={theme} />
-                                ))}
-                            </div>
-                        </Box>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
-                            Boxes read left→right in data-chain order per port; a tall box is one prop whose strings span
-                            those ports. A/B/C marks smart-remote slots.
-                            {haveActual
-                                ? ' "device" is the port config actually read from the controller; amber marks ports where it differs from the xLights plan.'
-                                : ' Run a full status read to overlay the device’s actual port config.'}
-                        </Typography>
-                    </>
-                )}
+                                    )}
+                                    {haveActual && (
+                                        <Typography
+                                            variant="caption"
+                                            title={r.actualModel ? `device model: ${r.actualModel}` : undefined}
+                                            sx={{
+                                                display: 'block',
+                                                // amber = drift, green = matches plan, neutral = no plan.
+                                                color: r.drift
+                                                    ? 'warning.main'
+                                                    : r.intendedPixels !== undefined
+                                                      ? 'success.main'
+                                                      : 'text.secondary',
+                                            }}
+                                        >
+                                            device {r.actualPixels ?? 0} px
+                                        </Typography>
+                                    )}
+                                </div>
+                            ))}
+                            {map.boxes.map((b) => (
+                                <PropBox key={b.model} box={b} drifted={boxDrifted(b)} theme={theme} />
+                            ))}
+                        </div>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
+                        Boxes read left→right in data-chain order per port; a tall box is one prop whose strings span
+                        those ports. A/B/C marks smart-remote slots.
+                        {haveActual
+                            ? ' "device" is the port config actually read from the controller; amber marks ports where it differs from the xLights plan.'
+                            : ' Run a full status read to overlay the device’s actual port config.'}
+                    </Typography>
+                </>
+            )}
         </CompactDialog>
     );
 };

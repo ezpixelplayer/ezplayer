@@ -115,7 +115,10 @@ export class GeometryGroupRenderer {
             // Perspective: pixels = worldSize * (H / (2*tan(fov/2))) / distance
             // Ortho: pixels = worldSize * (H / frustumHeight) * zoom
             let scale = 1.0;
-            const anyCam = camera as any;
+            const anyCam = camera as THREE.Camera & {
+                isPerspectiveCamera?: boolean;
+                isOrthographicCamera?: boolean;
+            };
             if (anyCam?.isPerspectiveCamera) {
                 const cam = camera as THREE.PerspectiveCamera;
                 const fovRad = (cam.fov * Math.PI) / 180;
@@ -508,8 +511,7 @@ export class GeometryManager {
 
     /** Rebuild the per-model wiring polylines when the selected set changes. */
     private updateWiringPaths(selectedModelNames?: Set<string>): void {
-        const key =
-            selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join(' ') : '';
+        const key = selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join(' ') : '';
         if (key === this.wiringShownKey) return;
         this.wiringShownKey = key;
 

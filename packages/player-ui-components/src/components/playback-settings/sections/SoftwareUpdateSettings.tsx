@@ -11,11 +11,12 @@ import {
     Typography,
 } from '@mui/material';
 import React from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AutoUpdateMode, AutoUpdateSettings, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import type { AutoUpdateMode, EZPElectronAPI, UpdateCommand } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
-import type { RootState } from '../../../store/Store';
+import type { AppDispatch, RootState } from '../../../store/Store';
+import { sendUpdateCommand } from '../../../store/slices/AutoUpdateStore';
 
 declare global {
     interface Window {
@@ -23,91 +24,91 @@ declare global {
     }
 }
 
-/** In-UI software update pane. All update interaction lives here; main pops no
- *  native dialogs. Electron-only — gate the settings tile on `canControlUpdates`. */
+/** Electron-router tile gate. LAN/cloud surfaces gate on the pushed
+ *  `autoUpdateOps` state instead (see the embedded/cloud routers). */
 export const canControlUpdates = (): boolean => {
     const api = window.electronAPI as Partial<EZPElectronAPI> | undefined;
-    return Boolean(api?.getAutoUpdateSettings && api.setAutoUpdateMode && api.installUpdateNow);
+    return Boolean(api?.updateCommand && api.getAutoUpdateOps);
 };
 
-export const SoftwareUpdateSettings: React.FC = () => {
-    const api = window.electronAPI as Partial<EZPElectronAPI> | undefined;
-    const status = useSelector((s: RootState) => s.autoUpdate.status);
-    const [settings, setSettings] = React.useState<AutoUpdateSettings | null>(null);
-    const [confirmForceOpen, setConfirmForceOpen] = React.useState(false);
-    const [installOnQuitArmed, setInstallOnQuitArmed] = React.useState(false);
-
-    React.useEffect(() => {
-        if (!api?.getAutoUpdateSettings) return;
-        let cancelled = false;
-        api.getAutoUpdateSettings()
-            .then((s) => {
-                if (!cancelled) setSettings(s);
-            })
-            .catch((error: unknown) => console.error('Failed to read auto-update settings:', error));
-        return () => {
-            cancelled = true;
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const handleModeChange = async (mode: AutoUpdateMode) => {
-        if (!api?.setAutoUpdateMode) return;
-        try {
-            setSettings(await api.setAutoUpdateMode(mode));
-        } catch (error) {
-            console.error('Failed to set auto-update mode:', error);
-        }
+/** Negative when a < b. Handles '-alpha'-style suffixes: numerically equal
+ *  versions rank a suffixed one below the plain release. */
+const compareVersions = (a: string, b: string): number => {
+    const parse = (v: string) => {
+        const [nums, suffix] = v.split(/-(.+)/);
+        return { parts: nums.split('.').map((n) => parseInt(n, 10) || 0), suffix: suffix ?? '' };
     };
+    const pa = parse(a);
+    const pb = parse(b);
+    for (let i = 0; i < Math.max(pa.parts.length, pb.parts.length); i++) {
+        const d = (pa.parts[i] ?? 0) - (pb.parts[i] ?? 0);
+        if (d !== 0) return d;
+    }
+    if (pa.suffix === pb.suffix) return 0;
+    if (!pa.suffix) return 1;
+    if (!pb.suffix) return -1;
+    return pa.suffix < pb.suffix ? -1 : 1;
+};
 
-    const availableVersion =
-        status?.state === 'available' || status?.state === 'downloaded' ? status.version : undefined;
-    const isSkipped = Boolean(
-        settings && availableVersion && settings.skippedVersions.includes(availableVersion),
+/** In-UI software update pane, for all UIs */
+export const SoftwareUpdateSettings: React.FC = () => {
+    const dispatch = useDispatch<AppDispatch>();
+    const ops = useSelector((s: RootState) => s.autoUpdate.ops);
+    const [confirmForceOpen, setConfirmForceOpen] = React.useState(false);
+    const [selectedTag, setSelectedTag] = React.useState('');
+    const [confirmVersionOpen, setConfirmVersionOpen] = React.useState(false);
+    // True between our unforced installNow and the resulting state push, so a
+    // deferral (schedule active) opens the confirm dialog only on this screen,
+    // not on every connected UI.
+    const pendingInstallRef = React.useRef(false);
+
+    const send = React.useCallback(
+        (cmd: UpdateCommand) => {
+            void dispatch(sendUpdateCommand(cmd));
+        },
+        [dispatch],
     );
 
-    const handleSkip = async () => {
-        if (!api?.skipUpdateVersion || !availableVersion) return;
-        try {
-            setSettings(await api.skipUpdateVersion(availableVersion));
-        } catch (error) {
-            console.error('Failed to skip version:', error);
+    const armed = ops?.installArmedOnQuit ?? false;
+    React.useEffect(() => {
+        if (armed && pendingInstallRef.current) {
+            pendingInstallRef.current = false;
+            setConfirmForceOpen(true);
         }
+    }, [armed]);
+
+    if (!ops) {
+        return (
+            <Box>
+                <Typography variant="body2" color="text.secondary">
+                    Waiting for the player&apos;s update state…
+                </Typography>
+            </Box>
+        );
+    }
+
+    const { settings, status } = ops;
+    const availableVersion =
+        status?.state === 'available' || status?.state === 'downloaded' ? status.version : undefined;
+    const isSkipped = Boolean(availableVersion && settings.skippedVersions.includes(availableVersion));
+
+    const handleInstallNow = () => {
+        pendingInstallRef.current = true;
+        send({ type: 'installNow' });
     };
 
-    const handleClearSkipped = async () => {
-        if (!api?.clearSkippedUpdateVersions) return;
-        try {
-            setSettings(await api.clearSkippedUpdateVersions());
-        } catch (error) {
-            console.error('Failed to clear skipped versions:', error);
-        }
-    };
-
-    const handleInstallNow = async (force: boolean) => {
-        if (!api?.installUpdateNow) return;
-        try {
-            const result = await api.installUpdateNow(force);
-            if (result === 'deferred') {
-                // Non-forced call already armed install-on-quit; ask about restarting anyway.
-                setInstallOnQuitArmed(true);
-                setConfirmForceOpen(true);
-            }
-        } catch (error) {
-            console.error('Failed to install update:', error);
-        }
-    };
-
-    const handleInstallOnQuit = () => {
-        api?.installUpdateOnQuit?.();
-        setInstallOnQuitArmed(true);
-    };
+    const releases = ops.releases;
+    const selectedRelease = releases?.find((r) => r.tag === selectedTag);
+    const selectedIsDowngrade = Boolean(
+        selectedRelease && compareVersions(selectedRelease.version, settings.currentVersion) < 0,
+    );
+    const busy = status?.state === 'checking' || status?.state === 'downloading';
 
     return (
         <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                EZPlayer {settings?.currentVersion ?? ''} is installed. Updates come from the official EZPlayer
-                releases; the player never restarts on its own.
+                EZPlayer {settings.currentVersion} is installed. Updates come from the official EZPlayer releases; the
+                player never restarts on its own.
             </Typography>
 
             <FormControl fullWidth size="small" sx={{ mb: 2 }}>
@@ -119,40 +120,37 @@ export const SoftwareUpdateSettings: React.FC = () => {
                     itemText="name"
                     itemValue="id"
                     label="Update Mode"
-                    value={settings?.mode ?? 'auto-check'}
+                    value={settings.mode}
                     onChange={(e) =>
-                        void handleModeChange((e.target as HTMLSelectElement).value as AutoUpdateMode)
+                        send({ type: 'setUpdateMode', mode: (e.target as HTMLSelectElement).value as AutoUpdateMode })
                     }
                 />
             </FormControl>
 
             <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-                <Button
-                    variant="outlined"
-                    size="small"
-                    disabled={status?.state === 'checking' || status?.state === 'downloading'}
-                    onClick={() => void api?.checkForUpdates?.()}
-                >
+                <Button variant="outlined" size="small" disabled={busy} onClick={() => send({ type: 'checkNow' })}>
                     Check for Updates
                 </Button>
                 {status?.state === 'available' && (
-                    <Button variant="contained" size="small" onClick={() => void api?.downloadUpdate?.()}>
+                    <Button variant="contained" size="small" onClick={() => send({ type: 'downloadNow' })}>
                         Download {status.version}
                     </Button>
                 )}
                 {status?.state === 'available' && !isSkipped && (
-                    <Button size="small" onClick={() => void handleSkip()}>
+                    <Button size="small" onClick={() => send({ type: 'skipVersion', version: status.version })}>
                         Skip This Version
                     </Button>
                 )}
-                {status?.state === 'downloaded' && !installOnQuitArmed && (
+                {status?.state === 'downloaded' && (
                     <>
-                        <Button variant="contained" size="small" onClick={() => void handleInstallNow(false)}>
+                        <Button variant="contained" size="small" onClick={handleInstallNow}>
                             Install &amp; Restart
                         </Button>
-                        <Button size="small" onClick={handleInstallOnQuit}>
-                            Install on Quit
-                        </Button>
+                        {!armed && (
+                            <Button size="small" onClick={() => send({ type: 'installOnQuit' })}>
+                                Install on Quit
+                            </Button>
+                        )}
                     </>
                 )}
             </Box>
@@ -176,8 +174,7 @@ export const SoftwareUpdateSettings: React.FC = () => {
             {status?.state === 'downloading' && (
                 <Box>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                        Downloading… {status.percent.toFixed(0)}% ({(status.bytesPerSecond / 1024).toFixed(0)}{' '}
-                        KB/s)
+                        Downloading… {status.percent.toFixed(0)}% ({(status.bytesPerSecond / 1024).toFixed(0)} KB/s)
                     </Typography>
                     <LinearProgress variant="determinate" value={status.percent} />
                 </Box>
@@ -185,7 +182,7 @@ export const SoftwareUpdateSettings: React.FC = () => {
             {status?.state === 'downloaded' && (
                 <Typography variant="body2">
                     Version {status.version} is downloaded and ready to install.
-                    {installOnQuitArmed && ' It will install when you quit EZPlayer.'}
+                    {armed && ' It will install when the player quits.'}
                 </Typography>
             )}
             {status?.state === 'error' && (
@@ -194,23 +191,94 @@ export const SoftwareUpdateSettings: React.FC = () => {
                 </Alert>
             )}
 
-            {settings && settings.skippedVersions.length > 0 && (
+            {settings.skippedVersions.length > 0 && (
                 <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="body2" color="text.secondary">
                         Skipped: {settings.skippedVersions.join(', ')}
                     </Typography>
-                    <Button size="small" onClick={() => void handleClearSkipped()}>
+                    <Button size="small" onClick={() => send({ type: 'clearSkippedVersions' })}>
                         Clear
                     </Button>
                 </Box>
             )}
 
+            {settings.mode === 'manual' && (
+                <Box sx={{ mt: 2 }}>
+                    {!releases && !ops.releasesError && (
+                        <Button size="small" onClick={() => send({ type: 'listReleases' })}>
+                            Choose a Specific Version…
+                        </Button>
+                    )}
+                    {ops.releasesError && (
+                        <Alert severity="error" sx={{ mt: 1 }}>
+                            Couldn&apos;t list releases: {ops.releasesError}
+                        </Alert>
+                    )}
+                    {releases && (
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <FormControl size="small" sx={{ minWidth: 260 }}>
+                                <Select
+                                    options={releases.map((r) => ({
+                                        id: r.tag,
+                                        name:
+                                            `${r.version} — ${r.publishedAt.slice(0, 10)}` +
+                                            (r.prerelease ? ' (beta)' : '') +
+                                            (r.version === settings.currentVersion ? ' (installed)' : ''),
+                                    }))}
+                                    itemText="name"
+                                    itemValue="id"
+                                    label="Version"
+                                    value={selectedTag}
+                                    onChange={(e) => setSelectedTag((e.target as HTMLSelectElement).value)}
+                                />
+                            </FormControl>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                disabled={
+                                    !selectedRelease || selectedRelease.version === settings.currentVersion || busy
+                                }
+                                onClick={() => setConfirmVersionOpen(true)}
+                            >
+                                Get This Version
+                            </Button>
+                        </Box>
+                    )}
+                </Box>
+            )}
+
+            <Dialog open={confirmVersionOpen} onClose={() => setConfirmVersionOpen(false)}>
+                <DialogTitle>
+                    {selectedIsDowngrade ? 'Downgrade EZPlayer?' : 'Install a Different Version?'}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        EZPlayer will download version {selectedRelease?.version} and offer to install it.
+                        {selectedRelease?.prerelease && ' This is a pre-release (beta) build.'}
+                        {selectedIsDowngrade &&
+                            ' Settings and show data written by newer versions may not work after downgrading.'}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmVersionOpen(false)}>Cancel</Button>
+                    <Button
+                        color={selectedIsDowngrade ? 'error' : 'primary'}
+                        onClick={() => {
+                            setConfirmVersionOpen(false);
+                            if (selectedRelease) send({ type: 'updateToVersion', tag: selectedRelease.tag });
+                        }}
+                    >
+                        Download
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
             <Dialog open={confirmForceOpen} onClose={() => setConfirmForceOpen(false)}>
                 <DialogTitle>Schedule Is Running</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        A show schedule is active right now. Restarting will interrupt playback until EZPlayer
-                        comes back up. If you wait, the update installs automatically when you quit.
+                        A show schedule is active right now. Restarting will interrupt playback until EZPlayer comes
+                        back up. If you wait, the update installs automatically when the player quits.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
@@ -219,7 +287,7 @@ export const SoftwareUpdateSettings: React.FC = () => {
                         color="error"
                         onClick={() => {
                             setConfirmForceOpen(false);
-                            void handleInstallNow(true);
+                            send({ type: 'installNow', force: true });
                         }}
                     >
                         Restart Anyway

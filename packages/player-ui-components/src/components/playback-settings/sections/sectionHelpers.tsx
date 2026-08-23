@@ -1,4 +1,5 @@
 import { TextField } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material';
 import React from 'react';
 import type { ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
 
@@ -20,7 +21,7 @@ export const TimeInput: React.FC<{
     onChange: (value: string) => void;
     label: string;
     size?: 'small' | 'medium';
-    sx?: any;
+    sx?: SxProps<Theme>;
     disabled?: boolean;
     isFromTime?: boolean;
 }> = React.memo(({ value, onChange, label, size = 'small', sx, disabled, isFromTime = false }) => {
@@ -123,7 +124,12 @@ export const TimeInput: React.FC<{
             onKeyDown={handleTimeKeyDown}
             onFocus={handleTimeFocus}
             onPaste={handleTimePaste}
-            onDoubleClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+            onDoubleClick={(e) => {
+                // The handler sits on the TextField root div, so reach for the actual input.
+                if (e.target instanceof HTMLInputElement) {
+                    e.target.select();
+                }
+            }}
             disabled={disabled}
             type="text"
             InputLabelProps={{ shrink: true }}

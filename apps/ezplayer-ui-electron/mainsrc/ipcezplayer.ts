@@ -53,10 +53,7 @@ import {
     uploadLayoutNow,
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
-import {
-    batchImportSequences,
-    batchImportSequencesFromFolder,
-} from './data/batch-sequence-import.js';
+import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
 
 import type {
     CloudCommand,
@@ -551,15 +548,18 @@ export async function loadShowFolder(forceRestart?: boolean) {
     broadcastToWebSocket('versions', ezpVersions);
 
     safeSend(updateWindow, 'update:showFolder', showFolder);
-    safeSend(updateWindow, 
+    safeSend(
+        updateWindow,
         'update:sequences',
         curSequences.filter((s) => !s.deleted),
     );
-    safeSend(updateWindow, 
+    safeSend(
+        updateWindow,
         'update:playlist',
         curPlaylists.filter((s) => !s.deleted),
     );
-    safeSend(updateWindow, 
+    safeSend(
+        updateWindow,
         'update:schedule',
         curSchedule.filter((s) => !s.deleted),
     );

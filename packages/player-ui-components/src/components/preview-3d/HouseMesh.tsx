@@ -5,7 +5,12 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as THREE from 'three';
 import type { ViewObject, Point3D } from '../../types/model3d';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
-import { type AssetResolver, createShowFileResolver, SHOW_FILE_DIR, SHOW_FILE_PATH } from '../../services/assetResolver';
+import {
+    type AssetResolver,
+    createShowFileResolver,
+    SHOW_FILE_DIR,
+    SHOW_FILE_PATH,
+} from '../../services/assetResolver';
 
 // ---------------------------------------------------------------------------
 // Constants

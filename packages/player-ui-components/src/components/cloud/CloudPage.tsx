@@ -481,10 +481,11 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                 overflow: 'hidden',
             }}
         >
-            <Box sx={{ flexShrink: 0, padding: 2 }}>
+            <Box sx={{ flexShrink: 0, padding: 2, paddingBottom: 0 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
-            <Box sx={{ padding: 2, paddingTop: 0, overflowY: 'auto', flexGrow: 1 }}>
+            {/* Gap lives inside the scroll box so the first card's top edge isn't clipped. */}
+            <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Top summary + state-driven actions. */}
                 <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
                     {/* Status row: green check / pause / help icon + headline + mode chip */}
@@ -712,8 +713,8 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                     )}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    Control this player from any browser — no sign-in needed. Anyone with this
-                                    link can control the player, so share it carefully.
+                                    Control this player from any browser — no sign-in needed. Anyone with this link can
+                                    control the player, so share it carefully.
                                 </Typography>
                             </Box>
                         </Stack>
@@ -860,10 +861,10 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <DialogTitle>Change Player ID?</DialogTitle>
                     <DialogContent>
                         <DialogContentText>
-                            A new Player ID is generated and your cloud registration — sequences, settings, and
-                            server assignment — moves to it automatically. The current ID, and every
-                            remote-control link or QR code that uses it, stops working immediately. Do this if
-                            you shared your link with someone who should no longer have access.
+                            A new Player ID is generated and your cloud registration — sequences, settings, and server
+                            assignment — moves to it automatically. The current ID, and every remote-control link or QR
+                            code that uses it, stops working immediately. Do this if you shared your link with someone
+                            who should no longer have access.
                         </DialogContentText>
                         {rotateError && (
                             <Typography variant="body2" color="error" sx={{ mt: 2 }}>

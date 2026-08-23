@@ -1,6 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileControllers, reconcilePorts, hasPortDrift, reconcileInputs, overlayHealth, healthNeedsAttention, applyOverrides } from '../src/util/controllerReconcile';
-import type { KnownController, DiscoveredController, EzpControllerRecord } from '../src/types/ControllerOps';
+import {
+    reconcileControllers,
+    reconcilePorts,
+    hasPortDrift,
+    reconcileInputs,
+    overlayHealth,
+    healthNeedsAttention,
+    applyOverrides,
+    ipInCidr,
+    findOffNetworkControllers,
+} from '../src/util/controllerReconcile';
+import type {
+    KnownController,
+    DiscoveredController,
+    EzpControllerRecord,
+    ControllerGridRow,
+    ControllerNetwork,
+} from '../src/types/ControllerOps';
 
 const now = '2026-01-01T00:00:00.000Z';
 
@@ -78,10 +94,7 @@ describe('reconcileControllers', () => {
 
     it('produces the full mixed set: present + absent + unregistered', () => {
         const rows = reconcileControllers(
-            [
-                known({ name: 'Roof', address: '192.168.1.50' }),
-                known({ name: 'Garage', address: '192.168.1.99' }),
-            ],
+            [known({ name: 'Roof', address: '192.168.1.50' }), known({ name: 'Garage', address: '192.168.1.99' })],
             [dev({ ip: '192.168.1.50' }), dev({ ip: '192.168.1.200' })],
         );
         const byState = (s: string) => rows.filter((r) => r.state === s).length;
@@ -196,12 +209,20 @@ describe('reconcilePorts', () => {
 
     it('sorts by port and hasPortDrift flags any non-ok', () => {
         const rows = reconcilePorts(
-            [{ port: 2, models: ['B'], pixels: 20 }, { port: 1, models: ['A'], pixels: 10 }],
-            [{ port: 1, pixels: 10 }, { port: 2, pixels: 99 }],
+            [
+                { port: 2, models: ['B'], pixels: 20 },
+                { port: 1, models: ['A'], pixels: 10 },
+            ],
+            [
+                { port: 1, pixels: 10 },
+                { port: 2, pixels: 99 },
+            ],
         );
         expect(rows.map((r) => r.port)).toEqual([1, 2]);
         expect(hasPortDrift(rows)).toBe(true);
-        expect(hasPortDrift([{ port: 1, intendedModels: ['A'], intendedPixels: 10, actualPixels: 10, drift: 'ok' }])).toBe(false);
+        expect(
+            hasPortDrift([{ port: 1, intendedModels: ['A'], intendedPixels: 10, actualPixels: 10, drift: 'ok' }]),
+        ).toBe(false);
     });
 });
 
@@ -212,7 +233,13 @@ describe('overlayHealth', () => {
             [{ id: '192.168.1.50|direct', ip: '192.168.1.50', source: { via: 'direct' }, seenAt: now }],
         );
         const [row] = overlayHealth(rows, [
-            { name: 'Roof', address: '192.168.1.50', connectivity: 'Up', pingSummary: '9 out of 10 pings', status: 'open' },
+            {
+                name: 'Roof',
+                address: '192.168.1.50',
+                connectivity: 'Up',
+                pingSummary: '9 out of 10 pings',
+                status: 'open',
+            },
         ]);
         expect(row.health?.connectivity).toBe('Up');
         expect(row.health?.pingSummary).toBe('9 out of 10 pings');
@@ -229,7 +256,9 @@ describe('overlayHealth', () => {
     it('promotes a known absent record to present when it pings Up (scan-independent liveness)', () => {
         const rows = reconcileControllers([{ name: 'Roof', address: '192.168.1.50', source: 'xlights' }], []);
         expect(rows[0].state).toBe('absent'); // no scan device
-        const [row] = overlayHealth(rows, [{ name: 'Roof', address: '192.168.1.50', connectivity: 'Up', pingSummary: '10 of 10' }]);
+        const [row] = overlayHealth(rows, [
+            { name: 'Roof', address: '192.168.1.50', connectivity: 'Up', pingSummary: '10 of 10' },
+        ]);
         expect(row.state).toBe('present');
         expect(row.health?.connectivity).toBe('Up');
     });
@@ -244,7 +273,9 @@ describe('overlayHealth', () => {
     it('leaves rows unchanged when nothing matches or statuses are empty', () => {
         const rows = reconcileControllers([{ name: 'X', address: '1.2.3.4', source: 'xlights' }], []);
         expect(overlayHealth(rows, [])).toBe(rows);
-        expect(overlayHealth(rows, [{ name: 'Other', address: '9.9.9.9', connectivity: 'Up' }])[0].health).toBeUndefined();
+        expect(
+            overlayHealth(rows, [{ name: 'Other', address: '9.9.9.9', connectivity: 'Up' }])[0].health,
+        ).toBeUndefined();
     });
 });
 
@@ -307,27 +338,33 @@ describe('applyOverrides', () => {
 
 describe('reconcileInputs', () => {
     const e131 = (universe: number, channels = 510, startChannel = 1) => ({
-        type: 'e131', universe, startChannel, channels,
+        type: 'e131',
+        universe,
+        startChannel,
+        channels,
     });
 
     it('no drift when the device matches the intended universe map', () => {
-        const r = reconcileInputs(
-            [e131(100), e131(101), e131(102)],
-            { protocol: 'e131', universes: [
-                { universe: 100, channels: 510 }, { universe: 101, channels: 510 }, { universe: 102, channels: 510 },
-            ] },
-        );
+        const r = reconcileInputs([e131(100), e131(101), e131(102)], {
+            protocol: 'e131',
+            universes: [
+                { universe: 100, channels: 510 },
+                { universe: 101, channels: 510 },
+                { universe: 102, channels: 510 },
+            ],
+        });
         expect(r.drift).toBe(false);
         expect(r.notes).toEqual([]);
     });
 
     it('flags missing, extra, and resized universes', () => {
-        const r = reconcileInputs(
-            [e131(100), e131(101)],
-            { protocol: 'e131', universes: [
-                { universe: 100, channels: 512 }, { universe: 7, channels: 510 },
-            ] },
-        );
+        const r = reconcileInputs([e131(100), e131(101)], {
+            protocol: 'e131',
+            universes: [
+                { universe: 100, channels: 512 },
+                { universe: 7, channels: 510 },
+            ],
+        });
         expect(r.drift).toBe(true);
         expect(r.notes.join(' | ')).toContain('missing on device: 101');
         expect(r.notes.join(' | ')).toContain('not in xLights: 7');
@@ -369,11 +406,15 @@ describe('reconcileInputs', () => {
 
     it('partial devices compare only the first universe and size', () => {
         const intent = [e131(100), e131(101), e131(102)];
-        expect(reconcileInputs(intent, {
-            universes: [{ universe: 100, channels: 510 }], partial: true,
-        }).drift).toBe(false);
+        expect(
+            reconcileInputs(intent, {
+                universes: [{ universe: 100, channels: 510 }],
+                partial: true,
+            }).drift,
+        ).toBe(false);
         const wrong = reconcileInputs(intent, {
-            universes: [{ universe: 55, channels: 512 }], partial: true,
+            universes: [{ universe: 55, channels: 512 }],
+            partial: true,
         });
         expect(wrong.drift).toBe(true);
         expect(wrong.notes.join(' | ')).toContain('start universe');
@@ -385,5 +426,83 @@ describe('reconcileInputs', () => {
         expect(reconcileInputs(undefined, { protocol: 'e131' }).drift).toBe(false);
         // Device that reports no protocol and no map (nothing to contradict).
         expect(reconcileInputs([e131(1)], {}).drift).toBe(false);
+    });
+});
+
+describe('ipInCidr', () => {
+    it('matches inside and rejects outside a /24', () => {
+        expect(ipInCidr('192.168.1.77', '192.168.1.0/24')).toBe(true);
+        expect(ipInCidr('192.168.2.10', '192.168.1.0/24')).toBe(false);
+    });
+    it('handles wider masks and the /0 catch-all', () => {
+        expect(ipInCidr('10.200.3.4', '10.0.0.0/8')).toBe(true);
+        expect(ipInCidr('11.0.0.1', '10.0.0.0/8')).toBe(false);
+        expect(ipInCidr('8.8.8.8', '0.0.0.0/0')).toBe(true);
+    });
+    it('is false for malformed input rather than throwing', () => {
+        expect(ipInCidr('lights.local', '192.168.1.0/24')).toBe(false);
+        expect(ipInCidr('192.168.1.5', 'garbage')).toBe(false);
+        expect(ipInCidr('192.168.1.5', '192.168.1.0/40')).toBe(false);
+        expect(ipInCidr('300.1.1.1', '192.168.1.0/24')).toBe(false);
+    });
+});
+
+describe('findOffNetworkControllers', () => {
+    const nets: ControllerNetwork[] = [{ name: 'eth0', address: '192.168.1.5', network: '192.168.1.0/24' }];
+    const row = (p: Partial<ControllerGridRow> & { name: string }): ControllerGridRow => ({
+        key: p.name,
+        state: 'absent',
+        active: true,
+        ...p,
+    });
+
+    it('flags an absent, enabled controller whose address is on no host network', () => {
+        const out = findOffNetworkControllers([row({ name: 'Front Yard', address: '192.168.2.10' })], nets);
+        expect(out).toEqual([
+            { network: '192.168.2.0/24', example: { name: 'Front Yard', address: '192.168.2.10' }, others: 0 },
+        ]);
+    });
+
+    it('groups by /24 with the lowest address as the example and counts the rest', () => {
+        const out = findOffNetworkControllers(
+            [
+                row({ name: 'Roof', address: '192.168.2.40' }),
+                row({ name: 'Front Yard', address: '192.168.2.10' }),
+                row({ name: 'Garage', address: '192.168.2.20' }),
+                row({ name: 'Barn', address: '10.0.0.9' }),
+            ],
+            nets,
+        );
+        expect(out).toEqual([
+            { network: '10.0.0.0/24', example: { name: 'Barn', address: '10.0.0.9' }, others: 0 },
+            { network: '192.168.2.0/24', example: { name: 'Front Yard', address: '192.168.2.10' }, others: 2 },
+        ]);
+    });
+
+    it('ignores on-subnet, present, ping-Up, disabled, xlightsOnly, hostname, and addressless rows', () => {
+        const out = findOffNetworkControllers(
+            [
+                row({ name: 'OnNet', address: '192.168.1.40' }),
+                row({ name: 'Present', address: '192.168.2.1', state: 'present' }),
+                row({ name: 'Routed', address: '10.0.0.1', health: { connectivity: 'Up' } }),
+                row({ name: 'Off', address: '10.0.0.2', active: false }),
+                row({ name: 'Off2', address: '10.0.0.3', enableState: 'disabled' }),
+                row({ name: 'XL', address: '10.0.0.4', enableState: 'xlightsOnly' }),
+                row({ name: 'ByName', address: 'lights.local' }),
+                row({ name: 'NoAddr' }),
+                row({ name: 'Ghost', address: '10.0.0.5', state: 'unregistered' }),
+            ],
+            nets,
+        );
+        expect(out).toEqual([]);
+    });
+
+    it('is silent when the host networks are unknown', () => {
+        expect(findOffNetworkControllers([row({ name: 'A', address: '192.168.2.10' })], [])).toEqual([]);
+    });
+
+    it('respects wider host masks', () => {
+        const wide: ControllerNetwork[] = [{ name: 'eth0', address: '10.1.2.3', network: '10.0.0.0/8' }];
+        expect(findOffNetworkControllers([row({ name: 'A', address: '10.9.9.9' })], wide)).toEqual([]);
     });
 });

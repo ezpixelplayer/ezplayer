@@ -69,7 +69,9 @@ export async function resolveTargetIp(arg: string, host: string): Promise<string
     try {
         state = await getOpsState(host);
     } catch {
-        throw new Error(`'${arg}' is not an IPv4 address, and resolving a name needs the app:\n${unreachableHint(host)}`);
+        throw new Error(
+            `'${arg}' is not an IPv4 address, and resolving a name needs the app:\n${unreachableHint(host)}`,
+        );
     }
     const lower = arg.toLowerCase();
     const known = (state.known ?? []).find((k) => k.name.toLowerCase() === lower);

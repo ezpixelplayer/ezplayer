@@ -35,6 +35,7 @@ interface PlaylistRow {
     id: string;
     title: string;
     tags: string;
+    duration: string;
     items: number;
 }
 
@@ -48,7 +49,7 @@ type PlaylistTableColumn = {
     headerName: string;
     flex?: number;
     minWidth?: number;
-    renderCell?: (params: { row: PlaylistRow; value: any }) => React.ReactNode;
+    renderCell?: (params: { row: PlaylistRow; value: unknown }) => React.ReactNode;
     sortable?: boolean;
     renderHeader?: () => React.ReactNode;
 };
@@ -83,8 +84,8 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
         const { field, direction } = sortState;
         const copy = [...rows];
         copy.sort((a, b) => {
-            const av = (a as any)?.[field];
-            const bv = (b as any)?.[field];
+            const av = (a as unknown as Record<string, unknown>)?.[field];
+            const bv = (b as unknown as Record<string, unknown>)?.[field];
             if (av === bv) return 0;
             if (av === undefined || av === null) return 1;
             if (bv === undefined || bv === null) return -1;
@@ -151,7 +152,7 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
                                 onDoubleClick={() => onRowDoubleClick?.({ row })}
                             >
                                 {columns.map((col) => {
-                                    const value = (row as any)?.[col.field];
+                                    const value = (row as unknown as Record<string, unknown>)?.[col.field];
                                     return (
                                         <TableCell
                                             key={`${rowId}-${col.field}`}
@@ -167,7 +168,7 @@ function PlaylistTable({ rows, columns, onRowDoubleClick, getRowId }: PlaylistTa
                                                 col.renderCell({ row, value })
                                             ) : (
                                                 <Typography variant="body2" noWrap>
-                                                    {value}
+                                                    {value as React.ReactNode}
                                                 </Typography>
                                             )}
                                         </TableCell>
@@ -300,7 +301,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
         }
     };
 
-    const handleEditPlaylistClick = (playlistId: PlaylistRow) => {
+    const handleEditPlaylistClick = (playlistId: string) => {
         // Navigate to create-edit-playlist with the playlist ID. `routeBase`
         // is empty for LAN/Electron, `/p/<token>` for the cloud per-player view.
         navigate(`${routeBase}${ROUTES.CREATE_EDIT_PLAYLIST}/${playlistId}`);
@@ -339,18 +340,18 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             headerName: 'PLAYLIST',
             flex: 1,
             minWidth: 200,
-            renderCell: (params: any) => <RowWrapper row={params.row}>{params.row.title}</RowWrapper>,
+            renderCell: (params: { row: PlaylistRow }) => <RowWrapper row={params.row}>{params.row.title}</RowWrapper>,
         },
         {
             field: 'tags',
             headerName: 'TAGS',
             flex: 1,
             minWidth: 150,
-            renderCell: (params: any) => (
+            renderCell: (params: { row: PlaylistRow }) => (
                 <RowWrapper row={params.row}>
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                        {params.value && params.value.length > 0
-                            ? params.value.split(',').map((tag: string, index: number) => (
+                        {params.row.tags && params.row.tags.length > 0
+                            ? params.row.tags.split(',').map((tag: string, index: number) => (
                                   <Typography
                                       key={`${params.row.id}-tag-${index}-${tag}`}
                                       variant="body2"
@@ -376,14 +377,16 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             headerName: 'DURATION',
             flex: 0.4,
             minWidth: 80,
-            renderCell: (params: any) => <RowWrapper row={params.row}>{params.row.duration}</RowWrapper>,
+            renderCell: (params: { row: PlaylistRow }) => (
+                <RowWrapper row={params.row}>{params.row.duration}</RowWrapper>
+            ),
         },
         {
             field: 'items',
             headerName: 'SONGS COUNT',
             flex: 0.4,
             minWidth: 80,
-            renderCell: (params: any) => <RowWrapper row={params.row}>{params.row.items}</RowWrapper>,
+            renderCell: (params: { row: PlaylistRow }) => <RowWrapper row={params.row}>{params.row.items}</RowWrapper>,
         },
         {
             field: 'actions',
@@ -391,7 +394,7 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             flex: 0.7,
             minWidth: 180,
             sortable: false,
-            renderCell: (params: any) => (
+            renderCell: (params: { row: PlaylistRow }) => (
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 0.5 }}>
                     <Button
                         aria-label="play"

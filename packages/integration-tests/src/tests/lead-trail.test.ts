@@ -39,7 +39,7 @@ function hms(d: Date): string {
 
 /** Upsert lead/trail onto the LT.fseq sequence record via the native API. */
 async function setLeadTrail(lead: number, trail: number): Promise<void> {
-    const sequences = (await fpp.currentShow()).sequences as Array<Record<string, any>>;
+    const sequences = (await fpp.currentShow()).sequences;
     const seq = sequences.find((s) => s.files?.fseq?.replace(/\\/g, '/').endsWith('LT.fseq'));
     expect(seq).toBeTruthy();
     const res = await fetch(`${app.base}/api/ezp/sequences`, {
@@ -170,7 +170,10 @@ describe('lead/trail time', () => {
         if (!run) return;
         const { start, idleAt, report, lastContentAt, blackAfterContentAt } = run;
         const startDeltaMs = report.firstMatchedAt !== undefined ? report.firstMatchedAt - start.getTime() : undefined;
-        console.log('[lead-trail pad]', JSON.stringify({ ...report, startDeltaMs, idleDeltaMs: idleAt - start.getTime() }));
+        console.log(
+            '[lead-trail pad]',
+            JSON.stringify({ ...report, startDeltaMs, idleDeltaMs: idleAt - start.getTime() }),
+        );
 
         // Content integrity: full sequence plays, from the first frame
         expect(report.unknown).toBe(0);
@@ -203,7 +206,10 @@ describe('lead/trail time', () => {
         if (!run) return;
         const { start, idleAt, report } = run;
         const startDeltaMs = report.firstMatchedAt !== undefined ? report.firstMatchedAt - start.getTime() : undefined;
-        console.log('[lead-trail trim]', JSON.stringify({ ...report, startDeltaMs, idleDeltaMs: idleAt - start.getTime() }));
+        console.log(
+            '[lead-trail trim]',
+            JSON.stringify({ ...report, startDeltaMs, idleDeltaMs: idleAt - start.getTime() }),
+        );
 
         expect(report.unknown).toBe(0);
         expect(report.orderViolations).toBe(0);

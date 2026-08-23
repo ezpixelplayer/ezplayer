@@ -23,13 +23,10 @@ export interface BatchImportOptions extends AutoDetectOptions {
 
 /**
  * Build a SequenceRecord from an FSEQ path + autodetection result.
- * Bulk import requires companion audio to be resolved first; title/artist
- * still fall back to the fseq basename / "Unknown Artist" when tags are absent.
+ * `audio` is left undefined for animations; title/artist fall back to the
+ * fseq basename / "Unknown Artist" when tags are absent.
  */
-export function buildSequenceRecordFromDetected(
-    fseqPath: string,
-    detected: AutoDetectedSongFiles,
-): SequenceRecord {
+export function buildSequenceRecordFromDetected(fseqPath: string, detected: AutoDetectedSongFiles): SequenceRecord {
     const id = crypto.randomUUID();
     const fseqBase = path.parse(fseqPath).name;
     return {
@@ -72,8 +69,7 @@ async function importOneFseq(
     fseqPath: string,
     options: AutoDetectOptions,
 ): Promise<
-    | { ok: true; success: BatchImportSuccess; record: SequenceRecord }
-    | { ok: false; failure: BatchImportFailure }
+    { ok: true; success: BatchImportSuccess; record: SequenceRecord } | { ok: false; failure: BatchImportFailure }
 > {
     const fseqName = path.basename(fseqPath);
     try {
@@ -87,10 +83,13 @@ async function importOneFseq(
             colocatedAudioAllowlist: options.colocatedAudioAllowlist,
         });
 
-        // Bulk import always requires a resolved companion audio file (show
-        // folder, colocated with the fseq, or media folder). Same rule for
-        // Electron IPC and LAN HTTP so both UIs stay in lockstep.
-        if (!detected.audioFile) {
+        // `audioRequired` is only undefined when the header couldn't be read.
+        if (detected.audioRequired === undefined) {
+            return { ok: false, failure: { fseqPath, fseqName, reason: 'Could not read FSEQ header' } };
+        }
+
+        // Audio is required only when the FSEQ header names a media file.
+        if (detected.audioRequired && !detected.audioFile) {
             const wanted = detected.headerAudioName ? ` (${detected.headerAudioName})` : '';
             return {
                 ok: false,
