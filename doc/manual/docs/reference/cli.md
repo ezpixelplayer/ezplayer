@@ -29,7 +29,7 @@ The **first non-flag argument** decides what EZPlayer does:
 | _(none)_                             | Launch the desktop app (the normal GUI).                            |
 | A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
 | [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
-| `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
+| `play`, `stats`, `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
 | Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
 
 Note the distinction between the two window-less modes: `headless` is the
@@ -52,6 +52,8 @@ the show. They are useful for setup, network diagnostics, and scripting.
 
 | Command                | Purpose                                                     |
 | ---------------------- | ----------------------------------------------------------- |
+| `play`                 | Play a sequence on a running player and report playback statistics while it runs. |
+| `stats`                | Print a running player's playback statistics.               |
 | `discover`             | Scan LAN networks for lighting controllers.                 |
 | `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
 | `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
@@ -60,10 +62,10 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | `help`                 | Print the command list. Also `--help`, `-h`.                |
 
 `discover`, `interfaces`, `controller status`, and `controller action` talk to
-devices directly and need no running player. `controller list` and
-`controller upload` query/drive a **running EZPlayer** over its LAN API
-(`--host`, default `127.0.0.1:3000`, honoring `EZPLAYER_WEB_PORT`) — the
-reconcile state and the xLights upload intent only exist inside the app.
+devices directly and need no running player. `play`, `stats`, `controller list`
+and `controller upload` query/drive a **running EZPlayer** over its LAN API
+(`--host`, default `127.0.0.1:3000`, honoring `EZPLAYER_WEB_PORT`) — playback,
+the reconcile state and the xLights upload intent only exist inside the app.
 
 Everything that acts on a lighting controller is a **subcommand of
 `controller`**, which keeps the plain names free for what they sound like — the
@@ -82,6 +84,93 @@ Get top-level help or per-command help:
 EZPlayer help                 # list commands
 EZPlayer discover --help      # options for one command
 EZPlayer controller           # list the controller subcommands
+```
+
+### `play`
+
+Play one sequence on a running player — windowed or [`headless`](#headless-mode)
+— and report the playback engine's statistics while it runs. This is the tool
+for "it drops frames" questions: it resets the cumulative counters, starts the
+sequence as an immediate jukebox play, prints one trace line per sample to
+`stderr`, and ends with a summary on `stdout`.
+
+```bash
+EZPlayer play <sequence> [--host <host[:port]>] [--duration <s>] [--interval <s>]
+                         [--no-output] [--keep-playing] [--json] [--quiet]
+```
+
+`<sequence>` is the sequence's id, its title, or its `.fseq` file name (with or
+without the extension), matched against the player's loaded sequence list.
+
+| Option                 | Alias | Description                                                                                     |
+| ---------------------- | ----- | ----------------------------------------------------------------------------------------------- |
+| `--host <host[:port]>` |       | The running player's LAN API. Default `127.0.0.1:3000` (`EZPLAYER_WEB_PORT` honored).           |
+| `--duration <s>`       | `-d`  | Seconds to run. Default: the sequence length plus two seconds; the run also ends early when the sequence finishes. |
+| `--interval <s>`       | `-i`  | Seconds between samples. Default `1`.                                                           |
+| `--no-output`          |       | Suppress controller output for the run: frames are still produced, timed and shown in the preview, but nothing is sent to the controllers. Lets you benchmark a show on a machine that cannot reach its controllers. Output is re-enabled when the run ends. |
+| `--keep-playing`       |       | Leave the sequence playing at the end (by default it is ended, like a jukebox skip).            |
+| `--json`               |       | Machine-readable `{ sequence, summary, samples }` on `stdout` instead of the text summary.      |
+| `--quiet`              | `-q`  | No per-sample trace on `stderr`.                                                                |
+
+Each trace line shows what changed since the previous sample — frames
+**sent**, **skipped** (the frame was late by more than the skip threshold) and
+**missed** (its data was not in the FSEQ cache when it was due) — plus the
+worst lag, average controller send time, how idle the playback loop was, the
+playback thread's event-loop delay, the FSEQ chunk cache state (ready / pending
+/ fetching), and the read and decompress time spent in that interval.
+
+The summary rolls that up: delivery ratio, worst lag, send times, loop delay,
+FSEQ cache fetches / hits / misses / evictions, read + decompress time per
+fetch, and audio chunks. The **loop delay** (p99 / max) is the number to look at
+when the read or decompress times look impossibly high: the playback loop runs
+the prefetch's completions, so anything that hogs it — most often sending many
+thousands of packets per frame — shows up as inflated read time and, past a
+point, as missed frames.
+
+A typical benchmark run needs no controllers at all:
+
+```bash
+EZPlayer headless --show-folder=D:\Shows\2025 --web-port=3123
+EZPlayer play "Jingle Bells" --host 127.0.0.1:3123 --no-output
+```
+
+```text
+Playing "Jingle Bells" on 127.0.0.1:3123 for 38s (controller output suppressed); sampling every 1s
+t=  1s sent=+2 skip=+0 miss=+0 lag=1.0ms send=0.0ms idle=0.0% loop(p99/max)=73.5ms/73.7ms cache=8r/35p/2f fetch=+8 read=+162ms decomp=+249ms
+t=  2s sent=+40 skip=+0 miss=+0 lag=5.4ms send=0.0ms idle=25.4% loop(p99/max)=30.7ms/30.7ms cache=63r/0p/0f fetch=+55 read=+814ms decomp=+484ms
+…
+Sequence finished.
+
+Run: 37.4s, 38 samples
+Frames: 1429 sent, 2 skipped (late), 0 missed (no data) → delivery ≈ 99.9%
+Timing: worst lag 36.7ms, worst advance 0.0ms; send avg 0.00ms / max 0.0ms; loop idle 87.5%; loop delay p99 73.5ms / max 82.5ms
+FSEQ:   711 chunk fetches (0 errors), 1431 hits / 0 misses, 483 evicted, 0 expired; read 2.01s + decompress 2.08s = 5.8ms per fetch (wall, incl. queueing); cache 997 / 1000 MB
+Audio:  0 chunks sent, 0 skipped; read 0.00s + decode 0.00s
+```
+
+Exit code `0` when the run completed (regardless of how well it played), `1` if
+the player could not be reached, the sequence is unknown, or it never started
+playing, `2` for a usage error.
+
+### `stats`
+
+Print the running player's playback statistics — the same counters as the
+Status screen's statistics dialog — once, or repeatedly.
+
+```bash
+EZPlayer stats [--host <host[:port]>] [--reset] [--watch [<s>]] [--json]
+```
+
+| Option                 | Alias | Description                                                                  |
+| ---------------------- | ----- | ---------------------------------------------------------------------------- |
+| `--host <host[:port]>` |       | The running player's LAN API. Default `127.0.0.1:3000` (`EZPLAYER_WEB_PORT` honored). |
+| `--reset`              |       | Reset the cumulative counters first.                                         |
+| `--watch [<s>]`        | `-w`  | Keep sampling every `<s>` seconds (default 1), one trace line per sample, until interrupted. |
+| `--json`               |       | Raw `{ stats, pStatus, serverNow }` JSON (`GET /api/ezp/playback-stats`) on `stdout`. |
+
+```bash
+EZPlayer stats                       # one snapshot of the local player
+EZPlayer stats --reset --watch 2     # zero the counters, then a line every 2s
 ```
 
 ### `discover`

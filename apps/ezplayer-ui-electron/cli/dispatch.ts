@@ -11,7 +11,7 @@ type CommandModule = { run: (args: string[]) => Promise<number> };
 /**
  * Single source of truth for verbs, in the order usage output lists them.
  */
-export const TOOL_VERBS = ['discover', 'interfaces', 'controller', 'shell', 'files', 'help'] as const;
+export const TOOL_VERBS = ['play', 'stats', 'discover', 'interfaces', 'controller', 'shell', 'files', 'help'] as const;
 
 export type ToolVerb = (typeof TOOL_VERBS)[number];
 
@@ -25,6 +25,8 @@ export const CONTROLLER_SUBCOMMANDS = ['list', 'status', 'action', 'upload'] as 
 export type ControllerSubcommand = (typeof CONTROLLER_SUBCOMMANDS)[number];
 
 const COMMANDS: Record<DispatchableVerb, () => Promise<CommandModule>> = {
+    play: () => import('./commands/play.js'),
+    stats: () => import('./commands/stats.js'),
     discover: () => import('./commands/discover.js'),
     interfaces: () => import('./commands/interfaces.js'),
     shell: () => import('./commands/shell.js'),
@@ -50,6 +52,46 @@ export function toolVerbSummary(verb: ToolVerb): string {
 
 /** One-line + detailed usage per command, for `--help`. */
 const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; detail: string }> = {
+    play: {
+        summary: 'Play a sequence on the running player and report playback statistics.',
+        detail:
+            'Usage: EZPlayer play <sequence> [--host <host[:port]>] [--duration <s>] [--interval <s>]\n' +
+            '                       [--no-output] [--keep-playing] [--json] [--quiet]\n' +
+            '\n' +
+            'Plays <sequence> (its id, title, or .fseq file name) as an immediate jukebox\n' +
+            'play on the running app — windowed or `EZPlayer headless` — resets the\n' +
+            'cumulative counters first, prints one trace line per sample to stderr while\n' +
+            'it plays, and a summary at the end: frames sent / skipped (late) / missed\n' +
+            '(no data), worst lag, send time, playback-loop delay, FSEQ cache fetches,\n' +
+            'hits/misses, read + decompress time. Stops the sequence when done.\n' +
+            '\n' +
+            'Typical benchmark run against a show folder, no controllers needed:\n' +
+            '  EZPlayer headless --show-folder=<dir> --web-port=3123\n' +
+            '  EZPlayer play "My Song" --host 127.0.0.1:3123 --no-output\n' +
+            '\n' +
+            '      --host          the EZPlayer to drive (default 127.0.0.1:3000; the port\n' +
+            '                      also honors EZPLAYER_WEB_PORT)\n' +
+            '  -d, --duration      seconds to run (default: the sequence length + 2)\n' +
+            '  -i, --interval      seconds between samples (default 1)\n' +
+            '      --no-output     suppress controller output for the run (frames are\n' +
+            '                      still produced and previewed; nothing goes on the wire)\n' +
+            '      --keep-playing  leave the sequence playing at the end\n' +
+            '      --json          machine-readable summary + samples on stdout\n' +
+            '  -q, --quiet         no per-sample trace',
+    },
+    stats: {
+        summary: "Print the running player's playback statistics.",
+        detail:
+            'Usage: EZPlayer stats [--host <host[:port]>] [--reset] [--watch [<s>]] [--json]\n' +
+            '\n' +
+            "The same counters as the Status screen's stats dialog, as text.\n" +
+            '      --host    the EZPlayer to ask (default 127.0.0.1:3000; the port also\n' +
+            '                honors EZPLAYER_WEB_PORT)\n' +
+            '      --reset   reset the cumulative counters first\n' +
+            '  -w, --watch   keep sampling every <s> seconds (default 1), one trace line\n' +
+            '                per sample, until interrupted\n' +
+            '      --json    raw {stats, pStatus, serverNow} JSON on stdout',
+    },
     discover: {
         summary: 'Scan networks for lighting controllers.',
         detail:

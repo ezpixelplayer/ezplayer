@@ -86,8 +86,9 @@ const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
 import { AsyncBatchLogger } from './logger';
 
-import { performance } from 'perf_hooks';
+import { monitorEventLoopDelay, performance } from 'perf_hooks';
 import { startAsyncCounts, startELDMonitor, startGCLogging } from './perfmon';
+import { begin as hirezTimerBegin } from '../win-hirez-timer/winhirestimer';
 
 import process from 'node:process';
 import { totalmem } from 'node:os';
@@ -206,6 +207,18 @@ if (logEventLoop) {
 const logAsyncs = false;
 if (logAsyncs) {
     startAsyncCounts();
+}
+
+// Windows schedules timed waits on a ~15.6 ms quantum unless a process asks for
+// 1 ms multimedia timer resolution; frame pacing needs the latter. Best effort —
+// xbusySleep also adapts to whatever resolution it actually observes.
+if (process.platform === 'win32') {
+    try {
+        if (hirezTimerBegin()) emitInfo('Windows 1 ms timer resolution enabled for playback');
+        else emitWarning('Windows 1 ms timer resolution unavailable; frame pacing will spin-wait more');
+    } catch (e) {
+        emitWarning(`Windows 1 ms timer resolution failed: ${(e as Error).message}`);
+    }
 }
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -771,9 +784,15 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         }
         case 'activateoutput':
+        case 'suppressoutput': {
+            // Frames are still produced (and published to the preview ring buffer);
+            // only the controller output (UDP) is gated. Used for dry-run/benchmark
+            // playback where no controllers are reachable.
+            outputSuppressed = cmd.command === 'suppressoutput';
+            if (curSender) curSender.outputEnabled = !outputSuppressed;
+            emitInfo(outputSuppressed ? 'Controller output suppressed' : 'Controller output active');
             break;
-        case 'suppressoutput':
-            break;
+        }
         case 'playplaylist':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
@@ -845,6 +864,12 @@ parentPort.on('message', async (command: PlayerCommand) => {
                     await running; // wait for loop to exit
                     running = undefined;
                 }
+
+                // A full restart (show folder change, player-page Reset) is a new
+                // measurement run: drop the previous show's counters, maxima and
+                // "last error" rather than carrying them into the new one. Done
+                // before the reload below so a genuine restart error still shows.
+                resetCumulativeCounters();
 
                 // Load XML coordinates eagerly and push to server
                 try {
@@ -1156,6 +1181,11 @@ function resetCumulativeCounters() {
     mp3Cache?.resetStats();
 }
 
+// Event-loop delay of this (playback) thread: how late timers fire because
+// synchronous work is hogging the loop. Reported per measurement period.
+const loopDelayHist = monitorEventLoopDelay({ resolution: 2 });
+loopDelayHist.enable();
+
 const playbackStatsAgg: OverallFrameSendStats = {
     nSends: 0,
     intervalStart: 0,
@@ -1215,6 +1245,8 @@ let isStopped = false;
 let shouldRestart = false;
 const multiSync = new MultiSyncSender();
 let sendIdleBlackFrames = true;
+/** `suppressoutput` command: frames are produced but no packets go to controllers. */
+let outputSuppressed = false;
 let curSender: FrameSender | undefined;
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
@@ -1812,6 +1844,7 @@ async function processQueue() {
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
     sender.blackFramesEnabled = sendIdleBlackFrames;
+    sender.outputEnabled = !outputSuppressed;
     curSender = sender;
 
     try {
@@ -2007,6 +2040,13 @@ async function processQueue() {
                 playbackStats.measurementPeriod = curPN - playbackStatsAgg.intervalStart;
                 playbackStats.idleTimePeriod = playbackStatsAgg.totalIdleTime;
                 playbackStats.sendTimePeriod = playbackStatsAgg.totalSendTime;
+                // Histogram values are ns; max is 0 while no sample landed.
+                playbackStats.loopDelay = {
+                    p50: loopDelayHist.percentile(50) / 1e6,
+                    p99: loopDelayHist.percentile(99) / 1e6,
+                    max: loopDelayHist.max / 1e6,
+                };
+                loopDelayHist.reset();
                 sendPlayerStateUpdate();
                 playbackStats.maxSendTimeHistorical = 0;
                 resetFrameSendStats(playbackStatsAgg, curPN);

@@ -21,6 +21,7 @@ import type {
     EZPlayerCommand,
     FullPlayerState,
     PlaybackSettings,
+    PlaybackStatistics,
     PlayerPStatusContent,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -1470,6 +1471,26 @@ async function startServer(config: ServerWorkerData) {
             pStatus: wsBroadcaster.get('pStatus'),
             cStatus: wsBroadcaster.get('cStatus'),
             nStatus: wsBroadcaster.get('nStatus'),
+        };
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/ezp/playback-stats — the playback worker's latest
+    // PlaybackStatistics (pushed about once a second) plus the player status.
+    // Drives `EZPlayer play` / `EZPlayer stats`; 503 until the worker has
+    // reported once (e.g. still starting).
+    // ----------------------------------------------
+    router.get('/api/ezp/playback-stats', async (ctx) => {
+        const stats = wsBroadcaster.get('playbackStatistics') as PlaybackStatistics | undefined;
+        if (!stats) {
+            ctx.status = 503;
+            ctx.body = { error: 'playback statistics not available yet' };
+            return;
+        }
+        ctx.body = {
+            stats,
+            pStatus: wsBroadcaster.get('pStatus'),
+            serverNow: Date.now(),
         };
     });
 

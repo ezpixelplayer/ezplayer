@@ -397,6 +397,11 @@ export interface PlaybackStatistics {
     // Timing Stability
     worstLagHistorical: number;
     worstAdvanceHistorical: number;
+    /** Playback-thread event-loop delay over the measurement period (ms). High
+     *  values mean the loop is hogged by synchronous work (e.g. packet sends), so
+     *  async completions — prefetch reads, decompress replies — queue behind it;
+     *  that inflates the read/decode times below and can starve the caches. */
+    loopDelay?: { p50: number; p99: number; max: number };
 
     // Frame Timings
     avgSendTime: number;
