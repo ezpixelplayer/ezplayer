@@ -21,11 +21,11 @@ ezplayer shell --show-folder "D:\Shows\MyShow" --password-file secret.txt
 On Windows, to enter the password interactively, run `ezplayer.cmd` (installed next
 to `EZPlayer.exe`) rather than the `.exe` itself.
 Alternatively, supply the password with `--password-file` or `--password`.
-See the [CLI reference](../reference/cli.md#remote-access-terminal-and-file-manager).
+See the [CLI reference](../reference/cli.md#remote-access-terminal-and-file-manager-setup).
 :::
 
 If not enabled, the feature is completely inaccessible. See
-[Remote access](../reference/cli.md#remote-access-terminal-and-file-manager) in
+[Remote access](../reference/cli.md#remote-access-terminal-and-file-manager-setup) in
 the CLI reference for the full command and for `--clear`.
 
 The shell and file manager have separate passwords.  Passwords are saved per show folder.

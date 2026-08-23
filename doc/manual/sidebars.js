@@ -53,8 +53,6 @@ const sidebars = {
                         'advanced/complex-schedules/schedule-preview',
                     ],
                 },
-                'advanced/volume',
-                'advanced/viewer-control',
                 {
                     type: 'category',
                     label: 'Show Status',
@@ -64,6 +62,20 @@ const sidebars = {
                         'advanced/show-status/statistics',
                     ],
                 },
+                {
+                    type: 'category',
+                    label: 'Controllers and Connections',
+                    items: [
+                        'advanced/controllers/overview',
+                        'advanced/controllers/networkscan',
+                        'advanced/controllers/controllerlist',
+                        'advanced/controllers/controlleractions',
+                        'advanced/controllers/portmap',
+                        'advanced/controllers/supportmatrix',
+                    ],
+                },
+                'advanced/volume',
+                'advanced/viewer-control',
             ],
         },
         {
@@ -76,6 +88,7 @@ const sidebars = {
                 'settings/ui',
                 'settings/audio',
                 'settings/player',
+                'settings/software-update',
                 'settings/jukebox',
                 'settings/cloud',
                 'settings/shell',
