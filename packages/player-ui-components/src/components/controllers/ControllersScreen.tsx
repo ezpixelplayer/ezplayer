@@ -28,6 +28,7 @@ import {
     TextField,
     ToggleButton,
     ToggleButtonGroup,
+    Tooltip,
     Typography,
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -996,7 +997,6 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     } | null>(null);
 
     const policyFor = (cidr: string) => (networkPolicies ?? []).find((p) => p.cidr === cidr);
-    const isAllowed = (cidr: string) => policyFor(cidr)?.allow !== false;
 
     // Seed the scan selection once, when networks first arrive; after that it
     // is the user's — including "none checked", which simply disables Scan.
@@ -1005,7 +1005,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         if (!seeded.current && interfaces.length > 0) {
             seeded.current = true;
             const expected = interfaces.filter((i) => policyFor(i.network)?.expectControllers);
-            const pool = expected.length > 0 ? expected : interfaces.filter((i) => isAllowed(i.network));
+            const pool = expected.length > 0 ? expected : interfaces;
             setSelected(new Set(pool.map((i) => i.network)));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1019,8 +1019,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             else next.add(cidr);
             return next;
         });
-    // Drop networks that were disallowed while still selected.
-    const effective = [...selected].filter(isAllowed);
+    const effective = [...selected];
     const setNetworkPolicy = (cidr: string, patch: { allow?: boolean; expectControllers?: boolean }) =>
         dispatch(issueControllerCommand({ cmd: 'network', cidr, patch }));
 
@@ -1406,20 +1405,26 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                         <TableCell>Network</TableCell>
                                         <TableCell>Interface</TableCell>
                                         <TableCell sx={{ whiteSpace: 'nowrap' }}>Controllers expected</TableCell>
-                                        <TableCell sx={{ whiteSpace: 'nowrap' }}>Proxy Allowed</TableCell>
+                                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                            <Tooltip title="Let a browser or the cloud UI reach this network's devices through this player. Scanning is unaffected.">
+                                                <span>Proxy Allowed</span>
+                                            </Tooltip>
+                                        </TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
                                     {interfaces.map((n) => {
                                         const pol = policyFor(n.network);
-                                        const allowed = pol?.allow !== false;
+                                        // Proxy policy governs who may reach in from outside; it says
+                                        // nothing about whether we scan this network or expect
+                                        // controllers on it, so it leaves the rest of the row alone.
+                                        const proxyAllowed = pol?.allow !== false;
                                         return (
-                                            <TableRow key={n.network} sx={{ opacity: allowed ? 1 : 0.55 }}>
+                                            <TableRow key={n.network}>
                                                 <TableCell padding="checkbox">
                                                     <Checkbox
                                                         size="small"
-                                                        checked={allowed && isChecked(n.network)}
-                                                        disabled={!allowed}
+                                                        checked={isChecked(n.network)}
                                                         onChange={() => toggle(n.network)}
                                                     />
                                                 </TableCell>
@@ -1443,7 +1448,6 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                                     <Checkbox
                                                         size="small"
                                                         checked={!!pol?.expectControllers}
-                                                        disabled={!allowed}
                                                         onChange={(e) =>
                                                             setNetworkPolicy(n.network, {
                                                                 expectControllers: e.target.checked,
@@ -1457,12 +1461,13 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                                 <TableCell>
                                                     <Checkbox
                                                         size="small"
-                                                        checked={allowed}
+                                                        checked={proxyAllowed}
                                                         onChange={(e) =>
                                                             setNetworkPolicy(n.network, { allow: e.target.checked })
                                                         }
                                                         inputProps={{
-                                                            'aria-label': 'allow scanning and proxying to this network',
+                                                            'aria-label':
+                                                                'let remote clients reach this network through this player',
                                                         }}
                                                     />
                                                 </TableCell>
