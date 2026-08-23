@@ -5,7 +5,7 @@ title: Controller List
 
 # Controller List
 
-![Controller List](/img/ctrlred.png)
+![Controller List](/img/ctrllist.png)
 
 The Controller List on the Controllers screen shows a combination of all configured and detected controller devices.
 
