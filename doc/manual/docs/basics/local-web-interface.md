@@ -10,7 +10,7 @@ other computers on the same network can open a web UI — no remote desktop
 required. The same server also provides the
 [REST Interface (HTTP API)](../reference/api.md) for external integration.
 
-This is the **LAN UI** (also called the embedded or web interface). It mirrors
+This serves the **LAN UI** (also called the embedded or web interface). It mirrors
 most of what you can do in the desktop app, with a few differences noted below.
 
 ## Opening the LAN UI
@@ -30,7 +30,7 @@ You can use the same URL on the show PC itself (`http://localhost:3000`) to
 test the web UI without a second device.
 
 From the LAN UI you can monitor the [Player](./player-screen.md) screen, use the
-[jukebox](./jukebox.md), edit [playlists](./playlists.md) and schedules, and
+[jukebox](./jukebox.md), edit [playlists](./playlists.md) and [schedules](./simple-schedules.md), and
 check [Show Status](../advanced/show-status/details.md).
 
 ## Special LAN UI Features
@@ -46,15 +46,15 @@ toggles a live **audio stream** — useful for listening over the network when y
 | Show Status (full detail)            | Yes           | Yes                             |
 | Add / edit song files                | Yes           | Yes (upload / choose on player) |
 | Bulk import songs                    | Yes           | Yes (from files in show folder) |
+| Port map and controller setup        | Yes           | Yes                             |
+| Software Update                      | Yes           | Yes                             |
 | Choose / set media folder            | Yes           | Yes (type player path)          |
 | Choose show folder                   | Yes           | No                              |
-| Cloud registration dialog            | Yes           | Limited (Cloud tile)            |
-| Kiosk mode                           | Separate port | Yes (`__EZPLAYER_MODE__=kiosk`) |
+| Cloud registration dialog            | Yes           | Limited                         |
 
 Show-folder selection stays on the show PC. Everything else — song management,
-playlist edits, schedule changes, jukebox requests, and API calls — can be done
-from the LAN UI once the server is **Listening**. See
-[Songs](./songs.md) for the file-handling details.
+playlist edits, schedule changes, jukebox requests, status, controller setup, and
+most settings — can be done from the LAN UI once the server is listening.
 
 ## Kiosk (public display)
 
@@ -62,8 +62,8 @@ EZPlayer can also open a second, **kiosk** web server one port above the LAN UI 
 The kiosk has a simplified sidebar — jukebox and player only, no
 song/playlist/schedule management.
 
-In **kiosk mode** (public LAN display), **End** and **Abort** playback buttons are hidden so
-visitors cannot stop the show. Skip and Play/Pause remain available.
+In the **kiosk** UI, the **End** and **Abort** playback buttons are hidden so
+visitors cannot stop the show.  Skip and Play/Pause remain available.
 
 ## HTTP Listener Status (desktop app)
 
@@ -98,13 +98,11 @@ If the preferred port is busy, EZPlayer tries the next ports in sequence (up to
 The main LAN UI port is chosen in this priority order:
 
 1. **CLI argument** — `--web-port=3000` (highest priority)
-2. **Environment variable** — `EZPLAYER_WEB_PORT`
+2. **Environment variable** — `EZPLAYER_WEB_PORT`; see [Environment Variables](../reference/env-variables.md) for all runtime variables.
 3. **Stored preference** — remembered from a previous successful launch
 4. **Default** — `3000`
 
-Valid ports vary by platform, but are likely in the **1024–49151** range. See
-[Environment Variables](../reference/env-variables.md) for all runtime and
-build-time variables.
+Valid ports vary by platform, but are likely in the **1024–49151** range.
 
 Changing the port number requires an EZPlayer restart.
 
@@ -120,7 +118,7 @@ Configure it the same way as the LAN UI Port:
 
 The kiosk UI can be disabled by setting its port number to `0`.
 
-The **HTTP Listener Status** card on Show Status reports the **main** LAN port and the kiosk port.
+The **HTTP Listener Status** card on Show Status reports the main LAN port and the kiosk port.
 
 ## What the server provides
 
@@ -134,6 +132,7 @@ The HTTP listener serves:
   data updates, and preview streaming
 - **Health check** — `GET /api/ezp/hello` returns a simple JSON message to verify
   the server is reachable
+- **Controller Proxy** — Allows HTTP access to controllers on select networks
 
 No authentication is built into the LAN server — anyone on your local network who
 knows the IP and port can connect. Keep the show PC on a trusted network or
