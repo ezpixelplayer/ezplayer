@@ -630,11 +630,7 @@ const GridRow: React.FC<{
                                         <ListItemIcon sx={{ color: a.color ? `${a.color}.main` : undefined }}>
                                             {a.icon}
                                         </ListItemIcon>
-                                        <ListItemText
-                                            primaryTypographyProps={{ color: a.color ? `${a.color}.main` : undefined }}
-                                        >
-                                            {a.label}
-                                        </ListItemText>
+                                        <ListItemText>{a.label}</ListItemText>
                                     </MenuItem>
                                 ))}
                             </Menu>
