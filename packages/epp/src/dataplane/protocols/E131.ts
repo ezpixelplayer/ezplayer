@@ -74,12 +74,10 @@ const encoder = new TextEncoder();
 // Constants (dubious)
 
 /**
- * Fill the parts of an E1.31 data packet header that never change between
- * packets from one sender: preamble, ACN id, vectors, CID, source name,
- * priority, options, DMP address format. Done once per (reused) header
- * buffer; `updateE131PacketHeader` then stamps the per-packet fields. Building
- * the whole header per packet (incl. UTF-8 encoding the source name) was a
- * measurable per-packet cost on shows with thousands of universes per frame.
+ * Fill the header fields that never change between packets from one sender.
+ * Done once per (reused) header buffer; `updateE131PacketHeader` stamps the
+ * per-packet fields. (A full per-packet rebuild was a measurable cost at
+ * thousands of universes per frame.)
  */
 export function fillE131PacketHeaderStatic(rdataPacket: Uint8Array, sourceName: string, cid?: Uint8Array) {
     const dataPacket = toDataView(rdataPacket);
@@ -119,8 +117,7 @@ export function fillE131PacketHeaderStatic(rdataPacket: Uint8Array, sourceName: 
     rdataPacket[125] = E131_START_CODE;
 }
 
-/** Stamp the per-packet fields: the three layer lengths, sequence, universe
- *  and property count. The buffer must have had `fillE131PacketHeaderStatic`. */
+/** Stamp the per-packet fields of a buffer prepared by `fillE131PacketHeaderStatic`. */
 export function updateE131PacketHeader(rdataPacket: Uint8Array, universe: number, sequence: number, dataLen: number) {
     if (dataLen > 512) {
         throw new Error('DMX data cannot exceed 512 bytes.');

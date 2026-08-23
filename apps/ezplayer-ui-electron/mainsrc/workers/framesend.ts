@@ -19,12 +19,9 @@ import { maxUint8 } from '../processing/blend';
 const unsharedSharedBuffer = new SharedArrayBuffer(1024);
 const int32USB = new Int32Array(unsharedSharedBuffer);
 /**
- * Observed granularity of a timed `Atomics.wait`: how far past the requested
- * timeout it actually returns. On Windows without a 1 ms multimedia timer a
- * 0.1 ms wait returns after ~15.6 ms (the default scheduler quantum), which
- * used to make every frame up to 15 ms late. Learned at run time: the sleep
- * does coarse waits while the remaining time comfortably exceeds this, then
- * spin-yields (setImmediate) for the final stretch.
+ * Observed overshoot of a timed `Atomics.wait` (e.g. ~15.6 ms on Windows
+ * without a 1 ms multimedia timer). The sleep waits coarsely while it can,
+ * then spin-yields the final stretch.
  */
 let waitOvershootMs = 0.5;
 const WAIT_SPIN_MARGIN_MS = 0.3;
@@ -37,12 +34,10 @@ export async function xbusySleep(nextTime: number, emitWarning: ((s: string) => 
         if (remaining <= 0.05) return;
 
         if (remaining > waitOvershootMs + WAIT_SPIN_MARGIN_MS) {
-            // Coarse wait: as long as we can without risking an overshoot past the target.
             const req = Math.min(1, remaining - waitOvershootMs);
             Atomics.wait(int32USB, 0, 0, req);
             const overshoot = Math.max(0, performance.now() - nt - req);
-            // Learn the worst case quickly, forget it slowly (the resolution can change
-            // under us, e.g. when a multimedia timer is enabled or released).
+            // Learn the worst case quickly, forget slowly (timer resolution can change).
             waitOvershootMs = overshoot > waitOvershootMs ? overshoot : waitOvershootMs * 0.999 + overshoot * 0.001;
             if (waitOvershootMs > 5 && !warnedCoarseTimer) {
                 warnedCoarseTimer = true;
@@ -52,8 +47,7 @@ export async function xbusySleep(nextTime: number, emitWarning: ((s: string) => 
                 );
             }
         }
-        // else: spin-yield — setImmediate keeps the event loop turning for I/O
-        // completions (prefetch reads, worker messages) while we wait.
+        // else: spin-yield; setImmediate keeps the event loop serving I/O completions.
 
         const lastCPU = process.cpuUsage();
         const ps = performance.now();
@@ -112,9 +106,8 @@ export class FrameSender {
     /** Gate for every black-frame send (idle/pause/stop/keepalive). Off =
      *  leave the wire untouched so another player can drive the controllers. */
     blackFramesEnabled: boolean = true;
-    /** Gate for controller output. Off = frames are still produced, timed and
-     *  published to the preview ring buffer, but no packets are sent
-     *  (`suppressoutput` command; dry-run / benchmark playback). */
+    /** `suppressoutput` gate: off = frames still produced and previewed, but
+     *  nothing is sent to controllers. */
     outputEnabled: boolean = true;
     blackFrame: Uint8Array | undefined = undefined;
     mixFrame: Uint8Array | undefined = undefined;
@@ -224,7 +217,6 @@ export class FrameSender {
                                 `src=${srcLen} nChannels=${this.nChannels}`,
                         );
                     }
-                    // subarray: a view, not a copy — publishFrom copies into the slot itself.
                     this.exportBuffer.publishFrom(this.job.dataBuffers[0].subarray(0, this.nChannels));
                 }
 
@@ -261,7 +253,7 @@ export class FrameSender {
         try {
             const frameref = args.frame;
             if (!this.outputEnabled) {
-                // Dry run: the frame counts as delivered, but nothing goes on the wire.
+                // Suppressed: the frame counts as delivered; nothing on the wire.
                 if (args.playbackStats) ++args.playbackStats.sentFramesCumulative;
                 if (args.playbackStatsAgg) ++args.playbackStatsAgg.nSends;
                 return;

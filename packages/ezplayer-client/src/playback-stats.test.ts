@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaybackStatistics, PrefetchCacheStats } from '@ezplayer/ezplayer-core';
-import { formatStatsSnapshot, formatSummary, formatTraceLine, summarize, type StatsSample } from './playback-stats.js';
-import { findSequence } from './ezp-client.js';
+import { formatStatsSnapshot, formatSummary, formatTraceLine, summarize, type StatsSample } from './playback-stats';
+import { findSequence } from './client';
 
 const cache = (over: Partial<PrefetchCacheStats> = {}): PrefetchCacheStats => ({
     totalItems: 0,

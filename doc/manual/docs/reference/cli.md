@@ -95,8 +95,8 @@ sequence as an immediate jukebox play, prints one trace line per sample to
 `stderr`, and ends with a summary on `stdout`.
 
 ```bash
-EZPlayer play <sequence> [--host <host[:port]>] [--duration <s>] [--interval <s>]
-                         [--no-output] [--keep-playing] [--json] [--quiet]
+EZPlayer play <sequence> [--host <host[:port]>] [--show-folder <dir>] [--duration <s>]
+                         [--interval <s>] [--no-output] [--keep-playing] [--json] [--quiet]
 ```
 
 `<sequence>` is the sequence's id, its title, or its `.fseq` file name (with or
@@ -104,7 +104,8 @@ without the extension), matched against the player's loaded sequence list.
 
 | Option                 | Alias | Description                                                                                     |
 | ---------------------- | ----- | ----------------------------------------------------------------------------------------------- |
-| `--host <host[:port]>` |       | The running player's LAN API. Default `127.0.0.1:3000` (`EZPLAYER_WEB_PORT` honored).           |
+| `--host <host[:port]>` |       | The running player's LAN API. Without it, the local player's port is read from the show folder's lock file (see `--show-folder`), then `EZPLAYER_WEB_PORT`, then `127.0.0.1:3000`. |
+| `--show-folder <dir>`  | `-s`  | Show folder whose lock file names the running local player. Default: the current directory, when it is a show folder. |
 | `--duration <s>`       | `-d`  | Seconds to run. Default: the sequence length plus two seconds; the run also ends early when the sequence finishes. |
 | `--interval <s>`       | `-i`  | Seconds between samples. Default `1`.                                                           |
 | `--no-output`          |       | Suppress controller output for the run: frames are still produced, timed and shown in the preview, but nothing is sent to the controllers. Lets you benchmark a show on a machine that cannot reach its controllers. Output is re-enabled when the run ends. |
@@ -158,12 +159,13 @@ Print the running player's playback statistics — the same counters as the
 Status screen's statistics dialog — once, or repeatedly.
 
 ```bash
-EZPlayer stats [--host <host[:port]>] [--reset] [--watch [<s>]] [--json]
+EZPlayer stats [--host <host[:port]>] [--show-folder <dir>] [--reset] [--watch [<s>]] [--json]
 ```
 
 | Option                 | Alias | Description                                                                  |
 | ---------------------- | ----- | ---------------------------------------------------------------------------- |
-| `--host <host[:port]>` |       | The running player's LAN API. Default `127.0.0.1:3000` (`EZPLAYER_WEB_PORT` honored). |
+| `--host <host[:port]>` |       | The running player's LAN API; defaults like `play` (lock file, then `EZPLAYER_WEB_PORT`, then `127.0.0.1:3000`). |
+| `--show-folder <dir>`  | `-s`  | Show folder whose lock file names the running local player. Default: the current directory, when it is a show folder. |
 | `--reset`              |       | Reset the cumulative counters first.                                         |
 | `--watch [<s>]`        | `-w`  | Keep sampling every `<s>` seconds (default 1), one trace line per sample, until interrupted. |
 | `--json`               |       | Raw `{ stats, pStatus, serverNow }` JSON (`GET /api/ezp/playback-stats`) on `stdout`. |

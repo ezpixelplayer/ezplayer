@@ -1,21 +1,29 @@
 /**
- * `stats` — print the running player's playback statistics (the same numbers
- * as the Status screen's stats dialog), once or repeatedly. Pure HTTP.
+ * `stats` — print the running player's playback statistics, once or
+ * repeatedly. Thin CLI over @ezplayer/ezplayer-client.
  */
 
-import { getPlaybackStats, postPlayerCommand, resolveHost, unreachableHint } from '../ezp-client.js';
-import { formatStatsSnapshot, formatTraceLine, type StatsSample } from '../playback-stats.js';
+import {
+    formatStatsSnapshot,
+    formatTraceLine,
+    getPlaybackStats,
+    postPlayerCommand,
+    type StatsSample,
+} from '@ezplayer/ezplayer-client';
+import { resolveLocalPlayerHost, unreachableHint } from '../ezp-client.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function run(args: string[]): Promise<number> {
     let hostFlag: string | undefined;
+    let showFolderFlag: string | undefined;
     let json = false;
     let reset = false;
     let watchS: number | undefined;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === '--host') hostFlag = args[++i];
+        else if (a === '--show-folder' || a === '-s') showFolderFlag = args[++i];
         else if (a === '--json') json = true;
         else if (a === '--reset') reset = true;
         else if (a === '--watch' || a === '-w') {
@@ -31,7 +39,7 @@ export async function run(args: string[]): Promise<number> {
             return 2;
         }
     }
-    const host = resolveHost(hostFlag);
+    const { host } = await resolveLocalPlayerHost(hostFlag, showFolderFlag);
 
     try {
         if (reset) await postPlayerCommand(host, { command: 'resetstats' });

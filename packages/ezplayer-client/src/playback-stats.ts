@@ -1,7 +1,6 @@
 /**
- * Pure helpers for reporting the playback worker's PlaybackStatistics from the
- * CLI (`play`, `stats`): per-sample trace lines and an end-of-run summary.
- * No I/O here so it can be unit tested; the commands do the fetching.
+ * Pure reporting helpers over PlaybackStatistics: per-sample trace lines and
+ * an end-of-run summary. No I/O.
  */
 
 import type { PlaybackStatistics } from '@ezplayer/ezplayer-core';

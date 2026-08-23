@@ -246,6 +246,9 @@ importers:
       '@ezplayer/epp-controllers':
         specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.12.tgz
         version: file:libs/ezplayer-epp-controllers-0.0.12.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
+      '@ezplayer/ezplayer-client':
+        specifier: workspace:*
+        version: link:../../packages/ezplayer-client
       '@ezplayer/ezplayer-core':
         specifier: workspace:*
         version: link:../../packages/ezplayer-core
@@ -568,6 +571,31 @@ importers:
       xllayoutcalcs:
         specifier: file:..\..\libs\xllayoutcalcs-0.3.3.tgz
         version: file:libs/xllayoutcalcs-0.3.3.tgz
+
+  packages/ezplayer-client:
+    dependencies:
+      '@ezplayer/ezplayer-core':
+        specifier: workspace:*
+        version: link:../ezplayer-core
+    devDependencies:
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.5(jiti@2.7.0)
+      rimraf:
+        specifier: ^6.1.3
+        version: 6.1.3
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(@swc/core@1.16.0)(jiti@2.7.0)(postcss@8.5.26)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 'catalog:'
+        version: 8.67.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
 
   packages/ezplayer-core:
     dependencies:

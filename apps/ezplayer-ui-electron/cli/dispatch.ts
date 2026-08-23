@@ -55,8 +55,9 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
     play: {
         summary: 'Play a sequence on the running player and report playback statistics.',
         detail:
-            'Usage: EZPlayer play <sequence> [--host <host[:port]>] [--duration <s>] [--interval <s>]\n' +
-            '                       [--no-output] [--keep-playing] [--json] [--quiet]\n' +
+            'Usage: EZPlayer play <sequence> [--host <host[:port]>] [--show-folder <dir>]\n' +
+            '                       [--duration <s>] [--interval <s>] [--no-output]\n' +
+            '                       [--keep-playing] [--json] [--quiet]\n' +
             '\n' +
             'Plays <sequence> (its id, title, or .fseq file name) as an immediate jukebox\n' +
             'play on the running app — windowed or `EZPlayer headless` — resets the\n' +
@@ -69,8 +70,11 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
             '  EZPlayer headless --show-folder=<dir> --web-port=3123\n' +
             '  EZPlayer play "My Song" --host 127.0.0.1:3123 --no-output\n' +
             '\n' +
-            '      --host          the EZPlayer to drive (default 127.0.0.1:3000; the port\n' +
-            '                      also honors EZPLAYER_WEB_PORT)\n' +
+            '      --host          the EZPlayer to drive. Without it, the local player is\n' +
+            '                      found via the show folder lock file (see --show-folder),\n' +
+            '                      then EZPLAYER_WEB_PORT, then 127.0.0.1:3000\n' +
+            '  -s, --show-folder   show folder whose lock file names the running player\n' +
+            '                      (default: the current directory, if it is a show folder)\n' +
             '  -d, --duration      seconds to run (default: the sequence length + 2)\n' +
             '  -i, --interval      seconds between samples (default 1)\n' +
             '      --no-output     suppress controller output for the run (frames are\n' +
@@ -82,15 +86,17 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
     stats: {
         summary: "Print the running player's playback statistics.",
         detail:
-            'Usage: EZPlayer stats [--host <host[:port]>] [--reset] [--watch [<s>]] [--json]\n' +
+            'Usage: EZPlayer stats [--host <host[:port]>] [--show-folder <dir>] [--reset]\n' +
+            '                      [--watch [<s>]] [--json]\n' +
             '\n' +
             "The same counters as the Status screen's stats dialog, as text.\n" +
-            '      --host    the EZPlayer to ask (default 127.0.0.1:3000; the port also\n' +
-            '                honors EZPLAYER_WEB_PORT)\n' +
-            '      --reset   reset the cumulative counters first\n' +
-            '  -w, --watch   keep sampling every <s> seconds (default 1), one trace line\n' +
-            '                per sample, until interrupted\n' +
-            '      --json    raw {stats, pStatus, serverNow} JSON on stdout',
+            '      --host          the EZPlayer to ask; defaults like `play` (lock file,\n' +
+            '                      then EZPLAYER_WEB_PORT, then 127.0.0.1:3000)\n' +
+            '  -s, --show-folder   show folder whose lock file names the running player\n' +
+            '      --reset         reset the cumulative counters first\n' +
+            '  -w, --watch         keep sampling every <s> seconds (default 1), one trace\n' +
+            '                      line per sample, until interrupted\n' +
+            '      --json          raw {stats, pStatus, serverNow} JSON on stdout',
     },
     discover: {
         summary: 'Scan networks for lighting controllers.',

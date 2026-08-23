@@ -209,9 +209,8 @@ if (logAsyncs) {
     startAsyncCounts();
 }
 
-// Windows schedules timed waits on a ~15.6 ms quantum unless a process asks for
-// 1 ms multimedia timer resolution; frame pacing needs the latter. Best effort —
-// xbusySleep also adapts to whatever resolution it actually observes.
+// Frame pacing wants the 1 ms Windows multimedia timer (waits are otherwise on
+// a ~15.6 ms quantum). Best effort; xbusySleep adapts to what it observes.
 if (process.platform === 'win32') {
     try {
         if (hirezTimerBegin()) emitInfo('Windows 1 ms timer resolution enabled for playback');
@@ -865,10 +864,8 @@ parentPort.on('message', async (command: PlayerCommand) => {
                     running = undefined;
                 }
 
-                // A full restart (show folder change, player-page Reset) is a new
-                // measurement run: drop the previous show's counters, maxima and
-                // "last error" rather than carrying them into the new one. Done
-                // before the reload below so a genuine restart error still shows.
+                // A full restart is a new measurement run: drop the previous show's
+                // counters and last error (before the reload, so its errors still show).
                 resetCumulativeCounters();
 
                 // Load XML coordinates eagerly and push to server
@@ -1181,8 +1178,7 @@ function resetCumulativeCounters() {
     mp3Cache?.resetStats();
 }
 
-// Event-loop delay of this (playback) thread: how late timers fire because
-// synchronous work is hogging the loop. Reported per measurement period.
+// Event-loop delay of the playback thread, reported per measurement period.
 const loopDelayHist = monitorEventLoopDelay({ resolution: 2 });
 loopDelayHist.enable();
 
