@@ -22,7 +22,7 @@ Below this is a table with records for each network device / controller:
 ## Status / Terminology
 
 ### Enabled / Disabled
-*Enabled* means that the controller is configured for sending live data as part of the show; *Disabled* means that it is not.  The controller is usually disabled by marking it as "Inactive" in xLights.
+*Enabled* ![Controller Enabled](/img/ctrlenabled.png) means that the controller is configured for sending live data as part of the show; *Disabled* ![Controller Disabled](/img/ctrldisabled.png) means that it is not.  The controller is usually disabled by marking it as "Inactive" in xLights.
 
 ### Red / Green/ Unlit
 Red ![Controller Red](/img/ctrlred.png) / Green ![Controller Green](/img/ctrlgreen.png) / Unlit ![Controller Unlit](/img/ctrlunlit.png) status light - Unlit means the controller is disabled.  Green indicates that the controller is responding to pings.  Red means no ping response.
