@@ -238,6 +238,25 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         return await response.json();
     }
 
+    async ensureShowAudioMp3(audioName: string) {
+        const response = await fetch(`${this.apiUrl}ezp/sequences/ensure-mp3`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: audioName }),
+        });
+        if (!response.ok) {
+            let detail = response.statusText;
+            try {
+                const body = (await response.json()) as { error?: string };
+                if (body?.error) detail = body.error;
+            } catch {
+                /* keep statusText */
+            }
+            throw new Error(`Audio conversion failed: ${detail}`);
+        }
+        return await response.json();
+    }
+
     async batchImportShowSequences(fseqNames: string[], companionAudioNames?: string[], allowExistingAudio?: boolean) {
         const response = await fetch(`${this.apiUrl}ezp/sequences/batch-import`, {
             method: 'POST',

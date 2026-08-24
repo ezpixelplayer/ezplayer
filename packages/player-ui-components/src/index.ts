@@ -99,6 +99,7 @@ export {
     batchImportShowSequences,
     batchUploadImportShowSequences,
     extractShowAudioMetadata,
+    ensureShowAudioMp3,
     canUploadShowFiles,
     listShowFiles,
     fetchSequences,

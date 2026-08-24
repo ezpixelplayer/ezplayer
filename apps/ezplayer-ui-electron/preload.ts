@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
     autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),
     extractAudioTagMetadata: (audioPath: string) => ipcRenderer.invoke('ipcExtractAudioTagMetadata', audioPath),
+    ensureMp3AudioFile: (audioPath: string) => ipcRenderer.invoke('ipcEnsureMp3AudioFile', audioPath),
     batchImportSequences: (fseqPaths: string[]) => ipcRenderer.invoke('ipcBatchImportSequences', fseqPaths),
     batchImportSequencesFromFolder: (folderPath: string) =>
         ipcRenderer.invoke('ipcBatchImportSequencesFromFolder', folderPath),

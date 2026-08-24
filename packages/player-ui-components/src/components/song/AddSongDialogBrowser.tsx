@@ -19,6 +19,7 @@ import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
 import {
     AppDispatch,
     autodetectShowSequence,
+    ensureShowAudioMp3,
     extractShowAudioMetadata,
     postSequenceData,
     RootState,
@@ -30,6 +31,19 @@ import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
+
+/** Extensions accepted by the Add Song audio picker. MP3 is unchanged;
+ *  other formats are converted to MP3 on the player via ffmpeg. */
+const ADD_SONG_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'];
+
+function isSupportedAddSongAudioName(name: string): boolean {
+    const lower = name.toLowerCase();
+    return ADD_SONG_AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+function needsBrowserMp3Conversion(name: string): boolean {
+    return !name.toLowerCase().endsWith('.mp3') && isSupportedAddSongAudioName(name);
+}
 
 export interface AddSongProps {
     title: string;
@@ -110,7 +124,10 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                 length: detected.durationSecs ?? prev.length,
             }));
             if (detected.audioFile) {
-                setMp3PlayerName((prev) => (prev || mp3File ? prev : detected.audioFile!));
+                const playable = await resolvePlayableAudioName(detected.audioFile);
+                if (playable) {
+                    setMp3PlayerName((prev) => (prev || mp3File ? prev : playable));
+                }
             }
             if (detected.imageFile) {
                 setArtworkName((prev) => prev ?? detected.imageFile!);
@@ -134,6 +151,28 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             }
         } catch (error) {
             console.error('Audio metadata failed:', error);
+        }
+    };
+
+    /** Convert non-MP3 show-folder audio to MP3; MP3 names pass through. */
+    const resolvePlayableAudioName = async (audioName: string): Promise<string | undefined> => {
+        if (!needsBrowserMp3Conversion(audioName)) {
+            return audioName;
+        }
+        try {
+            const result = await dispatch(ensureShowAudioMp3(audioName)).unwrap();
+            return result.audioFile || undefined;
+        } catch (error) {
+            console.error('Audio conversion failed:', error);
+            ToastMsgs.showErrorMessage(
+                error instanceof Error ? error.message : `Failed to convert ${audioName} to MP3`,
+                {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 4000,
+                },
+            );
+            return undefined;
         }
     };
 
@@ -180,16 +219,25 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             }
             await runAutodetect(file.name);
         } else if (type === 'mp3') {
-            if (!(file.name.endsWith('.mp3') || file.name.endsWith('.mp4'))) {
+            if (!isSupportedAddSongAudioName(file.name)) {
                 setNeedValidMp3File(true);
                 setMp3File(null);
                 return;
             }
             if (!(await uploadPicked(file))) return;
-            setMp3File(file);
-            setMp3PlayerName(null);
-            setNeedValidMp3File(false);
+            // Prefer metadata from the original upload before conversion.
             await applyAudioMetadata(file.name);
+            const playableName = await resolvePlayableAudioName(file.name);
+            if (!playableName) {
+                setNeedValidMp3File(true);
+                setMp3File(null);
+                setMp3PlayerName(null);
+                return;
+            }
+            // Keep File only for MP3 uploads; converted audio is tracked by player name.
+            setMp3File(playableName.toLowerCase().endsWith('.mp3') && file.name === playableName ? file : null);
+            setMp3PlayerName(playableName);
+            setNeedValidMp3File(false);
         } else {
             if (!(await uploadPicked(file))) return;
             setArtworkName(file.name);
@@ -305,14 +353,14 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                Upload .mp3 File{' '}
+                                Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional)
+                                    (optional — .mp3, or other formats converted to .mp3)
                                 </Typography>
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <FileButton
-                                    fileType={['.mp3']}
+                                    fileType={[...ADD_SONG_AUDIO_EXTENSIONS]}
                                     isMultipleFile={false}
                                     onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'mp3')}
                                 />
@@ -325,7 +373,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             </Box>
                             {needValidMp3File && (
                                 <Typography color="error" sx={{ mt: 1 }}>
-                                    Please upload a valid .mp3 file
+                                    Please upload a supported audio file (.mp3, .wav, .m4a, .aac, .flac, .ogg, .wma)
                                 </Typography>
                             )}
                         </Grid>
@@ -503,10 +551,18 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         setNeedValidFseqFile(false);
                         void runAutodetect(name); // fills title/artist/length/audio/artwork
                     } else if (pickerFor === 'mp3') {
-                        setMp3PlayerName(name);
                         setMp3File(null);
                         setNeedValidMp3File(false);
-                        void applyAudioMetadata(name);
+                        void (async () => {
+                            await applyAudioMetadata(name);
+                            const playable = await resolvePlayableAudioName(name);
+                            if (playable) {
+                                setMp3PlayerName(playable);
+                            } else {
+                                setMp3PlayerName(null);
+                                setNeedValidMp3File(true);
+                            }
+                        })();
                     } else {
                         setArtworkName(name);
                     }

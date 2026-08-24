@@ -54,6 +54,7 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
+import { ensureMp3AudioFile } from './data/audio-convert.js';
 
 import type {
     CloudCommand,
@@ -868,6 +869,9 @@ export async function registerContentHandlers(
     });
     ipcMain.handle('ipcExtractAudioTagMetadata', async (_event, audioPath: string) => {
         return extractAudioTagMetadata(audioPath);
+    });
+    ipcMain.handle('ipcEnsureMp3AudioFile', async (_event, audioPath: string) => {
+        return ensureMp3AudioFile(audioPath);
     });
     ipcMain.handle('ipcBatchImportSequences', async (_event, fseqPaths: string[]) => {
         const mediaFolder = getSettingsCache()?.mediaFolder;

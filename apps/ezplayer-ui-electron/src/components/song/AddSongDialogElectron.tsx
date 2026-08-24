@@ -23,6 +23,19 @@ import { ElectronFileButton } from './ElectronSelectFileButton';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 
+/** Extensions accepted by the Add Song audio picker. MP3 is unchanged;
+ *  other formats are converted to MP3 in the main process via ffmpeg. */
+const ADD_SONG_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'];
+
+function isSupportedAddSongAudio(filePath: string): boolean {
+    const lower = filePath.toLowerCase();
+    return ADD_SONG_AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+function needsClientMp3Conversion(filePath: string): boolean {
+    return !filePath.toLowerCase().endsWith('.mp3') && isSupportedAddSongAudio(filePath);
+}
+
 export interface AddSongProps {
     title: string;
     open: boolean;
@@ -125,6 +138,38 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
         applyMetadata(metadata, 'fill-empty');
     };
 
+    const resolvePlayableAudio = async (audioPath: string): Promise<string | undefined> => {
+        if (!needsClientMp3Conversion(audioPath)) {
+            return audioPath;
+        }
+        if (typeof window === 'undefined' || !window.electronAPI?.ensureMp3AudioFile) {
+            console.warn('[AddSong] ensureMp3AudioFile unavailable; cannot convert non-MP3 audio.');
+            ToastMsgs.showErrorMessage('Audio conversion is unavailable in this environment', {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 3000,
+            });
+            return undefined;
+        }
+        try {
+            console.log(`[AddSong] Converting audio to MP3: "${audioPath}"`);
+            const mp3Path = await window.electronAPI.ensureMp3AudioFile(audioPath);
+            console.log(`[AddSong] Conversion result: "${mp3Path}"`);
+            return mp3Path;
+        } catch (error) {
+            console.warn('[AddSong] Audio conversion failed:', error);
+            ToastMsgs.showErrorMessage(
+                error instanceof Error ? error.message : 'Failed to convert audio to MP3',
+                {
+                    theme: 'colored',
+                    position: 'bottom-right',
+                    autoClose: 4000,
+                },
+            );
+            return undefined;
+        }
+    };
+
     const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
             const lowerFile = file.toLowerCase();
@@ -142,7 +187,10 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 `[AddSong] Auto-detect result -> audio: ${detected?.audioFile ?? '<none>'}, image: ${detected?.imageFile ?? '<none>'}, imageGeneratedFromAudio: ${detected?.imageGeneratedFromAudio ? 'yes' : 'no'}`,
                             );
                             if (detected?.audioFile) {
-                                setMp3File((prev) => prev ?? detected.audioFile);
+                                const playable = await resolvePlayableAudio(detected.audioFile);
+                                if (playable) {
+                                    setMp3File((prev) => prev ?? playable);
+                                }
                             }
                             if (detected?.imageFile) {
                                 setImageFile((prev) => prev ?? detected.imageFile);
@@ -173,33 +221,38 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     setFseqFile(undefined);
                 }
             } else if (type === 'mp3') {
-                if (lowerFile.endsWith('.mp3')) {
-                    console.log(`[AddSong][MP3] Selected MP3 file: "${file}"`);
-                    setMp3File(file);
+                if (isSupportedAddSongAudio(lowerFile)) {
+                    console.log(`[AddSong][Audio] Selected audio file: "${file}"`);
+                    // Prefer tags from the original file (supports wav/m4a/flac/ogg tags).
                     if (typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
                         try {
-                            console.log(`[AddSong][MP3] Starting metadata extraction for: "${file}"`);
+                            console.log(`[AddSong][Audio] Starting metadata extraction for: "${file}"`);
                             const metadata = await window.electronAPI.extractAudioTagMetadata(file);
                             console.log(
-                                `[AddSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
+                                `[AddSong][Audio] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
                             );
-                            // MP3 field re-selection should refresh title/artist/image for the newly selected song.
                             applyMetadata(metadata ?? {}, 'replace-existing');
                             if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
                                 console.log(
-                                    '[AddSong][MP3] No usable ID3 metadata found (title/artist/image all empty).',
+                                    '[AddSong][Audio] No usable tag metadata found (title/artist/image all empty).',
                                 );
                             }
                         } catch (error) {
-                            console.warn('[AddSong] MP3 metadata extraction failed:', error);
+                            console.warn('[AddSong] Audio metadata extraction failed:', error);
                         }
                     } else {
                         console.warn(
-                            '[AddSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.',
+                            '[AddSong][Audio] electronAPI.extractAudioTagMetadata is unavailable in this environment.',
                         );
                     }
+                    const playable = await resolvePlayableAudio(file);
+                    if (playable) {
+                        setMp3File(playable);
+                    } else {
+                        setMp3File(undefined);
+                    }
                 } else {
-                    console.warn(`[AddSong][MP3] Ignored non-MP3 file in MP3 field: "${file}"`);
+                    console.warn(`[AddSong][Audio] Ignored unsupported audio file: "${file}"`);
                     setMp3File(undefined);
                 }
             } else if (type === 'image') {
@@ -319,13 +372,13 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                Upload .mp3 File{' '}
+                                Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional)
+                                    (optional — .mp3, or other formats converted to .mp3)
                                 </Typography>
                             </Typography>
                             <ElectronFileButton
-                                fileType={{ name: 'Audio', extensions: ['.mp3'] }}
+                                fileType={{ name: 'Audio', extensions: [...ADD_SONG_AUDIO_EXTENSIONS] }}
                                 isMultipleFile={false}
                                 onChange={(e) => handleFileChange(e?.target?.files[0]?.path, 'mp3')}
                             />

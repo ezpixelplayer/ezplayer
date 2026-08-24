@@ -37,6 +37,7 @@ import { FSEQReaderAsync } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
 import { batchImportSequences } from '../data/batch-sequence-import.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
+import { ensureMp3AudioFile, needsMp3Conversion } from '../data/audio-convert.js';
 import { fileBaseName } from './pathnames.js';
 
 /** Loose view of caught errors: fs/upload failures carry optional status/code/message. */
@@ -763,6 +764,20 @@ export async function autodetectSequenceCore(showFolder: string | undefined, fse
     const res = resolveNamed(showFolder, fseqName);
     if (!('target' in res)) return res;
     const detected = await autoDetectSongFilesFromFseq(res.target);
+    // Convert companion audio to MP3 when needed so the LAN Add Song path
+    // receives a playable basename. Conversion failure leaves the original
+    // name so the UI can still surface the file; import/ensure endpoints
+    // report conversion errors explicitly.
+    if (detected.audioFile && needsMp3Conversion(detected.audioFile)) {
+        try {
+            detected.audioFile = await ensureMp3AudioFile(detected.audioFile);
+        } catch (err) {
+            console.warn(
+                `[FileAPI] Autodetect audio conversion failed for "${detected.audioFile}":`,
+                (err as ErrLike)?.message ?? err,
+            );
+        }
+    }
     // Report show-relative names — clients never see absolute player paths.
     return {
         status: 200,
@@ -785,6 +800,22 @@ export async function audioMetadataCore(showFolder: string | undefined, audioNam
             imageFile: meta.imageFile ? path.basename(meta.imageFile) : undefined,
         },
     };
+}
+
+/** Convert a show-folder audio file to MP3 when needed. Existing `.mp3` is a no-op.
+ *  Returns the playable basename (always `.mp3` on success). */
+export async function ensureMp3AudioCore(showFolder: string | undefined, audioName: unknown): Promise<ProxyResult> {
+    const res = resolveNamed(showFolder, audioName);
+    if (!('target' in res)) return res;
+    try {
+        if (!needsMp3Conversion(res.target) && path.extname(res.target).toLowerCase() !== '.mp3') {
+            return { status: 400, body: { error: `Unsupported audio format: ${path.extname(res.target)}` } };
+        }
+        const mp3Path = await ensureMp3AudioFile(res.target);
+        return { status: 200, body: { audioFile: path.basename(mp3Path) } };
+    } catch (err) {
+        return { status: 500, body: { error: (err as ErrLike)?.message ?? 'Audio conversion failed' } };
+    }
 }
 
 /** Bulk-import `.fseq` files already present in the show folder (LAN / web UI).
@@ -1071,6 +1102,15 @@ export function registerSequenceApiRoutes(router: Router, deps: FileApiDeps): vo
 
     router.post('/api/ezp/sequences/audio-metadata', async (ctx) => {
         const res = await audioMetadataCore(
+            deps.getShowFolder(),
+            (ctx.request.body as { audio?: unknown } | undefined)?.audio,
+        );
+        ctx.status = res.status;
+        ctx.body = res.body;
+    });
+
+    router.post('/api/ezp/sequences/ensure-mp3', async (ctx) => {
+        const res = await ensureMp3AudioCore(
             deps.getShowFolder(),
             (ctx.request.body as { audio?: unknown } | undefined)?.audio,
         );

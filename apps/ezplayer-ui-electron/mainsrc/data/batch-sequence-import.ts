@@ -13,6 +13,7 @@ import {
     type AutoDetectOptions,
     type AutoDetectedSongFiles,
 } from './song-file-autodetect.js';
+import { ensureMp3AudioFile, needsMp3Conversion } from './audio-convert.js';
 
 export interface BatchImportOptions extends AutoDetectOptions {
     /** Persist one or more SequenceRecords (typically putSequencesWithDurations). */
@@ -99,6 +100,23 @@ async function importOneFseq(
                     reason: `Audio file not found${wanted}`,
                 },
             };
+        }
+
+        // Playback is MP3-only. Convert companion audio when needed; one
+        // conversion failure does not abort the rest of the batch.
+        if (detected.audioFile && needsMp3Conversion(detected.audioFile)) {
+            try {
+                detected.audioFile = await ensureMp3AudioFile(detected.audioFile);
+            } catch (error) {
+                return {
+                    ok: false,
+                    failure: {
+                        fseqPath,
+                        fseqName,
+                        reason: `Audio conversion failed: ${error instanceof Error ? error.message : String(error)}`,
+                    },
+                };
+            }
         }
 
         const record = buildSequenceRecordFromDetected(fseqPath, detected);

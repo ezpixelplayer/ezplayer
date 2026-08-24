@@ -163,6 +163,10 @@ export interface DataStorageAPI {
         imageFile?: string;
     }>;
 
+    /** Convert a show-folder audio file to MP3 when needed. Returns the
+     *  playable `.mp3` basename. Existing `.mp3` names are returned unchanged. */
+    ensureShowAudioMp3?: (audioName: string) => Promise<{ audioFile: string }>;
+
     /** Bulk-import `.fseq` files already in the show folder (web/LAN).
      *  `companionAudioNames` = audio uploaded in the same selection (colocated
      *  equivalent). `allowExistingAudio: true` (existing-files import) instead
