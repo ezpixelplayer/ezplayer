@@ -417,6 +417,11 @@ export interface PlaybackStatistics {
     // Skipped controller frames
     cframesSkippedDueToDirectiveCumulative: number;
     cframesSkippedDueToIncompletePriorCumulative: number;
+    /**
+     * Packets discarded by a sender after their protocol sequence number was
+     * assigned.
+     */
+    cpacketsDroppedBySenderCumulative: number;
 
     // Audio delivery
     sentAudioChunksCumulative: number;

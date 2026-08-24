@@ -209,6 +209,18 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                                 {formatValue(stats.cframesSkippedDueToIncompletePriorCumulative)}
                                             </Typography>
                                         </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Packets Dropped by Sender:</Typography>
+                                            <Typography
+                                                variant="body2"
+                                                fontWeight="bold"
+                                                color={
+                                                    stats.cpacketsDroppedBySenderCumulative ? 'warning.main' : undefined
+                                                }
+                                            >
+                                                {formatValue(stats.cpacketsDroppedBySenderCumulative)}
+                                            </Typography>
+                                        </Box>
                                     </Box>
                                 </CardContent>
                             </Card>

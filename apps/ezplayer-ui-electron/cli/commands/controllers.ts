@@ -117,7 +117,7 @@ export async function run(args: string[]): Promise<number> {
         console.log('\nNetwork policies:');
         for (const p of policies) {
             const bits = [
-                p.allow === false ? 'disallowed' : 'allowed',
+                p.allow === false ? 'proxy-disallowed' : 'proxy-allowed',
                 p.expectControllers ? 'expect-controllers' : undefined,
                 p.note,
             ].filter(Boolean);
