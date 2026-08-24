@@ -1,32 +1,41 @@
 /**
- * Client helpers for CLI verbs that talk to a RUNNING EZPlayer app's web API
- * (/api/ezp/controllers*). Pure Node `fetch`, no electron.
- *
- * Target defaults to 127.0.0.1:3000; a non-default configured port needs
- * --host or EZPLAYER_WEB_PORT (the app's stored port preference is not
- * readable here).
+ * Client helpers for CLI verbs that talk to a RUNNING EZPlayer app's web API.
+ * Pure Node `fetch`, no electron. The generic player client (playback,
+ * statistics, host defaults) lives in @ezplayer/ezplayer-client; this module
+ * adds the controller-ops endpoints and local-player discovery.
  */
 
+import fs from 'fs';
+import path from 'path';
 import type { ControllerCommand, ControllerOpsState } from '@ezplayer/ezplayer-core';
+import { resolveHost, unreachableHint } from '@ezplayer/ezplayer-client';
+import { SUBDIR_NAME } from '../mainsrc/data/SettingsMigration.js';
+import { runningPlayerWebPort } from '../mainsrc/showfolder-lock.js';
 
-const DEFAULT_PORT = 3000;
+export { resolveHost, unreachableHint };
 
-function defaultPort(): number {
-    const env = Number(process.env.EZPLAYER_WEB_PORT);
-    return Number.isInteger(env) && env > 0 ? env : DEFAULT_PORT;
-}
+/**
+ * Host for verbs that default to the local player (`play`, `stats`):
+ * `--host` beats the show folder's lock file (the port the player actually
+ * bound) beats EZPLAYER_WEB_PORT beats 3000. The folder is `--show-folder`,
+ * or the current directory when it is one.
+ */
+export async function resolveLocalPlayerHost(
+    hostFlag: string | undefined,
+    showFolderFlag: string | undefined,
+): Promise<{ host: string; source: string }> {
+    if (hostFlag) return { host: resolveHost(hostFlag), source: '--host' };
 
-/** `--host` value → "host:port" (port defaulted); undefined → local player. */
-export function resolveHost(hostFlag: string | undefined): string {
-    if (hostFlag) return hostFlag.includes(':') ? hostFlag : `${hostFlag}:${defaultPort()}`;
-    return `127.0.0.1:${defaultPort()}`;
-}
-
-export function unreachableHint(host: string): string {
-    return (
-        `could not reach EZPlayer at http://${host} — is the app running?\n` +
-        `(use --host <host[:port]> or EZPLAYER_WEB_PORT if it serves a different address/port)`
-    );
+    const folder = showFolderFlag
+        ? path.resolve(showFolderFlag)
+        : fs.existsSync(path.join(process.cwd(), SUBDIR_NAME))
+          ? process.cwd()
+          : undefined;
+    if (folder) {
+        const port = await runningPlayerWebPort(folder).catch(() => undefined);
+        if (port) return { host: `127.0.0.1:${port}`, source: `the lock file in ${folder}` };
+    }
+    return { host: resolveHost(undefined), source: 'the default' };
 }
 
 /** GET the shared controllerops snapshot from the running app. */

@@ -101,6 +101,14 @@ export const StatsDialog = ({ open, onClose, stats }: StatsDialogProps) => {
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography variant="body2">Loop Delay (p50 / p99 / max):</Typography>
+                                            <Typography variant="body2" fontWeight="bold">
+                                                {formatValue(stats.loopDelay?.p50)}ms /{' '}
+                                                {formatValue(stats.loopDelay?.p99)}
+                                                ms / {formatValue(stats.loopDelay?.max)}ms
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Typography variant="body2">Effect Processing:</Typography>
                                             <Typography variant="body2" fontWeight="bold">
                                                 {formatValue(stats.effectsProcessing?.backgroundBlendTimePeriod)}ms
