@@ -90,7 +90,13 @@ export interface ControllerNetwork {
 /** Persisted per-network policy, keyed by CIDR. */
 export interface NetworkPolicy {
     cidr: string;
-    /** false ⇒ scans and device-proxy requests into this network are refused. */
+    /**
+     * false ⇒ device-proxy requests into this network are refused, so remote
+     * clients (a browser on another machine, the cloud UI) cannot reach its
+     * devices through this player. Local scanning and discovery are NOT
+     * affected — this is about who may come in from outside, not about which
+     * networks we look at ourselves.
+     */
     allow?: boolean;
     /** We expect light controllers on this network. */
     expectControllers?: boolean;

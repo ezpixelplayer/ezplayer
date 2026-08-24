@@ -397,6 +397,10 @@ export interface PlaybackStatistics {
     // Timing Stability
     worstLagHistorical: number;
     worstAdvanceHistorical: number;
+    /** Playback-thread event-loop delay over the measurement period (ms). High
+     *  values mean synchronous work (e.g. packet sends) is hogging the loop,
+     *  which inflates the read/decode times below and can starve the caches. */
+    loopDelay?: { p50: number; p99: number; max: number };
 
     // Frame Timings
     avgSendTime: number;
@@ -413,6 +417,11 @@ export interface PlaybackStatistics {
     // Skipped controller frames
     cframesSkippedDueToDirectiveCumulative: number;
     cframesSkippedDueToIncompletePriorCumulative: number;
+    /**
+     * Packets discarded by a sender after their protocol sequence number was
+     * assigned.
+     */
+    cpacketsDroppedBySenderCumulative: number;
 
     // Audio delivery
     sentAudioChunksCumulative: number;

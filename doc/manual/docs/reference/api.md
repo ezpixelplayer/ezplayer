@@ -105,6 +105,57 @@ GET /api/ezp/getimage/seq-123-abc
 
 ---
 
+### GET /api/ezp/playback-stats
+
+Get the playback engine's statistics — the counters behind the Status screen's
+statistics dialog and the `EZPlayer play` / `EZPlayer stats` commands. The
+playback worker publishes a fresh set about once a second.
+
+**Request:**
+
+- Method: GET
+- Headers: None required
+
+**Response:**
+
+- Status: 200 OK
+- Body:
+
+```json
+{
+  "stats": {
+    "iteration": 1234,
+    "sentFramesCumulative": 1351,
+    "skippedFramesCumulative": 76,
+    "missedFramesCumulative": 0,
+    "worstLagHistorical": 4.9,
+    "avgSendTime": 12.7,
+    "maxSendTimeHistorical": 59.6,
+    "measurementPeriod": 1000,
+    "idleTimePeriod": 480,
+    "sendTimePeriod": 510,
+    "loopDelay": { "p50": 2.1, "p99": 18.3, "max": 23.0 },
+    "sequenceDecompress": { "fileReadTimeCumulative": 1870, "decompressTimeCumulative": 1390 },
+    "fseqPrefetch": { "totalMem": 1400000000, "headerCache": { "...": "..." }, "chunkCache": { "...": "..." } },
+    "...": "..."
+  },
+  "pStatus": { "status": "Playing", "now_playing": { "...": "..." } },
+  "serverNow": 1787496621562
+}
+```
+
+`stats` is a `PlaybackStatistics` object (see `@ezplayer/ezplayer-core`).
+Counters ending in `Cumulative` grow until a `resetstats` player command;
+`*Period` values cover the last measurement period; `*Historical` values are
+maxima since the last reset. `loopDelay` is the playback thread's event-loop
+delay over the period — high values mean the loop is hogged by synchronous work
+(typically sending many thousands of packets per frame), which delays the FSEQ
+prefetch's completions and inflates the read/decompress times.
+
+- Status: 503 Service Unavailable — the playback worker has not reported yet (still starting).
+
+---
+
 ### POST /api/ezp/player-command
 
 Send player command. Sends a command to control player playback, volume, or request playback of songs/playlists.
@@ -127,8 +178,8 @@ Send player command. Sends a command to control player playback, volume, or requ
 | `reloadcontrollers` | Reset playback from current show folder, reloading network and reopening controllers |                                                    |
 | `resetplayback`     | Reread and reset playback from current schedule items                                |                                                    |
 | `resetstats`        | Reset cumulative stats counters                                                      |                                                    |
-| `suppressoutput`    | Continue playback but suppress audio/video output                                    |                                                    |
-| `activateoutput`    | Re-enable audio/video output                                                         |                                                    |
+| `suppressoutput`    | Continue playback (timing, preview, statistics) but send nothing to the controllers  |                                                    |
+| `activateoutput`    | Re-enable controller output                                                          |                                                    |
 | `playsong`          | Play or enqueue a song                                                               | `songId`, `immediate`, `priority`, `requestId`     |
 | `playplaylist`      | Play or enqueue a playlist                                                           | `playlistId`, `immediate`, `priority`, `requestId` |
 | `deleterequest`     | Cancel a pending song or playlist request                                            | `requestId`                                        |

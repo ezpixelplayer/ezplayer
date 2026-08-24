@@ -18,11 +18,36 @@ import { maxUint8 } from '../processing/blend';
 // Sleep utilities
 const unsharedSharedBuffer = new SharedArrayBuffer(1024);
 const int32USB = new Int32Array(unsharedSharedBuffer);
+/**
+ * Observed overshoot of a timed `Atomics.wait` (e.g. ~15.6 ms on Windows
+ * without a 1 ms multimedia timer). The sleep waits coarsely while it can,
+ * then spin-yields the final stretch.
+ */
+let waitOvershootMs = 0.5;
+const WAIT_SPIN_MARGIN_MS = 0.3;
+let warnedCoarseTimer = false;
+
 export async function xbusySleep(nextTime: number, emitWarning: ((s: string) => void) | undefined): Promise<void> {
-    while (performance.now() < nextTime) {
+    while (true) {
         const nt = performance.now();
-        if (nt + 0.1 > nextTime) return;
-        Atomics.wait(int32USB, 0, 0, 0.1);
+        const remaining = nextTime - nt;
+        if (remaining <= 0.05) return;
+
+        if (remaining > waitOvershootMs + WAIT_SPIN_MARGIN_MS) {
+            const req = Math.min(1, remaining - waitOvershootMs);
+            Atomics.wait(int32USB, 0, 0, req);
+            const overshoot = Math.max(0, performance.now() - nt - req);
+            // Learn the worst case quickly, forget slowly (timer resolution can change).
+            waitOvershootMs = overshoot > waitOvershootMs ? overshoot : waitOvershootMs * 0.999 + overshoot * 0.001;
+            if (waitOvershootMs > 5 && !warnedCoarseTimer) {
+                warnedCoarseTimer = true;
+                emitWarning?.(
+                    `Coarse timer resolution: a ${req.toFixed(1)} ms wait took ${(req + overshoot).toFixed(1)} ms; ` +
+                        `frame timing will spin-wait the last ${waitOvershootMs.toFixed(1)} ms of each frame`,
+                );
+            }
+        }
+        // else: spin-yield; setImmediate keeps the event loop serving I/O completions.
 
         const lastCPU = process.cpuUsage();
         const ps = performance.now();
@@ -74,11 +99,28 @@ export interface ControllerSendStats {
 
 export class FrameSender {
     job: SendJob | undefined = undefined;
+
+    /**
+     * Packets every sender discarded before they reached its socket, summed.
+     * Cumulative on the clients, so it is assigned rather than accumulated.
+     */
+    senderDroppedTotal(): number {
+        let n = 0;
+        for (const sj of this.job?.senders ?? []) {
+            const client = (sj.sender as { client?: { nSkipped: number } } | undefined)?.client;
+            if (client) n += client.nSkipped;
+        }
+        return n;
+    }
+
     state: SendJobState = new SendJobState();
     outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
     blackFramesEnabled: boolean = true;
+    /** `suppressoutput` gate: off = frames still produced and previewed, but
+     *  nothing is sent to controllers. */
+    outputEnabled: boolean = true;
     blackFrame: Uint8Array | undefined = undefined;
     mixFrame: Uint8Array | undefined = undefined;
     exportBuffer: LatestFrameRingBuffer | undefined = undefined;
@@ -140,6 +182,7 @@ export class FrameSender {
         onlyIfEnabled?: boolean;
     }) {
         if (!this.blackFramesEnabled && args.onlyIfEnabled) return;
+        if (!this.outputEnabled) return;
         if (!this.blackFrame || !this.job || !this.state) return;
         if (this.sendInProgress) return; // A send is still running; skip this black frame
         this.releasePrevFrame();
@@ -239,13 +282,14 @@ export class FrameSender {
                                 `src=${srcLen} nChannels=${this.nChannels}`,
                         );
                     }
-                    this.exportBuffer.publishFrom(this.job.dataBuffers[0].slice(0, this.nChannels));
+                    this.exportBuffer.publishFrom(this.job.dataBuffers[0].subarray(0, this.nChannels));
                 }
 
                 this.job.slotFraction = this.slotFractionFor(args.frameInterval);
                 const res = this.state.initialize(args.targetFramePN, this.job, args.frameInterval);
                 args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
                 args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
+                args.playbackStats.cpacketsDroppedBySenderCumulative = this.senderDroppedTotal();
                 if (this.outstandingFrames.has(args.frame)) {
                     this.emitWarning?.('WARNING: THIS FRAME HANDLE ALREADY BEING SENT');
                     ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
@@ -283,6 +327,12 @@ export class FrameSender {
         this.sendInProgress = true;
         try {
             const frameref = args.frame;
+            if (!this.outputEnabled) {
+                // Suppressed: the frame counts as delivered; nothing on the wire.
+                if (args.playbackStats) ++args.playbackStats.sentFramesCumulative;
+                if (args.playbackStatsAgg) ++args.playbackStatsAgg.nSends;
+                return;
+            }
             if (frameref) {
                 this.outstandingFrames.add(frameref);
                 args.frame = undefined;

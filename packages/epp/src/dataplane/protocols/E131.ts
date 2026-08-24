@@ -73,18 +73,13 @@ const encoder = new TextEncoder();
 
 // Constants (dubious)
 
-function fillE131PacketHeader(
-    rdataPacket: Uint8Array,
-    universe: number,
-    sourceName: string,
-    sequence: number,
-    dataLen: number,
-    cid?: Uint8Array,
-) {
-    if (dataLen > 512) {
-        throw new Error('DMX data cannot exceed 512 bytes.');
-    }
-
+/**
+ * Fill the header fields that never change between packets from one sender.
+ * Done once per (reused) header buffer; `updateE131PacketHeader` stamps the
+ * per-packet fields. (A full per-packet rebuild was a measurable cost at
+ * thousands of universes per frame.)
+ */
+export function fillE131PacketHeaderStatic(rdataPacket: Uint8Array, sourceName: string, cid?: Uint8Array) {
     const dataPacket = toDataView(rdataPacket);
 
     rdataPacket.fill(0, 0, E131_PACKET_HEADERLEN); // 126
@@ -92,12 +87,12 @@ function fillE131PacketHeader(
     dataPacket.setUint16(0, E131_ROOT_PREAMBLE_SIZE, false);
     dataPacket.setUint16(2, E131_ROOT_POSTAMBLE_SIZE, false);
     rdataPacket.set(ACN_PACKET_IDENTIFIER, 4); // 12 bytes
-    setE131LengthField(dataPacket, 16, E131_PACKET_HEADERLEN + dataLen - 16); // Root layer flag and length;
+    // [16..18) root layer flags+length: per packet
     dataPacket.setUint32(18, E131_VECTOR_ROOT_DATA, false); // Root vector (VECTOR_ROOT_E131_DATA)
     rdataPacket.set(cid ?? E131_EZP_UUID_BUF, 22); // 16 byte UUID
 
     // Frame Layer
-    setE131LengthField(dataPacket, 38, E131_PACKET_HEADERLEN + dataLen - 38); // Frame layer flag and length;
+    // [38..40) framing layer flags+length: per packet
     dataPacket.setUint32(40, E131_VECTOR_DATA_PACKET, false);
     // Source name, hmm.
     let bytes = encoder.encode(sourceName);
@@ -108,18 +103,32 @@ function fillE131PacketHeader(
     rdataPacket.set(bytes, 44);
     rdataPacket[108] = E131_DEFAULT_PRIORITY;
     dataPacket.setUint16(109, 0, false); // Synchronization address
-    rdataPacket[111] = sequence & 0xff;
+    // [111] sequence: per packet
     rdataPacket[112] = 0; // Options: Bit 7 = Preview_Data, Bit 6 = Stream_Terminated, Bit 5 = Force_Synchronization
-    dataPacket.setUint16(113, universe, false); // Universe
+    // [113..115) universe: per packet
 
     // DMP layer
-    setE131LengthField(dataPacket, 115, E131_PACKET_HEADERLEN + dataLen - 115); // dmp layer flag and length;
+    // [115..117) dmp layer flags+length: per packet
     rdataPacket[117] = E131_VECTOR_DMP_SET_PROPERTY;
     rdataPacket[118] = 0xa1; // This is not explained.  It "identifies format of address and data"
     dataPacket.setUint16(119, 0, false); // Start address (0)
     dataPacket.setUint16(121, 1, false); // Address increment (1)
-    dataPacket.setUint16(123, dataLen + 1, false); // Property value count
+    // [123..125) property value count: per packet
     rdataPacket[125] = E131_START_CODE;
+}
+
+/** Stamp the per-packet fields of a buffer prepared by `fillE131PacketHeaderStatic`. */
+export function updateE131PacketHeader(rdataPacket: Uint8Array, universe: number, sequence: number, dataLen: number) {
+    if (dataLen > 512) {
+        throw new Error('DMX data cannot exceed 512 bytes.');
+    }
+    const dataPacket = toDataView(rdataPacket);
+    setE131LengthField(dataPacket, 16, E131_PACKET_HEADERLEN + dataLen - 16); // Root layer flag and length;
+    setE131LengthField(dataPacket, 38, E131_PACKET_HEADERLEN + dataLen - 38); // Frame layer flag and length;
+    rdataPacket[111] = sequence & 0xff;
+    dataPacket.setUint16(113, universe, false); // Universe
+    setE131LengthField(dataPacket, 115, E131_PACKET_HEADERLEN + dataLen - 115); // dmp layer flag and length;
+    dataPacket.setUint16(123, dataLen + 1, false); // Property value count
 }
 
 function buildE131SyncPacket(rsyncData: Uint8Array, syncUniverse: number, sequence: number, cid?: Uint8Array) {
@@ -205,10 +214,12 @@ export class E131Sender extends UDPSender {
             if (!bytesThisPacket) return;
             const univ = state.sendPacketNum() + this.startUniverse;
             if (this.curPacketNum >= this.headers.length) {
-                this.headers.push(Buffer.alloc(E131_PACKET_HEADERLEN));
+                const nh = Buffer.alloc(E131_PACKET_HEADERLEN);
+                fillE131PacketHeaderStatic(nh, sourceName);
+                this.headers.push(nh);
             }
             const hdr = this.headers[this.curPacketNum];
-            fillE131PacketHeader(hdr, univ, sourceName, state.nextE131SeqNum(), bytesThisPacket);
+            updateE131PacketHeader(hdr, univ, state.nextE131SeqNum(), bytesThisPacket);
             this.client!.addSendToBatch([hdr, ...packetBufs]);
             const wire = bytesThisPacket + this.packetWireOverhead();
             state.wireBytesSent += wire;
