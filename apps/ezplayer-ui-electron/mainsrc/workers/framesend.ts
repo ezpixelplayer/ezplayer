@@ -131,10 +131,10 @@ export class FrameSender {
     private warnedSendOverrun = false;
     private sendInProgress = false; // Guards SendJobState from concurrent send
 
-    /** Most the paced send may ever claim of a frame interval. Zero disables
-     *  pacing entirely (one burst per frame) -- see SendJob.slotFraction for
-     *  why that is the default while sending runs on the dispatch loop. */
-    maxSlotFraction = 0;
+    /** Most the paced send may ever claim of a frame interval; slotFractionFor
+     *  shrinks the actual slot below this by the measured loop overhead. Zero
+     *  disables pacing entirely (one burst per frame). */
+    maxSlotFraction = 0.5;
     /** performance.now() when the last send finished, if the next call follows it directly. */
     private lastSendEndPN: number | undefined = undefined;
     /** Decaying max of the dispatch loop's non-send time per frame (ms). */

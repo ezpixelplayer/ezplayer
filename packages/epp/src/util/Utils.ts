@@ -44,11 +44,24 @@ export async function atomicSleep(nextTime: number) {
     await Atomics.waitAsync(int32USB, 0, 0, st).value;
 }
 
+/** Learned overshoot of a timed Atomics.wait (~15.6 ms on Windows without a
+ *  1 ms multimedia timer, ~1 ms with one). Same approach as the playback
+ *  loop's xbusySleep: wait coarsely while safe, spin-yield the remainder so
+ *  the wake lands on time. setImmediate keeps I/O completions flowing. */
+let lpWaitOvershootMs = 0.5;
+
 export async function lpBusySleep(nextTime: number) {
     while (true) {
         const nt = performance.now();
-        if (nt + 0.1 > nextTime) return;
-        Atomics.wait(int32USB, 0, 0, 0.1);
+        const remaining = nextTime - nt;
+        if (remaining <= 0.05) return;
+        if (remaining > lpWaitOvershootMs + 0.3) {
+            const req = Math.min(1, remaining - lpWaitOvershootMs);
+            Atomics.wait(int32USB, 0, 0, req);
+            const overshoot = Math.max(0, performance.now() - nt - req);
+            lpWaitOvershootMs =
+                overshoot > lpWaitOvershootMs ? overshoot : lpWaitOvershootMs * 0.999 + overshoot * 0.001;
+        }
         await new Promise((resolve) => setImmediate(resolve));
     }
 }

@@ -111,7 +111,7 @@ describe('paced frame sending', () => {
         const events: { id: number; t: number; bytes: number }[] = [];
         const senders = [new FakeSender(0, 12000, events)];
         const job = makeFakeJob(senders, 1000);
-        job.slotFraction = 0.5; // pacing is off by default; this test is about the pacer
+        job.slotFraction = 0.5; // explicit, so the test holds whatever the default becomes
         // A rate this low would need over a second to place 12000 bytes
         job.senders[0].rateLimit = 10;
 

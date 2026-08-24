@@ -47,17 +47,12 @@ export class SendJob {
     dataBuffers: Uint8Array[] = [];
     senders: SenderJob[] = [];
 
-    /** Fraction of the frame interval to stretch sends across.
-     *
-     *  Zero -- the default -- means no pacing: the whole frame goes out as one
-     *  burst. Pacing only smooths the wire because it occupies wall clock, and
-     *  while the send runs on the dispatch loop that is time taken directly from
-     *  frame prep. Tried in production at 0.85 and again at 0.5; both cost more
-     *  in dropped frames than the smoothing was worth. The scheduler below is
-     *  intact and tested, so set this above zero once sending has its own
-     *  thread and the time it spends is no longer the loop's to lose.
-     */
-    slotFraction: number = 0;
+    /** Fraction of the frame interval to stretch sends across; the rest is
+     *  headroom for the push packet, socket callbacks, and next-frame prep.
+     *  The send holds the dispatch loop, so callers that can measure their own
+     *  overhead should set this per frame. Zero sends the whole frame as one
+     *  burst. */
+    slotFraction: number = 0.5;
 
     frameNumber: number = -1;
 }

@@ -1841,6 +1841,19 @@ async function processQueue() {
     const sender: FrameSender = new FrameSender();
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
+    // Override for the paced-send slot fraction (0 = pacing off, one burst
+    // per frame); the built-in default otherwise applies.
+    {
+        const f = Number(process.env.EZP_SEND_SLOT_FRACTION);
+        if (process.env.EZP_SEND_SLOT_FRACTION !== undefined && Number.isFinite(f) && f >= 0 && f <= 0.95) {
+            sender.maxSlotFraction = f;
+        }
+        emitInfo(
+            sender.maxSlotFraction > 0
+                ? `Paced send: slot fraction ${sender.maxSlotFraction}`
+                : 'Paced send off: each frame goes out as one burst',
+        );
+    }
     sender.blackFramesEnabled = sendIdleBlackFrames;
     sender.outputEnabled = !outputSuppressed;
     curSender = sender;
