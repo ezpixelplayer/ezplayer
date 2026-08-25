@@ -95,7 +95,6 @@ describe('audio-convert', () => {
     });
 
     it('resolves a usable ffmpeg binary path', async () => {
-        const { resolveFfmpegBinary } = await import('./audio-convert.js');
         const bin = resolveFfmpegBinary();
         expect(bin.toLowerCase()).toMatch(/ffmpeg/);
         // In this workspace, ffmpeg-static should provide a real file.
