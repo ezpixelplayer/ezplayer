@@ -34,7 +34,7 @@ import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 
 /** Extensions accepted by the Add Song audio picker. MP3 is unchanged;
  *  other formats are converted to MP3 on the player via ffmpeg. */
-const ADD_SONG_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'];
+const ADD_SONG_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'];
 
 function isSupportedAddSongAudioName(name: string): boolean {
     const lower = name.toLowerCase();
@@ -68,6 +68,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const [needValidMp3File, setNeedValidMp3File] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadingName, setUploadingName] = useState<string | null>(null);
+    /** True while non-MP3 audio is being converted on the player via ffmpeg. */
+    const [convertingAudio, setConvertingAudio] = useState(false);
+    const [convertingAudioName, setConvertingAudioName] = useState<string | null>(null);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -87,6 +90,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         setMp3PlayerName(null);
         setArtworkName(null);
         setImageUrl('');
+        setConvertingAudio(false);
+        setConvertingAudioName(null);
         setNewSongData({
             title: '',
             artist: '',
@@ -159,6 +164,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         if (!needsBrowserMp3Conversion(audioName)) {
             return audioName;
         }
+        setConvertingAudio(true);
+        setConvertingAudioName(audioName);
         try {
             const result = await dispatch(ensureShowAudioMp3(audioName)).unwrap();
             return result.audioFile || undefined;
@@ -173,6 +180,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                 },
             );
             return undefined;
+        } finally {
+            setConvertingAudio(false);
+            setConvertingAudioName(null);
         }
     };
 
@@ -225,6 +235,11 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                 return;
             }
             if (!(await uploadPicked(file))) return;
+            // Show selection immediately so the field isn't blank during tags/conversion.
+            if (needsBrowserMp3Conversion(file.name)) {
+                setConvertingAudio(true);
+                setConvertingAudioName(file.name);
+            }
             // Prefer metadata from the original upload before conversion.
             await applyAudioMetadata(file.name);
             const playableName = await resolvePlayableAudioName(file.name);
@@ -368,12 +383,22 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                                     Choose on player
                                 </Button>
                                 <Typography variant="body2" color="text.secondary">
-                                    {mp3File?.name ?? mp3PlayerName ?? ''}
+                                    {convertingAudio
+                                        ? (convertingAudioName ?? '')
+                                        : (mp3File?.name ?? mp3PlayerName ?? '')}
                                 </Typography>
                             </Box>
+                            {convertingAudio && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                                    <LinearProgress sx={{ flex: 1 }} />
+                                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                                        Converting to MP3 — please wait…
+                                    </Typography>
+                                </Box>
+                            )}
                             {needValidMp3File && (
                                 <Typography color="error" sx={{ mt: 1 }}>
-                                    Please upload a supported audio file (.mp3, .wav, .m4a, .aac, .flac, .ogg, .wma)
+                                    Please upload a supported audio file (.mp3, .wav, .m4a, .aac, .flac, .ogg, .wma, .mp4)
                                 </Typography>
                             )}
                         </Grid>
@@ -522,7 +547,11 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             color="primary"
                             onClick={handleNewSongSubmit}
                             disabled={
-                                uploading || !(fseqFile || fseqPlayerName) || !newSongData.title || !newSongData.artist
+                                uploading ||
+                                convertingAudio ||
+                                !(fseqFile || fseqPlayerName) ||
+                                !newSongData.title ||
+                                !newSongData.artist
                             }
                         >
                             Save

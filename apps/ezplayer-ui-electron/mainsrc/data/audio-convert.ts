@@ -11,7 +11,8 @@ import { randomUUID } from 'node:crypto';
  * autodetection. Playback is MP3-only (mpg123), so non-MP3 files are converted
  * via ffmpeg (bundled `ffmpeg-static`, with PATH / FFMPEG_PATH fallbacks).
  */
-export const CONVERTIBLE_AUDIO_EXTENSIONS = ['.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'] as const;
+/** Includes `.mp4` (audio track extracted; video discarded via ffmpeg `-vn`). */
+export const CONVERTIBLE_AUDIO_EXTENSIONS = ['.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'] as const;
 
 /** MP3 + convertible formats. MP3 is never converted. */
 export const SUPPORTED_AUDIO_EXTENSIONS = ['.mp3', ...CONVERTIBLE_AUDIO_EXTENSIONS] as const;
@@ -132,6 +133,36 @@ function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
  * - If the sibling `.mp3` already exists, reuses it (does not overwrite).
  * - Uses a temp file during conversion and cleans it up on failure / after move.
  */
+/**
+ * Resolve a stored or picked audio path to an absolute playable MP3.
+ * Relative paths are resolved under the show folder first, then the optional media folder.
+ */
+export async function preparePlayableAudioPath(
+    audioPath: string,
+    showFolder: string,
+    mediaFolder?: string,
+): Promise<string> {
+    const trimmed = audioPath.trim();
+    if (!trimmed) {
+        throw new Error('Audio path is required');
+    }
+
+    let resolved = path.isAbsolute(trimmed) ? path.resolve(trimmed) : path.join(showFolder, trimmed);
+    if (!(await fileExists(resolved))) {
+        const media = mediaFolder?.trim();
+        if (media) {
+            const alt = path.join(media, path.basename(trimmed));
+            if (await fileExists(alt)) {
+                resolved = alt;
+            }
+        }
+    }
+    if (!(await fileExists(resolved))) {
+        throw new Error(`Audio file not found: ${resolved}`);
+    }
+    return ensureMp3AudioFile(resolved);
+}
+
 export async function ensureMp3AudioFile(sourcePath: string): Promise<string> {
     if (!sourcePath?.trim()) {
         throw new Error('Audio path is required');

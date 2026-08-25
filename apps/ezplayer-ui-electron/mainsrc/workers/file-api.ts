@@ -38,6 +38,7 @@ import type { SequenceRecord } from '@ezplayer/ezplayer-core';
 import { batchImportSequences } from '../data/batch-sequence-import.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
 import { ensureMp3AudioFile, needsMp3Conversion } from '../data/audio-convert.js';
+import { toShowWirePath } from '../data/FileStorage.js';
 import { fileBaseName } from './pathnames.js';
 
 /** Loose view of caught errors: fs/upload failures carry optional status/code/message. */
@@ -51,7 +52,7 @@ export interface FileApiDeps {
     getMediaFolder?: () => string | undefined;
 }
 
-const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac', '.wma']);
+const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac', '.wma', '.mp4']);
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg']);
 const IMAGE_EXTS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const SEQ_EXTS = new Set(['.fseq']);
@@ -778,12 +779,17 @@ export async function autodetectSequenceCore(showFolder: string | undefined, fse
             );
         }
     }
-    // Report show-relative names — clients never see absolute player paths.
+    // Report show-relative wire paths (or absolute when outside the show folder).
     return {
         status: 200,
         body: {
             ...detected,
-            audioFile: detected.audioFile ? path.basename(detected.audioFile) : undefined,
+            audioFile:
+                detected.audioFile && showFolder
+                    ? toShowWirePath(detected.audioFile, showFolder)
+                    : detected.audioFile
+                      ? path.basename(detected.audioFile)
+                      : undefined,
             imageFile: detected.imageFile ? path.basename(detected.imageFile) : undefined,
         },
     };
@@ -803,7 +809,7 @@ export async function audioMetadataCore(showFolder: string | undefined, audioNam
 }
 
 /** Convert a show-folder audio file to MP3 when needed. Existing `.mp3` is a no-op.
- *  Returns the playable basename (always `.mp3` on success). */
+ *  Returns the playable wire path (show-relative, or absolute when outside the show folder). */
 export async function ensureMp3AudioCore(showFolder: string | undefined, audioName: unknown): Promise<ProxyResult> {
     const res = resolveNamed(showFolder, audioName);
     if (!('target' in res)) return res;
@@ -812,7 +818,12 @@ export async function ensureMp3AudioCore(showFolder: string | undefined, audioNa
             return { status: 400, body: { error: `Unsupported audio format: ${path.extname(res.target)}` } };
         }
         const mp3Path = await ensureMp3AudioFile(res.target);
-        return { status: 200, body: { audioFile: path.basename(mp3Path) } };
+        return {
+            status: 200,
+            body: {
+                audioFile: showFolder ? toShowWirePath(mp3Path, showFolder) : path.basename(mp3Path),
+            },
+        };
     } catch (err) {
         return { status: 500, body: { error: (err as ErrLike)?.message ?? 'Audio conversion failed' } };
     }

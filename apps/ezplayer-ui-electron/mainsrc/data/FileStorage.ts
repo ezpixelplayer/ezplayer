@@ -54,17 +54,19 @@ function ensureAbsolute(p: string, base: string): string {
     return path.join(base, p);
 }
 
-/**
- * Get relative path of a file against a base directory.
- * If not under base, returns the absolute path unchanged.
- */
-function toRelative(p: string, base: string): string {
-    const rel = path.relative(base, p);
+/** Show-folder-relative wire path for `sequences.json`; absolute when outside the show folder. */
+export function toShowWirePath(p: string, showFolder: string): string {
+    const rel = path.relative(showFolder, path.resolve(p));
     // path.relative returns things like "..\.." if not inside base
     if (rel.startsWith('..') || path.isAbsolute(rel)) {
-        return p; // not relative to base, return as-is
+        return path.resolve(p);
     }
     return rel;
+}
+
+/** @internal Used when persisting sequences.json */
+function toRelative(p: string, base: string): string {
+    return toShowWirePath(p, base);
 }
 
 /** Resolve a show-folder JSON file to its `.ezplayer/`-prefixed location. */

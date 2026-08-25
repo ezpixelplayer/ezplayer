@@ -54,7 +54,7 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { ensureMp3AudioFile } from './data/audio-convert.js';
+import { ensureMp3AudioFile, preparePlayableAudioPath } from './data/audio-convert.js';
 
 import type {
     CloudCommand,
@@ -458,9 +458,22 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             ups.work = { title: base, artist: '', length: 0 };
         }
         if (ups.files && showFolder) {
-            for (const key of ['fseq', 'audio', 'thumb'] as const) {
+            for (const key of ['fseq', 'thumb'] as const) {
                 const p = ups.files[key];
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
+            }
+            if (ups.files.audio) {
+                try {
+                    ups.files.audio = await preparePlayableAudioPath(
+                        ups.files.audio,
+                        showFolder,
+                        getSettingsCache()?.mediaFolder,
+                    );
+                } catch (err) {
+                    console.warn(`[sequences] Could not prepare audio "${ups.files.audio}":`, err);
+                    const p = ups.files.audio;
+                    if (p && !path.isAbsolute(p)) ups.files.audio = path.join(showFolder, p);
+                }
             }
         }
         if (!ups?.work?.length && ups.files?.fseq) {

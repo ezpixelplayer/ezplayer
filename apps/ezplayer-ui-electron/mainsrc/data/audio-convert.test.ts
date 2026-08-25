@@ -72,6 +72,7 @@ describe('audio-convert', () => {
         expect(needsMp3Conversion('a.mp3')).toBe(false);
         expect(needsMp3Conversion('a.wav')).toBe(true);
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).toContain('.flac');
+        expect(CONVERTIBLE_AUDIO_EXTENSIONS).toContain('.mp4');
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).not.toContain('.mp3');
     });
 
