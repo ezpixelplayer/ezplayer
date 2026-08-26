@@ -184,6 +184,12 @@ const playbackSettingsSlice = createSlice({
                 (e) => e.id !== action.payload,
             );
         },
+
+        /** Electron local speaker sinks (one AudioContext/window per id). */
+        setAudioOutputDeviceIds(state, action: PayloadAction<string[]>) {
+            const next = Array.from(new Set(action.payload.filter(Boolean)));
+            state.settings.audioOutputDeviceIds = next.length > 0 ? next : undefined;
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -222,6 +228,7 @@ export const {
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
+    setAudioOutputDeviceIds,
 } = playbackSettingsSlice.actions;
 
 export const playbackSettingsActions = playbackSettingsSlice.actions;

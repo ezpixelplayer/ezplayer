@@ -1,12 +1,15 @@
 import { Add, Delete } from '@mui/icons-material';
 import {
     Button,
+    Checkbox,
     Chip,
     Dialog,
     DialogContent,
     DialogTitle,
     Divider,
     FormControl,
+    FormControlLabel,
+    FormGroup,
     IconButton,
     List,
     ListItem,
@@ -15,10 +18,10 @@ import {
     Slider,
     Typography,
 } from '@mui/material';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Select } from '@ezplayer/shared-ui-components';
-import type { VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import { Select, isElectron } from '@ezplayer/shared-ui-components';
+import type { AudioDevice, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
@@ -40,6 +43,12 @@ const FRESH_ENTRY: Partial<VolumeScheduleEntry> = {
     volumeLevel: 100,
 };
 
+/** Prefer real sinks; Chromium's synthetic "default"/"communications" entries
+ *  often duplicate a physical device and would double-play if both are checked. */
+function isPhysicalOutput(d: AudioDevice): boolean {
+    return d.deviceId !== 'default' && d.deviceId !== 'communications';
+}
+
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
@@ -47,10 +56,59 @@ export const AudioSettings: React.FC = () => {
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([]);
 
     // Slider values while dragging. The store is only updated on commit
     const [draftVolume, setDraftVolume] = useState<number | null>(null);
     const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
+
+    const selectedOutputIds = settings.audioOutputDeviceIds ?? [];
+    const electronDesktop = isElectron();
+
+    useEffect(() => {
+        if (!electronDesktop || !navigator.mediaDevices?.enumerateDevices) return;
+
+        let cancelled = false;
+        const refresh = async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                if (cancelled) return;
+                setOutputDevices(
+                    devices
+                        .filter((d) => d.kind === 'audiooutput')
+                        .filter((d) => isPhysicalOutput(d as AudioDevice))
+                        .map(
+                            (d) =>
+                                ({
+                                    label: d.label,
+                                    deviceId: d.deviceId,
+                                    kind: d.kind,
+                                    groupId: d.groupId,
+                                }) satisfies AudioDevice,
+                        ),
+                );
+            } catch (err) {
+                console.warn('[AudioSettings] enumerateDevices failed', err);
+            }
+        };
+
+        void refresh();
+        navigator.mediaDevices.addEventListener?.('devicechange', refresh);
+        return () => {
+            cancelled = true;
+            navigator.mediaDevices.removeEventListener?.('devicechange', refresh);
+        };
+    }, [electronDesktop]);
+
+    const toggleOutputDevice = (deviceId: string, checked: boolean) => {
+        const next = new Set(selectedOutputIds);
+        if (checked) {
+            next.add(deviceId);
+        } else {
+            next.delete(deviceId);
+        }
+        dispatch(playbackSettingsActions.setAudioOutputDeviceIds([...next]));
+    };
 
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
@@ -96,6 +154,59 @@ export const AudioSettings: React.FC = () => {
 
     return (
         <Box>
+            {electronDesktop && (
+                <>
+                    <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                        Audio Outputs
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Play to one or more speakers at once. Each selected device gets its own audio
+                        engine (one AudioContext per window). With none selected, the system default
+                        output is used.
+                    </Typography>
+                    {selectedOutputIds.length >= 2 &&
+                        outputDevices.filter(
+                            (d) =>
+                                selectedOutputIds.includes(d.deviceId) &&
+                                /bluetooth|headset|earbuds|buds/i.test(d.label),
+                        ).length >= 2 && (
+                            <Typography
+                                variant="body2"
+                                color="warning.main"
+                                sx={{ mb: 2, fontWeight: 600 }}
+                            >
+                                Two Bluetooth earphones usually cannot play at the same time. Classic
+                                Bluetooth only keeps one high-quality audio stream active. Use wired/USB
+                                speakers, or Windows 11 Quick Settings → Shared Audio (requires Bluetooth
+                                LE Audio on the PC and both headsets).
+                            </Typography>
+                        )}
+                    {outputDevices.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                            No audio output devices found.
+                        </Typography>
+                    ) : (
+                        <FormGroup sx={{ mb: 3 }}>
+                            {outputDevices.map((d) => (
+                                <FormControlLabel
+                                    key={d.deviceId}
+                                    control={
+                                        <Checkbox
+                                            checked={selectedOutputIds.includes(d.deviceId)}
+                                            onChange={(_, isChecked) =>
+                                                toggleOutputDevice(d.deviceId, isChecked)
+                                            }
+                                        />
+                                    }
+                                    label={d.label || `Output (${d.deviceId.slice(0, 8)}…)`}
+                                />
+                            ))}
+                        </FormGroup>
+                    )}
+                    <Divider sx={{ my: 3 }} />
+                </>
+            )}
+
             <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
                 Volume Control
             </Typography>

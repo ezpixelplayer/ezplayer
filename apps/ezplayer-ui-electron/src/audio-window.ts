@@ -1,8 +1,19 @@
 // Runs in the hidden audio window (renderer) to avoid long renders causing audio disruptions
-import { AudioChunk } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+
+declare global {
+    interface Window {
+        electronAPI?: Partial<EZPElectronAPI> & { getAudioSinkId?: () => string };
+    }
+}
+
+type AudioContextWithSink = AudioContext & {
+    setSinkId?: (sinkId: string) => Promise<void>;
+    sinkId?: string;
+};
 
 export class RealTimeChunkPlayer {
-    private audioCtx?: AudioContext;
+    private audioCtx?: AudioContextWithSink;
     private audioCtxIncarnation = 1;
 
     // scheduling state
@@ -10,16 +21,59 @@ export class RealTimeChunkPlayer {
     private audioPlayAtNextRealTime: number | undefined = undefined;
     private audioPlayAtNextACT: number | undefined = undefined;
 
-    constructor() {
+    constructor(sinkId = '') {
         const AC =
             window.AudioContext ||
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         // Pin the context to 48 kHz so it matches the curated/normalized audio rate.
         // Source PCM already at 48 kHz then needs no per-chunk resampling (clean seams);
         // any stray 44.1 kHz content is resampled here but masked by the chunk crossfade.
-        this.audioCtx = new AC({ sampleRate: 48000 });
+        // Do NOT pass sinkId into the constructor: an invalid/unpermitted sink throws
+        // and aborts this whole script (no onAudioChunk listener → silent playback).
+        // Route via setSinkId below, which is try/caught and falls back to default.
+        this.audioCtx = new AC({ sampleRate: 48000 }) as AudioContextWithSink;
         this.audioCtxIncarnation++;
         this.resetSchedulingState();
+        void this.applySinkId(sinkId);
+    }
+
+    private async applySinkId(sinkId: string): Promise<void> {
+        if (!this.audioCtx) return;
+
+        try {
+            if (this.audioCtx.state === 'suspended') {
+                await this.audioCtx.resume();
+            }
+        } catch (err) {
+            console.warn('[audio-window] AudioContext.resume failed', err);
+        }
+
+        if (!sinkId) {
+            console.log('[audio-window] using system default sink');
+            return;
+        }
+
+        if (!this.audioCtx.setSinkId) {
+            console.warn('[audio-window] AudioContext.setSinkId unavailable; using default sink');
+            return;
+        }
+
+        // Already bound?
+        if (this.audioCtx.sinkId === sinkId) {
+            console.log(`[audio-window] sink already ${sinkId}`);
+            return;
+        }
+
+        try {
+            await this.audioCtx.setSinkId(sinkId);
+            console.log(`[audio-window] sink set to ${sinkId} (ctx.sinkId=${this.audioCtx.sinkId ?? '?'})`);
+        } catch (err) {
+            const name = err instanceof DOMException ? err.name : 'Error';
+            console.error(
+                `[audio-window] setSinkId(${sinkId}) failed (${name}); staying on system default.`,
+                err,
+            );
+        }
     }
 
     private resetSchedulingState() {
@@ -117,12 +171,20 @@ function log(msg: string) {
     }
 }
 
-// Create the player
-const player = new RealTimeChunkPlayer();
-log('Audio engine ready (TS)');
+const sinkId =
+    window.electronAPI?.getAudioSinkId?.() ??
+    new URLSearchParams(window.location.search).get('sinkId') ??
+    '';
+
+// Create the player bound to this window's sink
+const player = new RealTimeChunkPlayer(sinkId);
+log(`Audio engine ready (TS) sink=${sinkId || '(default)'}`);
 
 function handleAudioChunk(chunk: AudioChunk) {
     player.handleChunk(chunk);
 }
 
-window.electronAPI?.onAudioChunk(handleAudioChunk);
+const api = window.electronAPI;
+if (api?.onAudioChunk) {
+    api.onAudioChunk(handleAudioChunk);
+}

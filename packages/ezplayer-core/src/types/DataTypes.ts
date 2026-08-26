@@ -628,6 +628,13 @@ export interface PlaybackSettings {
      * co-located lookup fails (sequence import / autodetection).
      */
     mediaFolder?: string;
+    /**
+     * Local speaker outputs for the Electron desktop player. Each deviceId gets
+     * its own hidden BrowserWindow + AudioContext (Chromium: one sink per
+     * context). Empty/undefined → system default output only. Machine-local;
+     * not part of cloud-managed settings groups.
+     */
+    audioOutputDeviceIds?: string[];
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,

@@ -7,6 +7,28 @@ title: Audio
 
 ![Audio](/img/audio.png)
 
+## Audio Outputs
+
+On the **desktop (Electron) app**, you can play the same audio to multiple
+speakers at once. Open **Settings → Audio**, then check each output you want.
+
+- With **none** selected, EZPlayer uses the system default output.
+- Each selected device gets its own hidden audio engine window (one Web Audio
+  context per sink — Chromium’s limit of one sink per context).
+
+This setting is stored in the show folder’s `playbackSettings.json` and is
+local to the machine (not synced via cloud settings).
+
+**Note on Bluetooth:** Selecting two Bluetooth earphones in EZPlayer will open two
+audio engines, but **classic Bluetooth on most PCs only delivers one high-quality
+A2DP stream**. Both streams often end up on whichever headset Windows treats as
+active. That is an OS/radio limit, not something Chromium `setSinkId` can bypass.
+
+To listen on two wireless headsets at once on Windows 11, use **Quick Settings →
+Shared Audio** (needs Bluetooth LE Audio on the PC and both accessories). For
+app-level multi-output testing, prefer **wired/USB** devices, or one wired + one
+Bluetooth.
+
 ## Volume
 
 Volume levels and schedule overrides are documented under

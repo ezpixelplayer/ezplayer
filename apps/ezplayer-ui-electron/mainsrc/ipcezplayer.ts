@@ -75,6 +75,7 @@ import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } fr
 import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { getDiagnosticsConsent, reportDiagEvent, setDiagnosticsConsent } from './diagnostics.js';
 import { safeSend } from './safe-send.js';
+import { broadcastAudioChunk, syncAudioOutputDevices } from './audioWindows.js';
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
@@ -401,6 +402,7 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
 
     applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
     await saveCloudSettingsMeta(metaPath, newMeta);
+    syncAudioOutputDevices(next.audioOutputDeviceIds);
     safeSend(updateWindow, 'update:playbacksettings', next);
     broadcastToWebSocket('playbackSettings', next);
     playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
@@ -588,6 +590,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     const settings = getSettingsCache();
     if (settings) {
+        syncAudioOutputDevices(settings.audioOutputDeviceIds);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -779,11 +782,7 @@ export async function applyRotatePlayerToken(): Promise<void> {
     applyPlayerIdToken(newToken);
 }
 
-export async function registerContentHandlers(
-    mainWindow: BrowserWindow | null,
-    audioWindow: BrowserWindow | null,
-    nPlayWorker: Worker,
-) {
+export async function registerContentHandlers(mainWindow: BrowserWindow | null, nPlayWorker: Worker) {
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
@@ -923,6 +922,7 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<boolean> => {
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
+        syncAudioOutputDevices(settings.audioOutputDeviceIds);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -1067,8 +1067,7 @@ export async function registerContentHandlers(
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                //safeSend(mainWindow, 'audio:chunk', msg.chunk);
-                safeSend(audioWindow, 'audio:chunk', msg.chunk, [msg.chunk.buffer]);
+                broadcastAudioChunk(msg.chunk);
                 break;
             }
             case 'pixelbuffer': {
