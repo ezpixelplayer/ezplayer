@@ -1,5 +1,8 @@
-import { Add, Delete } from '@mui/icons-material';
+import { Add, Delete, ExpandMore } from '@mui/icons-material';
 import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
     Button,
     Checkbox,
     Chip,
@@ -9,7 +12,6 @@ import {
     Divider,
     FormControl,
     FormControlLabel,
-    FormGroup,
     IconButton,
     List,
     ListItem,
@@ -44,9 +46,32 @@ const FRESH_ENTRY: Partial<VolumeScheduleEntry> = {
 };
 
 /** Prefer real sinks; Chromium's synthetic "default"/"communications" entries
- *  often duplicate a physical device and would double-play if both are checked. */
+ *  often duplicate a physical device and would double-play if both are used. */
 function isPhysicalOutput(d: AudioDevice): boolean {
     return d.deviceId !== 'default' && d.deviceId !== 'communications';
+}
+
+/**
+ * UI sentinel for system Default (`setSinkId('')`). MUI Select treats `value=""`
+ * as unselected, so we never use an empty option id in the dropdown.
+ */
+const UI_DEFAULT_DEVICE_ID = '__ezp_system_default__';
+const DEFAULT_DEVICE_OPTION = { id: UI_DEFAULT_DEVICE_ID, name: 'Default' };
+
+function toUiDeviceId(deviceId: string): string {
+    return deviceId === '' ? UI_DEFAULT_DEVICE_ID : deviceId;
+}
+
+function fromUiDeviceId(uiId: string): string {
+    return uiId === UI_DEFAULT_DEVICE_ID ? '' : uiId;
+}
+
+type ScheduleDialogTarget =
+    | { kind: 'primary' }
+    | { kind: 'additional'; outputId: string };
+
+function newOutputId(): string {
+    return `aaudio-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export const AudioSettings: React.FC = () => {
@@ -54,15 +79,21 @@ export const AudioSettings: React.FC = () => {
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
 
     const [addOpen, setAddOpen] = useState(false);
+    const [scheduleTarget, setScheduleTarget] = useState<ScheduleDialogTarget>({ kind: 'primary' });
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
-    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [pendingDelete, setPendingDelete] = useState<
+        { kind: 'primary'; entryId: string } | { kind: 'additional'; outputId: string; entryId: string } | null
+    >(null);
     const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([]);
+    const [additionalExpanded, setAdditionalExpanded] = useState(false);
 
     // Slider values while dragging. The store is only updated on commit
     const [draftVolume, setDraftVolume] = useState<number | null>(null);
     const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
+    const [draftAdditionalVolumes, setDraftAdditionalVolumes] = useState<Record<string, number | null>>({});
 
-    const selectedOutputIds = settings.audioOutputDeviceIds ?? [];
+    const additionalOutputs = settings.additionalAudioOutputs ?? [];
+    const primaryDeviceId = settings.primaryAudioOutputDeviceId ?? '';
     const electronDesktop = isElectron();
 
     useEffect(() => {
@@ -100,48 +131,108 @@ export const AudioSettings: React.FC = () => {
         };
     }, [electronDesktop]);
 
-    const toggleOutputDevice = (deviceId: string, checked: boolean) => {
-        const next = new Set(selectedOutputIds);
-        if (checked) {
-            next.add(deviceId);
-        } else {
-            next.delete(deviceId);
-        }
-        dispatch(playbackSettingsActions.setAudioOutputDeviceIds([...next]));
-    };
+    /** Connected physical outputs only (Default is prepended for primary). */
+    const connectedDeviceOptions = outputDevices.map((d) => ({
+        id: d.deviceId,
+        name: d.label || `Output (${d.deviceId.slice(0, 8)}…)`,
+    }));
 
-    const openAdd = () => {
+    /** Primary picker: Default first, then each connected device. */
+    const primaryDeviceOptions = [DEFAULT_DEVICE_OPTION, ...connectedDeviceOptions];
+
+    /**
+     * Additional rows = one per currently connected physical device that is not
+     * already the primary. Never invent extra empty slots.
+     */
+    const additionalDeviceOptions = connectedDeviceOptions.filter((d) => d.id !== primaryDeviceId);
+
+    const additionalByDeviceId = new Map(
+        additionalOutputs.filter((o) => o.deviceId).map((o) => [o.deviceId, o]),
+    );
+
+    // If primary moves onto a device that was additional, drop that duplicate only.
+    // Do NOT prune against an empty/unready device list — that was wiping saved
+    // additionalAudioOutputs on every Settings remount and auto-saving the wipe.
+    useEffect(() => {
+        if (!electronDesktop) return;
+        const withoutPrimaryDup = additionalOutputs.filter((o) => o.deviceId !== primaryDeviceId);
+        if (withoutPrimaryDup.length !== additionalOutputs.length) {
+            dispatch(playbackSettingsActions.setAdditionalAudioOutputs(withoutPrimaryDup));
+        }
+    }, [electronDesktop, primaryDeviceId, additionalOutputs, dispatch]);
+
+    const openAddSchedule = (target: ScheduleDialogTarget) => {
+        setScheduleTarget(target);
         setNewEntry(FRESH_ENTRY);
         setAddOpen(true);
     };
 
-    const submitAdd = () => {
+    const submitAddSchedule = () => {
         if (
-            newEntry.days &&
-            newEntry.startTime &&
-            newEntry.endTime &&
-            newEntry.volumeLevel !== undefined &&
-            isValidTimeFormat(newEntry.startTime) &&
-            isValidExtendedTimeFormat(newEntry.endTime)
+            !(
+                newEntry.days &&
+                newEntry.startTime &&
+                newEntry.endTime &&
+                newEntry.volumeLevel !== undefined &&
+                isValidTimeFormat(newEntry.startTime) &&
+                isValidExtendedTimeFormat(newEntry.endTime)
+            )
         ) {
-            const entry: VolumeScheduleEntry = {
-                id: generateId(),
-                days: newEntry.days,
-                startTime: formatTime24Hour(newEntry.startTime),
-                endTime: formatTime24Hour(newEntry.endTime),
-                volumeLevel: newEntry.volumeLevel,
-            };
-            dispatch(playbackSettingsActions.addVolumeScheduleEntry(entry));
-            setNewEntry(FRESH_ENTRY);
-            setAddOpen(false);
+            return;
         }
+        const entry: VolumeScheduleEntry = {
+            id: generateId(),
+            days: newEntry.days,
+            startTime: formatTime24Hour(newEntry.startTime),
+            endTime: formatTime24Hour(newEntry.endTime),
+            volumeLevel: newEntry.volumeLevel,
+        };
+        if (scheduleTarget.kind === 'primary') {
+            dispatch(playbackSettingsActions.addVolumeScheduleEntry(entry));
+        } else {
+            dispatch(
+                playbackSettingsActions.addAdditionalAudioOutputScheduleEntry({
+                    id: scheduleTarget.outputId,
+                    entry,
+                }),
+            );
+        }
+        setNewEntry(FRESH_ENTRY);
+        setAddOpen(false);
     };
 
-    const confirmDelete = () => {
-        if (pendingDeleteId) {
-            dispatch(playbackSettingsActions.removeVolumeScheduleEntry(pendingDeleteId));
+    const confirmDeleteSchedule = () => {
+        if (!pendingDelete) return;
+        if (pendingDelete.kind === 'primary') {
+            dispatch(playbackSettingsActions.removeVolumeScheduleEntry(pendingDelete.entryId));
+        } else {
+            dispatch(
+                playbackSettingsActions.removeAdditionalAudioOutputScheduleEntry({
+                    id: pendingDelete.outputId,
+                    entryId: pendingDelete.entryId,
+                }),
+            );
         }
-        setPendingDeleteId(null);
+        setPendingDelete(null);
+    };
+
+    const setAdditionalEnabled = (deviceId: string, enabled: boolean) => {
+        const existing = additionalByDeviceId.get(deviceId);
+        if (enabled) {
+            if (existing) return;
+            dispatch(
+                playbackSettingsActions.addAdditionalAudioOutput({
+                    id: newOutputId(),
+                    deviceId,
+                    volumeControl: { defaultVolume: 100, schedule: [] },
+                }),
+            );
+            setAdditionalExpanded(true);
+            return;
+        }
+        if (existing) {
+            dispatch(playbackSettingsActions.removeAdditionalAudioOutput(existing.id));
+        }
     };
 
     const isAddValid =
@@ -152,57 +243,202 @@ export const AudioSettings: React.FC = () => {
         isValidTimeFormat(newEntry.startTime) &&
         isValidExtendedTimeFormat(newEntry.endTime);
 
+    const renderVolumeScheduleList = (
+        schedule: VolumeScheduleEntry[] | undefined,
+        onDelete: (entryId: string) => void,
+    ) => {
+        const entries = schedule ?? [];
+        if (entries.length === 0) return null;
+        return (
+            <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Current Volume Overrides ({entries.length} entries)
+                </Typography>
+                <List dense>
+                    {entries.map((entry, index) => (
+                        <React.Fragment key={entry.id}>
+                            <ListItem>
+                                <ListItemText
+                                    primary={
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                                flexWrap: 'wrap',
+                                            }}
+                                        >
+                                            <Chip label={getDaysDisplayName(entry.days)} size="small" />
+                                            <Typography variant="body2">
+                                                {formatTime24Hour(entry.startTime)} -{' '}
+                                                {formatTime24Hour(entry.endTime)}
+                                            </Typography>
+                                            <Chip
+                                                label={`${entry.volumeLevel}%`}
+                                                size="small"
+                                                color="primary"
+                                                variant="outlined"
+                                            />
+                                        </Box>
+                                    }
+                                    secondary={`Priority: ${entries.length - index}`}
+                                />
+                                <ListItemSecondaryAction>
+                                    <IconButton
+                                        edge="end"
+                                        onClick={() => onDelete(entry.id)}
+                                        size="small"
+                                        color="error"
+                                    >
+                                        <Delete />
+                                    </IconButton>
+                                </ListItemSecondaryAction>
+                            </ListItem>
+                            {index < entries.length - 1 && <Divider />}
+                        </React.Fragment>
+                    ))}
+                </List>
+            </Box>
+        );
+    };
+
+    const renderConnectedAdditionalDevice = (device: { id: string; name: string }) => {
+        const output = additionalByDeviceId.get(device.id);
+        const enabled = !!output;
+        const draft = output ? draftAdditionalVolumes[output.id] : null;
+        const volume = draft ?? output?.volumeControl?.defaultVolume ?? 100;
+
+        return (
+            <Box
+                key={device.id}
+                sx={{
+                    mb: 2,
+                    p: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                }}
+            >
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={enabled}
+                            onChange={(_, checked) => setAdditionalEnabled(device.id, checked)}
+                        />
+                    }
+                    label={
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                            {device.name}
+                        </Typography>
+                    }
+                    sx={{ mb: enabled ? 1 : 0 }}
+                />
+
+                {enabled && output && (
+                    <>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                            Volume
+                        </Typography>
+                        <Box sx={{ px: 2, mb: 1 }}>
+                            <Slider
+                                value={volume}
+                                onChange={(_, value) =>
+                                    setDraftAdditionalVolumes((prev) => ({
+                                        ...prev,
+                                        [output.id]: value as number,
+                                    }))
+                                }
+                                onChangeCommitted={(_, value) => {
+                                    setDraftAdditionalVolumes((prev) => ({
+                                        ...prev,
+                                        [output.id]: null,
+                                    }));
+                                    dispatch(
+                                        playbackSettingsActions.setAdditionalAudioOutputVolume({
+                                            id: output.id,
+                                            volume: value as number,
+                                        }),
+                                    );
+                                }}
+                                min={0}
+                                max={100}
+                                step={1}
+                                marks={[
+                                    { value: 0, label: '0' },
+                                    { value: 50, label: '50' },
+                                    { value: 100, label: '100' },
+                                ]}
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(v) => `${v}%`}
+                                sx={{
+                                    '& .MuiSlider-thumb': { width: 20, height: 20 },
+                                    '& .MuiSlider-track': { height: 6 },
+                                    '& .MuiSlider-rail': { height: 6 },
+                                }}
+                            />
+                        </Box>
+                        <Typography variant="body2" sx={{ mb: 2, fontWeight: 'medium' }}>
+                            Volume: {volume}%
+                        </Typography>
+
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                            Volume Schedule
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Independent overrides for this device. Last entry takes priority for
+                            overlapping times.
+                        </Typography>
+                        {renderVolumeScheduleList(output.volumeControl?.schedule, (entryId) =>
+                            setPendingDelete({
+                                kind: 'additional',
+                                outputId: output.id,
+                                entryId,
+                            }),
+                        )}
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Add />}
+                            onClick={() =>
+                                openAddSchedule({ kind: 'additional', outputId: output.id })
+                            }
+                        >
+                            Add Volume Override
+                        </Button>
+                    </>
+                )}
+            </Box>
+        );
+    };
+
     return (
         <Box>
             {electronDesktop && (
                 <>
                     <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
-                        Audio Outputs
+                        Audio Device
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Play to one or more speakers at once. Each selected device gets its own audio
-                        engine (one AudioContext per window). With none selected, the system default
-                        output is used.
+                        Primary output for this player. Default follows the system output; or pick a
+                        connected device (Speakers, Headset, …). Volume and schedule below apply to
+                        this device only.
                     </Typography>
-                    {selectedOutputIds.length >= 2 &&
-                        outputDevices.filter(
-                            (d) =>
-                                selectedOutputIds.includes(d.deviceId) &&
-                                /bluetooth|headset|earbuds|buds/i.test(d.label),
-                        ).length >= 2 && (
-                            <Typography
-                                variant="body2"
-                                color="warning.main"
-                                sx={{ mb: 2, fontWeight: 600 }}
-                            >
-                                Two Bluetooth earphones usually cannot play at the same time. Classic
-                                Bluetooth only keeps one high-quality audio stream active. Use wired/USB
-                                speakers, or Windows 11 Quick Settings → Shared Audio (requires Bluetooth
-                                LE Audio on the PC and both headsets).
-                            </Typography>
-                        )}
-                    {outputDevices.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                            No audio output devices found.
-                        </Typography>
-                    ) : (
-                        <FormGroup sx={{ mb: 3 }}>
-                            {outputDevices.map((d) => (
-                                <FormControlLabel
-                                    key={d.deviceId}
-                                    control={
-                                        <Checkbox
-                                            checked={selectedOutputIds.includes(d.deviceId)}
-                                            onChange={(_, isChecked) =>
-                                                toggleOutputDevice(d.deviceId, isChecked)
-                                            }
-                                        />
-                                    }
-                                    label={d.label || `Output (${d.deviceId.slice(0, 8)}…)`}
-                                />
-                            ))}
-                        </FormGroup>
-                    )}
+                    <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+                        <Select
+                            options={primaryDeviceOptions}
+                            itemText="name"
+                            itemValue="id"
+                            label="Audio Device"
+                            value={toUiDeviceId(primaryDeviceId)}
+                            onChange={(e) =>
+                                dispatch(
+                                    playbackSettingsActions.setPrimaryAudioOutputDeviceId(
+                                        fromUiDeviceId((e.target as HTMLSelectElement).value),
+                                    ),
+                                )
+                            }
+                        />
+                    </FormControl>
                     <Divider sx={{ my: 3 }} />
                 </>
             )}
@@ -254,62 +490,93 @@ export const AudioSettings: React.FC = () => {
                     Configure volume overrides for specific times. Last entry takes priority for overlapping times.
                 </Typography>
 
-                {(settings.volumeControl?.schedule?.length ?? 0) > 0 && (
-                    <Box sx={{ mb: 2 }}>
-                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                            Current Volume Overrides ({settings.volumeControl?.schedule?.length ?? 0} entries)
-                        </Typography>
-                        <List dense>
-                            {(settings.volumeControl?.schedule ?? []).map((entry, index) => (
-                                <React.Fragment key={entry.id}>
-                                    <ListItem>
-                                        <ListItemText
-                                            primary={
-                                                <Box
-                                                    sx={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 1,
-                                                        flexWrap: 'wrap',
-                                                    }}
-                                                >
-                                                    <Chip label={getDaysDisplayName(entry.days)} size="small" />
-                                                    <Typography variant="body2">
-                                                        {formatTime24Hour(entry.startTime)} -{' '}
-                                                        {formatTime24Hour(entry.endTime)}
-                                                    </Typography>
-                                                    <Chip
-                                                        label={`${entry.volumeLevel}%`}
-                                                        size="small"
-                                                        color="primary"
-                                                        variant="outlined"
-                                                    />
-                                                </Box>
-                                            }
-                                            secondary={`Priority: ${(settings.volumeControl?.schedule?.length ?? 0) - index}`}
-                                        />
-                                        <ListItemSecondaryAction>
-                                            <IconButton
-                                                edge="end"
-                                                onClick={() => setPendingDeleteId(entry.id)}
-                                                size="small"
-                                                color="error"
-                                            >
-                                                <Delete />
-                                            </IconButton>
-                                        </ListItemSecondaryAction>
-                                    </ListItem>
-                                    {index < (settings.volumeControl?.schedule?.length ?? 0) - 1 && <Divider />}
-                                </React.Fragment>
-                            ))}
-                        </List>
-                    </Box>
+                {renderVolumeScheduleList(settings.volumeControl?.schedule, (entryId) =>
+                    setPendingDelete({ kind: 'primary', entryId }),
                 )}
 
-                <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ mb: 2 }}>
+                <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => openAddSchedule({ kind: 'primary' })}
+                    sx={{ mb: 2 }}
+                >
                     Add Volume Override
                 </Button>
             </Box>
+
+            {electronDesktop && (
+                <>
+                    <Divider sx={{ my: 3 }} />
+                    <Accordion
+                        disableGutters
+                        elevation={0}
+                        expanded={additionalExpanded}
+                        onChange={(_, expanded) => setAdditionalExpanded(expanded)}
+                        sx={{
+                            bgcolor: 'transparent',
+                            '&:before': { display: 'none' },
+                            mb: 1,
+                        }}
+                    >
+                        <AccordionSummary
+                            expandIcon={<ExpandMore />}
+                            sx={{
+                                px: 0,
+                                minHeight: 40,
+                                '& .MuiAccordionSummary-content': { my: 1 },
+                            }}
+                        >
+                            <Box>
+                                <Typography variant="h6" sx={{ color: 'primary.main' }}>
+                                    Additional Audio Devices
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    {additionalDeviceOptions.length === 0
+                                        ? 'No other connected outputs available'
+                                        : `${additionalDeviceOptions.length} connected output${additionalDeviceOptions.length === 1 ? '' : 's'} — enable to play here too`}
+                                </Typography>
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ px: 0, pt: 1 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Only currently connected devices are listed. Check a device to play
+                                to it with its own volume and schedule.
+                            </Typography>
+                            {additionalDeviceOptions.filter((d) =>
+                                /bluetooth|headset|earbuds|buds/i.test(d.name),
+                            ).length >= 2 &&
+                                additionalOutputs.filter((o) =>
+                                    /bluetooth|headset|earbuds|buds/i.test(
+                                        connectedDeviceOptions.find((d) => d.id === o.deviceId)?.name ??
+                                            '',
+                                    ),
+                                ).length >= 2 && (
+                                    <Typography
+                                        variant="body2"
+                                        color="warning.main"
+                                        sx={{ mb: 2, fontWeight: 600 }}
+                                    >
+                                        Two Bluetooth earphones usually cannot play at the same time.
+                                        Classic Bluetooth only keeps one high-quality audio stream
+                                        active. Prefer wired/USB speakers, or Windows 11 Quick Settings →
+                                        Shared Audio (Bluetooth LE Audio).
+                                    </Typography>
+                                )}
+                            {additionalDeviceOptions.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">
+                                    {connectedDeviceOptions.length === 0
+                                        ? 'No audio output devices found.'
+                                        : 'The only connected device is already selected as primary.'}
+                                </Typography>
+                            ) : (
+                                additionalDeviceOptions.map((device) =>
+                                    renderConnectedAdditionalDevice(device),
+                                )
+                            )}
+                        </AccordionDetails>
+                    </Accordion>
+                </>
+            )}
 
             <Divider sx={{ my: 3 }} />
 
@@ -451,7 +718,7 @@ export const AudioSettings: React.FC = () => {
                             <Button
                                 variant="contained"
                                 startIcon={<Add />}
-                                onClick={submitAdd}
+                                onClick={submitAddSchedule}
                                 disabled={!isAddValid}
                                 sx={{ minWidth: 140 }}
                             >
@@ -462,7 +729,7 @@ export const AudioSettings: React.FC = () => {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={!!pendingDeleteId} onClose={() => setPendingDeleteId(null)}>
+            <Dialog open={!!pendingDelete} onClose={() => setPendingDelete(null)}>
                 <DialogTitle>
                     <Typography variant="h5">Delete Volume Override</Typography>
                 </DialogTitle>
@@ -472,10 +739,15 @@ export const AudioSettings: React.FC = () => {
                             Are you sure you want to delete this volume override?
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                            <Button variant="outlined" onClick={() => setPendingDeleteId(null)} sx={{ minWidth: 100 }}>
+                            <Button variant="outlined" onClick={() => setPendingDelete(null)} sx={{ minWidth: 100 }}>
                                 Cancel
                             </Button>
-                            <Button variant="contained" color="error" onClick={confirmDelete} sx={{ minWidth: 100 }}>
+                            <Button
+                                variant="contained"
+                                color="error"
+                                onClick={confirmDeleteSchedule}
+                                sx={{ minWidth: 100 }}
+                            >
                                 Delete
                             </Button>
                         </Box>

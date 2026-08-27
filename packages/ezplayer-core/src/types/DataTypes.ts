@@ -593,6 +593,18 @@ export interface VolumeControlState {
     schedule?: VolumeScheduleEntry[];
 }
 
+/**
+ * One extra local speaker sink for the Electron desktop player (in addition to
+ * the primary/system-default output driven by `PlaybackSettings.volumeControl`).
+ * Each entry has its own device, volume, and volume schedule.
+ */
+export interface AdditionalAudioOutput {
+    id: string;
+    /** Chromium `MediaDeviceInfo.deviceId` for an `audiooutput` sink. */
+    deviceId: string;
+    volumeControl: VolumeControlState;
+}
+
 export interface JukeboxSettings {
     /**
      * Tags that always exclude a song from the jukebox.
@@ -629,10 +641,21 @@ export interface PlaybackSettings {
      */
     mediaFolder?: string;
     /**
-     * Local speaker outputs for the Electron desktop player. Each deviceId gets
-     * its own hidden BrowserWindow + AudioContext (Chromium: one sink per
-     * context). Empty/undefined → system default output only. Machine-local;
-     * not part of cloud-managed settings groups.
+     * Primary local speaker sink for the Electron desktop player.
+     * Empty string / undefined = system Default output. Otherwise a Chromium
+     * `audiooutput` deviceId (Speakers, Headset, …). Machine-local.
+     */
+    primaryAudioOutputDeviceId?: string;
+    /**
+     * Extra local speaker sinks beyond the primary. Each entry is an
+     * independent device + volume + schedule. Empty/undefined → primary only.
+     * Machine-local; not part of cloud-managed settings groups.
+     */
+    additionalAudioOutputs?: AdditionalAudioOutput[];
+    /**
+     * @deprecated Prefer `additionalAudioOutputs`. Kept so older in-progress
+     * show-folder settings migrate cleanly; treated as device ids with default
+     * volume (100) and no schedule.
      */
     audioOutputDeviceIds?: string[];
 }

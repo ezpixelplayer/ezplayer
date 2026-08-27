@@ -7,17 +7,27 @@ title: Audio
 
 ![Audio](/img/audio.png)
 
-## Audio Outputs
+## Volume (primary output)
 
-On the **desktop (Electron) app**, you can play the same audio to multiple
-speakers at once. Open **Settings → Audio**, then check each output you want.
+The desktop player’s **primary** audio output is chosen under **Settings → Audio →
+Audio Device**:
 
-- With **none** selected, EZPlayer uses the system default output.
-- Each selected device gets its own hidden audio engine window (one Web Audio
-  context per sink — Chromium’s limit of one sink per context).
+- **Default** — system default output (first option)
+- Then any **connected** devices (Speakers, Headset, …)
 
-This setting is stored in the show folder’s `playbackSettings.json` and is
-local to the machine (not synced via cloud settings).
+**Volume Control** and schedule overrides apply only to that primary device.
+
+Volume levels and schedule overrides are also documented under
+[Advanced → Volume](../advanced/volume.md).
+
+## Additional Audio Devices
+
+On the **desktop (Electron) app**, expand **Additional Audio Devices**. Each
+**currently connected** output (except the primary) appears as one row — check it
+to play there with its own volume and schedule. Disconnected devices are not shown.
+
+Settings are stored in the show folder’s `playbackSettings.json` and are local to
+the machine (not synced via cloud settings).
 
 **Note on Bluetooth:** Selecting two Bluetooth earphones in EZPlayer will open two
 audio engines, but **classic Bluetooth on most PCs only delivers one high-quality
@@ -28,11 +38,6 @@ To listen on two wireless headsets at once on Windows 11, use **Quick Settings �
 Shared Audio** (needs Bluetooth LE Audio on the PC and both accessories). For
 app-level multi-output testing, prefer **wired/USB** devices, or one wired + one
 Bluetooth.
-
-## Volume
-
-Volume levels and schedule overrides are documented under
-[Advanced → Volume](../advanced/volume.md).
 
 ## Audio Sync Adjust
 

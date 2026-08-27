@@ -44,4 +44,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-} satisfies Partial<EZPElectronAPI> & { getAudioSinkId: () => string });
+    /** Linear amplitude 0–1 for this window's GainNode (per-sink volume). */
+    onAudioGain: (callback: (gain: number) => void) => {
+        ipcRenderer.on('audio:gain', (_event: IpcRendererEvent, gain: number) => {
+            callback(gain);
+        });
+    },
+} satisfies Partial<EZPElectronAPI> & {
+    getAudioSinkId: () => string;
+    onAudioGain: (callback: (gain: number) => void) => void;
+});

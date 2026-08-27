@@ -42,7 +42,7 @@ import {
     configureAudioWindowPaths,
     destroyAllAudioWindows,
     setAudioWindowsEnabled,
-    syncAudioOutputDevices,
+    syncAudioOutputsFromSettings,
 } from './mainsrc/audioWindows.js';
 
 import os from 'os';
@@ -170,7 +170,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         htmlBaseUrl: audioWindowDevUrl(),
     });
     // Default sink until show-folder settings load (may expand to N devices).
-    syncAudioOutputDevices(undefined);
+    syncAudioOutputsFromSettings(undefined);
 
     mainWindow = new BrowserWindow({
         width: 800,

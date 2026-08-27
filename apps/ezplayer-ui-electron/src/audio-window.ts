@@ -3,7 +3,10 @@ import type { AudioChunk, EZPElectronAPI } from '@ezplayer/ezplayer-core';
 
 declare global {
     interface Window {
-        electronAPI?: Partial<EZPElectronAPI> & { getAudioSinkId?: () => string };
+        electronAPI?: Partial<EZPElectronAPI> & {
+            getAudioSinkId?: () => string;
+            onAudioGain?: (callback: (gain: number) => void) => void;
+        };
     }
 }
 
@@ -14,6 +17,7 @@ type AudioContextWithSink = AudioContext & {
 
 export class RealTimeChunkPlayer {
     private audioCtx?: AudioContextWithSink;
+    private gainNode?: GainNode;
     private audioCtxIncarnation = 1;
 
     // scheduling state
@@ -32,9 +36,19 @@ export class RealTimeChunkPlayer {
         // and aborts this whole script (no onAudioChunk listener → silent playback).
         // Route via setSinkId below, which is try/caught and falls back to default.
         this.audioCtx = new AC({ sampleRate: 48000 }) as AudioContextWithSink;
+        this.gainNode = this.audioCtx.createGain();
+        this.gainNode.gain.value = 1;
+        this.gainNode.connect(this.audioCtx.destination);
         this.audioCtxIncarnation++;
         this.resetSchedulingState();
         void this.applySinkId(sinkId);
+    }
+
+    /** Linear amplitude 0–1. Independent per audio window / sink. */
+    public setGain(gain: number): void {
+        if (!this.gainNode) return;
+        const g = Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1;
+        this.gainNode.gain.value = g;
     }
 
     private async applySinkId(sinkId: string): Promise<void> {
@@ -87,11 +101,12 @@ export class RealTimeChunkPlayer {
      * Behavior matches your original implementation:
      * - Uses incarnation + playAtRealTime to decide whether to reset scheduling.
      * - Schedules contiguous playback via ACT timeline.
+     * PCM is expected at unity gain; volume is applied via GainNode.
      */
     public handleChunk(msg: AudioChunk): void {
         const { incarnation, playAtRealTime, sampleRate, channels, buffer, advanceSamples } = msg;
 
-        if (!this.audioCtx) return;
+        if (!this.audioCtx || !this.gainNode) return;
 
         const floatArray = new Float32Array(buffer);
         const numSamples = floatArray.length / channels;
@@ -151,7 +166,7 @@ export class RealTimeChunkPlayer {
 
         const source = this.audioCtx.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(this.audioCtx.destination);
+        source.connect(this.gainNode);
 
         // Web Audio time is in seconds
         source.start(startTimeMs! / 1000);
@@ -187,4 +202,7 @@ function handleAudioChunk(chunk: AudioChunk) {
 const api = window.electronAPI;
 if (api?.onAudioChunk) {
     api.onAudioChunk(handleAudioChunk);
+}
+if (api?.onAudioGain) {
+    api.onAudioGain((gain) => player.setGain(gain));
 }

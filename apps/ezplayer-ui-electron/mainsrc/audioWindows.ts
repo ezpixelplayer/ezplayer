@@ -1,16 +1,44 @@
 /**
  * One hidden BrowserWindow (and therefore one AudioContext) per audio output
  * sink. Chromium binds a single sink per AudioContext via setSinkId; multi-
- * output means N windows, each fed the same PCM chunks.
+ * output means N windows, each fed the same PCM chunks (unity gain in the
+ * buffer; per-sink volume applied via GainNode in the audio window).
+ *
+ * Primary sink comes from `PlaybackSettings.primaryAudioOutputDeviceId`
+ * (`''` = system Default). Additional sinks come from
+ * `PlaybackSettings.additionalAudioOutputs`.
  */
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { BrowserWindow, app } from 'electron';
-import type { AudioChunk } from '@ezplayer/ezplayer-core';
+import type { AdditionalAudioOutput, AudioChunk, PlaybackSettings, VolumeControlState } from '@ezplayer/ezplayer-core';
+import { getActiveVolumeSchedule } from '@ezplayer/ezplayer-core';
 import { safeSend } from './safe-send.js';
 
 /** Empty string = Chromium system default sink. */
 export const DEFAULT_AUDIO_SINK_ID = '';
+
+/** Resolve additional sinks from settings, migrating deprecated device-id lists. */
+export function additionalOutputsFromSettings(
+    settings: PlaybackSettings | null | undefined,
+): AdditionalAudioOutput[] | undefined {
+    if (!settings) return undefined;
+    if (settings.additionalAudioOutputs && settings.additionalAudioOutputs.length > 0) {
+        return settings.additionalAudioOutputs;
+    }
+    if (settings.audioOutputDeviceIds && settings.audioOutputDeviceIds.length > 0) {
+        return settings.audioOutputDeviceIds.filter(Boolean).map((deviceId, i) => ({
+            id: `migrated-${i}-${deviceId}`,
+            deviceId,
+            volumeControl: { defaultVolume: 100, schedule: [] },
+        }));
+    }
+    return undefined;
+}
+
+export function primarySinkIdFromSettings(settings: PlaybackSettings | null | undefined): string {
+    return settings?.primaryAudioOutputDeviceId ?? DEFAULT_AUDIO_SINK_ID;
+}
 
 let preloadPath = '';
 /** Absolute path to packaged audio-window.html (used when packaged / no Vite). */
@@ -22,6 +50,15 @@ let audioWindowsEnabled = true;
 
 /** sinkId → hidden audio render window */
 const audioWindows = new Map<string, BrowserWindow>();
+
+/** Additional sinks (excludes primary). Keyed by deviceId. */
+let additionalByDeviceId = new Map<string, AdditionalAudioOutput>();
+
+/** Sink that receives primary volumeControl / worker volumeSF. */
+let primarySinkId = DEFAULT_AUDIO_SINK_ID;
+
+/** Last primary linear gain from the playback worker (0–1). */
+let lastPrimaryVolumeSF = 1;
 
 export function setAudioWindowsEnabled(enabled: boolean) {
     audioWindowsEnabled = enabled;
@@ -41,17 +78,8 @@ export function configureAudioWindowPaths(opts: {
     htmlBaseUrl = opts.htmlBaseUrl;
 }
 
-function normalizeSinkIds(deviceIds: string[] | undefined | null): string[] {
-    if (!deviceIds || deviceIds.length === 0) {
-        return [DEFAULT_AUDIO_SINK_ID];
-    }
-    return Array.from(new Set(deviceIds));
-}
-
 function audioWindowLoadUrl(sinkId: string): string {
-    const url = htmlBaseUrl
-        ? new URL(htmlBaseUrl)
-        : pathToFileURL(htmlFilePath);
+    const url = htmlBaseUrl ? new URL(htmlBaseUrl) : pathToFileURL(htmlFilePath);
     url.searchParams.set('sinkId', sinkId);
     return url.toString();
 }
@@ -86,16 +114,57 @@ function createAudioWindow(sinkId: string): BrowserWindow {
         }
     });
 
+    win.webContents.once('did-finish-load', () => {
+        pushGainToWindow(sinkId, win);
+    });
+
     return win;
 }
 
-/** Create / destroy hidden audio windows so the set matches `deviceIds`. */
-export function syncAudioOutputDevices(deviceIds: string[] | undefined | null): void {
+function effectiveVolumeSF(volumeControl: VolumeControlState | undefined, now: Date): number {
+    if (!volumeControl) return 1;
+    const sched = getActiveVolumeSchedule(volumeControl, now);
+    const level = sched?.volumeLevel ?? volumeControl.defaultVolume ?? 100;
+    return Math.max(0, Math.min(100, level)) / 100;
+}
+
+function gainForSink(sinkId: string, now: Date = new Date()): number {
+    if (sinkId === primarySinkId) {
+        return lastPrimaryVolumeSF;
+    }
+    const cfg = additionalByDeviceId.get(sinkId);
+    return effectiveVolumeSF(cfg?.volumeControl, now);
+}
+
+function pushGainToWindow(sinkId: string, win: BrowserWindow, now?: Date) {
+    if (win.isDestroyed()) return;
+    safeSend(win, 'audio:gain', gainForSink(sinkId, now ?? new Date()));
+}
+
+function pushAllGains(now: Date = new Date()) {
+    for (const [sinkId, win] of audioWindows) {
+        pushGainToWindow(sinkId, win, now);
+    }
+}
+
+/**
+ * Ensure the primary sink plus every configured additional device has a live
+ * audio window. Prefer `syncAudioOutputsFromSettings`.
+ */
+export function syncAdditionalAudioOutputs(
+    outputs: AdditionalAudioOutput[] | undefined | null,
+    primaryId: string = DEFAULT_AUDIO_SINK_ID,
+): void {
     if (!audioWindowsEnabled) {
         return;
     }
 
-    const desired = normalizeSinkIds(deviceIds);
+    primarySinkId = primaryId;
+    // Drop additional entries that would duplicate the primary sink.
+    const filtered = (outputs ?? []).filter((o) => o.deviceId !== primaryId);
+    additionalByDeviceId = new Map(filtered.map((o) => [o.deviceId, o]));
+
+    const desired = [primarySinkId, ...new Set(filtered.map((o) => o.deviceId))];
     const desiredSet = new Set(desired);
 
     for (const [id, win] of [...audioWindows.entries()]) {
@@ -113,9 +182,31 @@ export function syncAudioOutputDevices(deviceIds: string[] | undefined | null): 
         }
     }
 
+    pushAllGains();
+
     console.log(
         `[audio] sync sinks (${desired.length}): ${desired.map((id) => (id ? id.slice(0, 12) + '…' : '(default)')).join(', ')}`,
     );
+}
+
+/** Sync primary + additional sinks from playback settings. */
+export function syncAudioOutputsFromSettings(settings: PlaybackSettings | null | undefined): void {
+    syncAdditionalAudioOutputs(
+        additionalOutputsFromSettings(settings),
+        primarySinkIdFromSettings(settings),
+    );
+}
+
+/** @deprecated Use syncAudioOutputsFromSettings. */
+export function syncAudioOutputDevices(deviceIds: string[] | undefined | null): void {
+    const outputs: AdditionalAudioOutput[] | undefined = deviceIds?.length
+        ? deviceIds.filter(Boolean).map((deviceId, i) => ({
+              id: `legacy-${i}-${deviceId}`,
+              deviceId,
+              volumeControl: { defaultVolume: 100, schedule: [] },
+          }))
+        : undefined;
+    syncAdditionalAudioOutputs(outputs, DEFAULT_AUDIO_SINK_ID);
 }
 
 export function getAudioWindows(): BrowserWindow[] {
@@ -129,11 +220,21 @@ export function destroyAllAudioWindows(): void {
         }
     }
     audioWindows.clear();
+    additionalByDeviceId.clear();
+    primarySinkId = DEFAULT_AUDIO_SINK_ID;
 }
 
-/** Fan-out one PCM chunk to every audio window (structured-clone per send). */
-export function broadcastAudioChunk(chunk: AudioChunk): void {
-    for (const win of getAudioWindows()) {
+/**
+ * Fan-out one unity-gain PCM chunk to every audio window. `primaryVolumeSF` is
+ * the primary/local volume already applied for web clients; local windows apply
+ * it (and per-additional volumes) via GainNode instead.
+ */
+export function broadcastAudioChunk(chunk: AudioChunk, primaryVolumeSF = 1): void {
+    lastPrimaryVolumeSF = primaryVolumeSF;
+    const now = new Date();
+    for (const [sinkId, win] of audioWindows) {
+        if (win.isDestroyed()) continue;
+        pushGainToWindow(sinkId, win, now);
         safeSend(win, 'audio:chunk', chunk);
     }
 }
