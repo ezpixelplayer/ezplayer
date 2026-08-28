@@ -345,9 +345,9 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
     return filtered;
 }
 
-/** Adopt cloud-managed player settings (one-way show-builder → player). Each
+/** Adopt cloud-managed player settings (one-way show-builder -> player). Each
  *  of the three groups is taken only when the cloud's `*_updated` stamp beats
- *  the locally-recorded one — so a player-side override survives until a fresh
+ *  the locally-recorded one, so a player-side override survives until a fresh
  *  show-builder save supersedes it. Adopted settings are persisted, the
  *  per-group stamps advanced, and the merged result pushed to the renderer +
  *  playback worker. */
@@ -417,10 +417,7 @@ let lastAppliedCloudCfg: CloudConfig | undefined;
 
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
- *  the playback worker, and refreshes the cloud worker's local-sequences cache.
- *  Serialized: cloud-install events can fire several records in quick succession,
- *  and concurrent commits would race on the same `sequences.json` (Windows
- *  EPERM on rename, plus a merge-against-stale-curSequences silent record loss). */
+ *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
 let commitChain: Promise<unknown> = Promise.resolve();
 async function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
     const next = commitChain.then(() => commitSequenceUpdatesInner(uppl));
@@ -440,6 +437,53 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     scheduleUpdated();
     updateCloudWorkerSequences(curSequences);
     return filtered;
+}
+
+/** Cloud installs are committed in batches. Each commit rewrites sequences.json,
+ *  pushes the full sequence list to the renderer + web clients, restarts the
+ *  playback queue (schedupdate) and refreshes the cloud worker's snapshot. */
+const INSTALL_COMMIT_MIN_INTERVAL_MS = 1000;
+let pendingInstalls = new Map<string, { record: SequenceRecord; showFolder: string | null | undefined }>();
+let installCommitTimer: NodeJS.Timeout | undefined;
+let lastInstallCommitAt = 0;
+
+async function flushPendingInstalls(): Promise<void> {
+    if (installCommitTimer) {
+        clearTimeout(installCommitTimer);
+        installCommitTimer = undefined;
+    }
+    lastInstallCommitAt = Date.now();
+    const folder = getCurrentShowFolder();
+    const queued = [...pendingInstalls.values()];
+    pendingInstalls = new Map();
+    const batch = queued.filter((p) => p.showFolder === folder).map((p) => p.record);
+    if (batch.length !== queued.length) {
+        console.warn(
+            `[cloud-install] dropped ${queued.length - batch.length} queued installs from a previous show folder`,
+        );
+    }
+    if (batch.length === 0) return;
+    // Same code path the renderer uses when it adds a song.
+    try {
+        await commitSequenceUpdates(batch);
+    } catch (e) {
+        console.error('[cloud-install] commit failed:', e);
+        return;
+    }
+    // Track the newly-installed files. A re-render lands at a new versioned path,
+    // so the old file stops being referenced and the next sweep reclaims it.
+    for (const record of batch) trackInstalledFiles(record);
+}
+
+function queueInstallCommit(record: SequenceRecord): void {
+    pendingInstalls.set(record.id, { record, showFolder: getCurrentShowFolder() });
+    if (installCommitTimer) return; // armed; it will commit whatever is queued
+    const since = Date.now() - lastInstallCommitAt;
+    if (since >= INSTALL_COMMIT_MIN_INTERVAL_MS) {
+        void flushPendingInstalls();
+        return;
+    }
+    installCommitTimer = setTimeout(() => void flushPendingInstalls(), INSTALL_COMMIT_MIN_INTERVAL_MS - since);
 }
 
 /** Sequence upsert shared by the renderer IPC and the server-worker RPC.
@@ -498,18 +542,14 @@ export async function loadShowFolder(forceRestart?: boolean) {
         return;
     }
 
-    // Immediately clear cached show data in the server worker so stale
-    // model coordinates, view objects, layout settings, and frame buffers
-    // from the previous show folder are never served to the frontend.
+    // Immediately clear cached show data so stale data is not sent to frontend.
     clearShowData();
 
-    // Reset combined player status at the folder boundary. content / controller /
-    // player snapshots are folder-scoped (cloud content, controller config from
-    // this show, current playback). Without this, switching to a fresh folder
-    // would carry the old folder's cstatus/nstatus/pstatus through `update:combinedstatus`
-    // until each writer (cloud worker, playback worker) happens to push a fresh frame.
+    // Reset combined player status.
     curStatus = {};
     curErrors = [];
+    // Flush out any pending writes (e.g. downloads) to show data in previous folder.
+    await flushPendingInstalls();
 
     // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
     // loader so that, on first run against an old folder, root-level files are moved
@@ -1047,16 +1087,7 @@ export async function registerContentHandlers(
                 console.warn('[cloud-install] cover-art extract failed:', e);
             }
         }
-        // Same code path the renderer uses when it adds a song.
-        try {
-            await commitSequenceUpdates([record]);
-        } catch (e) {
-            console.error('[cloud-install] commit failed:', e);
-            return;
-        }
-        // Track the newly-installed files. A re-render lands at a new versioned path,
-        // so the old file stops being referenced and the next sweep reclaims it.
-        trackInstalledFiles(record);
+        queueInstallCommit(record);
     });
 
     /// Connection from player worker thread
