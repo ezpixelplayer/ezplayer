@@ -641,6 +641,18 @@ export interface PlaybackSettings {
      */
     mediaFolder?: string;
     /**
+     * Electron desktop: when true/undefined, play to the system default output
+     * using `volumeControl`. When false, skip the default sink and use only
+     * `additionalAudioOutputs`. Machine-local.
+     */
+    useDefaultAudioOutput?: boolean;
+    /**
+     * Physical `audiooutput` deviceId that matches the OS default route (same
+     * Chromium groupId as synthetic `default`). Excluded from additional outputs
+     * when `useDefaultAudioOutput` is false. Machine-local.
+     */
+    systemDefaultOutputDeviceId?: string;
+    /**
      * Primary local speaker sink for the Electron desktop player.
      * Empty string / undefined = system Default output. Otherwise a Chromium
      * `audiooutput` deviceId (Speakers, Headset, …). Machine-local.

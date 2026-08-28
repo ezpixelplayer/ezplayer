@@ -17,10 +17,12 @@ import {
     ListItem,
     ListItemSecondaryAction,
     ListItemText,
+    Radio,
+    RadioGroup,
     Slider,
     Typography,
 } from '@mui/material';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select, isElectron } from '@ezplayer/shared-ui-components';
 import type { AudioDevice, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -51,19 +53,19 @@ function isPhysicalOutput(d: AudioDevice): boolean {
     return d.deviceId !== 'default' && d.deviceId !== 'communications';
 }
 
-/**
- * UI sentinel for system Default (`setSinkId('')`). MUI Select treats `value=""`
- * as unselected, so we never use an empty option id in the dropdown.
- */
-const UI_DEFAULT_DEVICE_ID = '__ezp_system_default__';
-const DEFAULT_DEVICE_OPTION = { id: UI_DEFAULT_DEVICE_ID, name: 'Default' };
-
-function toUiDeviceId(deviceId: string): string {
-    return deviceId === '' ? UI_DEFAULT_DEVICE_ID : deviceId;
+/** Additional outputs must be real device ids — never the system-default sink. */
+function isPhysicalAdditionalDevice(d: { id: string; name: string }): boolean {
+    if (!d.id || d.id === 'default' || d.id === 'communications') return false;
+    if (/^default$/i.test(d.name.trim())) return false;
+    return true;
 }
 
-function fromUiDeviceId(uiId: string): string {
-    return uiId === UI_DEFAULT_DEVICE_ID ? '' : uiId;
+/** Chromium's synthetic `default` sink shares groupId with the OS default speaker. */
+function isSystemDefaultRouteDevice(device: AudioDevice, systemDefaultGroupId?: string): boolean {
+    if (systemDefaultGroupId && device.groupId === systemDefaultGroupId) return true;
+    if (/^default\b/i.test(device.label?.trim() ?? '')) return true;
+    if (/\bdefault\s*[-–—]/i.test(device.label ?? '')) return true;
+    return false;
 }
 
 type ScheduleDialogTarget =
@@ -85,6 +87,8 @@ export const AudioSettings: React.FC = () => {
         { kind: 'primary'; entryId: string } | { kind: 'additional'; outputId: string; entryId: string } | null
     >(null);
     const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([]);
+    /** groupId shared by Chromium's synthetic `default` audiooutput and the OS default speaker. */
+    const [systemDefaultGroupId, setSystemDefaultGroupId] = useState<string | undefined>();
     const [additionalExpanded, setAdditionalExpanded] = useState(false);
 
     // Slider values while dragging. The store is only updated on commit
@@ -94,6 +98,8 @@ export const AudioSettings: React.FC = () => {
 
     const additionalOutputs = settings.additionalAudioOutputs ?? [];
     const primaryDeviceId = settings.primaryAudioOutputDeviceId ?? '';
+    const systemDefaultOutputDeviceId = settings.systemDefaultOutputDeviceId ?? '';
+    const useDefaultAudioOutput = settings.useDefaultAudioOutput !== false;
     const electronDesktop = isElectron();
 
     useEffect(() => {
@@ -104,9 +110,11 @@ export const AudioSettings: React.FC = () => {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 if (cancelled) return;
+                const audioOutputs = devices.filter((d) => d.kind === 'audiooutput');
+                const defaultSink = audioOutputs.find((d) => d.deviceId === 'default');
+                setSystemDefaultGroupId(defaultSink?.groupId || undefined);
                 setOutputDevices(
-                    devices
-                        .filter((d) => d.kind === 'audiooutput')
+                    audioOutputs
                         .filter((d) => isPhysicalOutput(d as AudioDevice))
                         .map(
                             (d) =>
@@ -131,35 +139,89 @@ export const AudioSettings: React.FC = () => {
         };
     }, [electronDesktop]);
 
-    /** Connected physical outputs only (Default is prepended for primary). */
+    // Remember which physical device is the OS default route (for exclusion when default output is off).
+    useEffect(() => {
+        if (!electronDesktop || !systemDefaultGroupId) return;
+        const defaultPhysical = outputDevices.find((d) => d.groupId === systemDefaultGroupId);
+        const id = defaultPhysical?.deviceId;
+        if (id && id !== systemDefaultOutputDeviceId) {
+            dispatch(playbackSettingsActions.setSystemDefaultOutputDeviceId(id));
+        }
+    }, [
+        electronDesktop,
+        systemDefaultGroupId,
+        outputDevices,
+        systemDefaultOutputDeviceId,
+        dispatch,
+    ]);
+
+    /** Connected physical outputs only. */
     const connectedDeviceOptions = outputDevices.map((d) => ({
         id: d.deviceId,
         name: d.label || `Output (${d.deviceId.slice(0, 8)}…)`,
     }));
 
-    /** Primary picker: Default first, then each connected device. */
-    const primaryDeviceOptions = [DEFAULT_DEVICE_OPTION, ...connectedDeviceOptions];
+    const isExcludedFromAdditionalList = useCallback(
+        (deviceId: string): boolean => {
+            if (!isPhysicalAdditionalDevice({ id: deviceId, name: '' })) return true;
+            if (!useDefaultAudioOutput) {
+                if (systemDefaultOutputDeviceId && deviceId === systemDefaultOutputDeviceId) {
+                    return true;
+                }
+                const dev = outputDevices.find((d) => d.deviceId === deviceId);
+                if (dev && isSystemDefaultRouteDevice(dev, systemDefaultGroupId)) return true;
+            }
+            if (useDefaultAudioOutput && deviceId === primaryDeviceId) return true;
+            return false;
+        },
+        [
+            outputDevices,
+            useDefaultAudioOutput,
+            systemDefaultGroupId,
+            systemDefaultOutputDeviceId,
+            primaryDeviceId,
+        ],
+    );
 
-    /**
-     * Additional rows = one per currently connected physical device that is not
-     * already the primary. Never invent extra empty slots.
-     */
-    const additionalDeviceOptions = connectedDeviceOptions.filter((d) => d.id !== primaryDeviceId);
+    /** Connected physical outputs for additional picks (never system Default). */
+    const selectableAdditionalDevices = connectedDeviceOptions.filter(
+        (d) => !isExcludedFromAdditionalList(d.id),
+    );
 
     const additionalByDeviceId = new Map(
         additionalOutputs.filter((o) => o.deviceId).map((o) => [o.deviceId, o]),
     );
 
     // If primary moves onto a device that was additional, drop that duplicate only.
-    // Do NOT prune against an empty/unready device list — that was wiping saved
-    // additionalAudioOutputs on every Settings remount and auto-saving the wipe.
     useEffect(() => {
-        if (!electronDesktop) return;
+        if (!electronDesktop || !useDefaultAudioOutput) return;
         const withoutPrimaryDup = additionalOutputs.filter((o) => o.deviceId !== primaryDeviceId);
         if (withoutPrimaryDup.length !== additionalOutputs.length) {
             dispatch(playbackSettingsActions.setAdditionalAudioOutputs(withoutPrimaryDup));
         }
-    }, [electronDesktop, primaryDeviceId, additionalOutputs, dispatch]);
+    }, [electronDesktop, useDefaultAudioOutput, primaryDeviceId, additionalOutputs, dispatch]);
+
+    useEffect(() => {
+        if (!electronDesktop || useDefaultAudioOutput) return;
+        if (additionalOutputs.length > 0) {
+            setAdditionalExpanded(true);
+        }
+    }, [electronDesktop, useDefaultAudioOutput, additionalOutputs.length]);
+
+    // Default output off: drop rows for the system-default route (same groupId as Chromium `default`).
+    useEffect(() => {
+        if (!electronDesktop || useDefaultAudioOutput) return;
+        const kept = additionalOutputs.filter((o) => !isExcludedFromAdditionalList(o.deviceId));
+        if (kept.length !== additionalOutputs.length) {
+            dispatch(playbackSettingsActions.setAdditionalAudioOutputs(kept));
+        }
+    }, [
+        electronDesktop,
+        useDefaultAudioOutput,
+        additionalOutputs,
+        isExcludedFromAdditionalList,
+        dispatch,
+    ]);
 
     const openAddSchedule = (target: ScheduleDialogTarget) => {
         setScheduleTarget(target);
@@ -217,6 +279,7 @@ export const AudioSettings: React.FC = () => {
     };
 
     const setAdditionalEnabled = (deviceId: string, enabled: boolean) => {
+        if (enabled && isExcludedFromAdditionalList(deviceId)) return;
         const existing = additionalByDeviceId.get(deviceId);
         if (enabled) {
             if (existing) return;
@@ -416,166 +479,168 @@ export const AudioSettings: React.FC = () => {
             {electronDesktop && (
                 <>
                     <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
-                        Audio Device
+                        Audio Output
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Primary output for this player. Default follows the system output; or pick a
-                        connected device (Speakers, Headset, …). Volume and schedule below apply to
-                        this device only.
+                        Choose whether audio plays through the system default output or only
+                        through specific devices you select below.
                     </Typography>
-                    <FormControl fullWidth size="small" sx={{ mb: 3 }}>
-                        <Select
-                            options={primaryDeviceOptions}
-                            itemText="name"
-                            itemValue="id"
-                            label="Audio Device"
-                            value={toUiDeviceId(primaryDeviceId)}
-                            onChange={(e) =>
+                    <FormControl sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                            Use default audio output?
+                        </Typography>
+                        <RadioGroup
+                            row
+                            value={useDefaultAudioOutput ? 'yes' : 'no'}
+                            onChange={(_, value) => {
                                 dispatch(
-                                    playbackSettingsActions.setPrimaryAudioOutputDeviceId(
-                                        fromUiDeviceId((e.target as HTMLSelectElement).value),
-                                    ),
-                                )
-                            }
-                        />
+                                    playbackSettingsActions.setUseDefaultAudioOutput(value === 'yes'),
+                                );
+                                if (value === 'no') {
+                                    setAdditionalExpanded(true);
+                                }
+                            }}
+                        >
+                            <FormControlLabel value="yes" control={<Radio />} label="Yes" />
+                            <FormControlLabel value="no" control={<Radio />} label="No" />
+                        </RadioGroup>
                     </FormControl>
                     <Divider sx={{ my: 3 }} />
                 </>
             )}
 
-            <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
-                Volume Control
-            </Typography>
-            <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" sx={{ mb: 2 }}>
-                    Default Volume
-                </Typography>
-                <Box sx={{ px: 2 }}>
-                    <Slider
-                        value={draftVolume ?? settings.volumeControl.defaultVolume}
-                        onChange={(_, value) => setDraftVolume(value as number)}
-                        onChangeCommitted={(_, value) => {
-                            setDraftVolume(null);
-                            dispatch(playbackSettingsActions.setDefaultVolume(value as number));
-                        }}
-                        min={0}
-                        max={100}
-                        step={1}
-                        marks={[
-                            { value: 0, label: '0' },
-                            { value: 25, label: '25' },
-                            { value: 50, label: '50' },
-                            { value: 75, label: '75' },
-                            { value: 100, label: '100' },
-                        ]}
-                        valueLabelDisplay="auto"
-                        valueLabelFormat={(value) => `${value}%`}
-                        sx={{
-                            '& .MuiSlider-thumb': { width: 20, height: 20 },
-                            '& .MuiSlider-track': { height: 6 },
-                            '& .MuiSlider-rail': { height: 6 },
-                        }}
-                    />
-                </Box>
-                <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                    Default Volume: {draftVolume ?? settings.volumeControl.defaultVolume}%
-                </Typography>
-            </Box>
-
-            <Box>
-                <Typography variant="subtitle2" sx={{ mb: 2 }}>
-                    Volume Schedule Overrides
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Configure volume overrides for specific times. Last entry takes priority for overlapping times.
-                </Typography>
-
-                {renderVolumeScheduleList(settings.volumeControl?.schedule, (entryId) =>
-                    setPendingDelete({ kind: 'primary', entryId }),
-                )}
-
-                <Button
-                    variant="contained"
-                    startIcon={<Add />}
-                    onClick={() => openAddSchedule({ kind: 'primary' })}
-                    sx={{ mb: 2 }}
-                >
-                    Add Volume Override
-                </Button>
-            </Box>
-
-            {electronDesktop && (
+            {(!electronDesktop || useDefaultAudioOutput) && (
                 <>
-                    <Divider sx={{ my: 3 }} />
-                    <Accordion
-                        disableGutters
-                        elevation={0}
-                        expanded={additionalExpanded}
-                        onChange={(_, expanded) => setAdditionalExpanded(expanded)}
+                    <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                        Volume Control
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                            Default Volume
+                        </Typography>
+                        <Box sx={{ px: 2 }}>
+                            <Slider
+                                value={draftVolume ?? settings.volumeControl.defaultVolume}
+                                onChange={(_, value) => setDraftVolume(value as number)}
+                                onChangeCommitted={(_, value) => {
+                                    setDraftVolume(null);
+                                    dispatch(playbackSettingsActions.setDefaultVolume(value as number));
+                                }}
+                                min={0}
+                                max={100}
+                                step={1}
+                                marks={[
+                                    { value: 0, label: '0' },
+                                    { value: 25, label: '25' },
+                                    { value: 50, label: '50' },
+                                    { value: 75, label: '75' },
+                                    { value: 100, label: '100' },
+                                ]}
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value) => `${value}%`}
+                                sx={{
+                                    '& .MuiSlider-thumb': { width: 20, height: 20 },
+                                    '& .MuiSlider-track': { height: 6 },
+                                    '& .MuiSlider-rail': { height: 6 },
+                                }}
+                            />
+                        </Box>
+                        <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
+                            Default Volume: {draftVolume ?? settings.volumeControl.defaultVolume}%
+                        </Typography>
+                    </Box>
+
+                    <Box>
+                        <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                            Volume Schedule Overrides
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Configure volume overrides for specific times. Last entry takes priority for overlapping times.
+                        </Typography>
+
+                        {renderVolumeScheduleList(settings.volumeControl?.schedule, (entryId) =>
+                            setPendingDelete({ kind: 'primary', entryId }),
+                        )}
+
+                        <Button
+                            variant="contained"
+                            startIcon={<Add />}
+                            onClick={() => openAddSchedule({ kind: 'primary' })}
+                            sx={{ mb: 2 }}
+                        >
+                            Add Volume Override
+                        </Button>
+                    </Box>
+                </>
+            )}
+
+            {electronDesktop && !useDefaultAudioOutput && (
+                <Accordion
+                    disableGutters
+                    elevation={0}
+                    expanded={additionalExpanded}
+                    onChange={(_, expanded) => setAdditionalExpanded(expanded)}
+                    sx={{
+                        bgcolor: 'transparent',
+                        '&:before': { display: 'none' },
+                        mb: 1,
+                    }}
+                >
+                    <AccordionSummary
+                        expandIcon={<ExpandMore />}
                         sx={{
-                            bgcolor: 'transparent',
-                            '&:before': { display: 'none' },
-                            mb: 1,
+                            px: 0,
+                            minHeight: 40,
+                            '& .MuiAccordionSummary-content': { my: 1 },
                         }}
                     >
-                        <AccordionSummary
-                            expandIcon={<ExpandMore />}
-                            sx={{
-                                px: 0,
-                                minHeight: 40,
-                                '& .MuiAccordionSummary-content': { my: 1 },
-                            }}
-                        >
-                            <Box>
-                                <Typography variant="h6" sx={{ color: 'primary.main' }}>
-                                    Additional Audio Devices
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    {additionalDeviceOptions.length === 0
-                                        ? 'No other connected outputs available'
-                                        : `${additionalDeviceOptions.length} connected output${additionalDeviceOptions.length === 1 ? '' : 's'} — enable to play here too`}
-                                </Typography>
-                            </Box>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ px: 0, pt: 1 }}>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                Only currently connected devices are listed. Check a device to play
-                                to it with its own volume and schedule.
+                        <Box>
+                            <Typography variant="h6" sx={{ color: 'primary.main' }}>
+                                Additional Audio Devices
                             </Typography>
-                            {additionalDeviceOptions.filter((d) =>
-                                /bluetooth|headset|earbuds|buds/i.test(d.name),
-                            ).length >= 2 &&
-                                additionalOutputs.filter((o) =>
-                                    /bluetooth|headset|earbuds|buds/i.test(
-                                        connectedDeviceOptions.find((d) => d.id === o.deviceId)?.name ??
-                                            '',
-                                    ),
-                                ).length >= 2 && (
-                                    <Typography
-                                        variant="body2"
-                                        color="warning.main"
-                                        sx={{ mb: 2, fontWeight: 600 }}
-                                    >
-                                        Two Bluetooth earphones usually cannot play at the same time.
-                                        Classic Bluetooth only keeps one high-quality audio stream
-                                        active. Prefer wired/USB speakers, or Windows 11 Quick Settings →
-                                        Shared Audio (Bluetooth LE Audio).
-                                    </Typography>
-                                )}
-                            {additionalDeviceOptions.length === 0 ? (
-                                <Typography variant="body2" color="text.secondary">
-                                    {connectedDeviceOptions.length === 0
-                                        ? 'No audio output devices found.'
-                                        : 'The only connected device is already selected as primary.'}
+                            <Typography variant="body2" color="text.secondary">
+                                {selectableAdditionalDevices.length === 0
+                                    ? 'No connected outputs available'
+                                    : `${selectableAdditionalDevices.length} connected output${selectableAdditionalDevices.length === 1 ? '' : 's'} — check to play here`}
+                            </Typography>
+                        </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ px: 0, pt: 1 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            System default output is disabled. Only currently connected devices are
+                            listed. Check a device to play to it with its own volume and schedule.
+                        </Typography>
+                        {selectableAdditionalDevices.filter((d) =>
+                            /bluetooth|headset|earbuds|buds/i.test(d.name),
+                        ).length >= 2 &&
+                            additionalOutputs.filter((o) =>
+                                /bluetooth|headset|earbuds|buds/i.test(
+                                    connectedDeviceOptions.find((d) => d.id === o.deviceId)?.name ??
+                                        '',
+                                ),
+                            ).length >= 2 && (
+                                <Typography
+                                    variant="body2"
+                                    color="warning.main"
+                                    sx={{ mb: 2, fontWeight: 600 }}
+                                >
+                                    Two Bluetooth earphones usually cannot play at the same time.
+                                    Classic Bluetooth only keeps one high-quality audio stream active.
+                                    Prefer wired/USB speakers, or Windows 11 Quick Settings → Shared
+                                    Audio (Bluetooth LE Audio).
                                 </Typography>
-                            ) : (
-                                additionalDeviceOptions.map((device) =>
-                                    renderConnectedAdditionalDevice(device),
-                                )
                             )}
-                        </AccordionDetails>
-                    </Accordion>
-                </>
+                        {selectableAdditionalDevices.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                                No audio output devices found.
+                            </Typography>
+                        ) : (
+                            selectableAdditionalDevices.map((device) =>
+                                renderConnectedAdditionalDevice(device),
+                            )
+                        )}
+                    </AccordionDetails>
+                </Accordion>
             )}
 
             <Divider sx={{ my: 3 }} />

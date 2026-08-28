@@ -15,29 +15,49 @@ import type { AdditionalAudioOutput, AudioChunk, PlaybackSettings, VolumeControl
 import { getActiveVolumeSchedule } from '@ezplayer/ezplayer-core';
 import { safeSend } from './safe-send.js';
 
+/** Chromium synthetic sinks and empty id (= system default). Not valid additional picks. */
+function isPhysicalAdditionalSinkId(deviceId: string | undefined): boolean {
+    return Boolean(deviceId && deviceId !== 'default' && deviceId !== 'communications');
+}
+
 /** Empty string = Chromium system default sink. */
 export const DEFAULT_AUDIO_SINK_ID = '';
+
 
 /** Resolve additional sinks from settings, migrating deprecated device-id lists. */
 export function additionalOutputsFromSettings(
     settings: PlaybackSettings | null | undefined,
 ): AdditionalAudioOutput[] | undefined {
     if (!settings) return undefined;
-    if (settings.additionalAudioOutputs && settings.additionalAudioOutputs.length > 0) {
-        return settings.additionalAudioOutputs;
+    const useDefault = defaultAudioOutputEnabledFromSettings(settings);
+    const raw =
+        settings.additionalAudioOutputs && settings.additionalAudioOutputs.length > 0
+            ? settings.additionalAudioOutputs
+            : settings.audioOutputDeviceIds && settings.audioOutputDeviceIds.length > 0
+              ? settings.audioOutputDeviceIds.filter(Boolean).map((deviceId, i) => ({
+                    id: `migrated-${i}-${deviceId}`,
+                    deviceId,
+                    volumeControl: { defaultVolume: 100, schedule: [] },
+                }))
+              : undefined;
+    if (!raw) return undefined;
+    if (useDefault) {
+        const primaryId = primarySinkIdFromSettings(settings);
+        return raw.filter((o) => o.deviceId !== primaryId && isPhysicalAdditionalSinkId(o.deviceId));
     }
-    if (settings.audioOutputDeviceIds && settings.audioOutputDeviceIds.length > 0) {
-        return settings.audioOutputDeviceIds.filter(Boolean).map((deviceId, i) => ({
-            id: `migrated-${i}-${deviceId}`,
-            deviceId,
-            volumeControl: { defaultVolume: 100, schedule: [] },
-        }));
-    }
-    return undefined;
+    const sysDefaultId = settings.systemDefaultOutputDeviceId;
+    return raw.filter(
+        (o) => isPhysicalAdditionalSinkId(o.deviceId) && o.deviceId !== sysDefaultId,
+    );
 }
 
 export function primarySinkIdFromSettings(settings: PlaybackSettings | null | undefined): string {
     return settings?.primaryAudioOutputDeviceId ?? DEFAULT_AUDIO_SINK_ID;
+}
+
+/** When false, the system-default sink window is not created. */
+export function defaultAudioOutputEnabledFromSettings(settings: PlaybackSettings | null | undefined): boolean {
+    return settings?.useDefaultAudioOutput !== false;
 }
 
 let preloadPath = '';
@@ -154,17 +174,26 @@ function pushAllGains(now: Date = new Date()) {
 export function syncAdditionalAudioOutputs(
     outputs: AdditionalAudioOutput[] | undefined | null,
     primaryId: string = DEFAULT_AUDIO_SINK_ID,
+    options?: { includePrimary?: boolean },
 ): void {
     if (!audioWindowsEnabled) {
         return;
     }
 
-    primarySinkId = primaryId;
-    // Drop additional entries that would duplicate the primary sink.
-    const filtered = (outputs ?? []).filter((o) => o.deviceId !== primaryId);
+    const includePrimary = options?.includePrimary !== false;
+    primarySinkId = includePrimary ? primaryId : DEFAULT_AUDIO_SINK_ID;
+    const raw = outputs ?? [];
+    // Drop additional entries that would duplicate the primary sink, and never
+    // route additional outputs through the system-default sink ('' / synthetic).
+    const filtered = includePrimary
+        ? raw.filter((o) => o.deviceId !== primaryId && isPhysicalAdditionalSinkId(o.deviceId))
+        : raw.filter((o) => isPhysicalAdditionalSinkId(o.deviceId));
     additionalByDeviceId = new Map(filtered.map((o) => [o.deviceId, o]));
 
-    const desired = [primarySinkId, ...new Set(filtered.map((o) => o.deviceId))];
+    const desired = [
+        ...(includePrimary ? [primarySinkId] : []),
+        ...new Set(filtered.map((o) => o.deviceId)),
+    ];
     const desiredSet = new Set(desired);
 
     for (const [id, win] of [...audioWindows.entries()]) {
@@ -191,10 +220,14 @@ export function syncAdditionalAudioOutputs(
 
 /** Sync primary + additional sinks from playback settings. */
 export function syncAudioOutputsFromSettings(settings: PlaybackSettings | null | undefined): void {
-    syncAdditionalAudioOutputs(
-        additionalOutputsFromSettings(settings),
-        primarySinkIdFromSettings(settings),
-    );
+    const useDefault = defaultAudioOutputEnabledFromSettings(settings);
+    if (useDefault) {
+        syncAdditionalAudioOutputs(undefined, primarySinkIdFromSettings(settings), { includePrimary: true });
+    } else {
+        syncAdditionalAudioOutputs(additionalOutputsFromSettings(settings), DEFAULT_AUDIO_SINK_ID, {
+            includePrimary: false,
+        });
+    }
 }
 
 /** @deprecated Use syncAudioOutputsFromSettings. */

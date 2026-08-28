@@ -90,6 +90,8 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             includedTags: includedNormalized,
         },
         testSequenceTags: normalizeTagList(input.testSequenceTags, DEFAULT_TEST_SEQUENCE_TAGS),
+        useDefaultAudioOutput: input.useDefaultAudioOutput !== false,
+        systemDefaultOutputDeviceId: input.systemDefaultOutputDeviceId ?? undefined,
         primaryAudioOutputDeviceId: input.primaryAudioOutputDeviceId ?? undefined,
         additionalAudioOutputs,
     };
@@ -225,6 +227,28 @@ const playbackSettingsSlice = createSlice({
             );
         },
 
+        /** Electron: play to system default output (uses `volumeControl`). */
+        setUseDefaultAudioOutput(state, action: PayloadAction<boolean>) {
+            state.settings.useDefaultAudioOutput = action.payload;
+            if (!action.payload) {
+                delete state.settings.primaryAudioOutputDeviceId;
+                const sysDefaultId = state.settings.systemDefaultOutputDeviceId;
+                const kept = (state.settings.additionalAudioOutputs ?? []).filter(
+                    (o) =>
+                        o.deviceId &&
+                        o.deviceId !== 'default' &&
+                        o.deviceId !== 'communications' &&
+                        o.deviceId !== sysDefaultId,
+                );
+                state.settings.additionalAudioOutputs = kept.length > 0 ? kept : undefined;
+            }
+        },
+
+        setSystemDefaultOutputDeviceId(state, action: PayloadAction<string | undefined>) {
+            const next = action.payload?.trim();
+            state.settings.systemDefaultOutputDeviceId = next || undefined;
+        },
+
         /** Electron primary sink (`''` / omit = system Default). */
         setPrimaryAudioOutputDeviceId(state, action: PayloadAction<string>) {
             const next = action.payload;
@@ -338,6 +362,8 @@ export const {
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
+    setUseDefaultAudioOutput,
+    setSystemDefaultOutputDeviceId,
     setPrimaryAudioOutputDeviceId,
     setAdditionalAudioOutputs,
     addAdditionalAudioOutput,
