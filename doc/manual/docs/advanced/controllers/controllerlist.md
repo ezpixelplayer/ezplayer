@@ -9,15 +9,20 @@ title: Controller List
 
 The Controller List on the Controllers screen shows a combination of all configured and detected controller devices.
 
-Above the table header, a summary of controller [status](#present--absent--unregistered) is shown, and global actions ("Upload all" and "Reboot all") are offered if applicable.
+Above the table, the title row shows a summary of controller [status](#present--absent--unregistered) next to the everyday commands:
+- **Refresh all** re-reads the details of every *Present* controller.  No network scan is needed — it asks each controller that is already known to be on the network.
+- **New record** creates an EZPlayer controller record by hand.
 
-If the "Show unidentified" checkbox is checked, network devices that are not known to be controllers are shown in the table, otherwise they are not.
+The toolbar below it holds the view options on the left ("Show unidentified": when checked, network devices that are not known to be controllers are shown in the table) and, on the right, the bulk device actions that apply to all present controllers ("Upload all" and "Reboot all"), offered if applicable.
 
 Below this is a table with records for each network device / controller:
 - Clicking the headers allows sorting of the table
-- Each row shows the state, name, IP, and type for a network device
+- Each row shows the state, enabled state, name, IP, type, and frame-rate cap ("Max FPS") for a network device
 - For devices with details, a foldout icon is available on the left end of the row
 - For devices that allow [actions](./controlleractions.md), a "kebab" menu is available on the right end of the row
+
+### Max FPS
+Some controllers cannot keep up with the show's frame rate.  The **Max FPS** column shows the frame-rate cap in effect for the controller: the value from the xLights controller Description (an `[MFT:25]` tag means a minimum of 25 ms between frames, i.e. 40 fps), or the override from the EZPlayer controller record, marked with an asterisk.  Use **Edit record** to set or clear the override; it takes effect the next time the show output is (re)started.
 
 ## Status / Terminology
 
@@ -28,7 +33,7 @@ Below this is a table with records for each network device / controller:
 Red ![Controller Red](/img/ctrlred.png) / Green ![Controller Green](/img/ctrlgreen.png) / Unlit ![Controller Unlit](/img/ctrlunlit.png) status light - Unlit means the controller is disabled.  Green indicates that the controller is responding to pings.  Red means no ping response.
 
 ### Present / Absent / Unregistered
-A *Present* ![Controller Present](/img/ctrlpresent.png) controller is enabled in the controller configuration and is responding to pings.  An *Absent* ![Controller Absent](/img/ctrlabsent.png) controller is in the configuration but is not responding.  An *Unregistered* ![Controller Unregistered](/img/ctrlunregistered.png) controller was found during network scan only, and may be responding to pings, but is not in the configuration.
+A *Present* ![Controller Present](/img/ctrlpresent.png) controller is enabled in the controller configuration and is responding to pings.  An *Absent* ![Controller Absent](/img/ctrlabsent.png) controller is in the configuration but is not responding — including one that was found earlier but has since stopped answering (its last-known details are kept; hover the status for when it last answered).  An *Unregistered* ![Controller Unregistered](/img/ctrlunregistered.png) controller was found during network scan only, and may be responding to pings, but is not in the configuration.
 
 ### Warning Alert
 A warning ![Controller Alert](/img/ctrlalert.png) indicator is presented when a controller needs attention.  Hovering or expanding the controller details will reveal more about the warning.

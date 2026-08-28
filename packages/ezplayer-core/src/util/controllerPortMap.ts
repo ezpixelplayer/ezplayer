@@ -5,7 +5,13 @@
  * dependency-free so the UI can run it client-side.
  */
 
-import type { ControllerModelIntent, ControllerPort, ControllerPortIntent } from '../types/ControllerOps';
+import type {
+    ControllerModelIntent,
+    ControllerPort,
+    ControllerPortIntent,
+    ControllerSerialPort,
+    ControllerSerialPortIntent,
+} from '../types/ControllerOps';
 
 /** Ports per smart-remote bank. */
 export const PORTS_PER_SMARTREMOTE = 4;
@@ -61,11 +67,39 @@ export interface PortMapRow {
     drift: boolean;
 }
 
+/** One serial (DMX/…) port row: channels rather than pixels, no chain boxes. */
+export interface PortMapSerialRow {
+    port: number;
+    /** Model names xLights puts on this port, in channel order. */
+    models: string[];
+    intendedChannels?: number;
+    intendedProtocol?: string;
+    actualChannels?: number;
+    actualProtocol?: string;
+    actualModel?: string;
+    /** True when the device carries fewer channels than intended, or the
+     *  intent/actual presence disagrees. */
+    drift: boolean;
+}
+
+export interface PortMapOptions {
+    /** Pixel ports the controller has; rows always run 1..this (else 1..max used). */
+    pixelPortCount?: number;
+    /** Serial ports the controller has; serial rows always run 1..this. */
+    serialPortCount?: number;
+    /** xLights serial-port intent. */
+    serialIntent?: ControllerSerialPortIntent[];
+    /** The device's serial ports as read. */
+    serialActual?: ControllerSerialPort[];
+}
+
 export interface PortMap {
     rows: PortMapRow[];
     boxes: PortMapBox[];
     /** Highest chain column in use (0 when there are no boxes). */
     columns: number;
+    /** Serial ports, listed after the pixel ports; empty when there are none. */
+    serial: PortMapSerialRow[];
 }
 
 /**
@@ -230,6 +264,7 @@ export function buildPortMap(
     modelIntents: ControllerModelIntent[] | undefined,
     intent: ControllerPortIntent[] | undefined,
     actual: ControllerPort[] | undefined,
+    opts: PortMapOptions = {},
 ): PortMap {
     const strings = modelIntents?.length ? expandIntentStrings(modelIntents) : expandSummaryIntent(intent ?? []);
 
@@ -297,9 +332,12 @@ export function buildPortMap(
     const actualByPort = new Map<number, ControllerPort>();
     for (const a of actual ?? []) actualByPort.set(a.port, a);
 
-    let maxPort = 0;
+    // Every fitted port gets a row, so empty ports past the last used one
+    // still show (and a box can never land beyond the visible rows).
+    let maxPort = opts.pixelPortCount ?? 0;
     for (const p of intendedByPort.keys()) maxPort = Math.max(maxPort, p);
     for (const a of actual ?? []) if ((a.pixels ?? 0) > 0) maxPort = Math.max(maxPort, a.port);
+    for (const b of boxes) maxPort = Math.max(maxPort, b.firstPort + b.span - 1);
 
     // Drift only flags when BOTH device data and intent data exist.
     const haveActual = (actual?.length ?? 0) > 0;
@@ -318,5 +356,44 @@ export function buildPortMap(
         });
     }
 
-    return { rows, boxes, columns };
+    return { rows, boxes, columns, serial: buildSerialRows(opts) };
+}
+
+/** Serial rows: 1..serialPortCount plus any port either side mentions. */
+function buildSerialRows(opts: PortMapOptions): PortMapSerialRow[] {
+    const intentByPort = new Map<number, ControllerSerialPortIntent>();
+    for (const i of opts.serialIntent ?? []) if (i.models.length || i.channels) intentByPort.set(i.port, i);
+    const actualByPort = new Map<number, ControllerSerialPort>();
+    for (const a of opts.serialActual ?? []) actualByPort.set(a.port, a);
+    let maxPort = opts.serialPortCount ?? 0;
+    for (const p of intentByPort.keys()) maxPort = Math.max(maxPort, p);
+    for (const a of actualByPort.values()) if ((a.channels ?? 0) > 0) maxPort = Math.max(maxPort, a.port);
+    const haveActual = opts.serialActual !== undefined;
+    const haveIntent = intentByPort.size > 0;
+    const rows: PortMapSerialRow[] = [];
+    for (let p = 1; p <= maxPort; p++) {
+        const i = intentByPort.get(p);
+        const a = actualByPort.get(p);
+        const intendedChannels = i?.channels;
+        const actualChannels = a?.channels;
+        // Drift only flags when BOTH sides exist; more device channels than
+        // intended is fine (controllers pad short DMX streams), fewer is not.
+        let drift = false;
+        if (haveActual && haveIntent) {
+            const wantOn = (intendedChannels ?? 0) > 0;
+            const isOn = (actualChannels ?? 0) > 0;
+            drift = wantOn !== isOn || (wantOn && (actualChannels ?? 0) < (intendedChannels ?? 0));
+        }
+        rows.push({
+            port: p,
+            models: i?.models ?? [],
+            intendedChannels,
+            intendedProtocol: i?.protocol,
+            actualChannels,
+            actualProtocol: a?.protocol,
+            actualModel: a?.model,
+            drift,
+        });
+    }
+    return rows;
 }

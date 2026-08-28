@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     reconcileControllers,
     reconcilePorts,
+    reconcileSerialPorts,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
@@ -504,5 +505,70 @@ describe('findOffNetworkControllers', () => {
     it('respects wider host masks', () => {
         const wide: ControllerNetwork[] = [{ name: 'eth0', address: '10.1.2.3', network: '10.0.0.0/8' }];
         expect(findOffNetworkControllers([row({ name: 'A', address: '10.9.9.9' })], wide)).toEqual([]);
+    });
+});
+
+describe('unreachable devices and Down pings', () => {
+    it('a record whose device has gone unreachable is absent but keeps its last-known device', () => {
+        const d = dev({ ip: '10.0.0.7', driverType: 'FPP', unreachable: true, pixelPorts: [{ port: 1, pixels: 50 }] });
+        const rows = reconcileControllers([known({ name: 'A', address: '10.0.0.7' })], [d]);
+        expect(rows[0].state).toBe('absent');
+        expect(rows[0].device).toBe(d);
+        // …and the unreachable device is not re-listed as a ghost.
+        expect(rows.length).toBe(1);
+    });
+
+    it('an unregistered ghost that has gone unreachable is dropped from the grid', () => {
+        const rows = reconcileControllers([], [dev({ ip: '10.0.0.9', driverType: 'WLED', unreachable: true })]);
+        expect(rows).toEqual([]);
+    });
+
+    it('a present record that pings Down becomes absent (stale scan result)', () => {
+        const rows: ControllerGridRow[] = [
+            { key: 'A', state: 'present', name: 'A', address: '10.0.0.7', device: dev({ ip: '10.0.0.7' }) },
+        ];
+        const out = overlayHealth(rows, [{ name: 'A', address: '10.0.0.7', connectivity: 'Down' }]);
+        expect(out[0].state).toBe('absent');
+        expect(out[0].health?.connectivity).toBe('Down');
+    });
+
+    it('applyOverrides carries the record fps override next to the xLights max fps', () => {
+        const out = applyOverrides(
+            [known({ name: 'A', address: '10.0.0.7', maxFps: 40 })],
+            [{ name: 'A', fpsOverride: 25 }],
+        );
+        expect(out[0].maxFps).toBe(40);
+        expect(out[0].fpsOverride).toBe(25);
+        const rows = reconcileControllers(out, []);
+        expect(rows[0].maxFps).toBe(40);
+        expect(rows[0].fpsOverride).toBe(25);
+    });
+});
+
+describe('reconcileSerialPorts', () => {
+    const intent = [{ port: 1, models: ['PAR 1', 'PAR 2'], channels: 20, protocol: 'dmx' }];
+
+    it('ok when the device carries at least the intended channels', () => {
+        const rows = reconcileSerialPorts(intent, [{ port: 1, protocol: 'dmx', channels: 64 }]);
+        expect(rows).toEqual([
+            {
+                port: 1,
+                intendedModels: ['PAR 1', 'PAR 2'],
+                intendedChannels: 20,
+                intendedProtocol: 'dmx',
+                actualModel: undefined,
+                actualChannels: 64,
+                actualProtocol: 'dmx',
+                drift: 'ok',
+            },
+        ]);
+    });
+
+    it('count when the device carries fewer channels, missing when it has none, unexpected when only the device has one', () => {
+        expect(reconcileSerialPorts(intent, [{ port: 1, channels: 10 }])[0].drift).toBe('count');
+        expect(reconcileSerialPorts(intent, [])[0].drift).toBe('missing');
+        expect(reconcileSerialPorts(intent, [{ port: 1, channels: 0 }])[0].drift).toBe('missing');
+        const rows = reconcileSerialPorts(undefined, [{ port: 2, channels: 16, protocol: 'dmx' }]);
+        expect(rows.map((r) => [r.port, r.drift])).toEqual([[2, 'unexpected']]);
     });
 });

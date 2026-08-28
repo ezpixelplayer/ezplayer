@@ -12,11 +12,15 @@ import type {
     DiscoveredController,
     ControllerPortIntent,
     ControllerPort,
+    ControllerSerialPort,
+    ControllerSerialPortIntent,
     PortReconcile,
+    SerialPortReconcile,
     ControllerHealth,
     ControllerNetwork,
     EzpControllerRecord,
 } from '../types/ControllerOps';
+import type { PortDriftKind } from '../types/ControllerOps';
 import type { ControllerStatus } from '../types/DataTypes';
 
 /**
@@ -47,6 +51,7 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             vendor: r.vendor ?? k.vendor,
             model: r.model ?? k.model,
             variant: r.variant ?? k.variant,
+            fpsOverride: r.fpsOverride,
             source: 'both',
         });
     }
@@ -62,6 +67,7 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             vendor: r.vendor,
             model: r.model,
             variant: r.variant,
+            fpsOverride: r.fpsOverride,
             source: 'ezp',
         });
     }
@@ -96,9 +102,11 @@ export function reconcileControllers(known: KnownController[], devices: Discover
         const addr = k.address?.trim();
         const device = addr ? (byIp.get(addr) ?? byHost.get(addr.toLowerCase())) : undefined;
         if (device) claimedIps.add(device.ip);
+        // A device we once saw but that no longer answers keeps its last-known
+        // detail on the row, yet the record is absent until it answers again.
         rows.push({
             key: k.name,
-            state: device ? 'present' : 'absent',
+            state: device && !device.unreachable ? 'present' : 'absent',
             name: k.name,
             address: k.address,
             device,
@@ -109,13 +117,19 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             source: k.source,
             intent: k.ports,
             modelIntents: k.modelIntents,
+            serialIntent: k.serialPorts,
+            pixelPortCount: k.pixelPortCount ?? device?.pixelPortCount,
+            serialPortCount: k.serialPortCount ?? device?.serialPortCount,
             outputs: k.outputs,
+            maxFps: k.maxFps,
+            fpsOverride: k.fpsOverride,
         });
     }
 
-    // Scanned devices no record claimed → unregistered "ghosts".
+    // Scanned devices no record claimed → unregistered "ghosts". One that has
+    // since stopped answering is just stale noise, not a find worth a row.
     for (const d of devices) {
-        if (claimedIps.has(d.ip)) continue;
+        if (claimedIps.has(d.ip) || d.unreachable) continue;
         rows.push({
             key: `ghost:${deviceKey(d)}`,
             state: 'unregistered',
@@ -189,8 +203,57 @@ export function reconcilePorts(intent: ControllerPortIntent[], actual: Controlle
     return [...byPort.values()].sort((x, y) => x.port - y.port);
 }
 
+/**
+ * Serial ports: xLights intent (models on DMX/Renard/… protocols) against the
+ * device's serial outputs, by port number. Channel counts decide the drift;
+ * model names inform display only. The device's start channel is NOT
+ * compared — it is device-local on some controllers (HinksPix) and absolute
+ * on others (FPP).
+ */
+export function reconcileSerialPorts(
+    intent: ControllerSerialPortIntent[] | undefined,
+    actual: ControllerSerialPort[] | undefined,
+): SerialPortReconcile[] {
+    const byPort = new Map<number, SerialPortReconcile>();
+    for (const i of intent ?? []) {
+        if (!i.models.length && !i.channels) continue;
+        byPort.set(i.port, {
+            port: i.port,
+            intendedModels: i.models,
+            intendedChannels: i.channels,
+            intendedProtocol: i.protocol,
+            drift: 'missing',
+        });
+    }
+    for (const a of actual ?? []) {
+        const active = (a.channels ?? 0) > 0;
+        const row = byPort.get(a.port);
+        if (row) {
+            row.actualModel = a.model;
+            row.actualChannels = a.channels;
+            row.actualProtocol = a.protocol;
+            if (!active) row.drift = 'missing';
+            // A controller may pad a short DMX stream (FPP/HinksPix floor at
+            // 16); more channels than intended is harmless, fewer is drift.
+            else if (row.intendedChannels !== undefined && (a.channels ?? 0) < row.intendedChannels)
+                row.drift = 'count';
+            else row.drift = 'ok';
+        } else if (active) {
+            byPort.set(a.port, {
+                port: a.port,
+                intendedModels: [],
+                actualModel: a.model,
+                actualChannels: a.channels,
+                actualProtocol: a.protocol,
+                drift: 'unexpected',
+            });
+        }
+    }
+    return [...byPort.values()].sort((x, y) => x.port - y.port);
+}
+
 /** True when any port is out of sync — the row-level "needs attention" flag. */
-export function hasPortDrift(rows: PortReconcile[]): boolean {
+export function hasPortDrift(rows: { drift: PortDriftKind }[]): boolean {
     return rows.some((r) => r.drift !== 'ok');
 }
 
@@ -331,8 +394,15 @@ export function overlayHealth(rows: ControllerGridRow[], statuses: ControllerSta
         const match = (addr ? byAddr.get(addr) : undefined) ?? (r.name ? byName.get(r.name.toLowerCase()) : undefined);
         if (!match) return r;
         // A live "Up" ping proves the device is on-network even if the scan
-        // missed it — flip absent → present; ghosts and Down/Pending untouched.
-        const state = r.state === 'absent' && match.connectivity === 'Up' ? 'present' : r.state;
+        // missed it — flip absent → present. A "Down" ping is just as live a
+        // signal the other way: a record whose scan result has gone stale is
+        // absent, not "present but red". Ghosts and Pending are untouched.
+        const state =
+            r.state === 'absent' && match.connectivity === 'Up'
+                ? 'present'
+                : r.state === 'present' && match.connectivity === 'Down'
+                  ? 'absent'
+                  : r.state;
         return {
             ...r,
             state,
@@ -374,7 +444,7 @@ export function ipInCidr(ip: string, cidr: string): boolean {
     const bits = bitsStr === undefined ? 32 : Number(bitsStr);
     if (ipN === null || netN === null || !Number.isInteger(bits) || bits < 0 || bits > 32) return false;
     const mask = bits === 0 ? 0 : ~((1 << (32 - bits)) - 1) >>> 0;
-    return ((ipN & mask) >>> 0) === ((netN & mask) >>> 0);
+    return (ipN & mask) >>> 0 === (netN & mask) >>> 0;
 }
 
 /** Controllers that would need a network this player has no interface on. */
@@ -394,7 +464,10 @@ export interface OffNetworkGroup {
  * off-subnet", which points at a wrong address or a missing network rather
  * than a powered-off box. Empty when the host's networks are unknown.
  */
-export function findOffNetworkControllers(rows: ControllerGridRow[], interfaces: ControllerNetwork[]): OffNetworkGroup[] {
+export function findOffNetworkControllers(
+    rows: ControllerGridRow[],
+    interfaces: ControllerNetwork[],
+): OffNetworkGroup[] {
     if (!interfaces.length) return [];
     const hostNets = interfaces.map((i) => i.network);
     const groups = new Map<string, { example: { name: string; address: string; ipN: number }; others: number }>();

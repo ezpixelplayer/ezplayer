@@ -106,7 +106,7 @@ const cfg: PingConfig = {
     hosts: [],
     intervalS: 5,
     maxSamples: 10,
-    concurrency: 10,
+    concurrency: 64,
 };
 
 let running = true;
@@ -153,9 +153,17 @@ parentPort.on('message', (msg: ParentMessage) => {
     }
 });
 
+/**
+ * Per-ping reply budget. Controllers sit on the local network, where a reply
+ * takes a few ms (a WiFi device in power-save maybe a couple of hundred), so a
+ * host that hasn't answered in this long is down for our purposes — and a
+ * round over a show's worth of dark controllers must not stall on it.
+ */
+const PING_TIMEOUT_MS = 300;
+
 async function pingHost(host: string): Promise<PingStat> {
     const window = ensureWindow(host);
-    const res = await ping(host, 1000);
+    const res = await ping(host, PING_TIMEOUT_MS);
     window.add(res.alive ? res.elapsed : undefined);
     return window.getReport(host);
 }

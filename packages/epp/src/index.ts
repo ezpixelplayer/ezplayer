@@ -25,6 +25,8 @@ export {
 } from './formats/FSeqUtil';
 
 export { ControllerRec, ModelRec, controllersAndModelsFromParsed, readControllersAndModels } from './xlcompat/XLXmlUtil';
+export { ExplicitControllerDesc } from './xlcompat/XLControllerDesc';
+export { readControllerFpsOverrides } from './xlcompat/XLControllerRecords';
 
 export {
     ControllerState,

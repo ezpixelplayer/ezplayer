@@ -60,10 +60,12 @@ import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import {
     reconcileControllers,
     reconcilePorts,
+    reconcileSerialPorts,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
     findOffNetworkControllers,
+    effectiveMaxFps,
 } from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
@@ -77,10 +79,11 @@ import type {
     EzpControllerRecordPatch,
     PortReconcile,
     PortDriftKind,
+    SerialPortReconcile,
 } from '@ezplayer/ezplayer-core';
 
 type Depth = 'sweep' | 'identify' | 'full';
-type SortKey = 'state' | 'name' | 'ip' | 'type';
+type SortKey = 'state' | 'enabled' | 'name' | 'ip' | 'type';
 
 /** Sort order for the State column: what you're most likely acting on first. */
 const STATE_RANK: Record<ControllerRecordState, number> = { present: 0, unregistered: 1, absent: 2 };
@@ -370,6 +373,89 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
     </Table>
 );
 
+/** Serial (DMX/…) ports: xLights-intent vs. controller-actual, in channels. */
+const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows }) => (
+    <Table size="small">
+        <TableHead>
+            <TableRow>
+                <TableCell>Serial port</TableCell>
+                <TableCell>xLights (intended)</TableCell>
+                <TableCell>Controller (actual)</TableCell>
+                <TableCell>Status</TableCell>
+            </TableRow>
+        </TableHead>
+        <TableBody>
+            {rows.map((r) => (
+                <TableRow key={r.port}>
+                    <TableCell
+                        sx={{
+                            borderLeft: '3px solid',
+                            borderLeftColor: r.drift !== 'ok' ? 'warning.main' : 'transparent',
+                        }}
+                    >
+                        {r.port}
+                    </TableCell>
+                    <TableCell>
+                        {r.intendedModels.length ? (
+                            <>
+                                <PortModelList names={r.intendedModels} flagTitle="" />
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    {[r.intendedProtocol?.toUpperCase(), `${r.intendedChannels ?? 0} ch`]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </Typography>
+                            </>
+                        ) : (
+                            '—'
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        {r.actualChannels !== undefined ? (
+                            <>
+                                {r.actualModel && <Typography variant="body2">{r.actualModel}</Typography>}
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    {[r.actualProtocol?.toUpperCase(), `${r.actualChannels} ch`]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </Typography>
+                            </>
+                        ) : (
+                            '—'
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        <Chip
+                            size="small"
+                            color={r.drift === 'ok' ? 'success' : 'warning'}
+                            variant={r.drift === 'ok' ? 'outlined' : 'filled'}
+                            label={r.drift === 'count' ? 'channels short' : PORT_DRIFT_LABEL[r.drift]}
+                        />
+                    </TableCell>
+                </TableRow>
+            ))}
+        </TableBody>
+    </Table>
+);
+
+/** "40" / "40*" (record override) / "—", with the provenance as hover text. */
+const MaxFpsCell: React.FC<{ row: ControllerGridRow }> = ({ row }) => {
+    const fps = effectiveMaxFps(row);
+    if (fps === undefined) return <>—</>;
+    const overridden = row.fpsOverride !== undefined;
+    return (
+        <span
+            title={
+                overridden
+                    ? `EZPlayer record override (${row.fpsOverride} fps)${row.maxFps !== undefined ? ` — xLights says ${row.maxFps}` : ''}`
+                    : 'from the xLights controller description ([MFT:ms] tag)'
+            }
+        >
+            {fps}
+            {overridden ? '*' : ''}
+        </span>
+    );
+};
+
 /** One grid row: a known record (present/absent) or a scan-only ghost (unregistered). */
 const GridRow: React.FC<{
     row: ControllerGridRow;
@@ -396,14 +482,22 @@ const GridRow: React.FC<{
     // read (depth=full); before that every intended port would read "missing".
     const portsRead = d?.pixelPorts !== undefined;
     const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? []);
-    const portDrift = portsRead && hasPortDrift(portRows);
+    // Serial (DMX/…) ports are compared in channels, apart from the pixels.
+    const serialRead = d?.serialPorts !== undefined;
+    const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
+    const portDrift = (portsRead && hasPortDrift(portRows)) || (serialRead && hasPortDrift(serialRows));
     // Same gating for the data-input side (protocol / universe map / DDP window).
     const inputsRead = d?.inputs !== undefined;
     const inputRec = reconcileInputs(row.outputs, d?.inputs);
     const inputDrift = inputsRead && inputRec.drift;
     const anyDrift = portDrift || inputDrift;
     // Port knowledge on either side is enough for the port-map visualizer.
-    const hasPortData = portRows.length > 0 || (row.modelIntents?.length ?? 0) > 0 || (d?.pixelPorts?.length ?? 0) > 0;
+    const hasPortData =
+        portRows.length > 0 ||
+        serialRows.length > 0 ||
+        (row.modelIntents?.length ?? 0) > 0 ||
+        (d?.pixelPorts?.length ?? 0) > 0 ||
+        (row.pixelPortCount ?? 0) > 0;
     const hasInputData = (row.outputs?.length ?? 0) > 0 || inputsRead;
     const health = row.health;
     const hasHealthDetail = !!(
@@ -459,7 +553,13 @@ const GridRow: React.FC<{
                 disabled: busy,
             });
     // Upload needs a live identified non-player device plus xLights intent.
-    if (known && d?.driverType && d.driverType !== 'EZPlayer' && (row.intent?.length ?? 0) > 0) {
+    if (
+        known &&
+        d?.driverType &&
+        d.driverType !== 'EZPlayer' &&
+        !d.unreachable &&
+        ((row.intent?.length ?? 0) > 0 || (row.serialIntent?.length ?? 0) > 0)
+    ) {
         actions.push({
             key: 'upload',
             label: 'Upload config…',
@@ -532,7 +632,17 @@ const GridRow: React.FC<{
                             color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
                         }}
                     />
-                    <Chip size="small" color={meta.color} label={meta.label} variant={ghost ? 'filled' : 'outlined'} />
+                    <Chip
+                        size="small"
+                        color={meta.color}
+                        label={meta.label}
+                        variant={ghost ? 'filled' : 'outlined'}
+                        title={
+                            d?.unreachable
+                                ? `${d.error ?? 'not responding'} — last answered ${new Date(d.seenAt).toLocaleString()}`
+                                : undefined
+                        }
+                    />
                     {anyDrift && (
                         <IconButton
                             size="small"
@@ -544,18 +654,10 @@ const GridRow: React.FC<{
                         </IconButton>
                     )}
                 </TableCell>
-                <TableCell sx={{ wordBreak: 'break-word' }}>
-                    {row.name ? (
-                        row.name
-                    ) : (
-                        <Typography
-                            component="span"
-                            variant="body2"
-                            sx={{ fontStyle: 'italic', color: 'text.secondary' }}
-                        >
-                            {d?.hostname ?? 'unregistered'}
-                        </Typography>
-                    )}
+                {/* Enabled / disabled / xLights-only, in its own column so the pill can
+                    size to its label and names still line up. Ghosts have no record, so
+                    nothing to show. */}
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {known &&
                         (() => {
                             const es = row.enableState ?? (row.active === false ? 'disabled' : 'enabled');
@@ -576,10 +678,24 @@ const GridRow: React.FC<{
                                             ? 'Defined for xLights’ own use; players don’t output to it'
                                             : undefined
                                     }
-                                    sx={{ ml: 1, opacity: es === 'enabled' ? 0.8 : 1 }}
+                                    sx={{ opacity: es === 'enabled' ? 0.8 : 1 }}
                                 />
                             );
                         })()}
+                </TableCell>
+                {/* Names grow sideways (the grid scrolls) rather than wrapping into tall rows. */}
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    {row.name ? (
+                        row.name
+                    ) : (
+                        <Typography
+                            component="span"
+                            variant="body2"
+                            sx={{ fontStyle: 'italic', color: 'text.secondary' }}
+                        >
+                            {d?.hostname ?? 'unregistered'}
+                        </Typography>
+                    )}
                 </TableCell>
                 <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                     {ip ?? '—'}
@@ -594,7 +710,7 @@ const GridRow: React.FC<{
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {typeLabel ?? '—'}
-                    {d?.error && (
+                    {d?.error && !d.unreachable && (
                         <WarningAmberIcon
                             color="warning"
                             fontSize="small"
@@ -602,6 +718,9 @@ const GridRow: React.FC<{
                             sx={{ ml: 0.5, verticalAlign: 'middle' }}
                         />
                     )}
+                </TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {known ? <MaxFpsCell row={row} /> : ''}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                     {actions.length > 0 && (
@@ -641,7 +760,7 @@ const GridRow: React.FC<{
             </TableRow>
             {expandable && (
                 <TableRow>
-                    <TableCell colSpan={6} sx={{ p: 0, border: 0 }}>
+                    <TableCell colSpan={8} sx={{ p: 0, border: 0 }}>
                         <Collapse in={open} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, pl: 6, borderBottom: '1px solid', borderColor: 'divider' }}>
                                 {hasHealthDetail && health && (
@@ -682,8 +801,8 @@ const GridRow: React.FC<{
                                         sx={{ mb: hasInputData ? 1 : hasDetail ? 2 : 0, flexWrap: 'wrap' }}
                                     >
                                         <Typography variant="subtitle2">Ports</Typography>
-                                        {portRows.length > 0 &&
-                                            (!portsRead ? (
+                                        {(portRows.length > 0 || serialRows.length > 0) &&
+                                            (!portsRead && !serialRead ? (
                                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                                     device config not read yet
                                                 </Typography>
@@ -700,7 +819,7 @@ const GridRow: React.FC<{
                                                     titleAccess="ports match xLights"
                                                 />
                                             ))}
-                                        {portRows.length > 0 && (
+                                        {(portRows.length > 0 || serialRows.length > 0) && (
                                             <Button
                                                 size="small"
                                                 startIcon={<CompareArrowsIcon />}
@@ -755,7 +874,12 @@ const GridRow: React.FC<{
                     onClose={() => setPortDialog(null)}
                     fullScreen
                 >
-                    <PortReconcileTable rows={portRows} />
+                    {portRows.length > 0 && <PortReconcileTable rows={portRows} />}
+                    {serialRows.length > 0 && (
+                        <Box sx={{ mt: portRows.length > 0 ? 2 : 0 }}>
+                            <SerialReconcileTable rows={serialRows} />
+                        </Box>
+                    )}
                     {hasInputData && (
                         <Box sx={{ mt: 2 }}>
                             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -785,6 +909,10 @@ const GridRow: React.FC<{
                     modelIntents={row.modelIntents}
                     intent={row.intent}
                     actual={d?.pixelPorts}
+                    pixelPortCount={row.pixelPortCount ?? d?.pixelPortCount}
+                    serialPortCount={row.serialPortCount ?? d?.serialPortCount}
+                    serialIntent={row.serialIntent}
+                    serialActual={d?.serialPorts}
                     onClose={() => setPortDialog(null)}
                 />
             )}
@@ -887,21 +1015,42 @@ const RecordDialog: React.FC<{
     initialVendor?: string;
     initialModel?: string;
     initialVariant?: string;
+    /** Current record override, if any. */
+    initialFpsOverride?: number;
+    /** What xLights declares, shown as the fallback when no override is set. */
+    xlightsMaxFps?: number;
     onClose: () => void;
     onSubmit: (name: string, patch: EzpControllerRecordPatch) => void;
-}> = ({ mode, initialName, initialAddress, initialVendor, initialModel, initialVariant, onClose, onSubmit }) => {
+}> = ({
+    mode,
+    initialName,
+    initialAddress,
+    initialVendor,
+    initialModel,
+    initialVariant,
+    initialFpsOverride,
+    xlightsMaxFps,
+    onClose,
+    onSubmit,
+}) => {
     const [name, setName] = useState(initialName);
     const [address, setAddress] = useState(initialAddress);
     const [vendor, setVendor] = useState(initialVendor ?? '');
     const [model, setModel] = useState(initialModel ?? '');
     const [variant, setVariant] = useState(initialVariant ?? '');
+    const [fps, setFps] = useState(initialFpsOverride !== undefined ? String(initialFpsOverride) : '');
     const nameLocked = mode === 'edit';
-    const canSave = name.trim().length > 0;
+    const fpsNum = fps.trim() === '' ? undefined : Number(fps);
+    const fpsValid = fpsNum === undefined || (Number.isFinite(fpsNum) && fpsNum > 0 && fpsNum <= 1000);
+    const canSave = name.trim().length > 0 && fpsValid;
     const submit = () => {
         const patch: EzpControllerRecordPatch = { address: address.trim() || undefined };
         patch.vendor = vendor.trim() || undefined;
         patch.model = model.trim() || undefined;
         patch.variant = variant.trim() || undefined;
+        // A record patch is merged, so an absent key keeps the old value; 0
+        // is the explicit "no override" (the store drops it).
+        patch.fpsOverride = fpsNum ?? 0;
         onSubmit(name.trim(), patch);
     };
     return (
@@ -956,6 +1105,23 @@ const RecordDialog: React.FC<{
                             size="small"
                         />
                     </Stack>
+                    <TextField
+                        label="Max FPS override"
+                        value={fps}
+                        onChange={(e) => setFps(e.target.value)}
+                        size="small"
+                        type="number"
+                        inputProps={{ min: 1, max: 1000, step: 1 }}
+                        error={!fpsValid}
+                        placeholder={xlightsMaxFps !== undefined ? String(xlightsMaxFps) : 'no limit'}
+                        helperText={
+                            !fpsValid
+                                ? 'Enter a frame rate between 1 and 1000, or leave blank.'
+                                : xlightsMaxFps !== undefined
+                                  ? `Caps the frame rate sent to this controller. Blank keeps the xLights description's ${xlightsMaxFps} fps ([MFT] tag).`
+                                  : 'Caps the frame rate sent to this controller. Blank means no cap (the show rate).'
+                        }
+                    />
                 </Stack>
             </DialogContent>
             <DialogActions>
@@ -994,6 +1160,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         vendor?: string;
         model?: string;
         variant?: string;
+        fpsOverride?: number;
+        maxFps?: number;
     } | null>(null);
 
     const policyFor = (cidr: string) => (networkPolicies ?? []).find((p) => p.cidr === cidr);
@@ -1045,6 +1213,13 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         switch (sortKey) {
             case 'state':
                 return STATE_RANK[r.state];
+            case 'enabled':
+                // enabled first, then xLights-only, disabled, and ghosts last.
+                return r.name
+                    ? { enabled: 0, xlightsOnly: 1, disabled: 2 }[
+                          r.enableState ?? (r.active === false ? 'disabled' : 'enabled')
+                      ]
+                    : 3;
             case 'ip':
                 return ipKey(r.device?.ip ?? r.address ?? '');
             case 'type':
@@ -1105,16 +1280,22 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     };
 
     // Bulk actions — fan the per-row commands out over reachable known rows.
-    const [bulkBusy, setBulkBusy] = useState<'upload' | 'reboot' | null>(null);
+    const [bulkBusy, setBulkBusy] = useState<'upload' | 'reboot' | 'refresh' | null>(null);
     // Latest ops snapshot for the async bulk loop (it outlives any one render).
     const operationsRef = useRef(operations);
     operationsRef.current = operations;
 
     // Eligible: present, scan-backed, and not known to be Down.
     const bulkRows = rows.filter((r) => r.state === 'present' && !!r.device && r.health?.connectivity !== 'Down');
+    // Refresh all: every present controller re-reads its details — no scan needed.
+    const refreshAllRows = bulkRows;
     // Mirror the per-row Upload gate: identified non-player device + xLights intent.
     const uploadAllRows = bulkRows.filter(
-        (r) => !!r.name && !!r.device!.driverType && r.device!.driverType !== 'EZPlayer' && (r.intent?.length ?? 0) > 0,
+        (r) =>
+            !!r.name &&
+            !!r.device!.driverType &&
+            r.device!.driverType !== 'EZPlayer' &&
+            ((r.intent?.length ?? 0) > 0 || (r.serialIntent?.length ?? 0) > 0),
     );
     // Mirror the per-row reboot gate: the actions list (when present) must offer reboot/restart.
     const rebootAllRows = bulkRows.filter((r) => {
@@ -1144,11 +1325,11 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         kind: ControllerOp['kind'];
         target: string;
     }
-    const runBulk = async (which: 'upload' | 'reboot', tasks: BulkTask[]): Promise<void> => {
+    const runBulk = async (which: 'upload' | 'reboot' | 'refresh', tasks: BulkTask[], parallel = 2): Promise<void> => {
         setBulkBusy(which);
         try {
             let cursor = 0;
-            const workers = Array.from({ length: Math.min(2, tasks.length) }, async () => {
+            const workers = Array.from({ length: Math.min(parallel, tasks.length) }, async () => {
                 while (cursor < tasks.length) {
                     const t = tasks[cursor++];
                     try {
@@ -1164,6 +1345,17 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             setBulkBusy(null);
         }
     };
+    // Reads are safe and independent, so more can run at once than uploads.
+    const refreshAll = () =>
+        void runBulk(
+            'refresh',
+            refreshAllRows.map((r) => ({
+                command: { cmd: 'status', id: r.device!.id, depth: 'full' },
+                kind: 'status',
+                target: r.device!.id,
+            })),
+            4,
+        );
     const uploadAll = () => {
         if (
             window.confirm(
@@ -1218,6 +1410,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             address: row.address ?? '',
             vendor: row.vendor,
             model: row.model,
+            fpsOverride: row.fpsOverride,
+            maxFps: row.maxFps,
         });
     const openPromote = (row: ControllerGridRow) =>
         setDialog({ mode: 'promote', name: row.device?.hostname ?? '', address: row.device?.ip ?? '' });
@@ -1274,8 +1468,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
                 {/* Reconciliation grid */}
                 <Card sx={{ p: { xs: 1, sm: 3 }, mb: 3 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                        <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
+                    {/* Title row: what's here (summary) and the everyday commands. */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                        <Typography variant="subtitle1" sx={{ mr: 1 }}>
                             Controllers
                         </Typography>
                         <Chip size="small" color="success" variant="outlined" label={`${count('present')} present`} />
@@ -1286,8 +1481,38 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                             variant="outlined"
                             label={`${count('unregistered')} unregistered`}
                         />
+                        <Box sx={{ flexGrow: 1 }} />
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<RefreshIcon />}
+                            onClick={refreshAll}
+                            disabled={bulkBusy !== null || refreshAllRows.length === 0}
+                            title="Re-read the details of every present controller (no network scan)"
+                        >
+                            {bulkBusy === 'refresh' ? 'Refreshing…' : `Refresh all (${refreshAllRows.length})`}
+                        </Button>
+                        <Button size="small" startIcon={<AddIcon />} onClick={openNew}>
+                            New record
+                        </Button>
+                    </Box>
+                    {/* Toolbar: view options on the left, bulk device actions on the right. */}
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 1,
+                            mt: 1,
+                            mb: 2,
+                            py: 0.5,
+                            borderTop: '1px solid',
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                        }}
+                    >
                         <FormControlLabel
-                            sx={{ ml: 1 }}
+                            sx={{ ml: 0 }}
                             control={
                                 <Checkbox
                                     size="small"
@@ -1301,9 +1526,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                 </Typography>
                             }
                         />
-                        <Button size="small" startIcon={<AddIcon />} onClick={openNew}>
-                            New record
-                        </Button>
+                        <Box sx={{ flexGrow: 1 }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                            All present controllers:
+                        </Typography>
                         <Button
                             size="small"
                             color="warning"
@@ -1339,6 +1565,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                         {(
                                             [
                                                 ['state', 'State'],
+                                                ['enabled', 'Enabled'],
                                                 ['name', 'Name'],
                                                 ['ip', 'IP'],
                                                 ['type', 'Type'],
@@ -1354,6 +1581,12 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                                 </TableSortLabel>
                                             </TableCell>
                                         ))}
+                                        <TableCell
+                                            sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}
+                                            title="Frame-rate cap for this controller: the xLights description's [MFT] tag, or the record override (*). Edit record to change."
+                                        >
+                                            Max FPS
+                                        </TableCell>
                                         <TableCell sx={{ textAlign: 'right' }}>Actions</TableCell>
                                     </TableRow>
                                 </TableHead>
@@ -1517,6 +1750,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                     initialVendor={dialog.vendor}
                     initialModel={dialog.model}
                     initialVariant={dialog.variant}
+                    initialFpsOverride={dialog.fpsOverride}
+                    xlightsMaxFps={dialog.maxFps}
                     onClose={() => setDialog(null)}
                     onSubmit={submitDialog}
                 />
