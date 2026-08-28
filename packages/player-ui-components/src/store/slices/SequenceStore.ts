@@ -84,18 +84,6 @@ export const extractShowAudioMetadata = createAsyncThunk<
     return await extra.extractShowAudioMetadata(audioName);
 });
 
-/** Convert show-folder audio to MP3 when needed; returns playable basename. */
-export const ensureShowAudioMp3 = createAsyncThunk<
-    { audioFile: string },
-    string,
-    { extra: DataStorageAPI }
->('sequences/ensureShowAudioMp3', async (audioName, { extra }) => {
-    if (!extra.ensureShowAudioMp3) {
-        throw new Error('This player connection does not support audio conversion');
-    }
-    return await extra.ensureShowAudioMp3(audioName);
-});
-
 /** Bulk-import fseq files already on the player (web/LAN). Pass
  *  `allowExistingAudio: true` for the existing-files variant so show-folder
  *  audio (root or subdirectory) may satisfy imports. */

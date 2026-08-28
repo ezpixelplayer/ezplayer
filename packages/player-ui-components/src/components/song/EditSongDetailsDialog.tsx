@@ -1,25 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import {
-    Autocomplete,
-    Button,
-    Dialog,
-    DialogContent,
-    DialogTitle,
-    Divider,
-    Grid,
-    LinearProgress,
-    Typography,
-} from '@mui/material';
+import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
 import { Box } from '../box/Box';
 
 import { FileButton, isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
+import { SUPPORTED_AUDIO_EXTENSIONS } from '@ezplayer/ezplayer-core';
 import {
     AppDispatch,
-    ensureShowAudioMp3,
     extractShowAudioMetadata,
     postSequenceData,
     RootState,
@@ -28,18 +18,6 @@ import {
 } from '../..';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
-
-/** Same formats as Add Song. MP3 is unchanged; others convert to MP3 via ffmpeg. */
-const EDIT_SONG_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'];
-
-function isSupportedEditSongAudio(filePath: string): boolean {
-    const lower = filePath.toLowerCase();
-    return EDIT_SONG_AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
-function needsMp3Conversion(filePath: string): boolean {
-    return !filePath.toLowerCase().endsWith('.mp3') && isSupportedEditSongAudio(filePath);
-}
 
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
@@ -60,7 +38,7 @@ const FileSelectButton = ({
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
-                                      ? [...EDIT_SONG_AUDIO_EXTENSIONS]
+                                      ? [...SUPPORTED_AUDIO_EXTENSIONS]
                                       : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
@@ -122,9 +100,6 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
     const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
-    /** True while non-MP3 audio is being converted via ffmpeg. */
-    const [convertingAudio, setConvertingAudio] = useState(false);
-    const [convertingAudioName, setConvertingAudioName] = useState<string | null>(null);
 
     useEffect(() => {
         if (open && selectedSongId) {
@@ -145,8 +120,6 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
             setUploadedFiles(selectedSong?.files || {});
             setNewFiles({});
-            setConvertingAudio(false);
-            setConvertingAudioName(null);
         }
     }, [open, selectedSongId, sequenceData]);
 
@@ -210,82 +183,23 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         }
     };
 
-    /** Convert non-MP3 audio to MP3 (Electron IPC or LAN ensure-mp3). MP3 passes through. */
-    const resolvePlayableAudio = async (audioPath: string): Promise<string | undefined> => {
-        if (!needsMp3Conversion(audioPath)) {
-            return audioPath;
-        }
-        setConvertingAudio(true);
-        setConvertingAudioName(audioPath);
-        try {
-            if (isElectron()) {
-                if (typeof window === 'undefined' || !window.electronAPI?.ensureMp3AudioFile) {
-                    ToastMsgs.showErrorMessage('Audio conversion is unavailable in this environment', {
-                        theme: 'colored',
-                        position: 'bottom-right',
-                        autoClose: 3000,
-                    });
-                    return undefined;
-                }
-                return await window.electronAPI.ensureMp3AudioFile(audioPath);
-            }
-            const result = await dispatch(ensureShowAudioMp3(audioPath)).unwrap();
-            return result.audioFile || undefined;
-        } catch (error) {
-            console.warn('[EditSong] Audio conversion failed:', error);
-            ToastMsgs.showErrorMessage(
-                error instanceof Error ? error.message : 'Failed to convert audio to MP3',
-                {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 4000,
-                },
-            );
-            return undefined;
-        } finally {
-            setConvertingAudio(false);
-            setConvertingAudioName(null);
-        }
-    };
-
     /** Web replacement path: the picked File lives on this machine, so push
      *  its bytes into the show folder first, then reference it by name. */
     const handleWebFileReplace = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
         const file = event.target.files?.[0];
         if (!file) return;
-        if (type === 'mp3' && !isSupportedEditSongAudio(file.name)) {
-            ToastMsgs.showErrorMessage(
-                'Please choose a supported audio file (.mp3, .wav, .m4a, .aac, .flac, .ogg, .wma, .mp4)',
-                {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 3000,
-                },
-            );
-            return;
-        }
         try {
             await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
+            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
+            setNewFiles((prev) => ({ ...prev, [fileKey]: file.name }));
             if (type === 'mp3') {
-                // Prefer tags from the original upload before conversion.
                 try {
                     const meta = await dispatch(extractShowAudioMetadata(file.name)).unwrap();
                     applyDetectedMetadata(meta);
                 } catch {
                     /* tags are best-effort */
                 }
-                if (needsMp3Conversion(file.name)) {
-                    setConvertingAudio(true);
-                    setConvertingAudioName(file.name);
-                }
-                const playable = await resolvePlayableAudio(file.name);
-                if (playable) {
-                    setNewFiles((prev) => ({ ...prev, audio: playable }));
-                }
-                return;
             }
-            const fileKey = type === 'image' ? 'thumb' : 'fseq';
-            setNewFiles((prev) => ({ ...prev, [fileKey]: file.name }));
             if (type === 'fseq') {
                 try {
                     const durationMs = await getFSEQDurationMSBrowser(file);
@@ -306,49 +220,22 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
     const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
-            if (type === 'mp3') {
-                if (!isSupportedEditSongAudio(file)) {
-                    console.warn(`[EditSong][Audio] Ignored unsupported audio file: "${file}"`);
-                    return;
-                }
-                if (needsMp3Conversion(file)) {
-                    setConvertingAudio(true);
-                    setConvertingAudioName(file);
-                }
-                if (typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
-                    try {
-                        console.log(`[EditSong][Audio] Starting metadata extraction for: "${file}"`);
-                        const metadata = await window.electronAPI.extractAudioTagMetadata(file);
-                        console.log(
-                            `[EditSong][Audio] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
-                        );
-                        applyDetectedMetadata(metadata ?? {});
-                    } catch (error) {
-                        console.warn('[EditSong] Audio metadata extraction failed:', error);
-                    }
-                }
-                const playable = await resolvePlayableAudio(file);
-                if (playable) {
-                    setNewFiles((prev) => ({ ...prev, audio: playable }));
-                }
-                return;
-            }
-
-            const fileKey = type === 'image' ? 'thumb' : 'fseq';
+            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file }));
 
             if (type === 'fseq' && typeof window !== 'undefined' && window.electronAPI?.autoDetectSongFilesFromFseq) {
                 try {
                     const detected = await window.electronAPI.autoDetectSongFilesFromFseq(file);
-                    if (detected?.audioFile) {
-                        const playable = await resolvePlayableAudio(detected.audioFile);
-                        if (playable) {
-                            setNewFiles((prev) => ({ ...prev, audio: prev.audio ?? playable }));
+                    setNewFiles((prev) => {
+                        const next = { ...prev };
+                        if (!next.audio && detected?.audioFile) {
+                            next.audio = detected.audioFile;
                         }
-                    }
-                    if (detected?.imageFile) {
-                        setNewFiles((prev) => ({ ...prev, thumb: prev.thumb ?? detected.imageFile }));
-                    }
+                        if (!next.thumb && detected?.imageFile) {
+                            next.thumb = detected.imageFile;
+                        }
+                        return next;
+                    });
                     if (detected?.durationSecs) {
                         setNewDurationSecs(detected.durationSecs);
                     }
@@ -359,6 +246,25 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 } catch (error) {
                     console.warn('Auto-detect from FSEQ failed:', error);
                 }
+            }
+
+            if (type === 'mp3' && typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
+                try {
+                    console.log(`[EditSong][MP3] Starting metadata extraction for: "${file}"`);
+                    const metadata = await window.electronAPI.extractAudioTagMetadata(file);
+                    console.log(
+                        `[EditSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
+                    );
+                    applyDetectedMetadata(metadata ?? {});
+                    console.log('[EditSong][MP3] Metadata applied (only empty fields are auto-filled).');
+                    if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
+                        console.log('[EditSong][MP3] No usable ID3 metadata found (title/artist/image all empty).');
+                    }
+                } catch (error) {
+                    console.warn('MP3 metadata extraction failed:', error);
+                }
+            } else if (type === 'mp3') {
+                console.warn('[EditSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.');
             }
         } else {
             // If file is undefined (cleared), remove it from newFiles
@@ -472,8 +378,6 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setErrors({ title: false, artist: false, lead_time: false, trail_time: false, volume_adj: false, tags: false });
         setNewFiles({});
         setNewDurationSecs(undefined);
-        setConvertingAudio(false);
-        setConvertingAudioName(null);
     };
 
     const handleCancel = () => {
@@ -556,7 +460,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </form>
                     </Grid>
 
-                    {/* File Management — native picker in Electron, upload on web */}
+                    {/* File Management â native picker in Electron, upload on web */}
                     <Grid item xs={12}>
                         <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
                             Files
@@ -588,57 +492,29 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                 </Typography>
                             </Box>
 
-                            {/* Audio File (optional) */}
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                    {isElectron() ? (
-                                        <FileSelectButton
-                                            fileType="mp3"
-                                            onFileSelect={(file) => handleFileChange(file, 'mp3')}
+                            {/* MP3 File (optional) */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                {isElectron() ? (
+                                    <FileSelectButton
+                                        fileType="mp3"
+                                        onFileSelect={(file) => handleFileChange(file, 'mp3')}
+                                    />
+                                ) : (
+                                    <>
+                                        <FileButton
+                                            fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
+                                            isMultipleFile={false}
+                                            onChange={(e) =>
+                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
+                                            }
                                         />
-                                    ) : (
-                                        <>
-                                            <FileButton
-                                                fileType={[...EDIT_SONG_AUDIO_EXTENSIONS]}
-                                                isMultipleFile={false}
-                                                onChange={(e) =>
-                                                    handleWebFileReplace(
-                                                        e as React.ChangeEvent<HTMLInputElement>,
-                                                        'mp3',
-                                                    )
-                                                }
-                                            />
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => setPickerFor('mp3')}
-                                            >
-                                                On player
-                                            </Button>
-                                        </>
-                                    )}
-                                    <Typography variant="body1">
-                                        {convertingAudio
-                                            ? getFileName(convertingAudioName ?? undefined)
-                                            : getFileName(newFiles?.audio || uploadedFiles?.audio) ||
-                                              'No audio file'}
-                                    </Typography>
-                                </Box>
-                                {convertingAudio && (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <LinearProgress sx={{ flex: 1 }} />
-                                        <Typography
-                                            variant="caption"
-                                            color="text.secondary"
-                                            sx={{ whiteSpace: 'nowrap' }}
-                                        >
-                                            Converting to MP3 — please wait…
-                                        </Typography>
-                                    </Box>
+                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                            On player
+                                        </Button>
+                                    </>
                                 )}
-                                <Typography variant="caption" color="text.secondary">
-                                    .mp3, or other formats converted to .mp3 (.wav, .m4a, .aac, .flac, .ogg, .wma,
-                                    .mp4)
+                                <Typography variant="body1">
+                                    {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No audio file'}
                                 </Typography>
                             </Box>
 
@@ -799,13 +675,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         marginTop: 3,
                     }}
                 >
-                    <Button
-                        onClick={handleSubmit}
-                        type="button"
-                        variant="contained"
-                        color="primary"
-                        disabled={convertingAudio}
-                    >
+                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary">
                         Save
                     </Button>
                     <Button type="button" variant="outlined" color="secondary" onClick={handleCancel}>
@@ -832,35 +702,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 title="Choose a file on the player"
                 dir={pickerFor === 'fseq' ? 'sequences' : pickerFor === 'mp3' ? 'music' : 'images'}
                 onSelect={(name) => {
-                    void (async () => {
-                        if (pickerFor === 'mp3') {
-                            if (!isSupportedEditSongAudio(name)) {
-                                ToastMsgs.showErrorMessage(
-                                    'Please choose a supported audio file (.mp3, .wav, .m4a, .aac, .flac, .ogg, .wma, .mp4)',
-                                    {
-                                        theme: 'colored',
-                                        position: 'bottom-right',
-                                        autoClose: 3000,
-                                    },
-                                );
-                                return;
-                            }
-                            try {
-                                const meta = await dispatch(extractShowAudioMetadata(name)).unwrap();
-                                applyDetectedMetadata(meta);
-                            } catch {
-                                /* tags are best-effort */
-                            }
-                            const playable = await resolvePlayableAudio(name);
-                            if (playable) {
-                                setNewFiles((prev) => ({ ...prev, audio: playable }));
-                            }
-                            return;
-                        }
-                        const fileKey = pickerFor === 'image' ? 'thumb' : 'fseq';
-                        setNewFiles((prev) => ({ ...prev, [fileKey]: name }));
-                        if (pickerFor === 'fseq') setNewDurationSecs(0); // server refills from header
-                    })();
+                    const fileKey = pickerFor === 'mp3' ? 'audio' : pickerFor === 'image' ? 'thumb' : 'fseq';
+                    setNewFiles((prev) => ({ ...prev, [fileKey]: name }));
+                    if (pickerFor === 'fseq') setNewDurationSecs(0); // server refills from header
                 }}
             />
         </Dialog>

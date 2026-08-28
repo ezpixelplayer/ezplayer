@@ -9,7 +9,6 @@ import {
     DialogTitle,
     Divider,
     Grid,
-    LinearProgress,
     Typography,
 } from '@mui/material';
 
@@ -17,25 +16,17 @@ import { TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '@ezplayer/player-ui-components';
 
-import { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
+import {
+    SequenceFiles,
+    SequenceRecord,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    isSupportedAudioName,
+} from '@ezplayer/ezplayer-core';
 
 import { ElectronFileButton } from './ElectronSelectFileButton';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
-
-/** Extensions accepted by the Add Song audio picker. MP3 is unchanged;
- *  other formats are converted to MP3 in the main process via ffmpeg. */
-const ADD_SONG_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'];
-
-function isSupportedAddSongAudio(filePath: string): boolean {
-    const lower = filePath.toLowerCase();
-    return ADD_SONG_AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
-function needsClientMp3Conversion(filePath: string): boolean {
-    return !filePath.toLowerCase().endsWith('.mp3') && isSupportedAddSongAudio(filePath);
-}
 
 export interface AddSongProps {
     title: string;
@@ -53,11 +44,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     const [imageFile, setImageFile] = useState<string | undefined>(undefined);
     const [imageUrl, setImageUrl] = useState<string>('');
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
-    /** True while non-MP3 audio is being converted via ffmpeg. */
-    const [convertingAudio, setConvertingAudio] = useState(false);
-    const [convertingAudioName, setConvertingAudioName] = useState<string | null>(null);
-    /** True while FSEQ autodetect (and optional audio conversion) is running. */
-    const [resolvingFseqMedia, setResolvingFseqMedia] = useState(false);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -75,9 +61,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
         setMp3File(undefined);
         setImageFile(undefined);
         setImageUrl('');
-        setConvertingAudio(false);
-        setConvertingAudioName(null);
-        setResolvingFseqMedia(false);
         setNewSongData({
             title: '',
             artist: '',
@@ -147,43 +130,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
         applyMetadata(metadata, 'fill-empty');
     };
 
-    const resolvePlayableAudio = async (audioPath: string): Promise<string | undefined> => {
-        if (!needsClientMp3Conversion(audioPath)) {
-            return audioPath;
-        }
-        setConvertingAudio(true);
-        setConvertingAudioName(audioPath);
-        try {
-            if (typeof window === 'undefined' || !window.electronAPI?.ensureMp3AudioFile) {
-                console.warn('[AddSong] ensureMp3AudioFile unavailable; cannot convert non-MP3 audio.');
-                ToastMsgs.showErrorMessage('Audio conversion is unavailable in this environment', {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 3000,
-                });
-                return undefined;
-            }
-            console.log(`[AddSong] Converting audio to MP3: "${audioPath}"`);
-            const mp3Path = await window.electronAPI.ensureMp3AudioFile(audioPath);
-            console.log(`[AddSong] Conversion result: "${mp3Path}"`);
-            return mp3Path;
-        } catch (error) {
-            console.warn('[AddSong] Audio conversion failed:', error);
-            ToastMsgs.showErrorMessage(
-                error instanceof Error ? error.message : 'Failed to convert audio to MP3',
-                {
-                    theme: 'colored',
-                    position: 'bottom-right',
-                    autoClose: 4000,
-                },
-            );
-            return undefined;
-        } finally {
-            setConvertingAudio(false);
-            setConvertingAudioName(null);
-        }
-    };
-
     const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
             const lowerFile = file.toLowerCase();
@@ -194,7 +140,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     setNeedValidFseqFile(false);
 
                     if (typeof window !== 'undefined' && window.electronAPI?.autoDetectSongFilesFromFseq) {
-                        setResolvingFseqMedia(true);
                         try {
                             console.log('[AddSong] Requesting backend auto-detect for audio/image...');
                             const detected = await window.electronAPI.autoDetectSongFilesFromFseq(file);
@@ -202,10 +147,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 `[AddSong] Auto-detect result -> audio: ${detected?.audioFile ?? '<none>'}, image: ${detected?.imageFile ?? '<none>'}, imageGeneratedFromAudio: ${detected?.imageGeneratedFromAudio ? 'yes' : 'no'}`,
                             );
                             if (detected?.audioFile) {
-                                const playable = await resolvePlayableAudio(detected.audioFile);
-                                if (playable) {
-                                    setMp3File((prev) => prev ?? playable);
-                                }
+                                setMp3File((prev) => prev ?? detected.audioFile);
                             }
                             if (detected?.imageFile) {
                                 setImageFile((prev) => prev ?? detected.imageFile);
@@ -224,8 +166,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             }
                         } catch (error) {
                             console.warn('[AddSong] Auto-detect from FSEQ failed:', error);
-                        } finally {
-                            setResolvingFseqMedia(false);
                         }
                     } else {
                         console.log(
@@ -238,43 +178,33 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     setFseqFile(undefined);
                 }
             } else if (type === 'mp3') {
-                if (isSupportedAddSongAudio(lowerFile)) {
+                if (isSupportedAudioName(lowerFile)) {
                     console.log(`[AddSong][Audio] Selected audio file: "${file}"`);
-                    // Show selection immediately so the field isn't blank during tags/conversion.
-                    if (needsClientMp3Conversion(file)) {
-                        setConvertingAudio(true);
-                        setConvertingAudioName(file);
-                    }
-                    // Prefer tags from the original file (supports wav/m4a/flac/ogg tags).
+                    setMp3File(file);
                     if (typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
                         try {
-                            console.log(`[AddSong][Audio] Starting metadata extraction for: "${file}"`);
+                            console.log(`[AddSong][MP3] Starting metadata extraction for: "${file}"`);
                             const metadata = await window.electronAPI.extractAudioTagMetadata(file);
                             console.log(
-                                `[AddSong][Audio] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
+                                `[AddSong][MP3] Extracted metadata: title=${metadata?.title ?? '(none)'}, artist=${metadata?.artist ?? '(none)'}, image=${metadata?.imageFile ?? '(none)'}`,
                             );
+                            // MP3 field re-selection should refresh title/artist/image for the newly selected song.
                             applyMetadata(metadata ?? {}, 'replace-existing');
                             if (!metadata?.title && !metadata?.artist && !metadata?.imageFile) {
                                 console.log(
-                                    '[AddSong][Audio] No usable tag metadata found (title/artist/image all empty).',
+                                    '[AddSong][MP3] No usable ID3 metadata found (title/artist/image all empty).',
                                 );
                             }
                         } catch (error) {
-                            console.warn('[AddSong] Audio metadata extraction failed:', error);
+                            console.warn('[AddSong] MP3 metadata extraction failed:', error);
                         }
                     } else {
                         console.warn(
-                            '[AddSong][Audio] electronAPI.extractAudioTagMetadata is unavailable in this environment.',
+                            '[AddSong][MP3] electronAPI.extractAudioTagMetadata is unavailable in this environment.',
                         );
                     }
-                    const playable = await resolvePlayableAudio(file);
-                    if (playable) {
-                        setMp3File(playable);
-                    } else {
-                        setMp3File(undefined);
-                    }
                 } else {
-                    console.warn(`[AddSong][Audio] Ignored unsupported audio file: "${file}"`);
+                    console.warn(`[AddSong][MP3] Ignored non-MP3 file in MP3 field: "${file}"`);
                     setMp3File(undefined);
                 }
             } else if (type === 'image') {
@@ -396,26 +326,15 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
                                 Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional — .mp3, or other formats converted to .mp3)
+                                    (optional — {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                 </Typography>
                             </Typography>
                             <ElectronFileButton
-                                fileType={{ name: 'Audio', extensions: [...ADD_SONG_AUDIO_EXTENSIONS] }}
+                                fileType={{ name: 'Audio', extensions: [...SUPPORTED_AUDIO_EXTENSIONS] }}
                                 isMultipleFile={false}
                                 onChange={(e) => handleFileChange(e?.target?.files[0]?.path, 'mp3')}
                             />
-                            {convertingAudio && convertingAudioName && (
-                                <Box sx={{ mt: 1 }}>
-                                    <Typography sx={{ mb: 0.5 }}>{convertingAudioName}</Typography>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <LinearProgress sx={{ flex: 1 }} />
-                                        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                                            Converting to MP3 — please wait…
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            )}
-                            {!convertingAudio && mp3File && <Typography sx={{ mt: 1 }}>{mp3File}</Typography>}
+                            {mp3File && <Typography sx={{ mt: 1 }}>{mp3File}</Typography>}
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
@@ -560,7 +479,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             variant="contained"
                             color="primary"
                             onClick={handleNewSongSubmit}
-                            disabled={convertingAudio || resolvingFseqMedia || !fseqFile || !newSongData.title || !newSongData.artist}
+                            disabled={!fseqFile || !newSongData.title || !newSongData.artist}
                         >
                             Save
                         </Button>

@@ -2,20 +2,35 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import * as fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import {
+    CONVERTIBLE_AUDIO_EXTENSIONS,
+    MP3_EXTENSION,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    isSupportedAudioName,
+    needsAudioConversion,
+} from '@ezplayer/ezplayer-core';
+
+export { CONVERTIBLE_AUDIO_EXTENSIONS, SUPPORTED_AUDIO_EXTENSIONS };
 
 /**
- * Audio extensions EZPlayer already recognizes for companion matching /
- * autodetection. Playback is MP3-only (mpg123), so non-MP3 files are converted
- * via ffmpeg (bundled `ffmpeg-static`, with PATH / FFMPEG_PATH fallbacks).
+ * Playback is MP3-only (mpg123). Other formats are transcoded with the bundled
+ * ffmpeg into a per-show cache; the song record always keeps the original file.
+ * Cache entries are keyed by source path + size + mtime + recipe, so a changed
+ * source or a changed recipe yields a new entry and the old one is pruned.
  */
-/** Includes `.mp4` (audio track extracted; video discarded via ffmpeg `-vn`). */
-export const CONVERTIBLE_AUDIO_EXTENSIONS = ['.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'] as const;
 
-/** MP3 + convertible formats. MP3 is never converted. */
-export const SUPPORTED_AUDIO_EXTENSIONS = ['.mp3', ...CONVERTIBLE_AUDIO_EXTENSIONS] as const;
+/** Bump when the ffmpeg recipe changes; every cached artifact is rebuilt. */
+export const AUDIO_CACHE_RECIPE = 1;
+export const AUDIO_CACHE_SUBDIR = path.join('.ezplayer', 'audio-cache');
+
+/** A `.part` untouched for this long is a dead writer, not an in-flight conversion. */
+const PART_STALE_MS = 60_000;
+/** Upper bound on waiting for another process's in-flight conversion. */
+const WAIT_FOR_WRITER_MS = 10 * 60_000;
+/** Prune keeps anything newer than this — covers in-flight and just-warmed entries. */
+const DEFAULT_PRUNE_GRACE_MS = 60 * 60_000;
 
 const require = createRequire(import.meta.url);
 
@@ -28,56 +43,53 @@ async function fileExists(filePath: string): Promise<boolean> {
     }
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export function isSupportedAudioPath(filePath: string): boolean {
-    const ext = path.extname(filePath).toLowerCase();
-    return (SUPPORTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext);
+    return isSupportedAudioName(filePath);
 }
 
 export function needsMp3Conversion(filePath: string): boolean {
-    const ext = path.extname(filePath).toLowerCase();
-    return (CONVERTIBLE_AUDIO_EXTENSIONS as readonly string[]).includes(ext);
+    return needsAudioConversion(filePath);
 }
 
-/** Prefer packaged binary; fall back to env / PATH. Exported for tests. */
+/** `FFMPEG_PATH` override, else the bundled ffmpeg-static binary. Never PATH:
+ *  a host ffmpeg would mask a packaging bug. */
 export function resolveFfmpegBinary(): string {
     const fromEnv = process.env.FFMPEG_PATH?.trim();
-    if (fromEnv && existsSync(fromEnv)) {
-        return fromEnv;
+    if (fromEnv) {
+        if (existsSync(fromEnv)) return fromEnv;
+        throw new Error(`FFMPEG_PATH is set but does not exist: "${fromEnv}"`);
     }
 
-    // Packaged Electron: binary copied next to resources (optional).
-    const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
-    if (resourcesPath) {
-        const name = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-        const candidate = path.join(resourcesPath, 'ffmpeg', name);
-        if (existsSync(candidate)) {
-            return candidate;
-        }
-    }
-
-    // Bundled ffmpeg-static (dev + asar.unpacked in production).
+    let bundled: string | null | undefined;
     try {
-        let bundled = require('ffmpeg-static') as string | null | undefined;
-        if (bundled) {
-            // Binaries cannot be spawned from inside app.asar.
-            if (bundled.includes('app.asar' + path.sep) || bundled.includes('app.asar/')) {
-                bundled = bundled.replace('app.asar', 'app.asar.unpacked');
-            }
-            if (existsSync(bundled)) {
-                return bundled;
-            }
-        }
+        bundled = require('ffmpeg-static') as string | null | undefined;
     } catch {
-        // Package missing — fall through to PATH.
+        bundled = undefined;
     }
-
-    return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    if (bundled) {
+        // Binaries cannot be spawned from inside app.asar.
+        if (bundled.includes('app.asar' + path.sep) || bundled.includes('app.asar/')) {
+            bundled = bundled.replace('app.asar', 'app.asar.unpacked');
+        }
+        if (existsSync(bundled)) return bundled;
+    }
+    throw new Error(
+        `Bundled ffmpeg binary not found${bundled ? ` at "${bundled}"` : ''}. ` +
+            `The ffmpeg-static install script must run (pnpm onlyBuiltDependencies), or set FFMPEG_PATH.`,
+    );
 }
 
 function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-        const ffmpegBin = resolveFfmpegBinary();
-        console.log(`[AudioConvert] Using ffmpeg: "${ffmpegBin}"`);
+        let ffmpegBin: string;
+        try {
+            ffmpegBin = resolveFfmpegBinary();
+        } catch (err) {
+            reject(err);
+            return;
+        }
         const child = spawn(
             ffmpegBin,
             [
@@ -92,6 +104,8 @@ function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
                 'libmp3lame',
                 '-q:a',
                 '2',
+                '-f',
+                'mp3',
                 destPath,
             ],
             { windowsHide: true },
@@ -101,12 +115,7 @@ function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
             stderr += String(chunk);
         });
         child.on('error', (err) => {
-            reject(
-                new Error(
-                    `ffmpeg is not available (${err.message}). ` +
-                        `Expected the bundled ffmpeg-static binary, or set FFMPEG_PATH / install ffmpeg on PATH.`,
-                ),
-            );
+            reject(new Error(`ffmpeg could not be started (${err.message})`));
         });
         child.on('close', (code) => {
             if (code === 0) {
@@ -125,82 +134,160 @@ function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
     });
 }
 
-/**
- * Ensure `sourcePath` is playable as MP3.
- * - `.mp3` → returned unchanged (existing flow).
- * - Convertible formats → convert to a sibling `<basename>.mp3` via ffmpeg.
- * - Never modifies or deletes the original source file.
- * - If the sibling `.mp3` already exists, reuses it (does not overwrite).
- * - Uses a temp file during conversion and cleans it up on failure / after move.
- */
-/**
- * Resolve a stored or picked audio path to an absolute playable MP3.
- * Relative paths are resolved under the show folder first, then the optional media folder.
- */
-export async function preparePlayableAudioPath(
-    audioPath: string,
-    showFolder: string,
-    mediaFolder?: string,
-): Promise<string> {
-    const trimmed = audioPath.trim();
-    if (!trimmed) {
-        throw new Error('Audio path is required');
-    }
-
-    let resolved = path.isAbsolute(trimmed) ? path.resolve(trimmed) : path.join(showFolder, trimmed);
-    if (!(await fileExists(resolved))) {
-        const media = mediaFolder?.trim();
-        if (media) {
-            const alt = path.join(media, path.basename(trimmed));
-            if (await fileExists(alt)) {
-                resolved = alt;
-            }
-        }
-    }
-    if (!(await fileExists(resolved))) {
-        throw new Error(`Audio file not found: ${resolved}`);
-    }
-    return ensureMp3AudioFile(resolved);
+export function audioCacheDir(showFolder: string): string {
+    return path.join(showFolder, AUDIO_CACHE_SUBDIR);
 }
 
-export async function ensureMp3AudioFile(sourcePath: string): Promise<string> {
+function absoluteUnder(p: string, showFolder: string): string {
+    const t = p.trim();
+    return path.isAbsolute(t) ? path.resolve(t) : path.join(showFolder, t);
+}
+
+/** Cache file a source would transcode to, or undefined when the source is missing. */
+export async function audioCachePathFor(sourcePath: string, showFolder: string): Promise<string | undefined> {
+    const resolved = absoluteUnder(sourcePath, showFolder);
+    let st: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+        st = await fs.stat(resolved);
+    } catch {
+        return undefined;
+    }
+    const digest = createHash('sha1')
+        .update(`${resolved}|${st.size}|${Math.floor(st.mtimeMs)}|r${AUDIO_CACHE_RECIPE}`)
+        .digest('hex')
+        .slice(0, 16);
+    const base = path
+        .parse(resolved)
+        .name.replace(/[^\w.-]+/g, '_')
+        .slice(0, 60);
+    return path.join(audioCacheDir(showFolder), `${base}-${digest}${MP3_EXTENSION}`);
+}
+
+/** Same-process dedupe: concurrent requests for one cache entry share the conversion. */
+const inflight = new Map<string, Promise<string>>();
+
+/**
+ * Resolve a record's `files.audio` to a playable MP3 path.
+ * - `.mp3` → the source itself (relative paths resolved under the show folder).
+ * - Convertible formats → the cached MP3, transcoding on a miss.
+ * - Never touches the source file.
+ */
+export async function resolvePlayableAudio(sourcePath: string, showFolder: string): Promise<string> {
     if (!sourcePath?.trim()) {
         throw new Error('Audio path is required');
     }
-    const resolved = path.resolve(sourcePath);
-    if (!(await fileExists(resolved))) {
-        throw new Error(`Audio file not found: ${resolved}`);
-    }
-
+    const resolved = absoluteUnder(sourcePath, showFolder);
     const ext = path.extname(resolved).toLowerCase();
-    if (ext === '.mp3') {
+    if (ext === MP3_EXTENSION) {
         return resolved;
     }
     if (!(CONVERTIBLE_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
         throw new Error(`Unsupported audio format: ${ext || '(none)'}`);
     }
-
-    const destPath = path.join(path.dirname(resolved), `${path.parse(resolved).name}.mp3`);
-    if (await fileExists(destPath)) {
-        console.log(`[AudioConvert] Reusing existing MP3: "${destPath}"`);
-        return destPath;
+    const dest = await audioCachePathFor(resolved, showFolder);
+    if (!dest) {
+        throw new Error(`Audio file not found: ${resolved}`);
     }
+    if (await fileExists(dest)) {
+        return dest;
+    }
+    const pending = inflight.get(dest);
+    if (pending) return pending;
+    const job = convertIntoCache(resolved, dest).finally(() => inflight.delete(dest));
+    inflight.set(dest, job);
+    return job;
+}
 
-    const tmpPath = path.join(os.tmpdir(), `ezplayer-audio-${randomUUID()}.mp3`);
+async function convertIntoCache(source: string, dest: string): Promise<string> {
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    // The main process (warming) and the playback worker may race on one entry.
+    if (await waitForOtherWriter(dest)) {
+        return dest;
+    }
+    const tmp = `${dest}.${process.pid}.part`;
     try {
-        console.log(`[AudioConvert] Converting "${resolved}" -> temp "${tmpPath}"`);
-        await runFfmpegToMp3(resolved, tmpPath);
-        try {
-            await fs.rename(tmpPath, destPath);
-        } catch {
-            // Cross-device rename can fail; fall back to copy + unlink temp.
-            await fs.copyFile(tmpPath, destPath);
-            await fs.unlink(tmpPath).catch(() => undefined);
-        }
-        console.log(`[AudioConvert] Wrote "${destPath}" (original preserved)`);
-        return destPath;
+        console.log(`[AudioCache] Converting "${source}" -> "${dest}"`);
+        await runFfmpegToMp3(source, tmp);
+        await fs.rename(tmp, dest);
+        return dest;
     } catch (err) {
-        await fs.unlink(tmpPath).catch(() => undefined);
+        await fs.unlink(tmp).catch(() => undefined);
         throw err;
     }
+}
+
+/** True when another writer finished `dest` while we waited on its live `.part`. */
+async function waitForOtherWriter(dest: string): Promise<boolean> {
+    const dir = path.dirname(dest);
+    const prefix = `${path.basename(dest)}.`;
+    const deadline = Date.now() + WAIT_FOR_WRITER_MS;
+    while (Date.now() < deadline) {
+        if (await fileExists(dest)) return true;
+        const names = (await fs.readdir(dir).catch(() => [] as string[])).filter(
+            (n) => n.startsWith(prefix) && n.endsWith('.part'),
+        );
+        let live = false;
+        for (const n of names) {
+            const st = await fs.stat(path.join(dir, n)).catch(() => undefined);
+            if (st && Date.now() - st.mtimeMs < PART_STALE_MS) live = true;
+        }
+        if (!live) return false;
+        await sleep(500);
+    }
+    return fileExists(dest);
+}
+
+/** Build cache entries for every convertible path, sequentially; failures are logged, not thrown. */
+export async function warmAudioCache(audioPaths: Iterable<string>, showFolder: string): Promise<void> {
+    const seen = new Set<string>();
+    for (const p of audioPaths) {
+        if (!p || !needsAudioConversion(p)) continue;
+        const abs = absoluteUnder(p, showFolder);
+        if (seen.has(abs)) continue;
+        seen.add(abs);
+        try {
+            await resolvePlayableAudio(abs, showFolder);
+        } catch (err) {
+            console.warn(`[AudioCache] Could not prepare "${abs}":`, err instanceof Error ? err.message : err);
+        }
+    }
+}
+
+/** Delete cache entries no live audio path maps to. Entries newer than `graceMs`
+ *  are kept (in-flight or just warmed). Returns the number deleted. */
+export async function pruneAudioCache(
+    showFolder: string,
+    liveAudioPaths: Iterable<string>,
+    opts?: { graceMs?: number },
+): Promise<number> {
+    const dir = audioCacheDir(showFolder);
+    const names = await fs.readdir(dir).catch(() => [] as string[]);
+    if (!names.length) return 0;
+
+    const keep = new Set<string>();
+    for (const p of liveAudioPaths) {
+        if (!p || !needsAudioConversion(p)) continue;
+        const c = await audioCachePathFor(p, showFolder);
+        if (c) keep.add(path.basename(c));
+    }
+
+    const grace = opts?.graceMs ?? DEFAULT_PRUNE_GRACE_MS;
+    let deleted = 0;
+    for (const name of names) {
+        if (keep.has(name)) continue;
+        const full = path.join(dir, name);
+        const st = await fs.stat(full).catch(() => undefined);
+        if (!st?.isFile()) continue;
+        if (Date.now() - st.mtimeMs < grace) continue;
+        try {
+            await fs.unlink(full);
+            deleted += 1;
+        } catch {
+            // EBUSY/EPERM — retry on the next sweep.
+        }
+    }
+    if (deleted > 0) {
+        console.log(`[AudioCache] pruned ${deleted} stale entries`);
+    }
+    return deleted;
 }

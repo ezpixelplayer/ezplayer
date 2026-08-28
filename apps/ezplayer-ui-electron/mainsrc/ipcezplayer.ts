@@ -54,7 +54,7 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { ensureMp3AudioFile, preparePlayableAudioPath } from './data/audio-convert.js';
+import { pruneAudioCache, warmAudioCache } from './data/audio-convert.js';
 
 import type {
     CloudCommand,
@@ -276,6 +276,14 @@ async function runGcSweep(): Promise<void> {
     }
 }
 
+/** Drop transcoded audio no current record maps to. Rides the cloud gc trigger. */
+async function pruneStaleAudioCache(): Promise<void> {
+    const showFolder = getCurrentShowFolder();
+    if (!showFolder) return;
+    const live = curSequences.filter((s) => !s.deleted).map((s) => s.files?.audio ?? '');
+    await pruneAudioCache(showFolder, live).catch((e) => console.warn('[AudioCache] prune failed:', e));
+}
+
 export function getSequenceThumbnail(id: string) {
     const seq = curSequences?.find((s) => s.id === id);
     if (seq?.files?.thumb) {
@@ -440,6 +448,13 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     broadcastToWebSocket('sequences', filtered);
     scheduleUpdated();
     updateCloudWorkerSequences(curSequences);
+    if (showFolder) {
+        // Best effort, off the commit path: transcode non-MP3 audio before playback needs it.
+        void warmAudioCache(
+            filtered.map((r) => r.files?.audio ?? ''),
+            showFolder,
+        );
+    }
     return filtered;
 }
 
@@ -458,22 +473,9 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             ups.work = { title: base, artist: '', length: 0 };
         }
         if (ups.files && showFolder) {
-            for (const key of ['fseq', 'thumb'] as const) {
+            for (const key of ['fseq', 'audio', 'thumb'] as const) {
                 const p = ups.files[key];
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
-            }
-            if (ups.files.audio) {
-                try {
-                    ups.files.audio = await preparePlayableAudioPath(
-                        ups.files.audio,
-                        showFolder,
-                        getSettingsCache()?.mediaFolder,
-                    );
-                } catch (err) {
-                    console.warn(`[sequences] Could not prepare audio "${ups.files.audio}":`, err);
-                    const p = ups.files.audio;
-                    if (p && !path.isAbsolute(p)) ups.files.audio = path.join(showFolder, p);
-                }
             }
         }
         if (!ups?.work?.length && ups.files?.fseq) {
@@ -883,9 +885,6 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcExtractAudioTagMetadata', async (_event, audioPath: string) => {
         return extractAudioTagMetadata(audioPath);
     });
-    ipcMain.handle('ipcEnsureMp3AudioFile', async (_event, audioPath: string) => {
-        return ensureMp3AudioFile(audioPath);
-    });
     ipcMain.handle('ipcBatchImportSequences', async (_event, fseqPaths: string[]) => {
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequences(fseqPaths ?? [], {
@@ -996,6 +995,7 @@ export async function registerContentHandlers(
         // Opportunistic gc — runs whenever the worker reports back, no-op when
         // queue is empty or player isn't idle.
         void runGcSweep();
+        void pruneStaleAudioCache();
     });
 
     onLayoutInstalled((layoutMeta) => {

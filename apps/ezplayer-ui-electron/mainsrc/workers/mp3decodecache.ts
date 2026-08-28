@@ -110,7 +110,13 @@ export type MP3Reference = RefHandle<MP3FileCacheVal>;
  * Handles fseq prefetching
  */
 export class MP3PrefetchCache {
-    constructor(arg: { readonly log: (msg: string) => void; now: number; mp3SpaceSeconds?: number }) {
+    constructor(arg: {
+        readonly log: (msg: string) => void;
+        now: number;
+        mp3SpaceSeconds?: number;
+        /** Map a record audio path to the file to decode (e.g. a cached transcode). */
+        resolveFile?: (audioFile: string) => Promise<string>;
+    }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
         this.decodewc = new Mp3DecodeWorkerClient();
@@ -118,7 +124,9 @@ export class MP3PrefetchCache {
             fetchFunction: async (key, _abort) => {
                 arg.log(`Starting mp3 load of ${key.mp3file}`);
                 try {
-                    return { decompAudio: await this.decodewc.decodeFile({ filePath: key.mp3file }) };
+                    const filePath = arg.resolveFile ? await arg.resolveFile(key.mp3file) : key.mp3file;
+                    if (filePath !== key.mp3file) arg.log(`Decoding cached audio ${filePath}`);
+                    return { decompAudio: await this.decodewc.decodeFile({ filePath }) };
                 } finally {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }

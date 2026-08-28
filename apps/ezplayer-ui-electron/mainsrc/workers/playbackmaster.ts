@@ -112,6 +112,7 @@ import {
     setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
+import { resolvePlayableAudio } from '../data/audio-convert.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -1822,6 +1823,10 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            resolveFile: (audioFile) => {
+                if (!showFolder) throw new Error(`No show folder to cache audio for `);
+                return resolvePlayableAudio(audioFile, showFolder);
+            },
         });
     }
 

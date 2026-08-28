@@ -128,11 +128,6 @@ export interface EZPElectronAPI {
     selectFiles: (options?: FileSelectOptions) => Promise<string[]>;
     autoDetectSongFilesFromFseq: (fseqPath: string) => Promise<AutoDetectedSongFiles>;
     extractAudioTagMetadata: (audioPath: string) => Promise<AudioTagMetadata>;
-    /**
-     * Ensure an audio path is playable MP3. Existing `.mp3` paths are returned
-     * unchanged; other supported formats are converted via system ffmpeg.
-     */
-    ensureMp3AudioFile: (audioPath: string) => Promise<string>;
     /** Import many .fseq paths using the same autodetection as single-song add. */
     batchImportSequences: (fseqPaths: string[]) => Promise<BatchImportSummary>;
     /** Import every .fseq under a folder (recursive). */
