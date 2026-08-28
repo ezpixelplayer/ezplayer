@@ -29,7 +29,7 @@ export const AUDIO_CACHE_SUBDIR = path.join('.ezplayer', 'audio-cache');
 const PART_STALE_MS = 60_000;
 /** Upper bound on waiting for another process's in-flight conversion. */
 const WAIT_FOR_WRITER_MS = 10 * 60_000;
-/** Prune keeps anything newer than this — covers in-flight and just-warmed entries. */
+/** Prune keeps anything newer than this - covers in-flight and just-warmed entries. */
 const DEFAULT_PRUNE_GRACE_MS = 60 * 60_000;
 
 const require = createRequire(import.meta.url);
@@ -168,8 +168,8 @@ const inflight = new Map<string, Promise<string>>();
 
 /**
  * Resolve a record's `files.audio` to a playable MP3 path.
- * - `.mp3` → the source itself (relative paths resolved under the show folder).
- * - Convertible formats → the cached MP3, transcoding on a miss.
+ * - `.mp3` -> the source itself (relative paths resolved under the show folder).
+ * - Convertible formats -> the cached MP3, transcoding on a miss.
  * - Never touches the source file.
  */
 export async function resolvePlayableAudio(sourcePath: string, showFolder: string): Promise<string> {
@@ -283,7 +283,7 @@ export async function pruneAudioCache(
             await fs.unlink(full);
             deleted += 1;
         } catch {
-            // EBUSY/EPERM — retry on the next sweep.
+            // EBUSY/EPERM - retry on the next sweep.
         }
     }
     if (deleted > 0) {

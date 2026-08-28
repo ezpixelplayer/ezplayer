@@ -460,7 +460,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </form>
                     </Grid>
 
-                    {/* File Management â native picker in Electron, upload on web */}
+                    {/* File Management - native picker in Electron, upload on web */}
                     <Grid item xs={12}>
                         <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
                             Files

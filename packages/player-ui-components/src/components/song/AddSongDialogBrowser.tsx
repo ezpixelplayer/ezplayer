@@ -308,7 +308,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
                                 Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional — {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
+                                    (optional: {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                 </Typography>
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -444,7 +444,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginTop: 2 }}>
                             <LinearProgress sx={{ flex: 1 }} />
                             <Typography variant="caption" color="text.secondary">
-                                Uploading {uploadingName}â¦
+                                Uploading {uploadingName}...
                             </Typography>
                         </Box>
                     )}

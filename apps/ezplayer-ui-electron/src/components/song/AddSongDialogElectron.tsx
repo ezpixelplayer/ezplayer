@@ -326,7 +326,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
                                 Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional — {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
+                                    (optional: {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                 </Typography>
                             </Typography>
                             <ElectronFileButton

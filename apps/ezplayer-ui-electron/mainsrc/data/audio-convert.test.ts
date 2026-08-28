@@ -29,7 +29,7 @@ async function ffmpeg(args: string[]): Promise<{ stdout: string; stderr: string 
     return execFileAsync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', ...args], { windowsHide: true });
 }
 
-// 0.2 s of 440 Hz sine, 8 kHz mono — a few KB per fixture.
+// 0.2 s of 440 Hz sine, 8 kHz mono - a few KB per fixture.
 const SINE = ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=8000:duration=0.2'];
 
 function fixtureArgs(ext: string, dest: string): string[] {
@@ -178,11 +178,11 @@ describe('audio-convert (real ffmpeg)', () => {
             const first = await resolvePlayableAudio(src, show);
             const stamp = await fs.stat(first);
 
-            // Same source → same file, not rewritten.
+            // Same source -> same file, not rewritten.
             expect(await resolvePlayableAudio(src, show)).toBe(first);
             expect((await fs.stat(first)).mtimeMs).toBe(stamp.mtimeMs);
 
-            // Rewrite the source (new size) → different key; old entry stays until pruned.
+            // Rewrite the source (new size) -> different key; old entry stays until pruned.
             await fs.copyFile(path.join(fixtureDir, 'song.flac'), src);
             await fs.utimes(src, new Date(), new Date(Date.now() + 5_000));
             const second = await resolvePlayableAudio(src, show);
@@ -259,7 +259,7 @@ describe('audio-convert (real ffmpeg)', () => {
             const flacEntry = path.basename((await audioCachePathFor(flac, show))!);
             expect(await cacheEntries()).toEqual([wavEntry, flacEntry].sort());
 
-            // Nothing is older than the grace window yet → nothing pruned.
+            // Nothing is older than the grace window yet -> nothing pruned.
             expect(await pruneAudioCache(show, [wav], { graceMs: 60_000 })).toBe(0);
             // With no grace, the entry without a live source goes; the live one stays.
             expect(await pruneAudioCache(show, [wav], { graceMs: 0 })).toBe(1);
