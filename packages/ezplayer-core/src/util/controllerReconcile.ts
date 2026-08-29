@@ -204,11 +204,7 @@ export function reconcilePorts(intent: ControllerPortIntent[], actual: Controlle
 }
 
 /**
- * Serial ports: xLights intent (models on DMX/Renard/… protocols) against the
- * device's serial outputs, by port number. Channel counts decide the drift;
- * model names inform display only. The device's start channel is NOT
- * compared — it is device-local on some controllers (HinksPix) and absolute
- * on others (FPP).
+ * Serial ports: intent against the device's serial outputs .
  */
 export function reconcileSerialPorts(
     intent: ControllerSerialPortIntent[] | undefined,
@@ -394,9 +390,7 @@ export function overlayHealth(rows: ControllerGridRow[], statuses: ControllerSta
         const match = (addr ? byAddr.get(addr) : undefined) ?? (r.name ? byName.get(r.name.toLowerCase()) : undefined);
         if (!match) return r;
         // A live "Up" ping proves the device is on-network even if the scan
-        // missed it — flip absent → present. A "Down" ping is just as live a
-        // signal the other way: a record whose scan result has gone stale is
-        // absent, not "present but red". Ghosts and Pending are untouched.
+        // missed it.  A "Down" ping is just as live a signal the other way.
         const state =
             r.state === 'absent' && match.connectivity === 'Up'
                 ? 'present'

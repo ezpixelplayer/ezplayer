@@ -360,7 +360,7 @@ function mergeDevice(d: DiscoveryDevice): void {
         if (next.oui === undefined) next.oui = prev.oui;
         if (next.hostname === undefined) next.hostname = prev.hostname;
     }
-    // Seen by a scan ⇒ answering again, whatever an earlier refresh found.
+    // Seen by a scan again, keep whatever an earlier refresh found.
     next.unreachable = false;
     state.devices[key] = next;
 }
@@ -435,7 +435,6 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
     const existing = records.find((r) => r.name === name);
     const merged: EzpControllerRecord = { ...(existing ?? { name }), ...patch, name };
     // A patch is a merge, so "clear the override" arrives as an explicit 0
-    // (a frame-rate cap of 0 is meaningless) — drop the key rather than store it.
     if (merged.fpsOverride !== undefined && !(merged.fpsOverride > 0)) delete merged.fpsOverride;
 
     const dir = recordsDir(recordsShowFolder);
@@ -488,9 +487,7 @@ async function runStatus(
         const probe = await probeController(dev.ip, proxyFor(dev), { detail: true, preferDriver: dev.driverType });
         if (!probe.success || !probe.report) {
             if (probe.unreachable && state.devices[command.id]) {
-                // Seen before, gone now: keep the last-known detail but mark
-                // the device unreachable so the grid reports it absent
-                // instead of pretending a fresh read failed to identify it.
+                // Seen before, gone now.
                 state.devices[command.id] = {
                     ...dev,
                     unreachable: true,
@@ -733,7 +730,7 @@ async function runUpload(
                 }
             }
             for (const s of derived.skipped) warnings.push(`port ${s.port} skipped: ${s.detail}`);
-            // Serial (DMX/Renard/…) ports ride alongside, never as pixels.
+            // Serial (DMX/Renard/LOR) ports ride alongside, never as pixels.
             const serialPorts: SerialPortConfig[] = (rec.serialPorts ?? [])
                 .filter((sp) => sp.channels > 0 && sp.startChannel !== undefined)
                 .map((sp) => ({
@@ -874,10 +871,8 @@ async function runScan(
 }
 
 /**
- * After a completed scan, a directly-reached device on one of the scanned
- * networks that the scan did NOT find has gone away: keep its last-known
- * detail but flag it unreachable so the grid shows its record absent. (A
- * cancelled scan proves nothing and never gets here.)
+ * After a completed scan, flag directly-reached devices that the scan did
+ *  NOT find as unreachable so the grid shows its record absent.
  */
 function markUnseenUnreachable(networks: { cidr: string }[], found: DiscoveryDevice[]): void {
     if (networks.length === 0) return;

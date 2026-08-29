@@ -226,14 +226,12 @@ export interface KnownController {
     /** Absolute 1-based channel span. */
     startChannel?: number;
     channelCount?: number;
-    /** xLights intent: which model(s)/pixels should plug into each physical
-     *  port — the "should-be" side of port reconciliation vs. `pixelPorts`. */
+    /** xLights intent: which model(s)/pixels should plug into each physical port */
     ports?: ControllerPortIntent[];
+    /** xLights intent for the controller's serial ports */
+    serialPorts?: ControllerSerialPortIntent[];
     /** Rich per-(model,string) intent for config upload; superset of `ports`. */
     modelIntents?: ControllerModelIntent[];
-    /** xLights intent for the controller's serial (DMX/Renard/…) ports —
-     *  models on serial protocols, kept apart from the pixel ports. */
-    serialPorts?: ControllerSerialPortIntent[];
     /** Pixel / serial ports the controller model has, from its capability
      *  definition (so a port map can draw the unused ones too). */
     pixelPortCount?: number;

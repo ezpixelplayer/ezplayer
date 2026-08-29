@@ -22,7 +22,7 @@ Below this is a table with records for each network device / controller:
 - For devices that allow [actions](./controlleractions.md), a "kebab" menu is available on the right end of the row
 
 ### Max FPS
-Some controllers cannot keep up with the show's frame rate.  The **Max FPS** column shows the frame-rate cap in effect for the controller: the value from the xLights controller Description (an `[MFT:25]` tag means a minimum of 25 ms between frames, i.e. 40 fps), or the override from the EZPlayer controller record, marked with an asterisk.  Use **Edit record** to set or clear the override; it takes effect the next time the show output is (re)started.
+Some controllers cannot keep up with the show's frame rate.  The **Max FPS** column shows the frame-rate cap in effect for the controller.  Use **Edit record** to set or clear the override; it takes effect the next time the show output is (re)started.
 
 ## Status / Terminology
 
@@ -33,7 +33,7 @@ Some controllers cannot keep up with the show's frame rate.  The **Max FPS** col
 Red ![Controller Red](/img/ctrlred.png) / Green ![Controller Green](/img/ctrlgreen.png) / Unlit ![Controller Unlit](/img/ctrlunlit.png) status light - Unlit means the controller is disabled.  Green indicates that the controller is responding to pings.  Red means no ping response.
 
 ### Present / Absent / Unregistered
-A *Present* ![Controller Present](/img/ctrlpresent.png) controller is enabled in the controller configuration and is responding to pings.  An *Absent* ![Controller Absent](/img/ctrlabsent.png) controller is in the configuration but is not responding — including one that was found earlier but has since stopped answering (its last-known details are kept; hover the status for when it last answered).  An *Unregistered* ![Controller Unregistered](/img/ctrlunregistered.png) controller was found during network scan only, and may be responding to pings, but is not in the configuration.
+A *Present* ![Controller Present](/img/ctrlpresent.png) controller is enabled in the controller configuration and is responding to pings.  An *Absent* ![Controller Absent](/img/ctrlabsent.png) controller is in the configuration but is not responding.  An *Unregistered* ![Controller Unregistered](/img/ctrlunregistered.png) controller was found during network scan only, and may be responding to pings, but is not in the configuration.
 
 ### Warning Alert
 A warning ![Controller Alert](/img/ctrlalert.png) indicator is presented when a controller needs attention.  Hovering or expanding the controller details will reveal more about the warning.

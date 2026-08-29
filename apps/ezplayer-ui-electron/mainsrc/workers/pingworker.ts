@@ -154,10 +154,7 @@ parentPort.on('message', (msg: ParentMessage) => {
 });
 
 /**
- * Per-ping reply budget. Controllers sit on the local network, where a reply
- * takes a few ms (a WiFi device in power-save maybe a couple of hundred), so a
- * host that hasn't answered in this long is down for our purposes — and a
- * round over a show's worth of dark controllers must not stall on it.
+ * Per-ping reply budget; LAN-like timing.
  */
 const PING_TIMEOUT_MS = 300;
 

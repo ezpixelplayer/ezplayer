@@ -1662,8 +1662,8 @@ function xlControllerToKnown(
 }
 
 /**
- * xLights' serial protocol names (Pixels.cpp __equivalentSerial). A model on
- * one of these plugs into a serial (DMX/Renard/…) connector, not a pixel port,
+ * Serial protocol names. A model on
+ * one of these plugs into a serial (DMX/Renard/LOR/etc) connector, not a pixel port,
  * so it must never be counted as pixels — 50 DMX channels are not 17 pixels.
  */
 const SERIAL_PROTOCOLS = new Set([
@@ -1935,8 +1935,6 @@ async function processQueue() {
               });
 
         // Per-controller max-FPS overrides from our records in the show folder
-        // (Controllers screen → Edit record); they cap the sender frame rate
-        // like the xLights [MFT:ms] description tag does.
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
         const sendJob = await openControllersForDataSend(controllers, {
             ddpPort: latestSettings?.advanced?.ddpPort,
