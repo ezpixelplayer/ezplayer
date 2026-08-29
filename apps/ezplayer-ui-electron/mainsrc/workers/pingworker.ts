@@ -106,7 +106,7 @@ const cfg: PingConfig = {
     hosts: [],
     intervalS: 5,
     maxSamples: 10,
-    concurrency: 10,
+    concurrency: 64,
 };
 
 let running = true;
@@ -153,9 +153,14 @@ parentPort.on('message', (msg: ParentMessage) => {
     }
 });
 
+/**
+ * Per-ping reply budget; LAN-like timing.
+ */
+const PING_TIMEOUT_MS = 300;
+
 async function pingHost(host: string): Promise<PingStat> {
     const window = ensureWindow(host);
-    const res = await ping(host, 1000);
+    const res = await ping(host, PING_TIMEOUT_MS);
     window.add(res.alive ? res.elapsed : undefined);
     return window.getReport(host);
 }

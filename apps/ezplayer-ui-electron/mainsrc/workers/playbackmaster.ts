@@ -36,6 +36,7 @@ import type {
     ControllerPortIntent,
     ControllerModelIntent,
     ControllerOutputIntent,
+    ControllerSerialPortIntent,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -61,6 +62,8 @@ import {
     CacheStats,
     loadXmlFile,
     resolveShowAssetPath,
+    ExplicitControllerDesc,
+    readControllerFpsOverrides,
 } from '@ezplayer/epp';
 
 import {
@@ -1359,8 +1362,9 @@ async function loadXmlCoordinates() {
             const { controllers, models } = parsed;
             const portIntent = buildPortIntent(models);
             const modelIntents = buildModelIntents(models);
+            const serialIntent = buildSerialIntent(models);
             knownControllers = controllers.map((c) =>
-                xlControllerToKnown(c, portIntent.get(c.name), modelIntents.get(c.name)),
+                xlControllerToKnown(c, portIntent.get(c.name), modelIntents.get(c.name), serialIntent.get(c.name)),
             );
             emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
         } catch (cErr) {
@@ -1622,7 +1626,11 @@ function xlControllerToKnown(
     c: XlControllerInfo,
     ports?: ControllerPortIntent[],
     modelIntents?: ControllerModelIntent[],
+    serialPorts?: ControllerSerialPortIntent[],
 ): KnownController {
+    // The controller Description may carry our [MFT:<ms>] min-frame-time tag.
+    const mft = new ExplicitControllerDesc(c.description ?? '').minFrameTime;
+    const maxFps = mft > 0 ? Math.round(1000 / mft) : undefined;
     const enableState =
         c.activeState === 'Active'
             ? ('enabled' as const)
@@ -1646,9 +1654,79 @@ function xlControllerToKnown(
         channelCount: c.maxChannels,
         ports: ports && ports.length ? ports : undefined,
         modelIntents: modelIntents && modelIntents.length ? modelIntents : undefined,
+        serialPorts: serialPorts && serialPorts.length ? serialPorts : undefined,
         outputs: xlControllerOutputs(c),
+        maxFps,
         source: 'xlights',
     };
+}
+
+/**
+ * Serial protocol names. A model on
+ * one of these plugs into a serial (DMX/Renard/LOR/etc) connector, not a pixel port,
+ * so it must never be counted as pixels — 50 DMX channels are not 17 pixels.
+ */
+const SERIAL_PROTOCOLS = new Set([
+    'dmx',
+    'dmx512',
+    'dmx-open',
+    'opendmx',
+    'dmx-pro',
+    'lor',
+    'renard',
+    'genericserial',
+    'pixelnet',
+    'pixelnet-lynx',
+    'pixelnet-open',
+]);
+
+function isSerialProtocol(protocol: string | undefined): boolean {
+    return !!protocol && SERIAL_PROTOCOLS.has(protocol.toLowerCase());
+}
+
+/** Family name the drivers expect: DMX and Pixelnet flavours collapse. */
+function serialProtocolFamily(protocol: string): string {
+    const p = protocol.toLowerCase();
+    if (p.startsWith('dmx') || p === 'opendmx') return 'dmx';
+    if (p.startsWith('pixelnet')) return 'pixelnet';
+    return p;
+}
+
+/** Serial-port intent per controller: models on serial protocols grouped by
+ *  port, in channel order, with the port's total channel span. */
+function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, ControllerSerialPortIntent[]> {
+    const byKey = new Map<string, { controller: string; port: number; models: XlModelChannelInfo[] }>();
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0 || !isSerialProtocol(m.controllerProtocol)) continue;
+        const key = `${m.controllerName}\u0000${m.controllerPort}`;
+        const g = byKey.get(key) ?? { controller: m.controllerName, port: m.controllerPort, models: [] };
+        g.models.push(m);
+        byKey.set(key, g);
+    }
+    const out = new Map<string, ControllerSerialPortIntent[]>();
+    for (const g of byKey.values()) {
+        g.models.sort((a, b) => a.startChannel - b.startChannel);
+        const first = g.models[0];
+        const last = g.models[g.models.length - 1];
+        const arr = out.get(g.controller) ?? [];
+        arr.push({
+            port: g.port,
+            models: g.models.map((m) => m.name),
+            modelChannels: g.models.map((m) => ({
+                name: m.name,
+                startChannel: m.startChannel,
+                channels: m.channelCount,
+            })),
+            // The span the port must carry: first channel through the last
+            // model's last channel (gaps between models included).
+            channels: last.startChannel + last.channelCount - first.startChannel,
+            startChannel: first.startChannel,
+            protocol: serialProtocolFamily(first.controllerProtocol),
+        });
+        out.set(g.controller, arr);
+    }
+    for (const arr of out.values()) arr.sort((a, b) => a.port - b.port);
+    return out;
 }
 
 /** The controller's outputs as upload intent: E131/ArtNet one entry per
@@ -1721,6 +1799,7 @@ function buildModelIntents(models: XlModelChannelInfo[]): Map<string, Controller
     const by = new Map<string, ControllerModelIntent[]>();
     for (const m of models) {
         if (!m.controllerName || m.controllerPort <= 0 || !m.controllerProtocol) continue;
+        if (isSerialProtocol(m.controllerProtocol)) continue; // see buildSerialIntent
         const arr = by.get(m.controllerName) ?? [];
         arr.push(modelIntentOf(m));
         by.set(m.controllerName, arr);
@@ -1736,6 +1815,7 @@ function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPo
     const byController = new Map<string, ControllerModelIntent[]>();
     for (const m of models) {
         if (!m.controllerName || m.controllerPort <= 0) continue;
+        if (isSerialProtocol(m.controllerProtocol)) continue; // see buildSerialIntent
         const arr = byController.get(m.controllerName) ?? [];
         arr.push(modelIntentOf(m));
         byController.set(m.controllerName, arr);
@@ -1872,12 +1952,16 @@ async function processQueue() {
                   logger: (msg) => emitWarning(msg),
               });
 
+        // Per-controller max-FPS overrides from our records in the show folder
+        const fpsOverrides = await readControllerFpsOverrides(showFolder!);
         const sendJob = await openControllersForDataSend(controllers, {
             ddpPort: latestSettings?.advanced?.ddpPort,
+            fpsOverrides,
         });
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
-            concurrency: 10,
+            // Pings are cheap; a whole show's controllers go out in one burst.
+            concurrency: 64,
             maxSamples: 10,
             intervalS: 5,
         });

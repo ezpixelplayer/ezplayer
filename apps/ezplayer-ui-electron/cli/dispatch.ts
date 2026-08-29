@@ -101,7 +101,7 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
     discover: {
         summary: 'Scan networks for lighting controllers.',
         detail:
-            'Usage: EZPlayer discover [--networks <cidr[,cidr…]>] [--depth sweep|identify|full] [--fpp-proxy] [--ezp-proxy]\n' +
+            'Usage: EZPlayer discover [--networks <cidr[,cidr...]>] [--depth sweep|identify|full] [--fpp-proxy] [--ezp-proxy]\n' +
             '\n' +
             '  -n, --networks  comma-separated CIDRs to scan (e.g. 192.168.1.0/24).\n' +
             '                  Omit to scan every external host network.\n' +

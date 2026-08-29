@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { portIntentFromModelIntents, expandIntentStrings, getPortSR } from '../src/util/controllerPortMap';
+import {
+    buildPortMap,
+    portIntentFromModelIntents,
+    expandIntentStrings,
+    getPortSR,
+} from '../src/util/controllerPortMap';
 import type { ControllerModelIntent } from '../src/types/ControllerOps';
 
 /** Minimal rich model intent. */
@@ -105,5 +110,68 @@ describe('portIntentFromModelIntents', () => {
         const ports = portIntentFromModelIntents(intents).map((p) => p.port);
         expect([...new Set(strings.map((s) => s.port))].sort((a, b) => a - b)).toEqual(ports);
         expect(getPortSR(3, 2, 0, false, 1)).toEqual({ port: 4, smartRemote: 0 });
+    });
+});
+
+describe('buildPortMap rows and serial ports', () => {
+    it('draws every fitted pixel port, starting at 1, even past the last used one', () => {
+        const map = buildPortMap([mi({ name: 'Arch', controllerPort: 25, nodeCount: 50 })], undefined, undefined, {
+            pixelPortCount: 32,
+        });
+        expect(map.rows.map((r) => r.port)).toEqual(Array.from({ length: 32 }, (_, i) => i + 1));
+        expect(map.rows[24].intendedPixels).toBe(50);
+        expect(map.rows[0].intendedPixels).toBeUndefined();
+        expect(map.serial).toEqual([]);
+    });
+
+    it('still extends past the fitted count when intent or device use a higher port', () => {
+        const map = buildPortMap(undefined, undefined, [{ port: 40, pixels: 10 }], { pixelPortCount: 32 });
+        expect(map.rows.length).toBe(40);
+    });
+
+    it('lists serial ports separately with channels, intent vs device', () => {
+        const map = buildPortMap(undefined, undefined, undefined, {
+            serialPortCount: 2,
+            serialIntent: [
+                {
+                    port: 1,
+                    models: ['PAR 1', 'PAR 2'],
+                    channels: 20,
+                    startChannel: 1001,
+                    protocol: 'dmx',
+                    modelChannels: [
+                        { name: 'PAR 1', startChannel: 1001, channels: 10 },
+                        { name: 'PAR 2', startChannel: 1011, channels: 10 },
+                    ],
+                },
+            ],
+            serialActual: [{ port: 1, protocol: 'dmx', channels: 16 }],
+        });
+        expect(map.rows).toEqual([]);
+        expect(map.serial.map((s) => s.port)).toEqual([1, 2]);
+        expect(map.serial[0]).toMatchObject({
+            models: ['PAR 1', 'PAR 2'],
+            startChannel: 1001,
+            intendedChannels: 20,
+            actualChannels: 16,
+            drift: true, // device short of the 20 channels xLights needs
+        });
+        // DMX addresses are relative to the port's first channel.
+        expect(map.serial[0].modelChannels.map((m) => [m.name, m.address])).toEqual([
+            ['PAR 1', 1],
+            ['PAR 2', 11],
+        ]);
+        expect(map.serial[1]).toMatchObject({ models: [], drift: false });
+    });
+
+    it('does not flag serial drift before the device has been read, and tolerates padding', () => {
+        const intent = [{ port: 1, models: ['PAR'], channels: 10 }];
+        expect(buildPortMap(undefined, undefined, undefined, { serialIntent: intent }).serial[0].drift).toBe(false);
+        expect(
+            buildPortMap(undefined, undefined, undefined, {
+                serialIntent: intent,
+                serialActual: [{ port: 1, channels: 16 }],
+            }).serial[0].drift,
+        ).toBe(false);
     });
 });

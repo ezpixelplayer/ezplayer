@@ -95,11 +95,17 @@ export type {
     PortDriftKind,
     PortReconcile,
     ControllerHealth,
+    ControllerSerialPortIntent,
+    ControllerSerialModelIntent,
+    ControllerSerialPort,
+    SerialPortReconcile,
 } from './types/ControllerOps';
+export { effectiveMaxFps } from './types/ControllerOps';
 
 export {
     reconcileControllers,
     reconcilePorts,
+    reconcileSerialPorts,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
@@ -117,7 +123,14 @@ export {
     portIntentFromModelIntents,
     PORTS_PER_SMARTREMOTE,
 } from './util/controllerPortMap';
-export type { PortMap, PortMapBox, PortMapRow, PortMapString } from './util/controllerPortMap';
+export type {
+    PortMap,
+    PortMapBox,
+    PortMapRow,
+    PortMapSerialRow,
+    PortMapString,
+    PortMapOptions,
+} from './util/controllerPortMap';
 
 export type {
     VcSong,

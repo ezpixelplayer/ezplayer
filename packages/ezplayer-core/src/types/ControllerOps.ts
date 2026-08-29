@@ -43,11 +43,24 @@ export interface DiscoveredController {
     detail?: ControllerDetailNode[];
     /** Actual per-port config read from the device (full depth). */
     pixelPorts?: ControllerPort[];
+    /** Pixel ports physically fitted, when the device says (full depth). */
+    pixelPortCount?: number;
+    /** Actual serial (DMX/…) port config read from the device (full depth). */
+    serialPorts?: ControllerSerialPort[];
+    /** Serial ports physically fitted, when the device says (full depth). */
+    serialPortCount?: number;
     /** Actual data-input config read from the device (full depth). */
     inputs?: ControllerInputInfo;
     /** Actions the driver enumerated (filled on status deep-reads). */
     actions?: ControllerDeviceAction[];
     error?: string;
+    /**
+     * Set when the device was seen before but nothing answers at its address
+     * any more (a failed refresh, or a later scan of its network that did not
+     * find it). The last-known detail is kept; the grid shows the record as
+     * absent until it answers again.
+     */
+    unreachable?: boolean;
     /** ISO timestamp this controller's info was last refreshed. */
     seenAt: string;
 }
@@ -213,15 +226,74 @@ export interface KnownController {
     /** Absolute 1-based channel span. */
     startChannel?: number;
     channelCount?: number;
-    /** xLights intent: which model(s)/pixels should plug into each physical
-     *  port — the "should-be" side of port reconciliation vs. `pixelPorts`. */
+    /** xLights intent: which model(s)/pixels should plug into each physical port */
     ports?: ControllerPortIntent[];
+    /** xLights intent for the controller's serial ports */
+    serialPorts?: ControllerSerialPortIntent[];
     /** Rich per-(model,string) intent for config upload; superset of `ports`. */
     modelIntents?: ControllerModelIntent[];
+    /** Pixel / serial ports the controller model has, from its capability
+     *  definition (so a port map can draw the unused ones too). */
+    pixelPortCount?: number;
+    serialPortCount?: number;
     /** Outputs (universes/channel blocks) from xlights_networks.xml. */
     outputs?: ControllerOutputIntent[];
+    /**
+     * Max frame rate xLights declares for this controller — the EZPlayer
+     * `[MFT:<ms>]` tag in the controller Description, as frames per second.
+     * Undefined ⇒ no limit declared.
+     */
+    maxFps?: number;
+    /** Our record's max-FPS override, when set; wins over `maxFps`. */
+    fpsOverride?: number;
     /** Provenance of the record. */
     source: 'xlights' | 'ezp' | 'both';
+}
+
+/** The frame-rate cap in effect for a known controller: the record override,
+ *  else the xLights declaration, else none. */
+export function effectiveMaxFps(k: { maxFps?: number; fpsOverride?: number }): number | undefined {
+    return k.fpsOverride ?? k.maxFps;
+}
+
+/** xLights intent for one serial (DMX / Renard / Pixelnet / …) output port. */
+export interface ControllerSerialPortIntent {
+    /** 1-based serial port number (xLights ControllerConnection Port). */
+    port: number;
+    /** Model names on the port, in channel order. */
+    models: string[];
+    /** Channels the port must carry (first model's first channel through the
+     *  last model's last channel). */
+    channels: number;
+    /** Absolute 1-based first channel of the port's channel span. */
+    startChannel?: number;
+    /** Serial protocol, lowercase (e.g. 'dmx', 'renard'). */
+    protocol?: string;
+    /** Where each model sits on the port.  Serial fixtures are often addressed
+     *  by channel, not chained like pixels, so this is what someone sets on the
+     *  fixture. Parallel to `models` when present. */
+    modelChannels?: ControllerSerialModelIntent[];
+}
+
+/** One model's channel placement on a serial port. */
+export interface ControllerSerialModelIntent {
+    name: string;
+    /** Absolute 1-based first show channel. */
+    startChannel: number;
+    channels: number;
+}
+
+/** A controller's ACTUAL serial port config as read from the device. */
+export interface ControllerSerialPort {
+    port: number;
+    protocol?: string;
+    /** First channel (1-based): absolute on FPP, device-local on HinksPix. */
+    startChannel?: number;
+    channels?: number;
+    universe?: number;
+    /** Device name / label when the controller has one (e.g. FPP "DMX1"). */
+    device?: string;
+    model?: string;
 }
 
 /** Per-(model,string) upload intent. Optional fields absent ⇒ "not set in
@@ -326,8 +398,16 @@ export interface ControllerGridRow {
     intent?: ControllerPortIntent[];
     /** Rich per-(model,string) intent; superset of `intent`. */
     modelIntents?: ControllerModelIntent[];
+    /** xLights serial-port intent, reconciled against the device's `serialPorts`. */
+    serialIntent?: ControllerSerialPortIntent[];
+    /** Port counts from the controller's capability definition. */
+    pixelPortCount?: number;
+    serialPortCount?: number;
     /** xLights output/universe intent, reconciled against the device's `inputs`. */
     outputs?: ControllerOutputIntent[];
+    /** Frame-rate cap: xLights declaration and our override (see KnownController). */
+    maxFps?: number;
+    fpsOverride?: number;
     /** Live health overlaid from the playback pipeline, joined by address/name. */
     health?: ControllerHealth;
 }
@@ -427,5 +507,18 @@ export interface PortReconcile {
     missingModels?: string[];
     /** Device-reported models xLights assigns elsewhere (or nowhere). */
     extraModels?: string[];
+    drift: PortDriftKind;
+}
+
+/** One serial port's intent-vs-actual reconciliation (channels, not pixels). */
+export interface SerialPortReconcile {
+    port: number;
+    intendedModels: string[];
+    intendedChannels?: number;
+    intendedProtocol?: string;
+    actualModel?: string;
+    actualChannels?: number;
+    actualProtocol?: string;
+    /** Same vocabulary as pixel ports; `count` means the channel counts differ. */
     drift: PortDriftKind;
 }

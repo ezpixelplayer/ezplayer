@@ -97,6 +97,20 @@ function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerStat
 export interface OpenControllersOptions {
     /** DDP destination port override (default 4048) — a testing/diagnostic knob. */
     ddpPort?: number;
+    /**
+     * Per-controller max frame rate, keyed by controller name (the EZPlayer
+     * controller record's fpsOverride). Wins over the xLights description's
+     * [MFT:ms] tag; a value <= 0 means "no cap".
+     */
+    fpsOverrides?: Record<string, number>;
+}
+
+/** Min ms between frames for a controller: record override, else the
+ *  description tag, else 0 (no cap). */
+function minFrameTimeFor(xc: ControllerRec, opts?: OpenControllersOptions): number {
+    const fps = opts?.fpsOverrides?.[xc.name];
+    if (fps !== undefined && fps > 0) return Math.round(1000 / fps);
+    return xc.desc?.minFrameTime ?? 0;
 }
 
 export async function openControllersForDataSend(ctrls: ControllerState[], opts?: OpenControllersOptions) {
@@ -125,7 +139,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
             dsender.pushAtEnd = false; // TODO try variety
             dsender.startChNum = proxied || xc.keepChannelNumbers ? xc.startch - 1 : 0;
             dsender.localAddress = xc.forceLocalIP;
-            dsender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;
+            dsender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             dsender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
 
             try {
@@ -159,7 +173,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
             // TODO!  Must fill in universe and ch per packet on multiple universes!  Do not do this now.
             esender.startUniverse = xc.universeNumbers?.[0] ?? 1;
             esender.channelsPerPacket = xc.universeSizes?.[0] ?? 510;
-            esender.minTimeBetweenFrames = xc.desc?.minFrameTime ?? 0;
+            esender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             try {
                 await esender.connect();
             } catch (e) {
