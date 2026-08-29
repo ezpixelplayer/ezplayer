@@ -9,15 +9,20 @@ title: Controller List
 
 The Controller List on the Controllers screen shows a combination of all configured and detected controller devices.
 
-Above the table header, a summary of controller [status](#present--absent--unregistered) is shown, and global actions ("Upload all" and "Reboot all") are offered if applicable.
+Above the table, the title row shows a summary of controller [status](#present--absent--unregistered) next to the everyday commands:
+- **Refresh all** re-reads the details of every *Present* controller.  No network scan is needed — it asks each controller that is already known to be on the network.
+- **New record** creates an EZPlayer controller record by hand.
 
-If the "Show unidentified" checkbox is checked, network devices that are not known to be controllers are shown in the table, otherwise they are not.
+The toolbar below it holds the view options on the left ("Show unidentified": when checked, network devices that are not known to be controllers are shown in the table) and, on the right, the bulk device actions that apply to all present controllers ("Upload all" and "Reboot all"), offered if applicable.
 
 Below this is a table with records for each network device / controller:
 - Clicking the headers allows sorting of the table
-- Each row shows the state, name, IP, and type for a network device
+- Each row shows the state, enabled state, name, IP, type, and frame-rate cap ("Max FPS") for a network device
 - For devices with details, a foldout icon is available on the left end of the row
 - For devices that allow [actions](./controlleractions.md), a "kebab" menu is available on the right end of the row
+
+### Max FPS
+Some controllers cannot keep up with the show's frame rate.  The **Max FPS** column shows the frame-rate cap in effect for the controller.  Use **Edit record** to set or clear the override; it takes effect the next time the show output is (re)started.
 
 ## Status / Terminology
 
