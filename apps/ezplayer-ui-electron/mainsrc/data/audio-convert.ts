@@ -17,13 +17,29 @@ export { CONVERTIBLE_AUDIO_EXTENSIONS, SUPPORTED_AUDIO_EXTENSIONS };
 /**
  * Playback is MP3-only (mpg123). Other formats are transcoded with the bundled
  * ffmpeg into a per-show cache; the song record always keeps the original file.
- * Cache entries are keyed by source path + size + mtime + recipe, so a changed
- * source or a changed recipe yields a new entry and the old one is pruned.
+ * Optional loudness normalization is baked into the cached file the same way.
+ * Cache entries are keyed by source path + size + mtime + recipe + options, so
+ * a changed source, recipe, or option yields a new entry and the old one is pruned.
  */
 
 /** Bump when the ffmpeg recipe changes; every cached artifact is rebuilt. */
 export const AUDIO_CACHE_RECIPE = 1;
 export const AUDIO_CACHE_SUBDIR = path.join('.ezplayer', 'audio-cache');
+
+/** EBU R128 single-pass loudness normalization; matches the cloud render recipe.
+ *  Tuned for FM transmitters / patio speakers / phones, not for dynamic range. */
+export const NORMALIZE_AUDIO_FILTER = 'loudnorm=I=-16:LRA=11:TP=-1.5';
+
+/** Per-record options that select a cache variant. */
+export interface AudioPrepOptions {
+    /** Bake loudness normalization into the playable file (applies to MP3 sources too). */
+    normalize?: boolean;
+}
+
+/** A record's audio plus its prep options, as warm/prune see it. */
+export interface AudioPrepItem extends AudioPrepOptions {
+    audio?: string;
+}
 
 /** A `.part` untouched for this long is a dead writer, not an in-flight conversion. */
 const PART_STALE_MS = 60_000;
@@ -51,6 +67,12 @@ export function isSupportedAudioPath(filePath: string): boolean {
 
 export function needsMp3Conversion(filePath: string): boolean {
     return needsAudioConversion(filePath);
+}
+
+/** True when playback needs a cache entry rather than the source file. */
+export function needsAudioPrep(filePath: string, opts?: AudioPrepOptions): boolean {
+    if (!filePath || !isSupportedAudioName(filePath)) return false;
+    return needsAudioConversion(filePath) || !!opts?.normalize;
 }
 
 /** `FFMPEG_PATH` override, else the bundled ffmpeg-static binary. Never PATH:
@@ -81,7 +103,20 @@ export function resolveFfmpegBinary(): string {
     );
 }
 
-function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
+/** ffmpeg arguments for one cache variant. Exported for tests. */
+export function ffmpegArgsFor(sourcePath: string, destPath: string, opts?: AudioPrepOptions): string[] {
+    const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', sourcePath, '-vn'];
+    if (opts?.normalize) {
+        args.push('-af', NORMALIZE_AUDIO_FILTER, '-codec:a', 'libmp3lame', '-q:a', '0');
+    } else {
+        args.push('-codec:a', 'libmp3lame', '-q:a', '2');
+    }
+    // The temp file has no .mp3 extension, so name the muxer explicitly.
+    args.push('-f', 'mp3', destPath);
+    return args;
+}
+
+function runFfmpegToMp3(sourcePath: string, destPath: string, opts?: AudioPrepOptions): Promise<void> {
     return new Promise((resolve, reject) => {
         let ffmpegBin: string;
         try {
@@ -90,26 +125,7 @@ function runFfmpegToMp3(sourcePath: string, destPath: string): Promise<void> {
             reject(err);
             return;
         }
-        const child = spawn(
-            ffmpegBin,
-            [
-                '-hide_banner',
-                '-loglevel',
-                'error',
-                '-y',
-                '-i',
-                sourcePath,
-                '-vn',
-                '-codec:a',
-                'libmp3lame',
-                '-q:a',
-                '2',
-                '-f',
-                'mp3',
-                destPath,
-            ],
-            { windowsHide: true },
-        );
+        const child = spawn(ffmpegBin, ffmpegArgsFor(sourcePath, destPath, opts), { windowsHide: true });
         let stderr = '';
         child.stderr?.on('data', (chunk: Buffer | string) => {
             stderr += String(chunk);
@@ -143,8 +159,12 @@ function absoluteUnder(p: string, showFolder: string): string {
     return path.isAbsolute(t) ? path.resolve(t) : path.join(showFolder, t);
 }
 
-/** Cache file a source would transcode to, or undefined when the source is missing. */
-export async function audioCachePathFor(sourcePath: string, showFolder: string): Promise<string | undefined> {
+/** Cache file a source would prep to, or undefined when the source is missing. */
+export async function audioCachePathFor(
+    sourcePath: string,
+    showFolder: string,
+    opts?: AudioPrepOptions,
+): Promise<string | undefined> {
     const resolved = absoluteUnder(sourcePath, showFolder);
     let st: Awaited<ReturnType<typeof fs.stat>>;
     try {
@@ -152,15 +172,17 @@ export async function audioCachePathFor(sourcePath: string, showFolder: string):
     } catch {
         return undefined;
     }
+    const variant = opts?.normalize ? '|norm' : '';
     const digest = createHash('sha1')
-        .update(`${resolved}|${st.size}|${Math.floor(st.mtimeMs)}|r${AUDIO_CACHE_RECIPE}`)
+        .update(`${resolved}|${st.size}|${Math.floor(st.mtimeMs)}|r${AUDIO_CACHE_RECIPE}${variant}`)
         .digest('hex')
         .slice(0, 16);
     const base = path
         .parse(resolved)
         .name.replace(/[^\w.-]+/g, '_')
         .slice(0, 60);
-    return path.join(audioCacheDir(showFolder), `${base}-${digest}${MP3_EXTENSION}`);
+    const suffix = opts?.normalize ? '-norm' : '';
+    return path.join(audioCacheDir(showFolder), `${base}${suffix}-${digest}${MP3_EXTENSION}`);
 }
 
 /** Same-process dedupe: concurrent requests for one cache entry share the conversion. */
@@ -168,23 +190,27 @@ const inflight = new Map<string, Promise<string>>();
 
 /**
  * Resolve a record's `files.audio` to a playable MP3 path.
- * - `.mp3` -> the source itself (relative paths resolved under the show folder).
- * - Convertible formats -> the cached MP3, transcoding on a miss.
+ * - `.mp3` without normalization -> the source itself (relative paths resolved under the show folder).
+ * - Anything else -> the cached MP3 for that variant, building it on a miss.
  * - Never touches the source file.
  */
-export async function resolvePlayableAudio(sourcePath: string, showFolder: string): Promise<string> {
+export async function resolvePlayableAudio(
+    sourcePath: string,
+    showFolder: string,
+    opts?: AudioPrepOptions,
+): Promise<string> {
     if (!sourcePath?.trim()) {
         throw new Error('Audio path is required');
     }
     const resolved = absoluteUnder(sourcePath, showFolder);
     const ext = path.extname(resolved).toLowerCase();
-    if (ext === MP3_EXTENSION) {
-        return resolved;
-    }
-    if (!(CONVERTIBLE_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
+    if (!(SUPPORTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
         throw new Error(`Unsupported audio format: ${ext || '(none)'}`);
     }
-    const dest = await audioCachePathFor(resolved, showFolder);
+    if (ext === MP3_EXTENSION && !opts?.normalize) {
+        return resolved;
+    }
+    const dest = await audioCachePathFor(resolved, showFolder, opts);
     if (!dest) {
         throw new Error(`Audio file not found: ${resolved}`);
     }
@@ -193,12 +219,12 @@ export async function resolvePlayableAudio(sourcePath: string, showFolder: strin
     }
     const pending = inflight.get(dest);
     if (pending) return pending;
-    const job = convertIntoCache(resolved, dest).finally(() => inflight.delete(dest));
+    const job = buildCacheEntry(resolved, dest, opts).finally(() => inflight.delete(dest));
     inflight.set(dest, job);
     return job;
 }
 
-async function convertIntoCache(source: string, dest: string): Promise<string> {
+async function buildCacheEntry(source: string, dest: string, opts?: AudioPrepOptions): Promise<string> {
     await fs.mkdir(path.dirname(dest), { recursive: true });
     // The main process (warming) and the playback worker may race on one entry.
     if (await waitForOtherWriter(dest)) {
@@ -206,8 +232,8 @@ async function convertIntoCache(source: string, dest: string): Promise<string> {
     }
     const tmp = `${dest}.${process.pid}.part`;
     try {
-        console.log(`[AudioCache] Converting "${source}" -> "${dest}"`);
-        await runFfmpegToMp3(source, tmp);
+        console.log(`[AudioCache] ${opts?.normalize ? 'Normalizing' : 'Converting'} "${source}" -> "${dest}"`);
+        await runFfmpegToMp3(source, tmp, opts);
         await fs.rename(tmp, dest);
         return dest;
     } catch (err) {
@@ -237,27 +263,29 @@ async function waitForOtherWriter(dest: string): Promise<boolean> {
     return fileExists(dest);
 }
 
-/** Build cache entries for every convertible path, sequentially; failures are logged, not thrown. */
-export async function warmAudioCache(audioPaths: Iterable<string>, showFolder: string): Promise<void> {
+/** Build cache entries for every item that needs one, sequentially; failures are logged, not thrown. */
+export async function warmAudioCache(items: Iterable<AudioPrepItem>, showFolder: string): Promise<void> {
     const seen = new Set<string>();
-    for (const p of audioPaths) {
-        if (!p || !needsAudioConversion(p)) continue;
+    for (const item of items) {
+        const p = item.audio;
+        if (!p || !needsAudioPrep(p, item)) continue;
         const abs = absoluteUnder(p, showFolder);
-        if (seen.has(abs)) continue;
-        seen.add(abs);
+        const id = `${abs}|${item.normalize ? 'norm' : 'plain'}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
         try {
-            await resolvePlayableAudio(abs, showFolder);
+            await resolvePlayableAudio(abs, showFolder, { normalize: item.normalize });
         } catch (err) {
             console.warn(`[AudioCache] Could not prepare "${abs}":`, err instanceof Error ? err.message : err);
         }
     }
 }
 
-/** Delete cache entries no live audio path maps to. Entries newer than `graceMs`
+/** Delete cache entries no live item maps to. Entries newer than `graceMs`
  *  are kept (in-flight or just warmed). Returns the number deleted. */
 export async function pruneAudioCache(
     showFolder: string,
-    liveAudioPaths: Iterable<string>,
+    liveItems: Iterable<AudioPrepItem>,
     opts?: { graceMs?: number },
 ): Promise<number> {
     const dir = audioCacheDir(showFolder);
@@ -265,9 +293,10 @@ export async function pruneAudioCache(
     if (!names.length) return 0;
 
     const keep = new Set<string>();
-    for (const p of liveAudioPaths) {
-        if (!p || !needsAudioConversion(p)) continue;
-        const c = await audioCachePathFor(p, showFolder);
+    for (const item of liveItems) {
+        const p = item.audio;
+        if (!p || !needsAudioPrep(p, item)) continue;
+        const c = await audioCachePathFor(p, showFolder, { normalize: item.normalize });
         if (c) keep.add(path.basename(c));
     }
 

@@ -276,11 +276,13 @@ async function runGcSweep(): Promise<void> {
     }
 }
 
+const audioPrepItem = (s: SequenceRecord) => ({ audio: s.files?.audio, normalize: s.settings?.normalize });
+
 /** Drop transcoded audio no current record maps to. Rides the cloud gc trigger. */
 async function pruneStaleAudioCache(): Promise<void> {
     const showFolder = getCurrentShowFolder();
     if (!showFolder) return;
-    const live = curSequences.filter((s) => !s.deleted).map((s) => s.files?.audio ?? '');
+    const live = curSequences.filter((s) => !s.deleted).map(audioPrepItem);
     await pruneAudioCache(showFolder, live).catch((e) => console.warn('[AudioCache] prune failed:', e));
 }
 
@@ -447,10 +449,7 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     updateCloudWorkerSequences(curSequences);
     if (showFolder) {
         // Best effort, off the commit path: transcode non-MP3 audio before playback needs it.
-        void warmAudioCache(
-            filtered.map((r) => r.files?.audio ?? ''),
-            showFolder,
-        );
+        void warmAudioCache(filtered.map(audioPrepItem), showFolder);
     }
     return filtered;
 }
@@ -521,6 +520,13 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
                 const p = ups.files[key];
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
             }
+        }
+        // Pin the normalization choice: new local songs take the setting default,
+        // edits that omit it keep the record's value. Cloud songs arrive normalized.
+        if (!ups.cloud && ups.settings?.normalize === undefined) {
+            const existing = curSequences?.find((s) => s.id === ups.id);
+            const normalize = existing?.settings?.normalize ?? getSettingsCache()?.normalizeNewSongs ?? false;
+            ups.settings = { ...(ups.settings ?? {}), normalize };
         }
         if (!ups?.work?.length && ups.files?.fseq) {
             // best-effort: a corrupt fseq shouldn't fail the whole upsert

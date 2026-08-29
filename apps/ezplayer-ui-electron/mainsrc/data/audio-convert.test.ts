@@ -8,8 +8,11 @@ import { promisify } from 'node:util';
 import {
     AUDIO_CACHE_SUBDIR,
     CONVERTIBLE_AUDIO_EXTENSIONS,
+    NORMALIZE_AUDIO_FILTER,
     audioCachePathFor,
+    ffmpegArgsFor,
     isSupportedAudioPath,
+    needsAudioPrep,
     needsMp3Conversion,
     pruneAudioCache,
     resolveFfmpegBinary,
@@ -66,6 +69,12 @@ function fixtureArgs(ext: string, dest: string): string[] {
     }
 }
 
+/** Quiet 6 s tone (about -30 LUFS) so normalization has something to do and
+ *  enough length for an integrated-loudness measurement. */
+function quietFixtureArgs(dest: string, codec: string[]): string[] {
+    return ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=6', '-af', 'volume=0.03', ...codec, dest];
+}
+
 function looksLikeMp3(buf: Buffer): boolean {
     if (buf.length < 4) return false;
     if (buf.subarray(0, 3).toString('latin1') === 'ID3') return true;
@@ -86,6 +95,18 @@ async function assertDecodableMp3(mp3Path: string): Promise<void> {
     await ffmpeg(['-i', mp3Path, '-f', 'null', '-']);
 }
 
+/** Integrated loudness (LUFS) per EBU R128, from ffmpeg's ebur128 summary. */
+async function integratedLoudness(file: string): Promise<number> {
+    const { stderr } = await execFileAsync(
+        FFMPEG,
+        ['-hide_banner', '-nostats', '-i', file, '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'],
+        { windowsHide: true },
+    );
+    const m = /Integrated loudness:\s*\n\s*I:\s*(-?[\d.]+) LUFS/.exec(stderr);
+    if (!m) throw new Error(`no integrated loudness in ffmpeg output:\n${stderr}`);
+    return Number(m[1]);
+}
+
 describe('audio-convert (real ffmpeg)', () => {
     let fixtureDir: string;
     let show: string;
@@ -96,6 +117,8 @@ describe('audio-convert (real ffmpeg)', () => {
         for (const ext of CONVERTIBLE_AUDIO_EXTENSIONS) {
             await ffmpeg(fixtureArgs(ext, path.join(fixtureDir, `song${ext}`)));
         }
+        await ffmpeg(quietFixtureArgs(path.join(fixtureDir, 'quiet.wav'), ['-c:a', 'pcm_s16le']));
+        await ffmpeg(quietFixtureArgs(path.join(fixtureDir, 'quiet.mp3'), ['-c:a', 'libmp3lame', '-q:a', '4']));
     }, CONVERT_TIMEOUT_MS);
 
     afterAll(async () => {
@@ -111,9 +134,9 @@ describe('audio-convert (real ffmpeg)', () => {
         await fs.rm(show, { recursive: true, force: true });
     });
 
-    async function stageFixture(ext: string, name = 'song'): Promise<string> {
+    async function stageFixture(ext: string, name = 'song', from = `song${ext}`): Promise<string> {
         const dest = path.join(show, `${name}${ext}`);
-        await fs.copyFile(path.join(fixtureDir, `song${ext}`), dest);
+        await fs.copyFile(path.join(fixtureDir, from), dest);
         return dest;
     }
 
@@ -130,6 +153,8 @@ describe('audio-convert (real ffmpeg)', () => {
         }
         const { stdout } = await execFileAsync(FFMPEG, ['-hide_banner', '-encoders'], { windowsHide: true });
         expect(stdout).toContain('libmp3lame');
+        const filters = await execFileAsync(FFMPEG, ['-hide_banner', '-filters'], { windowsHide: true });
+        expect(filters.stdout).toMatch(/\bloudnorm\b/);
     });
 
     it('detects convertible vs supported extensions', () => {
@@ -138,9 +163,27 @@ describe('audio-convert (real ffmpeg)', () => {
         expect(isSupportedAudioPath('a.txt')).toBe(false);
         expect(needsMp3Conversion('a.mp3')).toBe(false);
         expect(needsMp3Conversion('a.WAV')).toBe(true);
+        expect(needsAudioPrep('a.mp3')).toBe(false);
+        expect(needsAudioPrep('a.mp3', { normalize: true })).toBe(true);
+        expect(needsAudioPrep('a.wav')).toBe(true);
+        expect(needsAudioPrep('a.txt', { normalize: true })).toBe(false);
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).toContain('.flac');
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).toContain('.mp4');
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).not.toContain('.mp3');
+    });
+
+    it('uses the cloud normalization recipe', () => {
+        const plain = ffmpegArgsFor('in.wav', 'out.part');
+        const norm = ffmpegArgsFor('in.wav', 'out.part', { normalize: true });
+        expect(plain).not.toContain('-af');
+        expect(norm).toContain('-af');
+        expect(norm[norm.indexOf('-af') + 1]).toBe(NORMALIZE_AUDIO_FILTER);
+        expect(NORMALIZE_AUDIO_FILTER).toBe('loudnorm=I=-16:LRA=11:TP=-1.5');
+        expect(norm[norm.indexOf('-q:a') + 1]).toBe('0');
+        for (const args of [plain, norm]) {
+            expect(args).toContain('-vn');
+            expect(args.slice(-3)).toEqual(['-f', 'mp3', 'out.part']);
+        }
     });
 
     it('passes .mp3 through untouched and resolves relative paths under the show folder', async () => {
@@ -148,6 +191,7 @@ describe('audio-convert (real ffmpeg)', () => {
         await fs.writeFile(mp3, 'not-really-mp3');
         expect(await resolvePlayableAudio(mp3, show)).toBe(mp3);
         expect(await resolvePlayableAudio('song.mp3', show)).toBe(mp3);
+        expect(await resolvePlayableAudio(mp3, show, { normalize: false })).toBe(mp3);
         expect(await fs.readFile(mp3, 'utf8')).toBe('not-really-mp3');
         expect(await cacheEntries()).toEqual([]);
     });
@@ -247,25 +291,80 @@ describe('audio-convert (real ffmpeg)', () => {
     );
 
     it(
-        'warms every convertible path and prunes entries no live path maps to',
+        'normalizes a quiet WAV to about -16 LUFS in a separate cache variant',
+        async () => {
+            const src = await stageFixture('.wav', 'quiet', 'quiet.wav');
+            expect(await integratedLoudness(src)).toBeLessThan(-24);
+
+            const plain = await resolvePlayableAudio(src, show);
+            const norm = await resolvePlayableAudio(src, show, { normalize: true });
+
+            expect(norm).not.toBe(plain);
+            expect(path.basename(norm)).toMatch(/-norm-/);
+            expect(await cacheEntries()).toEqual([path.basename(plain), path.basename(norm)].sort());
+            await assertDecodableMp3(norm);
+            // Plain transcode keeps the source level; normalized lands near target.
+            expect(await integratedLoudness(plain)).toBeLessThan(-24);
+            expect(Math.abs((await integratedLoudness(norm)) - -16)).toBeLessThan(2);
+            // Toggling back is a cache hit on the plain variant, nothing rebuilt.
+            expect(await resolvePlayableAudio(src, show, { normalize: false })).toBe(plain);
+        },
+        CONVERT_TIMEOUT_MS,
+    );
+
+    it(
+        'normalizes an MP3 source into the cache and passes it through when unset',
+        async () => {
+            const src = await stageFixture('.mp3', 'quiet', 'quiet.mp3');
+            const original = await fs.readFile(src);
+
+            const norm = await resolvePlayableAudio(src, show, { normalize: true });
+            expect(path.dirname(norm)).toBe(cacheDir);
+            expect(norm).toBe(await audioCachePathFor(src, show, { normalize: true }));
+            await assertDecodableMp3(norm);
+            expect(Math.abs((await integratedLoudness(norm)) - -16)).toBeLessThan(2);
+            expect(await fs.readFile(src)).toEqual(original);
+
+            // Unset -> the source itself; the normalized entry is left for prune.
+            expect(await resolvePlayableAudio(src, show)).toBe(src);
+            expect(await cacheEntries()).toEqual([path.basename(norm)]);
+        },
+        CONVERT_TIMEOUT_MS,
+    );
+
+    it(
+        'warms every item that needs prep and prunes entries no live item maps to',
         async () => {
             const wav = await stageFixture('.wav', 'a');
             const flac = await stageFixture('.flac', 'b');
-            const mp3 = path.join(show, 'c.mp3');
-            await fs.writeFile(mp3, 'mp3');
+            const mp3 = await stageFixture('.mp3', 'c', 'quiet.mp3');
 
-            await warmAudioCache([wav, 'b.flac', mp3, '', path.join(show, 'missing.wav')], show);
+            await warmAudioCache(
+                [
+                    { audio: wav },
+                    { audio: 'b.flac', normalize: true },
+                    { audio: mp3 },
+                    { audio: mp3, normalize: true },
+                    { audio: '' },
+                    { audio: path.join(show, 'missing.wav') },
+                ],
+                show,
+            );
             const wavEntry = path.basename((await audioCachePathFor(wav, show))!);
-            const flacEntry = path.basename((await audioCachePathFor(flac, show))!);
-            expect(await cacheEntries()).toEqual([wavEntry, flacEntry].sort());
+            const flacNorm = path.basename((await audioCachePathFor(flac, show, { normalize: true }))!);
+            const mp3Norm = path.basename((await audioCachePathFor(mp3, show, { normalize: true }))!);
+            expect(await cacheEntries()).toEqual([wavEntry, flacNorm, mp3Norm].sort());
 
             // Nothing is older than the grace window yet -> nothing pruned.
-            expect(await pruneAudioCache(show, [wav], { graceMs: 60_000 })).toBe(0);
-            // With no grace, the entry without a live source goes; the live one stays.
-            expect(await pruneAudioCache(show, [wav], { graceMs: 0 })).toBe(1);
+            expect(await pruneAudioCache(show, [{ audio: wav }], { graceMs: 60_000 })).toBe(0);
+            // With no grace: keep the live variants exactly, drop the rest.
+            expect(
+                await pruneAudioCache(show, [{ audio: wav }, { audio: 'b.flac', normalize: true }], { graceMs: 0 }),
+            ).toBe(1);
+            expect(await cacheEntries()).toEqual([wavEntry, flacNorm].sort());
+            // A flipped flag no longer maps to the old variant.
+            expect(await pruneAudioCache(show, [{ audio: wav }, { audio: 'b.flac' }], { graceMs: 0 })).toBe(1);
             expect(await cacheEntries()).toEqual([wavEntry]);
-            // Relative live paths count too.
-            expect(await pruneAudioCache(show, ['a.wav'], { graceMs: 0 })).toBe(0);
             expect(await pruneAudioCache(show, [], { graceMs: 0 })).toBe(1);
             expect(await cacheEntries()).toEqual([]);
         },

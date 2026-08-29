@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
+import {
+    Autocomplete,
+    Button,
+    Checkbox,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    Divider,
+    FormControlLabel,
+    Grid,
+    Typography,
+} from '@mui/material';
 import { Box } from '../box/Box';
 
 import { FileButton, isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
@@ -86,6 +97,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         lead_time: '',
         trail_time: '',
         volume_adj: '',
+        normalize: false,
         tags: [] as string[],
     });
     const [errors, setErrors] = useState({
@@ -115,6 +127,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 lead_time: selectedSong?.settings?.lead_time?.toString() || '0',
                 trail_time: selectedSong?.settings?.trail_time?.toString() || '0',
                 volume_adj: selectedSong?.settings?.volume_adj?.toString() || '0',
+                normalize: selectedSong?.settings?.normalize === true,
                 tags: selectedSong?.settings?.tags || [],
             });
 
@@ -334,6 +347,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         lead_time: parseFloat(formData.lead_time),
                         trail_time: parseFloat(formData.trail_time),
                         volume_adj: parseFloat(formData.volume_adj),
+                        normalize: formData.normalize,
                         update_time: new Date().toISOString(),
                         tags: formData.tags,
                     },
@@ -371,6 +385,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             lead_time: originalSong?.settings?.lead_time?.toString() || '0',
             trail_time: originalSong?.settings?.trail_time?.toString() || '0',
             volume_adj: originalSong?.settings?.volume_adj?.toString() || '0',
+            normalize: originalSong?.settings?.normalize === true,
             tags: originalSong?.settings?.tags || [],
         });
         setSelectedTags(originalSong?.settings?.tags || []);
@@ -613,6 +628,32 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                             errors.volume_adj ? 'Please enter a valid number between -100 and 100.' : ''
                                         }
                                     />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <FormControlLabel
+                                        sx={{ mt: 2 }}
+                                        control={
+                                            <Checkbox
+                                                checked={formData.normalize}
+                                                onChange={(e) => {
+                                                    const normalize = e.target.checked;
+                                                    // Normalized audio makes a manual offset redundant; start from 0.
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        normalize,
+                                                        volume_adj: normalize ? '0' : prev.volume_adj,
+                                                    }));
+                                                    if (normalize)
+                                                        setErrors((prev) => ({ ...prev, volume_adj: false }));
+                                                }}
+                                            />
+                                        }
+                                        label="Normalize volume"
+                                    />
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                        Plays a loudness-normalized copy (EBU R128, -16 LUFS). The original file is not
+                                        changed.
+                                    </Typography>
                                 </Grid>
                                 <Grid item xs={6}>
                                     <Autocomplete
