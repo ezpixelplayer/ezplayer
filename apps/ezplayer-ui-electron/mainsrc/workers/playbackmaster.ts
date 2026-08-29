@@ -1712,6 +1712,11 @@ function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, Controller
         arr.push({
             port: g.port,
             models: g.models.map((m) => m.name),
+            modelChannels: g.models.map((m) => ({
+                name: m.name,
+                startChannel: m.startChannel,
+                channels: m.channelCount,
+            })),
             // The span the port must carry: first channel through the last
             // model's last channel (gaps between models included).
             channels: last.startChannel + last.channelCount - first.startChannel,

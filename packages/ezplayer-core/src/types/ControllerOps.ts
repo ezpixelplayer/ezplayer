@@ -262,12 +262,25 @@ export interface ControllerSerialPortIntent {
     port: number;
     /** Model names on the port, in channel order. */
     models: string[];
-    /** Channels the port must carry (sum of its models' channels). */
+    /** Channels the port must carry (first model's first channel through the
+     *  last model's last channel). */
     channels: number;
-    /** Absolute 1-based first channel. */
+    /** Absolute 1-based first channel of the port's channel span. */
     startChannel?: number;
     /** Serial protocol, lowercase (e.g. 'dmx', 'renard'). */
     protocol?: string;
+    /** Where each model sits on the port.  Serial fixtures are often addressed
+     *  by channel, not chained like pixels, so this is what someone sets on the
+     *  fixture. Parallel to `models` when present. */
+    modelChannels?: ControllerSerialModelIntent[];
+}
+
+/** One model's channel placement on a serial port. */
+export interface ControllerSerialModelIntent {
+    name: string;
+    /** Absolute 1-based first show channel. */
+    startChannel: number;
+    channels: number;
 }
 
 /** A controller's ACTUAL serial port config as read from the device. */

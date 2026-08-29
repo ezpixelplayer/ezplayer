@@ -96,6 +96,7 @@ export type {
     PortReconcile,
     ControllerHealth,
     ControllerSerialPortIntent,
+    ControllerSerialModelIntent,
     ControllerSerialPort,
     SerialPortReconcile,
 } from './types/ControllerOps';

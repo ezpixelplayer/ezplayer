@@ -132,17 +132,35 @@ describe('buildPortMap rows and serial ports', () => {
     it('lists serial ports separately with channels, intent vs device', () => {
         const map = buildPortMap(undefined, undefined, undefined, {
             serialPortCount: 2,
-            serialIntent: [{ port: 1, models: ['PAR 1', 'PAR 2'], channels: 20, protocol: 'dmx' }],
+            serialIntent: [
+                {
+                    port: 1,
+                    models: ['PAR 1', 'PAR 2'],
+                    channels: 20,
+                    startChannel: 1001,
+                    protocol: 'dmx',
+                    modelChannels: [
+                        { name: 'PAR 1', startChannel: 1001, channels: 10 },
+                        { name: 'PAR 2', startChannel: 1011, channels: 10 },
+                    ],
+                },
+            ],
             serialActual: [{ port: 1, protocol: 'dmx', channels: 16 }],
         });
         expect(map.rows).toEqual([]);
         expect(map.serial.map((s) => s.port)).toEqual([1, 2]);
         expect(map.serial[0]).toMatchObject({
             models: ['PAR 1', 'PAR 2'],
+            startChannel: 1001,
             intendedChannels: 20,
             actualChannels: 16,
             drift: true, // device short of the 20 channels xLights needs
         });
+        // DMX addresses are relative to the port's first channel.
+        expect(map.serial[0].modelChannels.map((m) => [m.name, m.address])).toEqual([
+            ['PAR 1', 1],
+            ['PAR 2', 11],
+        ]);
         expect(map.serial[1]).toMatchObject({ models: [], drift: false });
     });
 

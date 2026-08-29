@@ -492,12 +492,16 @@ const GridRow: React.FC<{
     const inputDrift = inputsRead && inputRec.drift;
     const anyDrift = portDrift || inputDrift;
     // Port knowledge on either side is enough for the port-map visualizer.
+    // An empty map is still a map: a device whose ports were read (even if
+    // none is configured) or whose port count is known gets the visualizer.
     const hasPortData =
         portRows.length > 0 ||
         serialRows.length > 0 ||
         (row.modelIntents?.length ?? 0) > 0 ||
-        (d?.pixelPorts?.length ?? 0) > 0 ||
-        (row.pixelPortCount ?? 0) > 0;
+        portsRead ||
+        serialRead ||
+        (row.pixelPortCount ?? d?.pixelPortCount ?? 0) > 0 ||
+        (row.serialPortCount ?? d?.serialPortCount ?? 0) > 0;
     const hasInputData = (row.outputs?.length ?? 0) > 0 || inputsRead;
     const health = row.health;
     const hasHealthDetail = !!(

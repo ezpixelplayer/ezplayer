@@ -72,6 +72,12 @@ export interface PortMapSerialRow {
     port: number;
     /** Model names xLights puts on this port, in channel order. */
     models: string[];
+    /** Per-model placement: absolute show channel, channel count, and the
+     *  address within the port (1-based; what a DMX fixture is set to). Empty
+     *  when only names are known. */
+    modelChannels: { name: string; startChannel: number; channels: number; address: number }[];
+    /** Absolute first show channel of the port's span (the DMX address base). */
+    startChannel?: number;
     intendedChannels?: number;
     intendedProtocol?: string;
     actualChannels?: number;
@@ -384,9 +390,15 @@ function buildSerialRows(opts: PortMapOptions): PortMapSerialRow[] {
             const isOn = (actualChannels ?? 0) > 0;
             drift = wantOn !== isOn || (wantOn && (actualChannels ?? 0) < (intendedChannels ?? 0));
         }
+        const base = i?.startChannel ?? i?.modelChannels?.[0]?.startChannel;
         rows.push({
             port: p,
             models: i?.models ?? [],
+            modelChannels: (i?.modelChannels ?? []).map((m) => ({
+                ...m,
+                address: base !== undefined ? m.startChannel - base + 1 : m.startChannel,
+            })),
+            startChannel: base,
             intendedChannels,
             intendedProtocol: i?.protocol,
             actualChannels,

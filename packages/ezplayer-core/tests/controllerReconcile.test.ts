@@ -514,7 +514,7 @@ describe('unreachable devices and Down pings', () => {
         const rows = reconcileControllers([known({ name: 'A', address: '10.0.0.7' })], [d]);
         expect(rows[0].state).toBe('absent');
         expect(rows[0].device).toBe(d);
-        // …and the unreachable device is not re-listed as a ghost.
+        // the unreachable device is not re-listed as a ghost.
         expect(rows.length).toBe(1);
     });
 

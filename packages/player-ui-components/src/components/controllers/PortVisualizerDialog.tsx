@@ -185,7 +185,7 @@ export const PortVisualizerDialog: React.FC<{
                                 Serial ports
                             </Typography>
                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
-                                DMX / Renard / … outputs — counted in channels, not pixels.
+                                DMX / Renard / LOR outputs by channel.
                             </Typography>
                             <Box sx={{ overflowX: 'auto' }}>
                                 <div
@@ -211,6 +211,15 @@ export const PortVisualizerDialog: React.FC<{
                                                 >
                                                     Serial {s.port}
                                                 </Typography>
+                                                {s.startChannel !== undefined && (
+                                                    <Typography
+                                                        variant="caption"
+                                                        title="Absolute show channel the port starts at"
+                                                        sx={{ display: 'block', color: 'text.secondary' }}
+                                                    >
+                                                        base ch {s.startChannel}
+                                                    </Typography>
+                                                )}
                                                 {s.intendedChannels !== undefined && (
                                                     <Typography
                                                         variant="caption"
@@ -265,9 +274,48 @@ export const PortVisualizerDialog: React.FC<{
                                                     maxWidth: 360,
                                                 }}
                                             >
-                                                {s.models.length ? (
+                                                {s.modelChannels.length ? (
+                                                    <table style={{ borderCollapse: 'collapse' }}>
+                                                        <tbody>
+                                                            {s.modelChannels.map((m) => (
+                                                                <tr key={m.name}>
+                                                                    <td
+                                                                        style={{
+                                                                            fontFamily: 'monospace',
+                                                                            textAlign: 'right',
+                                                                            paddingRight: 10,
+                                                                        }}
+                                                                        title="Address on this port (what the fixture is set to)"
+                                                                    >
+                                                                        {m.address}
+                                                                    </td>
+                                                                    <td style={{ paddingRight: 10 }}>
+                                                                        <Typography
+                                                                            variant="body2"
+                                                                            sx={{ fontWeight: 600 }}
+                                                                        >
+                                                                            {m.name}
+                                                                        </Typography>
+                                                                    </td>
+                                                                    <td>
+                                                                        <Typography
+                                                                            variant="caption"
+                                                                            sx={{
+                                                                                color: 'text.secondary',
+                                                                                whiteSpace: 'nowrap',
+                                                                            }}
+                                                                            title="Channel count · absolute show channel"
+                                                                        >
+                                                                            {m.channels} ch · show {m.startChannel}
+                                                                        </Typography>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                ) : s.models.length ? (
                                                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                        {s.models.join(' → ')}
+                                                        {s.models.join(', ')}
                                                     </Typography>
                                                 ) : (
                                                     <Typography variant="caption" sx={{ color: 'text.disabled' }}>

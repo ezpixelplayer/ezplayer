@@ -40,12 +40,17 @@ import {
     deriveXlightsPortConfigs,
     expandModelStrings,
     getCapabilities,
+    loadBundledCapabilities,
     checkUpload,
 } from '@ezplayer/epp-controllers';
 import { hostNetworks } from '../cli/net.js';
 import * as fsp from 'fs/promises';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The capability registry (xLights .xcontroller definitions, bundled in the
+// lib) is empty until loaded; every getCapabilities() below depends on it.
+loadBundledCapabilities();
 
 // Hard cap on concurrent local discovery scans.
 const MAX_CONCURRENT_SCANS = 2;
