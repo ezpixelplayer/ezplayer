@@ -125,7 +125,7 @@ describe('playback', () => {
         const deadline = Date.now() + 20_000;
         for (;;) {
             const f = mock.ddp.lastFrame();
-            if (f && f.channels.every((b) => b === 0)) break;
+            if (f?.channels?.every((b) => b === 0)) break;
             if (Date.now() > deadline) throw new Error('output never went dark after Stop Now');
             await new Promise((r) => setTimeout(r, 250));
         }
