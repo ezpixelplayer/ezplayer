@@ -29,6 +29,7 @@ import {
 } from '../..';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
+import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
@@ -112,6 +113,8 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
     const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
+    /** Save in flight: derived audio is built before the record commits. */
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if (open && selectedSongId) {
@@ -293,6 +296,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleSubmit = async (e: any) => {
         e.preventDefault();
+        if (saving) return;
         const newErrors = {
             title: formData.title.trim() === '',
             artist: formData.artist.trim() === '',
@@ -354,8 +358,10 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 };
 
                 // Send to the server
+                setSaving(true);
                 try {
                     await dispatch(postSequenceData([updatedSong])).unwrap();
+                    setSaving(false);
                     ToastMsgs.showSuccessMessage('Song settings updated successfully', {
                         theme: 'colored',
                         position: 'bottom-right',
@@ -364,11 +370,12 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                     onClose();
                 } catch (error) {
                     console.error('Error updating song:', error);
-                    onClose();
-                    ToastMsgs.showErrorMessage('Failed to update song', {
+                    setSaving(false);
+                    // Stay open so the user can fix the file or flag and retry.
+                    ToastMsgs.showErrorMessage(saveErrorMessage(error, 'Failed to update song'), {
                         theme: 'colored',
                         position: 'bottom-right',
-                        autoClose: 2000,
+                        autoClose: 6000,
                     });
                 }
             }
@@ -716,13 +723,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         marginTop: 3,
                     }}
                 >
-                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary">
+                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary" disabled={saving}>
                         Save
                     </Button>
-                    <Button type="button" variant="outlined" color="secondary" onClick={handleCancel}>
+                    <Button type="button" variant="outlined" color="secondary" onClick={handleCancel} disabled={saving}>
                         Cancel
                     </Button>
                 </Box>
+                <SongSaveProgress
+                    saving={saving}
+                    audio={newFiles?.audio || uploadedFiles?.audio}
+                    normalize={formData.normalize}
+                />
             </>
         </Box>
     );

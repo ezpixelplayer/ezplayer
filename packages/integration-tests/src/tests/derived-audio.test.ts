@@ -1,8 +1,9 @@
-/** Audio prep as a cached artifact: add songs the way the web UI does (upload
- *  files, POST /api/ezp/sequences), then check the player transcodes /
- *  normalizes into <show>/.ezplayer/audio-cache without touching the source,
- *  applies the "normalize new songs" default, and plays the song through the
- *  cached copy. Runs the real bundled ffmpeg. */
+/** Derived playback audio is precomputed: add songs the way the web UI does
+ *  (upload files, POST /api/ezp/sequences) and check that the derived MP3 exists
+ *  by the time the save returns, that the source is untouched, that the
+ *  "normalize new songs" default applies, that a song whose audio cannot be
+ *  derived is not saved, and that playback runs off the derived file. Runs the
+ *  real bundled ffmpeg. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -21,7 +22,7 @@ let mock: MockController;
 let show: FixtureShow;
 let app: EzPlayerProc;
 let fpp: FppClient;
-let cacheDir: string;
+let derivedDir: string;
 
 type Rec = {
     id: string;
@@ -62,24 +63,14 @@ async function writeSong(name: string, seed: number): Promise<void> {
     });
 }
 
-async function cacheEntries(): Promise<string[]> {
-    return (await fsp.readdir(cacheDir).catch(() => [] as string[])).filter((n) => n.endsWith('.mp3')).sort();
-}
-
-async function waitFor<T>(label: string, fn: () => Promise<T | undefined>, timeoutMs: number): Promise<T> {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-        const v = await fn();
-        if (v !== undefined) return v;
-        if (Date.now() > deadline) throw new Error(`timeout waiting for ${label}`);
-        await new Promise((r) => setTimeout(r, 250));
-    }
+async function derivedFiles(): Promise<string[]> {
+    return (await fsp.readdir(derivedDir).catch(() => [] as string[])).filter((n) => n.endsWith('.mp3')).sort();
 }
 
 beforeAll(async () => {
     mock = await startMockController({ channels: CHANNELS, ddpPort: 4048 });
     show = await createFixtureShow({ channels: CHANNELS });
-    cacheDir = path.join(show.dir, '.ezplayer', 'audio-cache');
+    derivedDir = path.join(show.dir, '.ezplayer', 'derived-audio');
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
 });
@@ -90,12 +81,12 @@ afterAll(async () => {
     await show?.cleanup();
 });
 
-describe('audio cache', () => {
-    it('transcodes an uploaded WAV into the show cache on add, leaving the source alone', async () => {
+describe('derived audio', () => {
+    it('derives an uploaded WAV before the save returns, leaving the source alone', async () => {
         await writeSong('Wav', 1);
         const wav = sineWav({ seconds: SONG_SECS });
         expect((await fpp.uploadFile('music', 'Wav.wav', wav)).status).toBe(200);
-        expect(await cacheEntries()).toEqual([]);
+        expect(await derivedFiles()).toEqual([]);
 
         // Same call the web UI's Add Song makes; no normalize flag -> setting default (off).
         const rec = (
@@ -104,21 +95,28 @@ describe('audio cache', () => {
         expect(rec.settings?.normalize).toBe(false);
         expect(rec.files.audio?.toLowerCase().endsWith('wav.wav')).toBe(true);
 
-        // Warmed in the background right after the commit.
-        const entries = await waitFor(
-            'plain cache entry',
-            async () => {
-                const e = await cacheEntries();
-                return e.length ? e : undefined;
-            },
-            30_000,
-        );
-        expect(entries).toEqual([expect.stringMatching(/^Wav-[0-9a-f]{16}\.mp3$/)]);
+        // Precomputed: present as soon as the save has returned, no waiting.
+        expect(await derivedFiles()).toEqual([expect.stringMatching(/^Wav-[0-9a-f]{16}\.mp3$/)]);
         expect(await fsp.readFile(path.join(show.dir, 'Wav.wav'))).toEqual(Buffer.from(wav));
         expect((await fsp.readdir(show.dir)).filter((n) => n.toLowerCase().endsWith('.mp3'))).toEqual([]);
     });
 
-    it('applies the "normalize new songs" default and builds the normalized variant', async () => {
+    it('refuses to save a song whose audio cannot be derived', async () => {
+        await writeSong('Bad', 3);
+        expect((await fpp.uploadFile('music', 'Bad.wav', new Uint8Array(64).fill(0x5a))).status).toBe(200);
+        const res = await postJson(`${app.base}/api/ezp/sequences`, [
+            { files: { fseq: 'Bad.fseq', audio: 'Bad.wav' }, work: { title: 'Bad Song', length: 0 } },
+        ]);
+        expect(res.status).not.toBe(200);
+        const body = (await res.json()) as { error?: string };
+        expect(body.error).toMatch(/ffmpeg conversion failed|derive/i);
+
+        const listed = (await fpp.currentShow()).sequences as Rec[] | undefined;
+        expect(listed?.find((s) => s.work.title === 'Bad Song')).toBeUndefined();
+        expect((await derivedFiles()).filter((n) => n.startsWith('Bad-'))).toEqual([]);
+    });
+
+    it('applies the "normalize new songs" default and derives the normalized variant', async () => {
         const on = await postJson(`${app.base}/api/ezp/playback-settings`, {
             ...baseSettings,
             normalizeNewSongs: true,
@@ -132,24 +130,17 @@ describe('audio cache', () => {
         ).find((s) => s.work.title === 'Norm Song')!;
         expect(rec.settings?.normalize).toBe(true);
 
-        // Only the normalized variant is built for this record.
-        await waitFor(
-            'normalized cache entry',
-            async () => (await cacheEntries()).find((n) => /^Norm-norm-[0-9a-f]{16}\.mp3$/.test(n)),
-            30_000,
-        );
-        expect((await cacheEntries()).filter((n) => n.startsWith('Norm-'))).toHaveLength(1);
+        // Only the normalized variant is derived for this record, and it is already there.
+        expect((await derivedFiles()).filter((n) => n.startsWith('Norm-'))).toEqual([
+            expect.stringMatching(/^Norm-norm-[0-9a-f]{16}\.mp3$/),
+        ]);
 
-        // Unchecking is a record edit; playback then uses the plain variant.
+        // Unchecking is a record edit; the plain variant is derived before that save returns.
         const edited = (
             await register({ ...rec, settings: { ...rec.settings, normalize: false }, updatedAt: Date.now() })
         ).find((s) => s.id === rec.id)!;
         expect(edited.settings?.normalize).toBe(false);
-        await waitFor(
-            'plain cache entry after unchecking',
-            async () => (await cacheEntries()).find((n) => /^Norm-[0-9a-f]{16}\.mp3$/.test(n)),
-            30_000,
-        );
+        expect((await derivedFiles()).find((n) => /^Norm-[0-9a-f]{16}\.mp3$/.test(n))).toBeDefined();
 
         // Omitting the flag on a later edit keeps the record's value, not the default.
         const kept = (await register({ ...edited, settings: { volume_adj: 3 }, updatedAt: Date.now() + 1 })).find(
@@ -165,14 +156,14 @@ describe('audio cache', () => {
         expect(off.status).toBe(200);
     });
 
-    it('plays a song whose audio comes from the cache', async () => {
-        const res = await fpp.putPlaylist('Cache', {
-            name: 'Cache',
+    it('plays a song from its derived audio', async () => {
+        const res = await fpp.putPlaylist('Derived', {
+            name: 'Derived',
             mainPlaylist: [{ type: 'sequence', sequenceName: 'Wav.fseq' }],
         });
         expect(res.status).toBe(200);
         const playlists = (await fpp.currentShow()).playlists as Array<{ id: string; title: string }>;
-        const pl = playlists.find((p) => p.title === 'Cache')!;
+        const pl = playlists.find((p) => p.title === 'Derived')!;
 
         const now = new Date();
         const start = new Date(now.getTime() + 4000);
@@ -182,11 +173,11 @@ describe('audio cache', () => {
         midnight.setHours(0, 0, 0, 0);
         const put = await postJson(`${app.base}/api/ezp/schedules`, [
             {
-                id: 'cache-sched',
+                id: 'derived-sched',
                 scheduleType: 'main',
                 playlistId: pl.id,
-                title: 'Cache',
-                playlistTitle: 'Cache',
+                title: 'Derived',
+                playlistTitle: 'Derived',
                 date: midnight.getTime(),
                 fromTime: hms(start),
                 toTime: hms(end),
@@ -195,9 +186,9 @@ describe('audio cache', () => {
         ]);
         expect(put.status).toBe(200);
         mock.ddp.reset();
-        await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'cache start', timeoutMs: 30_000 });
-        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'cache end', timeoutMs: 90_000 });
+        await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'derived start', timeoutMs: 30_000 });
+        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'derived end', timeoutMs: 90_000 });
         expect(mock.ddp.framesReceived()).toBeGreaterThan(0);
-        await postJson(`${app.base}/api/ezp/schedules`, [{ id: 'cache-sched', deleted: true }]);
+        await postJson(`${app.base}/api/ezp/schedules`, [{ id: 'derived-sched', deleted: true }]);
     });
 });

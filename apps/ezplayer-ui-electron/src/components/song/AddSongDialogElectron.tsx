@@ -14,7 +14,14 @@ import {
 
 import { TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
-import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '@ezplayer/player-ui-components';
+import {
+    AppDispatch,
+    postSequenceData,
+    RootState,
+    saveErrorMessage,
+    setSequenceTags,
+    SongSaveProgress,
+} from '@ezplayer/player-ui-components';
 
 import {
     SequenceFiles,
@@ -44,6 +51,9 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     const [imageFile, setImageFile] = useState<string | undefined>(undefined);
     const [imageUrl, setImageUrl] = useState<string>('');
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
+    /** Save in flight: derived audio is built before the record commits. */
+    const [saving, setSaving] = useState(false);
+    const normalizeNewSongs = useSelector((state: RootState) => state.playbackSettings.settings.normalizeNewSongs);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -224,6 +234,8 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
 
     const handleNewSongSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
+        setSaving(true);
 
         try {
             // Generate UUID for id and instanceId
@@ -280,11 +292,13 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
             onClose();
         } catch (error) {
             console.error('Error adding song:', error);
-            ToastMsgs.showErrorMessage('Failed to add song', {
+            ToastMsgs.showErrorMessage(saveErrorMessage(error, 'Failed to add song'), {
                 theme: 'colored',
                 position: 'bottom-right',
-                autoClose: 2000,
+                autoClose: 6000,
             });
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -479,14 +493,15 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             variant="contained"
                             color="primary"
                             onClick={handleNewSongSubmit}
-                            disabled={!fseqFile || !newSongData.title || !newSongData.artist}
+                            disabled={saving || !fseqFile || !newSongData.title || !newSongData.artist}
                         >
                             Save
                         </Button>
-                        <Button type="button" variant="outlined" color="secondary" onClick={onClose}>
+                        <Button type="button" variant="outlined" color="secondary" onClick={onClose} disabled={saving}>
                             Cancel
                         </Button>
                     </Box>
+                    <SongSaveProgress saving={saving} audio={mp3File} normalize={normalizeNewSongs === true} />
                 </form>
             </>
         </Box>

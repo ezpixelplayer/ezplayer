@@ -15,37 +15,45 @@ import {
 export { CONVERTIBLE_AUDIO_EXTENSIONS, SUPPORTED_AUDIO_EXTENSIONS };
 
 /**
- * Playback is MP3-only (mpg123). Other formats are transcoded with the bundled
- * ffmpeg into a per-show cache; the song record always keeps the original file.
- * Optional loudness normalization is baked into the cached file the same way.
- * Cache entries are keyed by source path + size + mtime + recipe + options, so
- * a changed source, recipe, or option yields a new entry and the old one is pruned.
+ * Derived playback audio.
+ *
+ * Playback is MP3-only (mpg123). A song record always keeps the user's original
+ * file in `files.audio`; what playback actually decodes is a *derivation* of it:
+ * a transcode for non-MP3 sources, optionally loudness-normalized (the record's
+ * `settings.normalize`). Derivations are precomputed - building one is part of
+ * committing the record, so a committed song is a playable song. Playback only
+ * maps record -> derived path; it never builds.
+ *
+ * Derived files live under `<show>/.ezplayer/derived-audio/`, named by source
+ * path + size + mtime + recipe + options, so a changed source, recipe, or option
+ * yields a new file and the old one is pruned. They are disposable: a show-folder
+ * load rebuilds anything missing.
  */
 
-/** Bump when the ffmpeg recipe changes; every cached artifact is rebuilt. */
-export const AUDIO_CACHE_RECIPE = 1;
-export const AUDIO_CACHE_SUBDIR = path.join('.ezplayer', 'audio-cache');
+/** Bump when the ffmpeg recipe changes; every derived file is rebuilt on the next load. */
+export const DERIVED_AUDIO_RECIPE = 1;
+export const DERIVED_AUDIO_SUBDIR = path.join('.ezplayer', 'derived-audio');
 
 /** EBU R128 single-pass loudness normalization; matches the cloud render recipe.
  *  Tuned for FM transmitters / patio speakers / phones, not for dynamic range. */
 export const NORMALIZE_AUDIO_FILTER = 'loudnorm=I=-16:LRA=11:TP=-1.5';
 
-/** Per-record options that select a cache variant. */
-export interface AudioPrepOptions {
+/** Per-record options that select a derivation variant. */
+export interface AudioDerivationOptions {
     /** Bake loudness normalization into the playable file (applies to MP3 sources too). */
     normalize?: boolean;
 }
 
-/** A record's audio plus its prep options, as warm/prune see it. */
-export interface AudioPrepItem extends AudioPrepOptions {
+/** A record's audio plus its derivation options. */
+export interface AudioDerivationItem extends AudioDerivationOptions {
     audio?: string;
 }
 
-/** A `.part` untouched for this long is a dead writer, not an in-flight conversion. */
+/** A `.part` untouched for this long is a dead writer, not an in-flight build. */
 const PART_STALE_MS = 60_000;
-/** Upper bound on waiting for another process's in-flight conversion. */
+/** Upper bound on waiting for another process's in-flight build. */
 const WAIT_FOR_WRITER_MS = 10 * 60_000;
-/** Prune keeps anything newer than this - covers in-flight and just-warmed entries. */
+/** Prune keeps anything newer than this - covers in-flight builds. */
 const DEFAULT_PRUNE_GRACE_MS = 60 * 60_000;
 
 const require = createRequire(import.meta.url);
@@ -61,6 +69,22 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Windows (Defender, indexer) can hold a just-written file for a moment. */
+async function unlinkWithRetry(file: string, attempts = 4, delayMs = 250): Promise<boolean> {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            await fs.unlink(file);
+            return true;
+        } catch (err) {
+            const code = (err as { code?: string })?.code;
+            if (code === 'ENOENT') return true;
+            if (code !== 'EBUSY' && code !== 'EPERM') return false;
+            if (i + 1 < attempts) await sleep(delayMs);
+        }
+    }
+    return false;
+}
+
 export function isSupportedAudioPath(filePath: string): boolean {
     return isSupportedAudioName(filePath);
 }
@@ -69,8 +93,8 @@ export function needsMp3Conversion(filePath: string): boolean {
     return needsAudioConversion(filePath);
 }
 
-/** True when playback needs a cache entry rather than the source file. */
-export function needsAudioPrep(filePath: string, opts?: AudioPrepOptions): boolean {
+/** True when playback needs a derived file rather than the source itself. */
+export function needsDerivedAudio(filePath: string, opts?: AudioDerivationOptions): boolean {
     if (!filePath || !isSupportedAudioName(filePath)) return false;
     return needsAudioConversion(filePath) || !!opts?.normalize;
 }
@@ -103,8 +127,8 @@ export function resolveFfmpegBinary(): string {
     );
 }
 
-/** ffmpeg arguments for one cache variant. Exported for tests. */
-export function ffmpegArgsFor(sourcePath: string, destPath: string, opts?: AudioPrepOptions): string[] {
+/** ffmpeg arguments for one derivation variant. Exported for tests. */
+export function ffmpegArgsFor(sourcePath: string, destPath: string, opts?: AudioDerivationOptions): string[] {
     const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', sourcePath, '-vn'];
     if (opts?.normalize) {
         args.push('-af', NORMALIZE_AUDIO_FILTER, '-codec:a', 'libmp3lame', '-q:a', '0');
@@ -116,7 +140,7 @@ export function ffmpegArgsFor(sourcePath: string, destPath: string, opts?: Audio
     return args;
 }
 
-function runFfmpegToMp3(sourcePath: string, destPath: string, opts?: AudioPrepOptions): Promise<void> {
+function runFfmpegToMp3(sourcePath: string, destPath: string, opts?: AudioDerivationOptions): Promise<void> {
     return new Promise((resolve, reject) => {
         let ffmpegBin: string;
         try {
@@ -150,8 +174,8 @@ function runFfmpegToMp3(sourcePath: string, destPath: string, opts?: AudioPrepOp
     });
 }
 
-export function audioCacheDir(showFolder: string): string {
-    return path.join(showFolder, AUDIO_CACHE_SUBDIR);
+export function derivedAudioDir(showFolder: string): string {
+    return path.join(showFolder, DERIVED_AUDIO_SUBDIR);
 }
 
 function absoluteUnder(p: string, showFolder: string): string {
@@ -159,11 +183,11 @@ function absoluteUnder(p: string, showFolder: string): string {
     return path.isAbsolute(t) ? path.resolve(t) : path.join(showFolder, t);
 }
 
-/** Cache file a source would prep to, or undefined when the source is missing. */
-export async function audioCachePathFor(
+/** Derived file a source maps to, or undefined when the source is missing. Pure: never builds. */
+export async function derivedAudioPathFor(
     sourcePath: string,
     showFolder: string,
-    opts?: AudioPrepOptions,
+    opts?: AudioDerivationOptions,
 ): Promise<string | undefined> {
     const resolved = absoluteUnder(sourcePath, showFolder);
     let st: Awaited<ReturnType<typeof fs.stat>>;
@@ -174,7 +198,7 @@ export async function audioCachePathFor(
     }
     const variant = opts?.normalize ? '|norm' : '';
     const digest = createHash('sha1')
-        .update(`${resolved}|${st.size}|${Math.floor(st.mtimeMs)}|r${AUDIO_CACHE_RECIPE}${variant}`)
+        .update(`${resolved}|${st.size}|${Math.floor(st.mtimeMs)}|r${DERIVED_AUDIO_RECIPE}${variant}`)
         .digest('hex')
         .slice(0, 16);
     const base = path
@@ -182,35 +206,67 @@ export async function audioCachePathFor(
         .name.replace(/[^\w.-]+/g, '_')
         .slice(0, 60);
     const suffix = opts?.normalize ? '-norm' : '';
-    return path.join(audioCacheDir(showFolder), `${base}${suffix}-${digest}${MP3_EXTENSION}`);
+    return path.join(derivedAudioDir(showFolder), `${base}${suffix}-${digest}${MP3_EXTENSION}`);
 }
 
-/** Same-process dedupe: concurrent requests for one cache entry share the conversion. */
-const inflight = new Map<string, Promise<string>>();
+function checkSupported(resolved: string): string {
+    const ext = path.extname(resolved).toLowerCase();
+    if (!(SUPPORTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
+        throw new Error(`Unsupported audio format: ${ext || '(none)'}`);
+    }
+    return ext;
+}
 
 /**
- * Resolve a record's `files.audio` to a playable MP3 path.
- * - `.mp3` without normalization -> the source itself (relative paths resolved under the show folder).
- * - Anything else -> the cached MP3 for that variant, building it on a miss.
- * - Never touches the source file.
+ * The file playback decodes for a record's `files.audio`. Pure: never builds.
+ * - `.mp3` without normalization -> the source itself.
+ * - Anything else -> its derived file, which must already exist (built at commit
+ *   or by the show-folder reconcile); otherwise throws.
  */
-export async function resolvePlayableAudio(
+export async function playableAudioPath(
     sourcePath: string,
     showFolder: string,
-    opts?: AudioPrepOptions,
+    opts?: AudioDerivationOptions,
 ): Promise<string> {
     if (!sourcePath?.trim()) {
         throw new Error('Audio path is required');
     }
     const resolved = absoluteUnder(sourcePath, showFolder);
-    const ext = path.extname(resolved).toLowerCase();
-    if (!(SUPPORTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
-        throw new Error(`Unsupported audio format: ${ext || '(none)'}`);
-    }
+    const ext = checkSupported(resolved);
     if (ext === MP3_EXTENSION && !opts?.normalize) {
         return resolved;
     }
-    const dest = await audioCachePathFor(resolved, showFolder, opts);
+    const derived = await derivedAudioPathFor(resolved, showFolder, opts);
+    if (!derived) {
+        throw new Error(`Audio file not found: ${resolved}`);
+    }
+    if (!(await fileExists(derived))) {
+        throw new Error(`Derived audio not built yet for "${resolved}" (re-save the song or reload the show)`);
+    }
+    return derived;
+}
+
+/** Same-process dedupe: concurrent requests for one derived file share the build. */
+const inflight = new Map<string, Promise<string>>();
+
+/**
+ * Make sure the derived file for a record's `files.audio` exists, building it
+ * when missing. Returns the path playback will use. Never touches the source.
+ */
+export async function ensureDerivedAudio(
+    sourcePath: string,
+    showFolder: string,
+    opts?: AudioDerivationOptions,
+): Promise<string> {
+    if (!sourcePath?.trim()) {
+        throw new Error('Audio path is required');
+    }
+    const resolved = absoluteUnder(sourcePath, showFolder);
+    const ext = checkSupported(resolved);
+    if (ext === MP3_EXTENSION && !opts?.normalize) {
+        return resolved;
+    }
+    const dest = await derivedAudioPathFor(resolved, showFolder, opts);
     if (!dest) {
         throw new Error(`Audio file not found: ${resolved}`);
     }
@@ -219,20 +275,20 @@ export async function resolvePlayableAudio(
     }
     const pending = inflight.get(dest);
     if (pending) return pending;
-    const job = buildCacheEntry(resolved, dest, opts).finally(() => inflight.delete(dest));
+    const job = buildDerivedAudio(resolved, dest, opts).finally(() => inflight.delete(dest));
     inflight.set(dest, job);
     return job;
 }
 
-async function buildCacheEntry(source: string, dest: string, opts?: AudioPrepOptions): Promise<string> {
+async function buildDerivedAudio(source: string, dest: string, opts?: AudioDerivationOptions): Promise<string> {
     await fs.mkdir(path.dirname(dest), { recursive: true });
-    // The main process (warming) and the playback worker may race on one entry.
+    // Two processes (commit vs. reconcile) may race on one file.
     if (await waitForOtherWriter(dest)) {
         return dest;
     }
     const tmp = `${dest}.${process.pid}.part`;
     try {
-        console.log(`[AudioCache] ${opts?.normalize ? 'Normalizing' : 'Converting'} "${source}" -> "${dest}"`);
+        console.log(`[DerivedAudio] ${opts?.normalize ? 'Normalizing' : 'Converting'} "${source}" -> "${dest}"`);
         await runFfmpegToMp3(source, tmp, opts);
         await fs.rename(tmp, dest);
         return dest;
@@ -263,40 +319,48 @@ async function waitForOtherWriter(dest: string): Promise<boolean> {
     return fileExists(dest);
 }
 
-/** Build cache entries for every item that needs one, sequentially; failures are logged, not thrown. */
-export async function warmAudioCache(items: Iterable<AudioPrepItem>, showFolder: string): Promise<void> {
+/** Derive audio for a record before it is committed. Throws on failure - a song
+ *  whose audio cannot be derived is not playable and must not be saved as if it were. */
+export async function deriveAudioForRecord(item: AudioDerivationItem, showFolder: string): Promise<void> {
+    if (!item.audio || !needsDerivedAudio(item.audio, item)) return;
+    await ensureDerivedAudio(item.audio, showFolder, { normalize: item.normalize });
+}
+
+/** Rebuild any missing derived files for the given records, sequentially. Used on
+ *  show-folder load (recipe bumps, deleted files); failures are logged, not thrown. */
+export async function reconcileDerivedAudio(items: Iterable<AudioDerivationItem>, showFolder: string): Promise<void> {
     const seen = new Set<string>();
     for (const item of items) {
         const p = item.audio;
-        if (!p || !needsAudioPrep(p, item)) continue;
+        if (!p || !needsDerivedAudio(p, item)) continue;
         const abs = absoluteUnder(p, showFolder);
         const id = `${abs}|${item.normalize ? 'norm' : 'plain'}`;
         if (seen.has(id)) continue;
         seen.add(id);
         try {
-            await resolvePlayableAudio(abs, showFolder, { normalize: item.normalize });
+            await ensureDerivedAudio(abs, showFolder, { normalize: item.normalize });
         } catch (err) {
-            console.warn(`[AudioCache] Could not prepare "${abs}":`, err instanceof Error ? err.message : err);
+            console.warn(`[DerivedAudio] Could not derive "${abs}":`, err instanceof Error ? err.message : err);
         }
     }
 }
 
-/** Delete cache entries no live item maps to. Entries newer than `graceMs`
- *  are kept (in-flight or just warmed). Returns the number deleted. */
-export async function pruneAudioCache(
+/** Delete derived files no live record maps to. Files newer than `graceMs` are
+ *  kept (in-flight builds). Returns the number deleted. */
+export async function pruneStaleDerivedAudio(
     showFolder: string,
-    liveItems: Iterable<AudioPrepItem>,
+    liveItems: Iterable<AudioDerivationItem>,
     opts?: { graceMs?: number },
 ): Promise<number> {
-    const dir = audioCacheDir(showFolder);
+    const dir = derivedAudioDir(showFolder);
     const names = await fs.readdir(dir).catch(() => [] as string[]);
     if (!names.length) return 0;
 
     const keep = new Set<string>();
     for (const item of liveItems) {
         const p = item.audio;
-        if (!p || !needsAudioPrep(p, item)) continue;
-        const c = await audioCachePathFor(p, showFolder, { normalize: item.normalize });
+        if (!p || !needsDerivedAudio(p, item)) continue;
+        const c = await derivedAudioPathFor(p, showFolder, { normalize: item.normalize });
         if (c) keep.add(path.basename(c));
     }
 
@@ -307,16 +371,12 @@ export async function pruneAudioCache(
         const full = path.join(dir, name);
         const st = await fs.stat(full).catch(() => undefined);
         if (!st?.isFile()) continue;
-        if (Date.now() - st.mtimeMs < grace) continue;
-        try {
-            await fs.unlink(full);
-            deleted += 1;
-        } catch {
-            // EBUSY/EPERM - retry on the next sweep.
-        }
+        // A filesystem stamp can sit a hair ahead of Date.now(); with no grace, age is irrelevant.
+        if (grace > 0 && Date.now() - st.mtimeMs < grace) continue;
+        if (await unlinkWithRetry(full)) deleted += 1; // else: retry on the next sweep
     }
     if (deleted > 0) {
-        console.log(`[AudioCache] pruned ${deleted} stale entries`);
+        console.log(`[DerivedAudio] pruned ${deleted} stale files`);
     }
     return deleted;
 }

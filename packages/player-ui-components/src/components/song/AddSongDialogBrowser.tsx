@@ -27,6 +27,7 @@ import {
     uploadShowFiles,
 } from '../..';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
+import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
@@ -42,6 +43,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const dispatch = useDispatch<AppDispatch>();
 
     const availableTags = useSelector((state: RootState) => state.sequences.tags);
+    const normalizeNewSongs = useSelector((state: RootState) => state.playbackSettings.settings.normalizeNewSongs);
+    /** Save in flight: derived audio is built on the player before the record commits. */
+    const [saving, setSaving] = useState(false);
 
     const [fseqFile, setFseqFile] = useState<File | null>(null);
     const [mp3File, setMp3File] = useState<File | null>(null);
@@ -199,6 +203,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
 
     const handleNewSongSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
+        setSaving(true);
 
         try {
             // Generate UUID for id and instanceId
@@ -255,11 +261,13 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             onClose();
         } catch (error) {
             console.error('Error adding song:', error);
-            ToastMsgs.showErrorMessage('Failed to add song', {
+            ToastMsgs.showErrorMessage(saveErrorMessage(error, 'Failed to add song'), {
                 theme: 'colored',
                 position: 'bottom-right',
-                autoClose: 2000,
+                autoClose: 6000,
             });
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -475,15 +483,24 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             color="primary"
                             onClick={handleNewSongSubmit}
                             disabled={
-                                uploading || !(fseqFile || fseqPlayerName) || !newSongData.title || !newSongData.artist
+                                saving ||
+                                uploading ||
+                                !(fseqFile || fseqPlayerName) ||
+                                !newSongData.title ||
+                                !newSongData.artist
                             }
                         >
                             Save
                         </Button>
-                        <Button type="button" variant="outlined" color="secondary" onClick={onClose}>
+                        <Button type="button" variant="outlined" color="secondary" onClick={onClose} disabled={saving}>
                             Cancel
                         </Button>
                     </Box>
+                    <SongSaveProgress
+                        saving={saving}
+                        audio={mp3File?.name ?? mp3PlayerName}
+                        normalize={normalizeNewSongs === true}
+                    />
                 </form>
             </>
             <ServerFilePickerDialog

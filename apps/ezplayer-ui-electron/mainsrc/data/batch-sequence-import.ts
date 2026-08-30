@@ -13,12 +13,17 @@ import {
     type AutoDetectOptions,
     type AutoDetectedSongFiles,
 } from './song-file-autodetect.js';
+import { deriveAudioForRecord } from './derived-audio.js';
 
 export interface BatchImportOptions extends AutoDetectOptions {
     /** Persist one or more SequenceRecords (typically putSequencesWithDurations). */
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
     /** Current catalog. Basename matches are skipped. */
     existingSequences?: SequenceRecord[];
+    /** Show folder; derived audio is built under it before a song is saved. */
+    showFolder?: string;
+    /** `settings.normalize` for the imported songs (the "normalize new songs" default). */
+    normalize?: boolean;
 }
 
 /**
@@ -67,7 +72,7 @@ export function buildSequenceRecordFromDetected(fseqPath: string, detected: Auto
 
 async function importOneFseq(
     fseqPath: string,
-    options: AutoDetectOptions,
+    options: AutoDetectOptions & Pick<BatchImportOptions, 'showFolder' | 'normalize'>,
 ): Promise<
     { ok: true; success: BatchImportSuccess; record: SequenceRecord } | { ok: false; failure: BatchImportFailure }
 > {
@@ -101,7 +106,30 @@ async function importOneFseq(
             };
         }
 
+        // A saved song is a playable song: derive its audio now, so one bad
+        // file fails only its own import instead of the whole batch at commit.
+        if (detected.audioFile && options.showFolder) {
+            try {
+                await deriveAudioForRecord(
+                    { audio: detected.audioFile, normalize: options.normalize },
+                    options.showFolder,
+                );
+            } catch (error) {
+                return {
+                    ok: false,
+                    failure: {
+                        fseqPath,
+                        fseqName,
+                        reason: `Cannot derive playable audio: ${error instanceof Error ? error.message : String(error)}`,
+                    },
+                };
+            }
+        }
+
         const record = buildSequenceRecordFromDetected(fseqPath, detected);
+        if (options.normalize !== undefined) {
+            record.settings = { ...(record.settings ?? {}), normalize: options.normalize };
+        }
 
         return {
             ok: true,

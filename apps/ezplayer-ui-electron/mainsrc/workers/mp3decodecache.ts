@@ -94,7 +94,7 @@ export type PrefetchMP3Request = {
     estDurationSec?: number;
     /** Confidence tier (0 = happy-path/fg, 2 = speculative skip/down-stack). */
     tier?: number;
-    /** Record's loudness-normalization flag; selects the cache variant. */
+    /** Record's loudness-normalization flag; selects the derived variant. */
     normalize?: boolean;
 };
 
@@ -117,7 +117,7 @@ export class MP3PrefetchCache {
         readonly log: (msg: string) => void;
         now: number;
         mp3SpaceSeconds?: number;
-        /** Map a record audio path to the file to decode (e.g. a cached transcode). */
+        /** Map a record audio path to the file to decode (its precomputed derivation). */
         resolveFile?: (audioFile: string, opts: { normalize: boolean }) => Promise<string>;
     }) {
         this.now = arg.now;
@@ -130,7 +130,7 @@ export class MP3PrefetchCache {
                     const filePath = arg.resolveFile
                         ? await arg.resolveFile(key.mp3file, { normalize: key.normalize })
                         : key.mp3file;
-                    if (filePath !== key.mp3file) arg.log(`Decoding cached audio ${filePath}`);
+                    if (filePath !== key.mp3file) arg.log(`Decoding derived audio ${filePath}`);
                     return { decompAudio: await this.decodewc.decodeFile({ filePath }) };
                 } finally {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);

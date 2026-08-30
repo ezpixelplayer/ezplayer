@@ -115,7 +115,7 @@ import {
     setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
-import { resolvePlayableAudio } from '../data/audio-convert.js';
+import { playableAudioPath } from '../data/derived-audio.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -1903,9 +1903,11 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            // Map record audio -> precomputed derived file. Never builds here; a
+            // missing derivation surfaces as an audio error for the song.
             resolveFile: (audioFile, opts) => {
-                if (!showFolder) throw new Error(`No show folder to cache audio for ${audioFile}`);
-                return resolvePlayableAudio(audioFile, showFolder, opts);
+                if (!showFolder) throw new Error(`No show folder to resolve audio for ${audioFile}`);
+                return playableAudioPath(audioFile, showFolder, opts);
             },
         });
     }

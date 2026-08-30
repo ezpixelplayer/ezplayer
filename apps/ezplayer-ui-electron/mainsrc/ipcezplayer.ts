@@ -54,7 +54,7 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { pruneAudioCache, warmAudioCache } from './data/audio-convert.js';
+import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio } from './data/derived-audio.js';
 
 import type {
     CloudCommand,
@@ -276,14 +276,14 @@ async function runGcSweep(): Promise<void> {
     }
 }
 
-const audioPrepItem = (s: SequenceRecord) => ({ audio: s.files?.audio, normalize: s.settings?.normalize });
+const derivedAudioItem = (s: SequenceRecord) => ({ audio: s.files?.audio, normalize: s.settings?.normalize });
 
-/** Drop transcoded audio no current record maps to. Rides the cloud gc trigger. */
-async function pruneStaleAudioCache(): Promise<void> {
+/** Drop derived audio no current record maps to. Rides the cloud gc trigger. */
+async function pruneStaleDerivedAudioNow(): Promise<void> {
     const showFolder = getCurrentShowFolder();
     if (!showFolder) return;
-    const live = curSequences.filter((s) => !s.deleted).map(audioPrepItem);
-    await pruneAudioCache(showFolder, live).catch((e) => console.warn('[AudioCache] prune failed:', e));
+    const live = curSequences.filter((s) => !s.deleted).map(derivedAudioItem);
+    await pruneStaleDerivedAudio(showFolder, live).catch((e) => console.warn('[DerivedAudio] prune failed:', e));
 }
 
 export function getSequenceThumbnail(id: string) {
@@ -447,10 +447,6 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     broadcastToWebSocket('sequences', filtered);
     scheduleUpdated();
     updateCloudWorkerSequences(curSequences);
-    if (showFolder) {
-        // Best effort, off the commit path: transcode non-MP3 audio before playback needs it.
-        void warmAudioCache(filtered.map(audioPrepItem), showFolder);
-    }
     return filtered;
 }
 
@@ -528,6 +524,19 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             const normalize = existing?.settings?.normalize ?? getSettingsCache()?.normalizeNewSongs ?? false;
             ups.settings = { ...(ups.settings ?? {}), normalize };
         }
+        // A committed song is a playable song: its derived audio (transcode and/or
+        // normalization) is built here, before the record is saved. Failure rejects
+        // the whole update, like a missing FSEQ would.
+        if (!ups.deleted && ups.files?.audio && showFolder) {
+            try {
+                await deriveAudioForRecord(derivedAudioItem(ups), showFolder);
+            } catch (err) {
+                const title = ups.work?.title || path.basename(ups.files.audio);
+                throw new Error(
+                    `Cannot derive playable audio for "${title}": ${err instanceof Error ? err.message : String(err)}`,
+                );
+            }
+        }
         if (!ups?.work?.length && ups.files?.fseq) {
             // best-effort: a corrupt fseq shouldn't fail the whole upsert
             try {
@@ -582,6 +591,9 @@ export async function loadShowFolder(forceRestart?: boolean) {
     await loadNetworkPolicies(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
+    // Derived audio is disposable; rebuild whatever is missing (recipe bump, deleted
+    // files) in the background. Songs already committed stay committed meanwhile.
+    void reconcileDerivedAudio(curSequences.filter((s) => !s.deleted).map(derivedAudioItem), showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
@@ -935,6 +947,8 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequences(fseqPaths ?? [], {
             mediaFolder,
+            showFolder: getCurrentShowFolder() ?? undefined,
+            normalize: getSettingsCache()?.normalizeNewSongs,
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -943,6 +957,8 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequencesFromFolder(folderPath, {
             mediaFolder,
+            showFolder: getCurrentShowFolder() ?? undefined,
+            normalize: getSettingsCache()?.normalizeNewSongs,
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -1041,7 +1057,7 @@ export async function registerContentHandlers(
         // Opportunistic gc — runs whenever the worker reports back, no-op when
         // queue is empty or player isn't idle.
         void runGcSweep();
-        void pruneStaleAudioCache();
+        void pruneStaleDerivedAudioNow();
     });
 
     onLayoutInstalled((layoutMeta) => {

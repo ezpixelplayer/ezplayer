@@ -15,6 +15,7 @@ export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
 export { ServerFilePickerDialog } from './components/song/ServerFilePickerDialog';
 export { EditSongDetailsDialog } from './components/song/EditSongDetailsDialog';
+export { SongSaveProgress, describeSongSave, saveErrorMessage } from './components/song/SongSaveProgress';
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';

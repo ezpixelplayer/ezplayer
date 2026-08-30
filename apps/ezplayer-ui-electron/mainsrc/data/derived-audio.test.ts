@@ -6,23 +6,25 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import {
-    AUDIO_CACHE_SUBDIR,
     CONVERTIBLE_AUDIO_EXTENSIONS,
+    DERIVED_AUDIO_SUBDIR,
     NORMALIZE_AUDIO_FILTER,
-    audioCachePathFor,
+    deriveAudioForRecord,
+    derivedAudioPathFor,
+    ensureDerivedAudio,
     ffmpegArgsFor,
     isSupportedAudioPath,
-    needsAudioPrep,
+    needsDerivedAudio,
     needsMp3Conversion,
-    pruneAudioCache,
+    playableAudioPath,
+    pruneStaleDerivedAudio,
+    reconcileDerivedAudio,
     resolveFfmpegBinary,
-    resolvePlayableAudio,
-    warmAudioCache,
-} from './audio-convert.js';
+} from './derived-audio.js';
 
 // Runs the real ffmpeg binary (no mocks): fixtures are synthesized with it,
-// then resolved through the audio cache and decoded back to prove the output
-// is playable. This is what guards the packaged ffmpeg-static binary.
+// then derived and decoded back to prove the output is playable. This is what
+// guards the packaged ffmpeg-static binary.
 
 const execFileAsync = promisify(execFile);
 const FFMPEG = resolveFfmpegBinary();
@@ -72,7 +74,16 @@ function fixtureArgs(ext: string, dest: string): string[] {
 /** Quiet 6 s tone (about -30 LUFS) so normalization has something to do and
  *  enough length for an integrated-loudness measurement. */
 function quietFixtureArgs(dest: string, codec: string[]): string[] {
-    return ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=6', '-af', 'volume=0.03', ...codec, dest];
+    return [
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=44100:duration=6',
+        '-af',
+        'volume=0.03',
+        ...codec,
+        dest,
+    ];
 }
 
 function looksLikeMp3(buf: Buffer): boolean {
@@ -107,10 +118,10 @@ async function integratedLoudness(file: string): Promise<number> {
     return Number(m[1]);
 }
 
-describe('audio-convert (real ffmpeg)', () => {
+describe('derived-audio (real ffmpeg)', () => {
     let fixtureDir: string;
     let show: string;
-    let cacheDir: string;
+    let derivedDir: string;
 
     beforeAll(async () => {
         fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ezplayer-audio-fixtures-'));
@@ -127,7 +138,7 @@ describe('audio-convert (real ffmpeg)', () => {
 
     beforeEach(async () => {
         show = await fs.mkdtemp(path.join(os.tmpdir(), 'ezplayer-show-'));
-        cacheDir = path.join(show, AUDIO_CACHE_SUBDIR);
+        derivedDir = path.join(show, DERIVED_AUDIO_SUBDIR);
     });
 
     afterEach(async () => {
@@ -140,8 +151,8 @@ describe('audio-convert (real ffmpeg)', () => {
         return dest;
     }
 
-    async function cacheEntries(): Promise<string[]> {
-        return (await fs.readdir(cacheDir).catch(() => [] as string[])).sort();
+    async function derivedFiles(): Promise<string[]> {
+        return (await fs.readdir(derivedDir).catch(() => [] as string[])).sort();
     }
 
     it('resolves the packaged ffmpeg-static binary', async () => {
@@ -157,16 +168,16 @@ describe('audio-convert (real ffmpeg)', () => {
         expect(filters.stdout).toMatch(/\bloudnorm\b/);
     });
 
-    it('detects convertible vs supported extensions', () => {
+    it('detects which sources need a derived file', () => {
         expect(isSupportedAudioPath('a.mp3')).toBe(true);
         expect(isSupportedAudioPath('a.wav')).toBe(true);
         expect(isSupportedAudioPath('a.txt')).toBe(false);
         expect(needsMp3Conversion('a.mp3')).toBe(false);
         expect(needsMp3Conversion('a.WAV')).toBe(true);
-        expect(needsAudioPrep('a.mp3')).toBe(false);
-        expect(needsAudioPrep('a.mp3', { normalize: true })).toBe(true);
-        expect(needsAudioPrep('a.wav')).toBe(true);
-        expect(needsAudioPrep('a.txt', { normalize: true })).toBe(false);
+        expect(needsDerivedAudio('a.mp3')).toBe(false);
+        expect(needsDerivedAudio('a.mp3', { normalize: true })).toBe(true);
+        expect(needsDerivedAudio('a.wav')).toBe(true);
+        expect(needsDerivedAudio('a.txt', { normalize: true })).toBe(false);
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).toContain('.flac');
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).toContain('.mp4');
         expect(CONVERTIBLE_AUDIO_EXTENSIONS).not.toContain('.mp3');
@@ -186,29 +197,42 @@ describe('audio-convert (real ffmpeg)', () => {
         }
     });
 
-    it('passes .mp3 through untouched and resolves relative paths under the show folder', async () => {
+    it('plays .mp3 sources directly; relative paths resolve under the show folder', async () => {
         const mp3 = path.join(show, 'song.mp3');
         await fs.writeFile(mp3, 'not-really-mp3');
-        expect(await resolvePlayableAudio(mp3, show)).toBe(mp3);
-        expect(await resolvePlayableAudio('song.mp3', show)).toBe(mp3);
-        expect(await resolvePlayableAudio(mp3, show, { normalize: false })).toBe(mp3);
+        expect(await ensureDerivedAudio(mp3, show)).toBe(mp3);
+        expect(await playableAudioPath(mp3, show)).toBe(mp3);
+        expect(await playableAudioPath('song.mp3', show)).toBe(mp3);
+        expect(await playableAudioPath(mp3, show, { normalize: false })).toBe(mp3);
         expect(await fs.readFile(mp3, 'utf8')).toBe('not-really-mp3');
-        expect(await cacheEntries()).toEqual([]);
+        expect(await derivedFiles()).toEqual([]);
+    });
+
+    it('playback never builds: a missing derived file is an error until it is derived', async () => {
+        const src = await stageFixture('.wav');
+        await expect(playableAudioPath(src, show)).rejects.toThrow(/Derived audio not built yet/);
+        expect(await derivedFiles()).toEqual([]);
+
+        const derived = await ensureDerivedAudio(src, show);
+        expect(await playableAudioPath(src, show)).toBe(derived);
+        expect(await playableAudioPath('song.wav', show)).toBe(derived);
+        // The normalized variant is a different file and is still unbuilt.
+        await expect(playableAudioPath(src, show, { normalize: true })).rejects.toThrow(/Derived audio not built/);
     });
 
     it.each(CONVERTIBLE_AUDIO_EXTENSIONS)(
-        'transcodes %s into the show audio cache and leaves the source intact',
+        'derives %s into the show derived-audio folder and leaves the source intact',
         async (ext) => {
             const src = await stageFixture(ext);
             const original = await fs.readFile(src);
 
-            const result = await resolvePlayableAudio(src, show);
+            const result = await ensureDerivedAudio(src, show);
 
-            expect(path.dirname(result)).toBe(cacheDir);
-            expect(result).toBe(await audioCachePathFor(src, show));
+            expect(path.dirname(result)).toBe(derivedDir);
+            expect(result).toBe(await derivedAudioPathFor(src, show));
             expect(await fs.readFile(src)).toEqual(original);
             await assertDecodableMp3(result);
-            expect(await cacheEntries()).toEqual([path.basename(result)]); // no .part left behind
+            expect(await derivedFiles()).toEqual([path.basename(result)]); // no .part left behind
             // Source folder untouched: no sibling .mp3.
             expect((await fs.readdir(show)).sort()).toEqual(['.ezplayer', path.basename(src)]);
         },
@@ -216,38 +240,38 @@ describe('audio-convert (real ffmpeg)', () => {
     );
 
     it(
-        'reuses the cache entry, and a changed source gets a new entry',
+        'reuses the derived file, and a changed source gets a new one',
         async () => {
             const src = await stageFixture('.wav');
-            const first = await resolvePlayableAudio(src, show);
+            const first = await ensureDerivedAudio(src, show);
             const stamp = await fs.stat(first);
 
             // Same source -> same file, not rewritten.
-            expect(await resolvePlayableAudio(src, show)).toBe(first);
+            expect(await ensureDerivedAudio(src, show)).toBe(first);
             expect((await fs.stat(first)).mtimeMs).toBe(stamp.mtimeMs);
 
-            // Rewrite the source (new size) -> different key; old entry stays until pruned.
+            // Rewrite the source (new size) -> different key; old file stays until pruned.
             await fs.copyFile(path.join(fixtureDir, 'song.flac'), src);
             await fs.utimes(src, new Date(), new Date(Date.now() + 5_000));
-            const second = await resolvePlayableAudio(src, show);
+            const second = await ensureDerivedAudio(src, show);
             expect(second).not.toBe(first);
-            expect(await cacheEntries()).toEqual([path.basename(first), path.basename(second)].sort());
+            expect(await derivedFiles()).toEqual([path.basename(first), path.basename(second)].sort());
         },
         CONVERT_TIMEOUT_MS,
     );
 
     it(
-        'dedupes concurrent requests for the same entry',
+        'dedupes concurrent builds of the same derived file',
         async () => {
             const src = await stageFixture('.ogg');
             const [a, b, c] = await Promise.all([
-                resolvePlayableAudio(src, show),
-                resolvePlayableAudio(src, show),
-                resolvePlayableAudio('song.ogg', show),
+                ensureDerivedAudio(src, show),
+                ensureDerivedAudio(src, show),
+                ensureDerivedAudio('song.ogg', show),
             ]);
             expect(b).toBe(a);
             expect(c).toBe(a);
-            expect(await cacheEntries()).toEqual([path.basename(a)]);
+            expect(await derivedFiles()).toEqual([path.basename(a)]);
         },
         CONVERT_TIMEOUT_MS,
     );
@@ -256,14 +280,14 @@ describe('audio-convert (real ffmpeg)', () => {
         'ignores a stale .part from a dead writer',
         async () => {
             const src = await stageFixture('.wav');
-            const dest = (await audioCachePathFor(src, show))!;
-            await fs.mkdir(cacheDir, { recursive: true });
+            const dest = (await derivedAudioPathFor(src, show))!;
+            await fs.mkdir(derivedDir, { recursive: true });
             const stalePart = `${dest}.999999.part`;
             await fs.writeFile(stalePart, 'junk');
             const old = new Date(Date.now() - 10 * 60_000);
             await fs.utimes(stalePart, old, old);
 
-            expect(await resolvePlayableAudio(src, show)).toBe(dest);
+            expect(await ensureDerivedAudio(src, show)).toBe(dest);
             await assertDecodableMp3(dest);
         },
         CONVERT_TIMEOUT_MS,
@@ -272,74 +296,77 @@ describe('audio-convert (real ffmpeg)', () => {
     it('rejects unsupported extensions and missing files', async () => {
         const txt = path.join(show, 'song.txt');
         await fs.writeFile(txt, 'x');
-        await expect(resolvePlayableAudio(txt, show)).rejects.toThrow(/Unsupported audio format/);
-        await expect(resolvePlayableAudio(path.join(show, 'nope.wav'), show)).rejects.toThrow(/not found/);
-        expect(await audioCachePathFor(path.join(show, 'nope.wav'), show)).toBeUndefined();
+        await expect(ensureDerivedAudio(txt, show)).rejects.toThrow(/Unsupported audio format/);
+        await expect(playableAudioPath(txt, show)).rejects.toThrow(/Unsupported audio format/);
+        await expect(ensureDerivedAudio(path.join(show, 'nope.wav'), show)).rejects.toThrow(/not found/);
+        expect(await derivedAudioPathFor(path.join(show, 'nope.wav'), show)).toBeUndefined();
     });
 
     it(
-        'leaves no cache entry or .part when ffmpeg fails on a corrupt input',
+        'leaves no derived file or .part when ffmpeg fails on a corrupt input',
         async () => {
             const wav = path.join(show, 'song.wav');
             await fs.writeFile(wav, Buffer.alloc(64, 0x5a));
 
-            await expect(resolvePlayableAudio(wav, show)).rejects.toThrow(/ffmpeg conversion failed/);
-            expect(await cacheEntries()).toEqual([]);
+            await expect(ensureDerivedAudio(wav, show)).rejects.toThrow(/ffmpeg conversion failed/);
+            await expect(deriveAudioForRecord({ audio: wav }, show)).rejects.toThrow(/ffmpeg conversion failed/);
+            expect(await derivedFiles()).toEqual([]);
             expect((await fs.readdir(show)).sort()).toEqual(['.ezplayer', 'song.wav']);
         },
         CONVERT_TIMEOUT_MS,
     );
 
     it(
-        'normalizes a quiet WAV to about -16 LUFS in a separate cache variant',
+        'normalizes a quiet WAV to about -16 LUFS as a separate variant',
         async () => {
             const src = await stageFixture('.wav', 'quiet', 'quiet.wav');
             expect(await integratedLoudness(src)).toBeLessThan(-24);
 
-            const plain = await resolvePlayableAudio(src, show);
-            const norm = await resolvePlayableAudio(src, show, { normalize: true });
+            const plain = await ensureDerivedAudio(src, show);
+            const norm = await ensureDerivedAudio(src, show, { normalize: true });
 
             expect(norm).not.toBe(plain);
             expect(path.basename(norm)).toMatch(/-norm-/);
-            expect(await cacheEntries()).toEqual([path.basename(plain), path.basename(norm)].sort());
+            expect(await derivedFiles()).toEqual([path.basename(plain), path.basename(norm)].sort());
             await assertDecodableMp3(norm);
             // Plain transcode keeps the source level; normalized lands near target.
             expect(await integratedLoudness(plain)).toBeLessThan(-24);
             expect(Math.abs((await integratedLoudness(norm)) - -16)).toBeLessThan(2);
-            // Toggling back is a cache hit on the plain variant, nothing rebuilt.
-            expect(await resolvePlayableAudio(src, show, { normalize: false })).toBe(plain);
+            // Both variants resolve for playback without rebuilding.
+            expect(await playableAudioPath(src, show, { normalize: false })).toBe(plain);
+            expect(await playableAudioPath(src, show, { normalize: true })).toBe(norm);
         },
         CONVERT_TIMEOUT_MS,
     );
 
     it(
-        'normalizes an MP3 source into the cache and passes it through when unset',
+        'normalizes an MP3 source into a derived file and plays the source when unset',
         async () => {
             const src = await stageFixture('.mp3', 'quiet', 'quiet.mp3');
             const original = await fs.readFile(src);
 
-            const norm = await resolvePlayableAudio(src, show, { normalize: true });
-            expect(path.dirname(norm)).toBe(cacheDir);
-            expect(norm).toBe(await audioCachePathFor(src, show, { normalize: true }));
+            const norm = await ensureDerivedAudio(src, show, { normalize: true });
+            expect(path.dirname(norm)).toBe(derivedDir);
+            expect(norm).toBe(await derivedAudioPathFor(src, show, { normalize: true }));
             await assertDecodableMp3(norm);
             expect(Math.abs((await integratedLoudness(norm)) - -16)).toBeLessThan(2);
             expect(await fs.readFile(src)).toEqual(original);
 
-            // Unset -> the source itself; the normalized entry is left for prune.
-            expect(await resolvePlayableAudio(src, show)).toBe(src);
-            expect(await cacheEntries()).toEqual([path.basename(norm)]);
+            // Unset -> the source itself; the normalized file is left for prune.
+            expect(await playableAudioPath(src, show)).toBe(src);
+            expect(await derivedFiles()).toEqual([path.basename(norm)]);
         },
         CONVERT_TIMEOUT_MS,
     );
 
     it(
-        'warms every item that needs prep and prunes entries no live item maps to',
+        'reconciles every record that needs a derived file and prunes files no record maps to',
         async () => {
             const wav = await stageFixture('.wav', 'a');
             const flac = await stageFixture('.flac', 'b');
             const mp3 = await stageFixture('.mp3', 'c', 'quiet.mp3');
 
-            await warmAudioCache(
+            await reconcileDerivedAudio(
                 [
                     { audio: wav },
                     { audio: 'b.flac', normalize: true },
@@ -350,23 +377,40 @@ describe('audio-convert (real ffmpeg)', () => {
                 ],
                 show,
             );
-            const wavEntry = path.basename((await audioCachePathFor(wav, show))!);
-            const flacNorm = path.basename((await audioCachePathFor(flac, show, { normalize: true }))!);
-            const mp3Norm = path.basename((await audioCachePathFor(mp3, show, { normalize: true }))!);
-            expect(await cacheEntries()).toEqual([wavEntry, flacNorm, mp3Norm].sort());
+            const wavFile = path.basename((await derivedAudioPathFor(wav, show))!);
+            const flacNorm = path.basename((await derivedAudioPathFor(flac, show, { normalize: true }))!);
+            const mp3Norm = path.basename((await derivedAudioPathFor(mp3, show, { normalize: true }))!);
+            expect(await derivedFiles()).toEqual([wavFile, flacNorm, mp3Norm].sort());
 
             // Nothing is older than the grace window yet -> nothing pruned.
-            expect(await pruneAudioCache(show, [{ audio: wav }], { graceMs: 60_000 })).toBe(0);
+            expect(await pruneStaleDerivedAudio(show, [{ audio: wav }], { graceMs: 60_000 })).toBe(0);
             // With no grace: keep the live variants exactly, drop the rest.
             expect(
-                await pruneAudioCache(show, [{ audio: wav }, { audio: 'b.flac', normalize: true }], { graceMs: 0 }),
+                await pruneStaleDerivedAudio(show, [{ audio: wav }, { audio: 'b.flac', normalize: true }], {
+                    graceMs: 0,
+                }),
             ).toBe(1);
-            expect(await cacheEntries()).toEqual([wavEntry, flacNorm].sort());
+            expect(await derivedFiles()).toEqual([wavFile, flacNorm].sort());
             // A flipped flag no longer maps to the old variant.
-            expect(await pruneAudioCache(show, [{ audio: wav }, { audio: 'b.flac' }], { graceMs: 0 })).toBe(1);
-            expect(await cacheEntries()).toEqual([wavEntry]);
-            expect(await pruneAudioCache(show, [], { graceMs: 0 })).toBe(1);
-            expect(await cacheEntries()).toEqual([]);
+            expect(await pruneStaleDerivedAudio(show, [{ audio: wav }, { audio: 'b.flac' }], { graceMs: 0 })).toBe(1);
+            expect(await derivedFiles()).toEqual([wavFile]);
+            expect(await pruneStaleDerivedAudio(show, [], { graceMs: 0 })).toBe(1);
+            expect(await derivedFiles()).toEqual([]);
+        },
+        CONVERT_TIMEOUT_MS,
+    );
+
+    it(
+        'prunes with no grace even when the filesystem stamps the file slightly in the future',
+        async () => {
+            const wav = await stageFixture('.wav');
+            const derived = await ensureDerivedAudio(wav, show);
+            const ahead = new Date(Date.now() + 2_000);
+            await fs.utimes(derived, ahead, ahead);
+
+            expect(await pruneStaleDerivedAudio(show, [], { graceMs: 60_000 })).toBe(0);
+            expect(await pruneStaleDerivedAudio(show, [], { graceMs: 0 })).toBe(1);
+            expect(await derivedFiles()).toEqual([]);
         },
         CONVERT_TIMEOUT_MS,
     );
