@@ -524,9 +524,7 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             const normalize = existing?.settings?.normalize ?? getSettingsCache()?.normalizeNewSongs ?? false;
             ups.settings = { ...(ups.settings ?? {}), normalize };
         }
-        // A committed song is a playable song: its derived audio (transcode and/or
-        // normalization) is built here, before the record is saved. Failure rejects
-        // the whole update, like a missing FSEQ would.
+        // A committed song must be playable, so its derived audio is built before save.
         if (!ups.deleted && ups.files?.audio && showFolder) {
             try {
                 await deriveAudioForRecord(derivedAudioItem(ups), showFolder);
@@ -592,7 +590,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     curSequences = await loadSequencesAPI(showFolder);
     // Derived audio is disposable; rebuild whatever is missing (recipe bump, deleted
-    // files) in the background. Songs already committed stay committed meanwhile.
+    // files) in the background.
     void reconcileDerivedAudio(curSequences.filter((s) => !s.deleted).map(derivedAudioItem), showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
