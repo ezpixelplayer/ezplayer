@@ -57,6 +57,8 @@ export { Viewer3D } from './components/preview-3d/Viewer3D';
 export type { Viewer3DProps } from './components/preview-3d/Viewer3D';
 export { Viewer2D } from './components/preview-3d/Viewer2D';
 export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
+export { RenderBridge } from './components/preview-3d/RenderBridge';
+export type { PreviewRenderHandle } from './components/preview-3d/RenderBridge';
 export { ModelList } from './components/preview-3d/ModelList';
 export type { ModelListProps } from './components/preview-3d/ModelList';
 export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState, LayoutSettings, ViewObject } from './types/model3d';
