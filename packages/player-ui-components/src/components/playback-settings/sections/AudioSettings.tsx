@@ -30,6 +30,8 @@ import type { AudioDevice, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
+import { supportsLocalAudioRouting } from '../../../store/api/DataStorageAPI';
+import { useDataStorageAPI } from '../../../store/DataStorageAPIProvider';
 import {
     DAY_OPTIONS,
     DayKey,
@@ -79,6 +81,7 @@ function newOutputId(): string {
 
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
+    const api = useDataStorageAPI();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
 
     const [addOpen, setAddOpen] = useState(false);
@@ -101,55 +104,72 @@ export const AudioSettings: React.FC = () => {
     const primaryDeviceId = settings.primaryAudioOutputDeviceId ?? '';
     const systemDefaultOutputDeviceId = settings.systemDefaultOutputDeviceId ?? '';
     const useDefaultAudioOutput = settings.useDefaultAudioOutput !== false;
-    const electronDesktop = isElectron();
+    const localAudioRouting = supportsLocalAudioRouting(api);
+    /** LAN/web UI: enumerate sinks on the player machine, not in the browser. */
+    const usesRemotePlayerDeviceApi =
+        typeof api.getAudioOutputDevices === 'function' && !isElectron();
+
+    const refreshOutputDevices = useCallback(async () => {
+        if (!localAudioRouting) return;
+        try {
+            const audioOutputs = usesRemotePlayerDeviceApi
+                ? await api.getAudioOutputDevices!()
+                : (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput');
+            const defaultSink = audioOutputs.find((d) => d.deviceId === 'default');
+            setSystemDefaultGroupId(defaultSink?.groupId || undefined);
+            setOutputDevices(
+                audioOutputs
+                    .filter((d) => isPhysicalOutput(d as AudioDevice))
+                    .map(
+                        (d) =>
+                            ({
+                                label: d.label,
+                                deviceId: d.deviceId,
+                                kind: d.kind,
+                                groupId: d.groupId,
+                            }) satisfies AudioDevice,
+                    ),
+            );
+        } catch (err) {
+            console.warn('[AudioSettings] audio output device refresh failed', err);
+        }
+    }, [api, localAudioRouting, usesRemotePlayerDeviceApi]);
 
     useEffect(() => {
-        if (!electronDesktop || !navigator.mediaDevices?.enumerateDevices) return;
+        if (!localAudioRouting) return;
 
         let cancelled = false;
-        const refresh = async () => {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                if (cancelled) return;
-                const audioOutputs = devices.filter((d) => d.kind === 'audiooutput');
-                const defaultSink = audioOutputs.find((d) => d.deviceId === 'default');
-                setSystemDefaultGroupId(defaultSink?.groupId || undefined);
-                setOutputDevices(
-                    audioOutputs
-                        .filter((d) => isPhysicalOutput(d as AudioDevice))
-                        .map(
-                            (d) =>
-                                ({
-                                    label: d.label,
-                                    deviceId: d.deviceId,
-                                    kind: d.kind,
-                                    groupId: d.groupId,
-                                }) satisfies AudioDevice,
-                        ),
-                );
-            } catch (err) {
-                console.warn('[AudioSettings] enumerateDevices failed', err);
-            }
-        };
+        void (async () => {
+            await refreshOutputDevices();
+            if (cancelled) return;
+        })();
 
-        void refresh();
-        navigator.mediaDevices.addEventListener?.('devicechange', refresh);
+        if (!usesRemotePlayerDeviceApi && navigator.mediaDevices?.addEventListener) {
+            const onDeviceChange = () => {
+                void refreshOutputDevices();
+            };
+            navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
+            return () => {
+                cancelled = true;
+                navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
+            };
+        }
+
         return () => {
             cancelled = true;
-            navigator.mediaDevices.removeEventListener?.('devicechange', refresh);
         };
-    }, [electronDesktop]);
+    }, [localAudioRouting, refreshOutputDevices, usesRemotePlayerDeviceApi]);
 
     // Remember which physical device is the OS default route (for exclusion when default output is off).
     useEffect(() => {
-        if (!electronDesktop || !systemDefaultGroupId) return;
+        if (!localAudioRouting || !systemDefaultGroupId) return;
         const defaultPhysical = outputDevices.find((d) => d.groupId === systemDefaultGroupId);
         const id = defaultPhysical?.deviceId;
         if (id && id !== systemDefaultOutputDeviceId) {
             dispatch(playbackSettingsActions.setSystemDefaultOutputDeviceId(id));
         }
     }, [
-        electronDesktop,
+        localAudioRouting,
         systemDefaultGroupId,
         outputDevices,
         systemDefaultOutputDeviceId,
@@ -195,29 +215,29 @@ export const AudioSettings: React.FC = () => {
 
     // If primary moves onto a device that was additional, drop that duplicate only.
     useEffect(() => {
-        if (!electronDesktop || !useDefaultAudioOutput) return;
+        if (!localAudioRouting || !useDefaultAudioOutput) return;
         const withoutPrimaryDup = additionalOutputs.filter((o) => o.deviceId !== primaryDeviceId);
         if (withoutPrimaryDup.length !== additionalOutputs.length) {
             dispatch(playbackSettingsActions.setAdditionalAudioOutputs(withoutPrimaryDup));
         }
-    }, [electronDesktop, useDefaultAudioOutput, primaryDeviceId, additionalOutputs, dispatch]);
+    }, [localAudioRouting, useDefaultAudioOutput, primaryDeviceId, additionalOutputs, dispatch]);
 
     useEffect(() => {
-        if (!electronDesktop || useDefaultAudioOutput) return;
+        if (!localAudioRouting || useDefaultAudioOutput) return;
         if (additionalOutputs.length > 0) {
             setAdditionalExpanded(true);
         }
-    }, [electronDesktop, useDefaultAudioOutput, additionalOutputs.length]);
+    }, [localAudioRouting, useDefaultAudioOutput, additionalOutputs.length]);
 
     // Default output off: drop rows for the system-default route (same groupId as Chromium `default`).
     useEffect(() => {
-        if (!electronDesktop || useDefaultAudioOutput) return;
+        if (!localAudioRouting || useDefaultAudioOutput) return;
         const kept = additionalOutputs.filter((o) => !isExcludedFromAdditionalList(o.deviceId));
         if (kept.length !== additionalOutputs.length) {
             dispatch(playbackSettingsActions.setAdditionalAudioOutputs(kept));
         }
     }, [
-        electronDesktop,
+        localAudioRouting,
         useDefaultAudioOutput,
         additionalOutputs,
         isExcludedFromAdditionalList,
@@ -477,7 +497,7 @@ export const AudioSettings: React.FC = () => {
 
     return (
         <Box>
-            {electronDesktop && (
+            {localAudioRouting && (
                 <>
                     <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
                         Audio Output
@@ -510,7 +530,7 @@ export const AudioSettings: React.FC = () => {
                 </>
             )}
 
-            {(!electronDesktop || useDefaultAudioOutput) && (
+            {(!localAudioRouting || useDefaultAudioOutput) && (
                 <>
                     <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
                         Volume Control
@@ -575,7 +595,7 @@ export const AudioSettings: React.FC = () => {
                 </>
             )}
 
-            {electronDesktop && !useDefaultAudioOutput && (
+            {localAudioRouting && !useDefaultAudioOutput && (
                 <Accordion
                     disableGutters
                     elevation={0}
@@ -617,7 +637,7 @@ export const AudioSettings: React.FC = () => {
                             additionalOutputs.filter((o) =>
                                 /bluetooth|headset|earbuds|buds/i.test(
                                     connectedDeviceOptions.find((d) => d.id === o.deviceId)?.name ??
-                                        '',
+                                    '',
                                 ),
                             ).length >= 2 && (
                                 <Typography

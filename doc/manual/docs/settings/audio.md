@@ -29,11 +29,6 @@ to play there with its own volume and schedule. Disconnected devices are not sho
 Settings are stored in the show folder’s `playbackSettings.json` and are local to
 the machine (not synced via cloud settings).
 
-**Note on Bluetooth:** Selecting two Bluetooth earphones in EZPlayer will open two
-audio engines, but **classic Bluetooth on most PCs only delivers one high-quality
-A2DP stream**. Both streams often end up on whichever headset Windows treats as
-active. That is an OS/radio limit, not something Chromium `setSinkId` can bypass.
-
 To listen on two wireless headsets at once on Windows 11, use **Quick Settings →
 Shared Audio** (needs Bluetooth LE Audio on the PC and both accessories). For
 app-level multi-output testing, prefer **wired/USB** devices, or one wired + one
