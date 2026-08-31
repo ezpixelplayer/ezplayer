@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, MapControls } from '@react-three/drei';
+import { RenderBridge, type PreviewRenderHandle } from './RenderBridge';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
@@ -49,6 +50,11 @@ export interface Viewer2DProps {
     cameraStateLoaded?: boolean; // Whether camera state has been loaded from storage
     onGetCurrentCameraState?: (getter: () => CameraState2D | null) => void; // Callback to register a function that gets current camera state
     fillContainer?: boolean;
+    /** Stop the r3f frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
+     *  Used for deterministic offline rendering (video export). */
+    renderOnDemand?: boolean;
+    /** Registers an imperative handle for fixed-size, frame-stepped rendering (null on unmount). */
+    onRenderHandle?: (handle: PreviewRenderHandle | null) => void;
 }
 
 function Optimized2DPointCloud({
@@ -973,6 +979,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     cameraStateLoaded = true,
     onGetCurrentCameraState,
     fillContainer = false,
+    renderOnDemand = false,
+    onRenderHandle,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -1067,6 +1075,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                     }}
                 >
                     <Canvas
+                        frameloop={renderOnDemand ? 'never' : 'always'}
                         onCreated={({ gl }) => {
                             gl.setClearColor('#191919', 1);
                             // Check if WebGL context was created successfully
@@ -1134,6 +1143,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             cameraStateLoaded={cameraStateLoaded}
                             onGetCurrentCameraState={onGetCurrentCameraState}
                         />
+                        <RenderBridge onRegister={onRenderHandle} />
                     </Canvas>
                 </Box>
             )}
