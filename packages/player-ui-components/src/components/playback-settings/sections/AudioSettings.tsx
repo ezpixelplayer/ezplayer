@@ -23,7 +23,7 @@ import {
     Switch,
     Typography,
 } from '@mui/material';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select, isElectron } from '@ezplayer/shared-ui-components';
 import type { AudioDevice, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -97,7 +97,7 @@ export const AudioSettings: React.FC = () => {
     const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
     const [draftAdditionalVolumes, setDraftAdditionalVolumes] = useState<Record<string, number | null>>({});
 
-    const additionalOutputs = settings.additionalAudioOutputs ?? [];
+    const additionalOutputs = useMemo(() => settings.additionalAudioOutputs ?? [], [settings.additionalAudioOutputs]);
     const primaryDeviceId = settings.primaryAudioOutputDeviceId ?? '';
     const systemDefaultOutputDeviceId = settings.systemDefaultOutputDeviceId ?? '';
     const useDefaultAudioOutput = settings.useDefaultAudioOutput !== false;

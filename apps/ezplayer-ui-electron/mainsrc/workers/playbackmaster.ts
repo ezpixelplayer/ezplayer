@@ -47,6 +47,7 @@ import {
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
+    songVolumeScale,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -2454,14 +2455,15 @@ async function processQueue() {
                             // down so it crossfades with the next chunk's ramped-up head.
                             const windowFrames = hopFrames + overlapFrames;
 
-                            // Unity PCM for Electron per-sink GainNode; web ring
-                            // is scaled inside sendAudioChunk using volumeSF.
+                            // Per-song volume_adj is baked into the samples, so every
+                            // sink and the export ring hear it; the global volume is
+                            // applied downstream (per-sink GainNode / web-ring volumeSF).
                             const chunk = buildInterleavedAudioChunkFromSegments({
                                 channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,
                                 sampleOffset,
                                 nSamples: windowFrames,
-                                volumeSF: 1,
+                                volumeSF: songVolumeScale(curAudioSeq?.settings?.volume_adj),
                             });
                             applyCrossfadeRamp(chunk, channels, overlapFrames);
 

@@ -178,6 +178,7 @@ export {
     audioExtension,
     isSupportedAudioName,
     needsAudioConversion,
+    songVolumeScale,
 } from './util/audioFormats';
 
 export {
