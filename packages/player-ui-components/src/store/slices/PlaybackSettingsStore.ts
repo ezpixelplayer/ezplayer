@@ -186,6 +186,10 @@ const playbackSettingsSlice = createSlice({
             state.settings.sendIdleBlackFrames = action.payload;
         },
 
+        setNormalizeNewSongs(state, action: PayloadAction<boolean>) {
+            state.settings.normalizeNewSongs = action.payload;
+        },
+
         // Sync output (FPP MultiSync master; future timecode strategies join here)
         setMultisyncEnabled(state, action: PayloadAction<boolean>) {
             const sync = (state.settings.sync ??= {});
@@ -353,6 +357,7 @@ export const {
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
     setSendIdleBlackFrames,
+    setNormalizeNewSongs,
     setMultisyncEnabled,
     setMultisyncRemotes,
     setMultisyncPort,

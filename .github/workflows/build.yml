@@ -56,3 +56,8 @@ jobs:
 
             - name: Build project
               run: pnpm run build
+
+            # Includes the real-ffmpeg conversion tests; fails if the ffmpeg-static
+            # binary for this platform is missing.
+            - name: Run app unit tests
+              run: pnpm --filter ezplayer-ui-electron test

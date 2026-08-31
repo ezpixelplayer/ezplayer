@@ -97,11 +97,17 @@ export type {
     PortDriftKind,
     PortReconcile,
     ControllerHealth,
+    ControllerSerialPortIntent,
+    ControllerSerialModelIntent,
+    ControllerSerialPort,
+    SerialPortReconcile,
 } from './types/ControllerOps';
+export { effectiveMaxFps } from './types/ControllerOps';
 
 export {
     reconcileControllers,
     reconcilePorts,
+    reconcileSerialPorts,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
@@ -119,7 +125,14 @@ export {
     portIntentFromModelIntents,
     PORTS_PER_SMARTREMOTE,
 } from './util/controllerPortMap';
-export type { PortMap, PortMapBox, PortMapRow, PortMapString } from './util/controllerPortMap';
+export type {
+    PortMap,
+    PortMapBox,
+    PortMapRow,
+    PortMapSerialRow,
+    PortMapString,
+    PortMapOptions,
+} from './util/controllerPortMap';
 
 export type {
     VcSong,
@@ -146,6 +159,7 @@ export type {
     ImageInfo,
     AudioTagMetadata,
     BatchImportFailure,
+    BatchImportProgress,
     BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
@@ -156,6 +170,15 @@ export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
 export { isSequencePlayable } from './util/seqFilter';
+
+export {
+    CONVERTIBLE_AUDIO_EXTENSIONS,
+    MP3_EXTENSION,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    audioExtension,
+    isSupportedAudioName,
+    needsAudioConversion,
+} from './util/audioFormats';
 
 export {
     type PlayAction,

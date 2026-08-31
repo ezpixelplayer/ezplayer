@@ -14,12 +14,13 @@ import type {
     ControllerOpOrigin,
     ControllerOpsState,
     ControllerPort,
+    ControllerSerialPort,
     DiscoveredController,
     EzpControllerRecord,
     KnownController,
     NetworkPolicy,
 } from '@ezplayer/ezplayer-core';
-import { applyOverrides } from '@ezplayer/ezplayer-core';
+import { applyOverrides, ipInCidr } from '@ezplayer/ezplayer-core';
 import type {
     DiscoveryDevice,
     DiscoveryJob,
@@ -28,6 +29,9 @@ import type {
     ModelPortIntent,
     OutputConfig,
     PixelPortInfo,
+    SerialPortConfig,
+    SerialPortInfo,
+    SetOutputsOptions,
 } from '@ezplayer/epp-controllers';
 import {
     discover,
@@ -36,12 +40,17 @@ import {
     deriveXlightsPortConfigs,
     expandModelStrings,
     getCapabilities,
+    loadBundledCapabilities,
     checkUpload,
 } from '@ezplayer/epp-controllers';
 import { hostNetworks } from '../cli/net.js';
 import * as fsp from 'fs/promises';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The capability registry (xLights .xcontroller definitions, bundled in the
+// lib) is empty until loaded; every getCapabilities() below depends on it.
+loadBundledCapabilities();
 
 // Hard cap on concurrent local discovery scans.
 const MAX_CONCURRENT_SCANS = 2;
@@ -88,7 +97,21 @@ function recordFile(showFolder: string, name: string): string {
 }
 
 function deriveKnown(): void {
-    state.known = applyOverrides(xlightsKnown, records);
+    state.known = applyOverrides(xlightsKnown, records).map(withPortCounts);
+}
+
+/** Stamp the pixel/serial port counts from the controller's capability
+ *  definition (vendor/model/variant), so the port map can draw every port the
+ *  controller has rather than only the ones in use. */
+function withPortCounts(k: KnownController): KnownController {
+    if ((k.pixelPortCount !== undefined && k.serialPortCount !== undefined) || !k.vendor || !k.model) return k;
+    const caps = getCapabilities(k.vendor, k.model, k.variant ?? '');
+    if (!caps) return k;
+    return {
+        ...k,
+        pixelPortCount: k.pixelPortCount ?? caps.maxPixelPort,
+        serialPortCount: k.serialPortCount ?? caps.maxSerialPort,
+    };
 }
 
 function parseRecord(data: unknown): EzpControllerRecord | null {
@@ -280,6 +303,19 @@ function toControllerPort(p: PixelPortInfo): ControllerPort {
     };
 }
 
+/** Driver serial-port report -> ControllerSerialPort (the "actual" side). */
+function toControllerSerialPort(p: SerialPortInfo): ControllerSerialPort {
+    return {
+        port: p.port,
+        protocol: p.protocol,
+        startChannel: p.startChannel,
+        channels: p.channels,
+        universe: p.universe,
+        device: p.device,
+        model: p.model,
+    };
+}
+
 /** epp-controllers DiscoveryDevice → lean core DiscoveredController. */
 function toController(d: DiscoveryDevice): DiscoveredController {
     return {
@@ -298,6 +334,9 @@ function toController(d: DiscoveryDevice): DiscoveredController {
         detail: d.detail as DiscoveredController['detail'],
         // Structured per-port config (full depth only) — reconcile's "actual" side.
         pixelPorts: d.report?.pixelPorts?.map(toControllerPort),
+        pixelPortCount: d.report?.pixelPortCount,
+        serialPorts: d.report?.serialPorts?.map(toControllerSerialPort),
+        serialPortCount: d.report?.serialPortCount,
         inputs: d.report?.inputs,
         error: d.error,
         seenAt: nowIso(),
@@ -314,6 +353,9 @@ function mergeDevice(d: DiscoveryDevice): void {
         // carries no driver identity — keep the previous values in that case.
         if (next.detail === undefined) next.detail = prev.detail;
         if (next.pixelPorts === undefined) next.pixelPorts = prev.pixelPorts;
+        if (next.pixelPortCount === undefined) next.pixelPortCount = prev.pixelPortCount;
+        if (next.serialPorts === undefined) next.serialPorts = prev.serialPorts;
+        if (next.serialPortCount === undefined) next.serialPortCount = prev.serialPortCount;
         if (next.inputs === undefined) next.inputs = prev.inputs;
         if (next.driverType === undefined) next.driverType = prev.driverType;
         if (next.vendor === undefined) next.vendor = prev.vendor;
@@ -323,6 +365,8 @@ function mergeDevice(d: DiscoveryDevice): void {
         if (next.oui === undefined) next.oui = prev.oui;
         if (next.hostname === undefined) next.hostname = prev.hostname;
     }
+    // Seen by a scan again, keep whatever an earlier refresh found.
+    next.unreachable = false;
     state.devices[key] = next;
 }
 
@@ -395,6 +439,8 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
     const { name, patch } = command;
     const existing = records.find((r) => r.name === name);
     const merged: EzpControllerRecord = { ...(existing ?? { name }), ...patch, name };
+    // A patch is a merge, so "clear the override" arrives as an explicit 0
+    if (merged.fpsOverride !== undefined && !(merged.fpsOverride > 0)) delete merged.fpsOverride;
 
     const dir = recordsDir(recordsShowFolder);
     await fsp.mkdir(dir, { recursive: true });
@@ -445,6 +491,17 @@ async function runStatus(
     try {
         const probe = await probeController(dev.ip, proxyFor(dev), { detail: true, preferDriver: dev.driverType });
         if (!probe.success || !probe.report) {
+            if (probe.unreachable && state.devices[command.id]) {
+                // Seen before, gone now.
+                state.devices[command.id] = {
+                    ...dev,
+                    unreachable: true,
+                    error: 'not responding — powered off or unreachable',
+                };
+                throw new Error(
+                    `${dev.model || dev.driverType || dev.ip} is not responding (powered off or unreachable)`,
+                );
+            }
             throw new Error(probe.error ?? 'no controller responded');
         }
         state.devices[command.id] = {
@@ -456,9 +513,13 @@ async function runStatus(
             firmwareVersion: probe.report.firmwareVersion ?? dev.firmwareVersion,
             detail: reportToTree(probe.report) as DiscoveredController['detail'],
             pixelPorts: probe.report.pixelPorts?.map(toControllerPort),
+            pixelPortCount: probe.report.pixelPortCount ?? dev.pixelPortCount,
+            serialPorts: probe.report.serialPorts?.map(toControllerSerialPort),
+            serialPortCount: probe.report.serialPortCount ?? dev.serialPortCount,
             inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
             error: undefined,
+            unreachable: false,
             seenAt: nowIso(),
         };
         op.status = 'done';
@@ -580,7 +641,7 @@ async function runUpload(
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
     const wantStrings = command.scope !== 'inputs';
     const wantInputs = command.scope !== 'strings';
-    if (wantStrings && !rec.modelIntents?.length) {
+    if (wantStrings && !rec.modelIntents?.length && !rec.serialPorts?.length) {
         throw new Error(`"${rec.name}" has no model/port intent from xLights to upload`);
     }
     if (wantInputs && !rec.outputs?.length) {
@@ -674,9 +735,30 @@ async function runUpload(
                 }
             }
             for (const s of derived.skipped) warnings.push(`port ${s.port} skipped: ${s.detail}`);
-            if (derived.ports.length === 0) throw new Error('derivation produced no uploadable ports');
-            capCheck({ pixelPorts: derived.ports, serialPorts: [] });
-            const r = await probe.driver.setOutputs(derived.ports, []);
+            // Serial (DMX/Renard/LOR) ports ride alongside, never as pixels.
+            const serialPorts: SerialPortConfig[] = (rec.serialPorts ?? [])
+                .filter((sp) => sp.channels > 0 && sp.startChannel !== undefined)
+                .map((sp) => ({
+                    port: sp.port - 1, // 1-based xLights port → 0-based config index
+                    protocol: sp.protocol ?? 'dmx',
+                    startChannel: sp.startChannel!,
+                    channels: sp.channels,
+                }));
+            if (derived.ports.length === 0 && serialPorts.length === 0) {
+                throw new Error('derivation produced no uploadable ports');
+            }
+            capCheck({ pixelPorts: derived.ports, serialPorts });
+            const setOpts: SetOutputsOptions = {
+                inputMode: rec.protocol?.toUpperCase(),
+                outputs: outputs.length
+                    ? outputs.map((o) => ({
+                          universe: o.universe ?? 0,
+                          startChannel: o.startChannel,
+                          channels: o.channels,
+                      }))
+                    : undefined,
+            };
+            const r = await probe.driver.setOutputs(derived.ports, serialPorts, setOpts);
             if (!r.success)
                 throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
@@ -699,8 +781,12 @@ async function runUpload(
                     ...dev,
                     detail: reportToTree(verify.report) as DiscoveredController['detail'],
                     pixelPorts: verify.report.pixelPorts?.map(toControllerPort),
+                    pixelPortCount: verify.report.pixelPortCount ?? dev.pixelPortCount,
+                    serialPorts: verify.report.serialPorts?.map(toControllerSerialPort),
+                    serialPortCount: verify.report.serialPortCount ?? dev.serialPortCount,
                     inputs: verify.report.inputs,
                     error: undefined,
+                    unreachable: false,
                     seenAt: nowIso(),
                 };
             }
@@ -772,6 +858,7 @@ async function runScan(
         // A cancelled job still resolves result(); the final progress phase
         // says how the run actually ended.
         op.status = op.progress?.phase === 'cancelled' ? 'cancelled' : 'done';
+        if (op.status === 'done') markUnseenUnreachable(request.networks, result.devices);
         op.finishedAt = nowIso();
         publish();
         return result;
@@ -785,6 +872,23 @@ async function runScan(
         scanJobs.delete(op.id);
         activeScans--;
         pruneOps();
+    }
+}
+
+/**
+ * After a completed scan, flag directly-reached devices that the scan did
+ *  NOT find as unreachable so the grid shows its record absent.
+ */
+function markUnseenUnreachable(networks: { cidr: string }[], found: DiscoveryDevice[]): void {
+    if (networks.length === 0) return;
+    const seen = new Set(found.map(deviceKey));
+    for (const dev of Object.values(state.devices)) {
+        if (dev.source.via !== 'direct' || seen.has(dev.id)) continue;
+        if (!networks.some((n) => ipInCidr(dev.ip, n.cidr))) continue;
+        if (!dev.unreachable) {
+            dev.unreachable = true;
+            dev.error = 'not found by the last scan of its network';
+        }
     }
 }
 

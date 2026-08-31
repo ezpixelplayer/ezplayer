@@ -27,6 +27,7 @@ import type {
     PlayerPStatusContent,
 } from '@ezplayer/ezplayer-core';
 
+import type { BatchImportProgress } from '@ezplayer/ezplayer-core';
 import type { IpcRendererEvent } from 'electron';
 
 export interface M2RIPC<Payload> {
@@ -47,6 +48,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     batchImportSequences: (fseqPaths: string[]) => ipcRenderer.invoke('ipcBatchImportSequences', fseqPaths),
     batchImportSequencesFromFolder: (folderPath: string) =>
         ipcRenderer.invoke('ipcBatchImportSequencesFromFolder', folderPath),
+    onBatchImportProgress: (callback: (p: BatchImportProgress) => void) => {
+        ipcRenderer.on('update:batchImportProgress', (_event: IpcRendererEvent, p: BatchImportProgress) => {
+            callback(p);
+        });
+    },
 
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) =>
         ipcRenderer.invoke('dialog:openDirectory', options),

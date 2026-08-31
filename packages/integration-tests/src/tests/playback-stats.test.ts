@@ -66,7 +66,7 @@ beforeAll(async () => {
         body: JSON.stringify([{ files: { fseq: 'SongA.fseq' }, work: { title: 'Song A', artist: '', length: 0 } }]),
     });
     expect(reg.status).toBe(200);
-    // …and wait for the player to pick the record up.
+    // wait for the player to pick the record up.
     const deadline = Date.now() + 30_000;
     for (;;) {
         const sequences = (await fpp.currentShow()).sequences;

@@ -39,6 +39,13 @@ Shared Audio** (needs Bluetooth LE Audio on the PC and both accessories). For
 app-level multi-output testing, prefer **wired/USB** devices, or one wired + one
 Bluetooth.
 
+## Loudness Normalization
+
+If set, all songs added will have loudness normalization applied by default.
+By normalizing audio, overall volume level will be consistent across songs, 
+and audio will play well on FM radio, outdoor speakers, phones,
+etc.
+
 ## Audio Sync Adjust
 
 Fine-tune how audio lines up with the light sequence. The slider runs from

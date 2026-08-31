@@ -33,6 +33,8 @@ export interface SequenceDetails {
 
 export interface SequenceSettings {
     volume_adj?: number;
+    /** Bake EBU R128 loudness normalization into the playable (cached) audio. */
+    normalize?: boolean;
     lead_time?: number;
     trail_time?: number;
     tags?: string[];
@@ -620,6 +622,8 @@ export interface JukeboxSettings {
 
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
+    /** Default for `settings.normalize` on songs added locally; cloud songs arrive normalized. */
+    normalizeNewSongs?: boolean;
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;

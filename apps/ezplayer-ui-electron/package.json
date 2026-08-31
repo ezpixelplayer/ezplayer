@@ -28,10 +28,12 @@
             "node_modules/@ezplayer/icmp-ping/package.json",
             "node_modules/@ezplayer/icmp-ping/build/Release/*.node",
             "node_modules/@lydell/node-pty/**/*",
-            "node_modules/@lydell/node-pty-*/**/*"
+            "node_modules/@lydell/node-pty-*/**/*",
+            "node_modules/ffmpeg-static/**/*"
         ],
         "asarUnpack": [
-            "**/*.node"
+            "**/*.node",
+            "**/ffmpeg-static/**"
         ],
         "extraResources": [
             {
@@ -149,7 +151,7 @@
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
-        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.16.tgz",
+        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.18.tgz",
         "@ezplayer/ezplayer-client": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/icmp-ping": "workspace:*",
@@ -174,6 +176,7 @@
         "debug": "^4.4.3",
         "electron-store": "^10.1.0",
         "electron-updater": "^6.8.9",
+        "ffmpeg-static": "^5.2.0",
         "i18next": "catalog:",
         "jszip": "catalog:",
         "koa": "^3.2.1",
