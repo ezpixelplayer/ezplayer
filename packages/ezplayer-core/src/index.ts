@@ -157,6 +157,7 @@ export type {
     ImageInfo,
     AudioTagMetadata,
     BatchImportFailure,
+    BatchImportProgress,
     BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,

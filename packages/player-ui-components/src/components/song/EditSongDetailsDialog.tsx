@@ -657,10 +657,6 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         }
                                         label="Normalize volume"
                                     />
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                        Plays a loudness-normalized copy (EBU R128, -16 LUFS). The original file is not
-                                        changed.
-                                    </Typography>
                                 </Grid>
                                 <Grid item xs={6}>
                                     <Autocomplete

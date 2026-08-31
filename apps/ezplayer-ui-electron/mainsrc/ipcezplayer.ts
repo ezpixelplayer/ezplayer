@@ -947,6 +947,7 @@ export async function registerContentHandlers(
             mediaFolder,
             showFolder: getCurrentShowFolder() ?? undefined,
             normalize: getSettingsCache()?.normalizeNewSongs,
+            onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -957,6 +958,7 @@ export async function registerContentHandlers(
             mediaFolder,
             showFolder: getCurrentShowFolder() ?? undefined,
             normalize: getSettingsCache()?.normalizeNewSongs,
+            onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });

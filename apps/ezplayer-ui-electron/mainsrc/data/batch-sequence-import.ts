@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type {
     BatchImportFailure,
+    BatchImportProgress,
     BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
@@ -24,6 +25,8 @@ export interface BatchImportOptions extends AutoDetectOptions {
     showFolder?: string;
     /** `settings.normalize` for the imported songs (the "normalize new songs" default). */
     normalize?: boolean;
+    /** Called as each fseq starts importing (audio derivation makes this slow) and once at the end. */
+    onProgress?: (p: BatchImportProgress) => void;
 }
 
 /**
@@ -186,6 +189,11 @@ export async function batchImportSequences(
             console.log(`[BatchImport] Skipped "${fseqName}" (already imported)`);
             continue;
         }
+        options.onProgress?.({
+            done: successes.length + failures.length + skipped.length,
+            total: unique.length,
+            fseqName,
+        });
         const result = await importOneFseq(fseqPath, options);
         if (result.ok) {
             successes.push(result.success);
@@ -201,6 +209,7 @@ export async function batchImportSequences(
         await options.putSequences(recordsToSave);
     }
 
+    options.onProgress?.({ done: unique.length, total: unique.length });
     const summary: BatchImportSummary = {
         total: unique.length,
         imported: successes.length,

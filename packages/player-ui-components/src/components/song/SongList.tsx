@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-ui-components';
 
-import type { BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
+import type { BatchImportProgress, BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
 import { batchImportShowSequences, batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
@@ -227,6 +227,8 @@ export function SongList({
     const [tagInputValue, setTagInputValue] = useState('');
     const [bulkMenuAnchor, setBulkMenuAnchor] = useState<null | HTMLElement>(null);
     const [bulkImporting, setBulkImporting] = useState(false);
+    /** Bulk-import progress: per-song from Electron events; count-only on the web. */
+    const [importProgress, setImportProgress] = useState<BatchImportProgress | null>(null);
     const [bulkSummary, setBulkSummary] = useState<BatchImportSummary | null>(null);
     const [bulkSummaryOpen, setBulkSummaryOpen] = useState(false);
     const [showFolderImportOpen, setShowFolderImportOpen] = useState(false);
@@ -253,6 +255,13 @@ export function SongList({
         setOpenEditDialog(false);
     };
 
+    useEffect(() => {
+        // Electron reports per-song progress while a bulk import runs.
+        if (typeof window !== 'undefined' && window.electronAPI?.onBatchImportProgress) {
+            window.electronAPI.onBatchImportProgress((p) => setImportProgress(p));
+        }
+    }, []);
+
     const runBulkImport = async (runner: () => Promise<BatchImportSummary | undefined>) => {
         setBulkImporting(true);
         try {
@@ -278,6 +287,7 @@ export function SongList({
             setBulkSummaryOpen(true);
         } finally {
             setBulkImporting(false);
+            setImportProgress(null);
         }
     };
 
@@ -345,6 +355,7 @@ export function SongList({
         console.log(
             `[BulkImport] Uploading+importing ${fseqFiles.length} fseq(s), ${companionAudioNames.length} companion audio(s) in one request…`,
         );
+        setImportProgress({ done: 0, total: toUpload.length });
         return dispatch(batchUploadImportShowSequences({ files: toUpload, companionAudioNames })).unwrap();
     };
 
@@ -424,6 +435,7 @@ export function SongList({
                 console.log(
                     `[BulkImport] LAN media folder: uploading ${companions.length} audio(s), retrying ${importFseqNames.length} sequence(s)…`,
                 );
+                setImportProgress({ done: 0, total: importFseqNames.length });
                 return dispatch(
                     batchUploadImportShowSequences({
                         files: companions.map((f) => ({ name: f.name, data: f as Blob })),
@@ -514,6 +526,7 @@ export function SongList({
         setShowFolderImportOpen(false);
         await runBulkImport(async () => {
             console.log(`[BulkImport] Importing ${fseqNames.length} existing show-folder sequence(s)…`);
+            setImportProgress({ done: 0, total: fseqNames.length });
             return dispatch(batchImportShowSequences({ fseqNames, allowExistingAudio: true })).unwrap();
         });
     };
@@ -881,7 +894,13 @@ export function SongList({
                                     }
                                     disabled={bulkImporting}
                                 >
-                                    Bulk Import
+                                    {bulkImporting
+                                        ? importProgress && importProgress.total > 0
+                                            ? isElectron()
+                                                ? `Importing ${Math.min(importProgress.done + 1, importProgress.total)}/${importProgress.total}...`
+                                                : `Importing ${importProgress.total} song(s)...`
+                                            : 'Importing...'
+                                        : 'Bulk Import'}
                                 </Button>
                                 <Menu
                                     anchorEl={bulkMenuAnchor}

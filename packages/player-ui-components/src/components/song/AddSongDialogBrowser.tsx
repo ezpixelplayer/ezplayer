@@ -3,10 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     Autocomplete,
     Button,
+    Checkbox,
     Dialog,
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     LinearProgress,
     Typography,
@@ -44,6 +46,11 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
 
     const availableTags = useSelector((state: RootState) => state.sequences.tags);
     const normalizeNewSongs = useSelector((state: RootState) => state.playbackSettings.settings.normalizeNewSongs);
+    /** Normalize volume for this song; defaults from Audio Settings each time the dialog opens. */
+    const [normalize, setNormalize] = useState(false);
+    useEffect(() => {
+        if (open) setNormalize(normalizeNewSongs === true);
+    }, [open, normalizeNewSongs]);
     /** Save in flight: derived audio is built on the player before the record commits. */
     const [saving, setSaving] = useState(false);
 
@@ -244,6 +251,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     lead_time: parseFloat(newSongData.lead_time) || 0,
                     trail_time: parseFloat(newSongData.trail_time) || 0,
                     volume_adj: parseFloat(newSongData.volume_adj) || 0,
+                    normalize,
                     tags: newSongData.tags,
                 },
             };
@@ -398,6 +406,23 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                         <Grid item xs={6}>
+                            <Autocomplete
+                                multiple
+                                freeSolo
+                                options={availableTags}
+                                value={newSongData.tags}
+                                onChange={(_, newValue) => {
+                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
+                                    newValue.forEach((tag) => {
+                                        if (tag && !availableTags.includes(tag)) {
+                                            dispatch(setSequenceTags([...availableTags, tag]));
+                                        }
+                                    });
+                                }}
+                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
                             <TextField
                                 label="Lead Time"
                                 name="lead_time"
@@ -431,20 +456,20 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                         <Grid item xs={6}>
-                            <Autocomplete
-                                multiple
-                                freeSolo
-                                options={availableTags}
-                                value={newSongData.tags}
-                                onChange={(_, newValue) => {
-                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
-                                    newValue.forEach((tag) => {
-                                        if (tag && !availableTags.includes(tag)) {
-                                            dispatch(setSequenceTags([...availableTags, tag]));
-                                        }
-                                    });
-                                }}
-                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            <FormControlLabel
+                                sx={{ mt: 1 }}
+                                control={
+                                    <Checkbox
+                                        checked={normalize}
+                                        onChange={(e) => {
+                                            const next = e.target.checked;
+                                            setNormalize(next);
+                                            // Normalized audio makes a manual offset redundant; start from 0.
+                                            if (next) setNewSongData((prev) => ({ ...prev, volume_adj: '0' }));
+                                        }}
+                                    />
+                                }
+                                label="Normalize volume"
                             />
                         </Grid>
                     </Grid>
@@ -496,11 +521,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             Cancel
                         </Button>
                     </Box>
-                    <SongSaveProgress
-                        saving={saving}
-                        audio={mp3File?.name ?? mp3PlayerName}
-                        normalize={normalizeNewSongs === true}
-                    />
+                    <SongSaveProgress saving={saving} audio={mp3File?.name ?? mp3PlayerName} normalize={normalize} />
                 </form>
             </>
             <ServerFilePickerDialog

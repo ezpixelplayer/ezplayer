@@ -4,10 +4,12 @@ import {
     Autocomplete,
     Box,
     Button,
+    Checkbox,
     Dialog,
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     Typography,
 } from '@mui/material';
@@ -54,6 +56,11 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     /** Save in flight: derived audio is built before the record commits. */
     const [saving, setSaving] = useState(false);
     const normalizeNewSongs = useSelector((state: RootState) => state.playbackSettings.settings.normalizeNewSongs);
+    /** Normalize volume for this song; defaults from Audio Settings each time the dialog opens. */
+    const [normalize, setNormalize] = useState(false);
+    useEffect(() => {
+        if (open) setNormalize(normalizeNewSongs === true);
+    }, [open, normalizeNewSongs]);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -275,6 +282,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     lead_time: parseFloat(newSongData.lead_time) || 0,
                     trail_time: parseFloat(newSongData.trail_time) || 0,
                     volume_adj: parseFloat(newSongData.volume_adj) || 0,
+                    normalize,
                     tags: newSongData.tags,
                 },
             };
@@ -416,6 +424,23 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                         <Grid item xs={6}>
+                            <Autocomplete
+                                multiple
+                                freeSolo
+                                options={availableTags}
+                                value={newSongData.tags}
+                                onChange={(_, newValue) => {
+                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
+                                    newValue.forEach((tag) => {
+                                        if (tag && !availableTags.includes(tag)) {
+                                            dispatch(setSequenceTags([...availableTags, tag]));
+                                        }
+                                    });
+                                }}
+                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
                             <TextField
                                 label="Volume Adjustment"
                                 name="volume_adj"
@@ -424,6 +449,23 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 inputProps={{ min: -100, max: 100 }}
                                 fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <FormControlLabel
+                                sx={{ mt: 1 }}
+                                control={
+                                    <Checkbox
+                                        checked={normalize}
+                                        onChange={(e) => {
+                                            const next = e.target.checked;
+                                            setNormalize(next);
+                                            // Normalized audio makes a manual offset redundant; start from 0.
+                                            if (next) setNewSongData((prev) => ({ ...prev, volume_adj: '0' }));
+                                        }}
+                                    />
+                                }
+                                label="Normalize volume"
                             />
                         </Grid>
                         <Grid item xs={6}>
@@ -446,24 +488,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 inputProps={{ min: -5, max: 5 }}
                                 fullWidth
-                            />
-                        </Grid>
-
-                        <Grid item xs={6}>
-                            <Autocomplete
-                                multiple
-                                freeSolo
-                                options={availableTags}
-                                value={newSongData.tags}
-                                onChange={(_, newValue) => {
-                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
-                                    newValue.forEach((tag) => {
-                                        if (tag && !availableTags.includes(tag)) {
-                                            dispatch(setSequenceTags([...availableTags, tag]));
-                                        }
-                                    });
-                                }}
-                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
                             />
                         </Grid>
                     </Grid>
@@ -501,7 +525,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             Cancel
                         </Button>
                     </Box>
-                    <SongSaveProgress saving={saving} audio={mp3File} normalize={normalizeNewSongs === true} />
+                    <SongSaveProgress saving={saving} audio={mp3File} normalize={normalize} />
                 </form>
             </>
         </Box>
