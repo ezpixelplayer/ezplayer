@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import type { PreviewRenderHandle } from './RenderBridge';
 import {
     ToggleButton,
     ToggleButtonGroup,
@@ -147,6 +148,11 @@ export interface Preview3DProps {
     /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
      *  storage-shaped JSON */
     captureViewStateRef?: React.MutableRefObject<(() => string | null) | null>;
+    /** Stop the active viewer's frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
+     *  Used for deterministic offline rendering (video export). */
+    renderOnDemand?: boolean;
+    /** Registers the active viewer's imperative render handle (null when the viewer unmounts). */
+    onRenderHandle?: (handle: PreviewRenderHandle | null) => void;
 }
 
 export const Preview3D: React.FC<Preview3DProps> = ({
@@ -167,6 +173,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     mode = 'standalone',
     compact = false,
     captureViewStateRef,
+    renderOnDemand = false,
+    onRenderHandle,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
@@ -1358,6 +1366,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onGetCurrentCameraState={handleGetCurrentCameraState3D}
                                     fillContainer
                                     forceOrbitControls={preferOrbitControls}
+                                    renderOnDemand={renderOnDemand}
+                                    onRenderHandle={onRenderHandle}
                                 />
                             ) : (
                                 <Viewer2D
@@ -1384,6 +1394,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     cameraStateLoaded={cameraStateLoaded}
                                     onGetCurrentCameraState={handleGetCurrentCameraState2D}
                                     fillContainer
+                                    renderOnDemand={renderOnDemand}
+                                    onRenderHandle={onRenderHandle}
                                 />
                             );
                         })()
