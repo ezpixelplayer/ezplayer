@@ -34,6 +34,8 @@ export type {
     CloudPlayerSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    AdditionalAudioOutput,
+    VolumeControlState,
     CloudPollScheduleEntry,
     PlayerWebSocketSnapshot,
     PlayerWebSocketPing,
@@ -176,6 +178,7 @@ export {
     audioExtension,
     isSupportedAudioName,
     needsAudioConversion,
+    songVolumeScale,
 } from './util/audioFormats';
 
 export {

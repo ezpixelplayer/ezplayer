@@ -25,6 +25,8 @@ import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
 import { reportDiagEvent } from './diagnostics.js';
 import { safeSend } from './safe-send.js';
+import { syncAudioOutputsFromSettings } from './audioWindows.js';
+import { getAudioOutputDevices } from './ipcmain.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import { isFeatureEnabled } from './remoteaccess.js';
 import {
@@ -112,14 +114,23 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         }
     },
     sendPlaybackSettings: (settings: unknown) => {
+        const playbackSettings = settings as PlaybackSettings;
+        syncAudioOutputsFromSettings(playbackSettings);
         if (playWorkerRef) {
             playWorkerRef.postMessage({
                 type: 'settings',
-                settings: settings as PlaybackSettings,
+                settings: playbackSettings,
             });
         }
         const mainWindow = getMainWindowRef?.();
         safeSend(mainWindow, 'update:playbacksettings', settings);
+    },
+    getAudioOutputDevices: async () => {
+        const mainWindow = getMainWindowRef?.();
+        if (!mainWindow) {
+            return [];
+        }
+        return await getAudioOutputDevices(mainWindow);
     },
     sendToMainWindow: (channel: string, ...args: unknown[]) => {
         const mainWindow = getMainWindowRef?.();

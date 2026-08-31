@@ -8,12 +8,29 @@ export interface M2RIPC<Payload> {
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+/** Sink id passed from main via webPreferences.additionalArguments. */
+function sinkIdFromArgv(): string {
+    const raw = process.argv.find((a: string) => a.startsWith('--ezp-audio-sink='));
+    if (!raw) return '';
+    try {
+        return decodeURIComponent(raw.slice('--ezp-audio-sink='.length));
+    } catch {
+        return raw.slice('--ezp-audio-sink='.length);
+    }
+}
+
+const configuredSinkId = sinkIdFromArgv();
+
 contextBridge.exposeInMainWorld('electronAPI', {
     connect() {
         return ipcRenderer.invoke('ipcUIConnect');
     },
     disconnect() {
         return ipcRenderer.invoke('ipcUIDisconnect');
+    },
+    /** Device id this audio window should bind to ('' = system default). */
+    getAudioSinkId(): string {
+        return configuredSinkId;
     },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
         ipcRenderer.on('audio:get-devices', async (_event: IpcRendererEvent, req: M2RIPC<void>) => {
@@ -27,4 +44,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-} satisfies Partial<EZPElectronAPI>);
+    /** Linear amplitude 0–1 for this window's GainNode (per-sink volume). */
+    onAudioGain: (callback: (gain: number) => void) => {
+        ipcRenderer.on('audio:gain', (_event: IpcRendererEvent, gain: number) => {
+            callback(gain);
+        });
+    },
+} satisfies Partial<EZPElectronAPI> & {
+    getAudioSinkId: () => string;
+    onAudioGain: (callback: (gain: number) => void) => void;
+});

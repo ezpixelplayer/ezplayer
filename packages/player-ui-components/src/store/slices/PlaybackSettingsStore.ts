@@ -1,7 +1,43 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { PlaybackSettings, ViewerControlScheduleEntry, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import {
+    AdditionalAudioOutput,
+    PlaybackSettings,
+    ViewerControlScheduleEntry,
+    VolumeControlState,
+    VolumeScheduleEntry,
+} from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
+
+function newAdditionalOutputId(): string {
+    return `aaudio-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function defaultVolumeControl(): VolumeControlState {
+    return { defaultVolume: 100, schedule: [] };
+}
+
+/** Migrate deprecated `audioOutputDeviceIds` → `additionalAudioOutputs`. */
+function migrateAdditionalAudioOutputs(input: PlaybackSettings): AdditionalAudioOutput[] | undefined {
+    if (input.additionalAudioOutputs && input.additionalAudioOutputs.length > 0) {
+        return input.additionalAudioOutputs.map((o) => ({
+            id: o.id || newAdditionalOutputId(),
+            deviceId: o.deviceId ?? '',
+            volumeControl: {
+                defaultVolume: o.volumeControl?.defaultVolume ?? 100,
+                schedule: o.volumeControl?.schedule ?? [],
+            },
+        }));
+    }
+    if (input.audioOutputDeviceIds && input.audioOutputDeviceIds.length > 0) {
+        return input.audioOutputDeviceIds.filter(Boolean).map((deviceId) => ({
+            id: newAdditionalOutputId(),
+            deviceId,
+            volumeControl: defaultVolumeControl(),
+        }));
+    }
+    return undefined;
+}
 
 /**
  * Playback settings slice — durable, user-editable settings (audio sync, jukebox
@@ -32,8 +68,10 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
     // is null/undefined, so `viewerControl: { enabled: true }` with `schedule`
     // missing slips through and crashes downstream `.schedule.length` reads.
     // Spread defaults first, then input, then explicitly re-default arrays.
+    const additionalAudioOutputs = migrateAdditionalAudioOutputs(input);
+    const { audioOutputDeviceIds: _deprecatedIds, ...rest } = input;
     return {
-        ...input,
+        ...rest,
         audioSyncAdjust: input.audioSyncAdjust ?? 0,
         backgroundSequence: input.backgroundSequence ?? 'overlay',
         viewerControl: {
@@ -52,6 +90,10 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             includedTags: includedNormalized,
         },
         testSequenceTags: normalizeTagList(input.testSequenceTags, DEFAULT_TEST_SEQUENCE_TAGS),
+        useDefaultAudioOutput: input.useDefaultAudioOutput !== false,
+        systemDefaultOutputDeviceId: input.systemDefaultOutputDeviceId ?? undefined,
+        primaryAudioOutputDeviceId: input.primaryAudioOutputDeviceId ?? undefined,
+        additionalAudioOutputs,
     };
 }
 
@@ -188,6 +230,104 @@ const playbackSettingsSlice = createSlice({
                 (e) => e.id !== action.payload,
             );
         },
+
+        /** Electron: play to system default output (uses `volumeControl`). */
+        setUseDefaultAudioOutput(state, action: PayloadAction<boolean>) {
+            state.settings.useDefaultAudioOutput = action.payload;
+            if (!action.payload) {
+                delete state.settings.primaryAudioOutputDeviceId;
+                const sysDefaultId = state.settings.systemDefaultOutputDeviceId;
+                const kept = (state.settings.additionalAudioOutputs ?? []).filter(
+                    (o) =>
+                        o.deviceId &&
+                        o.deviceId !== 'default' &&
+                        o.deviceId !== 'communications' &&
+                        o.deviceId !== sysDefaultId,
+                );
+                state.settings.additionalAudioOutputs = kept.length > 0 ? kept : undefined;
+            }
+        },
+
+        setSystemDefaultOutputDeviceId(state, action: PayloadAction<string | undefined>) {
+            const next = action.payload?.trim();
+            state.settings.systemDefaultOutputDeviceId = next || undefined;
+        },
+
+        /** Electron primary sink (`''` / omit = system Default). */
+        setPrimaryAudioOutputDeviceId(state, action: PayloadAction<string>) {
+            const next = action.payload;
+            state.settings.primaryAudioOutputDeviceId = next ? next : undefined;
+        },
+
+        /** Electron: replace the full additional-outputs list. */
+        setAdditionalAudioOutputs(state, action: PayloadAction<AdditionalAudioOutput[]>) {
+            state.settings.additionalAudioOutputs =
+                action.payload.length > 0 ? action.payload : undefined;
+            delete state.settings.audioOutputDeviceIds;
+        },
+        addAdditionalAudioOutput(state, action: PayloadAction<AdditionalAudioOutput>) {
+            (state.settings.additionalAudioOutputs ??= []).push({
+                ...action.payload,
+                id: action.payload.id || newAdditionalOutputId(),
+                volumeControl: action.payload.volumeControl ?? defaultVolumeControl(),
+            });
+            delete state.settings.audioOutputDeviceIds;
+        },
+        removeAdditionalAudioOutput(state, action: PayloadAction<string>) {
+            const next = (state.settings.additionalAudioOutputs ?? []).filter((o) => o.id !== action.payload);
+            state.settings.additionalAudioOutputs = next.length > 0 ? next : undefined;
+        },
+        updateAdditionalAudioOutput(
+            state,
+            action: PayloadAction<{ id: string; patch: Partial<Omit<AdditionalAudioOutput, 'id'>> }>,
+        ) {
+            const list = state.settings.additionalAudioOutputs ?? [];
+            const idx = list.findIndex((o) => o.id === action.payload.id);
+            if (idx < 0) return;
+            const cur = list[idx];
+            const patch = action.payload.patch;
+            list[idx] = {
+                ...cur,
+                ...patch,
+                id: cur.id,
+                volumeControl: patch.volumeControl
+                    ? {
+                          defaultVolume: patch.volumeControl.defaultVolume ?? cur.volumeControl.defaultVolume,
+                          schedule: patch.volumeControl.schedule ?? cur.volumeControl.schedule ?? [],
+                      }
+                    : cur.volumeControl,
+            };
+        },
+        setAdditionalAudioOutputDeviceId(state, action: PayloadAction<{ id: string; deviceId: string }>) {
+            const entry = (state.settings.additionalAudioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (entry) entry.deviceId = action.payload.deviceId;
+        },
+        setAdditionalAudioOutputVolume(state, action: PayloadAction<{ id: string; volume: number }>) {
+            const entry = (state.settings.additionalAudioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (entry) {
+                entry.volumeControl = entry.volumeControl ?? defaultVolumeControl();
+                entry.volumeControl.defaultVolume = action.payload.volume;
+            }
+        },
+        addAdditionalAudioOutputScheduleEntry(
+            state,
+            action: PayloadAction<{ id: string; entry: VolumeScheduleEntry }>,
+        ) {
+            const entry = (state.settings.additionalAudioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (!entry) return;
+            entry.volumeControl = entry.volumeControl ?? defaultVolumeControl();
+            (entry.volumeControl.schedule ??= []).push(action.payload.entry);
+        },
+        removeAdditionalAudioOutputScheduleEntry(
+            state,
+            action: PayloadAction<{ id: string; entryId: string }>,
+        ) {
+            const entry = (state.settings.additionalAudioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (!entry?.volumeControl?.schedule) return;
+            entry.volumeControl.schedule = entry.volumeControl.schedule.filter(
+                (e) => e.id !== action.payload.entryId,
+            );
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -227,6 +367,17 @@ export const {
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
+    setUseDefaultAudioOutput,
+    setSystemDefaultOutputDeviceId,
+    setPrimaryAudioOutputDeviceId,
+    setAdditionalAudioOutputs,
+    addAdditionalAudioOutput,
+    removeAdditionalAudioOutput,
+    updateAdditionalAudioOutput,
+    setAdditionalAudioOutputDeviceId,
+    setAdditionalAudioOutputVolume,
+    addAdditionalAudioOutputScheduleEntry,
+    removeAdditionalAudioOutputScheduleEntry,
 } = playbackSettingsSlice.actions;
 
 export const playbackSettingsActions = playbackSettingsSlice.actions;

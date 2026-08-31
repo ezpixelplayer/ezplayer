@@ -36,6 +36,14 @@ import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
 import { runCli } from './cli/dispatch.js';
 import type { Event as ElectronEvent } from 'electron';
+import {
+    audioWindowDevUrl,
+    audioWindowHtmlPath,
+    configureAudioWindowPaths,
+    destroyAllAudioWindows,
+    setAudioWindowsEnabled,
+    syncAudioOutputsFromSettings,
+} from './mainsrc/audioWindows.js';
 
 import os from 'os';
 
@@ -111,10 +119,7 @@ export function getMainWindow() {
     return mainWindow;
 }
 
-let audioWindow: BrowserWindow | null = null;
-export function getAudioWindow() {
-    return audioWindow;
-}
+export { getAudioWindows as getAudioWindow } from './mainsrc/audioWindows.js';
 
 let isQuitting = false;
 
@@ -157,21 +162,15 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     }
     const splashShownAt = Date.now();
 
-    audioWindow = new BrowserWindow({
-        show: false,
-
-        webPreferences: {
-            preload: path.join(__dirname, 'preload-audio.js'),
-            contextIsolation: true,
-            webSecurity: false,
-            // Hidden window default-throttles audio render; keep it full-priority.
-            backgroundThrottling: false,
-        },
+    configureAudioWindowPaths({
+        preloadPath: path.join(__dirname, 'preload-audio.js'),
+        htmlFilePath: audioWindowHtmlPath(__dirname),
+        // Dev must use Vite — dist/audio-window.html is only refreshed on build:react
+        // and a stale bundle ignores sinkId (every window plays the system default).
+        htmlBaseUrl: audioWindowDevUrl(),
     });
-
-    // Light-weight HTML/JS just for audio
-    audioWindow.loadURL(`file://${path.join(__dirname, '../dist/audio-window.html')}`);
-    //audioWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
+    // Default sink until show-folder settings load (may expand to N devices).
+    syncAudioOutputsFromSettings(undefined);
 
     mainWindow = new BrowserWindow({
         width: 800,
@@ -290,8 +289,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         void handleCloseRequest(event);
     });
     mainWindow.on('closed', () => {
-        audioWindow?.destroy();
-        audioWindow = null;
+        destroyAllAudioWindows();
         mainWindow = null;
         // app quit?
     });
@@ -330,6 +328,9 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
+    // No local speakers in headless — keep decoding/streaming for web/cloud only.
+    setAudioWindowsEnabled(false);
+
     // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });
     const kioskPortInfo = getKioskPort({ persist: false });
@@ -338,7 +339,7 @@ async function startHeadless() {
 
     registerFileListHandlers();
     registerLoginItemHandlers();
-    await registerContentHandlers(null, null, playWorker);
+    await registerContentHandlers(null, playWorker);
 
     // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
     const shutdown = (signal: NodeJS.Signals) => {
@@ -385,6 +386,14 @@ if (isToolVerb()) {
 } else
     app.whenReady().then(async () => {
         console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
+
+        // Chromium gates non-default AudioContext.setSinkId behind speaker-selection.
+        // Without this, every audio window falls back to the system default sink —
+        // so multi-output looks like "only one device plays". Desktop player: allow.
+        session.defaultSession.setPermissionCheckHandler(() => true);
+        session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
+            callback(true);
+        });
 
         // Reset CLI flags — wipe persisted state and quit. Variants differ in what
         // welcome-screen cloud-CTA value they leave persisted for the next launch.
@@ -455,7 +464,7 @@ if (isToolVerb()) {
         // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.
         ipcMain.handle('ipcGetWelcomeShowCloud', async () => getWelcomeShowCloud());
 
-        await registerContentHandlers(mainWindow, audioWindow, playWorker);
+        await registerContentHandlers(mainWindow, playWorker);
 
         if (app.isPackaged) {
             registerAutoUpdateHandlers(mainWindow!);

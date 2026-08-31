@@ -102,6 +102,7 @@ export interface ServerWorkerRPCAPI {
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
+    getAudioOutputDevices(): Promise<import('@ezplayer/ezplayer-core').AudioDevice[]>;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;
     /** Software-update verb from a LAN/cloud viewer. */

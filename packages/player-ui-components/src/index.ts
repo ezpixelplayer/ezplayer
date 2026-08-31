@@ -87,7 +87,7 @@ export type {
     CloudFileUpload,
     DownloadFile,
 } from './store/api/DataStorageAPI';
-export { getOrInitializePlayerId, setOrGeneratePlayerIdToken } from './store/api/DataStorageAPI';
+export { getOrInitializePlayerId, setOrGeneratePlayerIdToken, supportsLocalAudioRouting } from './store/api/DataStorageAPI';
 export { createAxiosInstance } from './store/api/cloud/axios-instance';
 export { isPlayerRegisteredCall } from './store/api/cloud/CloudAuthAPI';
 export { API_ENDPOINTS } from './store/api/ApiEndpoints';
@@ -95,6 +95,7 @@ export { createAppStore, playerReducers } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';
 export { playerSettingsAutoSaveMiddleware } from './store/slices/PlayerStatusMiddleware';
 export { InitialDataProvider } from './store/InitialDataProvider';
+export { useDataStorageAPI } from './store/DataStorageAPIProvider';
 export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {

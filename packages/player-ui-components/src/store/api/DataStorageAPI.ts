@@ -1,4 +1,5 @@
 import type {
+    AudioDevice,
     SequenceRecord,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -10,6 +11,8 @@ import type {
     PlaybackSettings,
     BatchImportSummary,
 } from '@ezplayer/ezplayer-core';
+
+import { isElectron } from '@ezplayer/shared-ui-components';
 
 import { AppDispatch } from '../..';
 
@@ -135,6 +138,10 @@ export interface DataStorageAPI {
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 
+    /** Enumerate `audiooutput` sinks on the player machine (Electron desktop
+     *  renderer or LAN/web UI via the player's REST API). */
+    getAudioOutputDevices?: () => Promise<AudioDevice[]>;
+
     /** Upload a file's bytes into the player's show folder (web/LAN backends
      *  with the file-management API). Absent on backends where files are
      *  already local (Electron renderer uses native dialogs + paths). */
@@ -181,4 +188,10 @@ export interface DataStorageAPI {
         companionAudioNames?: string[],
         importFseqNames?: string[],
     ) => Promise<BatchImportSummary>;
+}
+
+/** True when the UI can configure local multi-output audio routing (desktop
+ *  Electron renderer or LAN/web UI backed by a local player). */
+export function supportsLocalAudioRouting(extra: DataStorageAPI): boolean {
+    return isElectron() || typeof extra.getAudioOutputDevices === 'function';
 }

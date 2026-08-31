@@ -229,6 +229,21 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         return await window.electronAPI!.setPlaybackSettings(s);
     }
 
+    async getAudioOutputDevices(): Promise<AudioDevice[]> {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices
+            .filter((d) => d.kind === 'audiooutput')
+            .map(
+                (d) =>
+                    ({
+                        label: d.label,
+                        deviceId: d.deviceId,
+                        kind: d.kind,
+                        groupId: d.groupId,
+                    }) satisfies AudioDevice,
+            );
+    }
+
     /**
      * Single umbrella for cloud worker / cloud config commands. Routes through main,
      * which persists state to the show folder and reconfigures the cloud-poll worker.
