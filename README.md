@@ -114,7 +114,7 @@ When you first run EZPlayer, you will choose your show folder. This should conta
 
 The player opens to the "Player" screen, but there will not be much here yet. So, navigate between screens using the sidebar menu. (If no sidebar is visible, click the 3 bars in the upper right corner.)
 
-Start on the "Songs" screen. Here you can add songs (aka "sequences"). Start by choosing the .fseq; hopefully the music and metadata will be found automatically. If not, associate the .fseq file with its .mp3 file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists. You can then try playing your songs from the "Jukebox" gallery.
+Start on the "Songs" screen. Here you can add songs (aka "sequences"). Start by choosing the .fseq; hopefully the music and metadata will be found automatically. If not, associate the .fseq file with its audio file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists. You can then try playing your songs from the "Jukebox" gallery.
 
 After adding some songs, create playlists on the "Playlists" screen. You can think of a playlist as an ordered list of songs to play, but it can also be used as a "set" of songs that are not taken in order. As we'll see later, you might want to make an "intro" playlist, a few main playlists, and an "outro" playlist.
 

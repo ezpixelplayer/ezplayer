@@ -7,12 +7,14 @@ import {
     DialogTitle,
     Divider,
     FormControl,
+    FormControlLabel,
     IconButton,
     List,
     ListItem,
     ListItemSecondaryAction,
     ListItemText,
     Slider,
+    Switch,
     Typography,
 } from '@mui/material';
 import React, { useState } from 'react';
@@ -198,6 +200,28 @@ export const AudioSettings: React.FC = () => {
                 <Button variant="contained" startIcon={<Add />} onClick={openAdd} sx={{ mb: 2 }}>
                     Add Volume Override
                 </Button>
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                Loudness Normalization
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={settings.normalizeNewSongs === true}
+                            onChange={(e) => dispatch(playbackSettingsActions.setNormalizeNewSongs(e.target.checked))}
+                        />
+                    }
+                    label="Normalize volume of new songs by default"
+                />
+                <Typography variant="body2" color="text.secondary">
+                    Songs you add get "Normalize volume" turned on, so they play at a consistent loudness (EBU R128, -16
+                    LUFS). The original audio file is never changed; the derived copy lives in the show folder. Cloud
+                    songs already arrive normalized. Change it per song in Edit Song.
+                </Typography>
             </Box>
 
             <Divider sx={{ my: 3 }} />

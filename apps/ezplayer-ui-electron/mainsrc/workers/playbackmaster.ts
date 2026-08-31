@@ -115,6 +115,7 @@ import {
     setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
+import { playableAudioPath } from '../data/derived-audio.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -1902,6 +1903,12 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            // Map record audio -> precomputed derived file. Never builds here; a
+            // missing derivation surfaces as an audio error for the song.
+            resolveFile: (audioFile, opts) => {
+                if (!showFolder) throw new Error(`No show folder to resolve audio for ${audioFile}`);
+                return playableAudioPath(audioFile, showFolder, opts);
+            },
         });
     }
 
@@ -2254,6 +2261,7 @@ async function processQueue() {
                             estDurationSec: play.durationMS ? play.durationMS / 1000 : undefined,
                             tier,
                             expiry: targetFrameRTC + 7 * 24 * 3600_000,
+                            normalize: !!play.seq?.settings?.normalize,
                         });
                     }
                 };
@@ -2402,7 +2410,7 @@ async function processQueue() {
                     let saf = curAudioSeq?.files?.audio;
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
-                        audioref = mp3Cache.getMp3(saf);
+                        audioref = mp3Cache.getMp3(saf, !!curAudioSeq?.settings?.normalize);
                         if (!audioref) {
                             emitError(`Audio ${saf} not ready.`);
                             break;

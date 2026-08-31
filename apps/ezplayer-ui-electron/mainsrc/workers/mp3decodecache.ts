@@ -94,10 +94,13 @@ export type PrefetchMP3Request = {
     estDurationSec?: number;
     /** Confidence tier (0 = happy-path/fg, 2 = speculative skip/down-stack). */
     tier?: number;
+    /** Record's loudness-normalization flag; selects the derived variant. */
+    normalize?: boolean;
 };
 
 export interface MP3FileKey {
     mp3file: string;
+    normalize: boolean;
 }
 
 interface MP3FileCacheVal {
@@ -110,7 +113,13 @@ export type MP3Reference = RefHandle<MP3FileCacheVal>;
  * Handles fseq prefetching
  */
 export class MP3PrefetchCache {
-    constructor(arg: { readonly log: (msg: string) => void; now: number; mp3SpaceSeconds?: number }) {
+    constructor(arg: {
+        readonly log: (msg: string) => void;
+        now: number;
+        mp3SpaceSeconds?: number;
+        /** Map a record audio path to the file to decode (its precomputed derivation). */
+        resolveFile?: (audioFile: string, opts: { normalize: boolean }) => Promise<string>;
+    }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
         this.decodewc = new Mp3DecodeWorkerClient();
@@ -118,7 +127,11 @@ export class MP3PrefetchCache {
             fetchFunction: async (key, _abort) => {
                 arg.log(`Starting mp3 load of ${key.mp3file}`);
                 try {
-                    return { decompAudio: await this.decodewc.decodeFile({ filePath: key.mp3file }) };
+                    const filePath = arg.resolveFile
+                        ? await arg.resolveFile(key.mp3file, { normalize: key.normalize })
+                        : key.mp3file;
+                    if (filePath !== key.mp3file) arg.log(`Decoding derived audio ${filePath}`);
+                    return { decompAudio: await this.decodewc.decodeFile({ filePath }) };
                 } finally {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }
@@ -127,7 +140,7 @@ export class MP3PrefetchCache {
             budgetPredictor: (key) => this.estimateBudgetSec(this.durationHints.get(key.mp3file)),
             budgetCalculator: (_key, val) =>
                 Math.ceil(val.decompAudio.nSamples / (val.decompAudio.sampleRate ?? 1) / 5 + 1) * 5,
-            keyToId: (key) => `${key.mp3file}`,
+            keyToId: (key) => (key.normalize ? `${key.mp3file}|norm` : key.mp3file),
             budgetLimit: arg.mp3SpaceSeconds ?? 5400,
             maxConcurrency: 1,
             priorityComparator: needTimePriorityCompare,
@@ -163,15 +176,15 @@ export class MP3PrefetchCache {
             this.durationHints.set(req.mp3file, req.estDurationSec);
         }
         this.mp3PrefetchCache.prefetch({
-            key: { mp3file: req.mp3file },
+            key: { mp3file: req.mp3file, normalize: !!req.normalize },
             priority: { neededTime: req.needByTime, neededThroughTime: req.neededThroughTime, tier: req.tier },
             now: this.now,
             expiry: req.expiry ?? this.now + 24 * 3600 * 1000,
         });
     }
 
-    getMp3(mp3file: string): { ref?: MP3Reference; err?: Error } | undefined {
-        const mp3ref = this.mp3PrefetchCache.reference({ mp3file }, this.now);
+    getMp3(mp3file: string, normalize?: boolean): { ref?: MP3Reference; err?: Error } | undefined {
+        const mp3ref = this.mp3PrefetchCache.reference({ mp3file, normalize: !!normalize }, this.now);
         if (!mp3ref) return undefined;
         if (!mp3ref.ref?.v) return { err: mp3ref.err };
         return { ref: mp3ref.ref };

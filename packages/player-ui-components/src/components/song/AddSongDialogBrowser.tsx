@@ -3,10 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     Autocomplete,
     Button,
+    Checkbox,
     Dialog,
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     LinearProgress,
     Typography,
@@ -16,6 +18,7 @@ import { Box } from '../box/Box';
 import { FileButton, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
+import { SUPPORTED_AUDIO_EXTENSIONS, isSupportedAudioName } from '@ezplayer/ezplayer-core';
 import {
     AppDispatch,
     autodetectShowSequence,
@@ -26,6 +29,7 @@ import {
     uploadShowFiles,
 } from '../..';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
+import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
@@ -41,6 +45,14 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const dispatch = useDispatch<AppDispatch>();
 
     const availableTags = useSelector((state: RootState) => state.sequences.tags);
+    const normalizeNewSongs = useSelector((state: RootState) => state.playbackSettings.settings.normalizeNewSongs);
+    /** Normalize volume for this song; defaults from Audio Settings each time the dialog opens. */
+    const [normalize, setNormalize] = useState(false);
+    useEffect(() => {
+        if (open) setNormalize(normalizeNewSongs === true);
+    }, [open, normalizeNewSongs]);
+    /** Save in flight: derived audio is built on the player before the record commits. */
+    const [saving, setSaving] = useState(false);
 
     const [fseqFile, setFseqFile] = useState<File | null>(null);
     const [mp3File, setMp3File] = useState<File | null>(null);
@@ -180,7 +192,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             }
             await runAutodetect(file.name);
         } else if (type === 'mp3') {
-            if (!(file.name.endsWith('.mp3') || file.name.endsWith('.mp4'))) {
+            if (!isSupportedAudioName(file.name)) {
                 setNeedValidMp3File(true);
                 setMp3File(null);
                 return;
@@ -198,6 +210,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
 
     const handleNewSongSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
+        setSaving(true);
 
         try {
             // Generate UUID for id and instanceId
@@ -237,6 +251,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     lead_time: parseFloat(newSongData.lead_time) || 0,
                     trail_time: parseFloat(newSongData.trail_time) || 0,
                     volume_adj: parseFloat(newSongData.volume_adj) || 0,
+                    normalize,
                     tags: newSongData.tags,
                 },
             };
@@ -254,11 +269,13 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             onClose();
         } catch (error) {
             console.error('Error adding song:', error);
-            ToastMsgs.showErrorMessage('Failed to add song', {
+            ToastMsgs.showErrorMessage(saveErrorMessage(error, 'Failed to add song'), {
                 theme: 'colored',
                 position: 'bottom-right',
-                autoClose: 2000,
+                autoClose: 6000,
             });
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -305,14 +322,14 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                Upload .mp3 File{' '}
+                                Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional)
+                                    (optional: {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                 </Typography>
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <FileButton
-                                    fileType={['.mp3']}
+                                    fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
                                     isMultipleFile={false}
                                     onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'mp3')}
                                 />
@@ -325,7 +342,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             </Box>
                             {needValidMp3File && (
                                 <Typography color="error" sx={{ mt: 1 }}>
-                                    Please upload a valid .mp3 file
+                                    Please upload a supported audio file ({SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                 </Typography>
                             )}
                         </Grid>
@@ -389,6 +406,23 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                         <Grid item xs={6}>
+                            <Autocomplete
+                                multiple
+                                freeSolo
+                                options={availableTags}
+                                value={newSongData.tags}
+                                onChange={(_, newValue) => {
+                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
+                                    newValue.forEach((tag) => {
+                                        if (tag && !availableTags.includes(tag)) {
+                                            dispatch(setSequenceTags([...availableTags, tag]));
+                                        }
+                                    });
+                                }}
+                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
                             <TextField
                                 label="Lead Time"
                                 name="lead_time"
@@ -422,20 +456,20 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                         <Grid item xs={6}>
-                            <Autocomplete
-                                multiple
-                                freeSolo
-                                options={availableTags}
-                                value={newSongData.tags}
-                                onChange={(_, newValue) => {
-                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
-                                    newValue.forEach((tag) => {
-                                        if (tag && !availableTags.includes(tag)) {
-                                            dispatch(setSequenceTags([...availableTags, tag]));
-                                        }
-                                    });
-                                }}
-                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            <FormControlLabel
+                                sx={{ mt: 1 }}
+                                control={
+                                    <Checkbox
+                                        checked={normalize}
+                                        onChange={(e) => {
+                                            const next = e.target.checked;
+                                            setNormalize(next);
+                                            // Normalized audio makes a manual offset redundant; start from 0.
+                                            if (next) setNewSongData((prev) => ({ ...prev, volume_adj: '0' }));
+                                        }}
+                                    />
+                                }
+                                label="Normalize volume"
                             />
                         </Grid>
                     </Grid>
@@ -443,7 +477,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginTop: 2 }}>
                             <LinearProgress sx={{ flex: 1 }} />
                             <Typography variant="caption" color="text.secondary">
-                                Uploading {uploadingName}…
+                                Uploading {uploadingName}...
                             </Typography>
                         </Box>
                     )}
@@ -474,15 +508,20 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             color="primary"
                             onClick={handleNewSongSubmit}
                             disabled={
-                                uploading || !(fseqFile || fseqPlayerName) || !newSongData.title || !newSongData.artist
+                                saving ||
+                                uploading ||
+                                !(fseqFile || fseqPlayerName) ||
+                                !newSongData.title ||
+                                !newSongData.artist
                             }
                         >
                             Save
                         </Button>
-                        <Button type="button" variant="outlined" color="secondary" onClick={onClose}>
+                        <Button type="button" variant="outlined" color="secondary" onClick={onClose} disabled={saving}>
                             Cancel
                         </Button>
                     </Box>
+                    <SongSaveProgress saving={saving} audio={mp3File?.name ?? mp3PlayerName} normalize={normalize} />
                 </form>
             </>
             <ServerFilePickerDialog

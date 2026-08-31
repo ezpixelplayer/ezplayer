@@ -54,6 +54,7 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
+import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio } from './data/derived-audio.js';
 
 import type {
     CloudCommand,
@@ -273,6 +274,16 @@ async function runGcSweep(): Promise<void> {
         console.log(`[cloud-gc] swept ${deleted} files (${installedFiles.length} tracked)`);
         void saveInstalledFiles();
     }
+}
+
+const derivedAudioItem = (s: SequenceRecord) => ({ audio: s.files?.audio, normalize: s.settings?.normalize });
+
+/** Drop derived audio no current record maps to. Rides the cloud gc trigger. */
+async function pruneStaleDerivedAudioNow(): Promise<void> {
+    const showFolder = getCurrentShowFolder();
+    if (!showFolder) return;
+    const live = curSequences.filter((s) => !s.deleted).map(derivedAudioItem);
+    await pruneStaleDerivedAudio(showFolder, live).catch((e) => console.warn('[DerivedAudio] prune failed:', e));
 }
 
 export function getSequenceThumbnail(id: string) {
@@ -506,6 +517,24 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
             }
         }
+        // Pin the normalization choice: new local songs take the setting default,
+        // edits that omit it keep the record's value. Cloud songs arrive normalized.
+        if (!ups.cloud && ups.settings?.normalize === undefined) {
+            const existing = curSequences?.find((s) => s.id === ups.id);
+            const normalize = existing?.settings?.normalize ?? getSettingsCache()?.normalizeNewSongs ?? false;
+            ups.settings = { ...(ups.settings ?? {}), normalize };
+        }
+        // A committed song must be playable, so its derived audio is built before save.
+        if (!ups.deleted && ups.files?.audio && showFolder) {
+            try {
+                await deriveAudioForRecord(derivedAudioItem(ups), showFolder);
+            } catch (err) {
+                const title = ups.work?.title || path.basename(ups.files.audio);
+                throw new Error(
+                    `Cannot derive playable audio for "${title}": ${err instanceof Error ? err.message : String(err)}`,
+                );
+            }
+        }
         if (!ups?.work?.length && ups.files?.fseq) {
             // best-effort: a corrupt fseq shouldn't fail the whole upsert
             try {
@@ -560,6 +589,9 @@ export async function loadShowFolder(forceRestart?: boolean) {
     await loadNetworkPolicies(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
+    // Derived audio is disposable; rebuild whatever is missing (recipe bump, deleted
+    // files) in the background.
+    void reconcileDerivedAudio(curSequences.filter((s) => !s.deleted).map(derivedAudioItem), showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
@@ -913,6 +945,9 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequences(fseqPaths ?? [], {
             mediaFolder,
+            showFolder: getCurrentShowFolder() ?? undefined,
+            normalize: getSettingsCache()?.normalizeNewSongs,
+            onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -921,6 +956,9 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequencesFromFolder(folderPath, {
             mediaFolder,
+            showFolder: getCurrentShowFolder() ?? undefined,
+            normalize: getSettingsCache()?.normalizeNewSongs,
+            onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -1019,6 +1057,7 @@ export async function registerContentHandlers(
         // Opportunistic gc — runs whenever the worker reports back, no-op when
         // queue is empty or player isn't idle.
         void runGcSweep();
+        void pruneStaleDerivedAudioNow();
     });
 
     onLayoutInstalled((layoutMeta) => {
