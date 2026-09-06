@@ -108,6 +108,6 @@
         "vite": "catalog:",
         "vite-plugin-svgr": "catalog:",
         "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.3.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.4.tgz"
     }
 }
