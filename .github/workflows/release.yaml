@@ -67,6 +67,9 @@ jobs:
             - name: Build app (no publish)
               run: pnpm run build
 
+            - name: Run app unit tests
+              run: pnpm --filter ezplayer-ui-electron test
+
             - name: Upload platform artifacts
               uses: actions/upload-artifact@v4
               with:
@@ -112,6 +115,9 @@ jobs:
 
             - name: Build app (no publish)
               run: pnpm run build
+
+            - name: Run app unit tests
+              run: pnpm --filter ezplayer-ui-electron test
 
             - name: Upload Pi arm64 artifacts
               uses: actions/upload-artifact@v4

@@ -107,6 +107,14 @@ export interface BatchImportSummary {
     skipped?: BatchImportSkipped[];
 }
 
+export interface BatchImportProgress {
+    /** Songs finished (imported, failed, or skipped) so far. */
+    done: number;
+    total: number;
+    /** The fseq about to be imported. */
+    fseqName?: string;
+}
+
 // Node/coord types, color profile, channel mapping, and `GetNodeResult` now live in
 // xllayoutcalcs — this package re-exports `GetNodeResult` so consumers have a single source
 // of truth and don't drift when the upstream shape evolves.
@@ -132,6 +140,8 @@ export interface EZPElectronAPI {
     batchImportSequences: (fseqPaths: string[]) => Promise<BatchImportSummary>;
     /** Import every .fseq under a folder (recursive). */
     batchImportSequencesFromFolder: (folderPath: string) => Promise<BatchImportSummary>;
+    /** Fired as each fseq of a bulk import starts, and once when all are done. */
+    onBatchImportProgress: (callback: (p: BatchImportProgress) => void) => void;
 
     writeFile: (filename: string, content: string) => Promise<string>;
     readFile: (filename: string) => Promise<string>;

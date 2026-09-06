@@ -157,6 +157,7 @@ export type {
     ImageInfo,
     AudioTagMetadata,
     BatchImportFailure,
+    BatchImportProgress,
     BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
@@ -167,6 +168,15 @@ export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
 export { isSequencePlayable } from './util/seqFilter';
+
+export {
+    CONVERTIBLE_AUDIO_EXTENSIONS,
+    MP3_EXTENSION,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    audioExtension,
+    isSupportedAudioName,
+    needsAudioConversion,
+} from './util/audioFormats';
 
 export {
     type PlayAction,

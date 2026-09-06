@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import { parseAudioTags } from 'audiofile';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'];
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'];
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
 const MIME_TO_EXT: Record<string, string> = {
     'image/jpeg': '.jpg',

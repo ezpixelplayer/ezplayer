@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
+import { RenderBridge, type PreviewRenderHandle } from './RenderBridge';
 import * as THREE from 'three';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
@@ -57,6 +58,11 @@ export interface Viewer3DProps {
      *  Used by the layout-edit visual mode where click-to-select + orbit/pan/zoom
      *  is the desired interaction model on every device. */
     forceOrbitControls?: boolean;
+    /** Stop the r3f frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
+     *  Used for deterministic offline rendering (video export). */
+    renderOnDemand?: boolean;
+    /** Registers an imperative handle for fixed-size, frame-stepped rendering (null on unmount). */
+    onRenderHandle?: (handle: PreviewRenderHandle | null) => void;
 }
 
 // Optimized point cloud rendering using shader-based geometry batches
@@ -1303,6 +1309,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     onGetCurrentCameraState,
     fillContainer = false,
     forceOrbitControls = false,
+    renderOnDemand = false,
+    onRenderHandle,
 }) => {
     const [error, setError] = useState<string | null>(null);
 
@@ -1478,6 +1486,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                     }}
                 >
                     <Canvas
+                        frameloop={renderOnDemand ? 'never' : 'always'}
                         onCreated={({ gl }) => {
                             gl.setClearColor('#191919', 1);
                             if (!gl.getContext()) {
@@ -1550,6 +1559,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             cameraStateLoaded={cameraStateLoaded}
                             onGetCurrentCameraState={onGetCurrentCameraState}
                         />
+                        <RenderBridge onRegister={onRenderHandle} />
                         {showStats && <Stats />}
                     </Canvas>
                 </Box>
