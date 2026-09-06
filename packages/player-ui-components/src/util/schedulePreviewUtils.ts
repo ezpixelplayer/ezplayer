@@ -49,16 +49,9 @@ export function generateSchedulePreview(
     // Get current state snapshot
     const currentState = playerState.getStatusSnapshot();
 
-    // If we hit the safety limit, add a warning event
+    // If we hit the safety limit, report it. (Do not inject a synthetic log entry:
+    // the timeline treats every scheduleId it sees as a real schedule row.)
     if (logs.length >= maxLogs) {
-        logs.push({
-            eventType: 'Schedule Prevented',
-            eventTime: endTime,
-            stackDepth: 0,
-            scheduleId: 'system',
-            playlistId: undefined,
-            sequenceId: undefined,
-        });
         errors.push(
             'Schedule simulation stopped due to excessive events. Consider increasing the maxEvents setting or simplifying your schedule configuration.',
         );
