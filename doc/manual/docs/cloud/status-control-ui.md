@@ -91,10 +91,21 @@ have sequences assigned on EZRGB. A **halted** chip means content sync stopped
 with an error — check **Last Error** and try **Sync Content Now** (or
 **Sync Layout + Content**) after fixing the underlying problem.
 
+## Remote Control Link
+
+Shown once the player is registered. The QR code and link open the player's
+control page in any browser with no sign-in. The link contains the Player ID,
+so share it only with people who should be able to control the player.
+
+Turn off **Enable Cloud Remote Control** to refuse remote control from the
+cloud. The link and QR code are hidden and anyone currently connected is
+disconnected. Registration, status reporting, and content sync continue.
+
 ## Cloud Configuration
 
-Shows this folder's cloud URL and Player ID. Click **Edit** to open the same
-registration / settings dialog as **Settings → Cloud**. See
+Shows this folder's cloud URL and Player ID. The Player ID is masked; use the
+eye icon to reveal it or the copy icon to copy it. Click **Edit** to open the
+same registration / settings dialog as **Settings → Cloud**. See
 [Cloud settings](../settings/cloud.md) for polling schedule and other options.
 
 ## On the EZRGB website
