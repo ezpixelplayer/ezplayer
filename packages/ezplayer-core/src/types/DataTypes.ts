@@ -595,15 +595,16 @@ export interface VolumeControlState {
     schedule?: VolumeScheduleEntry[];
 }
 
-/**
- * One extra local speaker sink for the Electron desktop player (in addition to
- * the primary/system-default output driven by `PlaybackSettings.volumeControl`).
- * Each entry has its own device, volume, and volume schedule.
- */
-export interface AdditionalAudioOutput {
+/** One named local output for the desktop player when the system default
+ *  output is not used. Identity is deviceId, re-matched by label/groupId if
+ *  the id changes. Each entry has its own volume and schedule. */
+export interface AudioOutputConfig {
     id: string;
     /** Chromium `MediaDeviceInfo.deviceId` for an `audiooutput` sink. */
     deviceId: string;
+    /** Device label at the time it was selected; shown while disconnected. */
+    label: string;
+    groupId?: string;
     volumeControl: VolumeControlState;
 }
 
@@ -644,36 +645,12 @@ export interface PlaybackSettings {
      * co-located lookup fails (sequence import / autodetection).
      */
     mediaFolder?: string;
-    /**
-     * Electron desktop: when true/undefined, play to the system default output
-     * using `volumeControl`. When false, skip the default sink and use only
-     * `additionalAudioOutputs`. Machine-local.
-     */
+    /** Desktop player: true/undefined plays to the system default output using
+     *  `volumeControl`; false plays only to `audioOutputs`. Machine-local. */
     useDefaultAudioOutput?: boolean;
-    /**
-     * Physical `audiooutput` deviceId that matches the OS default route (same
-     * Chromium groupId as synthetic `default`). Excluded from additional outputs
-     * when `useDefaultAudioOutput` is false. Machine-local.
-     */
-    systemDefaultOutputDeviceId?: string;
-    /**
-     * Primary local speaker sink for the Electron desktop player.
-     * Empty string / undefined = system Default output. Otherwise a Chromium
-     * `audiooutput` deviceId (Speakers, Headset, …). Machine-local.
-     */
-    primaryAudioOutputDeviceId?: string;
-    /**
-     * Extra local speaker sinks beyond the primary. Each entry is an
-     * independent device + volume + schedule. Empty/undefined → primary only.
-     * Machine-local; not part of cloud-managed settings groups.
-     */
-    additionalAudioOutputs?: AdditionalAudioOutput[];
-    /**
-     * @deprecated Prefer `additionalAudioOutputs`. Kept so older in-progress
-     * show-folder settings migrate cleanly; treated as device ids with default
-     * volume (100) and no schedule.
-     */
-    audioOutputDeviceIds?: string[];
+    /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
+     *  not part of cloud-managed settings groups. */
+    audioOutputs?: AudioOutputConfig[];
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,

@@ -12,8 +12,6 @@ import type {
     BatchImportSummary,
 } from '@ezplayer/ezplayer-core';
 
-import { isElectron } from '@ezplayer/shared-ui-components';
-
 import { AppDispatch } from '../..';
 
 import { v4 as uuidv4 } from 'uuid';
@@ -190,8 +188,7 @@ export interface DataStorageAPI {
     ) => Promise<BatchImportSummary>;
 }
 
-/** True when the UI can configure local multi-output audio routing (desktop
- *  Electron renderer or LAN/web UI backed by a local player). */
-export function supportsLocalAudioRouting(extra: DataStorageAPI): boolean {
-    return isElectron() || typeof extra.getAudioOutputDevices === 'function';
+/** True when the UI can configure local audio outputs on the player machine. */
+export function supportsLocalAudioRouting(api: DataStorageAPI): boolean {
+    return typeof api.getAudioOutputDevices === 'function';
 }

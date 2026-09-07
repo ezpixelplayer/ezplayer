@@ -2455,9 +2455,7 @@ async function processQueue() {
                             // down so it crossfades with the next chunk's ramped-up head.
                             const windowFrames = hopFrames + overlapFrames;
 
-                            // Per-song volume_adj is baked into the samples, so every
-                            // sink and the export ring hear it; the global volume is
-                            // applied downstream (per-sink GainNode / web-ring volumeSF).
+                            // Per-song volume_adj is baked in; global volume is applied downstream.
                             const chunk = buildInterleavedAudioChunkFromSegments({
                                 channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,

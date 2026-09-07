@@ -1,12 +1,16 @@
 // Runs in the hidden audio window (renderer) to avoid long renders causing audio disruptions
-import type { AudioChunk, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, AudioOutputTarget } from '@ezplayer/ezplayer-core';
+import { resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
+
+interface AudioWindowAPI {
+    getAudioOutput?: () => AudioOutputTarget;
+    onAudioChunk?: (callback: (data: AudioChunk) => void) => void;
+    onAudioGain?: (callback: (gain: number) => void) => void;
+}
 
 declare global {
     interface Window {
-        electronAPI?: Partial<EZPElectronAPI> & {
-            getAudioSinkId?: () => string;
-            onAudioGain?: (callback: (gain: number) => void) => void;
-        };
+        electronAPI?: AudioWindowAPI;
     }
 }
 
@@ -19,74 +23,80 @@ export class RealTimeChunkPlayer {
     private audioCtx?: AudioContextWithSink;
     private gainNode?: GainNode;
     private audioCtxIncarnation = 1;
+    private gain = 1;
+    /** False while a named output device is absent; output is muted. */
+    private routed = true;
+    private boundDeviceId = '';
+    private rebindPending = false;
 
     // scheduling state
     private audioCleanBreakInterval: number | undefined = undefined;
     private audioPlayAtNextRealTime: number | undefined = undefined;
     private audioPlayAtNextACT: number | undefined = undefined;
 
-    constructor(sinkId = '') {
+    constructor(private readonly target: AudioOutputTarget) {
         const AC =
             window.AudioContext ||
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         // Pin the context to 48 kHz so it matches the curated/normalized audio rate.
         // Source PCM already at 48 kHz then needs no per-chunk resampling (clean seams);
         // any stray 44.1 kHz content is resampled here but masked by the chunk crossfade.
-        // Do NOT pass sinkId into the constructor: an invalid/unpermitted sink throws
-        // and aborts this whole script (no onAudioChunk listener → silent playback).
-        // Route via setSinkId below, which is try/caught and falls back to default.
+        // Sink is applied via setSinkId; a bad sink in the constructor throws.
         this.audioCtx = new AC({ sampleRate: 48000 }) as AudioContextWithSink;
         this.gainNode = this.audioCtx.createGain();
-        this.gainNode.gain.value = 1;
         this.gainNode.connect(this.audioCtx.destination);
         this.audioCtxIncarnation++;
         this.resetSchedulingState();
-        void this.applySinkId(sinkId);
+        if (target.deviceId) {
+            this.routed = false;
+            this.applyGain();
+            void this.rebind();
+            navigator.mediaDevices?.addEventListener?.('devicechange', () => void this.rebind());
+        }
+        void this.audioCtx.resume().catch((err) => console.warn('[audio-window] AudioContext.resume failed', err));
     }
 
-    /** Linear amplitude 0–1. Independent per audio window / sink. */
+    /** Linear amplitude 0..1 from main. */
     public setGain(gain: number): void {
-        if (!this.gainNode) return;
-        const g = Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1;
-        this.gainNode.gain.value = g;
+        this.gain = Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1;
+        this.applyGain();
     }
 
-    private async applySinkId(sinkId: string): Promise<void> {
-        if (!this.audioCtx) return;
+    private applyGain(): void {
+        if (this.gainNode) this.gainNode.gain.value = this.routed ? this.gain : 0;
+    }
 
+    /** Locate the named device among connected outputs and bind the sink to it. */
+    private async rebind(): Promise<void> {
+        if (!this.audioCtx?.setSinkId) {
+            console.warn('[audio-window] AudioContext.setSinkId unavailable; output muted');
+            return;
+        }
+        if (this.rebindPending) return;
+        this.rebindPending = true;
         try {
-            if (this.audioCtx.state === 'suspended') {
-                await this.audioCtx.resume();
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const found = resolveAudioOutputDevice(this.target, devices);
+            if (!found) {
+                if (this.routed) console.warn(`[audio-window] ${this.target.label}: device gone, muted`);
+                this.routed = false;
+                this.applyGain();
+                return;
             }
+            if (found.deviceId !== this.boundDeviceId) {
+                await this.audioCtx.setSinkId(found.deviceId);
+                this.boundDeviceId = found.deviceId;
+                console.log(`[audio-window] ${this.target.label}: bound to ${found.label || found.deviceId}`);
+            }
+            this.routed = true;
+            this.applyGain();
         } catch (err) {
-            console.warn('[audio-window] AudioContext.resume failed', err);
-        }
-
-        if (!sinkId) {
-            console.log('[audio-window] using system default sink');
-            return;
-        }
-
-        if (!this.audioCtx.setSinkId) {
-            console.warn('[audio-window] AudioContext.setSinkId unavailable; using default sink');
-            return;
-        }
-
-        // Already bound?
-        if (this.audioCtx.sinkId === sinkId) {
-            console.log(`[audio-window] sink already ${sinkId}`);
-            return;
-        }
-
-        try {
-            await this.audioCtx.setSinkId(sinkId);
-            console.log(`[audio-window] sink set to ${sinkId} (ctx.sinkId=${this.audioCtx.sinkId ?? '?'})`);
-        } catch (err) {
-            const name = err instanceof DOMException ? err.name : 'Error';
-            console.error(
-                `[audio-window] setSinkId(${sinkId}) failed (${name}); staying on system default.`,
-                err,
-            );
+            this.routed = false;
+            this.boundDeviceId = '';
+            this.applyGain();
+            console.error(`[audio-window] ${this.target.label}: setSinkId failed, muted`, err);
+        } finally {
+            this.rebindPending = false;
         }
     }
 
@@ -101,7 +111,7 @@ export class RealTimeChunkPlayer {
      * Behavior matches your original implementation:
      * - Uses incarnation + playAtRealTime to decide whether to reset scheduling.
      * - Schedules contiguous playback via ACT timeline.
-     * PCM is expected at unity gain; volume is applied via GainNode.
+     * PCM arrives at unity gain; volume is applied by the GainNode.
      */
     public handleChunk(msg: AudioChunk): void {
         const { incarnation, playAtRealTime, sampleRate, channels, buffer, advanceSamples } = msg;
@@ -186,23 +196,11 @@ function log(msg: string) {
     }
 }
 
-const sinkId =
-    window.electronAPI?.getAudioSinkId?.() ??
-    new URLSearchParams(window.location.search).get('sinkId') ??
-    '';
-
-// Create the player bound to this window's sink
-const player = new RealTimeChunkPlayer(sinkId);
-log(`Audio engine ready (TS) sink=${sinkId || '(default)'}`);
-
-function handleAudioChunk(chunk: AudioChunk) {
-    player.handleChunk(chunk);
-}
-
 const api = window.electronAPI;
-if (api?.onAudioChunk) {
-    api.onAudioChunk(handleAudioChunk);
-}
-if (api?.onAudioGain) {
-    api.onAudioGain((gain) => player.setGain(gain));
-}
+const target: AudioOutputTarget = api?.getAudioOutput?.() ?? { deviceId: '', label: '' };
+
+const player = new RealTimeChunkPlayer(target);
+log(`Audio engine ready (TS) output=${target.label || '(default)'}`);
+
+api?.onAudioChunk?.((chunk) => player.handleChunk(chunk));
+api?.onAudioGain?.((gain) => player.setGain(gain));

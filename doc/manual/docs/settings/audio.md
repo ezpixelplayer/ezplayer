@@ -7,32 +7,29 @@ title: Audio
 
 ![Audio](/img/audio.png)
 
-## Volume (primary output)
+## Audio Output
 
-The desktop player’s **primary** audio output is chosen under **Settings → Audio →
-Audio Device**:
+**Use default audio output?** chooses how the desktop player reaches your speakers.
 
-- **Default** — system default output (first option)
-- Then any **connected** devices (Speakers, Headset, …)
+- **Yes** plays through whatever the operating system's default output is at the
+  time. Change the default in the OS and the player follows. **Volume Control**
+  applies to this output.
+- **No** plays only through the devices you check under **Audio Devices**. Each
+  device has its own volume and volume schedule. This is how you send one feed to
+  an FM transmitter on the built-in output and another to patio speakers on a USB
+  interface while leaving a headset unchecked.
 
-**Volume Control** and schedule overrides apply only to that primary device.
+Checked devices stay selected while unplugged (they show as **Not connected**) and
+resume automatically when they return. Select a device while it is connected.
 
-Volume levels and schedule overrides are also documented under
+These choices are stored in the show folder's `playbackSettings.json`, are local to
+the player machine, and are not synced through cloud settings. The same settings
+are available from the LAN web UI.
+
+## Volume
+
+Volume levels and schedule overrides are documented under
 [Advanced → Volume](../advanced/volume.md).
-
-## Additional Audio Devices
-
-On the **desktop (Electron) app**, expand **Additional Audio Devices**. Each
-**currently connected** output (except the primary) appears as one row — check it
-to play there with its own volume and schedule. Disconnected devices are not shown.
-
-Settings are stored in the show folder’s `playbackSettings.json` and are local to
-the machine (not synced via cloud settings).
-
-To listen on two wireless headsets at once on Windows 11, use **Quick Settings →
-Shared Audio** (needs Bluetooth LE Audio on the PC and both accessories). For
-app-level multi-output testing, prefer **wired/USB** devices, or one wired + one
-Bluetooth.
 
 ## Loudness Normalization
 

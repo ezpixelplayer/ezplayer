@@ -1,4 +1,4 @@
-import { Add, Delete, ExpandMore } from '@mui/icons-material';
+import { Add, Delete, ExpandMore, Refresh } from '@mui/icons-material';
 import {
     Accordion,
     AccordionDetails,
@@ -26,7 +26,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select, isElectron } from '@ezplayer/shared-ui-components';
-import type { AudioDevice, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import type { AudioDevice, AudioOutputConfig, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import { isPhysicalAudioOutput, resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
@@ -50,25 +51,29 @@ const FRESH_ENTRY: Partial<VolumeScheduleEntry> = {
     volumeLevel: 100,
 };
 
-/** Prefer real sinks; Chromium's synthetic "default"/"communications" entries
- *  often duplicate a physical device and would double-play if both are used. */
-function isPhysicalOutput(d: AudioDevice): boolean {
-    return d.deviceId !== 'default' && d.deviceId !== 'communications';
+type ScheduleDialogTarget = { kind: 'primary' } | { kind: 'output'; outputId: string };
+
+/** A stored output, a connected device, or both (stored output currently connected). */
+interface OutputRow {
+    key: string;
+    label: string;
+    config?: AudioOutputConfig;
+    device?: AudioDevice;
 }
 
-/** Additional outputs must be real device ids — never the system-default sink. */
-function isPhysicalAdditionalDevice(d: { id: string; name: string }): boolean {
-    if (!d.id || d.id === 'default' || d.id === 'communications') return false;
-    if (/^default$/i.test(d.name.trim())) return false;
-    return true;
-}
-
-type ScheduleDialogTarget =
-    | { kind: 'primary' }
-    | { kind: 'additional'; outputId: string };
-
-function newOutputId(): string {
-    return `aaudio-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+/** Pair stored outputs with connected devices; leftovers become unconfigured rows. */
+function buildOutputRows(configs: AudioOutputConfig[], devices: AudioDevice[]): OutputRow[] {
+    const taken = new Set<string>();
+    const rows: OutputRow[] = configs.map((config) => {
+        const device = resolveAudioOutputDevice(config, devices, taken);
+        if (device) taken.add(device.deviceId);
+        return { key: config.id, label: device?.label || config.label, config, device };
+    });
+    for (const device of devices) {
+        if (taken.has(device.deviceId)) continue;
+        rows.push({ key: device.deviceId, label: device.label || `Output (${device.deviceId.slice(0, 8)})`, device });
+    }
+    return rows;
 }
 
 export const AudioSettings: React.FC = () => {
@@ -80,151 +85,57 @@ export const AudioSettings: React.FC = () => {
     const [scheduleTarget, setScheduleTarget] = useState<ScheduleDialogTarget>({ kind: 'primary' });
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
     const [pendingDelete, setPendingDelete] = useState<
-        { kind: 'primary'; entryId: string } | { kind: 'additional'; outputId: string; entryId: string } | null
+        { kind: 'primary'; entryId: string } | { kind: 'output'; outputId: string; entryId: string } | null
     >(null);
     const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([]);
-    /** groupId shared by Chromium's synthetic `default` audiooutput and the OS default speaker. */
-    const [systemDefaultGroupId, setSystemDefaultGroupId] = useState<string | undefined>();
-    const [additionalExpanded, setAdditionalExpanded] = useState(false);
+    const [outputsExpanded, setOutputsExpanded] = useState(true);
 
     // Slider values while dragging. The store is only updated on commit
     const [draftVolume, setDraftVolume] = useState<number | null>(null);
     const [draftSyncAdjust, setDraftSyncAdjust] = useState<number | null>(null);
-    const [draftAdditionalVolumes, setDraftAdditionalVolumes] = useState<Record<string, number | null>>({});
+    const [draftOutputVolumes, setDraftOutputVolumes] = useState<Record<string, number | null>>({});
 
-    const additionalOutputs = useMemo(() => settings.additionalAudioOutputs ?? [], [settings.additionalAudioOutputs]);
-    const primaryDeviceId = settings.primaryAudioOutputDeviceId ?? '';
-    const systemDefaultOutputDeviceId = settings.systemDefaultOutputDeviceId ?? '';
+    const audioOutputs = useMemo(() => settings.audioOutputs ?? [], [settings.audioOutputs]);
     const useDefaultAudioOutput = settings.useDefaultAudioOutput !== false;
     const localAudioRouting = supportsLocalAudioRouting(api);
-    /** LAN/web UI: enumerate sinks on the player machine, not in the browser. */
-    const usesRemotePlayerDeviceApi =
-        typeof api.getAudioOutputDevices === 'function' && !isElectron();
 
     const refreshOutputDevices = useCallback(async () => {
-        if (!localAudioRouting) return;
+        if (!api.getAudioOutputDevices) return;
         try {
-            const audioOutputs = usesRemotePlayerDeviceApi
-                ? await api.getAudioOutputDevices!()
-                : (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput');
-            const defaultSink = audioOutputs.find((d) => d.deviceId === 'default');
-            setSystemDefaultGroupId(defaultSink?.groupId || undefined);
-            setOutputDevices(
-                audioOutputs
-                    .filter((d) => isPhysicalOutput(d as AudioDevice))
-                    .map(
-                        (d) =>
-                            ({
-                                label: d.label,
-                                deviceId: d.deviceId,
-                                kind: d.kind,
-                                groupId: d.groupId,
-                            }) satisfies AudioDevice,
-                    ),
-            );
+            const devices = await api.getAudioOutputDevices();
+            setOutputDevices(devices.filter(isPhysicalAudioOutput));
         } catch (err) {
             console.warn('[AudioSettings] audio output device refresh failed', err);
         }
-    }, [api, localAudioRouting, usesRemotePlayerDeviceApi]);
+    }, [api]);
 
     useEffect(() => {
         if (!localAudioRouting) return;
+        void refreshOutputDevices();
+        // Only the desktop renderer sees the player machine's own device changes.
+        if (!isElectron() || !navigator.mediaDevices?.addEventListener) return;
+        const onDeviceChange = () => void refreshOutputDevices();
+        navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
+        return () => navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
+    }, [localAudioRouting, refreshOutputDevices]);
 
-        let cancelled = false;
-        void (async () => {
-            await refreshOutputDevices();
-            if (cancelled) return;
-        })();
+    const outputRows = useMemo(() => buildOutputRows(audioOutputs, outputDevices), [audioOutputs, outputDevices]);
 
-        if (!usesRemotePlayerDeviceApi && navigator.mediaDevices?.addEventListener) {
-            const onDeviceChange = () => {
-                void refreshOutputDevices();
-            };
-            navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
-            return () => {
-                cancelled = true;
-                navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
-            };
-        }
-
-        return () => {
-            cancelled = true;
-        };
-    }, [localAudioRouting, refreshOutputDevices, usesRemotePlayerDeviceApi]);
-
-    // Remember which physical device is the OS default route (for exclusion when default output is off).
+    // A stored output matched by label/groupId gets its deviceId refreshed.
     useEffect(() => {
-        if (!localAudioRouting || !systemDefaultGroupId) return;
-        const defaultPhysical = outputDevices.find((d) => d.groupId === systemDefaultGroupId);
-        const id = defaultPhysical?.deviceId;
-        if (id && id !== systemDefaultOutputDeviceId) {
-            dispatch(playbackSettingsActions.setSystemDefaultOutputDeviceId(id));
+        for (const row of outputRows) {
+            if (row.config && row.device && row.device.deviceId !== row.config.deviceId) {
+                dispatch(
+                    playbackSettingsActions.setAudioOutputDevice({
+                        id: row.config.id,
+                        deviceId: row.device.deviceId,
+                        label: row.device.label,
+                        groupId: row.device.groupId,
+                    }),
+                );
+            }
         }
-    }, [
-        localAudioRouting,
-        systemDefaultGroupId,
-        outputDevices,
-        systemDefaultOutputDeviceId,
-        dispatch,
-    ]);
-
-    /** Connected physical outputs only. */
-    const connectedDeviceOptions = outputDevices.map((d) => ({
-        id: d.deviceId,
-        name: d.label || `Output (${d.deviceId.slice(0, 8)}…)`,
-    }));
-
-    const isExcludedFromAdditionalList = useCallback(
-        (deviceId: string): boolean => {
-            if (!isPhysicalAdditionalDevice({ id: deviceId, name: '' })) return true;
-            if (useDefaultAudioOutput && deviceId === primaryDeviceId) return true;
-            return false;
-        },
-        [
-            useDefaultAudioOutput,
-            primaryDeviceId,
-        ],
-    );
-
-    /** Connected physical outputs for additional picks (never system Default). */
-    const selectableAdditionalDevices = connectedDeviceOptions.filter(
-        (d) => !isExcludedFromAdditionalList(d.id),
-    );
-
-    const additionalByDeviceId = new Map(
-        additionalOutputs.filter((o) => o.deviceId).map((o) => [o.deviceId, o]),
-    );
-
-    // If primary moves onto a device that was additional, drop that duplicate only.
-    useEffect(() => {
-        if (!localAudioRouting || !useDefaultAudioOutput) return;
-        const withoutPrimaryDup = additionalOutputs.filter((o) => o.deviceId !== primaryDeviceId);
-        if (withoutPrimaryDup.length !== additionalOutputs.length) {
-            dispatch(playbackSettingsActions.setAdditionalAudioOutputs(withoutPrimaryDup));
-        }
-    }, [localAudioRouting, useDefaultAudioOutput, primaryDeviceId, additionalOutputs, dispatch]);
-
-    useEffect(() => {
-        if (!localAudioRouting || useDefaultAudioOutput) return;
-        if (additionalOutputs.length > 0) {
-            setAdditionalExpanded(true);
-        }
-    }, [localAudioRouting, useDefaultAudioOutput, additionalOutputs.length]);
-
-    // Keep persisted additional rows aligned to currently selectable real devices.
-    useEffect(() => {
-        if (!localAudioRouting || useDefaultAudioOutput) return;
-        const kept = additionalOutputs.filter((o) => !isExcludedFromAdditionalList(o.deviceId));
-        if (kept.length !== additionalOutputs.length) {
-            dispatch(playbackSettingsActions.setAdditionalAudioOutputs(kept));
-        }
-    }, [
-        localAudioRouting,
-        useDefaultAudioOutput,
-        additionalOutputs,
-        isExcludedFromAdditionalList,
-        dispatch,
-    ]);
+    }, [outputRows, dispatch]);
 
     const openAddSchedule = (target: ScheduleDialogTarget) => {
         setScheduleTarget(target);
@@ -232,35 +143,27 @@ export const AudioSettings: React.FC = () => {
         setAddOpen(true);
     };
 
+    const isAddValid =
+        newEntry.days &&
+        newEntry.startTime &&
+        newEntry.endTime &&
+        newEntry.volumeLevel !== undefined &&
+        isValidTimeFormat(newEntry.startTime) &&
+        isValidExtendedTimeFormat(newEntry.endTime);
+
     const submitAddSchedule = () => {
-        if (
-            !(
-                newEntry.days &&
-                newEntry.startTime &&
-                newEntry.endTime &&
-                newEntry.volumeLevel !== undefined &&
-                isValidTimeFormat(newEntry.startTime) &&
-                isValidExtendedTimeFormat(newEntry.endTime)
-            )
-        ) {
-            return;
-        }
+        if (!isAddValid) return;
         const entry: VolumeScheduleEntry = {
             id: generateId(),
-            days: newEntry.days,
-            startTime: formatTime24Hour(newEntry.startTime),
-            endTime: formatTime24Hour(newEntry.endTime),
-            volumeLevel: newEntry.volumeLevel,
+            days: newEntry.days!,
+            startTime: formatTime24Hour(newEntry.startTime!),
+            endTime: formatTime24Hour(newEntry.endTime!),
+            volumeLevel: newEntry.volumeLevel!,
         };
         if (scheduleTarget.kind === 'primary') {
             dispatch(playbackSettingsActions.addVolumeScheduleEntry(entry));
         } else {
-            dispatch(
-                playbackSettingsActions.addAdditionalAudioOutputScheduleEntry({
-                    id: scheduleTarget.outputId,
-                    entry,
-                }),
-            );
+            dispatch(playbackSettingsActions.addAudioOutputScheduleEntry({ id: scheduleTarget.outputId, entry }));
         }
         setNewEntry(FRESH_ENTRY);
         setAddOpen(false);
@@ -272,7 +175,7 @@ export const AudioSettings: React.FC = () => {
             dispatch(playbackSettingsActions.removeVolumeScheduleEntry(pendingDelete.entryId));
         } else {
             dispatch(
-                playbackSettingsActions.removeAdditionalAudioOutputScheduleEntry({
+                playbackSettingsActions.removeAudioOutputScheduleEntry({
                     id: pendingDelete.outputId,
                     entryId: pendingDelete.entryId,
                 }),
@@ -281,33 +184,26 @@ export const AudioSettings: React.FC = () => {
         setPendingDelete(null);
     };
 
-    const setAdditionalEnabled = (deviceId: string, enabled: boolean) => {
-        if (enabled && isExcludedFromAdditionalList(deviceId)) return;
-        const existing = additionalByDeviceId.get(deviceId);
+    const setOutputEnabled = (row: OutputRow, enabled: boolean) => {
         if (enabled) {
-            if (existing) return;
+            if (row.config || !row.device) return;
             dispatch(
-                playbackSettingsActions.addAdditionalAudioOutput({
-                    id: newOutputId(),
-                    deviceId,
-                    volumeControl: { defaultVolume: 100, schedule: [] },
+                playbackSettingsActions.addAudioOutput({
+                    deviceId: row.device.deviceId,
+                    label: row.device.label,
+                    groupId: row.device.groupId,
                 }),
             );
-            setAdditionalExpanded(true);
-            return;
-        }
-        if (existing) {
-            dispatch(playbackSettingsActions.removeAdditionalAudioOutput(existing.id));
+        } else if (row.config) {
+            dispatch(playbackSettingsActions.removeAudioOutput(row.config.id));
         }
     };
 
-    const isAddValid =
-        newEntry.days &&
-        newEntry.startTime &&
-        newEntry.endTime &&
-        newEntry.volumeLevel !== undefined &&
-        isValidTimeFormat(newEntry.startTime) &&
-        isValidExtendedTimeFormat(newEntry.endTime);
+    const sliderSx = {
+        '& .MuiSlider-thumb': { width: 20, height: 20 },
+        '& .MuiSlider-track': { height: 6 },
+        '& .MuiSlider-rail': { height: 6 },
+    };
 
     const renderVolumeScheduleList = (
         schedule: VolumeScheduleEntry[] | undefined,
@@ -326,18 +222,10 @@ export const AudioSettings: React.FC = () => {
                             <ListItem>
                                 <ListItemText
                                     primary={
-                                        <Box
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 1,
-                                                flexWrap: 'wrap',
-                                            }}
-                                        >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                             <Chip label={getDaysDisplayName(entry.days)} size="small" />
                                             <Typography variant="body2">
-                                                {formatTime24Hour(entry.startTime)} -{' '}
-                                                {formatTime24Hour(entry.endTime)}
+                                                {formatTime24Hour(entry.startTime)} - {formatTime24Hour(entry.endTime)}
                                             </Typography>
                                             <Chip
                                                 label={`${entry.volumeLevel}%`}
@@ -368,39 +256,29 @@ export const AudioSettings: React.FC = () => {
         );
     };
 
-    const renderConnectedAdditionalDevice = (device: { id: string; name: string }) => {
-        const output = additionalByDeviceId.get(device.id);
-        const enabled = !!output;
-        const draft = output ? draftAdditionalVolumes[output.id] : null;
-        const volume = draft ?? output?.volumeControl?.defaultVolume ?? 100;
+    const renderOutputRow = (row: OutputRow) => {
+        const output = row.config;
+        const draft = output ? draftOutputVolumes[output.id] : null;
+        const volume = draft ?? output?.volumeControl.defaultVolume ?? 100;
 
         return (
-            <Box
-                key={device.id}
-                sx={{
-                    mb: 2,
-                    p: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                }}
-            >
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            checked={enabled}
-                            onChange={(_, checked) => setAdditionalEnabled(device.id, checked)}
-                        />
-                    }
-                    label={
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                            {device.name}
-                        </Typography>
-                    }
-                    sx={{ mb: enabled ? 1 : 0 }}
-                />
+            <Box key={row.key} sx={{ mb: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <FormControlLabel
+                        control={
+                            <Checkbox checked={!!output} onChange={(_, checked) => setOutputEnabled(row, checked)} />
+                        }
+                        label={
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                {row.label}
+                            </Typography>
+                        }
+                        sx={{ mb: output ? 1 : 0 }}
+                    />
+                    {output && !row.device && <Chip label="Not connected" size="small" color="warning" />}
+                </Box>
 
-                {enabled && output && (
+                {output && (
                     <>
                         <Typography variant="subtitle2" sx={{ mb: 1 }}>
                             Volume
@@ -409,18 +287,12 @@ export const AudioSettings: React.FC = () => {
                             <Slider
                                 value={volume}
                                 onChange={(_, value) =>
-                                    setDraftAdditionalVolumes((prev) => ({
-                                        ...prev,
-                                        [output.id]: value as number,
-                                    }))
+                                    setDraftOutputVolumes((prev) => ({ ...prev, [output.id]: value as number }))
                                 }
                                 onChangeCommitted={(_, value) => {
-                                    setDraftAdditionalVolumes((prev) => ({
-                                        ...prev,
-                                        [output.id]: null,
-                                    }));
+                                    setDraftOutputVolumes((prev) => ({ ...prev, [output.id]: null }));
                                     dispatch(
-                                        playbackSettingsActions.setAdditionalAudioOutputVolume({
+                                        playbackSettingsActions.setAudioOutputVolume({
                                             id: output.id,
                                             volume: value as number,
                                         }),
@@ -436,11 +308,7 @@ export const AudioSettings: React.FC = () => {
                                 ]}
                                 valueLabelDisplay="auto"
                                 valueLabelFormat={(v) => `${v}%`}
-                                sx={{
-                                    '& .MuiSlider-thumb': { width: 20, height: 20 },
-                                    '& .MuiSlider-track': { height: 6 },
-                                    '& .MuiSlider-rail': { height: 6 },
-                                }}
+                                sx={sliderSx}
                             />
                         </Box>
                         <Typography variant="body2" sx={{ mb: 2, fontWeight: 'medium' }}>
@@ -451,23 +319,16 @@ export const AudioSettings: React.FC = () => {
                             Volume Schedule
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Independent overrides for this device. Last entry takes priority for
-                            overlapping times.
+                            Overrides for this device only. Last entry takes priority for overlapping times.
                         </Typography>
-                        {renderVolumeScheduleList(output.volumeControl?.schedule, (entryId) =>
-                            setPendingDelete({
-                                kind: 'additional',
-                                outputId: output.id,
-                                entryId,
-                            }),
+                        {renderVolumeScheduleList(output.volumeControl.schedule, (entryId) =>
+                            setPendingDelete({ kind: 'output', outputId: output.id, entryId }),
                         )}
                         <Button
                             variant="outlined"
                             size="small"
                             startIcon={<Add />}
-                            onClick={() =>
-                                openAddSchedule({ kind: 'additional', outputId: output.id })
-                            }
+                            onClick={() => openAddSchedule({ kind: 'output', outputId: output.id })}
                         >
                             Add Volume Override
                         </Button>
@@ -485,8 +346,7 @@ export const AudioSettings: React.FC = () => {
                         Audio Output
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Choose whether audio plays through the system default output or only
-                        through specific devices you select below.
+                        Play through whatever the system default output is, or through specific devices chosen below.
                     </Typography>
                     <FormControl sx={{ mb: 3 }}>
                         <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -496,12 +356,8 @@ export const AudioSettings: React.FC = () => {
                             row
                             value={useDefaultAudioOutput ? 'yes' : 'no'}
                             onChange={(_, value) => {
-                                dispatch(
-                                    playbackSettingsActions.setUseDefaultAudioOutput(value === 'yes'),
-                                );
-                                if (value === 'no') {
-                                    setAdditionalExpanded(true);
-                                }
+                                dispatch(playbackSettingsActions.setUseDefaultAudioOutput(value === 'yes'));
+                                if (value === 'no') setOutputsExpanded(true);
                             }}
                         >
                             <FormControlLabel value="yes" control={<Radio />} label="Yes" />
@@ -541,11 +397,7 @@ export const AudioSettings: React.FC = () => {
                                 ]}
                                 valueLabelDisplay="auto"
                                 valueLabelFormat={(value) => `${value}%`}
-                                sx={{
-                                    '& .MuiSlider-thumb': { width: 20, height: 20 },
-                                    '& .MuiSlider-track': { height: 6 },
-                                    '& .MuiSlider-rail': { height: 6 },
-                                }}
+                                sx={sliderSx}
                             />
                         </Box>
                         <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
@@ -558,7 +410,8 @@ export const AudioSettings: React.FC = () => {
                             Volume Schedule Overrides
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Configure volume overrides for specific times. Last entry takes priority for overlapping times.
+                            Configure volume overrides for specific times. Last entry takes priority for overlapping
+                            times.
                         </Typography>
 
                         {renderVolumeScheduleList(settings.volumeControl?.schedule, (entryId) =>
@@ -581,66 +434,45 @@ export const AudioSettings: React.FC = () => {
                 <Accordion
                     disableGutters
                     elevation={0}
-                    expanded={additionalExpanded}
-                    onChange={(_, expanded) => setAdditionalExpanded(expanded)}
-                    sx={{
-                        bgcolor: 'transparent',
-                        '&:before': { display: 'none' },
-                        mb: 1,
-                    }}
+                    expanded={outputsExpanded}
+                    onChange={(_, expanded) => setOutputsExpanded(expanded)}
+                    sx={{ bgcolor: 'transparent', '&:before': { display: 'none' }, mb: 1 }}
                 >
                     <AccordionSummary
                         expandIcon={<ExpandMore />}
-                        sx={{
-                            px: 0,
-                            minHeight: 40,
-                            '& .MuiAccordionSummary-content': { my: 1 },
-                        }}
+                        sx={{ px: 0, minHeight: 40, '& .MuiAccordionSummary-content': { my: 1 } }}
                     >
                         <Box>
                             <Typography variant="h6" sx={{ color: 'primary.main' }}>
-                                Additional Audio Devices
+                                Audio Devices
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                                {selectableAdditionalDevices.length === 0
-                                    ? 'No connected outputs available'
-                                    : `${selectableAdditionalDevices.length} connected output${selectableAdditionalDevices.length === 1 ? '' : 's'} — check to play here`}
+                                {audioOutputs.length === 0
+                                    ? 'No devices selected; nothing will play locally'
+                                    : `${audioOutputs.length} selected`}
                             </Typography>
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ px: 0, pt: 1 }}>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            System default output is disabled. Only currently connected devices are
-                            listed. Check a device to play to it with its own volume and schedule.
-                        </Typography>
-                        {selectableAdditionalDevices.filter((d) =>
-                            /bluetooth|headset|earbuds|buds/i.test(d.name),
-                        ).length >= 2 &&
-                            additionalOutputs.filter((o) =>
-                                /bluetooth|headset|earbuds|buds/i.test(
-                                    connectedDeviceOptions.find((d) => d.id === o.deviceId)?.name ??
-                                    '',
-                                ),
-                            ).length >= 2 && (
-                                <Typography
-                                    variant="body2"
-                                    color="warning.main"
-                                    sx={{ mb: 2, fontWeight: 600 }}
-                                >
-                                    Two Bluetooth earphones usually cannot play at the same time.
-                                    Classic Bluetooth only keeps one high-quality audio stream active.
-                                    Prefer wired/USB speakers, or Windows 11 Quick Settings → Shared
-                                    Audio (Bluetooth LE Audio).
-                                </Typography>
-                            )}
-                        {selectableAdditionalDevices.length === 0 ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                                Check a device to play to it with its own volume and schedule. Selected devices stay
+                                selected while unplugged and resume when they return.
+                            </Typography>
+                            <IconButton
+                                size="small"
+                                onClick={() => void refreshOutputDevices()}
+                                title="Refresh devices"
+                            >
+                                <Refresh />
+                            </IconButton>
+                        </Box>
+                        {outputRows.length === 0 ? (
                             <Typography variant="body2" color="text.secondary">
                                 No audio output devices found.
                             </Typography>
                         ) : (
-                            selectableAdditionalDevices.map((device) =>
-                                renderConnectedAdditionalDevice(device),
-                            )
+                            outputRows.map(renderOutputRow)
                         )}
                     </AccordionDetails>
                 </Accordion>

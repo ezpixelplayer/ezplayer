@@ -3,7 +3,7 @@
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
-import type { CloudCommand, RemoteAccessAvailability, UpdateCommand } from '@ezplayer/ezplayer-core';
+import type { AudioDevice, CloudCommand, RemoteAccessAvailability, UpdateCommand } from '@ezplayer/ezplayer-core';
 
 export type { RemoteAccessAvailability };
 import type { DiscoveryResult } from '@ezplayer/epp-controllers';
@@ -102,7 +102,7 @@ export interface ServerWorkerRPCAPI {
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
     sendPlaybackSettings(settings: unknown): void;
-    getAudioOutputDevices(): Promise<import('@ezplayer/ezplayer-core').AudioDevice[]>;
+    getAudioOutputDevices(): Promise<AudioDevice[]>;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;
     /** Software-update verb from a LAN/cloud viewer. */

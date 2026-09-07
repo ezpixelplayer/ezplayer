@@ -165,11 +165,9 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     configureAudioWindowPaths({
         preloadPath: path.join(__dirname, 'preload-audio.js'),
         htmlFilePath: audioWindowHtmlPath(__dirname),
-        // Dev must use Vite — dist/audio-window.html is only refreshed on build:react
-        // and a stale bundle ignores sinkId (every window plays the system default).
         htmlBaseUrl: audioWindowDevUrl(),
     });
-    // Default sink until show-folder settings load (may expand to N devices).
+    // Default sink until show-folder settings load.
     syncAudioOutputsFromSettings(undefined);
 
     mainWindow = new BrowserWindow({
@@ -328,7 +326,7 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
-    // No local speakers in headless — keep decoding/streaming for web/cloud only.
+    // Headless plays no local audio; decoding still feeds web/cloud clients.
     setAudioWindowsEnabled(false);
 
     // persist:false — never write headless CLI values into stored preferences
@@ -387,9 +385,8 @@ if (isToolVerb()) {
     app.whenReady().then(async () => {
         console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
 
-        // Chromium gates non-default AudioContext.setSinkId behind speaker-selection.
-        // Without this, every audio window falls back to the system default sink —
-        // so multi-output looks like "only one device plays". Desktop player: allow.
+        // AudioContext.setSinkId needs speaker-selection granted. Granting all
+        // matches what Electron does with no handler installed.
         session.defaultSession.setPermissionCheckHandler(() => true);
         session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
             callback(true);
