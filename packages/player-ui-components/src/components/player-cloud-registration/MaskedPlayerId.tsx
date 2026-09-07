@@ -6,22 +6,16 @@ import React, { useState } from 'react';
 import { Box } from '../box/Box';
 
 interface MaskedPlayerIdProps {
-    /** The token. Empty / undefined renders `emptyLabel` with no controls. */
+    /** Empty renders `emptyLabel` with no controls. */
     value?: string;
     emptyLabel?: string;
 }
 
-/** Fixed-width mask regardless of the real token — its length and shape are
- *  not the viewer's business either. */
+/** Fixed width so the mask reveals nothing about the token's length or shape. */
 const MASK = '••••••••••••••••••••';
 
-/**
- * Player ID display that hides the token until the eye is pressed. The token is
- * a bearer credential (anyone holding it can drive the player through the cloud),
- * so it must not sit on screen unprompted — but it also needs to be one click to
- * copy for the "enter it on another machine" flow. Masked by default, reveal
- * toggles, copy works whether revealed or not.
- */
+/** Player ID shown masked, with an eye to reveal and a copy button that works
+ *  either way. The ID is a credential, so it should not sit on screen unasked. */
 export const MaskedPlayerId: React.FC<MaskedPlayerIdProps> = ({ value, emptyLabel = '(not set)' }) => {
     const [revealed, setRevealed] = useState(false);
     const [copied, setCopied] = useState(false);

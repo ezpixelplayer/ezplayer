@@ -133,8 +133,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                 </RadioGroup>
             </FormControl>
 
-            {/* Schedule list — only shown in scheduled mode. Any windows saved
-                earlier are kept while in "Always" mode; they just aren't listed. */}
+            {/* Schedule list — scheduled mode only. Saved windows survive a switch to "Always". */}
             {mode === 'scheduled' && (
                 <>
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>

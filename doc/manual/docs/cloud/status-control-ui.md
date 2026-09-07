@@ -94,13 +94,12 @@ with an error — check **Last Error** and try **Sync Content Now** (or
 ## Remote Control Link
 
 Shown once the player is registered. The QR code and link open the player's
-control page in any browser with no sign-in — the link contains the Player ID,
+control page in any browser with no sign-in. The link contains the Player ID,
 so share it only with people who should be able to control the player.
 
-The **Enable Cloud Remote Control** switch turns this off: the player ignores
-remote-control connections from the cloud and hides the link and QR code.
-Registration, status reporting, and content sync keep running. Anyone already
-connected is dropped as soon as the switch goes off.
+Turn off **Enable Cloud Remote Control** to refuse remote control from the
+cloud. The link and QR code are hidden and anyone currently connected is
+disconnected. Registration, status reporting, and content sync continue.
 
 ## Cloud Configuration
 

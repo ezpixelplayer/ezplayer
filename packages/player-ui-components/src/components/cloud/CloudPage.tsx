@@ -427,8 +427,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
 
     const isRegistered = cloudStatus.playerIdIsRegistered;
 
-    // Cloud remote control: the player refuses viewer bridges while this is off,
-    // so the link/QR is withheld too (it would just spin). Default on.
+    // Remote control off → the link/QR is withheld too; it would not connect anyway.
     const remoteControlEnabled = cloudConfig.cloudRemoteControlEnabled !== false;
     const handleRemoteControlToggle = (enabled: boolean) =>
         void dispatch(issueCloudCommand({ type: 'setCloudRemoteControlEnabled', enabled }));
@@ -730,9 +729,8 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
                 </Card>
 
-                {/* Remote control: the enable switch lives here so it sits next to
-                    the thing it gates. Hidden when the host can't change registration
-                    (a cloud viewer flipping this off would cut its own session). */}
+                {/* Remote control link + enable switch. The switch is hidden where
+                    registration is, since a cloud viewer would cut its own session. */}
                 {controlUrl && (
                     <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
@@ -917,7 +915,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                         )}
                     </Box>
                     <Field label="Cloud Service URL" value={cloudConfig.cloudServiceUrl || '(not set)'} />
-                    {/* The token is a bearer credential — masked until asked for. */}
+                    {/* Masked; the token is a credential. */}
                     <Box sx={{ ...fieldRowSx, alignItems: 'center' }}>
                         <Typography className="label" variant="body2">
                             Player ID

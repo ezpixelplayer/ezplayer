@@ -71,9 +71,7 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
     const playerIdIsRegistered = useSelector(selectIsRegistered);
     const cloudActive = useSelector(selectCloudActive);
 
-    // Advanced-section popups. Neither field is edited in place: the URL and
-    // the ID are shown as plain text and each button opens a small dialog with
-    // its own draft state, seeded from the current value when it opens.
+    // Advanced-section popups; each seeds its draft from the current value on open.
     const [manualPlayerId, setManualPlayerId] = useState('');
     const [manualOpen, setManualOpen] = useState(false);
     const [cloudUrlInput, setCloudUrlInput] = useState('');
@@ -259,7 +257,7 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                     </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
-                    {/* Cloud Service URL — read-only text; Edit opens a popup. */}
+                    {/* Cloud Service URL */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
                         <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140 }}>
                             Cloud Service URL:
@@ -272,7 +270,7 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                         </Button>
                     </Box>
 
-                    {/* Current Player ID — masked; eye reveals, copy icon copies. */}
+                    {/* Current Player ID */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
                         <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140 }}>
                             Current Player ID:

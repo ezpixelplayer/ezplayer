@@ -821,8 +821,7 @@ export function applyCloudEnabled(enabled: boolean) {
     broadcastCloudConfig(cfg);
 }
 
-/** Allow / refuse cloud viewer bridges. Persisted per show folder; the gate
- *  itself lives in cloudpollparent and drops any live bridge on disable. */
+/** Allow / refuse cloud remote control. */
 export function applyCloudRemoteControlEnabled(enabled: boolean) {
     const cfg = updateCloudConfig({ cloudRemoteControlEnabled: enabled });
     reconfigureCloudWorker(cfg);

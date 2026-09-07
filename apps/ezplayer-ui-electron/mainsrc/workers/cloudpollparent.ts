@@ -37,12 +37,10 @@ function sessionKey(cloudUrl: string, playerIdToken: string, showFolder: string)
     return `${cloudUrl}\0${playerIdToken}\0${showFolder}`;
 }
 
-/** Operator's "Enable Cloud Remote Control" switch. While false, the cloud's
- *  `openCloudWS` requests are ignored, so no viewer bridge is ever dialed. */
 let remoteControlEnabled = true;
 
-/** Flip the remote-control gate. Turning it off also drops any live bridge so
- *  an attached viewer loses the player immediately, not at TTL expiry. */
+/** Disabling also drops any live bridge, so an attached viewer is cut off now
+ *  rather than at TTL expiry. */
 export function setCloudRemoteControlEnabled(enabled: boolean): void {
     if (remoteControlEnabled === enabled) return;
     remoteControlEnabled = enabled;
@@ -75,8 +73,6 @@ function applyOutOfBandCommand(cmd: OutOfBandCommand) {
                 console.warn('[cloudpoll] openCloudWS missing wsUrl; ignoring command');
                 return;
             }
-            // The cloud re-emits this on every checkin while a viewer is
-            // attached, so no need to remember we refused — just keep refusing.
             if (!remoteControlEnabled) return;
             cloudBridgeOpen(cmd.wsUrl, cmd.proxyWsUrl, cmd.audioWsUrl, cmd.sessionId, cmd.ttlSeconds);
             return;
