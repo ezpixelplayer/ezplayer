@@ -382,33 +382,14 @@ importers:
         specifier: ^8.21.0
         version: 8.21.3
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.3.tgz
-        version: file:libs/xllayoutcalcs-0.3.3.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.4.tgz
+        version: file:libs/xllayoutcalcs-0.3.4.tgz
       zstd-codec:
         specifier: ^0.1.5
         version: 0.1.5
       zstddec:
         specifier: ^0.1.0
         version: 0.1.0
-    optionalDependencies:
-      '@lydell/node-pty-darwin-arm64':
-        specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
-      '@lydell/node-pty-darwin-x64':
-        specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
-      '@lydell/node-pty-linux-arm64':
-        specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
-      '@lydell/node-pty-linux-x64':
-        specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
-      '@lydell/node-pty-win32-arm64':
-        specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
-      '@lydell/node-pty-win32-x64':
-        specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
     devDependencies:
       '@electron/asar':
         specifier: ^3.4.1
@@ -445,7 +426,7 @@ importers:
         version: 41.10.5
       electron-builder:
         specifier: ^26.15.4
-        version: 26.15.7(electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7))
+        version: 26.15.7(electron-builder-squirrel-windows@26.15.7)
       electron-builder-squirrel-windows:
         specifier: ^26.15.4
         version: 26.15.7(dmg-builder@26.15.7)
@@ -467,6 +448,25 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@24.13.3)(jsdom@25.0.1)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
+    optionalDependencies:
+      '@lydell/node-pty-darwin-arm64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-darwin-x64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-linux-arm64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-linux-x64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-win32-arm64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
+      '@lydell/node-pty-win32-x64':
+        specifier: 1.2.0-beta.14
+        version: 1.2.0-beta.14
 
   apps/ezplayer-ui-embedded:
     dependencies:
@@ -519,8 +519,8 @@ importers:
         specifier: 'catalog:'
         version: 10.0.6(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.3.tgz
-        version: file:libs/xllayoutcalcs-0.3.3.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.4.tgz
+        version: file:libs/xllayoutcalcs-0.3.4.tgz
     devDependencies:
       '@types/react':
         specifier: 'catalog:'
@@ -572,8 +572,8 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.3.tgz
-        version: file:libs/xllayoutcalcs-0.3.3.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.4.tgz
+        version: file:libs/xllayoutcalcs-0.3.4.tgz
 
   packages/ezplayer-client:
     dependencies:
@@ -625,8 +625,8 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.3.tgz
-        version: file:libs/xllayoutcalcs-0.3.3.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.4.tgz
+        version: file:libs/xllayoutcalcs-0.3.4.tgz
 
   packages/icmp-ping:
     dependencies:
@@ -876,8 +876,8 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.2.0)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.2.0)(jiti@2.7.0)(sass@1.102.0)(yaml@2.9.0))
       xllayoutcalcs:
-        specifier: file:..\..\libs\xllayoutcalcs-0.3.3.tgz
-        version: file:libs/xllayoutcalcs-0.3.3.tgz
+        specifier: file:..\..\libs\xllayoutcalcs-0.3.4.tgz
+        version: file:libs/xllayoutcalcs-0.3.4.tgz
 
   packages/shared-ui-components:
     dependencies:
@@ -1917,6 +1917,7 @@ packages:
     engines: {node: ^22.20 || ^24.12 || >=25}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@noble/hashes@1.4.0':
     resolution: {integrity: sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg==}
@@ -1955,36 +1956,42 @@ packages:
     engines: {node: '>= 10.0.0'}
     cpu: [arm]
     os: [linux]
+    libc: [glibc]
 
   '@parcel/watcher-linux-arm-musl@2.6.0':
     resolution: {integrity: sha512-9c6AUHgHoG+IY88MRIHupztQiQnrbqHYQjkM2btA+Bf/wQnQMuiD0Wfk1EVv3TlNT3x41uU71rn6E4xh/+zvkw==}
     engines: {node: '>= 10.0.0'}
     cpu: [arm]
     os: [linux]
+    libc: [musl]
 
   '@parcel/watcher-linux-arm64-glibc@2.6.0':
     resolution: {integrity: sha512-yHRqS2owEXe6Hic9z6Mh1ECsCd+ODVOGvZDyciqRd21+v+o+DnXMOrw50DSpIG2sb8GPEaPPmfeCAWKPJdq46g==}
     engines: {node: '>= 10.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@parcel/watcher-linux-arm64-musl@2.6.0':
     resolution: {integrity: sha512-WhB2e/V7rqdHHWZusBSPuy5Ei8S6lSz6FE5TKKQz5h3a0O+C+mhY7vxU9b/stqvMb8beLnPY82ZrFTLKs+SrKA==}
     engines: {node: '>= 10.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@parcel/watcher-linux-x64-glibc@2.6.0':
     resolution: {integrity: sha512-ulGE6x6Oz6iAwg75T8YQSoguBWasniIbX+QWpaYPcCnDOpdWX3k+4xbEYPZVLxOuoJI+svJJPD3sEj8G7lrQ3A==}
     engines: {node: '>= 10.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@parcel/watcher-linux-x64-musl@2.6.0':
     resolution: {integrity: sha512-tkBYKt7YQrjIJWYDnto2YgO8MRkjlMTSNoRHzsXinBqbLdeOM3L32wPZJvIZxqaLMfSlS/4sUjH/6STVP/XDLw==}
     engines: {node: '>= 10.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@parcel/watcher-win32-arm64@2.6.0':
     resolution: {integrity: sha512-gIZAP23jaHjGWasY/TY6yL7NHFClf0Ga7FN+iINvk+KN94rhm94lYZhFsbYFNcA04/onvGD9kKmiJLJB2HbNwQ==}
@@ -2143,66 +2150,79 @@ packages:
     resolution: {integrity: sha512-81wiiX3v7aqy+T+bT61TJ78yJjRquqFFTTbAPt08imfQQzkPIW8t6aJbkTagtCCrXMNc9D66+geqlK7ydLPNqA==}
     cpu: [arm]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.62.4':
     resolution: {integrity: sha512-9kmDIvNZqdoHOBZgNtpTBeLWYO/LVipM3H/j62P8848/l/VPEQL6N3uxU9pvP1oZAsXyC2MEnFP3ovRjo7WYNQ==}
     cpu: [arm]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.62.4':
     resolution: {integrity: sha512-CcnXHWnXg69g+DX5VWL3FHts3qMRN2uVEHX+BZvGLdd07/gXkn3ePjYtO1LDJvxkGKVHMclKBRa1QUTH+6toYQ==}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.62.4':
     resolution: {integrity: sha512-iFOibiHnTRuhrWLlRsOQFdZJJIa7S8OwkneJr4ocALP16u5yk6lWLINFwhHaEqBFMsKDUZofLkGos7+CPzGB3g==}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-loong64-gnu@4.62.4':
     resolution: {integrity: sha512-XnWYMI7euHlb5a871xPja+Gm7DRCFU+FGRrtS2sMq9N8FvqtpagUy6gD4YOemC5MRk9xbh8+jYMEJbigFQwsgA==}
     cpu: [loong64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.62.4':
     resolution: {integrity: sha512-qGDAlO0U8xedCcsdRm9oaoQY8DAx/QT7uIxJWhCdx0ceIWX783UC9QSYkdpzAe29wNiVfp24+bZdQmn49o45SQ==}
     cpu: [loong64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-ppc64-gnu@4.62.4':
     resolution: {integrity: sha512-ru4H6ezD7ysA5EiEK6qkkaEb4modH8CTej6kUy/gQi20u3kB3G7Zn8snXXkeJSCOFKG/rbPPtM/+9Wgas1961w==}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-musl@4.62.4':
     resolution: {integrity: sha512-2W4MO5WQVJnbJaZdvDb9rhBDuFU1nKIepPFpJUBsTh2k1YY2g+ODViaWuyOAjQ5cOP7NvrvLzt3wvHOoiAvc7w==}
     cpu: [ppc64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-riscv64-gnu@4.62.4':
     resolution: {integrity: sha512-+fxjfuoAmVMCYV5QyjoIpu0cp5DOiOTeqYFk1AVaxGr+/ravWLX89XfQmptsoWcaVy/TGf2hexzbUOrCQIL1CQ==}
     cpu: [riscv64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.62.4':
     resolution: {integrity: sha512-jTn8JfHGL4djjFxPuM06LmNUJDsst2jeVlsd9OmIH6zc5sC9K6rIuO4YajXatLUpBmBKl6b35ro1QZocLi+tcA==}
     cpu: [riscv64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.62.4':
     resolution: {integrity: sha512-oCJCJL4pXsoDcP2QZ+JVlPTIRc6266zsIaeJJsWImmF7HO0W8nb6HuSgZlMWxJwaPf8ehbSw8yo0EUw925hKsA==}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.62.4':
     resolution: {integrity: sha512-W69hukhZ3KKNRCaMIEzKvcFye42hh0FE1+YoYaf5+Ikacuftoco6yO/xouz0hc5d5W/s3yBro5jRiuEE/Q5vUw==}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.62.4':
     resolution: {integrity: sha512-qiXbGG2jkjXhzXpsFZSR2Xpb8DN/UaxYsbb/STbuR/6fpaDgRmmaq1B/LmtF2wQFOFOSsK2jdE0RZ3a0zHn4QA==}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-openbsd-x64@4.62.4':
     resolution: {integrity: sha512-nWeM//hxv8mIo6jD7Hu4o48DVmV9pbV6gsKaWU+4NFyqHoPKwrkRiZGLKUhOBk8qNmDmpwFtPKg80Bo/Tn4xiQ==}
@@ -2338,36 +2358,42 @@ packages:
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@swc/core-linux-arm64-musl@1.16.0':
     resolution: {integrity: sha512-d9+iajbMB87b0umgbP+Gy3yBDSDgty4Q6H5pZ8fgTb/dOoKIwwynP4L4kvWCOFg2i49kxmAAUs1uJZh9s0E+RQ==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@swc/core-linux-ppc64-gnu@1.16.0':
     resolution: {integrity: sha512-QRpeKGOg+B0qmo3BFU+6rL/gpoKYYJ7OFSMf5DNMafohYZ/iq2qvAH9Gcrf8NxROj3iooKOVewJ+YgahH1nSLw==}
     engines: {node: '>=10'}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@swc/core-linux-s390x-gnu@1.16.0':
     resolution: {integrity: sha512-q+Vr/hmHCcRXT/WFzOJC+T6GGEEtq2iaTtmyLfxO7yzu4ckgcqSNkg9m181wfNhuMwfNBoBhOfwQCnLsGZ5F4g==}
     engines: {node: '>=10'}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@swc/core-linux-x64-gnu@1.16.0':
     resolution: {integrity: sha512-DWVBc3QnpsSgKoq8N4rmZeZa5r/XrHdLkITsExN/tvTdqPtAPDPt+Ysy33OfgBlyN8lNe4xwsXWe6DXlRkJeRQ==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@swc/core-linux-x64-musl@1.16.0':
     resolution: {integrity: sha512-6XCgDSc1HPf/5dpjvABhKHICiBcsuZyW3hQMkn8sxel0TqprkJGp+H4iaBYIUTPixhrBub2hBPtfjcZLE6yL3w==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@swc/core-win32-arm64-msvc@1.16.0':
     resolution: {integrity: sha512-T/+9VVCZJ3AKEth9IP3U9AJ2YscQq+7LUqRTvfR4a2q36+Ri22oOwUizpAKOqQ42vb2Y/kOa4TOcJOfHoDIT/w==}
@@ -5612,9 +5638,9 @@ packages:
       utf-8-validate:
         optional: true
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.3.tgz:
-    resolution: {integrity: sha512-z1UrV6eU6bR9SgNqWV4qTt+UAQ5VbG9j2PAaP8PLKi52YqhilkqDa4MlOaxLzaNF5h4TR5EdSkX4DS0Dz7LFUA==, tarball: file:libs/xllayoutcalcs-0.3.3.tgz}
-    version: 0.3.3
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.4.tgz:
+    resolution: {integrity: sha512-jSlZ7JUjUOC6Swy55iB3eW7RU7EUzov9wSI7NRxWzFb0D6RmU+p8SrpDioYh3Lmq/XxaWfFLXypz0YuvT8bg/Q==, tarball: file:libs/xllayoutcalcs-0.3.4.tgz}
+    version: 0.3.4
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -7556,7 +7582,7 @@ snapshots:
       normalize-path: 3.0.0
       picomatch: 2.3.2
 
-  app-builder-lib@26.15.7(dmg-builder@26.15.7(electron-builder-squirrel-windows@26.15.7))(electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7)):
+  app-builder-lib@26.15.7(dmg-builder@26.15.7)(electron-builder-squirrel-windows@26.15.7):
     dependencies:
       '@electron/asar': 3.4.1
       '@electron/fuses': 1.8.0
@@ -8062,7 +8088,7 @@ snapshots:
 
   dmg-builder@26.15.7(electron-builder-squirrel-windows@26.15.7):
     dependencies:
-      app-builder-lib: 26.15.7(dmg-builder@26.15.7(electron-builder-squirrel-windows@26.15.7))(electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7))
+      app-builder-lib: 26.15.7(dmg-builder@26.15.7)(electron-builder-squirrel-windows@26.15.7)
       builder-util: 26.15.3
       fs-extra: 10.1.0
       js-yaml: 4.3.1
@@ -8122,16 +8148,16 @@ snapshots:
 
   electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7):
     dependencies:
-      app-builder-lib: 26.15.7(dmg-builder@26.15.7(electron-builder-squirrel-windows@26.15.7))(electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7))
+      app-builder-lib: 26.15.7(dmg-builder@26.15.7)(electron-builder-squirrel-windows@26.15.7)
       builder-util: 26.15.3
       electron-winstaller: 5.4.0
     transitivePeerDependencies:
       - dmg-builder
       - supports-color
 
-  electron-builder@26.15.7(electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7)):
+  electron-builder@26.15.7(electron-builder-squirrel-windows@26.15.7):
     dependencies:
-      app-builder-lib: 26.15.7(dmg-builder@26.15.7(electron-builder-squirrel-windows@26.15.7))(electron-builder-squirrel-windows@26.15.7(dmg-builder@26.15.7))
+      app-builder-lib: 26.15.7(dmg-builder@26.15.7)(electron-builder-squirrel-windows@26.15.7)
       builder-util: 26.15.3
       builder-util-runtime: 9.7.0
       chalk: 4.1.2
@@ -10466,7 +10492,7 @@ snapshots:
 
   ws@8.21.3: {}
 
-  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.3.tgz:
+  xllayoutcalcs@file:libs/xllayoutcalcs-0.3.4.tgz:
     dependencies:
       gl-matrix: 3.4.4
 
