@@ -133,58 +133,69 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                 </RadioGroup>
             </FormControl>
 
-            {/* Schedule list (only meaningful in scheduled mode, but always shown so the
-                user can prepare windows before flipping the switch). */}
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Allowed Times ({schedule.length})
-            </Typography>
-            {schedule.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    No allowed times defined.
-                    {mode === 'scheduled' && ' In scheduled mode with no allowed times, content polling is suspended.'}
-                </Typography>
-            ) : (
-                <List dense sx={{ mb: 2 }}>
-                    {schedule.map((entry, index) => (
-                        <React.Fragment key={entry.id}>
-                            <ListItem>
-                                <ListItemText
-                                    primary={
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                            <Chip label={getDaysDisplayName(entry.days)} size="small" />
-                                            <Typography variant="body2">
-                                                {formatTime24Hour(entry.startTime)} - {formatTime24Hour(entry.endTime)}
-                                            </Typography>
-                                        </Box>
-                                    }
-                                />
-                                <ListItemSecondaryAction>
-                                    <IconButton
-                                        edge="end"
-                                        onClick={() => setPendingDeleteId(entry.id)}
-                                        size="small"
-                                        color="error"
-                                    >
-                                        <Delete />
-                                    </IconButton>
-                                </ListItemSecondaryAction>
-                            </ListItem>
-                            {index < schedule.length - 1 && <Divider />}
-                        </React.Fragment>
-                    ))}
-                </List>
+            {/* Schedule list — only shown in scheduled mode. Any windows saved
+                earlier are kept while in "Always" mode; they just aren't listed. */}
+            {mode === 'scheduled' && (
+                <>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                        Allowed Times ({schedule.length})
+                    </Typography>
+                    {schedule.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            No allowed times defined. With no allowed times, content polling is suspended.
+                        </Typography>
+                    ) : (
+                        <List dense sx={{ mb: 2 }}>
+                            {schedule.map((entry, index) => (
+                                <React.Fragment key={entry.id}>
+                                    <ListItem>
+                                        <ListItemText
+                                            primary={
+                                                <Box
+                                                    sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 1,
+                                                        flexWrap: 'wrap',
+                                                    }}
+                                                >
+                                                    <Chip label={getDaysDisplayName(entry.days)} size="small" />
+                                                    <Typography variant="body2">
+                                                        {formatTime24Hour(entry.startTime)} -{' '}
+                                                        {formatTime24Hour(entry.endTime)}
+                                                    </Typography>
+                                                </Box>
+                                            }
+                                        />
+                                        <ListItemSecondaryAction>
+                                            <IconButton
+                                                edge="end"
+                                                onClick={() => setPendingDeleteId(entry.id)}
+                                                size="small"
+                                                color="error"
+                                            >
+                                                <Delete />
+                                            </IconButton>
+                                        </ListItemSecondaryAction>
+                                    </ListItem>
+                                    {index < schedule.length - 1 && <Divider />}
+                                </React.Fragment>
+                            ))}
+                        </List>
+                    )}
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<Add />}
+                        onClick={() => {
+                            setNewWindow(FRESH_WINDOW);
+                            setAddOpen(true);
+                        }}
+                    >
+                        Add Sync Time Window to Schedule
+                    </Button>
+                </>
             )}
-            <Button
-                variant="outlined"
-                size="small"
-                startIcon={<Add />}
-                onClick={() => {
-                    setNewWindow(FRESH_WINDOW);
-                    setAddOpen(true);
-                }}
-            >
-                Add Sync Time Window to Schedule
-            </Button>
 
             {/* Add window dialog */}
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>

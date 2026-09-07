@@ -48,6 +48,7 @@ import {
     onLayoutInstalled,
     onVcResync,
     pollCloudNow,
+    setCloudRemoteControlEnabled,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
     uploadLayoutNow,
@@ -597,6 +598,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
     const cloudActive = cloudConfig.cloudEnabled !== false;
+    setCloudRemoteControlEnabled(cloudConfig.cloudRemoteControlEnabled !== false);
     setCloudWorkerConfig(
         cloudActive ? cloudConfig.cloudServiceUrl : '',
         cloudActive ? cloudConfig.playerIdToken : '',
@@ -731,6 +733,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
         case 'setCloudEnabled':
             applyCloudEnabled(cmd.enabled);
             break;
+        case 'setCloudRemoteControlEnabled':
+            applyCloudRemoteControlEnabled(cmd.enabled);
+            break;
         case 'setCloudPolling':
             applyCloudPolling({
                 mode: cmd.mode,
@@ -753,6 +758,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
  *  one place so applyXxx helpers don't need to know about every field. */
 function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
+    setCloudRemoteControlEnabled(cfg.cloudRemoteControlEnabled !== false);
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
         cloudActive ? cfg.playerIdToken : '',
@@ -811,6 +817,14 @@ export function applyCloudPolling(patch: {
  *  already short-circuits everything on either being empty. */
 export function applyCloudEnabled(enabled: boolean) {
     const cfg = updateCloudConfig({ cloudEnabled: enabled });
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
+}
+
+/** Allow / refuse cloud viewer bridges. Persisted per show folder; the gate
+ *  itself lives in cloudpollparent and drops any live bridge on disable. */
+export function applyCloudRemoteControlEnabled(enabled: boolean) {
+    const cfg = updateCloudConfig({ cloudRemoteControlEnabled: enabled });
     reconfigureCloudWorker(cfg);
     broadcastCloudConfig(cfg);
 }

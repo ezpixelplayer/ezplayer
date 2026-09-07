@@ -701,6 +701,11 @@ export interface CloudConfig {
      *  configured URL/token but suspends polling and downloads — the user can
      *  flip back without re-entering anything. */
     cloudEnabled?: boolean;
+    /** Whether cloud viewers may attach to this player (the `/ezpui/p/<token>`
+     *  remote-control page). Default true. False makes the player ignore the
+     *  cloud's `openCloudWS` requests, so no control/proxy/audio bridge is ever
+     *  dialed — sync, registration, and status reporting are unaffected. */
+    cloudRemoteControlEnabled?: boolean;
     /** When the worker is enabled, how aggressively it polls content. `'always'`
      *  polls on the configured cadence. `'scheduled'` polls only when current
      *  local time is inside any window in `cloudPollSchedule`. Registration
@@ -932,6 +937,7 @@ export type CloudCommand =
     | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
+    | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud viewer bridges
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so
            *  callers can change one knob without re-sending the others). To clear the
