@@ -8,10 +8,12 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
+    FormControlLabel,
     IconButton,
     LinearProgress,
     Link,
     Stack,
+    Switch,
     Table,
     TableBody,
     TableCell,
@@ -37,6 +39,7 @@ import LinkOffIcon from '@mui/icons-material/LinkOff';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import Tooltip from '@mui/material/Tooltip';
 import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
+import { MaskedPlayerId } from '../player-cloud-registration/MaskedPlayerId';
 import React, { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { QRCodeSVG } from 'qrcode.react';
@@ -424,6 +427,11 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
 
     const isRegistered = cloudStatus.playerIdIsRegistered;
 
+    // Remote control off → the link/QR is withheld too; it would not connect anyway.
+    const remoteControlEnabled = cloudConfig.cloudRemoteControlEnabled !== false;
+    const handleRemoteControlToggle = (enabled: boolean) =>
+        void dispatch(issueCloudCommand({ type: 'setCloudRemoteControlEnabled', enabled }));
+
     // Cloud remote-control URL — prefer the elected regional home server,
     // fall back to the configured cloud service URL (central).
     const controlBase = (cloudStatus.homeServerUrl ?? cloudConfig.cloudServiceUrl ?? '').replace(/\/+$/, '');
@@ -721,63 +729,91 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
                 </Card>
 
+                {/* Remote control link + enable switch. The switch is hidden where
+                    registration is, since a cloud viewer would cut its own session. */}
                 {controlUrl && (
                     <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
                             <Typography variant="h6" sx={{ color: 'primary.main' }}>
                                 Remote Control Link
                             </Typography>
                             <Box sx={{ flexGrow: 1 }} />
-                            <Tooltip title="Copy link">
-                                <IconButton size="small" onClick={() => void copyToClipboard(controlUrl)}>
-                                    <ContentCopyIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
+                            {allowRegistration && (
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            size="small"
+                                            checked={remoteControlEnabled}
+                                            onChange={(e) => handleRemoteControlToggle(e.target.checked)}
+                                        />
+                                    }
+                                    label={
+                                        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+                                            Enable Cloud Remote Control
+                                        </Typography>
+                                    }
+                                    sx={{ mr: 0 }}
+                                />
+                            )}
+                            {remoteControlEnabled && (
+                                <Tooltip title="Copy link">
+                                    <IconButton size="small" onClick={() => void copyToClipboard(controlUrl)}>
+                                        <ContentCopyIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
                         </Box>
-                        <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap">
-                            <Box
-                                sx={{
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    borderRadius: 1,
-                                    p: 1,
-                                    bgcolor: 'background.paper',
-                                    lineHeight: 0,
-                                }}
-                            >
-                                <QRCodeSVG value={controlUrl} size={132} level="M" includeMargin={false} />
-                            </Box>
-                            <Box sx={{ flex: 1, minWidth: 240 }}>
-                                <Typography
-                                    variant="body2"
-                                    sx={{ fontFamily: 'monospace', wordBreak: 'break-all', mb: 1 }}
+                        {remoteControlEnabled ? (
+                            <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap">
+                                <Box
+                                    sx={{
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                        p: 1,
+                                        bgcolor: 'background.paper',
+                                        lineHeight: 0,
+                                    }}
                                 >
-                                    {isElectron() ? (
-                                        <Link
-                                            component="button"
-                                            underline="hover"
-                                            onClick={() => window.electronAPI?.openExternal(controlUrl)}
-                                            sx={{ textAlign: 'left' }}
-                                        >
-                                            {controlUrl}
-                                        </Link>
-                                    ) : (
-                                        <Link
-                                            href={controlUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            underline="hover"
-                                        >
-                                            {controlUrl}
-                                        </Link>
-                                    )}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    Control this player from any browser — no sign-in needed. Anyone with this link can
-                                    control the player, so share it carefully.
-                                </Typography>
-                            </Box>
-                        </Stack>
+                                    <QRCodeSVG value={controlUrl} size={132} level="M" includeMargin={false} />
+                                </Box>
+                                <Box sx={{ flex: 1, minWidth: 240 }}>
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ fontFamily: 'monospace', wordBreak: 'break-all', mb: 1 }}
+                                    >
+                                        {isElectron() ? (
+                                            <Link
+                                                component="button"
+                                                underline="hover"
+                                                onClick={() => window.electronAPI?.openExternal(controlUrl)}
+                                                sx={{ textAlign: 'left' }}
+                                            >
+                                                {controlUrl}
+                                            </Link>
+                                        ) : (
+                                            <Link
+                                                href={controlUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                underline="hover"
+                                            >
+                                                {controlUrl}
+                                            </Link>
+                                        )}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Control this player from any browser — no sign-in needed. Anyone with this link
+                                        can control the player, so share it carefully.
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary">
+                                Cloud remote control is off. The player ignores remote-control connections from the
+                                cloud; sync and status reporting continue. Turn it on to show the link and QR code.
+                            </Typography>
+                        )}
                     </Card>
                 )}
 
@@ -879,7 +915,13 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                         )}
                     </Box>
                     <Field label="Cloud Service URL" value={cloudConfig.cloudServiceUrl || '(not set)'} />
-                    <Field label="Player ID Token" value={cloudConfig.playerIdToken || '(not set)'} />
+                    {/* Masked; the token is a credential. */}
+                    <Box sx={{ ...fieldRowSx, alignItems: 'center' }}>
+                        <Typography className="label" variant="body2">
+                            Player ID
+                        </Typography>
+                        <MaskedPlayerId value={cloudConfig.playerIdToken} />
+                    </Box>
                 </Card>
             </Box>
             {allowRegistration && (
