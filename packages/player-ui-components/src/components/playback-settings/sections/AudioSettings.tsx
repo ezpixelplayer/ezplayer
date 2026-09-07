@@ -63,14 +63,6 @@ function isPhysicalAdditionalDevice(d: { id: string; name: string }): boolean {
     return true;
 }
 
-/** Chromium's synthetic `default` sink shares groupId with the OS default speaker. */
-function isSystemDefaultRouteDevice(device: AudioDevice, systemDefaultGroupId?: string): boolean {
-    if (systemDefaultGroupId && device.groupId === systemDefaultGroupId) return true;
-    if (/^default\b/i.test(device.label?.trim() ?? '')) return true;
-    if (/\bdefault\s*[-–—]/i.test(device.label ?? '')) return true;
-    return false;
-}
-
 type ScheduleDialogTarget =
     | { kind: 'primary' }
     | { kind: 'additional'; outputId: string };
