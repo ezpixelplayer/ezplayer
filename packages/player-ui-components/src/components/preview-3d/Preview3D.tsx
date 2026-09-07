@@ -157,8 +157,7 @@ export interface Preview3DProps {
 }
 
 /**
- * Active-state style for the toggles on the fullscreen overlay. A solid fill rather than a
- * tinted icon: the overlay gets used outdoors, where a gold-on-white tint barely reads.
+ * Active-state style for the toggles on the fullscreen overlay.
  */
 const overlayActiveSx = {
     bgcolor: 'primary.main',
@@ -203,7 +202,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // the view and the model list, plus a small floating control cluster.
     const [expanded, setExpanded] = useState(false);
     // Fullscreen-only: withhold live data from the viewers so the shader falls back to its
-    // animated procedural rainbow, which is far easier to see outdoors than unlit pixels.
+    // animated procedural rainbow.
     const [forceTestPattern, setForceTestPattern] = useState(false);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
