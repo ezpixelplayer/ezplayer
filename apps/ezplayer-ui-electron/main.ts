@@ -11,6 +11,7 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
 import { reportDiagEvent } from './mainsrc/diagnostics.js';
+import { primeDiagEnv } from './mainsrc/diagEnv.js';
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
@@ -385,6 +386,8 @@ if (isToolVerb()) {
 } else
     app.whenReady().then(async () => {
         console.log(`Starting EZPlayer Version: ${JSON.stringify(ezpVersions, undefined, 4)}`);
+        // Warm the GPU/OS snapshot that rides along with crash reports.
+        primeDiagEnv();
 
         // Reset CLI flags — wipe persisted state and quit. Variants differ in what
         // welcome-screen cloud-CTA value they leave persisted for the next launch.
