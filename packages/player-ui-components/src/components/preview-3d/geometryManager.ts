@@ -191,8 +191,12 @@ export class GeometryGroupRenderer {
      */
     updateLiveDataColors(liveData?: LatestFrameRingBuffer): void {
         if (!liveData) {
-            // No live data available - use procedural colors
+            // No live data available - use procedural colors.
+            // Forget the last consumed seq so that when live data returns (e.g. the fullscreen
+            // test-pattern toggle is switched off) the current frame is re-read immediately,
+            // even if the player is paused and no new frame has been published since.
             this.material.uniforms.useLiveData.value = 0.0;
+            this._lastFrameSeq = 0;
             return;
         }
 

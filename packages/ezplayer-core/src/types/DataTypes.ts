@@ -743,6 +743,9 @@ export interface CloudConfig {
      *  configured URL/token but suspends polling and downloads — the user can
      *  flip back without re-entering anything. */
     cloudEnabled?: boolean;
+    /** Whether the player accepts remote control from the cloud. Default true.
+     *  Sync, registration, and status reporting are unaffected. */
+    cloudRemoteControlEnabled?: boolean;
     /** When the worker is enabled, how aggressively it polls content. `'always'`
      *  polls on the configured cadence. `'scheduled'` polls only when current
      *  local time is inside any window in `cloudPollSchedule`. Registration
@@ -974,6 +977,7 @@ export type CloudCommand =
     | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
+    | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud remote control
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so
            *  callers can change one knob without re-sending the others). To clear the
