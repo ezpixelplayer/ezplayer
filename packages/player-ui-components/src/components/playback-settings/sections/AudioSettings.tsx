@@ -63,14 +63,6 @@ function isPhysicalAdditionalDevice(d: { id: string; name: string }): boolean {
     return true;
 }
 
-/** Chromium's synthetic `default` sink shares groupId with the OS default speaker. */
-function isSystemDefaultRouteDevice(device: AudioDevice, systemDefaultGroupId?: string): boolean {
-    if (systemDefaultGroupId && device.groupId === systemDefaultGroupId) return true;
-    if (/^default\b/i.test(device.label?.trim() ?? '')) return true;
-    if (/\bdefault\s*[-–—]/i.test(device.label ?? '')) return true;
-    return false;
-}
-
 type ScheduleDialogTarget =
     | { kind: 'primary' }
     | { kind: 'additional'; outputId: string };
@@ -185,21 +177,11 @@ export const AudioSettings: React.FC = () => {
     const isExcludedFromAdditionalList = useCallback(
         (deviceId: string): boolean => {
             if (!isPhysicalAdditionalDevice({ id: deviceId, name: '' })) return true;
-            if (!useDefaultAudioOutput) {
-                if (systemDefaultOutputDeviceId && deviceId === systemDefaultOutputDeviceId) {
-                    return true;
-                }
-                const dev = outputDevices.find((d) => d.deviceId === deviceId);
-                if (dev && isSystemDefaultRouteDevice(dev, systemDefaultGroupId)) return true;
-            }
             if (useDefaultAudioOutput && deviceId === primaryDeviceId) return true;
             return false;
         },
         [
-            outputDevices,
             useDefaultAudioOutput,
-            systemDefaultGroupId,
-            systemDefaultOutputDeviceId,
             primaryDeviceId,
         ],
     );
@@ -229,7 +211,7 @@ export const AudioSettings: React.FC = () => {
         }
     }, [localAudioRouting, useDefaultAudioOutput, additionalOutputs.length]);
 
-    // Default output off: drop rows for the system-default route (same groupId as Chromium `default`).
+    // Keep persisted additional rows aligned to currently selectable real devices.
     useEffect(() => {
         if (!localAudioRouting || useDefaultAudioOutput) return;
         const kept = additionalOutputs.filter((o) => !isExcludedFromAdditionalList(o.deviceId));
