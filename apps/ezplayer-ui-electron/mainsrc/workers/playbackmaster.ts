@@ -1685,14 +1685,6 @@ function isSerialProtocol(protocol: string | undefined): boolean {
     return !!protocol && SERIAL_PROTOCOLS.has(protocol.toLowerCase());
 }
 
-/** Family name the drivers expect: DMX and Pixelnet flavours collapse. */
-function serialProtocolFamily(protocol: string): string {
-    const p = protocol.toLowerCase();
-    if (p.startsWith('dmx') || p === 'opendmx') return 'dmx';
-    if (p.startsWith('pixelnet')) return 'pixelnet';
-    return p;
-}
-
 /** Serial-port intent per controller: models on serial protocols grouped by
  *  port, in channel order, with the port's total channel span. */
 function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, ControllerSerialPortIntent[]> {
@@ -1722,7 +1714,13 @@ function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, Controller
             // model's last channel (gaps between models included).
             channels: last.startChannel + last.channelCount - first.startChannel,
             startChannel: first.startChannel,
-            protocol: serialProtocolFamily(first.controllerProtocol),
+            // The name is the controller's own: xLights writes whichever
+            // spelling the target's capability list declares (a Falcon "dmx",
+            // an FPP TTY cape "DMX-Open" or "DMX-Pro"), and the upload check
+            // validates against that same list. The flavours differ on the
+            // wire, so the name is carried through and each driver narrows it
+            // to what its hardware does.
+            protocol: first.controllerProtocol,
         });
         out.set(g.controller, arr);
     }

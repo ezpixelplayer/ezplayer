@@ -1291,8 +1291,14 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
     // Eligible: present, scan-backed, and not known to be Down.
     const bulkRows = rows.filter((r) => r.state === 'present' && !!r.device && r.health?.connectivity !== 'Down');
-    // Refresh all: every present controller re-reads its details — no scan needed.
-    const refreshAllRows = bulkRows;
+    // Refresh all: a status read works from a bare known address (the backend
+    // materializes the device from the probe), so unlike upload and reboot it
+    // needs no prior scan — only somewhere to send the probe, which is why it
+    // stays available on a freshly opened screen. Anything addressable and not
+    // known to be Down is eligible, including records no scan has matched yet.
+    const refreshAllRows = rows.filter(
+        (r) => (r.device?.id ?? r.address) && r.health?.connectivity !== 'Down',
+    );
     // Mirror the per-row Upload gate: identified non-player device + xLights intent.
     const uploadAllRows = bulkRows.filter(
         (r) =>
@@ -1353,11 +1359,15 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const refreshAll = () =>
         void runBulk(
             'refresh',
-            refreshAllRows.map((r) => ({
-                command: { cmd: 'status', id: r.device!.id, depth: 'full' },
-                kind: 'status',
-                target: r.device!.id,
-            })),
+            refreshAllRows.map((r) => {
+                // Same addressing as the row's own Refresh Details.
+                const id = r.device?.id ?? `${r.address}|direct`;
+                return {
+                    command: { cmd: 'status', id, address: r.device ? undefined : r.address, depth: 'full' },
+                    kind: 'status',
+                    target: id,
+                };
+            }),
             4,
         );
     const uploadAll = () => {
