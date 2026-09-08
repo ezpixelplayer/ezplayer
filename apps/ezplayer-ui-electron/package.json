@@ -10,7 +10,7 @@
     },
     "private": true,
     "license": "AGPL-3.0",
-    "version": "0.6.6",
+    "version": "0.6.7",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -151,7 +151,7 @@
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
-        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.18.tgz",
+        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.19.tgz",
         "@ezplayer/ezplayer-client": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/icmp-ping": "workspace:*",
