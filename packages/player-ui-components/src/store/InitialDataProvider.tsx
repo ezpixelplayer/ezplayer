@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { AppDispatch, authSliceActions, DataStorageAPI } from '..';
-import { DataStorageAPIProvider } from './DataStorageAPIProvider';
 
 interface IDPProps {
     children: React.ReactNode;
@@ -33,5 +32,5 @@ export const InitialDataProvider = ({ children, api }: IDPProps) => {
             }
         })();
     });
-    return <DataStorageAPIProvider api={api}>{children}</DataStorageAPIProvider>;
+    return <>{children}</>;
 };

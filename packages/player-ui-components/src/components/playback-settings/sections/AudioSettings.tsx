@@ -27,12 +27,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select, isElectron } from '@ezplayer/shared-ui-components';
 import type { AudioDevice, AudioOutputConfig, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
-import { isPhysicalAudioOutput, resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
+import { resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
-import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
+import { fetchAudioOutputDevices, playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
-import { supportsLocalAudioRouting } from '../../../store/api/DataStorageAPI';
-import { useDataStorageAPI } from '../../../store/DataStorageAPIProvider';
 import {
     DAY_OPTIONS,
     DayKey,
@@ -78,7 +76,6 @@ function buildOutputRows(configs: AudioOutputConfig[], devices: AudioDevice[]): 
 
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
-    const api = useDataStorageAPI();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
 
     const [addOpen, setAddOpen] = useState(false);
@@ -87,7 +84,8 @@ export const AudioSettings: React.FC = () => {
     const [pendingDelete, setPendingDelete] = useState<
         { kind: 'primary'; entryId: string } | { kind: 'output'; outputId: string; entryId: string } | null
     >(null);
-    const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([]);
+    /** null until the backend reports it can enumerate the player machine's outputs. */
+    const [outputDevices, setOutputDevices] = useState<AudioDevice[] | null>(null);
     const [outputsExpanded, setOutputsExpanded] = useState(true);
 
     // Slider values while dragging. The store is only updated on commit
@@ -97,29 +95,26 @@ export const AudioSettings: React.FC = () => {
 
     const audioOutputs = useMemo(() => settings.audioOutputs ?? [], [settings.audioOutputs]);
     const useDefaultAudioOutput = settings.useDefaultAudioOutput !== false;
-    const localAudioRouting = supportsLocalAudioRouting(api);
+    const localAudioRouting = outputDevices !== null;
 
     const refreshOutputDevices = useCallback(async () => {
-        if (!api.getAudioOutputDevices) return;
         try {
-            const devices = await api.getAudioOutputDevices();
-            setOutputDevices(devices.filter(isPhysicalAudioOutput));
+            setOutputDevices(await dispatch(fetchAudioOutputDevices()).unwrap());
         } catch (err) {
             console.warn('[AudioSettings] audio output device refresh failed', err);
         }
-    }, [api]);
+    }, [dispatch]);
 
     useEffect(() => {
-        if (!localAudioRouting) return;
         void refreshOutputDevices();
         // Only the desktop renderer sees the player machine's own device changes.
         if (!isElectron() || !navigator.mediaDevices?.addEventListener) return;
         const onDeviceChange = () => void refreshOutputDevices();
         navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
         return () => navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
-    }, [localAudioRouting, refreshOutputDevices]);
+    }, [refreshOutputDevices]);
 
-    const outputRows = useMemo(() => buildOutputRows(audioOutputs, outputDevices), [audioOutputs, outputDevices]);
+    const outputRows = useMemo(() => buildOutputRows(audioOutputs, outputDevices ?? []), [audioOutputs, outputDevices]);
 
     // A stored output matched by label/groupId gets its deviceId refreshed.
     useEffect(() => {

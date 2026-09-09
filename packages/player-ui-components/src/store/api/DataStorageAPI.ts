@@ -187,8 +187,3 @@ export interface DataStorageAPI {
         importFseqNames?: string[],
     ) => Promise<BatchImportSummary>;
 }
-
-/** True when the UI can configure local audio outputs on the player machine. */
-export function supportsLocalAudioRouting(api: DataStorageAPI): boolean {
-    return typeof api.getAudioOutputDevices === 'function';
-}

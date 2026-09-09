@@ -1,11 +1,13 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
+    AudioDevice,
     AudioOutputConfig,
     PlaybackSettings,
     ViewerControlScheduleEntry,
     VolumeControlState,
     VolumeScheduleEntry,
 } from '@ezplayer/ezplayer-core';
+import { isPhysicalAudioOutput } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
 
@@ -114,6 +116,15 @@ export const savePlayerSettings = createAsyncThunk<void, void, { state: unknown;
         const state = getState() as RootState;
         const settings: PlaybackSettings = state.playbackSettings.settings;
         await extra.setPlayerSettings(settings);
+    },
+);
+
+/** Physical output sinks on the player machine; null when the backend cannot enumerate. */
+export const fetchAudioOutputDevices = createAsyncThunk<AudioDevice[] | null, void, { extra: DataStorageAPI }>(
+    'playbackSettings/fetchAudioOutputDevices',
+    async (_arg, { extra }) => {
+        if (!extra.getAudioOutputDevices) return null;
+        return (await extra.getAudioOutputDevices()).filter(isPhysicalAudioOutput);
     },
 );
 
