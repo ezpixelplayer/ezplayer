@@ -19,3 +19,12 @@ export function isSupportedAudioName(name: string): boolean {
 export function needsAudioConversion(name: string): boolean {
     return (CONVERTIBLE_AUDIO_EXTENSIONS as readonly string[]).includes(audioExtension(name));
 }
+
+/** Per-song `volume_adj` (-100..100, percent) as an amplitude scale factor:
+ *  -100 mutes, 0 is unchanged, +100 doubles. Baked into the sent samples,
+ *  composing with the global volume applied per sink. */
+export function songVolumeScale(volumeAdj?: number): number {
+    if (typeof volumeAdj !== 'number' || !Number.isFinite(volumeAdj)) return 1;
+    const clamped = Math.max(-100, Math.min(100, volumeAdj));
+    return 1 + clamped / 100;
+}

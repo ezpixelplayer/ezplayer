@@ -1573,6 +1573,20 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: GET /api/ezp/audio-output-devices
+    // ----------------------------------------------
+    router.get('/api/ezp/audio-output-devices', async (ctx) => {
+        try {
+            const devices = await rpc.call('getAudioOutputDevices');
+            ctx.body = { devices };
+        } catch (error) {
+            console.error('[server-worker] Error listing audio output devices:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
     // API: POST /api/ezp/playback-settings
     // ----------------------------------------------
     router.post('/api/ezp/playback-settings', async (ctx) => {
