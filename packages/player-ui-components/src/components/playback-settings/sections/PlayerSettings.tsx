@@ -53,12 +53,19 @@ export const PlayerSettings: React.FC = () => {
     const loginItemApi = window.electronAPI as Partial<EZPElectronAPI> | undefined;
 
     // Diagnostics consent is app-global (electron-store in main), not part of
-    // PlaybackSettings — probe as Partial so older preload builds just hide it.
+    // PlaybackSettings. Section is always visible; checkboxes stay interactive
+    // only when the preload APIs are present (same Electron behavior as before).
     const diagApi = loginItemApi;
     const canControlDiag = Boolean(diagApi?.getDiagnosticsConsent && diagApi.setDiagnosticsConsent);
     const [diagConsent, setDiagConsent] = React.useState<DiagnosticsConsent | null>(null);
+    const defaultDiagConsent: DiagnosticsConsent = {
+        uploadEnabled: true,
+        includePlayerId: false,
+    };
+    const displayedDiagConsent = diagConsent ?? defaultDiagConsent;
+    const diagInteractive = canControlDiag && diagConsent !== null;
     React.useEffect(() => {
-        if (!onDesktop || !canControlDiag || !diagApi?.getDiagnosticsConsent) return;
+        if (!canControlDiag || !diagApi?.getDiagnosticsConsent) return;
         let cancelled = false;
         diagApi
             .getDiagnosticsConsent()
@@ -69,7 +76,7 @@ export const PlayerSettings: React.FC = () => {
         return () => {
             cancelled = true;
         };
-    }, [onDesktop, canControlDiag, diagApi]);
+    }, [canControlDiag, diagApi]);
     const handleDiagChange = async (patch: Partial<DiagnosticsConsent>) => {
         if (!diagApi?.setDiagnosticsConsent) return;
         try {
@@ -89,6 +96,7 @@ export const PlayerSettings: React.FC = () => {
     const [openAtLoginLoading, setOpenAtLoginLoading] = React.useState(onDesktop && canControlLoginItem);
     const [openAtLoginSaving, setOpenAtLoginSaving] = React.useState(false);
     const showLoginItemUi = onDesktop && canControlLoginItem && loginItemPlatformSupported;
+    const startupInteractive = showLoginItemUi && loginItemSupported;
 
     React.useEffect(() => {
         if (!onDesktop || !canControlLoginItem || !loginItemApi?.isLoginItemSupported) {
@@ -144,47 +152,33 @@ export const PlayerSettings: React.FC = () => {
         }
     };
 
-    const showStartupSection =
-        showLoginItemUi || (onDesktop && !canControlLoginItem && loginItemOsHint);
-
     return (
         <Box>
-            {showStartupSection && (
-                <>
-                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                        Startup
-                    </Typography>
-                    {showLoginItemUi && loginItemSupported && (
-                        <Box sx={{ mb: 2 }}>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={openAtLogin}
-                                        onChange={(_e, checked) => void handleOpenAtLoginChange(_e, checked)}
-                                        disabled={openAtLoginLoading || openAtLoginSaving}
-                                    />
-                                }
-                                label="Start EZPlayer when I sign in"
-                            />
-                            <Typography variant="body2" color="text.secondary">
-                                Launch EZPlayer automatically when you sign in.
-                            </Typography>
-                        </Box>
-                    )}
-                    {showLoginItemUi && !loginItemSupported && !openAtLoginLoading && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Start at sign-in is available in the installed EZPlayer app, not while running from
-                            development mode.
-                        </Typography>
-                    )}
-                    {onDesktop && !canControlLoginItem && loginItemOsHint && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Restart EZPlayer to enable the sign-in startup setting.
-                        </Typography>
-                    )}
-                    <Divider sx={{ my: 3 }} />
-                </>
-            )}
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Startup
+            </Typography>
+            <Box sx={{ mb: 2 }}>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={openAtLogin}
+                            onChange={(_e, checked) => void handleOpenAtLoginChange(_e, checked)}
+                            disabled={!startupInteractive || openAtLoginLoading || openAtLoginSaving}
+                        />
+                    }
+                    label="Start EZPlayer when I sign in"
+                />
+                <Typography variant="body2" color="text.secondary">
+                    {startupInteractive
+                        ? 'Launch EZPlayer automatically when you sign in.'
+                        : showLoginItemUi && !loginItemSupported && !openAtLoginLoading
+                          ? 'Start at sign-in is available in the installed EZPlayer app, not while running from development mode.'
+                          : onDesktop && !canControlLoginItem && loginItemOsHint
+                            ? 'Restart EZPlayer to enable the sign-in startup setting.'
+                            : 'Start at sign-in is available in the EZPlayer desktop app on Windows and macOS.'}
+                </Typography>
+            </Box>
+            <Divider sx={{ my: 3 }} />
 
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
                 Playback behavior
@@ -224,44 +218,41 @@ export const PlayerSettings: React.FC = () => {
                 </Typography>
             </Box>
 
-            {onDesktop && canControlDiag && diagConsent && (
-                <>
-                    <Divider sx={{ my: 3 }} />
-                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                        Diagnostics
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or
-                        personal information is included.
-                    </Typography>
-                    <Box>
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={diagConsent.uploadEnabled}
-                                    onChange={(_e, checked) => void handleDiagChange({ uploadEnabled: checked })}
-                                />
-                            }
-                            label="Send anonymous crash reports"
+            <Divider sx={{ my: 3 }} />
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Diagnostics
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
+                information is included.
+            </Typography>
+            <Box>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={displayedDiagConsent.uploadEnabled}
+                            disabled={!diagInteractive}
+                            onChange={(_e, checked) => void handleDiagChange({ uploadEnabled: checked })}
                         />
-                    </Box>
-                    <Box>
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={diagConsent.includePlayerId}
-                                    disabled={!diagConsent.uploadEnabled}
-                                    onChange={(_e, checked) => void handleDiagChange({ includePlayerId: checked })}
-                                />
-                            }
-                            label="Include my Player ID with reports"
+                    }
+                    label="Send anonymous crash reports"
+                />
+            </Box>
+            <Box>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={displayedDiagConsent.includePlayerId}
+                            disabled={!diagInteractive || !displayedDiagConsent.uploadEnabled}
+                            onChange={(_e, checked) => void handleDiagChange({ includePlayerId: checked })}
                         />
-                        <Typography variant="body2" color="text.secondary">
-                            Lets support connect reports to your player when you ask for help. Off by default.
-                        </Typography>
-                    </Box>
-                </>
-            )}
+                    }
+                    label="Include my Player ID with reports"
+                />
+                <Typography variant="body2" color="text.secondary">
+                    Lets support connect reports to your player when you ask for help. Off by default.
+                </Typography>
+            </Box>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

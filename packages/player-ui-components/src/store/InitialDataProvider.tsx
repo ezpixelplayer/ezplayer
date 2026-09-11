@@ -1,6 +1,16 @@
-import { useEffect } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { AppDispatch, authSliceActions, DataStorageAPI } from '..';
+
+const DataStorageAPIContext = createContext<DataStorageAPI | null>(null);
+
+export function useDataStorageAPI(): DataStorageAPI {
+    const api = useContext(DataStorageAPIContext);
+    if (!api) {
+        throw new Error('useDataStorageAPI must be used within InitialDataProvider');
+    }
+    return api;
+}
 
 interface IDPProps {
     children: React.ReactNode;
