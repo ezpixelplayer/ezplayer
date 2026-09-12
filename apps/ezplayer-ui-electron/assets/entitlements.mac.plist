@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Hardened-runtime entitlements for the signed + notarized macOS build.
+  Referenced from package.json build.mac.entitlements / entitlementsInherit.
+
+  - allow-jit / allow-unsigned-executable-memory: required by V8 / Electron.
+  - disable-library-validation: lets the app load the native .node modules we ship
+    (node-pty, icmp-ping, affinity) which are signed with our Developer ID but are
+    not part of Electron's own signature.
+  - network.*: the app is both a server (embedded web UI, player API) and a client
+    (controllers, cloud). Not required outside the App Sandbox, but harmless and
+    explicit.
+-->
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+</dict>
+</plist>
