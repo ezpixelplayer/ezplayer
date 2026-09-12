@@ -3,17 +3,98 @@
  *
  * MUST stay free of any `electron` import: both the Electron entry and the
  * pure-Node CLI entry reach this. No verb (or `gui`) means "launch the app",
- * which is not handled here.
+ * and the APP_VERBS need Electron; main.ts handles those. This module only
+ * documents them and rejects them in the pure-Node entry.
  */
 
 type CommandModule = { run: (args: string[]) => Promise<number> };
 
 /**
- * Single source of truth for verbs, in the order usage output lists them.
+ * Single source of truth for the text-only verbs, in the order usage output
+ * lists them. These run in the pure-Node entry as well as the desktop binary.
  */
 export const TOOL_VERBS = ['play', 'stats', 'discover', 'interfaces', 'controller', 'shell', 'files', 'help'] as const;
 
 export type ToolVerb = (typeof TOOL_VERBS)[number];
+
+/**
+ * Verbs that need the Electron runtime (session, electron-store, the player),
+ * so they exist only in the desktop binary; main.ts runs them after
+ * `app.whenReady()`. The pure-Node entry rejects them with a pointer there.
+ */
+export const APP_VERBS = ['headless', 'reset'] as const;
+export type AppVerb = (typeof APP_VERBS)[number];
+
+const APP_USAGE: Record<AppVerb, { summary: string; detail: string }> = {
+    headless: {
+        summary: 'Run the full player with no windows.',
+        detail:
+            'Usage: EZPlayer headless [--show-folder=<dir>] [--web-port=<n>] [--kiosk-port=<n>]\n' +
+            '                         [--user-data-dir=<dir>]\n' +
+            '\n' +
+            'Runs the player — scheduled and API-driven playback, light output, the LAN\n' +
+            'web/API server, kiosk server and cloud connectivity — exactly as the windowed\n' +
+            'app does, but without any windows or local speaker output. Requires a valid\n' +
+            'show folder via --show-folder= or a previously configured one. Never modifies\n' +
+            'persisted preferences. Stop it with Ctrl-C or SIGTERM.\n' +
+            '\n' +
+            'EZPLAYER_HEADLESS=1 in the environment is equivalent to the verb.\n' +
+            '\n' +
+            'Exit codes: 2 = no/invalid show folder, 3 = show folder locked by another\n' +
+            'EZPlayer, 64 = unknown verb.',
+    },
+    reset: {
+        summary: "Clear EZPlayer's persisted state and quit (back to the welcome screen).",
+        detail:
+            'Usage: EZPlayer reset [--no-cloud] [--user-data-dir=<dir>]\n' +
+            '\n' +
+            'Forgets the persisted show-folder pointer and clears the renderer\'s\n' +
+            'localStorage, then quits without starting a show. The next launch shows the\n' +
+            'welcome screen again so a new show folder can be picked. Your show folder\n' +
+            "files are not touched — only EZPlayer's stored pointer to the folder.\n" +
+            '\n' +
+            '      --no-cloud       pin the welcome screen to local/xLights only (hide the\n' +
+            '                       cloud option) on the next launch\n' +
+            '      --cloud          show the cloud option on the next launch (the default)\n' +
+            '      --user-data-dir  reset the isolated profile in <dir> instead of the\n' +
+            '                       default one\n' +
+            '\n' +
+            'The legacy flags --reset, --reset-cloud and --reset-nocloud still work as\n' +
+            'aliases of `reset` and `reset --no-cloud`.',
+    },
+};
+
+/** True for a verb that only the desktop binary can run. */
+export function isAppVerbName(verb: string): verb is AppVerb {
+    return (APP_VERBS as readonly string[]).includes(verb);
+}
+
+export function appVerbSummary(verb: AppVerb): string {
+    return APP_USAGE[verb].summary;
+}
+
+/** Full `--help` text for an app-only verb. */
+export function appVerbUsage(verb: AppVerb): string {
+    return APP_USAGE[verb].detail;
+}
+
+export type ResetOptions = { showCloud: boolean };
+
+/**
+ * Parse the options after `reset`: the options, `'help'`, or an error for an
+ * unknown argument. Pure so it is unit-testable; mainsrc/reset.ts acts on it.
+ */
+export function parseResetArgs(args: string[]): ResetOptions | 'help' | { error: string } {
+    let showCloud = true;
+    for (const a of args) {
+        if (HELP_FLAGS.has(a)) return 'help';
+        else if (a === '--no-cloud' || a === '--nocloud') showCloud = false;
+        else if (a === '--cloud') showCloud = true;
+        else if (a.startsWith('--user-data-dir=')) continue; // applied by earlycli
+        else return { error: `Unknown option "${a}" for reset.` };
+    }
+    return { showCloud };
+}
 
 /** `help` is answered inline; `controller` dispatches to a subcommand. */
 type DispatchableVerb = Exclude<ToolVerb, 'help' | 'controller'>;
@@ -232,8 +313,8 @@ export function isToolVerbName(verb: string): verb is ToolVerb {
 }
 
 function printTopHelp(): void {
-    console.log('EZPlayer — headless commands\n');
-    console.log('Usage: EZPlayer <command> [options]\n');
+    console.log('EZPlayer — command line\n');
+    console.log('Usage: EZPlayer [<command>] [options]\n');
     console.log('Commands:');
     for (const verb of TOOL_VERBS) {
         console.log(`  ${verb.padEnd(12)} ${toolVerbSummary(verb)}`);
@@ -243,8 +324,43 @@ function printTopHelp(): void {
             }
         }
     }
-    console.log('\nRun "EZPlayer <command> --help" for command options.');
+    console.log('\nDesktop-app commands (EZPlayer binary only, not the console launcher):');
+    for (const verb of APP_VERBS) {
+        console.log(`  ${verb.padEnd(12)} ${appVerbSummary(verb)}`);
+    }
+    console.log('\nRun "EZPlayer <command> --help" (or "EZPlayer help <command>") for options.');
     console.log('With no command (or `gui`), EZPlayer launches the desktop app.');
+}
+
+/** Detail help for a verb (or `controller <sub>`), or null when there is none. */
+function verbDetail(verb: string, sub?: string): string | null {
+    if (verb === 'controller') {
+        return sub && isControllerSubcommand(sub) ? USAGE[sub].detail : null;
+    }
+    if (isDispatchable(verb)) return USAGE[verb].detail;
+    if (isAppVerbName(verb)) return APP_USAGE[verb].detail;
+    return null;
+}
+
+/** `help [<verb> [<sub>]]`, also reached via `--help`/`-h` as the first arg. */
+function runHelp(rest: string[]): number {
+    const [verb, sub] = rest;
+    if (!verb) {
+        printTopHelp();
+        return 0;
+    }
+    if (verb === 'controller' && !sub) {
+        printControllerHelp();
+        return 0;
+    }
+    const detail = verbDetail(verb, sub);
+    if (detail === null) {
+        console.error(`Unknown command "${rest.join(' ')}".\n`);
+        printTopHelp();
+        return 2;
+    }
+    console.log(detail);
+    return 0;
 }
 
 function printControllerHelp(): void {
@@ -295,15 +411,23 @@ export function isHeadlessVerb(verb: string | undefined): boolean {
 export async function runCli(args: string[]): Promise<number> {
     const [verb, ...rest] = args;
 
-    if (!verb || HELP_FLAGS.has(verb)) {
-        printTopHelp();
-        return 0;
-    }
+    if (!verb || HELP_FLAGS.has(verb)) return runHelp(rest);
 
-    // Only the pure-Node entry gets here with `gui` — no window to open.
+    // Only the pure-Node entry gets here with `gui` or an app-only verb — the
+    // desktop binary handles them in main.ts before reaching runCli.
     if (verb === 'gui') {
         console.error('The `gui` verb launches the desktop app; it is not available in the headless CLI.');
         console.error('Run the EZPlayer app directly, or with no command.\n');
+        printTopHelp();
+        return 2;
+    }
+    if (isAppVerbName(verb)) {
+        if (rest.some((a) => HELP_FLAGS.has(a))) {
+            console.log(APP_USAGE[verb].detail);
+            return 0;
+        }
+        console.error(`The \`${verb}\` command needs the desktop app runtime; it is not available in the headless CLI.`);
+        console.error(`Run it on the EZPlayer app binary instead, e.g. \`EZPlayer.exe ${verb}\` (not the console launcher).\n`);
         printTopHelp();
         return 2;
     }

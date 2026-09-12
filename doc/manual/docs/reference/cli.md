@@ -29,17 +29,23 @@ The **first non-flag argument** decides what EZPlayer does:
 | _(none)_                             | Launch the desktop app (the normal GUI).                            |
 | A leading-dash flag (`--show-folder`, `--web-port`, …) | Launch the desktop app, configured by that flag and any others. |
 | [`headless`](#headless-mode)         | Run the **full player with no windows** — it still plays the show and serves the web API. |
+| [`reset`](#reset)                    | **Clear EZPlayer's persisted state** (show folder pointer, welcome state) and quit, so the next launch shows the welcome screen. |
 | `play`, `stats`, `discover`, `interfaces`, `controller`, `shell`, `files`, `help` | Run a **text-only command** and exit without opening a window or starting the show. |
 | Any other bareword                   | **Error**: EZPlayer prints `unknown command '…'` and the usage text, then exits with code **64**. It does _not_ fall through to the GUI. |
 
-Note the distinction between the two window-less modes: `headless` is the
-**player** running without a UI, while the text-only commands are
+Note the distinction between the window-less modes: `headless` is the
+**player** running without a UI, `reset` is a one-shot maintenance action on
+the app's own stored state, and the text-only commands are
 **diagnostic/management tools** that print and exit before the app ever
 bootstraps.
 
 :::note
 The text-only commands are also available from the pure-Node CLI entry used in
-development and CI (`node dist/cli.js <command>`), which has no GUI to launch.
+development and CI (`node dist/cli.js <command>`) and from the Windows console
+launcher `ezplayer.cmd`, neither of which has a GUI to launch. `headless` and
+`reset` need the Electron runtime, so they only run on the EZPlayer app binary
+itself (`EZPlayer.exe reset`, not `ezplayer reset`); the console entries refuse
+them with a message saying so.
 :::
 
 Everything from [Launch flags](#launch-flags) onward describes the flags that
@@ -59,7 +65,7 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
 | `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager-setup). |
 | `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager-setup). |
-| `help`                 | Print the command list. Also `--help`, `-h`.                |
+| `help`                 | Print the command list, or `help <command>` for one command's options. Also `--help`, `-h`. |
 
 `discover`, `interfaces`, `controller status`, and `controller action` talk to
 devices directly and need no running player. `play`, `stats`, `controller list`
@@ -83,6 +89,7 @@ Get top-level help or per-command help:
 ```bash
 EZPlayer help                 # list commands
 EZPlayer discover --help      # options for one command
+EZPlayer help discover        # same thing
 EZPlayer controller           # list the controller subcommands
 ```
 
@@ -460,13 +467,13 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 | Verb / Flag            | Purpose                                                         |
 | ---------------------- | --------------------------------------------------------------- |
 | `headless`             | Run the full player with no windows ([details](#headless-mode)) |
+| `reset`                | Clear persisted state, then quit (cloud welcome on next launch) ([details](#reset)) |
+| `reset --no-cloud`     | Clear persisted state, pin local-only welcome, then quit        |
 | `--show-folder=<path>` | Open the given show folder on launch                            |
 | `--web-port=<n>`       | LAN HTTP server port (default `3000`)                           |
 | `--kiosk-port=<n>`     | Kiosk web server port (default `3001`)                          |
 | `--kiosk-port=0`       | Disable the kiosk server                                        |
 | `--user-data-dir=<p>`  | Isolate all persisted app state to the given directory          |
-| `--reset`              | Clear persisted state, then quit (cloud welcome on next launch) |
-| `--reset-nocloud`      | Clear persisted state, pin local-only welcome, then quit        |
 | `--no-update-check`    | Skip automatic update checks (startup and idle pre-download)    |
 
 ## Show folder
@@ -571,31 +578,45 @@ actual **Port**, **Source**, and **Listening** state.
 Equivalent environment variables are documented in
 [Environment Variables](./env-variables.md).
 
-## Reset and first-run flags
+## Reset
 
-Reset flags **clear persisted startup state and exit immediately** — they do not
-start a show. Use them to recover from a bad folder choice or to re-run the
-welcome flow.
+The `reset` verb **clears persisted startup state and exits immediately** — it
+does not start a show. Use it to recover from a bad folder choice, to re-run the
+welcome flow, or to factory-reset a machine before handing it off.
 
-| Flag              | What is cleared                              | Next launch welcome screen            |
-| ----------------- | -------------------------------------------- | ------------------------------------- |
-| `--reset`         | Show folder pointer, renderer `localStorage` | Cloud option shown (default)          |
-| `--reset-nocloud` | Same as `--reset`                            | Local/xLights only (cloud CTA hidden) |
+```bash
+EZPlayer.exe reset [--no-cloud] [--user-data-dir=<dir>]
+```
 
-`--reset-cloud` is an alias of `--reset`.
+| Command             | What is cleared                              | Next launch welcome screen            |
+| ------------------- | -------------------------------------------- | ------------------------------------- |
+| `reset`             | Show folder pointer, renderer `localStorage` | Cloud option shown (default)          |
+| `reset --no-cloud`  | Same as `reset`                              | Local/xLights only (cloud CTA hidden) |
+
+`--cloud` is accepted as the explicit spelling of the default. Add
+`--user-data-dir=<dir>` to reset an [isolated profile](#headless-mode) instead
+of the default one.
 
 Example:
 
 ```bash
-EZPlayer.exe --reset-nocloud
+EZPlayer.exe reset --no-cloud
 ```
 
-After running a reset flag, start EZPlayer normally. You will see the welcome
-screen again and can pick a new show folder.
+After a reset, start EZPlayer normally. You will see the welcome screen again
+and can pick a new show folder.
 
 :::warning
-Reset flags quit the app after clearing state. They do not delete your show
-folder files — only EZPlayer's stored pointer to that folder.
+`reset` quits the app after clearing state. It does not delete your show folder
+files — only EZPlayer's stored pointer to that folder.
+:::
+
+:::note
+`reset` runs on the EZPlayer app binary only — it needs the Electron session to
+clear. On Windows use `EZPlayer.exe reset`, not the `ezplayer.cmd` console
+launcher, which refuses it. The older flag spellings `--reset`, `--reset-cloud`
+(both = `reset`) and `--reset-nocloud` (= `reset --no-cloud`) are still
+accepted for existing shortcuts and scripts, with a deprecation warning.
 :::
 
 ## Debugging and logging
@@ -707,7 +728,7 @@ needed.
 **Factory reset before handing off a machine**
 
 ```bash
-EZPlayer.exe --reset
+EZPlayer.exe reset
 ```
 
 ## Internal flags (not for operators)
@@ -719,5 +740,5 @@ The main process may pass these to the renderer via Electron
 | ---------------------------------------------- | ------------------------------------------------------------------ |
 | `--show-welcome=true` / `--show-welcome=false` | Controls whether the welcome screen appears on that process launch |
 
-Use `--reset*` or remove an invalid show folder rather than passing
+Use [`reset`](#reset) or remove an invalid show folder rather than passing
 `--show-welcome` manually.

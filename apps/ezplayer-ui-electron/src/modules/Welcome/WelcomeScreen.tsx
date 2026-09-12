@@ -18,7 +18,7 @@ export const WelcomeScreen = () => {
     const [stage, setStage] = React.useState<WelcomeStage>('choose');
 
     // Shown by default; the real value is fetched from main below. Local-only
-    // installs (`--reset-nocloud`) resolve this to false. Initial false avoids
+    // installs (`EZPlayer reset --no-cloud`) resolve this to false. Initial false avoids
     // flashing the cloud card before that fetch resolves on those installs.
     const [showCloudCTA, setShowCloudCTA] = React.useState(false);
     React.useEffect(() => {
