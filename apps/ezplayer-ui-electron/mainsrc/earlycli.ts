@@ -8,12 +8,24 @@ import * as path from 'path';
  */
 
 /**
- * Verbs that run text-only and exit *before* any Electron bootstrap.
+ * APP_VERBS need the Electron runtime and run after app.whenReady(); TOOL_VERBS
+ * run text-only and exit *before* any Electron bootstrap.
  */
-import { isToolVerbName, TOOL_VERBS, toolVerbSummary, type ToolVerb } from '../cli/dispatch.js';
+import {
+    APP_VERBS,
+    appVerbSummary,
+    isToolVerbName,
+    TOOL_VERBS,
+    toolVerbSummary,
+    type AppVerb,
+    type ToolVerb,
+} from '../cli/dispatch.js';
 
-const KNOWN_VERBS = ['headless', ...TOOL_VERBS] as const;
+const KNOWN_VERBS = [...APP_VERBS, ...TOOL_VERBS] as const;
 export type CliVerb = (typeof KNOWN_VERBS)[number];
+
+/** Deprecated aliases of `reset`, kept so existing shortcuts and scripts work. */
+const LEGACY_RESET_FLAGS = ['--reset', '--reset-cloud', '--reset-nocloud'] as const;
 
 // The verb is the first non-flag argument after the executable (and, in dev,
 // after the app path). Chromium switches can precede the app path.
@@ -53,6 +65,19 @@ export function isHeadless(): boolean {
     return verb === 'headless';
 }
 
+/**
+ * Arguments for the `reset` verb, or null when no reset was asked for. The
+ * legacy flags map onto the verb's options: `--reset` / `--reset-cloud` →
+ * `reset`, `--reset-nocloud` → `reset --no-cloud`.
+ */
+export function getResetArgs(): string[] | null {
+    if (verb === 'reset') return getCliArgs().slice(1);
+    const legacy = LEGACY_RESET_FLAGS.find((f) => process.argv.includes(f));
+    if (!legacy) return null;
+    console.warn(`EZPlayer: ${legacy} is deprecated; use \`EZPlayer reset${legacy === '--reset-nocloud' ? ' --no-cloud' : ''}\`.`);
+    return legacy === '--reset-nocloud' ? ['--no-cloud'] : [];
+}
+
 /** True for text-only verbs that run and exit before the app bootstraps. */
 export function isToolVerb(): boolean {
     return verb !== null && isToolVerbName(verb);
@@ -73,8 +98,7 @@ export function cliUsage(): string {
         '',
         'Verbs:',
         '  (none)      Launch the windowed player.',
-        '  headless    Run the player with no windows. Requires a valid show',
-        '              folder via --show-folder= or a previously configured one.',
+        ...APP_VERBS.map((verb: AppVerb) => `  ${verb.padEnd(11)} ${appVerbSummary(verb)}`),
         ...TOOL_VERBS.map((verb: ToolVerb) => `  ${verb.padEnd(11)} ${toolVerbSummary(verb)}`),
         '',
         'Common options:',
