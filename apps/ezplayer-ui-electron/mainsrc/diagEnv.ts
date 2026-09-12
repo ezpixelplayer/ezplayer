@@ -16,7 +16,29 @@
 import { app, screen } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
+import util from 'node:util';
 import { isHeadless } from './earlycli.js';
+
+const LOG_RING_SIZE = 5;
+const LOG_LINE_MAX = 240;
+const logRing: string[] = [];
+
+/** Wrap console.* in the main process so reports carry the last few lines. */
+export function installDiagLogRing(): void {
+    for (const level of ['log', 'info', 'warn', 'error'] as const) {
+        const orig = console[level].bind(console);
+        console[level] = (...args: unknown[]) => {
+            try {
+                const line = `${new Date().toISOString().slice(11, 23)} ${level[0].toUpperCase()} ${util.format(...args)}`;
+                logRing.push(line.length > LOG_LINE_MAX ? line.slice(0, LOG_LINE_MAX) : line);
+                if (logRing.length > LOG_RING_SIZE) logRing.shift();
+            } catch {
+                /* never break logging */
+            }
+            orig(...args);
+        };
+    }
+}
 
 export interface DiagEnvOs {
     /** process.platform (linux/win32/darwin). */
@@ -105,6 +127,10 @@ export interface DiagEnvSnapshot {
          *  renderer is gone, so this is the only pre-crash memory view. */
         procs?: DiagEnvProc[];
         procsAgeS?: number;
+        /** Peak working set per process type (MB) over this run's samples. */
+        peakMB?: Record<string, number>;
+        /** Last few main-process console lines. */
+        log?: string[];
     };
 }
 
@@ -122,6 +148,8 @@ export interface DiagEnvProc {
 const METRICS_INTERVAL_MS = 60_000;
 let lastMetrics: { at: number; procs: DiagEnvProc[] } | undefined;
 let metricsTimer: NodeJS.Timeout | undefined;
+/** Peak working set per process type (MB); outlives a dead renderer. */
+const peakByType: Record<string, number> = {};
 
 function sampleMetrics(): void {
     try {
@@ -136,6 +164,10 @@ function sampleMetrics(): void {
                 ...(p.memory.peakWorkingSetSize ? { peakMB: Math.round(p.memory.peakWorkingSetSize / 1024) } : {}),
                 cpu: Math.round(p.cpu.percentCPUUsage * 10) / 10,
             }));
+        for (const p of procs) {
+            const seen = Math.max(p.rssMB, p.peakMB ?? 0);
+            if (seen > (peakByType[p.type] ?? 0)) peakByType[p.type] = seen;
+        }
         lastMetrics = { at: Date.now(), procs };
     } catch {
         /* keep the previous sample */
@@ -331,8 +363,13 @@ export function getDiagEnv(): DiagEnvSnapshot | undefined {
                 ...(process.platform === 'linux' ? { loadavg: os.loadavg().map((x) => Math.round(x * 100) / 100) } : {}),
                 minidumps: minidumpCount(),
                 ...(lastMetrics
-                    ? { procs: lastMetrics.procs, procsAgeS: Math.round((Date.now() - lastMetrics.at) / 1000) }
+                    ? {
+                          procs: lastMetrics.procs,
+                          procsAgeS: Math.round((Date.now() - lastMetrics.at) / 1000),
+                          peakMB: { ...peakByType },
+                      }
                     : {}),
+                ...(logRing.length ? { log: [...logRing] } : {}),
             },
         };
     } catch {

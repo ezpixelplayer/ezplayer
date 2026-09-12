@@ -861,6 +861,13 @@ class PlaybackStateEntry {
 
             const left = runToTime - curTime;
 
+            // A missing/NaN/zero duration can't advance the clock; end the part rather than spin.
+            if (!(this.getCurDurFor(c) > 0)) {
+                if (dbg) console.log(`PSE no usable duration at part ${c.itemPart} cursor ${c.itemCursor}; ending part`);
+                this.endCurrentPart(depth, c, curTime, log);
+                continue;
+            }
+
             if (c.itemPart === 0) {
                 // Pre list
                 const itime = c.item.preSectionDurs[c.itemCursor];
@@ -1114,6 +1121,16 @@ class PlaybackStateEntry {
     getCurDur() {
         if (this.itemPart > 2) return 0;
         return this.seqDurs[this.itemPart]?.[this.itemCursor] ?? 0;
+    }
+
+    /** Duration (ms) of the item under a cursor, with the main part's loop
+     *  wrap applied. NaN when the part has no durations to index. */
+    getCurDurFor(c: PlaybackCursor): number {
+        if (c.itemPart < 0 || c.itemPart > 2) return NaN;
+        const durs = this.seqDurs[c.itemPart];
+        if (!durs?.length) return NaN;
+        const idx = c.itemPart === 1 ? c.itemCursor % durs.length : c.itemCursor;
+        return durs[idx] ?? NaN;
     }
 
     // Next things, next interruption time
@@ -1589,6 +1606,10 @@ export class PlayerRunState {
                 )
                     .map((id) => this.sequencesById.get(id))
                     .filter((seq): seq is SequenceRecord => !!seq);
+                // Durations track the shuffled order; empty durs spun advanceToTime forever.
+                for (const seq of sc.mainSection) {
+                    sc.mainSectionDurs.push(getSeqTimesMS(seq).totalSeqTimeMS || 1000);
+                }
             } else {
                 for (let i = 0; i < mainpl.items.length; ++i) {
                     const seq = this.sequencesById.get(mainpl.items[i].id);

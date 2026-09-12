@@ -270,6 +270,7 @@ const parts3shuffle: ScheduledPlaylist = {
     fromTime: '18:00',
     toTime: '18:03',
     loop: true,
+    shuffle: true,
     duration: 0, // ???
 };
 
@@ -284,6 +285,7 @@ const parts3shuffleShort: ScheduledPlaylist = {
     fromTime: '18:00',
     toTime: '18:02',
     loop: true,
+    shuffle: true,
     duration: 0, // ???
 };
 

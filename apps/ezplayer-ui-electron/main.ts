@@ -11,7 +11,8 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
 import { reportDiagEvent } from './mainsrc/diagnostics.js';
-import { primeDiagEnv } from './mainsrc/diagEnv.js';
+import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
+installDiagLogRing();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
