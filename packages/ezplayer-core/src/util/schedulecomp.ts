@@ -1606,7 +1606,7 @@ export class PlayerRunState {
                 )
                     .map((id) => this.sequencesById.get(id))
                     .filter((seq): seq is SequenceRecord => !!seq);
-                // Durations track the shuffled order; empty durs spun advanceToTime forever.
+                // Durations track the shuffled order.
                 for (const seq of sc.mainSection) {
                     sc.mainSectionDurs.push(getSeqTimesMS(seq).totalSeqTimeMS || 1000);
                 }
