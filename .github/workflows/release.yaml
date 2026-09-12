@@ -94,6 +94,9 @@ jobs:
     build-mac:
         runs-on: macos-latest
         environment: release
+        # Signing + two notarizations normally adds 10-30 min over the unsigned build.
+        # A codesign hang (keychain prompt) would otherwise sit for the 6h default.
+        timeout-minutes: 90
 
         steps:
             - name: Checkout repository
@@ -183,6 +186,9 @@ jobs:
                     || { echo "::error::No 'Developer ID Application' identity found after import"; exit 1; }
 
                   echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+                  # electron-builder's notarization is otherwise silent between "signing"
+                  # and "notarization successful"; this surfaces submit/poll progress.
+                  echo "DEBUG=electron-notarize*" >> "$GITHUB_ENV"
                   echo "Code signing: enabled"
 
                   if [ -z "$APPLE_API_KEY_BASE64" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER" ]; then
