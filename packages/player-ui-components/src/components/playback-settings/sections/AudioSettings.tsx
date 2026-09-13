@@ -1,4 +1,4 @@
-import { Add, Delete, ExpandMore, Refresh } from '@mui/icons-material';
+import { Add, Delete, ExpandMore } from '@mui/icons-material';
 import {
     Accordion,
     AccordionDetails,
@@ -23,13 +23,13 @@ import {
     Switch,
     Typography,
 } from '@mui/material';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Select, isElectron } from '@ezplayer/shared-ui-components';
+import { Select } from '@ezplayer/shared-ui-components';
 import type { AudioDevice, AudioOutputConfig, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
-import { fetchAudioOutputDevices, playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
+import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import {
     DAY_OPTIONS,
@@ -77,6 +77,8 @@ function buildOutputRows(configs: AudioOutputConfig[], devices: AudioDevice[]): 
 export const AudioSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
+    /** null until the player reports its outputs (never, for backends without local audio). */
+    const outputDevices = useSelector((s: RootState) => s.audioDevices.outputs);
 
     const [addOpen, setAddOpen] = useState(false);
     const [scheduleTarget, setScheduleTarget] = useState<ScheduleDialogTarget>({ kind: 'primary' });
@@ -84,8 +86,6 @@ export const AudioSettings: React.FC = () => {
     const [pendingDelete, setPendingDelete] = useState<
         { kind: 'primary'; entryId: string } | { kind: 'output'; outputId: string; entryId: string } | null
     >(null);
-    /** null until the backend reports it can enumerate the player machine's outputs. */
-    const [outputDevices, setOutputDevices] = useState<AudioDevice[] | null>(null);
     const [outputsExpanded, setOutputsExpanded] = useState(true);
 
     // Slider values while dragging. The store is only updated on commit
@@ -96,23 +96,6 @@ export const AudioSettings: React.FC = () => {
     const audioOutputs = useMemo(() => settings.audioOutputs ?? [], [settings.audioOutputs]);
     const useDefaultAudioOutput = settings.useDefaultAudioOutput !== false;
     const localAudioRouting = outputDevices !== null;
-
-    const refreshOutputDevices = useCallback(async () => {
-        try {
-            setOutputDevices(await dispatch(fetchAudioOutputDevices()).unwrap());
-        } catch (err) {
-            console.warn('[AudioSettings] audio output device refresh failed', err);
-        }
-    }, [dispatch]);
-
-    useEffect(() => {
-        void refreshOutputDevices();
-        // Only the desktop renderer sees the player machine's own device changes.
-        if (!isElectron() || !navigator.mediaDevices?.addEventListener) return;
-        const onDeviceChange = () => void refreshOutputDevices();
-        navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
-        return () => navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
-    }, [refreshOutputDevices]);
 
     const outputRows = useMemo(() => buildOutputRows(audioOutputs, outputDevices ?? []), [audioOutputs, outputDevices]);
 
@@ -449,19 +432,10 @@ export const AudioSettings: React.FC = () => {
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ px: 0, pt: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-                                Check a device to play to it with its own volume and schedule. Selected devices stay
-                                selected while unplugged and resume when they return.
-                            </Typography>
-                            <IconButton
-                                size="small"
-                                onClick={() => void refreshOutputDevices()}
-                                title="Refresh devices"
-                            >
-                                <Refresh />
-                            </IconButton>
-                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Check a device to play to it with its own volume and schedule. Selected devices stay
+                            selected while unplugged and resume when they return.
+                        </Typography>
                         {outputRows.length === 0 ? (
                             <Typography variant="body2" color="text.secondary">
                                 No audio output devices found.

@@ -1,5 +1,4 @@
 import type {
-    AudioDevice,
     SequenceRecord,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -135,10 +134,6 @@ export interface DataStorageAPI {
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
-
-    /** Enumerate `audiooutput` sinks on the player machine (Electron desktop
-     *  renderer or LAN/web UI via the player's REST API). */
-    getAudioOutputDevices?: () => Promise<AudioDevice[]>;
 
     /** Upload a file's bytes into the player's show folder (web/LAN backends
      *  with the file-management API). Absent on backends where files are

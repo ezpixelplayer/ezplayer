@@ -170,6 +170,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(state);
         });
     },
+    reportAudioOutputDevices: (devices: AudioDevice[]) => {
+        ipcRenderer.send('ipcAudioOutputDevices', devices);
+    },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
         ipcRenderer.on('update:showFolder', (_event: IpcRendererEvent, data: string) => {
