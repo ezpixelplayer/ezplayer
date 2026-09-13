@@ -562,7 +562,10 @@ const GridRow: React.FC<{
         d?.driverType &&
         d.driverType !== 'EZPlayer' &&
         !d.unreachable &&
-        ((row.intent?.length ?? 0) > 0 || (row.serialIntent?.length ?? 0) > 0)
+        ((row.intent?.length ?? 0) > 0 ||
+            (row.serialIntent?.length ?? 0) > 0 ||
+            (row.panelMatrixIntent?.length ?? 0) > 0 ||
+            (row.virtualMatrixIntent?.length ?? 0) > 0)
     ) {
         actions.push({
             key: 'upload',
@@ -1296,9 +1299,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // needs no prior scan — only somewhere to send the probe, which is why it
     // stays available on a freshly opened screen. Anything addressable and not
     // known to be Down is eligible, including records no scan has matched yet.
-    const refreshAllRows = rows.filter(
-        (r) => (r.device?.id ?? r.address) && r.health?.connectivity !== 'Down',
-    );
+    const refreshAllRows = rows.filter((r) => (r.device?.id ?? r.address) && r.health?.connectivity !== 'Down');
     // Mirror the per-row Upload gate: identified non-player device + xLights intent.
     const uploadAllRows = bulkRows.filter(
         (r) =>

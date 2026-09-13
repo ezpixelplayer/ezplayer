@@ -99,6 +99,8 @@ export type {
     ControllerHealth,
     ControllerSerialPortIntent,
     ControllerSerialModelIntent,
+    ControllerPanelMatrixIntent,
+    ControllerVirtualMatrixIntent,
     ControllerSerialPort,
     SerialPortReconcile,
 } from './types/ControllerOps';

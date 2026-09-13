@@ -641,7 +641,13 @@ async function runUpload(
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
     const wantStrings = command.scope !== 'inputs';
     const wantInputs = command.scope !== 'strings';
-    if (wantStrings && !rec.modelIntents?.length && !rec.serialPorts?.length) {
+    if (
+        wantStrings &&
+        !rec.modelIntents?.length &&
+        !rec.serialPorts?.length &&
+        !rec.panelMatrices?.length &&
+        !rec.virtualMatrices?.length
+    ) {
         throw new Error(`"${rec.name}" has no model/port intent from xLights to upload`);
     }
     if (wantInputs && !rec.outputs?.length) {
@@ -744,7 +750,10 @@ async function runUpload(
                     startChannel: sp.startChannel!,
                     channels: sp.channels,
                 }));
-            if (derived.ports.length === 0 && serialPorts.length === 0) {
+            const panelMatrices = rec.panelMatrices ?? [];
+            const virtualMatrices = rec.virtualMatrices ?? [];
+            const hasMatrices = panelMatrices.length > 0 || virtualMatrices.length > 0;
+            if (derived.ports.length === 0 && serialPorts.length === 0 && !hasMatrices) {
                 throw new Error('derivation produced no uploadable ports');
             }
             capCheck({ pixelPorts: derived.ports, serialPorts });
@@ -758,10 +767,41 @@ async function runUpload(
                       }))
                     : undefined,
             };
-            const r = await probe.driver.setOutputs(derived.ports, serialPorts, setOpts);
-            if (!r.success)
-                throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
-            if (r.warnings) warnings.push(...r.warnings);
+            // A controller driving only matrices has no string configuration to
+            // write; sending an empty one would clear the strings it does have.
+            if (derived.ports.length > 0 || serialPorts.length > 0) {
+                const r = await probe.driver.setOutputs(derived.ports, serialPorts, setOpts);
+                if (!r.success)
+                    throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
+                if (r.warnings) warnings.push(...r.warnings);
+            }
+            // LED panel matrices are bound to channels, never created: their
+            // panel geometry lives on the controller.
+            if (panelMatrices.length) {
+                const r = await probe.driver.setPanelMatrices(
+                    panelMatrices.map((pm) => ({
+                        port: pm.port,
+                        startChannel: pm.startChannel,
+                        protocol: pm.protocol,
+                    })),
+                );
+                if (r.warnings) warnings.push(...r.warnings);
+                if (!r.success) throw new Error(`panel matrix upload failed: ${r.message ?? 'unknown error'}`);
+            }
+            if (virtualMatrices.length) {
+                const r = await probe.driver.setVirtualMatrices(
+                    virtualMatrices.map((vm) => ({
+                        name: vm.model,
+                        port: vm.port,
+                        startChannel: vm.startChannel,
+                        channelCount: vm.channels,
+                        width: vm.width,
+                        height: vm.height,
+                    })),
+                );
+                if (r.warnings) warnings.push(...r.warnings);
+                if (!r.success) throw new Error(`virtual matrix upload failed: ${r.message ?? 'unknown error'}`);
+            }
         }
         try {
             const applied = await probe.driver.applyConfig();

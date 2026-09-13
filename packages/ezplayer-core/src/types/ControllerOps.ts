@@ -230,6 +230,10 @@ export interface KnownController {
     ports?: ControllerPortIntent[];
     /** xLights intent for the controller's serial ports */
     serialPorts?: ControllerSerialPortIntent[];
+    /** xLights intent for the controller's LED panel matrices. */
+    panelMatrices?: ControllerPanelMatrixIntent[];
+    /** xLights intent for models on the controller's HDMI virtual matrices. */
+    virtualMatrices?: ControllerVirtualMatrixIntent[];
     /** Rich per-(model,string) intent for config upload; superset of `ports`. */
     modelIntents?: ControllerModelIntent[];
     /** Pixel / serial ports the controller model has, from its capability
@@ -257,6 +261,38 @@ export function effectiveMaxFps(k: { maxFps?: number; fpsOverride?: number }): n
 }
 
 /** xLights intent for one serial (DMX / Renard / Pixelnet / …) output port. */
+/**
+ * xLights intent for one LED panel matrix: the channel range a matrix port must
+ * carry. Panel size, layout and wiring stay on the controller; this is only
+ * what to point the matrix at.
+ */
+export interface ControllerPanelMatrixIntent {
+    /** 1-based matrix number (xLights ControllerConnection Port). */
+    port: number;
+    /** Model names drawn on the matrix, in channel order. */
+    models: string[];
+    /** Absolute 1-based first channel of the matrix's models. */
+    startChannel: number;
+    /** Channels the models span, first model's first through last model's last. */
+    channels: number;
+    /** The xLights protocol, which names the driver family allowed to serve it
+     *  ("LED Panel Matrix", "… - Hat/Cap/Cape", "… - ColorLight"). */
+    protocol: string;
+}
+
+/** xLights intent for one model drawn on an HDMI/framebuffer virtual matrix. */
+export interface ControllerVirtualMatrixIntent {
+    /** 1-based HDMI output (xLights ControllerConnection Port). */
+    port: number;
+    model: string;
+    /** Absolute 1-based first channel. */
+    startChannel: number;
+    channels: number;
+    /** Size in pixels, from the matrix model's strings and nodes. */
+    width: number;
+    height: number;
+}
+
 export interface ControllerSerialPortIntent {
     /** 1-based serial port number (xLights ControllerConnection Port). */
     port: number;
@@ -400,6 +436,10 @@ export interface ControllerGridRow {
     modelIntents?: ControllerModelIntent[];
     /** xLights serial-port intent, reconciled against the device's `serialPorts`. */
     serialIntent?: ControllerSerialPortIntent[];
+    /** xLights LED panel matrix intent. */
+    panelMatrixIntent?: ControllerPanelMatrixIntent[];
+    /** xLights virtual (HDMI) matrix intent. */
+    virtualMatrixIntent?: ControllerVirtualMatrixIntent[];
     /** Port counts from the controller's capability definition. */
     pixelPortCount?: number;
     serialPortCount?: number;

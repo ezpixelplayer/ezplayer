@@ -118,6 +118,8 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             intent: k.ports,
             modelIntents: k.modelIntents,
             serialIntent: k.serialPorts,
+            panelMatrixIntent: k.panelMatrices,
+            virtualMatrixIntent: k.virtualMatrices,
             pixelPortCount: k.pixelPortCount ?? device?.pixelPortCount,
             serialPortCount: k.serialPortCount ?? device?.serialPortCount,
             outputs: k.outputs,

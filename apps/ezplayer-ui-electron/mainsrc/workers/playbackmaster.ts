@@ -37,6 +37,8 @@ import type {
     ControllerModelIntent,
     ControllerOutputIntent,
     ControllerSerialPortIntent,
+    ControllerPanelMatrixIntent,
+    ControllerVirtualMatrixIntent,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -1365,8 +1367,16 @@ async function loadXmlCoordinates() {
             const portIntent = buildPortIntent(models);
             const modelIntents = buildModelIntents(models);
             const serialIntent = buildSerialIntent(models);
+            const matrixIntent = buildMatrixIntents(models, verticalMatrixNames(xrgb));
             knownControllers = controllers.map((c) =>
-                xlControllerToKnown(c, portIntent.get(c.name), modelIntents.get(c.name), serialIntent.get(c.name)),
+                xlControllerToKnown(
+                    c,
+                    portIntent.get(c.name),
+                    modelIntents.get(c.name),
+                    serialIntent.get(c.name),
+                    matrixIntent.panels.get(c.name),
+                    matrixIntent.virtuals.get(c.name),
+                ),
             );
             emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
         } catch (cErr) {
@@ -1629,6 +1639,8 @@ function xlControllerToKnown(
     ports?: ControllerPortIntent[],
     modelIntents?: ControllerModelIntent[],
     serialPorts?: ControllerSerialPortIntent[],
+    panelMatrices?: ControllerPanelMatrixIntent[],
+    virtualMatrices?: ControllerVirtualMatrixIntent[],
 ): KnownController {
     // The controller Description may carry our [MFT:<ms>] min-frame-time tag.
     const mft = new ExplicitControllerDesc(c.description ?? '').minFrameTime;
@@ -1657,6 +1669,8 @@ function xlControllerToKnown(
         ports: ports && ports.length ? ports : undefined,
         modelIntents: modelIntents && modelIntents.length ? modelIntents : undefined,
         serialPorts: serialPorts && serialPorts.length ? serialPorts : undefined,
+        panelMatrices: panelMatrices && panelMatrices.length ? panelMatrices : undefined,
+        virtualMatrices: virtualMatrices && virtualMatrices.length ? virtualMatrices : undefined,
         outputs: xlControllerOutputs(c),
         maxFps,
         source: 'xlights',
@@ -1681,6 +1695,33 @@ const SERIAL_PROTOCOLS = new Set([
     'pixelnet-lynx',
     'pixelnet-open',
 ]);
+
+/**
+ * LED panel matrix protocols. A model on one of these is drawn on a HUB75 or
+ * ColorLight matrix the controller owns, not strung off a pixel port — treating
+ * it as pixels uploads a 192x32 panel as a pixel string on "port 1".
+ */
+const PANEL_MATRIX_PROTOCOLS = new Set([
+    'led panel matrix',
+    'led panel matrix - hat/cap/cape',
+    'led panel matrix - colorlight',
+]);
+
+/** The HDMI/framebuffer virtual matrix protocol. */
+const VIRTUAL_MATRIX_PROTOCOL = 'virtual matrix';
+
+function isPanelMatrixProtocol(protocol: string | undefined): boolean {
+    return !!protocol && PANEL_MATRIX_PROTOCOLS.has(protocol.toLowerCase());
+}
+
+function isVirtualMatrixProtocol(protocol: string | undefined): boolean {
+    return !!protocol && protocol.toLowerCase() === VIRTUAL_MATRIX_PROTOCOL;
+}
+
+/** Neither pixel nor serial: matrices have their own upload paths. */
+function isMatrixProtocol(protocol: string | undefined): boolean {
+    return isPanelMatrixProtocol(protocol) || isVirtualMatrixProtocol(protocol);
+}
 
 function isSerialProtocol(protocol: string | undefined): boolean {
     return !!protocol && SERIAL_PROTOCOLS.has(protocol.toLowerCase());
@@ -1795,11 +1836,97 @@ function modelIntentOf(m: XlModelChannelInfo): ControllerModelIntent {
 
 /** Per-model upload intent grouped by controller name. Only models with a
  *  protocol qualify. */
+/**
+ * Names of the layout's vertical matrices. The parsed model info does not keep
+ * orientation, and the layout spells it two ways: `DisplayAs="Vert Matrix"`,
+ * or since the 2026.3 format `DisplayAs="Matrix"` with `Vertical="true"`.
+ */
+function verticalMatrixNames(xrgb: {
+    getElementsByTagName(tag: string): ArrayLike<{ getAttribute(name: string): string | null }>;
+}): Set<string> {
+    const names = new Set<string>();
+    const models = xrgb.getElementsByTagName('model');
+    for (let i = 0; i < models.length; i++) {
+        const el = models[i];
+        const displayAs = el.getAttribute('DisplayAs');
+        if (displayAs === 'Vert Matrix' || (displayAs === 'Matrix' && el.getAttribute('Vertical') === 'true')) {
+            const name = el.getAttribute('name');
+            if (name) names.add(name);
+        }
+    }
+    return names;
+}
+
+/**
+ * A matrix model's size in pixels, the way xLights sizes a virtual matrix: a
+ * vertical matrix is its strings wide and a string's nodes tall, anything else
+ * the other way round. Falls back to 64x32, xLights' own default, when the
+ * model's strings do not describe a grid.
+ */
+function matrixSize(m: XlModelChannelInfo, vertical: boolean): { width: number; height: number } {
+    const strings = m.numPhysicalStrings || 0;
+    const perString = m.stringNodeCounts?.[0] ?? (strings > 0 ? Math.floor(m.nodeCount / strings) : 0);
+    if (strings <= 0 || perString <= 0) return { width: 64, height: 32 };
+    return vertical ? { width: strings, height: perString } : { width: perString, height: strings };
+}
+
+/** Panel and virtual matrix intent per controller. */
+function buildMatrixIntents(
+    models: XlModelChannelInfo[],
+    verticalMatrices: ReadonlySet<string>,
+): {
+    panels: Map<string, ControllerPanelMatrixIntent[]>;
+    virtuals: Map<string, ControllerVirtualMatrixIntent[]>;
+} {
+    const panelGroups = new Map<string, { controller: string; port: number; models: XlModelChannelInfo[] }>();
+    const virtuals = new Map<string, ControllerVirtualMatrixIntent[]>();
+
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0) continue;
+        if (isPanelMatrixProtocol(m.controllerProtocol)) {
+            const key = `${m.controllerName}\u0000${m.controllerPort}`;
+            const g = panelGroups.get(key) ?? { controller: m.controllerName, port: m.controllerPort, models: [] };
+            g.models.push(m);
+            panelGroups.set(key, g);
+        } else if (isVirtualMatrixProtocol(m.controllerProtocol)) {
+            const arr = virtuals.get(m.controllerName) ?? [];
+            arr.push({
+                port: m.controllerPort,
+                model: m.name,
+                startChannel: m.startChannel,
+                channels: m.channelCount,
+                ...matrixSize(m, verticalMatrices.has(m.name)),
+            });
+            virtuals.set(m.controllerName, arr);
+        }
+    }
+
+    const panels = new Map<string, ControllerPanelMatrixIntent[]>();
+    for (const g of panelGroups.values()) {
+        g.models.sort((a, b) => a.startChannel - b.startChannel);
+        const first = g.models[0];
+        const last = g.models[g.models.length - 1];
+        const arr = panels.get(g.controller) ?? [];
+        arr.push({
+            port: g.port,
+            models: g.models.map((m) => m.name),
+            startChannel: first.startChannel,
+            channels: last.startChannel + last.channelCount - first.startChannel,
+            protocol: first.controllerProtocol,
+        });
+        panels.set(g.controller, arr);
+    }
+    for (const arr of panels.values()) arr.sort((a, b) => a.port - b.port);
+    for (const arr of virtuals.values()) arr.sort((a, b) => a.port - b.port || a.startChannel - b.startChannel);
+    return { panels, virtuals };
+}
+
 function buildModelIntents(models: XlModelChannelInfo[]): Map<string, ControllerModelIntent[]> {
     const by = new Map<string, ControllerModelIntent[]>();
     for (const m of models) {
         if (!m.controllerName || m.controllerPort <= 0 || !m.controllerProtocol) continue;
         if (isSerialProtocol(m.controllerProtocol)) continue; // see buildSerialIntent
+        if (isMatrixProtocol(m.controllerProtocol)) continue; // see buildMatrixIntents
         const arr = by.get(m.controllerName) ?? [];
         arr.push(modelIntentOf(m));
         by.set(m.controllerName, arr);
@@ -1816,6 +1943,7 @@ function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPo
     for (const m of models) {
         if (!m.controllerName || m.controllerPort <= 0) continue;
         if (isSerialProtocol(m.controllerProtocol)) continue; // see buildSerialIntent
+        if (isMatrixProtocol(m.controllerProtocol)) continue; // see buildMatrixIntents
         const arr = byController.get(m.controllerName) ?? [];
         arr.push(modelIntentOf(m));
         byController.set(m.controllerName, arr);
