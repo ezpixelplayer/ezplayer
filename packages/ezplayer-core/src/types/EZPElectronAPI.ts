@@ -17,6 +17,8 @@ import type {
     RemoteAccessAvailability,
     UpdateCommand,
     AutoUpdateOpsState,
+    AppSettingsCommand,
+    AppSettingsState,
 } from './DataTypes';
 import type { ControllerCommand, ControllerOpsState } from './ControllerOps';
 
@@ -120,14 +122,6 @@ export interface BatchImportProgress {
 // of truth and don't drift when the upstream shape evolves.
 export type { GetNodeResult, ChannelRole, ChannelRoleKind, ImageInfo } from 'xllayoutcalcs';
 
-/** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
- *  on (opt-out); `includePlayerId` defaults off (opt-in) since it ties a
- *  report to a specific installation. */
-export interface DiagnosticsConsent {
-    uploadEnabled: boolean;
-    includePlayerId: boolean;
-}
-
 export interface EZPElectronAPI {
     shouldShowWelcomeOnLaunch: () => boolean;
 
@@ -157,9 +151,10 @@ export interface EZPElectronAPI {
      *  to `CloudCommand` and a case in main's dispatcher — no per-verb IPC plumbing. */
     cloudCommand: (cmd: CloudCommand) => Promise<void>;
 
-    // Diagnostics/crash-report consent (app-global, machine-wide).
-    getDiagnosticsConsent?: () => Promise<DiagnosticsConsent>;
-    setDiagnosticsConsent?: (patch: Partial<DiagnosticsConsent>) => Promise<DiagnosticsConsent>;
+    /** App-global settings (diagnostics consent, start at sign-in). Initial state
+     *  arrives in the connect() snapshot; updates push via onAppSettingsUpdated. */
+    appSettingsCommand: (cmd: AppSettingsCommand) => Promise<void>;
+    onAppSettingsUpdated: (callback: (state: AppSettingsState) => void) => void;
     /** Forward an uncaught renderer JS error (incl. exceptions thrown during
      *  React render) to main's diagnostics reporter, which applies the
      *  consent gate and upload throttle. */
@@ -242,14 +237,6 @@ export interface EZPElectronAPI {
     // Audio
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => void;
     onAudioChunk: (callback: (data: AudioChunk) => void) => void;
-
-    /** Whether this OS supports sign-in startup (Windows and macOS). */
-    isLoginItemPlatformSupported: () => Promise<boolean>;
-    /** Whether sign-in startup can be configured (installed Windows/macOS app only, not dev mode). */
-    isLoginItemSupported: () => Promise<boolean>;
-    /** Whether EZPlayer is configured to launch when the user signs in. */
-    getOpenAtLogin: () => Promise<boolean>;
-    setOpenAtLogin: (openAtLogin: boolean) => Promise<boolean>;
 
     /** Auto-update. All interaction is in-UI. */
     updateCommand: (cmd: UpdateCommand) => Promise<void>;

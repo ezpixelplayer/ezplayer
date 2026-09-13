@@ -18,10 +18,13 @@ import type {
     PlayerCStatusContent,
     PlaybackSettings,
     RemoteAccessAvailability,
+    AppSettingsCommand,
+    AppSettingsState,
 } from '@ezplayer/ezplayer-core';
 
 import {
     AppDispatch,
+    appSettingsActions,
     DataStorageAPI,
     setPlayerStatus,
     setPlaybackStatistics,
@@ -99,6 +102,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         window.electronAPI!.onRemoteAccessUpdated((state: RemoteAccessAvailability) => {
             if (!this.dispatch) return;
             this.dispatch(remoteAccessActions.setRemoteAccess(state));
+        });
+        window.electronAPI!.onAppSettingsUpdated((state: AppSettingsState) => {
+            if (!this.dispatch) return;
+            this.dispatch(appSettingsActions.setAppSettings(state));
         });
         window.electronAPI!.ipcRequestAudioDevices(enumerateAudioOutputs);
         navigator.mediaDevices?.addEventListener?.('devicechange', () => void this.publishAudioOutputDevices());
@@ -250,6 +257,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         await window.electronAPI!.updateCommand(cmd);
     }
 
+    async issueAppSettingsCommand(cmd: AppSettingsCommand): Promise<void> {
+        await window.electronAPI!.appSettingsCommand(cmd);
+    }
+
     async connect(dispatch: AppDispatch): Promise<void> {
         this.dispatch = dispatch;
         // Retry: on a cold start the invoke can beat main's handler registration.
@@ -274,6 +285,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.cloudStatus) dispatch(cloudStatusActions.setCloudStatus(snapshot.cloudStatus));
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
+            if (snapshot.appSettings) dispatch(appSettingsActions.setAppSettings(snapshot.appSettings));
         }
         void this.publishAudioOutputDevices();
         // Initial update state comes from an invoke.

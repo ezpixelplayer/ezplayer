@@ -21,7 +21,6 @@ import {
     stopPlayerPlayback,
 } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
-import { registerLoginItemHandlers } from './mainsrc/ipcLoginItem.js';
 import {
     closeShowFolder,
     ensureExclusiveFolder,
@@ -337,7 +336,6 @@ async function startHeadless() {
     playWorker = await startPlaybackWorker();
 
     registerFileListHandlers();
-    registerLoginItemHandlers();
     await registerContentHandlers(null, playWorker);
 
     // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
@@ -441,7 +439,6 @@ if (isToolVerb()) {
         playWorker = await startPlaybackWorker();
 
         registerFileListHandlers();
-        registerLoginItemHandlers();
         createWindow(showFolderSpec ?? undefined, shouldShowWelcome);
 
         // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.

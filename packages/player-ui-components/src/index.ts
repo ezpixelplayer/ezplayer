@@ -94,7 +94,7 @@ export { API_ENDPOINTS } from './store/api/ApiEndpoints';
 export { createAppStore, playerReducers } from './store/Store';
 export type { RootState, AppDispatch } from './store/Store';
 export { playerSettingsAutoSaveMiddleware } from './store/slices/PlayerStatusMiddleware';
-export { InitialDataProvider, useDataStorageAPI } from './store/InitialDataProvider';
+export { InitialDataProvider } from './store/InitialDataProvider';
 export { RouteBaseProvider, useRouteBase } from './util/RouteBaseProvider';
 
 export {
@@ -150,6 +150,8 @@ export { remoteAccessActions } from './store/slices/RemoteAccessStore';
 export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';
 export { audioDevicesActions } from './store/slices/AudioDevicesStore';
 export type { AudioDevicesState } from './store/slices/AudioDevicesStore';
+export { appSettingsActions, sendAppSettingsCommand } from './store/slices/AppSettingsStore';
+export type { AppSettingsSliceState } from './store/slices/AppSettingsStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

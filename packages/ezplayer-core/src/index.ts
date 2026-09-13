@@ -66,6 +66,10 @@ export type {
     ReleaseInfo,
     UpdateCommand,
     AutoUpdateOpsState,
+    DiagnosticsConsent,
+    LoginItemState,
+    AppSettingsState,
+    AppSettingsCommand,
 } from './types/DataTypes';
 
 export type {
@@ -150,7 +154,6 @@ export type {
     AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
-    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,

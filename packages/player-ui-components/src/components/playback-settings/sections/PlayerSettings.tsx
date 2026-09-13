@@ -1,18 +1,13 @@
 import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { isElectron, Select } from '@ezplayer/shared-ui-components';
-import type { DiagnosticsConsent, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { Select } from '@ezplayer/shared-ui-components';
+import type { AppSettingsCommand, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
+import { sendAppSettingsCommand } from '../../../store/slices/AppSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
-
-declare global {
-    interface Window {
-        electronAPI?: EZPElectronAPI;
-    }
-}
 
 /** Number field that commits on blur; empty commits `undefined` (use default). */
 const PortField: React.FC<{
@@ -48,109 +43,24 @@ export const PlayerSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
     const multisync = settings.sync?.multisync;
-    const onDesktop = isElectron();
-    // Treat as Partial so we can detect older preload builds missing login-item APIs.
-    const loginItemApi = window.electronAPI as Partial<EZPElectronAPI> | undefined;
 
-    // Diagnostics consent is app-global (electron-store in main), not part of
-    // PlaybackSettings. Section is always visible; checkboxes stay interactive
-    // only when the preload APIs are present (same Electron behavior as before).
-    const diagApi = loginItemApi;
-    const canControlDiag = Boolean(diagApi?.getDiagnosticsConsent && diagApi.setDiagnosticsConsent);
-    const [diagConsent, setDiagConsent] = React.useState<DiagnosticsConsent | null>(null);
-    const defaultDiagConsent: DiagnosticsConsent = {
-        uploadEnabled: true,
-        includePlayerId: false,
-    };
-    const displayedDiagConsent = diagConsent ?? defaultDiagConsent;
-    const diagInteractive = canControlDiag && diagConsent !== null;
-    React.useEffect(() => {
-        if (!canControlDiag || !diagApi?.getDiagnosticsConsent) return;
-        let cancelled = false;
-        diagApi
-            .getDiagnosticsConsent()
-            .then((c) => {
-                if (!cancelled) setDiagConsent(c);
-            })
-            .catch((error: unknown) => console.error('Failed to read diagnostics consent:', error));
-        return () => {
-            cancelled = true;
-        };
-    }, [canControlDiag, diagApi]);
-    const handleDiagChange = async (patch: Partial<DiagnosticsConsent>) => {
-        if (!diagApi?.setDiagnosticsConsent) return;
-        try {
-            setDiagConsent(await diagApi.setDiagnosticsConsent(patch));
-        } catch (error) {
-            console.error('Failed to update diagnostics consent:', error);
-        }
-    };
-    const canControlLoginItem = Boolean(
-        loginItemApi?.isLoginItemSupported && loginItemApi.getOpenAtLogin && loginItemApi.setOpenAtLogin,
-    );
-    // Renderer hint only (for the rare "restart to pick up preload" path). Real gating uses main-process platform.
-    const loginItemOsHint = typeof navigator !== 'undefined' && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent);
-    const [loginItemPlatformSupported, setLoginItemPlatformSupported] = React.useState(false);
-    const [loginItemSupported, setLoginItemSupported] = React.useState(false);
-    const [openAtLogin, setOpenAtLogin] = React.useState(false);
-    const [openAtLoginLoading, setOpenAtLoginLoading] = React.useState(onDesktop && canControlLoginItem);
-    const [openAtLoginSaving, setOpenAtLoginSaving] = React.useState(false);
-    const showLoginItemUi = onDesktop && canControlLoginItem && loginItemPlatformSupported;
-    const startupInteractive = showLoginItemUi && loginItemSupported;
+    // App-global settings (diagnostics consent, start at sign-in) are pushed by
+    // the player like any other state; null until the first snapshot arrives.
+    const appSettings = useSelector((s: RootState) => s.appSettings.state);
+    const sendAppSettings = (cmd: AppSettingsCommand) => void dispatch(sendAppSettingsCommand(cmd));
 
-    React.useEffect(() => {
-        if (!onDesktop || !canControlLoginItem || !loginItemApi?.isLoginItemSupported) {
-            setLoginItemPlatformSupported(false);
-            setLoginItemSupported(false);
-            setOpenAtLoginLoading(false);
-            return;
-        }
-        let cancelled = false;
-        setOpenAtLoginLoading(true);
-        const platformPromise = loginItemApi.isLoginItemPlatformSupported
-            ? loginItemApi.isLoginItemPlatformSupported()
-            : // Older preload: assume Windows/macOS desktop (feature was Win-focused).
-            Promise.resolve(true);
-        platformPromise
-            .then((platformSupported: boolean) => {
-                if (cancelled) return false;
-                setLoginItemPlatformSupported(platformSupported);
-                if (!platformSupported) return false;
-                return loginItemApi.isLoginItemSupported!();
-            })
-            .then((supported: boolean | void) => {
-                if (cancelled || typeof supported !== 'boolean') return;
-                setLoginItemSupported(supported);
-                if (!supported || !loginItemApi.getOpenAtLogin) return;
-                return loginItemApi.getOpenAtLogin();
-            })
-            .then((enabled: boolean | void) => {
-                if (!cancelled && typeof enabled === 'boolean') setOpenAtLogin(enabled);
-            })
-            .catch((error: unknown) => console.error('Failed to read login-item settings:', error))
-            .finally(() => {
-                if (!cancelled) setOpenAtLoginLoading(false);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [onDesktop, canControlLoginItem, loginItemApi]);
+    const loginItem = appSettings?.loginItem;
+    const startupInteractive = loginItem?.availability === 'ok';
+    const startupHelp = !loginItem
+        ? 'Start at sign-in is available in the EZPlayer desktop app on Windows and macOS.'
+        : loginItem.availability === 'dev-mode'
+          ? 'Start at sign-in is available in the installed EZPlayer app, not while running from development mode.'
+          : loginItem.availability === 'unsupported-platform'
+            ? 'Start at sign-in is available on Windows and macOS.'
+            : 'Launch EZPlayer automatically at sign-in on the player computer.';
 
-    const handleOpenAtLoginChange = async (_event: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
-        if (!loginItemApi?.setOpenAtLogin) return;
-        const previous = openAtLogin;
-        setOpenAtLogin(checked);
-        setOpenAtLoginSaving(true);
-        try {
-            const actual = await loginItemApi.setOpenAtLogin(checked);
-            setOpenAtLogin(actual);
-        } catch (error) {
-            console.error('Failed to update login-item settings:', error);
-            setOpenAtLogin(previous);
-        } finally {
-            setOpenAtLoginSaving(false);
-        }
-    };
+    const diag: DiagnosticsConsent = appSettings?.diagnostics ?? { uploadEnabled: true, includePlayerId: false };
+    const diagInteractive = appSettings !== null;
 
     return (
         <Box>
@@ -161,21 +71,17 @@ export const PlayerSettings: React.FC = () => {
                 <FormControlLabel
                     control={
                         <Checkbox
-                            checked={openAtLogin}
-                            onChange={(_e, checked) => void handleOpenAtLoginChange(_e, checked)}
-                            disabled={!startupInteractive || openAtLoginLoading || openAtLoginSaving}
+                            checked={loginItem?.openAtLogin ?? false}
+                            disabled={!startupInteractive}
+                            onChange={(_e, checked) =>
+                                sendAppSettings({ type: 'setOpenAtLogin', openAtLogin: checked })
+                            }
                         />
                     }
-                    label="Start EZPlayer when I sign in"
+                    label="Start EZPlayer at sign-in"
                 />
                 <Typography variant="body2" color="text.secondary">
-                    {startupInteractive
-                        ? 'Launch EZPlayer automatically when you sign in.'
-                        : showLoginItemUi && !loginItemSupported && !openAtLoginLoading
-                          ? 'Start at sign-in is available in the installed EZPlayer app, not while running from development mode.'
-                          : onDesktop && !canControlLoginItem && loginItemOsHint
-                            ? 'Restart EZPlayer to enable the sign-in startup setting.'
-                            : 'Start at sign-in is available in the EZPlayer desktop app on Windows and macOS.'}
+                    {startupHelp}
                 </Typography>
             </Box>
             <Divider sx={{ my: 3 }} />
@@ -230,9 +136,11 @@ export const PlayerSettings: React.FC = () => {
                 <FormControlLabel
                     control={
                         <Checkbox
-                            checked={displayedDiagConsent.uploadEnabled}
+                            checked={diag.uploadEnabled}
                             disabled={!diagInteractive}
-                            onChange={(_e, checked) => void handleDiagChange({ uploadEnabled: checked })}
+                            onChange={(_e, checked) =>
+                                sendAppSettings({ type: 'setDiagnosticsConsent', patch: { uploadEnabled: checked } })
+                            }
                         />
                     }
                     label="Send anonymous crash reports"
@@ -242,9 +150,14 @@ export const PlayerSettings: React.FC = () => {
                 <FormControlLabel
                     control={
                         <Checkbox
-                            checked={displayedDiagConsent.includePlayerId}
-                            disabled={!diagInteractive || !displayedDiagConsent.uploadEnabled}
-                            onChange={(_e, checked) => void handleDiagChange({ includePlayerId: checked })}
+                            checked={diag.includePlayerId}
+                            disabled={!diagInteractive || !diag.uploadEnabled}
+                            onChange={(_e, checked) =>
+                                sendAppSettings({
+                                    type: 'setDiagnosticsConsent',
+                                    patch: { includePlayerId: checked },
+                                })
+                            }
                         />
                     }
                     label="Include my Player ID with reports"

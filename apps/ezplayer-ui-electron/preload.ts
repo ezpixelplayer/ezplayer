@@ -3,9 +3,10 @@ import type {
     AudioDevice,
     AutoUpdateOpsState,
     UpdateCommand,
+    AppSettingsCommand,
+    AppSettingsState,
     CloudConfig,
     CloudStatus,
-    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -132,11 +133,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cloudCommand(cmd: CloudCommand): Promise<void> {
         return ipcRenderer.invoke('ipcCloudCommand', cmd);
     },
-    getDiagnosticsConsent(): Promise<DiagnosticsConsent> {
-        return ipcRenderer.invoke('ipcGetDiagnosticsConsent');
+    appSettingsCommand(cmd: AppSettingsCommand): Promise<void> {
+        return ipcRenderer.invoke('ipcAppSettingsCommand', cmd);
     },
-    setDiagnosticsConsent(patch: Partial<DiagnosticsConsent>): Promise<DiagnosticsConsent> {
-        return ipcRenderer.invoke('ipcSetDiagnosticsConsent', patch);
+    onAppSettingsUpdated: (callback: (state: AppSettingsState) => void) => {
+        ipcRenderer.on('update:appsettings', (_event: IpcRendererEvent, state: AppSettingsState) => {
+            callback(state);
+        });
     },
     reportRendererError(message: string, stack?: string): Promise<void> {
         return ipcRenderer.invoke('ipcReportRendererError', message, stack);
@@ -237,11 +240,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-
-    isLoginItemPlatformSupported: () => ipcRenderer.invoke('login-item:isPlatformSupported'),
-    isLoginItemSupported: () => ipcRenderer.invoke('login-item:isSupported'),
-    getOpenAtLogin: () => ipcRenderer.invoke('login-item:get'),
-    setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
 
     // Auto-update
     updateCommand: (cmd: UpdateCommand) => ipcRenderer.invoke('autoupdate:command', cmd),
