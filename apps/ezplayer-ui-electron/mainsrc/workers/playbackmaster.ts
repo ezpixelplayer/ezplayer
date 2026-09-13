@@ -1869,17 +1869,7 @@ function sendAudioChunk(
     channels: number,
     advanceSamples: number,
 ) {
-    if (audioExportRing) {
-        if (volumeSF === 1) {
-            audioExportRing.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples);
-        } else {
-            const scaled = new Float32Array(samplesUnity.length);
-            for (let i = 0; i < samplesUnity.length; i++) {
-                scaled[i] = samplesUnity[i] * volumeSF;
-            }
-            audioExportRing.publish(scaled, playAtRealTime, incarnation, sampleRate, channels, advanceSamples);
-        }
-    }
+    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, volumeSF);
     const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
