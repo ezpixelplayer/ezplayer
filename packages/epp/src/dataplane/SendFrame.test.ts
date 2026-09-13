@@ -12,6 +12,8 @@ class FakeSender implements Sender {
         readonly id: number,
         readonly totalBytes: number,
         readonly events: { id: number; t: number; bytes: number }[],
+        /** What frameWireBytes reports; defaults to the truth. */
+        readonly estimatedBytes: number = totalBytes,
     ) {}
     startFrame() {}
     endFrame() {}
@@ -28,7 +30,7 @@ class FakeSender implements Sender {
         return false;
     }
     frameWireBytes(_job: SenderJob) {
-        return this.totalBytes;
+        return this.estimatedBytes;
     }
     sendPortion(_frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {
         const n = Math.min(job.burstSize, this.totalBytes - state.wireBytesSent);
@@ -109,7 +111,8 @@ describe('paced frame sending', () => {
 
     it('flushes the remainder rather than running past the slot deadline', async () => {
         const events: { id: number; t: number; bytes: number }[] = [];
-        const senders = [new FakeSender(0, 12000, events)];
+        // Underestimates 50x, so its rate would need over a second for 12000 bytes
+        const senders = [new FakeSender(0, 12000, events, 240)];
         const job = makeFakeJob(senders, 1000);
         job.slotFraction = 0.5; // explicit, so the test holds whatever the default becomes
 
