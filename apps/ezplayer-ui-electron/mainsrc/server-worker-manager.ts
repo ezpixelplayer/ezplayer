@@ -37,7 +37,12 @@ import {
     startShellSession,
     writeToShellSession,
 } from './shell-session.js';
-import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
+import {
+    dispatchControllerCommand,
+    setControllerOpsBroadcaster,
+    refreshInterfaces,
+    hasRunningControllerOps,
+} from './controller-ops.js';
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
 import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
 import { ezpVersions } from '../versions.js';
@@ -102,6 +107,11 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
         if (cmd.command === 'resetplayback') {
+            // Reloading clears controller state an operation is still writing to.
+            if (hasRunningControllerOps()) {
+                console.warn('[resetplayback] refused: a controller operation is running');
+                return;
+            }
             // Same path as folder change: reload everything and force worker restart
             loadShowFolder(true);
             return;

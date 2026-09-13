@@ -7,11 +7,18 @@
 
 import type {
     ControllerModelIntent,
+    ControllerPanelMatrix,
+    ControllerPanelMatrixIntent,
     ControllerPort,
     ControllerPortIntent,
     ControllerSerialPort,
     ControllerSerialPortIntent,
+    ControllerVirtualMatrix,
+    ControllerVirtualMatrixIntent,
+    PanelMatrixReconcile,
+    VirtualMatrixReconcile,
 } from '../types/ControllerOps';
+import { reconcilePanelMatrices, reconcileVirtualMatrices } from './controllerReconcile';
 
 /** Ports per smart-remote bank. */
 export const PORTS_PER_SMARTREMOTE = 4;
@@ -97,6 +104,14 @@ export interface PortMapOptions {
     serialIntent?: ControllerSerialPortIntent[];
     /** The device's serial ports as read. */
     serialActual?: ControllerSerialPort[];
+    /** xLights LED panel matrix intent. */
+    panelIntent?: ControllerPanelMatrixIntent[];
+    /** The device's panel matrices as read; undefined when not read. */
+    panelActual?: ControllerPanelMatrix[];
+    /** xLights virtual matrix intent. */
+    virtualIntent?: ControllerVirtualMatrixIntent[];
+    /** The device's virtual matrices as read; undefined when not read. */
+    virtualActual?: ControllerVirtualMatrix[];
 }
 
 export interface PortMap {
@@ -106,6 +121,12 @@ export interface PortMap {
     columns: number;
     /** Serial ports, listed after the pixel ports; empty when there are none. */
     serial: PortMapSerialRow[];
+    /** LED panel matrices, the controller's unused ones included. Drift means
+     *  something only when `opts.panelActual` was given. */
+    panels: PanelMatrixReconcile[];
+    /** HDMI virtual matrices, the controller's unused ones included. Drift
+     *  means something only when `opts.virtualActual` was given. */
+    virtuals: VirtualMatrixReconcile[];
 }
 
 /**
@@ -362,7 +383,14 @@ export function buildPortMap(
         });
     }
 
-    return { rows, boxes, columns, serial: buildSerialRows(opts) };
+    return {
+        rows,
+        boxes,
+        columns,
+        serial: buildSerialRows(opts),
+        panels: reconcilePanelMatrices(opts.panelIntent, opts.panelActual, { includeIdle: true }),
+        virtuals: reconcileVirtualMatrices(opts.virtualIntent, opts.virtualActual, { includeIdle: true }),
+    };
 }
 
 /** Serial rows: 1..serialPortCount plus any port either side mentions. */
