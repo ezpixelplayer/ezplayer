@@ -144,7 +144,7 @@ variables, but often appear alongside them:
 | Flag / setting                                  | Purpose                                                        |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--show-folder=<path>`                          | Open a specific show folder on launch                          |
-| `--reset` / `--reset-cloud` / `--reset-nocloud` | Clear persisted show-folder and welcome state, then exit       |
+| `reset` / `reset --no-cloud`                    | Clear persisted show-folder and welcome state, then exit       |
 | `window.__EZPLAYER_MODE__`                      | Injected as `"kiosk"` in kiosk server HTML (not an OS env var) |
 
 CLI documentation: [Command Line Interface (CLI)](./cli.md).
