@@ -1913,6 +1913,7 @@ function buildMatrixIntents(
             startChannel: first.startChannel,
             channels: last.startChannel + last.channelCount - first.startChannel,
             protocol: first.controllerProtocol,
+            ...matrixSize(first, verticalMatrices.has(first.name)),
         });
         panels.set(g.controller, arr);
     }

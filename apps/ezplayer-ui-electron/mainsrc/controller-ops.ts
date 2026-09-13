@@ -13,8 +13,10 @@ import type {
     ControllerOp,
     ControllerOpOrigin,
     ControllerOpsState,
+    ControllerPanelMatrix,
     ControllerPort,
     ControllerSerialPort,
+    ControllerVirtualMatrix,
     DiscoveredController,
     EzpControllerRecord,
     KnownController,
@@ -28,10 +30,14 @@ import type {
     DiscoveryResult,
     ModelPortIntent,
     OutputConfig,
+    PanelMatrixConfig,
+    PanelMatrixInfo,
     PixelPortInfo,
     SerialPortConfig,
     SerialPortInfo,
     SetOutputsOptions,
+    VirtualMatrixConfig,
+    VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
 import {
     discover,
@@ -316,6 +322,35 @@ function toControllerSerialPort(p: SerialPortInfo): ControllerSerialPort {
     };
 }
 
+/** Driver panel matrix report -> ControllerPanelMatrix. */
+function toControllerPanelMatrix(m: PanelMatrixInfo): ControllerPanelMatrix {
+    return {
+        port: m.port,
+        driver: m.driver,
+        enabled: m.enabled,
+        startChannel: m.startChannel,
+        channels: m.channelCount,
+        width: m.width,
+        height: m.height,
+        panelCount: m.panelCount,
+        name: m.name,
+    };
+}
+
+/** Driver virtual matrix report -> ControllerVirtualMatrix. */
+function toControllerVirtualMatrix(m: VirtualMatrixInfo): ControllerVirtualMatrix {
+    return {
+        name: m.name,
+        port: m.port,
+        enabled: m.enabled,
+        startChannel: m.startChannel,
+        channels: m.channelCount,
+        width: m.width,
+        height: m.height,
+        device: m.device,
+    };
+}
+
 /** epp-controllers DiscoveryDevice → lean core DiscoveredController. */
 function toController(d: DiscoveryDevice): DiscoveredController {
     return {
@@ -337,6 +372,8 @@ function toController(d: DiscoveryDevice): DiscoveredController {
         pixelPortCount: d.report?.pixelPortCount,
         serialPorts: d.report?.serialPorts?.map(toControllerSerialPort),
         serialPortCount: d.report?.serialPortCount,
+        panelMatrices: d.report?.panelMatrices?.map(toControllerPanelMatrix),
+        virtualMatrices: d.report?.virtualMatrices?.map(toControllerVirtualMatrix),
         inputs: d.report?.inputs,
         error: d.error,
         seenAt: nowIso(),
@@ -356,6 +393,8 @@ function mergeDevice(d: DiscoveryDevice): void {
         if (next.pixelPortCount === undefined) next.pixelPortCount = prev.pixelPortCount;
         if (next.serialPorts === undefined) next.serialPorts = prev.serialPorts;
         if (next.serialPortCount === undefined) next.serialPortCount = prev.serialPortCount;
+        if (next.panelMatrices === undefined) next.panelMatrices = prev.panelMatrices;
+        if (next.virtualMatrices === undefined) next.virtualMatrices = prev.virtualMatrices;
         if (next.inputs === undefined) next.inputs = prev.inputs;
         if (next.driverType === undefined) next.driverType = prev.driverType;
         if (next.vendor === undefined) next.vendor = prev.vendor;
@@ -516,6 +555,8 @@ async function runStatus(
             pixelPortCount: probe.report.pixelPortCount ?? dev.pixelPortCount,
             serialPorts: probe.report.serialPorts?.map(toControllerSerialPort),
             serialPortCount: probe.report.serialPortCount ?? dev.serialPortCount,
+            panelMatrices: probe.report.panelMatrices?.map(toControllerPanelMatrix),
+            virtualMatrices: probe.report.virtualMatrices?.map(toControllerVirtualMatrix),
             inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
             error: undefined,
@@ -750,13 +791,24 @@ async function runUpload(
                     startChannel: sp.startChannel!,
                     channels: sp.channels,
                 }));
-            const panelMatrices = rec.panelMatrices ?? [];
-            const virtualMatrices = rec.virtualMatrices ?? [];
+            const panelMatrices: PanelMatrixConfig[] = (rec.panelMatrices ?? []).map((pm) => ({
+                port: pm.port,
+                startChannel: pm.startChannel,
+                protocol: pm.protocol,
+            }));
+            const virtualMatrices: VirtualMatrixConfig[] = (rec.virtualMatrices ?? []).map((vm) => ({
+                name: vm.model,
+                port: vm.port,
+                startChannel: vm.startChannel,
+                channelCount: vm.channels,
+                width: vm.width,
+                height: vm.height,
+            }));
             const hasMatrices = panelMatrices.length > 0 || virtualMatrices.length > 0;
             if (derived.ports.length === 0 && serialPorts.length === 0 && !hasMatrices) {
                 throw new Error('derivation produced no uploadable ports');
             }
-            capCheck({ pixelPorts: derived.ports, serialPorts });
+            capCheck({ pixelPorts: derived.ports, serialPorts, panelMatrices, virtualMatrices });
             const setOpts: SetOutputsOptions = {
                 inputMode: rec.protocol?.toUpperCase(),
                 outputs: outputs.length
@@ -778,27 +830,12 @@ async function runUpload(
             // LED panel matrices are bound to channels, never created: their
             // panel geometry lives on the controller.
             if (panelMatrices.length) {
-                const r = await probe.driver.setPanelMatrices(
-                    panelMatrices.map((pm) => ({
-                        port: pm.port,
-                        startChannel: pm.startChannel,
-                        protocol: pm.protocol,
-                    })),
-                );
+                const r = await probe.driver.setPanelMatrices(panelMatrices);
                 if (r.warnings) warnings.push(...r.warnings);
                 if (!r.success) throw new Error(`panel matrix upload failed: ${r.message ?? 'unknown error'}`);
             }
             if (virtualMatrices.length) {
-                const r = await probe.driver.setVirtualMatrices(
-                    virtualMatrices.map((vm) => ({
-                        name: vm.model,
-                        port: vm.port,
-                        startChannel: vm.startChannel,
-                        channelCount: vm.channels,
-                        width: vm.width,
-                        height: vm.height,
-                    })),
-                );
+                const r = await probe.driver.setVirtualMatrices(virtualMatrices);
                 if (r.warnings) warnings.push(...r.warnings);
                 if (!r.success) throw new Error(`virtual matrix upload failed: ${r.message ?? 'unknown error'}`);
             }
@@ -824,6 +861,8 @@ async function runUpload(
                     pixelPortCount: verify.report.pixelPortCount ?? dev.pixelPortCount,
                     serialPorts: verify.report.serialPorts?.map(toControllerSerialPort),
                     serialPortCount: verify.report.serialPortCount ?? dev.serialPortCount,
+                    panelMatrices: verify.report.panelMatrices?.map(toControllerPanelMatrix),
+                    virtualMatrices: verify.report.virtualMatrices?.map(toControllerVirtualMatrix),
                     inputs: verify.report.inputs,
                     error: undefined,
                     unreachable: false,

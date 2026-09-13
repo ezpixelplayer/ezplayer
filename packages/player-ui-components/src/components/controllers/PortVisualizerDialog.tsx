@@ -6,10 +6,15 @@ import { CompactDialog } from '../dialog/CompactDialog';
 import { buildPortMap } from '@ezplayer/ezplayer-core';
 import type {
     ControllerModelIntent,
+    ControllerPanelMatrix,
+    ControllerPanelMatrixIntent,
     ControllerPort,
     ControllerPortIntent,
     ControllerSerialPort,
     ControllerSerialPortIntent,
+    ControllerVirtualMatrix,
+    ControllerVirtualMatrixIntent,
+    PortDriftKind,
     PortMapBox,
 } from '@ezplayer/ezplayer-core';
 
@@ -76,6 +81,89 @@ const PropBox: React.FC<{ box: PortMapBox; drifted: boolean; theme: Theme }> = (
     );
 };
 
+/** One matrix in the map: the label column plus a box saying what drives it. */
+const MatrixRow: React.FC<{
+    label: string;
+    /** Plan and device lines under the label. */
+    lines: { text: string; tone: 'plan' | 'device' }[];
+    models: string[];
+    detail?: string;
+    /** Drift, when the device side has been read. */
+    drift?: PortDriftKind;
+    notes: string[];
+    theme: Theme;
+}> = ({ label, lines, models, detail, drift, notes, theme }) => {
+    const drifted = drift !== undefined && drift !== 'ok';
+    const deviceColor = drifted ? 'warning.main' : models.length ? 'success.main' : 'text.secondary';
+    return (
+        <>
+            <div
+                style={{
+                    padding: '4px 12px 4px 6px',
+                    borderLeft: `3px solid ${drifted ? theme.palette.warning.main : 'transparent'}`,
+                    minWidth: 96,
+                }}
+            >
+                <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {label}
+                </Typography>
+                {lines.map((l, i) => (
+                    <Typography
+                        key={i}
+                        variant="caption"
+                        sx={{ display: 'block', color: l.tone === 'device' ? deviceColor : 'text.secondary' }}
+                    >
+                        {l.text}
+                    </Typography>
+                ))}
+            </div>
+            <div
+                title={notes.join('\n') || undefined}
+                style={{
+                    border: `1px solid ${
+                        models.length
+                            ? drifted
+                                ? theme.palette.warning.main
+                                : alpha(theme.palette.info.main, 0.4)
+                            : 'transparent'
+                    }`,
+                    borderRadius: theme.shape.borderRadius,
+                    background: models.length
+                        ? alpha(drifted ? theme.palette.warning.main : theme.palette.info.main, 0.1)
+                        : 'transparent',
+                    padding: '4px 8px',
+                    minWidth: 130,
+                    maxWidth: 360,
+                }}
+            >
+                {models.length ? (
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {models.join(', ')}
+                    </Typography>
+                ) : (
+                    <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                        unused
+                    </Typography>
+                )}
+                {detail && (
+                    <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                        {detail}
+                    </Typography>
+                )}
+                {drifted &&
+                    notes.map((n, i) => (
+                        <Typography key={i} variant="caption" sx={{ display: 'block', color: 'warning.main' }}>
+                            {n}
+                        </Typography>
+                    ))}
+            </div>
+        </>
+    );
+};
+
+const sizeLabel = (w?: number, h?: number): string | undefined => (w && h ? `${w}×${h}` : undefined);
+const joinParts = (parts: (string | undefined)[]): string | undefined => parts.filter(Boolean).join(' · ') || undefined;
+
 /** xLights-visualizer-style port map: ports down the left, props as boxes in
  *  data-chain order, with the device's actual pixel counts overlaid per port. */
 export const PortVisualizerDialog: React.FC<{
@@ -89,6 +177,10 @@ export const PortVisualizerDialog: React.FC<{
     serialPortCount?: number;
     serialIntent?: ControllerSerialPortIntent[];
     serialActual?: ControllerSerialPort[];
+    panelIntent?: ControllerPanelMatrixIntent[];
+    panelActual?: ControllerPanelMatrix[];
+    virtualIntent?: ControllerVirtualMatrixIntent[];
+    virtualActual?: ControllerVirtualMatrix[];
     onClose: () => void;
 }> = ({
     title,
@@ -99,6 +191,10 @@ export const PortVisualizerDialog: React.FC<{
     serialPortCount,
     serialIntent,
     serialActual,
+    panelIntent,
+    panelActual,
+    virtualIntent,
+    virtualActual,
     onClose,
 }) => {
     const theme = useTheme();
@@ -107,7 +203,13 @@ export const PortVisualizerDialog: React.FC<{
         serialPortCount,
         serialIntent,
         serialActual,
+        panelIntent,
+        panelActual,
+        virtualIntent,
+        virtualActual,
     });
+    const havePanelActual = panelActual !== undefined;
+    const haveVirtualActual = virtualActual !== undefined;
     const driftedPorts = new Set(map.rows.filter((r) => r.drift).map((r) => r.port));
     const boxDrifted = (b: PortMapBox) =>
         Array.from({ length: b.span }, (_, i) => b.firstPort + i).some((p) => driftedPorts.has(p));
@@ -116,7 +218,10 @@ export const PortVisualizerDialog: React.FC<{
 
     return (
         <CompactDialog title={`Port map — ${title}`} onClose={onClose} fullScreen>
-            {map.rows.length === 0 && map.serial.length === 0 ? (
+            {map.rows.length === 0 &&
+            map.serial.length === 0 &&
+            map.panels.length === 0 &&
+            map.virtuals.length === 0 ? (
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     No port configuration known for this controller yet — no xLights models are assigned to it and no
                     device port config has been read.
@@ -324,6 +429,103 @@ export const PortVisualizerDialog: React.FC<{
                                                 )}
                                             </div>
                                         </React.Fragment>
+                                    ))}
+                                </div>
+                            </Box>
+                        </Box>
+                    )}
+                    {(map.panels.length > 0 || map.virtuals.length > 0) && (
+                        <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                                Matrices
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                                LED panel matrices by the number the controller gives them, and HDMI virtual matrices by
+                                model. A panel matrix's size and wiring are set on the controller; an upload only points
+                                it at the models' channels.
+                            </Typography>
+                            <Box sx={{ overflowX: 'auto' }}>
+                                <div
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'max-content max-content',
+                                        gap: 6,
+                                        width: 'max-content',
+                                    }}
+                                >
+                                    {map.panels.map((p) => (
+                                        <MatrixRow
+                                            key={`panel-${p.port}`}
+                                            label={`Panel ${p.port}`}
+                                            lines={[
+                                                ...(p.intendedStartChannel !== undefined
+                                                    ? [
+                                                          {
+                                                              text: `plan ch ${p.intendedStartChannel} · ${p.intendedChannels} ch`,
+                                                              tone: 'plan' as const,
+                                                          },
+                                                      ]
+                                                    : []),
+                                                ...(havePanelActual
+                                                    ? [
+                                                          {
+                                                              text:
+                                                                  p.actualStartChannel !== undefined
+                                                                      ? `device ch ${p.actualStartChannel} · ${p.actualChannels} ch${p.actualEnabled ? '' : ' (off)'}`
+                                                                      : 'device: none',
+                                                              tone: 'device' as const,
+                                                          },
+                                                      ]
+                                                    : []),
+                                            ]}
+                                            models={p.intendedModels}
+                                            detail={joinParts([
+                                                p.actualDriver ?? p.intendedProtocol,
+                                                sizeLabel(p.actualWidth, p.actualHeight) ??
+                                                    sizeLabel(p.intendedWidth, p.intendedHeight),
+                                                p.actualName,
+                                            ])}
+                                            drift={havePanelActual ? p.drift : undefined}
+                                            notes={p.notes}
+                                            theme={theme}
+                                        />
+                                    ))}
+                                    {map.virtuals.map((v) => (
+                                        <MatrixRow
+                                            key={`virtual-${v.name}`}
+                                            label={v.actualDevice ?? (v.port !== undefined ? `HDMI ${v.port}` : 'HDMI')}
+                                            lines={[
+                                                ...(v.intendedStartChannel !== undefined
+                                                    ? [
+                                                          {
+                                                              text: `plan ch ${v.intendedStartChannel} · ${v.intendedChannels} ch`,
+                                                              tone: 'plan' as const,
+                                                          },
+                                                      ]
+                                                    : []),
+                                                ...(haveVirtualActual
+                                                    ? [
+                                                          {
+                                                              text:
+                                                                  v.actualStartChannel !== undefined
+                                                                      ? `device ch ${v.actualStartChannel} · ${v.actualChannels} ch${v.actualEnabled ? '' : ' (off)'}`
+                                                                      : 'device: none',
+                                                              tone: 'device' as const,
+                                                          },
+                                                      ]
+                                                    : []),
+                                            ]}
+                                            models={v.intendedStartChannel !== undefined ? [v.name] : []}
+                                            detail={joinParts([
+                                                'virtual matrix',
+                                                sizeLabel(v.intendedWidth, v.intendedHeight) ??
+                                                    sizeLabel(v.actualWidth, v.actualHeight),
+                                                v.intendedStartChannel === undefined ? v.name : undefined,
+                                            ])}
+                                            drift={haveVirtualActual ? v.drift : undefined}
+                                            notes={v.notes}
+                                            theme={theme}
+                                        />
                                     ))}
                                 </div>
                             </Box>

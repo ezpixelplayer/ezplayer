@@ -49,6 +49,11 @@ export interface DiscoveredController {
     serialPorts?: ControllerSerialPort[];
     /** Serial ports physically fitted, when the device says (full depth). */
     serialPortCount?: number;
+    /** LED panel matrices read from the device (full depth); empty when read
+     *  and none are configured, absent when not read. */
+    panelMatrices?: ControllerPanelMatrix[];
+    /** HDMI virtual matrices read from the device (full depth), same convention. */
+    virtualMatrices?: ControllerVirtualMatrix[];
     /** Actual data-input config read from the device (full depth). */
     inputs?: ControllerInputInfo;
     /** Actions the driver enumerated (filled on status deep-reads). */
@@ -278,6 +283,9 @@ export interface ControllerPanelMatrixIntent {
     /** The xLights protocol, which names the driver family allowed to serve it
      *  ("LED Panel Matrix", "… - Hat/Cap/Cape", "… - ColorLight"). */
     protocol: string;
+    /** Size in pixels of the first model, when its strings describe a grid. */
+    width?: number;
+    height?: number;
 }
 
 /** xLights intent for one model drawn on an HDMI/framebuffer virtual matrix. */
@@ -330,6 +338,36 @@ export interface ControllerSerialPort {
     /** Device name / label when the controller has one (e.g. FPP "DMX1"). */
     device?: string;
     model?: string;
+}
+
+/** An LED panel matrix as read from the controller. */
+export interface ControllerPanelMatrix {
+    /** 1-based matrix number, as the controller's own UI labels it. */
+    port: number;
+    /** The driver serving it, e.g. "ColorLight5a75", "BBShiftPanel", "RGBMatrix". */
+    driver?: string;
+    enabled: boolean;
+    startChannel: number;
+    channels: number;
+    width?: number;
+    height?: number;
+    panelCount?: number;
+    name?: string;
+}
+
+/** An HDMI/framebuffer virtual matrix as read from the controller. */
+export interface ControllerVirtualMatrix {
+    /** The model name the matrix was uploaded for. */
+    name?: string;
+    /** 1-based output the device name implies. */
+    port?: number;
+    enabled: boolean;
+    startChannel: number;
+    channels: number;
+    width?: number;
+    height?: number;
+    /** e.g. "HDMI-A-1" or "fb0". */
+    device?: string;
 }
 
 /** Per-(model,string) upload intent. Optional fields absent ⇒ "not set in
@@ -526,7 +564,8 @@ export interface ControllerPort {
  *  - `ok`         intent and actual agree
  *  - `missing`    xLights expects pixels here but the controller has none → reconfig
  *  - `unexpected` the controller has pixels here but xLights assigns none → stale/extra
- *  - `count`      both present but the pixel counts differ */
+ *  - `count`      both present but the pixel counts differ; for a matrix, any
+ *                 difference in its configuration (see the row's `notes`) */
 export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count';
 
 /** One port's intent-vs-actual reconciliation. */
@@ -561,4 +600,45 @@ export interface SerialPortReconcile {
     actualProtocol?: string;
     /** Same vocabulary as pixel ports; `count` means the channel counts differ. */
     drift: PortDriftKind;
+}
+
+/** One LED panel matrix's intent-vs-actual reconciliation. */
+export interface PanelMatrixReconcile {
+    port: number;
+    intendedModels: string[];
+    intendedStartChannel?: number;
+    intendedChannels?: number;
+    intendedProtocol?: string;
+    intendedWidth?: number;
+    intendedHeight?: number;
+    actualDriver?: string;
+    actualEnabled?: boolean;
+    actualStartChannel?: number;
+    actualChannels?: number;
+    actualWidth?: number;
+    actualHeight?: number;
+    actualName?: string;
+    drift: PortDriftKind;
+    /** One line per difference; empty when in sync. */
+    notes: string[];
+}
+
+/** One HDMI virtual matrix's intent-vs-actual reconciliation, matched by model name. */
+export interface VirtualMatrixReconcile {
+    /** The model name; the device name for a matrix no model claims. */
+    name: string;
+    port?: number;
+    intendedStartChannel?: number;
+    intendedChannels?: number;
+    intendedWidth?: number;
+    intendedHeight?: number;
+    actualEnabled?: boolean;
+    actualStartChannel?: number;
+    actualChannels?: number;
+    actualWidth?: number;
+    actualHeight?: number;
+    actualDevice?: string;
+    drift: PortDriftKind;
+    /** One line per difference; empty when in sync. */
+    notes: string[];
 }

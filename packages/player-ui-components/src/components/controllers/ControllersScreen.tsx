@@ -61,6 +61,8 @@ import {
     reconcileControllers,
     reconcilePorts,
     reconcileSerialPorts,
+    reconcilePanelMatrices,
+    reconcileVirtualMatrices,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
@@ -80,6 +82,8 @@ import type {
     PortReconcile,
     PortDriftKind,
     SerialPortReconcile,
+    PanelMatrixReconcile,
+    VirtualMatrixReconcile,
 } from '@ezplayer/ezplayer-core';
 
 type Depth = 'sweep' | 'identify' | 'full';
@@ -437,6 +441,147 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
     </Table>
 );
 
+/** "192×32" when both are known. */
+const sizeLabel = (w?: number, h?: number): string | undefined => (w && h ? `${w}×${h}` : undefined);
+
+/** Status chip for a matrix row; the differences ride along as text. */
+const MatrixStatus: React.FC<{ drift: PortDriftKind; notes: string[] }> = ({ drift, notes }) => (
+    <>
+        <Chip
+            size="small"
+            color={drift === 'ok' ? 'success' : 'warning'}
+            variant={drift === 'ok' ? 'outlined' : 'filled'}
+            label={drift === 'count' ? 'differs' : PORT_DRIFT_LABEL[drift]}
+        />
+        {notes.map((n, i) => (
+            <Typography key={i} variant="caption" sx={{ display: 'block', color: 'text.secondary', mt: 0.25 }}>
+                {n}
+            </Typography>
+        ))}
+    </>
+);
+
+const driftBorder = (drift: PortDriftKind) => ({
+    borderLeft: '3px solid',
+    borderLeftColor: drift !== 'ok' ? 'warning.main' : 'transparent',
+});
+
+/** LED panel matrices: xLights-intent vs. controller-actual, by matrix number. */
+const PanelMatrixReconcileTable: React.FC<{ rows: PanelMatrixReconcile[] }> = ({ rows }) => (
+    <Table size="small">
+        <TableHead>
+            <TableRow>
+                <TableCell>Panel matrix</TableCell>
+                <TableCell>xLights (intended)</TableCell>
+                <TableCell>Controller (actual)</TableCell>
+                <TableCell>Status</TableCell>
+            </TableRow>
+        </TableHead>
+        <TableBody>
+            {rows.map((r) => (
+                <TableRow key={r.port}>
+                    <TableCell sx={driftBorder(r.drift)}>{r.port}</TableCell>
+                    <TableCell>
+                        {r.intendedModels.length ? (
+                            <>
+                                <PortModelList names={r.intendedModels} flagTitle="" />
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    {[
+                                        r.intendedProtocol,
+                                        sizeLabel(r.intendedWidth, r.intendedHeight),
+                                        `ch ${r.intendedStartChannel} · ${r.intendedChannels} ch`,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </Typography>
+                            </>
+                        ) : (
+                            '—'
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        {r.actualStartChannel !== undefined ? (
+                            <>
+                                {r.actualName && <Typography variant="body2">{r.actualName}</Typography>}
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    {[
+                                        r.actualDriver,
+                                        sizeLabel(r.actualWidth, r.actualHeight),
+                                        `ch ${r.actualStartChannel} · ${r.actualChannels} ch`,
+                                        r.actualEnabled ? undefined : 'disabled',
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </Typography>
+                            </>
+                        ) : (
+                            '—'
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        <MatrixStatus drift={r.drift} notes={r.notes} />
+                    </TableCell>
+                </TableRow>
+            ))}
+        </TableBody>
+    </Table>
+);
+
+/** HDMI virtual matrices: xLights-intent vs. controller-actual, by model name. */
+const VirtualMatrixReconcileTable: React.FC<{ rows: VirtualMatrixReconcile[] }> = ({ rows }) => (
+    <Table size="small">
+        <TableHead>
+            <TableRow>
+                <TableCell>Virtual matrix</TableCell>
+                <TableCell>xLights (intended)</TableCell>
+                <TableCell>Controller (actual)</TableCell>
+                <TableCell>Status</TableCell>
+            </TableRow>
+        </TableHead>
+        <TableBody>
+            {rows.map((r) => (
+                <TableRow key={r.name}>
+                    <TableCell sx={driftBorder(r.drift)}>{r.name}</TableCell>
+                    <TableCell>
+                        {r.intendedStartChannel !== undefined ? (
+                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                {[
+                                    r.port !== undefined ? `output ${r.port}` : undefined,
+                                    sizeLabel(r.intendedWidth, r.intendedHeight),
+                                    `ch ${r.intendedStartChannel} · ${r.intendedChannels} ch`,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                            </Typography>
+                        ) : (
+                            '—'
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        {r.actualStartChannel !== undefined ? (
+                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                {[
+                                    r.actualDevice,
+                                    sizeLabel(r.actualWidth, r.actualHeight),
+                                    `ch ${r.actualStartChannel} · ${r.actualChannels} ch`,
+                                    r.actualEnabled ? undefined : 'disabled',
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                            </Typography>
+                        ) : (
+                            '—'
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        <MatrixStatus drift={r.drift} notes={r.notes} />
+                    </TableCell>
+                </TableRow>
+            ))}
+        </TableBody>
+    </Table>
+);
+
 /** "40" / "40*" (record override) / "—", with the provenance as hover text. */
 const MaxFpsCell: React.FC<{ row: ControllerGridRow }> = ({ row }) => {
     const fps = effectiveMaxFps(row);
@@ -485,7 +630,18 @@ const GridRow: React.FC<{
     // Serial (DMX/…) ports are compared in channels, apart from the pixels.
     const serialRead = d?.serialPorts !== undefined;
     const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
-    const portDrift = (portsRead && hasPortDrift(portRows)) || (serialRead && hasPortDrift(serialRows));
+    // Matrices are compared by matrix number (panels) or model name (HDMI).
+    const panelsRead = d?.panelMatrices !== undefined;
+    const panelRows = reconcilePanelMatrices(row.panelMatrixIntent, d?.panelMatrices);
+    const virtualsRead = d?.virtualMatrices !== undefined;
+    const virtualRows = reconcileVirtualMatrices(row.virtualMatrixIntent, d?.virtualMatrices);
+    const portDrift =
+        (portsRead && hasPortDrift(portRows)) ||
+        (serialRead && hasPortDrift(serialRows)) ||
+        (panelsRead && hasPortDrift(panelRows)) ||
+        (virtualsRead && hasPortDrift(virtualRows));
+    const anyPortRows = portRows.length > 0 || serialRows.length > 0 || panelRows.length > 0 || virtualRows.length > 0;
+    const anyPortsRead = portsRead || serialRead || panelsRead || virtualsRead;
     // Same gating for the data-input side (protocol / universe map / DDP window).
     const inputsRead = d?.inputs !== undefined;
     const inputRec = reconcileInputs(row.outputs, d?.inputs);
@@ -495,11 +651,9 @@ const GridRow: React.FC<{
     // An empty map is still a map: a device whose ports were read (even if
     // none is configured) or whose port count is known gets the visualizer.
     const hasPortData =
-        portRows.length > 0 ||
-        serialRows.length > 0 ||
+        anyPortRows ||
         (row.modelIntents?.length ?? 0) > 0 ||
-        portsRead ||
-        serialRead ||
+        anyPortsRead ||
         (row.pixelPortCount ?? d?.pixelPortCount ?? 0) > 0 ||
         (row.serialPortCount ?? d?.serialPortCount ?? 0) > 0;
     const hasInputData = (row.outputs?.length ?? 0) > 0 || inputsRead;
@@ -808,8 +962,8 @@ const GridRow: React.FC<{
                                         sx={{ mb: hasInputData ? 1 : hasDetail ? 2 : 0, flexWrap: 'wrap' }}
                                     >
                                         <Typography variant="subtitle2">Ports</Typography>
-                                        {(portRows.length > 0 || serialRows.length > 0) &&
-                                            (!portsRead && !serialRead ? (
+                                        {anyPortRows &&
+                                            (!anyPortsRead ? (
                                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                                     device config not read yet
                                                 </Typography>
@@ -826,7 +980,7 @@ const GridRow: React.FC<{
                                                     titleAccess="ports match xLights"
                                                 />
                                             ))}
-                                        {(portRows.length > 0 || serialRows.length > 0) && (
+                                        {anyPortRows && (
                                             <Button
                                                 size="small"
                                                 startIcon={<CompareArrowsIcon />}
@@ -887,6 +1041,16 @@ const GridRow: React.FC<{
                             <SerialReconcileTable rows={serialRows} />
                         </Box>
                     )}
+                    {panelRows.length > 0 && (
+                        <Box sx={{ mt: portRows.length > 0 || serialRows.length > 0 ? 2 : 0 }}>
+                            <PanelMatrixReconcileTable rows={panelRows} />
+                        </Box>
+                    )}
+                    {virtualRows.length > 0 && (
+                        <Box sx={{ mt: portRows.length > 0 || serialRows.length > 0 || panelRows.length > 0 ? 2 : 0 }}>
+                            <VirtualMatrixReconcileTable rows={virtualRows} />
+                        </Box>
+                    )}
                     {hasInputData && (
                         <Box sx={{ mt: 2 }}>
                             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -920,6 +1084,10 @@ const GridRow: React.FC<{
                     serialPortCount={row.serialPortCount ?? d?.serialPortCount}
                     serialIntent={row.serialIntent}
                     serialActual={d?.serialPorts}
+                    panelIntent={row.panelMatrixIntent}
+                    panelActual={d?.panelMatrices}
+                    virtualIntent={row.virtualMatrixIntent}
+                    virtualActual={d?.virtualMatrices}
                     onClose={() => setPortDialog(null)}
                 />
             )}
