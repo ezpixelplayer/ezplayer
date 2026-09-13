@@ -98,7 +98,7 @@ export class AudioChunkRingBuffer {
     // ── writer API ──
 
     /**
-     * Publish one audio chunk into the next slot.
+     * Publish one audio chunk into the next slot, scaled by `gain` during the copy.
      * @returns the sequence number assigned to this chunk
      */
     publish(
@@ -108,6 +108,7 @@ export class AudioChunkRingBuffer {
         sampleRate: number,
         channels: number,
         advanceSamples?: number,
+        gain = 1,
     ): number {
         const sampleCount = samples.length;
         // Default the hop to the full payload when not specified (no overlap).
@@ -142,7 +143,11 @@ export class AudioChunkRingBuffer {
         // Write audio data
         const audioOffset = metaOffset + SLOT_META_BYTES;
         const audioView = new Float32Array(this.buffer, audioOffset, sampleCount);
-        audioView.set(samples);
+        if (gain === 1) {
+            audioView.set(samples);
+        } else {
+            for (let i = 0; i < sampleCount; i++) audioView[i] = samples[i] * gain;
+        }
 
         // Commit: write seq last so readers see consistent data
         Atomics.store(meta, SM_SEQ, seq);

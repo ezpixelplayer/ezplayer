@@ -129,7 +129,7 @@ export type PlayerCommand =
 
 export type WorkerToMainMessage =
     | { type: 'ready' }
-    | { type: 'audioChunk'; chunk: AudioChunk }
+    | { type: 'audioChunk'; chunk: AudioChunk; volumeSF: number }
     | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }
