@@ -47,6 +47,7 @@ import {
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
+    songVolumeScale,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -1856,20 +1857,24 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
     }
 }
 
-/** Publish to the ring buffer (for web clients) then send via IPC (for Electron audio window). */
+/**
+ * Publish volume-scaled samples to the ring buffer (web clients), then send
+ * unity-gain PCM to main for Electron audio windows (per-sink GainNode).
+ */
 function sendAudioChunk(
-    samples: Float32Array,
+    samplesUnity: Float32Array,
     playAtRealTime: number,
     incarnation: number,
     sampleRate: number,
     channels: number,
     advanceSamples: number,
 ) {
-    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels, advanceSamples);
-    const buf = samples.buffer as ArrayBuffer;
+    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, volumeSF);
+    const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
             type: 'audioChunk',
+            volumeSF,
             chunk: {
                 sampleRate,
                 channels,
@@ -2451,12 +2456,13 @@ async function processQueue() {
                             // down so it crossfades with the next chunk's ramped-up head.
                             const windowFrames = hopFrames + overlapFrames;
 
+                            // Per-song volume_adj is baked in; global volume is applied downstream.
                             const chunk = buildInterleavedAudioChunkFromSegments({
                                 channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,
                                 sampleOffset,
                                 nSamples: windowFrames,
-                                volumeSF,
+                                volumeSF: songVolumeScale(curAudioSeq?.settings?.volume_adj),
                             });
                             applyCrossfadeRamp(chunk, channels, overlapFrames);
 

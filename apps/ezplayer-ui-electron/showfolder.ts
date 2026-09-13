@@ -9,8 +9,8 @@ import { showFolderLockPath, updateShowFolderLock } from './mainsrc/showfolder-l
 const store = new Store<{
     showFolder?: string;
     /** Welcome-screen flag: when true, the cloud-CTA card appears alongside the
-     *  xLights folder picker. Defaults on (unset → cloud shown); `--reset-nocloud`
-     *  pins it off for local-only first run. Toggled by the `--reset*` CLI flags. */
+     *  xLights folder picker. Defaults on (unset → cloud shown); `reset --no-cloud`
+     *  pins it off for local-only first run. Toggled by the `reset` CLI verb. */
     welcomeShowCloud?: boolean;
 }>();
 let releaseLock: null | (() => Promise<void>) = null;
@@ -483,8 +483,8 @@ export async function closeShowFolder() {
     currentShowFolder = null;
 }
 
-/** Wipe the persisted show-folder pointer (electron-store). Used by the `--reset*`
- *  CLI flags to land the user back on the Welcome screen. */
+/** Wipe the persisted show-folder pointer (electron-store). Used by the `reset`
+ *  CLI verb to land the user back on the Welcome screen. */
 export function clearPersistedShowFolder() {
     store.delete('showFolder');
 }
