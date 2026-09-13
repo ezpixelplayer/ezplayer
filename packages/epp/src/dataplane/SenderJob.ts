@@ -19,6 +19,8 @@ export interface Sender {
     resume(): void;
     minFrameTime(): number;
     isCurrentlySending(): boolean;
+    /** Estimated on-the-wire bytes (payload + protocol + UDP/IP/eth overhead) for one whole frame of this job. */
+    frameWireBytes(job: SenderJob): number;
 }
 
 // What's in here?  The description of the job, containing:
@@ -34,8 +36,7 @@ export class SenderJobPart {
 
 export class SenderJob {
     parts: SenderJobPart[] = [];
-    rateLimit: number = 1000000000; // bytes per millisecond
-    burstSize: number = 10000; // bytes per send batch
+    burstSize: number = 2880; // Wire bytes per sendPortion burst (~2 DDP packets)
 
     // Sender + settings
     sender?: Sender;
@@ -44,6 +45,14 @@ export class SenderJob {
 export class SendJob {
     dataBuffers: Uint8Array[] = [];
     senders: SenderJob[] = [];
+
+    /**
+     * Fraction of the frame interval to stretch sends across.
+     *   Ideally this would be 1.0; however the current design needs headroom
+     *    for the push packet, socket callbacks, and next-frame prep.
+     *    Zero sends the whole frame as fast as possible.
+     */
+    slotFraction: number = 0.5;
 
     frameNumber: number = -1;
 }
@@ -56,6 +65,11 @@ export class SendJobSenderState implements SchedulerHeapItem {
     nextTime: number = 0;
 
     curChNum: number = 0;
+
+    /** Wire bytes sent so far this frame (payload + protocol + UDP/IP/eth overhead). */
+    wireBytesSent: number = 0;
+    /** Pacing rate for this frame, wire bytes per millisecond. */
+    sendRate: number = 0;
 
     skippingThisFrame: boolean = false;
     lastSendTime: number = 0;
@@ -94,6 +108,7 @@ export class SendJobSenderState implements SchedulerHeapItem {
         this.nextTime = 0;
         this.curChNum = 0;
         this.sendPacketNumber = 0;
+        this.wireBytesSent = 0;
     }
 }
 
@@ -106,7 +121,21 @@ export class SendJobState {
     job?: SendJob;
     sendHeap: SchedulerMinHeap<SendJobSenderState> = new SchedulerMinHeap();
 
-    initialize(sendTime: number, job: SendJob) {
+    /** Hard end of this frame's send slot (performance.now() basis). Past this
+     *  the scheduler stops pacing. */
+    sendDeadline: number = Infinity;
+
+    /**
+     * Set up per-sender progress and the interleaving/pacing plan for one frame.
+     *
+     * Each non-skipped sender gets a send rate that stretches its frame data
+     * across the usable slot (frameIntervalMs * job.slotFraction, measured from
+     * sendTime). The scheduler heap is rebuilt with all
+     * active senders due at slot start; interleaving across controllers then
+     * falls out of the heap ordering as each sender's nextTime advances by
+     * bytesSent / sendRate.
+     */
+    initialize(sendTime: number, job: SendJob, frameIntervalMs: number = 50) {
         let skipsDueToReq = 0;
         let skipsDueToSlowCtrl = 0;
 
@@ -115,7 +144,6 @@ export class SendJobState {
             const s = new SendJobSenderState();
             s.senderIdx = this.states.length;
             this.states.push(s);
-            this.sendHeap.insert(s);
         }
         let i = 0;
         for (const s of this.states) {
@@ -140,6 +168,26 @@ export class SendJobState {
             }
             ++i;
         }
+
+        // Build the interleaving/pacing plan. If we're starting late, the window shrinks so
+        // the frame still lands by its deadline (down to an immediate burst).
+        this.sendHeap.clear();
+        const startNow = performance.now();
+        const slotStart = Math.max(sendTime, startNow);
+        const deadline = sendTime + Math.max(1, frameIntervalMs) * job.slotFraction;
+        const window = Math.max(1, deadline - slotStart);
+        this.sendDeadline = Math.max(deadline, slotStart + window);
+        for (const s of this.states) {
+            if (s.skippingThisFrame || s.senderIdx >= job.senders.length) continue;
+            const senderJob = job.senders[s.senderIdx];
+            if (!senderJob.sender) continue;
+            const wireBytes = senderJob.sender.frameWireBytes(senderJob);
+            if (wireBytes <= 0) continue;
+            s.sendRate = wireBytes / window;
+            s.nextTime = slotStart;
+            this.sendHeap.insert(s);
+        }
+
         return { skipsDueToReq, skipsDueToSlowCtrl };
     }
 }

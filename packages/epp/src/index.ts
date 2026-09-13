@@ -6,11 +6,11 @@ export { SendBatch } from './dataplane/protocols/UDP';
 
 export { Sender, SenderJob, SendJob, SendJobState } from './dataplane/SenderJob';
 
-export { startFrame, endFrame, startBatch, endBatch, sendPartial, sendFull } from './dataplane/SendFrame';
+export { startFrame, endFrame, startBatch, endBatch, sendPartial, sendFull, SendFullResult } from './dataplane/SendFrame';
 
 export { ControllerSetup, OpenControllerReport } from './controllers/controllertypes';
 
-export { busySleep, lpBusySleep } from './util/Utils';
+export { lpBusySleep } from './util/Utils';
 
 export { getFileSize, readFileRange, readHandleRange, readJsonFile, loadXmlFile } from './util/FileUtil';
 

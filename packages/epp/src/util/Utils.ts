@@ -1,12 +1,5 @@
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function busySleep(nextTime: number): Promise<void> {
-    while (performance.now() < nextTime) {
-        //await Promise.resolve();
-        await new Promise((resolve) => setImmediate(resolve));
-    }
-}
-
 export async function sleepSleep(nextTime: number): Promise<void> {
     const curTime = performance.now();
     if (nextTime > curTime - 2) {
@@ -38,17 +31,28 @@ export function readUInt24LE(buffer: DataView, offset: number) {
 
 const unsharedSharedBuffer = new SharedArrayBuffer(1024);
 const int32USB = new Int32Array(unsharedSharedBuffer);
-export async function atomicSleep(nextTime: number) {
-    const st = nextTime - performance.now();
-    if (st <= 0) return;
-    await Atomics.waitAsync(int32USB, 0, 0, st).value;
-}
 
+/** Learned overshoot of a timed Atomics.wait (~15.6 ms on Windows without a
+ *  1 ms multimedia timer, ~1 ms with one). */
+let lpWaitOvershootMs = 0.5;
+
+/**
+ * Same approach as the playback loop's xbusySleep: wait coarsely while safe,
+ *  spin-yield the remainder so the wake lands on time but setImmediate keeps
+ *  I/O completions flowing.
+ */
 export async function lpBusySleep(nextTime: number) {
     while (true) {
         const nt = performance.now();
-        if (nt + 0.1 > nextTime) return;
-        Atomics.wait(int32USB, 0, 0, 0.1);
+        const remaining = nextTime - nt;
+        if (remaining <= 0.05) return;
+        if (remaining > lpWaitOvershootMs + 0.3) {
+            const req = Math.min(1, remaining - lpWaitOvershootMs);
+            Atomics.wait(int32USB, 0, 0, req);
+            const overshoot = Math.max(0, performance.now() - nt - req);
+            lpWaitOvershootMs =
+                overshoot > lpWaitOvershootMs ? overshoot : lpWaitOvershootMs * 0.999 + overshoot * 0.001;
+        }
         await new Promise((resolve) => setImmediate(resolve));
     }
 }

@@ -1,8 +1,8 @@
 import {
-    busySleep,
     endBatch,
     endFrame,
     FrameReference,
+    lpBusySleep,
     SendBatch,
     sendFull,
     SendJob,
@@ -117,8 +117,6 @@ export class FrameSender {
     outstandingFrames: Set<FrameReference> = new Set();
     prevSendBatch: SendBatch[] | undefined = undefined;
     nChannels: number = 0;
-    /** Gate for every black-frame send (idle/pause/stop/keepalive). Off =
-     *  leave the wire untouched so another player can drive the controllers. */
     blackFramesEnabled: boolean = true;
     /** `suppressoutput` gate: off = frames still produced and previewed, but
      *  nothing is sent to controllers. */
@@ -130,9 +128,54 @@ export class FrameSender {
     emitError?: (err: Error) => void;
     private warnedShortFrame = false;
     private warnedLongFrame = false;
+    private warnedSendOverrun = false;
+    private sendInProgress = false; // Guards SendJobState from concurrent send
+
+    /** Most the paced send may ever claim of a frame interval; slotFractionFor
+     *  shrinks the actual slot below this by the measured loop overhead. Zero
+     *  disables pacing entirely (one burst per frame). */
+    maxSlotFraction = 0.5;
+    /** performance.now() when the last send finished, if the next call follows it directly. */
+    private lastSendEndPN: number | undefined = undefined;
+    /** Decaying max of the dispatch loop's non-send time per frame (ms). */
+    private loopOverheadMs = 0;
+    /** Decaying max of time spent packetizing and enqueueing sends (ms). */
+    private sendActiveMs = 0;
+
+    /**
+     * The send holds the dispatch loop, so its slot has to leave room for
+     * everything else the loop does per frame (schedule, prefetch, decompress,
+     * mix, export). Reserve the measured overhead plus a tenth of the interval
+     * and stretch the send across whatever is left.
+     *
+     * Also reserve the measured active time: the pacer schedules sleeps by
+     * bytes/rate alone, so packetizing and handing packets to the socket lands
+     * on top of the plan rather than inside it, and the send finishes about
+     * that much late. Reserving the active time -- not the resulting overrun,
+     * which would chase its own tail, since shrinking the slot cannot shrink
+     * the work -- pulls the finish back to where it was aimed.
+     */
+    private slotFractionFor(frameInterval: number): number {
+        if (this.maxSlotFraction <= 0) return 0; // Pacing off: send as one burst
+        const iv = Math.max(1, frameInterval);
+        const reserve = this.loopOverheadMs + this.sendActiveMs + iv * 0.1;
+        return Math.min(this.maxSlotFraction, Math.max(0.05, (iv - reserve) / iv));
+    }
+
+    /** Fold the gap since the last send into the overhead estimate. Only valid
+     *  between back-to-back frames; idle/black/skipped gaps are not loop work. */
+    private noteLoopOverhead(nowPN: number, frameInterval: number) {
+        const last = this.lastSendEndPN;
+        this.lastSendEndPN = undefined;
+        if (last === undefined) return;
+        const overhead = nowPN - last;
+        if (overhead < 0 || overhead > frameInterval * 2) return;
+        this.loopOverheadMs = Math.max(overhead, this.loopOverheadMs * 0.95);
+    }
 
     async sendBlackFrame(args: {
         targetFramePN: number;
+        frameInterval?: number;
         playbackStats?: PlaybackStatistics;
         playbackStatsAgg?: OverallFrameSendStats;
         /** Set for idle black frames, which can be disabled */
@@ -141,9 +184,11 @@ export class FrameSender {
         if (!this.blackFramesEnabled && args.onlyIfEnabled) return;
         if (!this.outputEnabled) return;
         if (!this.blackFrame || !this.job || !this.state) return;
+        if (this.sendInProgress) return; // A send is still running; skip this black frame
         this.releasePrevFrame();
         this.job!.dataBuffers = [this.blackFrame];
-        this.state.initialize(args.targetFramePN, this.job);
+        this.job.slotFraction = this.slotFractionFor(args.frameInterval ?? 50);
+        this.state.initialize(args.targetFramePN, this.job, args.frameInterval ?? 50);
         await this.doSendFrame({ ...args, frame: undefined });
     }
 
@@ -165,12 +210,18 @@ export class FrameSender {
             }
 
             const preSleepPN = performance.now();
+            this.noteLoopOverhead(preSleepPN, args.frameInterval);
             // If target frame PN is way in the future compared to other tasks, go around again.
             if (args.targetFramePN - preSleepPN > args.frameInterval * 2) {
-                // Send black
+                // Send black (awaited: send shares this.state with the next frame)
                 args.playbackStatsAgg.totalIdleTime += args.frameInterval;
                 await xbusySleep(preSleepPN + args.frameInterval, this.emitWarning);
-                if (this.blackFrame) this.sendBlackFrame({ targetFramePN: preSleepPN, onlyIfEnabled: true });
+                if (this.blackFrame)
+                    await this.sendBlackFrame({
+                        targetFramePN: preSleepPN + args.frameInterval,
+                        frameInterval: args.frameInterval,
+                        onlyIfEnabled: true,
+                    });
                 return 0;
             }
 
@@ -234,7 +285,8 @@ export class FrameSender {
                     this.exportBuffer.publishFrom(this.job.dataBuffers[0].subarray(0, this.nChannels));
                 }
 
-                const res = this.state.initialize(args.targetFramePN, this.job);
+                this.job.slotFraction = this.slotFractionFor(args.frameInterval);
+                const res = this.state.initialize(args.targetFramePN, this.job, args.frameInterval);
                 args.playbackStats.cframesSkippedDueToDirectiveCumulative += res.skipsDueToReq;
                 args.playbackStats.cframesSkippedDueToIncompletePriorCumulative += res.skipsDueToSlowCtrl;
                 args.playbackStats.cpacketsDroppedBySenderCumulative = this.senderDroppedTotal();
@@ -265,6 +317,14 @@ export class FrameSender {
         playbackStatsAgg?: OverallFrameSendStats;
         frame: FrameReference | undefined;
     }) {
+        if (this.sendInProgress) {
+            this.emitWarning?.('Frame send started while previous frame in progress');
+            if (args.playbackStats) ++args.playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
+            args.frame?.release();
+            args.frame = undefined;
+            return;
+        }
+        this.sendInProgress = true;
         try {
             const frameref = args.frame;
             if (!this.outputEnabled) {
@@ -277,13 +337,20 @@ export class FrameSender {
                 this.outstandingFrames.add(frameref);
                 args.frame = undefined;
             }
-            const startSendTime = performance.now();
             startFrame(this.state);
             startBatch(this.state);
-            await sendFull(this.state, busySleep);
+            const paced = await sendFull(this.state, lpBusySleep);
             const end = endBatch(this.state);
             this.prevSendBatch = end;
-            const sendTime = performance.now() - startSendTime;
+            const sendTime = paced.activeMs;
+            this.sendActiveMs = Math.max(paced.activeMs, this.sendActiveMs * 0.95);
+            if (this.maxSlotFraction > 0 && paced.overrunMs > 1 && !this.warnedSendOverrun) {
+                this.warnedSendOverrun = true;
+                this.emitWarning?.(
+                    `[framesend] paced send overran its slot by ${paced.overrunMs.toFixed(1)}ms; ` +
+                        `loop overhead estimate ${this.loopOverheadMs.toFixed(1)}ms`,
+                );
+            }
             Promise.allSettled(end.map((s) => s.promise)).then(() => {
                 for (const sb of end) {
                     if (sb.nECBs > 0) {
@@ -301,6 +368,7 @@ export class FrameSender {
             });
             if (args.playbackStatsAgg) {
                 args.playbackStatsAgg.totalSendTime += sendTime;
+                args.playbackStatsAgg.totalIdleTime += paced.waitMs;
                 ++args.playbackStatsAgg.nSends;
             }
             if (args.playbackStats) {
@@ -310,6 +378,9 @@ export class FrameSender {
         } catch (e) {
             const err = e as Error;
             this.emitError?.(err);
+        } finally {
+            this.sendInProgress = false;
+            this.lastSendEndPN = performance.now();
         }
         endFrame(this.state);
     }
