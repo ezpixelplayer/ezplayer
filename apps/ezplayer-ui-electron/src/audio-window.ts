@@ -28,6 +28,7 @@ export class RealTimeChunkPlayer {
     private routed = true;
     private boundDeviceId = '';
     private rebindPending = false;
+    private pollTimer: number | undefined;
 
     // scheduling state
     private audioCleanBreakInterval: number | undefined = undefined;
@@ -50,8 +51,13 @@ export class RealTimeChunkPlayer {
         if (target.deviceId) {
             this.routed = false;
             this.applyGain();
-            void this.rebind();
+            // Hidden windows may not receive devicechange; poll while the device is missing.
             navigator.mediaDevices?.addEventListener?.('devicechange', () => void this.rebind());
+            this.audioCtx.addEventListener('error', () => this.onSinkLost('render error'));
+            this.audioCtx.addEventListener('statechange', () => {
+                if (this.audioCtx?.state === 'suspended' && this.routed) void this.rebind();
+            });
+            void this.rebind();
         }
         void this.audioCtx.resume().catch((err) => console.warn('[audio-window] AudioContext.resume failed', err));
     }
@@ -66,6 +72,22 @@ export class RealTimeChunkPlayer {
         if (this.gainNode) this.gainNode.gain.value = this.routed ? this.gain : 0;
     }
 
+    private onSinkLost(reason: string): void {
+        if (this.routed) console.warn(`[audio-window] ${this.target.label}: ${reason}, muted`);
+        this.routed = false;
+        this.boundDeviceId = '';
+        this.applyGain();
+        this.schedulePoll();
+    }
+
+    private schedulePoll(): void {
+        if (this.pollTimer !== undefined) return;
+        this.pollTimer = window.setTimeout(() => {
+            this.pollTimer = undefined;
+            void this.rebind();
+        }, 2000);
+    }
+
     /** Locate the named device among connected outputs and bind the sink to it. */
     private async rebind(): Promise<void> {
         if (!this.audioCtx?.setSinkId) {
@@ -78,9 +100,7 @@ export class RealTimeChunkPlayer {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const found = resolveAudioOutputDevice(this.target, devices);
             if (!found) {
-                if (this.routed) console.warn(`[audio-window] ${this.target.label}: device gone, muted`);
-                this.routed = false;
-                this.applyGain();
+                this.onSinkLost('device gone');
                 return;
             }
             if (found.deviceId !== this.boundDeviceId) {
@@ -88,13 +108,12 @@ export class RealTimeChunkPlayer {
                 this.boundDeviceId = found.deviceId;
                 console.log(`[audio-window] ${this.target.label}: bound to ${found.label || found.deviceId}`);
             }
+            if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
             this.routed = true;
             this.applyGain();
         } catch (err) {
-            this.routed = false;
-            this.boundDeviceId = '';
-            this.applyGain();
-            console.error(`[audio-window] ${this.target.label}: setSinkId failed, muted`, err);
+            console.error(`[audio-window] ${this.target.label}: setSinkId failed`, err);
+            this.onSinkLost('setSinkId failed');
         } finally {
             this.rebindPending = false;
         }
