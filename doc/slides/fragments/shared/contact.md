@@ -6,7 +6,7 @@
 
 Discord: **https://discord.gg/gpwxM4bR94**
 Web: **ezrgb.com** &middot; the EZRGB Website
-Web: **ezplayer.dev** &middot; manual, etc. (coming soon)
+Web: **docs.ezplayer.dev** &middot; manual, slides, etc.
 GitHub: **github.com/ezpixelplayer/ezplayer**
 Email: **ezplayer@ezrgb.com**
 

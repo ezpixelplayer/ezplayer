@@ -13,6 +13,14 @@ export class SchedulerMinHeap<T extends SchedulerHeapItem> {
         return this.heap[0]; // Peek at the top element
     }
 
+    get size(): number {
+        return this.heap.length;
+    }
+
+    clear(): void {
+        this.heap.length = 0;
+    }
+
     updateTop(updateFn: (item: T) => void): void {
         if (this.heap.length === 0) return;
 

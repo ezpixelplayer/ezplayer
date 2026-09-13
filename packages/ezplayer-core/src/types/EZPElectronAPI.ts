@@ -182,6 +182,9 @@ export interface EZPElectronAPI {
     /** Pushed whenever remote-access availability changes. */
     onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => void;
 
+    /** Renderer reports the machine's audio outputs (startup and devicechange) for LAN clients. */
+    reportAudioOutputDevices: (devices: AudioDevice[]) => void;
+
     // Set up / remove callbacks
     connect: () => Promise<UIConnectSnapshot | undefined>;
     disconnect: () => Promise<void>;

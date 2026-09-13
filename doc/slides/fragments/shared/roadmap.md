@@ -1,12 +1,13 @@
 ## Roadmap
 
-**This year**
+**Most Popular Requests**
 
-- Sync packets
-- Integration API
+- Sync packets for remotes
+- HDMI output
+- Mac build
+- Fire frequency (per xSchedule)
 
 **Stretch**
 
 - Brightness control
-- HDMI output
 - Background music

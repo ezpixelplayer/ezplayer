@@ -1,7 +1,7 @@
 // earlycli must stay the first import: it applies --user-data-dir before
 // showfolder/webport/ipcautoupdate construct their electron-stores.
-import { cliUsage, getCliArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
-import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
+import { cliUsage, getCliArgs, getResetArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
+import { app, crashReporter, BrowserWindow, Menu, dialog, session } from 'electron';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -11,7 +11,8 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
 import { reportDiagEvent } from './mainsrc/diagnostics.js';
-import { primeDiagEnv } from './mainsrc/diagEnv.js';
+import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
+installDiagLogRing();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
@@ -22,21 +23,28 @@ import {
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import { registerLoginItemHandlers } from './mainsrc/ipcLoginItem.js';
 import {
-    clearPersistedShowFolder,
     closeShowFolder,
     ensureExclusiveFolder,
     ensureExclusiveFolderHeadless,
     getWelcomeShowCloud,
     hasValidConfiguredShowFolder,
-    setWelcomeShowCloud,
 } from './showfolder.js';
-import { session, ipcMain } from 'electron';
+import { runReset } from './mainsrc/reset.js';
+import { ipcMain } from 'electron';
 import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
 import { runCli } from './cli/dispatch.js';
 import type { Event as ElectronEvent } from 'electron';
+import {
+    audioWindowDevUrl,
+    audioWindowHtmlPath,
+    configureAudioWindowPaths,
+    destroyAllAudioWindows,
+    setAudioWindowsEnabled,
+    syncAudioOutputsFromSettings,
+} from './mainsrc/audioWindows.js';
 
 import os from 'os';
 
@@ -112,10 +120,7 @@ export function getMainWindow() {
     return mainWindow;
 }
 
-let audioWindow: BrowserWindow | null = null;
-export function getAudioWindow() {
-    return audioWindow;
-}
+export { getAudioWindows as getAudioWindow } from './mainsrc/audioWindows.js';
 
 let isQuitting = false;
 
@@ -158,21 +163,13 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     }
     const splashShownAt = Date.now();
 
-    audioWindow = new BrowserWindow({
-        show: false,
-
-        webPreferences: {
-            preload: path.join(__dirname, 'preload-audio.js'),
-            contextIsolation: true,
-            webSecurity: false,
-            // Hidden window default-throttles audio render; keep it full-priority.
-            backgroundThrottling: false,
-        },
+    configureAudioWindowPaths({
+        preloadPath: path.join(__dirname, 'preload-audio.js'),
+        htmlFilePath: audioWindowHtmlPath(__dirname),
+        htmlBaseUrl: audioWindowDevUrl(),
     });
-
-    // Light-weight HTML/JS just for audio
-    audioWindow.loadURL(`file://${path.join(__dirname, '../dist/audio-window.html')}`);
-    //audioWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
+    // Default sink until show-folder settings load.
+    syncAudioOutputsFromSettings(undefined);
 
     mainWindow = new BrowserWindow({
         width: 800,
@@ -291,8 +288,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         void handleCloseRequest(event);
     });
     mainWindow.on('closed', () => {
-        audioWindow?.destroy();
-        audioWindow = null;
+        destroyAllAudioWindows();
         mainWindow = null;
         // app quit?
     });
@@ -331,6 +327,9 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
+    // Headless plays no local audio; decoding still feeds web/cloud clients.
+    setAudioWindowsEnabled(false);
+
     // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });
     const kioskPortInfo = getKioskPort({ persist: false });
@@ -339,7 +338,7 @@ async function startHeadless() {
 
     registerFileListHandlers();
     registerLoginItemHandlers();
-    await registerContentHandlers(null, null, playWorker);
+    await registerContentHandlers(null, playWorker);
 
     // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
     const shutdown = (signal: NodeJS.Signals) => {
@@ -373,12 +372,14 @@ async function startHeadless() {
     console.log(`EZPlayer headless: ready on web port ${portInfo.port}`);
 }
 
+// app.exit() tears down abruptly, so flush stdout first (the empty write's
+// callback fires after buffered output drains) to avoid truncating output.
+const exitFlushed = (code: number) => process.stdout.write('', () => app.exit(code));
+
 if (isToolVerb()) {
     // Text-only verbs (discover/interfaces) run and exit without ever creating a
     // window or starting workers — unlike `headless`, which is a full player with
-    // no windows. app.exit() tears down abruptly, so flush stdout first (the empty
-    // write's callback fires after buffered output drains) to avoid truncating.
-    const exitFlushed = (code: number) => process.stdout.write('', () => app.exit(code));
+    // no windows.
     runCli(getCliArgs()).then(exitFlushed, (e) => {
         console.error(e);
         exitFlushed(1);
@@ -389,32 +390,20 @@ if (isToolVerb()) {
         // Warm the GPU/OS snapshot that rides along with crash reports.
         primeDiagEnv();
 
-        // Reset CLI flags — wipe persisted state and quit. Variants differ in what
-        // welcome-screen cloud-CTA value they leave persisted for the next launch.
-        //   --reset          : clear state, cloud-CTA enabled afterwards (current default)
-        //   --reset-cloud    : clear state, cloud-CTA enabled afterwards (explicit alias of --reset)
-        //   --reset-nocloud  : clear state, cloud-CTA disabled (pin for local-only first run)
-        const wantResetCloud = process.argv.includes('--reset-cloud');
-        const wantResetNoCloud = process.argv.includes('--reset-nocloud');
-        const wantReset = process.argv.includes('--reset') || wantResetCloud || wantResetNoCloud;
-        if (wantReset) {
-            try {
-                clearPersistedShowFolder();
-                await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
-                // Write the cloud-CTA flag AFTER clearing storage. (The flag is in
-                // electron-store, separate from localStorage, but order doesn't hurt.)
-                // Cloud is the default now; only --reset-nocloud pins local-only.
-                const showCloudAfterReset = !wantResetNoCloud;
-                setWelcomeShowCloud(showCloudAfterReset);
-                console.log(
-                    `[reset] cleared show-folder + localStorage; welcomeShowCloud=${showCloudAfterReset} (mode=${
-                        wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
-                    })`,
-                );
-            } catch (e) {
-                console.warn('[reset] failed:', (e as Error).message);
-            }
-            app.quit();
+        // AudioContext.setSinkId needs speaker-selection granted. Granting all
+        // matches what Electron does with no handler installed.
+        session.defaultSession.setPermissionCheckHandler(() => true);
+        session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
+            callback(true);
+        });
+
+        // `reset [--no-cloud]` (or a legacy --reset* flag) — wipe persisted state
+        // and quit without starting a show. Needs the session, hence after ready.
+        const resetArgs = getResetArgs();
+        if (resetArgs) {
+            const code = await runReset(resetArgs);
+            if (code === 0) app.quit();
+            else exitFlushed(code);
             return;
         }
 
@@ -458,7 +447,7 @@ if (isToolVerb()) {
         // Renderer reads this on Welcome mount via electronAPI.getWelcomeShowCloud.
         ipcMain.handle('ipcGetWelcomeShowCloud', async () => getWelcomeShowCloud());
 
-        await registerContentHandlers(mainWindow, audioWindow, playWorker);
+        await registerContentHandlers(mainWindow, playWorker);
 
         if (app.isPackaged) {
             registerAutoUpdateHandlers(mainWindow!);

@@ -38,7 +38,15 @@ import {
     controllerOpsActions,
     remoteAccessActions,
     autoUpdateActions,
+    audioDevicesActions,
 } from '@ezplayer/player-ui-components';
+
+async function enumerateAudioOutputs(): Promise<AudioDevice[]> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+        .filter((d) => d.kind === 'audiooutput')
+        .map((d) => ({ label: d.label, deviceId: d.deviceId, kind: d.kind, groupId: d.groupId }) satisfies AudioDevice);
+}
 
 /**
  * Electron renderer's `DataStorageAPI` implementation. All data and commands
@@ -92,20 +100,8 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (!this.dispatch) return;
             this.dispatch(remoteAccessActions.setRemoteAccess(state));
         });
-        window.electronAPI!.ipcRequestAudioDevices(async () => {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            return devices
-                .filter((d) => d.kind === 'audiooutput')
-                .map(
-                    (d) =>
-                        ({
-                            label: d.label,
-                            deviceId: d.deviceId,
-                            kind: d.kind,
-                            groupId: d.groupId,
-                        }) satisfies AudioDevice,
-                );
-        });
+        window.electronAPI!.ipcRequestAudioDevices(enumerateAudioOutputs);
+        navigator.mediaDevices?.addEventListener?.('devicechange', () => void this.publishAudioOutputDevices());
         window.electronAPI!.onAudioChunk(({ incarnation, playAtRealTime, sampleRate, channels, buffer }) => {
             if (!this.audioCtx) return;
 
@@ -229,6 +225,13 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         return await window.electronAPI!.setPlaybackSettings(s);
     }
 
+    /** Push the machine's outputs to the store and to main (for LAN clients). */
+    private async publishAudioOutputDevices(): Promise<void> {
+        const devices = await enumerateAudioOutputs();
+        this.dispatch?.(audioDevicesActions.setAudioOutputDevices(devices));
+        window.electronAPI!.reportAudioOutputDevices(devices);
+    }
+
     /**
      * Single umbrella for cloud worker / cloud config commands. Routes through main,
      * which persists state to the show folder and reconfigures the cloud-poll worker.
@@ -272,6 +275,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
         }
+        void this.publishAudioOutputDevices();
         // Initial update state comes from an invoke.
         try {
             dispatch(autoUpdateActions.setOps(await window.electronAPI!.getAutoUpdateOps()));

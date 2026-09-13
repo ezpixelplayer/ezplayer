@@ -1,5 +1,5 @@
 import dgram from 'dgram';
-import { UdpClient, UDPSender } from './UDP';
+import { UDP_WIRE_OVERHEAD, UdpClient, UDPSender } from './UDP';
 import { SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
 import { toDataView } from '../../util/Utils';
 
@@ -172,13 +172,25 @@ export class DDPSender extends UDPSender {
         }
     }
 
+    private packetWireOverhead(): number {
+        return (this.useTimecodes ? 14 : 10) + UDP_WIRE_OVERHEAD;
+    }
+
+    frameWireBytes(job: SenderJob): number {
+        let payload = 0;
+        for (const p of job.parts) payload += p.bufLen;
+        const packets = Math.ceil(payload / this.channelsPerPacket);
+        const push = this.pushAtEnd ? 10 + UDP_WIRE_OVERHEAD : 0;
+        return payload + packets * this.packetWireOverhead() + push;
+    }
+
+    /** Send up to job.burstSize wire bytes (whole packets), then yield.
+     *  Returns true when the frame is fully sent for this sender. */
     sendPortion(frame: SendJob, job: SenderJob, state: SendJobSenderState): boolean {
         const connected = this.client?.isConnected();
         if (!this.client || !connected) return true;
 
-        const burst = job.burstSize;
-        // Rate-limit bookkeeping; only written until the write-back TODO below lands.
-        let _rlLeftToSend = burst;
+        let burstLeft = job.burstSize;
 
         let bytesThisPacket = 0;
         let packetBufs: Uint8Array[] = [];
@@ -198,16 +210,18 @@ export class DDPSender extends UDPSender {
                 state.nextDDPSeqNum(),
             );
             this.client!.addSendToBatch([hdr, ...packetBufs]);
+            const wire = bytesThisPacket + this.packetWireOverhead();
+            state.wireBytesSent += wire;
+            burstLeft -= wire;
             packetBufs = [];
             state.curChNum += bytesThisPacket;
             bytesThisPacket = 0;
             ++this.curPacketNum;
         };
 
-        // Outer loop - go through all the parts
-        //  When to return: all done, or budget hit and we're about to enqueue
-        // OK go through and do it ALL... and update the next send time based on the token bucket
-        for (; state.curPart < job.parts.length;) {
+        // Go through the parts, packetizing; stop at a packet boundary once the
+        // burst budget is spent (the scheduler calls again at the paced time).
+        for (; state.curPart < job.parts.length; ) {
             const part = job.parts[state.curPart];
             const leftThisJob = part.bufLen - state.curOffset;
             if (!leftThisJob) {
@@ -220,8 +234,8 @@ export class DDPSender extends UDPSender {
 
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
-                _rlLeftToSend -= bytesThisPacket;
                 sendOut(false);
+                if (burstLeft <= 0) return false;
                 continue;
             }
 
@@ -233,8 +247,6 @@ export class DDPSender extends UDPSender {
             state.curOffset += thisJob;
         }
 
-        // TODO EZP Rate limit write-back
-
         // May have stuff left...
         sendOut(true);
         return true;
@@ -245,6 +257,7 @@ export class DDPSender extends UDPSender {
             fillInDDPHeader(this.pushHeader, 0, this.startChNum + state.curChNum, 0, true, state.nextDDPSeqNum());
             if (this.client?.isConnected()) {
                 this.client?.addSendToBatch(this.pushHeader);
+                state.wireBytesSent += this.pushHeader.length + UDP_WIRE_OVERHEAD;
             }
         }
     }

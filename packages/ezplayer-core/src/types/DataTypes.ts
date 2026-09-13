@@ -1,4 +1,5 @@
 import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+import type { AudioDevice } from './EZPElectronAPI';
 
 export interface EZPlayerVersions {
     name: string;
@@ -595,6 +596,19 @@ export interface VolumeControlState {
     schedule?: VolumeScheduleEntry[];
 }
 
+/** One named local output for the desktop player when the system default
+ *  output is not used. Identity is deviceId, re-matched by label/groupId if
+ *  the id changes. Each entry has its own volume and schedule. */
+export interface AudioOutputConfig {
+    id: string;
+    /** Chromium `MediaDeviceInfo.deviceId` for an `audiooutput` sink. */
+    deviceId: string;
+    /** Device label at the time it was selected; shown while disconnected. */
+    label: string;
+    groupId?: string;
+    volumeControl: VolumeControlState;
+}
+
 export interface JukeboxSettings {
     /**
      * Tags that always exclude a song from the jukebox.
@@ -632,6 +646,12 @@ export interface PlaybackSettings {
      * co-located lookup fails (sequence import / autodetection).
      */
     mediaFolder?: string;
+    /** Desktop player: true/undefined plays to the system default output using
+     *  `volumeControl`; false plays only to `audioOutputs`. Machine-local. */
+    useDefaultAudioOutput?: boolean;
+    /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
+     *  not part of cloud-managed settings groups. */
+    audioOutputs?: AudioOutputConfig[];
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,
@@ -833,6 +853,8 @@ export type FullPlayerState = {
     remoteAccess?: RemoteAccessAvailability;
     /** Software-update settings/status/releases. One atomic snapshot. */
     autoUpdateOps?: AutoUpdateOpsState;
+    /** Physical audio outputs on the player machine, as seen by its desktop renderer. */
+    audioOutputDevices?: AudioDevice[];
 };
 
 /**
