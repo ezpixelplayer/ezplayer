@@ -320,6 +320,12 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('updateCommand', msg.cmd).catch((err) => {
             console.error('[server-worker] updateCommand failed:', err);
         });
+    } else if (msg.type === 'appSettingsCommand') {
+        // App-global settings verb. Results flow back via the
+        // broadcast `appSettings` state.
+        void rpc.call('appSettingsCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] appSettingsCommand failed:', err);
+        });
     }
 });
 

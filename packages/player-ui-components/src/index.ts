@@ -150,6 +150,8 @@ export { remoteAccessActions } from './store/slices/RemoteAccessStore';
 export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';
 export { audioDevicesActions } from './store/slices/AudioDevicesStore';
 export type { AudioDevicesState } from './store/slices/AudioDevicesStore';
+export { appSettingsActions, sendAppSettingsCommand } from './store/slices/AppSettingsStore';
+export type { AppSettingsSliceState } from './store/slices/AppSettingsStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

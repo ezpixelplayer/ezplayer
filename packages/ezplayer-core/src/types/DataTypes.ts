@@ -535,6 +535,7 @@ export interface UIConnectSnapshot {
     controllerops?: ControllerOpsState;
     /** Which remote-access tiles to offer. */
     remoteAccess?: RemoteAccessAvailability;
+    appSettings?: AppSettingsState;
 }
 
 export type ScheduleDays =
@@ -855,6 +856,8 @@ export type FullPlayerState = {
     autoUpdateOps?: AutoUpdateOpsState;
     /** Physical audio outputs on the player machine, as seen by its desktop renderer. */
     audioOutputDevices?: AudioDevice[];
+    /** App-global (machine-wide) settings: diagnostics consent, start at sign-in. */
+    appSettings?: AppSettingsState;
 };
 
 /**
@@ -866,6 +869,32 @@ export interface RemoteAccessAvailability {
     /** Show-folder files. */
     files: boolean;
 }
+
+/** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
+ *  on (opt-out); `includePlayerId` defaults off (opt-in) since it ties a
+ *  report to a specific installation. */
+export interface DiagnosticsConsent {
+    uploadEnabled: boolean;
+    includePlayerId: boolean;
+}
+
+/** OS login item ("start EZPlayer at sign-in") on the player machine. */
+export interface LoginItemState {
+    /** 'ok' when configurable; otherwise why not. */
+    availability: 'ok' | 'unsupported-platform' | 'dev-mode';
+    openAtLogin: boolean;
+}
+
+/** App-global settings that live outside the show folder (electron-store / OS).
+ *  Pushed to every UI as one snapshot; changed via `AppSettingsCommand`. */
+export interface AppSettingsState {
+    diagnostics: DiagnosticsConsent;
+    loginItem: LoginItemState;
+}
+
+export type AppSettingsCommand =
+    | { type: 'setDiagnosticsConsent'; patch: Partial<DiagnosticsConsent> }
+    | { type: 'setOpenAtLogin'; openAtLogin: boolean };
 
 export type PlayerWebSocketSnapshot = {
     type: 'snapshot';
@@ -987,7 +1016,10 @@ export type PlayerClientWebSocketMessage =
     | { type: 'controllerCommand'; command: ControllerCommand }
     // Software-update verbs. Fire and forget; results flow back via the
     // broadcast `autoUpdateOps` state.
-    | { type: 'updateCommand'; cmd: UpdateCommand };
+    | { type: 'updateCommand'; cmd: UpdateCommand }
+    // App-global settings verbs. Fire and forget; results flow back via the
+    // broadcast `appSettings` state.
+    | { type: 'appSettingsCommand'; cmd: AppSettingsCommand };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 

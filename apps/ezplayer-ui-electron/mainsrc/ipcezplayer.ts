@@ -74,8 +74,9 @@ import type {
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
-import type { AudioDevice, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
-import { getDiagnosticsConsent, reportDiagEvent, setDiagnosticsConsent } from './diagnostics.js';
+import type { AppSettingsCommand, AudioDevice } from '@ezplayer/ezplayer-core';
+import { reportDiagEvent } from './diagnostics.js';
+import { dispatchAppSettingsCommand, getAppSettingsState } from './appSettings.js';
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings, broadcastAudioChunk } from './audioWindows.js';
 
@@ -886,6 +887,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             cloudStatus: getCurrentCloudStatus(),
             controllerops: getControllerOpsState(),
             remoteAccess: await getRemoteAccessAvailability(),
+            appSettings: getAppSettingsState(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
@@ -1039,10 +1041,9 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     ipcMain.handle('ipcCloudCommand', async (_event, cmd: CloudCommand) => {
         await dispatchCloudCommand(cmd);
     });
-    ipcMain.handle('ipcGetDiagnosticsConsent', async () => getDiagnosticsConsent());
-    ipcMain.handle('ipcSetDiagnosticsConsent', async (_event, patch: Partial<DiagnosticsConsent>) =>
-        setDiagnosticsConsent(patch),
-    );
+    ipcMain.handle('ipcAppSettingsCommand', async (_event, cmd: AppSettingsCommand) => {
+        await dispatchAppSettingsCommand(cmd);
+    });
     ipcMain.handle('ipcReportRendererError', async (_event, message: unknown, stack: unknown) => {
         console.error('[renderer-error]', message, stack ?? '');
         reportDiagEvent(
