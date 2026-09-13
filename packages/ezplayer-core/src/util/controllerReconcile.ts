@@ -16,6 +16,12 @@ import type {
     ControllerSerialPortIntent,
     PortReconcile,
     SerialPortReconcile,
+    ControllerPanelMatrix,
+    ControllerPanelMatrixIntent,
+    PanelMatrixReconcile,
+    ControllerVirtualMatrix,
+    ControllerVirtualMatrixIntent,
+    VirtualMatrixReconcile,
     ControllerHealth,
     ControllerNetwork,
     EzpControllerRecord,
@@ -118,6 +124,8 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             intent: k.ports,
             modelIntents: k.modelIntents,
             serialIntent: k.serialPorts,
+            panelMatrixIntent: k.panelMatrices,
+            virtualMatrixIntent: k.virtualMatrices,
             pixelPortCount: k.pixelPortCount ?? device?.pixelPortCount,
             serialPortCount: k.serialPortCount ?? device?.serialPortCount,
             outputs: k.outputs,
@@ -246,6 +254,167 @@ export function reconcileSerialPorts(
         }
     }
     return [...byPort.values()].sort((x, y) => x.port - y.port);
+}
+
+/** FPP drivers for HUB75 panels on a hat or cape. */
+const CAPE_PANEL_DRIVERS = new Set(['BBShiftPanel', 'BBBMatrix', 'LEDscapeMatrix', 'RGBMatrix']);
+
+/**
+ * Whether a matrix's driver is one the model's protocol accepts: the ColorLight
+ * protocol wants a ColorLight receiver, the Hat/Cap/Cape one a HUB75 driver,
+ * and plain "LED Panel Matrix" takes whatever the controller has.
+ */
+function panelDriverServes(protocol: string | undefined, driver: string | undefined): boolean {
+    if (!driver) return true;
+    const p = (protocol ?? '').toLowerCase();
+    if (p.endsWith('- colorlight')) return driver === 'ColorLight5a75';
+    if (p.endsWith('- hat/cap/cape')) return CAPE_PANEL_DRIVERS.has(driver);
+    return true;
+}
+
+/**
+ * LED panel matrices: intent against the controller's matrices by number. The
+ * matrix itself (panels, wiring, size) belongs to the controller, so only
+ * what an upload sets is drift (enabled, start channel, a driver the protocol
+ * accepts), plus a matrix too small for the models on it. `includeIdle` also
+ * lists disabled matrices no model uses, for the port map.
+ */
+export function reconcilePanelMatrices(
+    intent: ControllerPanelMatrixIntent[] | undefined,
+    actual: ControllerPanelMatrix[] | undefined,
+    opts: { includeIdle?: boolean } = {},
+): PanelMatrixReconcile[] {
+    const byPort = new Map<number, PanelMatrixReconcile>();
+    for (const i of intent ?? []) {
+        byPort.set(i.port, {
+            port: i.port,
+            intendedModels: i.models,
+            intendedStartChannel: i.startChannel,
+            intendedChannels: i.channels,
+            intendedProtocol: i.protocol,
+            intendedWidth: i.width,
+            intendedHeight: i.height,
+            drift: 'missing',
+            notes: [`the controller has no LED panel matrix ${i.port}`],
+        });
+    }
+    for (const a of actual ?? []) {
+        const fromDevice = {
+            actualDriver: a.driver,
+            actualEnabled: a.enabled,
+            actualStartChannel: a.startChannel,
+            actualChannels: a.channels,
+            actualWidth: a.width,
+            actualHeight: a.height,
+            actualName: a.name,
+        };
+        const row = byPort.get(a.port);
+        if (!row) {
+            if (a.enabled || opts.includeIdle) {
+                byPort.set(a.port, {
+                    port: a.port,
+                    intendedModels: [],
+                    ...fromDevice,
+                    drift: a.enabled ? 'unexpected' : 'ok',
+                    notes: a.enabled ? ['enabled on the controller, but no xLights model uses it'] : [],
+                });
+            }
+            continue;
+        }
+        Object.assign(row, fromDevice);
+        if (!a.enabled) {
+            row.drift = 'missing';
+            row.notes = ['disabled on the controller'];
+            continue;
+        }
+        const notes: string[] = [];
+        if (!panelDriverServes(row.intendedProtocol, a.driver)) {
+            notes.push(`xLights expects ${row.intendedProtocol}, but the controller's matrix is ${a.driver}`);
+        }
+        if (row.intendedStartChannel !== undefined && a.startChannel !== row.intendedStartChannel) {
+            notes.push(`starts at channel ${a.startChannel}; xLights starts it at ${row.intendedStartChannel}`);
+        }
+        if (row.intendedChannels !== undefined && a.channels < row.intendedChannels) {
+            notes.push(`holds ${a.channels} channels; the models on it need ${row.intendedChannels}`);
+        }
+        row.drift = notes.length ? 'count' : 'ok';
+        row.notes = notes;
+    }
+    return [...byPort.values()].sort((x, y) => x.port - y.port);
+}
+
+/**
+ * HDMI virtual matrices: one per model, matched by the model name the upload
+ * stores on the matrix. Everything about a virtual matrix comes from the
+ * model, so start, size, channel count and output all count as drift. A
+ * matrix no model claims is `unexpected` while enabled; `includeIdle` lists
+ * the disabled ones too.
+ */
+export function reconcileVirtualMatrices(
+    intent: ControllerVirtualMatrixIntent[] | undefined,
+    actual: ControllerVirtualMatrix[] | undefined,
+    opts: { includeIdle?: boolean } = {},
+): VirtualMatrixReconcile[] {
+    const byName = new Map<string, VirtualMatrixReconcile>();
+    for (const i of intent ?? []) {
+        byName.set(i.model, {
+            name: i.model,
+            port: i.port,
+            intendedStartChannel: i.startChannel,
+            intendedChannels: i.channels,
+            intendedWidth: i.width,
+            intendedHeight: i.height,
+            drift: 'missing',
+            notes: ['the controller has no virtual matrix for this model'],
+        });
+    }
+    const unclaimed: VirtualMatrixReconcile[] = [];
+    (actual ?? []).forEach((a, index) => {
+        const fromDevice = {
+            actualEnabled: a.enabled,
+            actualStartChannel: a.startChannel,
+            actualChannels: a.channels,
+            actualWidth: a.width,
+            actualHeight: a.height,
+            actualDevice: a.device,
+        };
+        const row = a.name !== undefined ? byName.get(a.name) : undefined;
+        if (!row) {
+            if (a.enabled || opts.includeIdle) {
+                unclaimed.push({
+                    name: a.name ?? a.device ?? `matrix ${index + 1}`,
+                    port: a.port,
+                    ...fromDevice,
+                    drift: a.enabled ? 'unexpected' : 'ok',
+                    notes: a.enabled ? ['enabled on the controller, but no xLights model uses it'] : [],
+                });
+            }
+            return;
+        }
+        Object.assign(row, fromDevice);
+        if (!a.enabled) {
+            row.drift = 'missing';
+            row.notes = ['disabled on the controller'];
+            return;
+        }
+        const notes: string[] = [];
+        const compare = (what: string, device: number | undefined, plan: number | undefined): void => {
+            if (device !== undefined && plan !== undefined && device !== plan) {
+                notes.push(`${what} ${device} on the controller; xLights ${plan}`);
+            }
+        };
+        compare('start channel', a.startChannel, row.intendedStartChannel);
+        compare('channels', a.channels, row.intendedChannels);
+        compare('width', a.width, row.intendedWidth);
+        compare('height', a.height, row.intendedHeight);
+        if (a.port !== undefined && row.port !== undefined && a.port !== row.port) {
+            notes.push(`on output ${a.port}; xLights puts it on output ${row.port}`);
+        }
+        row.drift = notes.length ? 'count' : 'ok';
+        row.notes = notes;
+    });
+    const start = (r: VirtualMatrixReconcile): number => r.intendedStartChannel ?? r.actualStartChannel ?? 0;
+    return [...byName.values(), ...unclaimed].sort((x, y) => (x.port ?? 0) - (y.port ?? 0) || start(x) - start(y));
 }
 
 /** True when any port is out of sync — the row-level "needs attention" flag. */

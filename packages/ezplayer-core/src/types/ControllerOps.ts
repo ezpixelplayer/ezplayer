@@ -49,6 +49,11 @@ export interface DiscoveredController {
     serialPorts?: ControllerSerialPort[];
     /** Serial ports physically fitted, when the device says (full depth). */
     serialPortCount?: number;
+    /** LED panel matrices read from the device (full depth); empty when read
+     *  and none are configured, absent when not read. */
+    panelMatrices?: ControllerPanelMatrix[];
+    /** HDMI virtual matrices read from the device (full depth), same convention. */
+    virtualMatrices?: ControllerVirtualMatrix[];
     /** Actual data-input config read from the device (full depth). */
     inputs?: ControllerInputInfo;
     /** Actions the driver enumerated (filled on status deep-reads). */
@@ -66,8 +71,10 @@ export interface DiscoveredController {
 }
 
 export type ControllerOpKind = 'scan' | 'status' | 'action' | 'upload';
-/** `cancelled` = stopped on request before completion; partial results kept. */
-export type ControllerOpStatus = 'running' | 'done' | 'error' | 'cancelled';
+/** `queued` = waiting for a free slot (the player limits how many of a kind
+ *  run at once); `cancelled` = stopped on request before completion, partial
+ *  results kept. */
+export type ControllerOpStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 export type ControllerOpOrigin = 'lan' | 'cloud' | 'cli';
 
 export interface ControllerOpProgress {
@@ -153,8 +160,14 @@ export type ControllerCommand =
           cmd: 'refreshInterfaces';
       }
     | {
-          /** Cancel a running op by id; currently only scans are cancelable. */
+          /** Cancel an op by id: a running scan, or any op still queued. */
           cmd: 'cancel';
+          opId: string;
+      }
+    | {
+          /** Remove a finished op (typically a failure) from the shared list,
+           *  so it is gone for every client. */
+          cmd: 'dismiss';
           opId: string;
       }
     | {
@@ -230,6 +243,10 @@ export interface KnownController {
     ports?: ControllerPortIntent[];
     /** xLights intent for the controller's serial ports */
     serialPorts?: ControllerSerialPortIntent[];
+    /** xLights intent for the controller's LED panel matrices. */
+    panelMatrices?: ControllerPanelMatrixIntent[];
+    /** xLights intent for models on the controller's HDMI virtual matrices. */
+    virtualMatrices?: ControllerVirtualMatrixIntent[];
     /** Rich per-(model,string) intent for config upload; superset of `ports`. */
     modelIntents?: ControllerModelIntent[];
     /** Pixel / serial ports the controller model has, from its capability
@@ -257,6 +274,41 @@ export function effectiveMaxFps(k: { maxFps?: number; fpsOverride?: number }): n
 }
 
 /** xLights intent for one serial (DMX / Renard / Pixelnet / …) output port. */
+/**
+ * xLights intent for one LED panel matrix: the channel range a matrix port must
+ * carry. Panel size, layout and wiring stay on the controller; this is only
+ * what to point the matrix at.
+ */
+export interface ControllerPanelMatrixIntent {
+    /** 1-based matrix number (xLights ControllerConnection Port). */
+    port: number;
+    /** Model names drawn on the matrix, in channel order. */
+    models: string[];
+    /** Absolute 1-based first channel of the matrix's models. */
+    startChannel: number;
+    /** Channels the models span, first model's first through last model's last. */
+    channels: number;
+    /** The xLights protocol, which names the driver family allowed to serve it
+     *  ("LED Panel Matrix", "… - Hat/Cap/Cape", "… - ColorLight"). */
+    protocol: string;
+    /** Size in pixels of the first model, when its strings describe a grid. */
+    width?: number;
+    height?: number;
+}
+
+/** xLights intent for one model drawn on an HDMI/framebuffer virtual matrix. */
+export interface ControllerVirtualMatrixIntent {
+    /** 1-based HDMI output (xLights ControllerConnection Port). */
+    port: number;
+    model: string;
+    /** Absolute 1-based first channel. */
+    startChannel: number;
+    channels: number;
+    /** Size in pixels, from the matrix model's strings and nodes. */
+    width: number;
+    height: number;
+}
+
 export interface ControllerSerialPortIntent {
     /** 1-based serial port number (xLights ControllerConnection Port). */
     port: number;
@@ -294,6 +346,36 @@ export interface ControllerSerialPort {
     /** Device name / label when the controller has one (e.g. FPP "DMX1"). */
     device?: string;
     model?: string;
+}
+
+/** An LED panel matrix as read from the controller. */
+export interface ControllerPanelMatrix {
+    /** 1-based matrix number, as the controller's own UI labels it. */
+    port: number;
+    /** The driver serving it, e.g. "ColorLight5a75", "BBShiftPanel", "RGBMatrix". */
+    driver?: string;
+    enabled: boolean;
+    startChannel: number;
+    channels: number;
+    width?: number;
+    height?: number;
+    panelCount?: number;
+    name?: string;
+}
+
+/** An HDMI/framebuffer virtual matrix as read from the controller. */
+export interface ControllerVirtualMatrix {
+    /** The model name the matrix was uploaded for. */
+    name?: string;
+    /** 1-based output the device name implies. */
+    port?: number;
+    enabled: boolean;
+    startChannel: number;
+    channels: number;
+    width?: number;
+    height?: number;
+    /** e.g. "HDMI-A-1" or "fb0". */
+    device?: string;
 }
 
 /** Per-(model,string) upload intent. Optional fields absent ⇒ "not set in
@@ -400,6 +482,10 @@ export interface ControllerGridRow {
     modelIntents?: ControllerModelIntent[];
     /** xLights serial-port intent, reconciled against the device's `serialPorts`. */
     serialIntent?: ControllerSerialPortIntent[];
+    /** xLights LED panel matrix intent. */
+    panelMatrixIntent?: ControllerPanelMatrixIntent[];
+    /** xLights virtual (HDMI) matrix intent. */
+    virtualMatrixIntent?: ControllerVirtualMatrixIntent[];
     /** Port counts from the controller's capability definition. */
     pixelPortCount?: number;
     serialPortCount?: number;
@@ -486,7 +572,8 @@ export interface ControllerPort {
  *  - `ok`         intent and actual agree
  *  - `missing`    xLights expects pixels here but the controller has none → reconfig
  *  - `unexpected` the controller has pixels here but xLights assigns none → stale/extra
- *  - `count`      both present but the pixel counts differ */
+ *  - `count`      both present but the pixel counts differ; for a matrix, any
+ *                 difference in its configuration (see the row's `notes`) */
 export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count';
 
 /** One port's intent-vs-actual reconciliation. */
@@ -521,4 +608,45 @@ export interface SerialPortReconcile {
     actualProtocol?: string;
     /** Same vocabulary as pixel ports; `count` means the channel counts differ. */
     drift: PortDriftKind;
+}
+
+/** One LED panel matrix's intent-vs-actual reconciliation. */
+export interface PanelMatrixReconcile {
+    port: number;
+    intendedModels: string[];
+    intendedStartChannel?: number;
+    intendedChannels?: number;
+    intendedProtocol?: string;
+    intendedWidth?: number;
+    intendedHeight?: number;
+    actualDriver?: string;
+    actualEnabled?: boolean;
+    actualStartChannel?: number;
+    actualChannels?: number;
+    actualWidth?: number;
+    actualHeight?: number;
+    actualName?: string;
+    drift: PortDriftKind;
+    /** One line per difference; empty when in sync. */
+    notes: string[];
+}
+
+/** One HDMI virtual matrix's intent-vs-actual reconciliation, matched by model name. */
+export interface VirtualMatrixReconcile {
+    /** The model name; the device name for a matrix no model claims. */
+    name: string;
+    port?: number;
+    intendedStartChannel?: number;
+    intendedChannels?: number;
+    intendedWidth?: number;
+    intendedHeight?: number;
+    actualEnabled?: boolean;
+    actualStartChannel?: number;
+    actualChannels?: number;
+    actualWidth?: number;
+    actualHeight?: number;
+    actualDevice?: string;
+    drift: PortDriftKind;
+    /** One line per difference; empty when in sync. */
+    notes: string[];
 }

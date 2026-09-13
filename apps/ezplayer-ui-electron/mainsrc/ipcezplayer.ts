@@ -96,6 +96,8 @@ import {
     getControllerOpsState,
     loadControllerRecords,
     loadNetworkPolicies,
+    resetControllerOps,
+    hasRunningControllerOps,
     setKnownControllers,
 } from './controller-ops.js';
 import type { ControllerCommand } from '@ezplayer/ezplayer-core';
@@ -589,6 +591,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // into the subdir and the loaders read the migrated copies on this same tick.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
+    resetControllerOps();
     await loadControllerRecords(showFolder);
     await loadNetworkPolicies(showFolder);
 
@@ -999,6 +1002,11 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
 
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
+            // Reloading clears controller state an operation is still writing to.
+            if (hasRunningControllerOps()) {
+                console.warn('[resetplayback] refused: a controller operation is running');
+                return false;
+            }
             await loadShowFolder(true);
             return true;
         }

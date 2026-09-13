@@ -103,8 +103,14 @@ export type {
     ControllerHealth,
     ControllerSerialPortIntent,
     ControllerSerialModelIntent,
+    ControllerPanelMatrixIntent,
+    ControllerVirtualMatrixIntent,
     ControllerSerialPort,
     SerialPortReconcile,
+    ControllerPanelMatrix,
+    ControllerVirtualMatrix,
+    PanelMatrixReconcile,
+    VirtualMatrixReconcile,
 } from './types/ControllerOps';
 export { effectiveMaxFps } from './types/ControllerOps';
 
@@ -112,6 +118,8 @@ export {
     reconcileControllers,
     reconcilePorts,
     reconcileSerialPorts,
+    reconcilePanelMatrices,
+    reconcileVirtualMatrices,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
