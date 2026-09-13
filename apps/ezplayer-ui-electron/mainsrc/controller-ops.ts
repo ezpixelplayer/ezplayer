@@ -69,6 +69,10 @@ let opCounter = 0;
 // Live job handles for running scan ops, so `cancel` can reach the engine.
 const scanJobs = new Map<string, DiscoveryJob>();
 
+// Bumped by resetControllerOps; a scan started before a reset must not merge
+// what it finds into the cleared state.
+let resetGeneration = 0;
+
 const state: ControllerOpsState = { interfaces: [], devices: {}, operations: {}, known: [], networkPolicies: [] };
 
 // Injected by server-worker-manager, so this module needs no dependency on it.
@@ -457,7 +461,43 @@ export async function dispatchControllerCommand(
         case 'cancel':
             runCancel(command);
             return undefined;
+        case 'dismiss':
+            runDismiss(command);
+            return undefined;
     }
+}
+
+/** True while any controller operation (scan, read, action, upload) runs. */
+export function hasRunningControllerOps(): boolean {
+    return Object.values(state.operations).some((o) => o.status === 'running');
+}
+
+/**
+ * Forget everything learned from the network: scan results, device details
+ * and finished operations. Part of reloading the show, alongside re-reading the
+ * persisted records. Running scans are cancelled; other running operations are
+ * left to finish, since stopping an upload part-way could leave a controller
+ * half-configured.
+ */
+export function resetControllerOps(): void {
+    resetGeneration++;
+    for (const job of scanJobs.values()) job.cancel();
+    state.devices = {};
+    for (const [id, op] of Object.entries(state.operations)) {
+        if (op.status !== 'running') delete state.operations[id];
+    }
+    state.interfaces = hostNetworks();
+    publish();
+}
+
+/** Drop a finished op for every client. Already gone is fine: another client
+ *  may have dismissed it first. */
+function runDismiss(command: Extract<ControllerCommand, { cmd: 'dismiss' }>): void {
+    const op = state.operations[command.opId];
+    if (!op) return;
+    if (op.status === 'running') throw new Error(`operation ${command.opId} is still running`);
+    delete state.operations[command.opId];
+    publish();
 }
 
 /** Cancel a running scan op by op id. The job's cancel() resolves result()
@@ -922,22 +962,25 @@ async function runScan(
             // recurseEzpProxies intentionally not forwarded: a run must not
             // chain federation onward.
         };
+        const generation = resetGeneration;
         const job = startScanJob(request, (ev) => {
             if (ev.ev === 'progress') {
                 op.progress = ev.progress;
                 publish();
-            } else if (ev.ev === 'device') {
+            } else if (ev.ev === 'device' && generation === resetGeneration) {
                 mergeDevice(ev.device);
                 publish();
             }
         });
         scanJobs.set(op.id, job);
         const result = await job.result();
-        for (const d of result.devices) mergeDevice(d);
+        if (generation === resetGeneration) for (const d of result.devices) mergeDevice(d);
         // A cancelled job still resolves result(); the final progress phase
         // says how the run actually ended.
         op.status = op.progress?.phase === 'cancelled' ? 'cancelled' : 'done';
-        if (op.status === 'done') markUnseenUnreachable(request.networks, result.devices);
+        if (op.status === 'done' && generation === resetGeneration) {
+            markUnseenUnreachable(request.networks, result.devices);
+        }
         op.finishedAt = nowIso();
         publish();
         return result;

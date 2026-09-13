@@ -29,6 +29,7 @@ const COMMAND_VERBS = [
     'network',
     'refreshInterfaces',
     'cancel',
+    'dismiss',
 ] as const;
 
 export interface ControllersApiDeps {
@@ -94,6 +95,7 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
         case 'refreshInterfaces':
             break;
         case 'cancel':
+        case 'dismiss':
             error = needString('opId');
             break;
     }

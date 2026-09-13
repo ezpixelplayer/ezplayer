@@ -6,6 +6,7 @@ import {
     Card,
     Checkbox,
     Chip,
+    CircularProgress,
     Collapse,
     Dialog,
     DialogActions,
@@ -18,6 +19,7 @@ import {
     ListItemText,
     Menu,
     MenuItem,
+    Popover,
     Stack,
     Table,
     TableBody,
@@ -40,6 +42,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SyncProblemIcon from '@mui/icons-material/SyncProblem';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
@@ -56,6 +59,7 @@ import { CompactDialog } from '../dialog/CompactDialog';
 import { PortVisualizerDialog } from './PortVisualizerDialog';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
+import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import {
     reconcileControllers,
@@ -605,6 +609,11 @@ const MaxFpsCell: React.FC<{ row: ControllerGridRow }> = ({ row }) => {
 const GridRow: React.FC<{
     row: ControllerGridRow;
     busy: boolean;
+    /** The operation running against this controller, if any. */
+    runningOp?: ControllerOp;
+    /** This controller's most recent failed operation, until dismissed. */
+    failedOp?: ControllerOp;
+    onDismiss: (opId: string) => void;
     serverBase: string | undefined;
     onStatus: (id: string, address?: string) => void;
     onAction: (id: string, action: ControllerDeviceAction) => void;
@@ -613,8 +622,23 @@ const GridRow: React.FC<{
     onEdit: (row: ControllerGridRow) => void;
     onPromote: (row: ControllerGridRow) => void;
     onDelete: (name: string) => void;
-}> = ({ row, busy, serverBase, onStatus, onAction, onUpload, onActivate, onEdit, onPromote, onDelete }) => {
+}> = ({
+    row,
+    busy,
+    runningOp,
+    failedOp,
+    onDismiss,
+    serverBase,
+    onStatus,
+    onAction,
+    onUpload,
+    onActivate,
+    onEdit,
+    onPromote,
+    onDelete,
+}) => {
     const [open, setOpen] = useState(false);
+    const [errorAnchor, setErrorAnchor] = useState<HTMLElement | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [portDialog, setPortDialog] = useState<'compare' | 'map' | null>(null);
     const [uploadOpen, setUploadOpen] = useState(false);
@@ -804,15 +828,71 @@ const GridRow: React.FC<{
                                 : undefined
                         }
                     />
-                    {anyDrift && (
-                        <IconButton
-                            size="small"
-                            onClick={() => setPortDialog('compare')}
-                            title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
-                            sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                    {/* One status slot: work in progress, then a failure, then drift. */}
+                    {runningOp ? (
+                        <MuiBox
+                            component="span"
+                            title={`${runningOp.label}…`}
+                            sx={{ display: 'inline-flex', ml: 0.75, verticalAlign: 'middle' }}
                         >
-                            <SyncProblemIcon color="warning" fontSize="small" />
-                        </IconButton>
+                            <CircularProgress size={16} />
+                        </MuiBox>
+                    ) : failedOp ? (
+                        <>
+                            <IconButton
+                                size="small"
+                                onClick={(e) => setErrorAnchor(e.currentTarget)}
+                                title={`${failedOp.label} failed (click for details)`}
+                                sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                            >
+                                <ErrorOutlineIcon color="error" fontSize="small" />
+                            </IconButton>
+                            <Popover
+                                open={!!errorAnchor}
+                                anchorEl={errorAnchor}
+                                onClose={() => setErrorAnchor(null)}
+                                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                            >
+                                <Box sx={{ p: 2, maxWidth: 420 }}>
+                                    <Typography variant="subtitle2">{failedOp.label} failed</Typography>
+                                    {failedOp.error && (
+                                        <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                            {failedOp.error}
+                                        </Typography>
+                                    )}
+                                    {failedOp.finishedAt && (
+                                        <Typography
+                                            variant="caption"
+                                            sx={{ display: 'block', color: 'text.secondary', mt: 0.5 }}
+                                        >
+                                            {new Date(failedOp.finishedAt).toLocaleString()}
+                                        </Typography>
+                                    )}
+                                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                                        <Button
+                                            size="small"
+                                            onClick={() => {
+                                                setErrorAnchor(null);
+                                                onDismiss(failedOp.id);
+                                            }}
+                                        >
+                                            Dismiss
+                                        </Button>
+                                    </Box>
+                                </Box>
+                            </Popover>
+                        </>
+                    ) : (
+                        anyDrift && (
+                            <IconButton
+                                size="small"
+                                onClick={() => setPortDialog('compare')}
+                                title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
+                                sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                            >
+                                <SyncProblemIcon color="warning" fontSize="small" />
+                            </IconButton>
+                        )
                     )}
                 </TableCell>
                 {/* Enabled / disabled / xLights-only, in its own column so the pill can
@@ -1369,18 +1449,40 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const ops = Object.values(operations);
     const running = ops.filter((o) => o.status === 'running');
     const scanning = running.some((o) => o.kind === 'scan');
-    // Failed ops stay visible until dismissed.
-    const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
-    const errored = ops
-        .filter((o) => o.status === 'error' && !dismissedErrors.has(o.id))
-        .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))
-        .slice(0, 5);
-    const dismissError = (id: string) => setDismissedErrors((prev) => new Set(prev).add(id));
+    // Failed ops stay until someone dismisses them, which removes them on the
+    // player for every client.
+    const failed = ops
+        .filter((o) => o.status === 'error')
+        .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''));
+    const dismissError = (opId: string) => dispatch(issueControllerCommand({ cmd: 'dismiss', opId }));
     const deviceList = Object.values(devices).sort(
         (a, b) => ipKey(a.ip) - ipKey(b.ip) || sourceRank(a) - sourceRank(b),
     );
 
     const rows = overlayHealth(reconcileControllers(known ?? [], deviceList), statusesRaw ?? []);
+    // Operations against one controller show on its row (spinner or error
+    // icon); the Operations card keeps scans and anything no row claims.
+    const rowTarget = (row: ControllerGridRow): string => row.device?.id ?? `${row.address ?? ''}|direct`;
+    const rowTargets = new Set(rows.map(rowTarget));
+    const runningByTarget = new Map<string, ControllerOp>();
+    for (const o of running) if (rowTargets.has(o.target)) runningByTarget.set(o.target, o);
+    const failedByTarget = new Map<string, ControllerOp>();
+    for (const o of failed)
+        if (rowTargets.has(o.target) && !failedByTarget.has(o.target)) failedByTarget.set(o.target, o);
+    const cardRunning = running.filter((o) => !rowTargets.has(o.target));
+    const errored = failed.filter((o) => !rowTargets.has(o.target)).slice(0, 5);
+
+    // Reload show & controllers: the Player page's Reload Schedule, which also
+    // clears what was learned from the network. Not while the show runs or a
+    // controller operation is still going.
+    const playerStatus = useSelector((s: RootState) => s.runtime?.combined?.player?.status);
+    const showActive = playerStatus === 'Playing' || playerStatus === 'Paused';
+    const reloadBlocked = showActive
+        ? 'Stop the show to reload'
+        : running.length > 0
+          ? 'Wait for the running controller operation to finish'
+          : undefined;
+    const reloadAll = () => void dispatch(callImmediateCommand({ command: 'resetplayback' }));
     // Enabled-but-unreachable controllers on networks this player has no interface on.
     const offNetwork = findOffNetworkControllers(rows, interfaces);
     const hostNetworkList = interfaces.map((i) => i.network).join(', ');
@@ -1613,12 +1715,12 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             {/* Gap lives inside the scroll box so the first card's top edge isn't clipped. */}
             <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
                 {/* Running operations, undismissed failures, and off-network controllers */}
-                {(running.length > 0 || errored.length > 0 || offNetwork.length > 0) && (
+                {(cardRunning.length > 0 || errored.length > 0 || offNetwork.length > 0) && (
                     <Card sx={{ p: 3, mb: 3, maxWidth: 820 }}>
                         <Typography variant="subtitle1" sx={{ mb: 2 }}>
-                            {running.length > 0 || errored.length > 0 ? 'Operations' : 'Network'}
+                            {cardRunning.length > 0 || errored.length > 0 ? 'Operations' : 'Network'}
                         </Typography>
-                        {running.map((op) => (
+                        {cardRunning.map((op) => (
                             <OpProgress key={op.id} op={op} onCancel={op.kind === 'scan' ? cancelOp : undefined} />
                         ))}
                         {errored.map((op) => (
@@ -1665,6 +1767,23 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                             label={`${count('unregistered')} unregistered`}
                         />
                         <Box sx={{ flexGrow: 1 }} />
+                        <Tooltip
+                            title={
+                                reloadBlocked ??
+                                'Reload the show, then clear scan results, controller details and operation errors'
+                            }
+                        >
+                            <span>
+                                <Button
+                                    size="small"
+                                    startIcon={<RestartAltIcon />}
+                                    onClick={reloadAll}
+                                    disabled={!!reloadBlocked}
+                                >
+                                    Reload show &amp; controllers
+                                </Button>
+                            </span>
+                        </Tooltip>
                         <Button
                             size="small"
                             variant="outlined"
@@ -1778,7 +1897,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                         <GridRow
                                             key={row.key}
                                             row={row}
-                                            busy={busyTargets.has(row.device?.id ?? `${row.address ?? ''}|direct`)}
+                                            busy={busyTargets.has(rowTarget(row))}
+                                            runningOp={runningByTarget.get(rowTarget(row))}
+                                            failedOp={failedByTarget.get(rowTarget(row))}
+                                            onDismiss={dismissError}
                                             serverBase={serverBase}
                                             onStatus={loadDetail}
                                             onAction={runDeviceAction}

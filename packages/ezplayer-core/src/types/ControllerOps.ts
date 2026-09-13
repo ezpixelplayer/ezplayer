@@ -163,6 +163,12 @@ export type ControllerCommand =
           opId: string;
       }
     | {
+          /** Remove a finished op (typically a failure) from the shared list,
+           *  so it is gone for every client. */
+          cmd: 'dismiss';
+          opId: string;
+      }
+    | {
           /** Run a driver-enumerated action (see ControllerDeviceAction) by id. */
           cmd: 'action';
           id: string;

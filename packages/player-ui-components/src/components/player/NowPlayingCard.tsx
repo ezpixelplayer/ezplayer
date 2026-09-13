@@ -15,9 +15,9 @@ import { Box } from '../box/Box';
 import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
 import { VolumeOff, VolumeUp, Refresh, Tune, Close } from '@mui/icons-material';
 import { useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
-import { AppDispatch } from '../../store/Store';
+import { AppDispatch, RootState } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
 import { AudioSettings } from '../playback-settings/sections/AudioSettings';
 import { PlayerSystemTime } from './PlayerSystemTime';
@@ -64,6 +64,10 @@ export const NowPlayingCard = ({
     const isPlaying = player.status === 'Playing';
     const isPaused = player.status === 'Paused';
     const isActive = isPlaying || isPaused;
+    // Reloading clears controller state, so it waits for controller operations.
+    const controllerOpRunning = useSelector((s: RootState) =>
+        Object.values(s.controllerOps?.operations ?? {}).some((o) => o.status === 'running'),
+    );
     const hasNowPlaying = !!player.now_playing;
     const hasBackgroundPlaying = !!player.background_now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
@@ -250,15 +254,22 @@ export const NowPlayingCard = ({
                 {/* Reload schedule button — only when stopped */}
                 {!isActive && (
                     <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                        <Button
-                            variant="outlined"
-                            startIcon={<Refresh />}
-                            onClick={async () => {
-                                await dispatch(callImmediateCommand({ command: 'resetplayback' })).unwrap();
-                            }}
+                        <Tooltip
+                            title={controllerOpRunning ? 'Wait for the running controller operation to finish' : ''}
                         >
-                            Reload Schedule
-                        </Button>
+                            <span>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<Refresh />}
+                                    disabled={controllerOpRunning}
+                                    onClick={async () => {
+                                        await dispatch(callImmediateCommand({ command: 'resetplayback' })).unwrap();
+                                    }}
+                                >
+                                    Reload Schedule
+                                </Button>
+                            </span>
+                        </Tooltip>
                     </Box>
                 )}
 
