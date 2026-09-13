@@ -29,7 +29,7 @@ import { SenderJob, SendJob, SendJobState } from '../dataplane/SenderJob';
 import { sendFull } from '../dataplane/SendFrame';
 import { getColorCycle } from '../effects/ColorUtil';
 import { EffectBufferRGB } from '../effects/EffectBuffer';
-import { busySleep } from '../util/Utils';
+import { lpBusySleep } from '../util/Utils';
 
 interface Args {
     address: string;
@@ -143,7 +143,7 @@ async function main(): Promise<void> {
         mtx.fill(r, g, b);
         mtx.fillColumn(frame % args.width, 255, 255, 255);
 
-        await sendFull(state, busySleep);
+        await sendFull(state, lpBusySleep);
 
         const postSendTime = performance.now();
         const sendTime = postSendTime - nowTime;
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
 
         frame++;
         const nextTargetTime = baseTime + frame * frameTime;
-        if (nextTargetTime - postSendTime > dontSleep) await busySleep(nextTargetTime);
+        if (nextTargetTime - postSendTime > dontSleep) await lpBusySleep(nextTargetTime);
     }
     report();
 }
