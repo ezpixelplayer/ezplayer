@@ -56,6 +56,11 @@ export const NowPlayingCard = ({
     // Hooks must precede the ptype early-return to keep call order stable.
     const dispatch = useDispatch<AppDispatch>();
     const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+    // Reloading clears controller state, so it waits for controller operations
+    // that are running or queued.
+    const controllerOpRunning = useSelector((s: RootState) =>
+        Object.values(s.controllerOps?.operations ?? {}).some((o) => o.status === 'running' || o.status === 'queued'),
+    );
 
     if (player.ptype !== 'EZP') {
         return null;
@@ -64,10 +69,6 @@ export const NowPlayingCard = ({
     const isPlaying = player.status === 'Playing';
     const isPaused = player.status === 'Paused';
     const isActive = isPlaying || isPaused;
-    // Reloading clears controller state, so it waits for controller operations.
-    const controllerOpRunning = useSelector((s: RootState) =>
-        Object.values(s.controllerOps?.operations ?? {}).some((o) => o.status === 'running'),
-    );
     const hasNowPlaying = !!player.now_playing;
     const hasBackgroundPlaying = !!player.background_now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
