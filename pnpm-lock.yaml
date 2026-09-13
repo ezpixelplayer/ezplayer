@@ -244,8 +244,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/epp
       '@ezplayer/epp-controllers':
-        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.22.tgz
-        version: file:libs/ezplayer-epp-controllers-0.0.22.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
+        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.23.tgz
+        version: file:libs/ezplayer-epp-controllers-0.0.23.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
       '@ezplayer/ezplayer-client':
         specifier: workspace:*
         version: link:../../packages/ezplayer-client
@@ -1627,9 +1627,9 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.22.tgz':
-    resolution: {integrity: sha512-Y6kACNQF4dSpNshA7aZmrzCOnHsQLwHgnc1ocvj3EZGqisV0zeKvml/VLSjr/YVcq9Zdngz/R0NZWPMIjOzOHA==, tarball: file:libs/ezplayer-epp-controllers-0.0.22.tgz}
-    version: 0.0.22
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.23.tgz':
+    resolution: {integrity: sha512-lBb6GGK5/TBxS1py3MtIiNU04bEP09OtDlk9wEMUYYy7JtcasrmKxcHbLtC2aooC9TUUjy3fDg2qERYQskUwlw==, tarball: file:libs/ezplayer-epp-controllers-0.0.23.tgz}
+    version: 0.0.23
     peerDependencies:
       '@ezplayer/epp': 0.1.7
       '@ezplayer/icmp-ping': 0.1.1
@@ -6354,7 +6354,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.22.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.23.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
     dependencies:
       '@ezplayer/epp': link:packages/epp
       '@xmldom/xmldom': 0.8.15
