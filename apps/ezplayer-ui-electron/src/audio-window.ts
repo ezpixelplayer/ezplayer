@@ -110,6 +110,7 @@ export class RealTimeChunkPlayer {
             }
             if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
             this.routed = true;
+            this.resetSchedulingState();
             this.applyGain();
         } catch (err) {
             console.error(`[audio-window] ${this.target.label}: setSinkId failed`, err);
@@ -136,6 +137,11 @@ export class RealTimeChunkPlayer {
         const { incarnation, playAtRealTime, sampleRate, channels, buffer, advanceSamples } = msg;
 
         if (!this.audioCtx || !this.gainNode) return;
+        // Nothing is rendering; queued sources would all fire at once on resume.
+        if (!this.routed || this.audioCtx.state !== 'running') {
+            this.resetSchedulingState();
+            return;
+        }
 
         const floatArray = new Float32Array(buffer);
         const numSamples = floatArray.length / channels;

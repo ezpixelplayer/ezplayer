@@ -74,7 +74,7 @@ import type {
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
-import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import type { AudioDevice, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { getDiagnosticsConsent, reportDiagEvent, setDiagnosticsConsent } from './diagnostics.js';
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings, broadcastAudioChunk } from './audioWindows.js';
@@ -1010,6 +1010,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         } as PlayerCommand);
         return true;
     });
+    ipcMain.on('ipcAudioOutputDevices', (_event, devices: AudioDevice[]) => {
+        broadcastToWebSocket('audioOutputDevices', devices);
+    });
+
     ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<boolean> => {
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);

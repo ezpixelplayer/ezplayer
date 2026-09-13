@@ -1,4 +1,5 @@
 import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+import type { AudioDevice } from './EZPElectronAPI';
 
 export interface EZPlayerVersions {
     name: string;
@@ -852,6 +853,8 @@ export type FullPlayerState = {
     remoteAccess?: RemoteAccessAvailability;
     /** Software-update settings/status/releases. One atomic snapshot. */
     autoUpdateOps?: AutoUpdateOpsState;
+    /** Physical audio outputs on the player machine, as seen by its desktop renderer. */
+    audioOutputDevices?: AudioDevice[];
 };
 
 /**

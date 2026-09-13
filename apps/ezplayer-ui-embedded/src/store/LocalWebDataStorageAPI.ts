@@ -10,7 +10,6 @@ import type {
     PlaybackSettings,
     BatchImportSummary,
     PlayerWebSocketMessage,
-    AudioDevice,
 } from '@ezplayer/ezplayer-core';
 
 import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/player-ui-components';
@@ -21,6 +20,7 @@ import {
     autoUpdateActions,
     cloudConfigActions,
     remoteAccessActions,
+    audioDevicesActions,
     cloudStatusActions,
     controllerOpsActions,
     hydratePlaybackSettings,
@@ -106,6 +106,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.remoteAccess !== undefined) {
                 dispatch(remoteAccessActions.setRemoteAccess(data.remoteAccess));
             }
+            if (data.audioOutputDevices !== undefined) {
+                dispatch(audioDevicesActions.setAudioOutputDevices(data.audioOutputDevices));
+            }
             if (data.autoUpdateOps !== undefined) {
                 dispatch(autoUpdateActions.setOps(data.autoUpdateOps));
             }
@@ -189,15 +192,6 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             console.error('Error posting playback settings to Electron:', error);
             return false;
         }
-    }
-
-    async getAudioOutputDevices(): Promise<AudioDevice[]> {
-        const response = await fetch(`${this.apiUrl}ezp/audio-output-devices`);
-        if (!response.ok) {
-            throw new Error(`Failed to list audio output devices: ${response.statusText}`);
-        }
-        const result = (await response.json()) as { devices?: AudioDevice[] };
-        return result.devices ?? [];
     }
 
     // Cloud config writes route over the WebSocket: koa worker forwards to main, main
