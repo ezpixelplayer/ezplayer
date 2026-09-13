@@ -1,6 +1,6 @@
 // earlycli must stay the first import: it applies --user-data-dir before
 // showfolder/webport/ipcautoupdate construct their electron-stores.
-import { cliUsage, getCliArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
+import { cliUsage, getCliArgs, getResetArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog } from 'electron';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
@@ -23,15 +23,14 @@ import {
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
 import { registerLoginItemHandlers } from './mainsrc/ipcLoginItem.js';
 import {
-    clearPersistedShowFolder,
     closeShowFolder,
     ensureExclusiveFolder,
     ensureExclusiveFolderHeadless,
     getWelcomeShowCloud,
     hasValidConfiguredShowFolder,
-    setWelcomeShowCloud,
 } from './showfolder.js';
-import { session, ipcMain } from 'electron';
+import { runReset } from './mainsrc/reset.js';
+import { ipcMain } from 'electron';
 import { getWebPort, getKioskPort } from './webport.js';
 import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
@@ -374,12 +373,14 @@ async function startHeadless() {
     console.log(`EZPlayer headless: ready on web port ${portInfo.port}`);
 }
 
+// app.exit() tears down abruptly, so flush stdout first (the empty write's
+// callback fires after buffered output drains) to avoid truncating output.
+const exitFlushed = (code: number) => process.stdout.write('', () => app.exit(code));
+
 if (isToolVerb()) {
     // Text-only verbs (discover/interfaces) run and exit without ever creating a
     // window or starting workers — unlike `headless`, which is a full player with
-    // no windows. app.exit() tears down abruptly, so flush stdout first (the empty
-    // write's callback fires after buffered output drains) to avoid truncating.
-    const exitFlushed = (code: number) => process.stdout.write('', () => app.exit(code));
+    // no windows.
     runCli(getCliArgs()).then(exitFlushed, (e) => {
         console.error(e);
         exitFlushed(1);
@@ -390,32 +391,13 @@ if (isToolVerb()) {
         // Warm the GPU/OS snapshot that rides along with crash reports.
         primeDiagEnv();
 
-        // Reset CLI flags — wipe persisted state and quit. Variants differ in what
-        // welcome-screen cloud-CTA value they leave persisted for the next launch.
-        //   --reset          : clear state, cloud-CTA enabled afterwards (current default)
-        //   --reset-cloud    : clear state, cloud-CTA enabled afterwards (explicit alias of --reset)
-        //   --reset-nocloud  : clear state, cloud-CTA disabled (pin for local-only first run)
-        const wantResetCloud = process.argv.includes('--reset-cloud');
-        const wantResetNoCloud = process.argv.includes('--reset-nocloud');
-        const wantReset = process.argv.includes('--reset') || wantResetCloud || wantResetNoCloud;
-        if (wantReset) {
-            try {
-                clearPersistedShowFolder();
-                await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
-                // Write the cloud-CTA flag AFTER clearing storage. (The flag is in
-                // electron-store, separate from localStorage, but order doesn't hurt.)
-                // Cloud is the default now; only --reset-nocloud pins local-only.
-                const showCloudAfterReset = !wantResetNoCloud;
-                setWelcomeShowCloud(showCloudAfterReset);
-                console.log(
-                    `[reset] cleared show-folder + localStorage; welcomeShowCloud=${showCloudAfterReset} (mode=${
-                        wantResetCloud ? 'reset-cloud' : wantResetNoCloud ? 'reset-nocloud' : 'reset'
-                    })`,
-                );
-            } catch (e) {
-                console.warn('[reset] failed:', (e as Error).message);
-            }
-            app.quit();
+        // `reset [--no-cloud]` (or a legacy --reset* flag) — wipe persisted state
+        // and quit without starting a show. Needs the session, hence after ready.
+        const resetArgs = getResetArgs();
+        if (resetArgs) {
+            const code = await runReset(resetArgs);
+            if (code === 0) app.quit();
+            else exitFlushed(code);
             return;
         }
 
