@@ -15,16 +15,12 @@ title: Audio
   time. Change the default in the OS and the player follows. **Volume Control**
   applies to this output.
 - **No** plays only through the devices you check under **Audio Devices**. Each
-  device has its own volume and volume schedule. This is how you send one feed to
-  an FM transmitter on the built-in output and another to patio speakers on a USB
-  interface while leaving a headset unchecked.
+  device has its own volume and volume schedule.  This allows, for example,
+  sending audio straight to the FM transmitter, applying a volume schedule to the
+  patio speakers, and not sending any audio to the USB headset.
 
 Checked devices stay selected while unplugged (they show as **Not connected**) and
 resume automatically when they return. Select a device while it is connected.
-
-These choices are stored in the show folder's `playbackSettings.json`, are local to
-the player machine, and are not synced through cloud settings. The same settings
-are available from the LAN web UI.
 
 ## Volume
 
