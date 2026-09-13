@@ -36,7 +36,6 @@ export class SenderJobPart {
 
 export class SenderJob {
     parts: SenderJobPart[] = [];
-    rateLimit: number = 1000000000; // Max wire bytes per millisecond to this controller
     burstSize: number = 2880; // Wire bytes per sendPortion burst (~2 DDP packets)
 
     // Sender + settings
@@ -47,11 +46,12 @@ export class SendJob {
     dataBuffers: Uint8Array[] = [];
     senders: SenderJob[] = [];
 
-    /** Fraction of the frame interval to stretch sends across; the rest is
-     *  headroom for the push packet, socket callbacks, and next-frame prep.
-     *  The send holds the dispatch loop, so callers that can measure their own
-     *  overhead should set this per frame. Zero sends the whole frame as one
-     *  burst. */
+    /**
+     * Fraction of the frame interval to stretch sends across.
+     *   Ideally this would be 1.0; however the current design needs headroom
+     *    for the push packet, socket callbacks, and next-frame prep.
+     *    Zero sends the whole frame as fast as possible.
+     */
     slotFraction: number = 0.5;
 
     frameNumber: number = -1;
@@ -122,16 +122,15 @@ export class SendJobState {
     sendHeap: SchedulerMinHeap<SendJobSenderState> = new SchedulerMinHeap();
 
     /** Hard end of this frame's send slot (performance.now() basis). Past this
-     *  the scheduler stops pacing and flushes whatever is left, so a bad rate
-     *  estimate or a hiccup can't eat into the next frame. */
+     *  the scheduler stops pacing. */
     sendDeadline: number = Infinity;
 
     /**
-     * Set up per-sender progress and the pacing plan for one frame.
+     * Set up per-sender progress and the interleaving/pacing plan for one frame.
      *
      * Each non-skipped sender gets a send rate that stretches its frame data
      * across the usable slot (frameIntervalMs * job.slotFraction, measured from
-     * sendTime), capped by its rateLimit. The scheduler heap is rebuilt with all
+     * sendTime). The scheduler heap is rebuilt with all
      * active senders due at slot start; interleaving across controllers then
      * falls out of the heap ordering as each sender's nextTime advances by
      * bytesSent / sendRate.
@@ -170,7 +169,7 @@ export class SendJobState {
             ++i;
         }
 
-        // Build the pacing plan. If we're starting late, the window shrinks so
+        // Build the interleaving/pacing plan. If we're starting late, the window shrinks so
         // the frame still lands by its deadline (down to an immediate burst).
         this.sendHeap.clear();
         const startNow = performance.now();
@@ -184,7 +183,7 @@ export class SendJobState {
             if (!senderJob.sender) continue;
             const wireBytes = senderJob.sender.frameWireBytes(senderJob);
             if (wireBytes <= 0) continue;
-            s.sendRate = Math.min(wireBytes / window, senderJob.rateLimit);
+            s.sendRate = wireBytes / window;
             s.nextTime = slotStart;
             this.sendHeap.insert(s);
         }

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { endBatch, sendFull, startBatch, startFrame } from './SendFrame';
 import { Sender, SenderJob, SendJob, SendJobSenderState, SendJobState } from './SenderJob';
 import { DDPSender } from './protocols/DDP';
-import { busySleep, lpBusySleep } from '../util/Utils';
+import { lpBusySleep } from '../util/Utils';
 
 /** Minimal Sender that "sends" bursts of abstract wire bytes and records when. */
 class FakeSender implements Sender {
@@ -63,7 +63,7 @@ describe('paced frame sending', () => {
         const state = new SendJobState();
         const t0 = performance.now();
         state.initialize(t0, job, 100); // 100ms frame -> 85ms usable slot
-        await sendFull(state, busySleep);
+        await sendFull(state, lpBusySleep);
         const elapsed = performance.now() - t0;
 
         // 12 bursts per sender, everything delivered, one push each
@@ -100,7 +100,7 @@ describe('paced frame sending', () => {
         const state = new SendJobState();
         const t0 = performance.now();
         state.initialize(t0 - 200, job, 50); // deadline long gone
-        await sendFull(state, busySleep);
+        await sendFull(state, lpBusySleep);
         const elapsed = performance.now() - t0;
 
         expect(events.length).toBe(12);
@@ -112,13 +112,11 @@ describe('paced frame sending', () => {
         const senders = [new FakeSender(0, 12000, events)];
         const job = makeFakeJob(senders, 1000);
         job.slotFraction = 0.5; // explicit, so the test holds whatever the default becomes
-        // A rate this low would need over a second to place 12000 bytes
-        job.senders[0].rateLimit = 10;
 
         const state = new SendJobState();
         const t0 = performance.now();
         state.initialize(t0, job, 50); // 50ms frame -> 25ms slot
-        const res = await sendFull(state, busySleep);
+        const res = await sendFull(state, lpBusySleep);
         const elapsed = performance.now() - t0;
 
         expect(events.length).toBe(12); // everything still went out

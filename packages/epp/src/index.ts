@@ -10,7 +10,7 @@ export { startFrame, endFrame, startBatch, endBatch, sendPartial, sendFull, Send
 
 export { ControllerSetup, OpenControllerReport } from './controllers/controllertypes';
 
-export { busySleep, lpBusySleep } from './util/Utils';
+export { lpBusySleep } from './util/Utils';
 
 export { getFileSize, readFileRange, readHandleRange, readJsonFile, loadXmlFile } from './util/FileUtil';
 
