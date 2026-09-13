@@ -60,8 +60,6 @@ loadBundledCapabilities();
 
 // Hard cap on concurrent local discovery scans.
 const MAX_CONCURRENT_SCANS = 2;
-// Keep at most this many finished ops around for late-joining clients.
-const MAX_RETAINED_OPS = 20;
 
 let activeScans = 0;
 let opCounter = 0;
@@ -420,13 +418,36 @@ function findRunningOp(kind: ControllerOp['kind'], target: string): ControllerOp
     );
 }
 
-function pruneOps(): void {
-    const done = Object.values(state.operations).filter((o) => o.status !== 'running');
-    if (done.length <= MAX_RETAINED_OPS) return;
-    done.sort((a, b) => (a.finishedAt ?? '').localeCompare(b.finishedAt ?? ''));
-    for (const o of done.slice(0, done.length - MAX_RETAINED_OPS)) {
-        delete state.operations[o.id];
+/**
+ * History is kept per target: once an op finishes, older finished ops of the
+ * same kind against the same controller (or scan target) are dropped, so each
+ * keeps only its latest result per kind. A failure stays until it is dismissed
+ * or a newer op of that kind replaces it.
+ */
+function retireOlderOps(finished: ControllerOp): void {
+    if (finished.status === 'error') {
+        console.warn(`[controller-ops] ${finished.label} failed: ${finished.error ?? 'unknown error'}`);
     }
+    for (const [id, o] of Object.entries(state.operations)) {
+        if (id === finished.id || o.status === 'running') continue;
+        if (o.kind === finished.kind && o.target === finished.target) delete state.operations[id];
+    }
+}
+
+/**
+ * Whether there is reason to believe a controller answers at this device: a
+ * driver identified it before, or xLights or a record gives a controller type
+ * for its address.
+ */
+function expectsController(dev: DiscoveredController): boolean {
+    if (dev.driverType) return true;
+    const host = dev.hostname?.toLowerCase();
+    return (state.known ?? []).some(
+        (k) =>
+            !!(k.vendor || k.model) &&
+            !!k.address &&
+            (k.address === dev.ip || (!!host && k.address.toLowerCase() === host)),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +589,19 @@ async function runStatus(
     publish();
 
     try {
-        const probe = await probeController(dev.ip, proxyFor(dev), { detail: true, preferDriver: dev.driverType });
+        const probe = await probeController(dev.ip, proxyFor(dev), {
+            detail: true,
+            preferDriver: dev.driverType,
+            expectController: expectsController(dev),
+        });
+        if (!probe.success && probe.noWebService) {
+            // An ordinary host with no web service: note it, but it is not a
+            // failed read, since nothing said a controller was there.
+            state.devices[command.id] = { ...dev, error: probe.error, unreachable: false, seenAt: nowIso() };
+            op.status = 'done';
+            op.finishedAt = nowIso();
+            return;
+        }
         if (!probe.success || !probe.report) {
             if (probe.unreachable && state.devices[command.id]) {
                 // Seen before, gone now.
@@ -612,7 +645,7 @@ async function runStatus(
         throw err;
     } finally {
         publish();
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 
@@ -639,7 +672,10 @@ async function runAction(
     publish();
 
     try {
-        const probe = await probeController(dev.ip, proxyFor(dev), { preferDriver: dev.driverType });
+        const probe = await probeController(dev.ip, proxyFor(dev), {
+            preferDriver: dev.driverType,
+            expectController: expectsController(dev),
+        });
         if (!probe.success || !probe.driver) {
             throw new Error(probe.error ?? 'no controller responded');
         }
@@ -654,7 +690,7 @@ async function runAction(
         throw err;
     } finally {
         publish();
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 
@@ -748,7 +784,11 @@ async function runUpload(
     publish();
 
     try {
-        const probe = await probeController(dev.ip, proxyFor(dev), { preferDriver: dev.driverType });
+        // Upload needs xLights intent, so a controller is expected here.
+        const probe = await probeController(dev.ip, proxyFor(dev), {
+            preferDriver: dev.driverType,
+            expectController: true,
+        });
         if (!probe.success || !probe.driver) {
             throw new Error(probe.error ?? 'no controller responded');
         }
@@ -892,7 +932,11 @@ async function runUpload(
         }
         // Read back so the reconcile grid reflects the device's new truth.
         try {
-            const verify = await probeController(dev.ip, proxyFor(dev), { detail: true, preferDriver: dev.driverType });
+            const verify = await probeController(dev.ip, proxyFor(dev), {
+                detail: true,
+                preferDriver: dev.driverType,
+                expectController: true,
+            });
             if (verify.success && verify.report) {
                 state.devices[command.id] = {
                     ...dev,
@@ -921,7 +965,7 @@ async function runUpload(
         throw err;
     } finally {
         publish();
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 
@@ -993,7 +1037,7 @@ async function runScan(
     } finally {
         scanJobs.delete(op.id);
         activeScans--;
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 

@@ -2,19 +2,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Controller reads resolve when a test says so, and never touch the network.
 const probe = vi.hoisted(() => ({
-    pending: [] as ((result: { success: boolean; error?: string; report?: unknown }) => void)[],
+    pending: [] as ((result: { success: boolean; error?: string; report?: unknown; noWebService?: boolean }) => void)[],
+    options: [] as ({ expectController?: boolean } | undefined)[],
 }));
 
 vi.mock('@ezplayer/epp-controllers', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@ezplayer/epp-controllers')>();
     return {
         ...actual,
-        probeController: vi.fn(() => new Promise((resolve) => probe.pending.push(resolve))),
+        probeController: vi.fn((_ip: string, _proxy: string | undefined, opts?: { expectController?: boolean }) => {
+            probe.options.push(opts);
+            return new Promise((resolve) => probe.pending.push(resolve));
+        }),
     };
 });
 
-const { dispatchControllerCommand, getControllerOpsState, hasRunningControllerOps, resetControllerOps } =
-    await import('./controller-ops.js');
+const {
+    dispatchControllerCommand,
+    getControllerOpsState,
+    hasRunningControllerOps,
+    resetControllerOps,
+    setKnownControllers,
+} = await import('./controller-ops.js');
 
 /** Start a status read against a never-scanned address; returns its settle promise. */
 function startRead(address: string): Promise<unknown> {
@@ -24,7 +33,7 @@ function startRead(address: string): Promise<unknown> {
 }
 
 /** Settle the oldest pending read. */
-function settleRead(result: { success: boolean; error?: string }): void {
+function settleRead(result: { success: boolean; error?: string; noWebService?: boolean }): void {
     probe.pending.shift()!(result);
 }
 
@@ -32,6 +41,8 @@ const opsFor = (target: string) => Object.values(getControllerOpsState().operati
 
 beforeEach(() => {
     probe.pending.length = 0;
+    probe.options.length = 0;
+    setKnownControllers([]);
     resetControllerOps();
 });
 
@@ -86,5 +97,56 @@ describe('reset', () => {
         settleRead({ success: false, error: 'finished after reset' });
         await second;
         expect(opsFor('10.9.0.5|direct')).toMatchObject([{ status: 'error', error: 'finished after reset' }]);
+    });
+});
+
+describe('history per controller', () => {
+    it('keeps only the latest result of a kind for each controller', async () => {
+        for (const error of ['first', 'second']) {
+            const done = startRead('10.9.0.6');
+            settleRead({ success: false, error });
+            await done;
+        }
+        const other = startRead('10.9.0.7');
+        settleRead({ success: false, error: 'other controller' });
+        await other;
+
+        expect(opsFor('10.9.0.6|direct')).toMatchObject([{ status: 'error', error: 'second' }]);
+        expect(opsFor('10.9.0.7|direct')).toMatchObject([{ status: 'error', error: 'other controller' }]);
+    });
+
+    it('lets a newer successful read replace an older failure', async () => {
+        const failed = startRead('10.9.0.8');
+        settleRead({ success: false, error: 'timed out' });
+        await failed;
+        const ok = startRead('10.9.0.8');
+        // An ordinary host finishes as done, which is enough to replace the failure.
+        settleRead({ success: false, noWebService: true, error: 'no web service' });
+        await ok;
+        expect(opsFor('10.9.0.8|direct')).toMatchObject([{ status: 'done' }]);
+    });
+});
+
+describe('ping answers but no web service', () => {
+    it('is not a failure when nothing says a controller is at the address', async () => {
+        const done = startRead('10.9.0.9');
+        expect(probe.options.at(-1)?.expectController).toBe(false);
+        settleRead({ success: false, noWebService: true, error: '10.9.0.9 answers ping but nothing answers' });
+        await done;
+        expect(opsFor('10.9.0.9|direct')).toMatchObject([{ status: 'done' }]);
+        expect(getControllerOpsState().devices['10.9.0.9|direct']).toMatchObject({
+            error: '10.9.0.9 answers ping but nothing answers',
+        });
+    });
+
+    it('expects a controller where xLights names one at the address', async () => {
+        setKnownControllers([
+            { name: 'Tree', address: '10.9.0.10', vendor: 'Falcon', model: 'F16V4', active: true, source: 'xlights' },
+        ]);
+        const done = startRead('10.9.0.10');
+        expect(probe.options.at(-1)?.expectController).toBe(true);
+        settleRead({ success: false, error: 'web service did not answer within 30 s' });
+        await done;
+        expect(opsFor('10.9.0.10|direct')).toMatchObject([{ status: 'error' }]);
     });
 });

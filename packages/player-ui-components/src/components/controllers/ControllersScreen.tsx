@@ -1576,7 +1576,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             !!r.name &&
             !!r.device!.driverType &&
             r.device!.driverType !== 'EZPlayer' &&
-            ((r.intent?.length ?? 0) > 0 || (r.serialIntent?.length ?? 0) > 0),
+            ((r.intent?.length ?? 0) > 0 ||
+                (r.serialIntent?.length ?? 0) > 0 ||
+                (r.panelMatrixIntent?.length ?? 0) > 0 ||
+                (r.virtualMatrixIntent?.length ?? 0) > 0),
     );
     // Mirror the per-row reboot gate: the actions list (when present) must offer reboot/restart.
     const rebootAllRows = bulkRows.filter((r) => {
@@ -1588,18 +1591,33 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         d.actions?.find((a) => a.id === 'reboot')?.id ?? d.actions?.find((a) => a.id === 'restart')?.id ?? 'reboot';
 
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-    /** Wait until no op of `kind` runs against `target`, per the broadcast ops state. */
-    const waitForOpEnd = async (kind: ControllerOp['kind'], target: string): Promise<void> => {
-        const isRunning = () =>
-            Object.values(operationsRef.current).some(
-                (o) => o.status === 'running' && o.kind === kind && o.target === target,
-            );
-        if (!isRunning()) {
-            await sleep(1000); // grace: the op broadcast may not have landed yet
-            if (!isRunning()) return;
+    const opIdsFor = (kind: ControllerOp['kind'], target: string): Set<string> =>
+        new Set(
+            Object.values(operationsRef.current)
+                .filter((o) => o.kind === kind && o.target === target)
+                .map((o) => o.id),
+        );
+    /**
+     * Wait for the op a command started to finish. Over IPC the command
+     * resolves when the op is done; over the WebSocket or the cloud it only
+     * means "sent", and the op shows up in the broadcast later. `before` holds
+     * the op ids for this target from before the command, so the new op is
+     * recognised by id (no clock comparison across machines). A running op that
+     * was already there is the one the command joined.
+     */
+    const waitForOp = async (kind: ControllerOp['kind'], target: string, before: Set<string>): Promise<void> => {
+        const appearBy = Date.now() + 15_000;
+        const deadline = Date.now() + 15 * 60_000; // safety valve
+        let seen = false;
+        while (Date.now() < deadline) {
+            const ops = Object.values(operationsRef.current).filter((o) => o.kind === kind && o.target === target);
+            const running = ops.some((o) => o.status === 'running');
+            const finishedNew = ops.some((o) => o.status !== 'running' && !before.has(o.id));
+            if (finishedNew && !running) return;
+            if (running) seen = true;
+            else if (seen || Date.now() > appearBy) return;
+            await sleep(400);
         }
-        const deadline = Date.now() + 5 * 60_000; // safety valve
-        while (isRunning() && Date.now() < deadline) await sleep(400);
     };
     interface BulkTask {
         command: ControllerCommand;
@@ -1614,8 +1632,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                 while (cursor < tasks.length) {
                     const t = tasks[cursor++];
                     try {
-                        await dispatch(issueControllerCommand(t.command));
-                        await waitForOpEnd(t.kind, t.target);
+                        const before = opIdsFor(t.kind, t.target);
+                        await dispatch(issueControllerCommand(t.command)).unwrap();
+                        await waitForOp(t.kind, t.target, before);
                     } catch {
                         // Per-device failures surface in the ops list; keep going.
                     }

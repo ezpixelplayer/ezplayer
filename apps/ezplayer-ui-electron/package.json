@@ -163,7 +163,7 @@
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
-        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.20.tgz",
+        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.21.tgz",
         "@ezplayer/ezplayer-client": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/icmp-ping": "workspace:*",
