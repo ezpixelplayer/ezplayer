@@ -8,7 +8,7 @@ import * as path from 'path';
  */
 
 /**
- * APP_VERBS need the Electron runtime and run after app.whenReady(); TOOL_VERBS
+ * APP_VERBS need the Electron runtime; TOOL_VERBS
  * run text-only and exit *before* any Electron bootstrap.
  */
 import {

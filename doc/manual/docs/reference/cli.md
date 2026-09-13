@@ -42,10 +42,7 @@ bootstraps.
 :::note
 The text-only commands are also available from the pure-Node CLI entry used in
 development and CI (`node dist/cli.js <command>`) and from the Windows console
-launcher `ezplayer.cmd`, neither of which has a GUI to launch. `headless` and
-`reset` need the Electron runtime, so they only run on the EZPlayer app binary
-itself (`EZPlayer.exe reset`, not `ezplayer reset`); the console entries refuse
-them with a message saying so.
+launcher `ezplayer.cmd`.
 :::
 
 Everything from [Launch flags](#launch-flags) onward describes the flags that
@@ -609,14 +606,6 @@ and can pick a new show folder.
 :::warning
 `reset` quits the app after clearing state. It does not delete your show folder
 files — only EZPlayer's stored pointer to that folder.
-:::
-
-:::note
-`reset` runs on the EZPlayer app binary only — it needs the Electron session to
-clear. On Windows use `EZPlayer.exe reset`, not the `ezplayer.cmd` console
-launcher, which refuses it. The older flag spellings `--reset`, `--reset-cloud`
-(both = `reset`) and `--reset-nocloud` (= `reset --no-cloud`) are still
-accepted for existing shortcuts and scripts, with a deprecation warning.
 :::
 
 ## Debugging and logging

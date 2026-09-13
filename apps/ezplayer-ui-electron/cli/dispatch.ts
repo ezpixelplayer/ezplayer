@@ -2,25 +2,22 @@
  * Headless CLI dispatch — maps a verb to a command module.
  *
  * MUST stay free of any `electron` import: both the Electron entry and the
- * pure-Node CLI entry reach this. No verb (or `gui`) means "launch the app",
- * and the APP_VERBS need Electron; main.ts handles those. This module only
- * documents them and rejects them in the pure-Node entry.
+ * pure-Node CLI entry reach this.
  */
 
 type CommandModule = { run: (args: string[]) => Promise<number> };
 
 /**
  * Single source of truth for the text-only verbs, in the order usage output
- * lists them. These run in the pure-Node entry as well as the desktop binary.
+ * lists them. These run in the pure-Node entrypoint as well as the desktop binary.
  */
 export const TOOL_VERBS = ['play', 'stats', 'discover', 'interfaces', 'controller', 'shell', 'files', 'help'] as const;
 
 export type ToolVerb = (typeof TOOL_VERBS)[number];
 
 /**
- * Verbs that need the Electron runtime (session, electron-store, the player),
- * so they exist only in the desktop binary; main.ts runs them after
- * `app.whenReady()`. The pure-Node entry rejects them with a pointer there.
+ * Verbs that need the Electron runtime (session, electron-store, the player).
+ *   (The pure-Node entrypoint rejects them with a pointer there.)
  */
 export const APP_VERBS = ['headless', 'reset'] as const;
 export type AppVerb = (typeof APP_VERBS)[number];
@@ -44,23 +41,20 @@ const APP_USAGE: Record<AppVerb, { summary: string; detail: string }> = {
             'EZPlayer, 64 = unknown verb.',
     },
     reset: {
-        summary: "Clear EZPlayer's persisted state and quit (back to the welcome screen).",
+        summary: "Clear EZPlayer's state and quit; the next run starts on the welcome screen.",
         detail:
             'Usage: EZPlayer reset [--no-cloud] [--user-data-dir=<dir>]\n' +
             '\n' +
-            'Forgets the persisted show-folder pointer and clears the renderer\'s\n' +
-            'localStorage, then quits without starting a show. The next launch shows the\n' +
+            'Forgets the show-folder choice and UI serttings,\n' +
+            'then quits without starting a show. The next launch shows the\n' +
             'welcome screen again so a new show folder can be picked. Your show folder\n' +
-            "files are not touched — only EZPlayer's stored pointer to the folder.\n" +
+            "files are not touched, just EZPlayer's memory of the selected folder.\n" +
             '\n' +
             '      --no-cloud       pin the welcome screen to local/xLights only (hide the\n' +
             '                       cloud option) on the next launch\n' +
             '      --cloud          show the cloud option on the next launch (the default)\n' +
             '      --user-data-dir  reset the isolated profile in <dir> instead of the\n' +
-            '                       default one\n' +
-            '\n' +
-            'The legacy flags --reset, --reset-cloud and --reset-nocloud still work as\n' +
-            'aliases of `reset` and `reset --no-cloud`.',
+            '                       default one\n',
     },
 };
 
@@ -313,7 +307,7 @@ export function isToolVerbName(verb: string): verb is ToolVerb {
 }
 
 function printTopHelp(): void {
-    console.log('EZPlayer — command line\n');
+    console.log('EZPlayer command line\n');
     console.log('Usage: EZPlayer [<command>] [options]\n');
     console.log('Commands:');
     for (const verb of TOOL_VERBS) {
@@ -413,8 +407,7 @@ export async function runCli(args: string[]): Promise<number> {
 
     if (!verb || HELP_FLAGS.has(verb)) return runHelp(rest);
 
-    // Only the pure-Node entry gets here with `gui` or an app-only verb — the
-    // desktop binary handles them in main.ts before reaching runCli.
+    // The pure-Node mode should not try to run these.
     if (verb === 'gui') {
         console.error('The `gui` verb launches the desktop app; it is not available in the headless CLI.');
         console.error('Run the EZPlayer app directly, or with no command.\n');
