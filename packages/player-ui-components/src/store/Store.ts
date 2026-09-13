@@ -11,6 +11,8 @@ import cloudStatusReducer from './slices/CloudStatusStore';
 import controllerOpsReducer from './slices/ControllerOpsStore';
 import remoteAccessReducer from './slices/RemoteAccessStore';
 import autoUpdateReducer from './slices/AutoUpdateStore';
+import audioDevicesReducer from './slices/AudioDevicesStore';
+import appSettingsReducer from './slices/AppSettingsStore';
 
 import { DataStorageAPI } from './api/DataStorageAPI';
 import { playerSettingsAutoSaveMiddleware } from './slices/PlayerStatusMiddleware';
@@ -27,6 +29,8 @@ export const playerReducers = {
     controllerOps: controllerOpsReducer,
     remoteAccess: remoteAccessReducer,
     autoUpdate: autoUpdateReducer,
+    audioDevices: audioDevicesReducer,
+    appSettings: appSettingsReducer,
 };
 
 export function createAppStore(thunkAPI: DataStorageAPI) {

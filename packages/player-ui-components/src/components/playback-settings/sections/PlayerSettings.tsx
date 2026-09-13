@@ -1,18 +1,13 @@
 import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { isElectron, Select } from '@ezplayer/shared-ui-components';
-import type { DiagnosticsConsent, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import { Select } from '@ezplayer/shared-ui-components';
+import type { AppSettingsCommand, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
+import { sendAppSettingsCommand } from '../../../store/slices/AppSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
-
-declare global {
-    interface Window {
-        electronAPI?: EZPElectronAPI;
-    }
-}
 
 /** Number field that commits on blur; empty commits `undefined` (use default). */
 const PortField: React.FC<{
@@ -48,136 +43,53 @@ export const PlayerSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
     const multisync = settings.sync?.multisync;
-    const onDesktop = isElectron();
-    // Treat as Partial so we can detect older preload builds missing login-item APIs.
-    const loginItemApi = window.electronAPI as Partial<EZPElectronAPI> | undefined;
 
-    // Diagnostics consent is app-global (electron-store in main), not part of
-    // PlaybackSettings — probe as Partial so older preload builds just hide it.
-    const diagApi = loginItemApi;
-    const canControlDiag = Boolean(diagApi?.getDiagnosticsConsent && diagApi.setDiagnosticsConsent);
-    const [diagConsent, setDiagConsent] = React.useState<DiagnosticsConsent | null>(null);
-    React.useEffect(() => {
-        if (!onDesktop || !canControlDiag || !diagApi?.getDiagnosticsConsent) return;
-        let cancelled = false;
-        diagApi
-            .getDiagnosticsConsent()
-            .then((c) => {
-                if (!cancelled) setDiagConsent(c);
-            })
-            .catch((error: unknown) => console.error('Failed to read diagnostics consent:', error));
-        return () => {
-            cancelled = true;
-        };
-    }, [onDesktop, canControlDiag, diagApi]);
-    const handleDiagChange = async (patch: Partial<DiagnosticsConsent>) => {
-        if (!diagApi?.setDiagnosticsConsent) return;
-        try {
-            setDiagConsent(await diagApi.setDiagnosticsConsent(patch));
-        } catch (error) {
-            console.error('Failed to update diagnostics consent:', error);
-        }
-    };
-    const canControlLoginItem = Boolean(
-        loginItemApi?.isLoginItemSupported && loginItemApi.getOpenAtLogin && loginItemApi.setOpenAtLogin,
-    );
-    // Renderer hint only (for the rare "restart to pick up preload" path). Real gating uses main-process platform.
-    const loginItemOsHint = typeof navigator !== 'undefined' && /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent);
-    const [loginItemPlatformSupported, setLoginItemPlatformSupported] = React.useState(false);
-    const [loginItemSupported, setLoginItemSupported] = React.useState(false);
-    const [openAtLogin, setOpenAtLogin] = React.useState(false);
-    const [openAtLoginLoading, setOpenAtLoginLoading] = React.useState(onDesktop && canControlLoginItem);
-    const [openAtLoginSaving, setOpenAtLoginSaving] = React.useState(false);
-    const showLoginItemUi = onDesktop && canControlLoginItem && loginItemPlatformSupported;
+    // App-global settings (diagnostics consent, start at sign-in) are pushed by
+    // the player like any other state; null until the first snapshot arrives.
+    const appSettings = useSelector((s: RootState) => s.appSettings.state);
+    const sendAppSettings = (cmd: AppSettingsCommand) => void dispatch(sendAppSettingsCommand(cmd));
 
-    React.useEffect(() => {
-        if (!onDesktop || !canControlLoginItem || !loginItemApi?.isLoginItemSupported) {
-            setLoginItemPlatformSupported(false);
-            setLoginItemSupported(false);
-            setOpenAtLoginLoading(false);
-            return;
-        }
-        let cancelled = false;
-        setOpenAtLoginLoading(true);
-        const platformPromise = loginItemApi.isLoginItemPlatformSupported
-            ? loginItemApi.isLoginItemPlatformSupported()
-            : // Older preload: assume Windows/macOS desktop (feature was Win-focused).
-              Promise.resolve(true);
-        platformPromise
-            .then((platformSupported: boolean) => {
-                if (cancelled) return false;
-                setLoginItemPlatformSupported(platformSupported);
-                if (!platformSupported) return false;
-                return loginItemApi.isLoginItemSupported!();
-            })
-            .then((supported: boolean | void) => {
-                if (cancelled || typeof supported !== 'boolean') return;
-                setLoginItemSupported(supported);
-                if (!supported || !loginItemApi.getOpenAtLogin) return;
-                return loginItemApi.getOpenAtLogin();
-            })
-            .then((enabled: boolean | void) => {
-                if (!cancelled && typeof enabled === 'boolean') setOpenAtLogin(enabled);
-            })
-            .catch((error: unknown) => console.error('Failed to read login-item settings:', error))
-            .finally(() => {
-                if (!cancelled) setOpenAtLoginLoading(false);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [onDesktop, canControlLoginItem, loginItemApi]);
+    const loginItem = appSettings?.loginItem;
+    const startupInteractive = loginItem?.availability === 'ok';
+    const startupHelp = !loginItem
+        ? 'Start at sign-in is available in the EZPlayer desktop app on Windows and macOS.'
+        : loginItem.availability === 'dev-mode'
+          ? 'Start at sign-in is available in the installed EZPlayer app, not while running from development mode.'
+          : loginItem.availability === 'unsupported-platform'
+            ? 'Start at sign-in is available on Windows and macOS.'
+            : 'Launch EZPlayer automatically at sign-in on the player computer.';
 
-    const handleOpenAtLoginChange = async (_event: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
-        if (!loginItemApi?.setOpenAtLogin) return;
-        const previous = openAtLogin;
-        setOpenAtLogin(checked);
-        setOpenAtLoginSaving(true);
-        try {
-            const actual = await loginItemApi.setOpenAtLogin(checked);
-            setOpenAtLogin(actual);
-        } catch (error) {
-            console.error('Failed to update login-item settings:', error);
-            setOpenAtLogin(previous);
-        } finally {
-            setOpenAtLoginSaving(false);
-        }
-    };
+    const diag: DiagnosticsConsent = appSettings?.diagnostics ?? { uploadEnabled: true, includePlayerId: false };
+    const diagInteractive = appSettings !== null;
 
     return (
         <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Player runtime behaviors.
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Startup
             </Typography>
-            {showLoginItemUi && loginItemSupported && (
-                <Box sx={{ mb: 2 }}>
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                checked={openAtLogin}
-                                onChange={(_e, checked) => void handleOpenAtLoginChange(_e, checked)}
-                                disabled={openAtLoginLoading || openAtLoginSaving}
-                            />
-                        }
-                        label="Start EZPlayer when I sign in"
-                    />
-                    <Typography variant="body2" color="text.secondary">
-                        Launch EZPlayer automatically when you sign in.
-                    </Typography>
-                </Box>
-            )}
-            {showLoginItemUi && !loginItemSupported && !openAtLoginLoading && (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Start at sign-in is available in the installed EZPlayer app, not while running from development
-                    mode.
+            <Box sx={{ mb: 2 }}>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={loginItem?.openAtLogin ?? false}
+                            disabled={!startupInteractive}
+                            onChange={(_e, checked) =>
+                                sendAppSettings({ type: 'setOpenAtLogin', openAtLogin: checked })
+                            }
+                        />
+                    }
+                    label="Start EZPlayer at sign-in"
+                />
+                <Typography variant="body2" color="text.secondary">
+                    {startupHelp}
                 </Typography>
-            )}
-            {onDesktop && !canControlLoginItem && loginItemOsHint && (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Restart EZPlayer to enable the sign-in startup setting.
-                </Typography>
-            )}
-            <FormControl fullWidth size="small">
+            </Box>
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Playback behavior
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
                 <Select
                     options={[
                         { id: 'overlay', name: 'Overlay' },
@@ -209,6 +121,49 @@ export const PlayerSettings: React.FC = () => {
                 <Typography variant="body2" color="text.secondary">
                     Send black frames while nothing is playing so lights go dark. Turn off when another player drives
                     the same controllers — lights then hold their last frame when playback stops.
+                </Typography>
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Diagnostics
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
+                information is included.
+            </Typography>
+            <Box>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={diag.uploadEnabled}
+                            disabled={!diagInteractive}
+                            onChange={(_e, checked) =>
+                                sendAppSettings({ type: 'setDiagnosticsConsent', patch: { uploadEnabled: checked } })
+                            }
+                        />
+                    }
+                    label="Send anonymous crash reports"
+                />
+            </Box>
+            <Box>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={diag.includePlayerId}
+                            disabled={!diagInteractive || !diag.uploadEnabled}
+                            onChange={(_e, checked) =>
+                                sendAppSettings({
+                                    type: 'setDiagnosticsConsent',
+                                    patch: { includePlayerId: checked },
+                                })
+                            }
+                        />
+                    }
+                    label="Include my Player ID with reports"
+                />
+                <Typography variant="body2" color="text.secondary">
+                    Lets support connect reports to your player when you ask for help. Off by default.
                 </Typography>
             </Box>
 
@@ -249,6 +204,26 @@ export const PlayerSettings: React.FC = () => {
                     )
                 }
             />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+                <PortField
+                    label="MultiSync port"
+                    value={multisync?.port}
+                    placeholder="32320"
+                    disabled={!multisync?.enabled}
+                    onCommit={(v) => dispatch(playbackSettingsActions.setMultisyncPort(v))}
+                />
+                <TextField
+                    size="small"
+                    label="MultiSync multicast address"
+                    value={multisync?.multicastAddress ?? ''}
+                    placeholder="239.70.80.80"
+                    disabled={!multisync?.enabled}
+                    InputLabelProps={{ shrink: true }}
+                    onChange={(e) =>
+                        dispatch(playbackSettingsActions.setMultisyncMulticastAddress(e.target.value.trim()))
+                    }
+                />
+            </Box>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -274,24 +249,6 @@ export const PlayerSettings: React.FC = () => {
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <PortField
-                    label="MultiSync port"
-                    value={multisync?.port}
-                    placeholder="32320"
-                    disabled={!multisync?.enabled}
-                    onCommit={(v) => dispatch(playbackSettingsActions.setMultisyncPort(v))}
-                />
-                <TextField
-                    size="small"
-                    label="MultiSync multicast address"
-                    value={multisync?.multicastAddress ?? ''}
-                    placeholder="239.70.80.80"
-                    disabled={!multisync?.enabled}
-                    InputLabelProps={{ shrink: true }}
-                    onChange={(e) =>
-                        dispatch(playbackSettingsActions.setMultisyncMulticastAddress(e.target.value.trim()))
-                    }
-                />
-                <PortField
                     label="DDP output port"
                     value={settings.advanced?.ddpPort}
                     placeholder="4048"
@@ -299,45 +256,6 @@ export const PlayerSettings: React.FC = () => {
                     onCommit={(v) => dispatch(playbackSettingsActions.setAdvancedDdpPort(v))}
                 />
             </Box>
-
-            {onDesktop && canControlDiag && diagConsent && (
-                <>
-                    <Divider sx={{ my: 3 }} />
-                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                        Diagnostics
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or
-                        personal information is included.
-                    </Typography>
-                    <Box>
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={diagConsent.uploadEnabled}
-                                    onChange={(_e, checked) => void handleDiagChange({ uploadEnabled: checked })}
-                                />
-                            }
-                            label="Send anonymous crash reports"
-                        />
-                    </Box>
-                    <Box>
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={diagConsent.includePlayerId}
-                                    disabled={!diagConsent.uploadEnabled}
-                                    onChange={(_e, checked) => void handleDiagChange({ includePlayerId: checked })}
-                                />
-                            }
-                            label="Include my Player ID with reports"
-                        />
-                        <Typography variant="body2" color="text.secondary">
-                            Lets support connect reports to your player when you ask for help. Off by default.
-                        </Typography>
-                    </Box>
-                </>
-            )}
         </Box>
     );
 };

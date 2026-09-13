@@ -1,5 +1,4 @@
 import type {
-    AudioDevice,
     SequenceRecord,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -10,6 +9,7 @@ import type {
     EZPlayerCommand,
     PlaybackSettings,
     BatchImportSummary,
+    AppSettingsCommand,
 } from '@ezplayer/ezplayer-core';
 
 import { AppDispatch } from '../..';
@@ -133,12 +133,12 @@ export interface DataStorageAPI {
      *  progress arrive via the pushed `autoUpdateOps` state. */
     issueUpdateCommand?: (cmd: UpdateCommand) => Promise<void>;
 
+    /** App-global settings verbs (diagnostics consent, start at sign-in). Fire and
+     *  forget: the new state arrives via the pushed `appSettings` state. */
+    issueAppSettingsCommand?: (cmd: AppSettingsCommand) => Promise<void>;
+
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
-
-    /** Enumerate `audiooutput` sinks on the player machine (Electron desktop
-     *  renderer or LAN/web UI via the player's REST API). */
-    getAudioOutputDevices?: () => Promise<AudioDevice[]>;
 
     /** Upload a file's bytes into the player's show folder (web/LAN backends
      *  with the file-management API). Absent on backends where files are

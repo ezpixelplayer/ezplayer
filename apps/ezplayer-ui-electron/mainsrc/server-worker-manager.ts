@@ -26,7 +26,6 @@ import { updateShowFolderLock } from './showfolder-lock.js';
 import { reportDiagEvent } from './diagnostics.js';
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings } from './audioWindows.js';
-import { getAudioOutputDevices } from './ipcmain.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import { isFeatureEnabled } from './remoteaccess.js';
 import {
@@ -40,6 +39,7 @@ import {
 } from './shell-session.js';
 import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
+import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
 import { ezpVersions } from '../versions.js';
 import type {
     PlaybackSettings,
@@ -125,13 +125,6 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         const mainWindow = getMainWindowRef?.();
         safeSend(mainWindow, 'update:playbacksettings', settings);
     },
-    getAudioOutputDevices: async () => {
-        const mainWindow = getMainWindowRef?.();
-        if (!mainWindow) {
-            return [];
-        }
-        return await getAudioOutputDevices(mainWindow);
-    },
     sendToMainWindow: (channel: string, ...args: unknown[]) => {
         const mainWindow = getMainWindowRef?.();
         safeSend(mainWindow, channel, ...args);
@@ -141,6 +134,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     updateCommand: async (cmd) => {
         await dispatchUpdateCommand(cmd);
+    },
+    appSettingsCommand: async (cmd) => {
+        await dispatchAppSettingsCommand(cmd);
     },
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
@@ -230,6 +226,12 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     // (The Electron push channel is handled inside ipcautoupdate itself.)
     setAutoUpdateOpsBroadcaster((s) => {
         broadcastToWebSocket('autoUpdateOps', s);
+    });
+
+    // App-global settings go to both front-ends like controller ops.
+    setAppSettingsBroadcaster((s) => {
+        broadcastToWebSocket('appSettings', s);
+        safeSend(getMainWindowRef?.(), 'update:appsettings', s);
     });
 
     // Handle messages from server worker

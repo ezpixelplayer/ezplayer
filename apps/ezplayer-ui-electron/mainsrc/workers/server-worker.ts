@@ -320,6 +320,12 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('updateCommand', msg.cmd).catch((err) => {
             console.error('[server-worker] updateCommand failed:', err);
         });
+    } else if (msg.type === 'appSettingsCommand') {
+        // App-global settings verb. Results flow back via the
+        // broadcast `appSettings` state.
+        void rpc.call('appSettingsCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] appSettingsCommand failed:', err);
+        });
     }
 });
 
@@ -1567,20 +1573,6 @@ async function startServer(config: ServerWorkerData) {
             ctx.body = { success: true, schedules: result };
         } catch (error) {
             console.error('[server-worker] Error processing schedules update:', error);
-            ctx.status = 500;
-            ctx.body = { error: 'Internal server error' };
-        }
-    });
-
-    // ----------------------------------------------
-    // API: GET /api/ezp/audio-output-devices
-    // ----------------------------------------------
-    router.get('/api/ezp/audio-output-devices', async (ctx) => {
-        try {
-            const devices = await rpc.call('getAudioOutputDevices');
-            ctx.body = { devices };
-        } catch (error) {
-            console.error('[server-worker] Error listing audio output devices:', error);
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }
