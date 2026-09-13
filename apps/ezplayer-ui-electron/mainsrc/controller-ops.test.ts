@@ -32,10 +32,15 @@ function startRead(address: string): Promise<unknown> {
     );
 }
 
-/** Settle the oldest pending read. */
-function settleRead(result: { success: boolean; error?: string; noWebService?: boolean }): void {
+/** Settle the oldest pending read, once the probe has been called (it starts
+ *  after the op takes its slot, a microtask after the command). */
+async function settleRead(result: { success: boolean; error?: string; noWebService?: boolean }): Promise<void> {
+    await vi.waitFor(() => expect(probe.pending.length).toBeGreaterThan(0));
     probe.pending.shift()!(result);
 }
+
+/** Wait until the probe for the latest read has been called. */
+const probeCalled = (count: number) => vi.waitFor(() => expect(probe.options.length).toBeGreaterThanOrEqual(count));
 
 const opsFor = (target: string) => Object.values(getControllerOpsState().operations).filter((o) => o.target === target);
 
@@ -49,7 +54,7 @@ beforeEach(() => {
 describe('dismiss', () => {
     it('removes a failed operation from the shared state', async () => {
         const done = startRead('10.9.0.1');
-        settleRead({ success: false, error: 'boom' });
+        await settleRead({ success: false, error: 'boom' });
         await done;
         const [failed] = opsFor('10.9.0.1|direct');
         expect(failed).toMatchObject({ status: 'error', error: 'boom' });
@@ -64,9 +69,9 @@ describe('dismiss', () => {
         const done = startRead('10.9.0.2');
         const [running] = opsFor('10.9.0.2|direct');
         await expect(dispatchControllerCommand({ cmd: 'dismiss', opId: running.id }, 'lan')).rejects.toThrow(
-            /still running/,
+            /has not finished/,
         );
-        settleRead({ success: false, error: 'late' });
+        await settleRead({ success: false, error: 'late' });
         await done;
     });
 });
@@ -76,14 +81,14 @@ describe('reset', () => {
         expect(hasRunningControllerOps()).toBe(false);
         const done = startRead('10.9.0.3');
         expect(hasRunningControllerOps()).toBe(true);
-        settleRead({ success: false, error: 'x' });
+        await settleRead({ success: false, error: 'x' });
         await done;
         expect(hasRunningControllerOps()).toBe(false);
     });
 
     it('clears devices and finished operations but lets running ones finish', async () => {
         const first = startRead('10.9.0.4');
-        settleRead({ success: false, error: 'old failure' });
+        await settleRead({ success: false, error: 'old failure' });
         await first;
         const second = startRead('10.9.0.5');
 
@@ -94,7 +99,7 @@ describe('reset', () => {
         expect(opsFor('10.9.0.4|direct')).toEqual([]);
         expect(opsFor('10.9.0.5|direct')).toMatchObject([{ status: 'running' }]);
 
-        settleRead({ success: false, error: 'finished after reset' });
+        await settleRead({ success: false, error: 'finished after reset' });
         await second;
         expect(opsFor('10.9.0.5|direct')).toMatchObject([{ status: 'error', error: 'finished after reset' }]);
     });
@@ -104,11 +109,11 @@ describe('history per controller', () => {
     it('keeps only the latest result of a kind for each controller', async () => {
         for (const error of ['first', 'second']) {
             const done = startRead('10.9.0.6');
-            settleRead({ success: false, error });
+            await settleRead({ success: false, error });
             await done;
         }
         const other = startRead('10.9.0.7');
-        settleRead({ success: false, error: 'other controller' });
+        await settleRead({ success: false, error: 'other controller' });
         await other;
 
         expect(opsFor('10.9.0.6|direct')).toMatchObject([{ status: 'error', error: 'second' }]);
@@ -117,11 +122,11 @@ describe('history per controller', () => {
 
     it('lets a newer successful read replace an older failure', async () => {
         const failed = startRead('10.9.0.8');
-        settleRead({ success: false, error: 'timed out' });
+        await settleRead({ success: false, error: 'timed out' });
         await failed;
         const ok = startRead('10.9.0.8');
         // An ordinary host finishes as done, which is enough to replace the failure.
-        settleRead({ success: false, noWebService: true, error: 'no web service' });
+        await settleRead({ success: false, noWebService: true, error: 'no web service' });
         await ok;
         expect(opsFor('10.9.0.8|direct')).toMatchObject([{ status: 'done' }]);
     });
@@ -130,8 +135,9 @@ describe('history per controller', () => {
 describe('ping answers but no web service', () => {
     it('is not a failure when nothing says a controller is at the address', async () => {
         const done = startRead('10.9.0.9');
+        await probeCalled(1);
         expect(probe.options.at(-1)?.expectController).toBe(false);
-        settleRead({ success: false, noWebService: true, error: '10.9.0.9 answers ping but nothing answers' });
+        await settleRead({ success: false, noWebService: true, error: '10.9.0.9 answers ping but nothing answers' });
         await done;
         expect(opsFor('10.9.0.9|direct')).toMatchObject([{ status: 'done' }]);
         expect(getControllerOpsState().devices['10.9.0.9|direct']).toMatchObject({
@@ -144,9 +150,51 @@ describe('ping answers but no web service', () => {
             { name: 'Tree', address: '10.9.0.10', vendor: 'Falcon', model: 'F16V4', active: true, source: 'xlights' },
         ]);
         const done = startRead('10.9.0.10');
+        await probeCalled(1);
         expect(probe.options.at(-1)?.expectController).toBe(true);
-        settleRead({ success: false, error: 'web service did not answer within 30 s' });
+        await settleRead({ success: false, error: 'web service did not answer within 30 s' });
         await done;
         expect(opsFor('10.9.0.10|direct')).toMatchObject([{ status: 'error' }]);
+    });
+});
+
+describe('queue', () => {
+    const statusOf = (n: number) => opsFor(`10.9.1.${n}|direct`)[0]?.status;
+
+    it('runs eight reads at a time and queues the rest', async () => {
+        const done = Array.from({ length: 10 }, (_, i) => startRead(`10.9.1.${i}`));
+        expect(Array.from({ length: 10 }, (_, i) => statusOf(i))).toEqual([
+            ...Array<string>(8).fill('running'),
+            'queued',
+            'queued',
+        ]);
+        await vi.waitFor(() => expect(probe.pending.length).toBe(8));
+
+        // A read finishing hands its slot to the oldest queued read.
+        await settleRead({ success: false, error: 'first done' });
+        await vi.waitFor(() => expect(statusOf(8)).toBe('running'));
+        expect(statusOf(9)).toBe('queued');
+
+        for (let i = 0; i < 9; i++) await settleRead({ success: false, error: 'done' });
+        await Promise.all(done);
+        expect(hasRunningControllerOps()).toBe(false);
+    });
+
+    it('drops queued reads on reset and on cancel, without starting them', async () => {
+        const done = Array.from({ length: 10 }, (_, i) => startRead(`10.9.1.${i}`));
+        const queued = opsFor('10.9.1.9|direct')[0];
+        expect(queued.status).toBe('queued');
+        await dispatchControllerCommand({ cmd: 'cancel', opId: queued.id }, 'lan');
+        expect(opsFor('10.9.1.9|direct')).toMatchObject([{ status: 'cancelled' }]);
+
+        resetControllerOps();
+        expect(opsFor('10.9.1.8|direct')).toEqual([]);
+        expect(hasRunningControllerOps()).toBe(true); // the eight running ones finish
+
+        for (let i = 0; i < 8; i++) await settleRead({ success: false, error: 'done' });
+        await Promise.all(done);
+        // The cancelled and reset reads never reached the controller.
+        expect(probe.options.length).toBe(8);
+        expect(hasRunningControllerOps()).toBe(false);
     });
 });

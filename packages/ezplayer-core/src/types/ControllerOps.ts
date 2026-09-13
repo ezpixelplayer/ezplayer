@@ -71,8 +71,10 @@ export interface DiscoveredController {
 }
 
 export type ControllerOpKind = 'scan' | 'status' | 'action' | 'upload';
-/** `cancelled` = stopped on request before completion; partial results kept. */
-export type ControllerOpStatus = 'running' | 'done' | 'error' | 'cancelled';
+/** `queued` = waiting for a free slot (the player limits how many of a kind
+ *  run at once); `cancelled` = stopped on request before completion, partial
+ *  results kept. */
+export type ControllerOpStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 export type ControllerOpOrigin = 'lan' | 'cloud' | 'cli';
 
 export interface ControllerOpProgress {
@@ -158,7 +160,7 @@ export type ControllerCommand =
           cmd: 'refreshInterfaces';
       }
     | {
-          /** Cancel a running op by id; currently only scans are cancelable. */
+          /** Cancel an op by id: a running scan, or any op still queued. */
           cmd: 'cancel';
           opId: string;
       }

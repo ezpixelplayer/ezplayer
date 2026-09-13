@@ -412,10 +412,67 @@ function mergeDevice(d: DiscoveryDevice): void {
 }
 
 /** An already-running op of this kind for this target, if any (dedup/coalesce). */
-function findRunningOp(kind: ControllerOp['kind'], target: string): ControllerOp | undefined {
+/** An op of this kind against this target that has not finished (queued or running). */
+function findActiveOp(kind: ControllerOp['kind'], target: string): ControllerOp | undefined {
     return Object.values(state.operations).find(
-        (o) => o.status === 'running' && o.kind === kind && o.target === target,
+        (o) => (o.status === 'running' || o.status === 'queued') && o.kind === kind && o.target === target,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Per-kind concurrency. Each controller is independent, so a bulk run is just
+// every command issued at once; the player runs a few of each kind at a time
+// and the rest wait as `queued`, which every client sees.
+// ---------------------------------------------------------------------------
+
+type SlotKind = Exclude<ControllerOp['kind'], 'scan'>;
+const OP_CONCURRENCY: Record<SlotKind, number> = { status: 8, action: 8, upload: 6 };
+const slotsInUse: Record<SlotKind, number> = { status: 0, action: 0, upload: 0 };
+const slotWaiters: Record<SlotKind, (() => void)[]> = { status: [], action: [], upload: [] };
+
+/** A new op, `running` if a slot of its kind is free now, else `queued`. */
+function newOp(kind: SlotKind, target: string, label: string, origin: ControllerOpOrigin): ControllerOp {
+    return {
+        id: `op_${Date.now()}_${++opCounter}`,
+        kind,
+        target,
+        label,
+        status: slotsInUse[kind] < OP_CONCURRENCY[kind] ? 'running' : 'queued',
+        origin,
+        startedAt: nowIso(),
+    };
+}
+
+/**
+ * Take a slot for `op`, waiting while its kind is at the limit. Resolves false
+ * when the op was cancelled while it waited (it then holds no slot). Must be
+ * called straight after `newOp`, so a free slot is taken before anything else
+ * can claim it.
+ */
+async function waitForSlot(op: ControllerOp): Promise<boolean> {
+    const kind = op.kind as SlotKind;
+    if (slotsInUse[kind] < OP_CONCURRENCY[kind]) {
+        slotsInUse[kind]++;
+    } else {
+        // releaseSlot hands its slot straight to the next waiter.
+        await new Promise<void>((resolve) => slotWaiters[kind].push(resolve));
+    }
+    if (op.status === 'cancelled') {
+        releaseSlot(kind);
+        return false;
+    }
+    if (op.status === 'queued') {
+        op.status = 'running';
+        op.startedAt = nowIso();
+        publish();
+    }
+    return true;
+}
+
+function releaseSlot(kind: SlotKind): void {
+    const next = slotWaiters[kind].shift();
+    if (next) next();
+    else slotsInUse[kind]--;
 }
 
 /**
@@ -429,7 +486,7 @@ function retireOlderOps(finished: ControllerOp): void {
         console.warn(`[controller-ops] ${finished.label} failed: ${finished.error ?? 'unknown error'}`);
     }
     for (const [id, o] of Object.entries(state.operations)) {
-        if (id === finished.id || o.status === 'running') continue;
+        if (id === finished.id || o.status === 'running' || o.status === 'queued') continue;
         if (o.kind === finished.kind && o.target === finished.target) delete state.operations[id];
     }
 }
@@ -488,9 +545,9 @@ export async function dispatchControllerCommand(
     }
 }
 
-/** True while any controller operation (scan, read, action, upload) runs. */
+/** True while any controller operation (scan, read, action, upload) runs or waits to. */
 export function hasRunningControllerOps(): boolean {
-    return Object.values(state.operations).some((o) => o.status === 'running');
+    return Object.values(state.operations).some((o) => o.status === 'running' || o.status === 'queued');
 }
 
 /**
@@ -505,6 +562,11 @@ export function resetControllerOps(): void {
     for (const job of scanJobs.values()) job.cancel();
     state.devices = {};
     for (const [id, op] of Object.entries(state.operations)) {
+        // A queued op never starts: it would act on state just cleared.
+        if (op.status === 'queued') {
+            op.status = 'cancelled';
+            op.finishedAt = nowIso();
+        }
         if (op.status !== 'running') delete state.operations[id];
     }
     state.interfaces = hostNetworks();
@@ -516,16 +578,26 @@ export function resetControllerOps(): void {
 function runDismiss(command: Extract<ControllerCommand, { cmd: 'dismiss' }>): void {
     const op = state.operations[command.opId];
     if (!op) return;
-    if (op.status === 'running') throw new Error(`operation ${command.opId} is still running`);
+    if (op.status === 'running' || op.status === 'queued') {
+        throw new Error(`operation ${command.opId} has not finished`);
+    }
     delete state.operations[command.opId];
     publish();
 }
 
-/** Cancel a running scan op by op id. The job's cancel() resolves result()
- *  with what was found so far; runScan then marks the op `cancelled`. */
+/** Cancel an op by id. A queued op is dropped before it starts. A running
+ *  scan's cancel() resolves result() with what was found so far; runScan then
+ *  marks the op `cancelled`. */
 function runCancel(command: Extract<ControllerCommand, { cmd: 'cancel' }>): void {
     const op = state.operations[command.opId];
     if (!op) throw new Error(`unknown operation: ${command.opId}`);
+    if (op.status === 'queued') {
+        op.status = 'cancelled';
+        op.finishedAt = nowIso();
+        retireOlderOps(op);
+        publish();
+        return;
+    }
     if (op.status !== 'running') return; // already finished — nothing to do
     const job = scanJobs.get(command.opId);
     if (!job) throw new Error(`operation ${command.opId} (${op.kind}) is not cancelable`);
@@ -574,21 +646,17 @@ async function runStatus(
     }
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
     // Same-target ops are coalesced.
-    if (findRunningOp('status', command.id)) return;
+    if (findActiveOp('status', command.id)) return;
 
-    const op: ControllerOp = {
-        id: `op_${Date.now()}_${++opCounter}`,
-        kind: 'status',
-        target: command.id,
-        label: `Read ${dev.model || dev.driverType || dev.ip}`,
-        status: 'running',
-        origin,
-        startedAt: nowIso(),
-    };
+    const op = newOp('status', command.id, `Read ${dev.model || dev.driverType || dev.ip}`, origin);
     state.operations[op.id] = op;
+    const started = waitForSlot(op);
     publish();
 
+    let slot = false;
     try {
+        slot = await started;
+        if (!slot) return;
         const probe = await probeController(dev.ip, proxyFor(dev), {
             detail: true,
             preferDriver: dev.driverType,
@@ -644,6 +712,7 @@ async function runStatus(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        if (slot) releaseSlot('status');
         publish();
         retireOlderOps(op);
     }
@@ -657,21 +726,17 @@ async function runAction(
     const dev = state.devices[command.id];
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
     // Same-target ops are coalesced.
-    if (findRunningOp('action', command.id)) return;
+    if (findActiveOp('action', command.id)) return;
 
-    const op: ControllerOp = {
-        id: `op_${Date.now()}_${++opCounter}`,
-        kind: 'action',
-        target: command.id,
-        label: `${command.action} ${dev.model || dev.driverType || dev.ip}`,
-        status: 'running',
-        origin,
-        startedAt: nowIso(),
-    };
+    const op = newOp('action', command.id, `${command.action} ${dev.model || dev.driverType || dev.ip}`, origin);
     state.operations[op.id] = op;
+    const started = waitForSlot(op);
     publish();
 
+    let slot = false;
     try {
+        slot = await started;
+        if (!slot) return;
         const probe = await probeController(dev.ip, proxyFor(dev), {
             preferDriver: dev.driverType,
             expectController: expectsController(dev),
@@ -689,6 +754,7 @@ async function runAction(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        if (slot) releaseSlot('action');
         publish();
         retireOlderOps(op);
     }
@@ -752,38 +818,35 @@ async function runUpload(
 ): Promise<void> {
     const dev = state.devices[command.id];
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
-    if (findRunningOp('upload', command.id)) return;
+    if (findActiveOp('upload', command.id)) return;
 
     const rec = (state.known ?? []).find((k) => k.address === dev.ip || (dev.hostname && k.address === dev.hostname));
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
     const wantStrings = command.scope !== 'inputs';
     const wantInputs = command.scope !== 'strings';
-    if (
-        wantStrings &&
-        !rec.modelIntents?.length &&
-        !rec.serialPorts?.length &&
-        !rec.panelMatrices?.length &&
-        !rec.virtualMatrices?.length
-    ) {
+    const hasIntent =
+        !!rec.modelIntents?.length ||
+        !!rec.serialPorts?.length ||
+        !!rec.panelMatrices?.length ||
+        !!rec.virtualMatrices?.length;
+    // A controller in the xLights layout with no models on it is intent too:
+    // uploading clears its ports. Only a record of our own has nothing to say.
+    if (wantStrings && !hasIntent && rec.source === 'ezp') {
         throw new Error(`"${rec.name}" has no model/port intent from xLights to upload`);
     }
     if (wantInputs && !rec.outputs?.length) {
         throw new Error(`"${rec.name}" has no outputs (universes) from xLights to upload`);
     }
 
-    const op: ControllerOp = {
-        id: `op_${Date.now()}_${++opCounter}`,
-        kind: 'upload',
-        target: command.id,
-        label: `Upload ${command.scope} → ${rec.name}`,
-        status: 'running',
-        origin,
-        startedAt: nowIso(),
-    };
+    const op = newOp('upload', command.id, `Upload ${command.scope} → ${rec.name}`, origin);
     state.operations[op.id] = op;
+    const started = waitForSlot(op);
     publish();
 
+    let slot = false;
     try {
+        slot = await started;
+        if (!slot) return;
         // Upload needs xLights intent, so a controller is expected here.
         const probe = await probeController(dev.ip, proxyFor(dev), {
             preferDriver: dev.driverType,
@@ -885,9 +948,6 @@ async function runUpload(
                 height: vm.height,
             }));
             const hasMatrices = panelMatrices.length > 0 || virtualMatrices.length > 0;
-            if (derived.ports.length === 0 && serialPorts.length === 0 && !hasMatrices) {
-                throw new Error('derivation produced no uploadable ports');
-            }
             capCheck({ pixelPorts: derived.ports, serialPorts, panelMatrices, virtualMatrices });
             const setOpts: SetOutputsOptions = {
                 inputMode: rec.protocol?.toUpperCase(),
@@ -900,8 +960,9 @@ async function runUpload(
                     : undefined,
             };
             // A controller driving only matrices has no string configuration to
-            // write; sending an empty one would clear the strings it does have.
-            if (derived.ports.length > 0 || serialPorts.length > 0) {
+            // write. Otherwise an empty one is sent on purpose: the layout puts
+            // nothing on those ports, so they are cleared.
+            if (derived.ports.length > 0 || serialPorts.length > 0 || !hasMatrices) {
                 const r = await probe.driver.setOutputs(derived.ports, serialPorts, setOpts);
                 if (!r.success)
                     throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
@@ -964,6 +1025,7 @@ async function runUpload(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        if (slot) releaseSlot('upload');
         publish();
         retireOlderOps(op);
     }
@@ -981,7 +1043,7 @@ async function runScan(
     if (activeScans >= MAX_CONCURRENT_SCANS) {
         throw new Error(`too many concurrent discovery scans (max ${MAX_CONCURRENT_SCANS})`);
     }
-    if (findRunningOp('scan', scanTarget(command))) {
+    if (findActiveOp('scan', scanTarget(command))) {
         throw new Error('an identical scan is already running');
     }
 

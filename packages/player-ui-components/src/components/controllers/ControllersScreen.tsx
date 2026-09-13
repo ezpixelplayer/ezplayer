@@ -43,6 +43,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SyncProblemIcon from '@mui/icons-material/SyncProblem';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
@@ -609,7 +610,7 @@ const MaxFpsCell: React.FC<{ row: ControllerGridRow }> = ({ row }) => {
 const GridRow: React.FC<{
     row: ControllerGridRow;
     busy: boolean;
-    /** The operation running against this controller, if any. */
+    /** The operation running, or queued to run, against this controller. */
     runningOp?: ControllerOp;
     /** This controller's most recent failed operation, until dismissed. */
     failedOp?: ControllerOp;
@@ -740,7 +741,9 @@ const GridRow: React.FC<{
         d?.driverType &&
         d.driverType !== 'EZPlayer' &&
         !d.unreachable &&
-        ((row.intent?.length ?? 0) > 0 ||
+        (row.source === 'xlights' ||
+            row.source === 'both' ||
+            (row.intent?.length ?? 0) > 0 ||
             (row.serialIntent?.length ?? 0) > 0 ||
             (row.panelMatrixIntent?.length ?? 0) > 0 ||
             (row.virtualMatrixIntent?.length ?? 0) > 0)
@@ -829,7 +832,15 @@ const GridRow: React.FC<{
                         }
                     />
                     {/* One status slot: work in progress, then a failure, then drift. */}
-                    {runningOp ? (
+                    {runningOp?.status === 'queued' ? (
+                        <MuiBox
+                            component="span"
+                            title={`Waiting to start: ${runningOp.label}`}
+                            sx={{ display: 'inline-flex', ml: 0.5, verticalAlign: 'middle' }}
+                        >
+                            <HourglassEmptyIcon color="action" fontSize="small" />
+                        </MuiBox>
+                    ) : runningOp ? (
                         <MuiBox
                             component="span"
                             title={`${runningOp.label}…`}
@@ -1447,7 +1458,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         dispatch(issueControllerCommand({ cmd: 'network', cidr, patch }));
 
     const ops = Object.values(operations);
-    const running = ops.filter((o) => o.status === 'running');
+    // Queued ops are waiting for a slot on the player; for the UI they are work in progress.
+    const running = ops.filter((o) => o.status === 'running' || o.status === 'queued');
     const scanning = running.some((o) => o.kind === 'scan');
     // Failed ops stay until someone dismisses them, which removes them on the
     // player for every client.
@@ -1558,25 +1570,27 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
 
     // Bulk actions — fan the per-row commands out over reachable known rows.
     const [bulkBusy, setBulkBusy] = useState<'upload' | 'reboot' | 'refresh' | null>(null);
-    // Latest ops snapshot for the async bulk loop (it outlives any one render).
-    const operationsRef = useRef(operations);
-    operationsRef.current = operations;
-
-    // Eligible: present, scan-backed, and not known to be Down.
-    const bulkRows = rows.filter((r) => r.state === 'present' && !!r.device && r.health?.connectivity !== 'Down');
+    // Bulk actions skip disabled controllers and ones not currently answering:
+    // a row counts when it is present (a scan found it, or its ping is up) and
+    // its ping is not down.
+    const enabledRow = (r: ControllerGridRow): boolean =>
+        r.enableState ? r.enableState !== 'disabled' : r.active !== false;
+    const answering = (r: ControllerGridRow): boolean => r.state === 'present' && r.health?.connectivity !== 'Down';
+    // Eligible for upload and reboot: also scan-backed, so there is a device to address.
+    const bulkRows = rows.filter((r) => enabledRow(r) && answering(r) && !!r.device);
     // Refresh all: a status read works from a bare known address (the backend
-    // materializes the device from the probe), so unlike upload and reboot it
-    // needs no prior scan — only somewhere to send the probe, which is why it
-    // stays available on a freshly opened screen. Anything addressable and not
-    // known to be Down is eligible, including records no scan has matched yet.
-    const refreshAllRows = rows.filter((r) => (r.device?.id ?? r.address) && r.health?.connectivity !== 'Down');
+    // materializes the device from the probe), so it needs no prior scan; a
+    // pinging record counts even before one has matched it.
+    const refreshAllRows = rows.filter((r) => enabledRow(r) && answering(r) && (r.device?.id ?? r.address));
     // Mirror the per-row Upload gate: identified non-player device + xLights intent.
     const uploadAllRows = bulkRows.filter(
         (r) =>
             !!r.name &&
             !!r.device!.driverType &&
             r.device!.driverType !== 'EZPlayer' &&
-            ((r.intent?.length ?? 0) > 0 ||
+            (r.source === 'xlights' ||
+                r.source === 'both' ||
+                (r.intent?.length ?? 0) > 0 ||
                 (r.serialIntent?.length ?? 0) > 0 ||
                 (r.panelMatrixIntent?.length ?? 0) > 0 ||
                 (r.virtualMatrixIntent?.length ?? 0) > 0),
@@ -1590,75 +1604,31 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const rebootActionId = (d: DiscoveredController): string =>
         d.actions?.find((a) => a.id === 'reboot')?.id ?? d.actions?.find((a) => a.id === 'restart')?.id ?? 'reboot';
 
-    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-    const opIdsFor = (kind: ControllerOp['kind'], target: string): Set<string> =>
-        new Set(
-            Object.values(operationsRef.current)
-                .filter((o) => o.kind === kind && o.target === target)
-                .map((o) => o.id),
-        );
-    /**
-     * Wait for the op a command started to finish. Over IPC the command
-     * resolves when the op is done; over the WebSocket or the cloud it only
-     * means "sent", and the op shows up in the broadcast later. `before` holds
-     * the op ids for this target from before the command, so the new op is
-     * recognised by id (no clock comparison across machines). A running op that
-     * was already there is the one the command joined.
-     */
-    const waitForOp = async (kind: ControllerOp['kind'], target: string, before: Set<string>): Promise<void> => {
-        const appearBy = Date.now() + 15_000;
-        const deadline = Date.now() + 15 * 60_000; // safety valve
-        let seen = false;
-        while (Date.now() < deadline) {
-            const ops = Object.values(operationsRef.current).filter((o) => o.kind === kind && o.target === target);
-            const running = ops.some((o) => o.status === 'running');
-            const finishedNew = ops.some((o) => o.status !== 'running' && !before.has(o.id));
-            if (finishedNew && !running) return;
-            if (running) seen = true;
-            else if (seen || Date.now() > appearBy) return;
-            await sleep(400);
-        }
-    };
     interface BulkTask {
         command: ControllerCommand;
-        kind: ControllerOp['kind'];
-        target: string;
     }
-    const runBulk = async (which: 'upload' | 'reboot' | 'refresh', tasks: BulkTask[], parallel = 2): Promise<void> => {
+    /**
+     * Issue every command of a bulk run at once. The player runs a few of each
+     * kind at a time and queues the rest, so all of them show as queued or
+     * running straight away, in every client.
+     */
+    const runBulk = async (which: 'upload' | 'reboot' | 'refresh', tasks: BulkTask[]): Promise<void> => {
         setBulkBusy(which);
         try {
-            let cursor = 0;
-            const workers = Array.from({ length: Math.min(parallel, tasks.length) }, async () => {
-                while (cursor < tasks.length) {
-                    const t = tasks[cursor++];
-                    try {
-                        const before = opIdsFor(t.kind, t.target);
-                        await dispatch(issueControllerCommand(t.command)).unwrap();
-                        await waitForOp(t.kind, t.target, before);
-                    } catch {
-                        // Per-device failures surface in the ops list; keep going.
-                    }
-                }
-            });
-            await Promise.all(workers);
+            // Per-device failures surface on their rows; one rejection must not stop the rest.
+            await Promise.allSettled(tasks.map((t) => dispatch(issueControllerCommand(t.command)).unwrap()));
         } finally {
             setBulkBusy(null);
         }
     };
-    // Reads are safe and independent, so more can run at once than uploads.
     const refreshAll = () =>
         void runBulk(
             'refresh',
             refreshAllRows.map((r) => {
                 // Same addressing as the row's own Refresh Details.
                 const id = r.device?.id ?? `${r.address}|direct`;
-                return {
-                    command: { cmd: 'status', id, address: r.device ? undefined : r.address, depth: 'full' },
-                    kind: 'status',
-                    target: id,
-                };
+                return { command: { cmd: 'status', id, address: r.device ? undefined : r.address, depth: 'full' } };
             }),
-            4,
         );
     const uploadAll = () => {
         if (
@@ -1669,11 +1639,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         ) {
             void runBulk(
                 'upload',
-                uploadAllRows.map((r) => ({
-                    command: { cmd: 'upload', id: r.device!.id, scope: 'full' },
-                    kind: 'upload',
-                    target: r.device!.id,
-                })),
+                uploadAllRows.map((r) => ({ command: { cmd: 'upload', id: r.device!.id, scope: 'full' } })),
             );
         }
     };
@@ -1688,8 +1654,6 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                 'reboot',
                 rebootAllRows.map((r) => ({
                     command: { cmd: 'action', id: r.device!.id, action: rebootActionId(r.device!) },
-                    kind: 'action',
-                    target: r.device!.id,
                 })),
             );
         }
