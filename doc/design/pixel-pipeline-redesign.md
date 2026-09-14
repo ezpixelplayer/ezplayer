@@ -265,7 +265,60 @@ Each phase ships on its own and is verified with the integration harness's mock 
 
 **Phase 5: sources.** A canonical sequence format designed for random access and per-model chunking, whole-display input as a `FrameSource`, audio-overlay hooks alongside effect sequences.
 
-## 12. Implementation status (branch `moc/pixel-pipeline`, 2026-09-14)
+## 12. Sequence layout descriptors
+
+A descriptor says what a rendered file's channels mean. It is the input to the Input Map, and it is the only thing that lets a file outlive the layout it was rendered against.
+
+### What a descriptor holds
+
+Global: producer (`xlrender`, `xlights`, `pinned`), the layout fingerprint (hash of the model table below), the fingerprint of the `rgbeffects` models section it came from, total channels, frame count and step time (so a descriptor can be sanity-checked against the fixed header), and three flags for the whole file: `curvesApplied` (dimming curves baked into the data), `colorOrderApplied` (string-type byte order is what the wire wants, as xLights renders today), and `nodeOrder` (`xlights` physical order, or `canonical` row-major for grids, so a future renderer can skip the swizzle and the player does it on output).
+
+Per model: name, 0-based start channel, node count, channels per node, channel roles, node runs when they are not one contiguous span, and the baked gamma and brightness when `curvesApplied` is set. Aliases are not stored; the player resolves a file model name that matches no layout model through the current `rgbeffects` alias list at map-compile time, so a rename after the render still works.
+
+### Where it lives
+
+The 64 KB header cap rules out the whole descriptor for large shows (a few thousand models with names is well past it), so the design is content-addressed:
+
+- The fseq variable header `EZ` always carries a small **stamp**: descriptor format version, the layout fingerprint, the flags, model count, total channels. This fits in well under 100 bytes and never fails to fit.
+- The full descriptor lives in a **registry** keyed by fingerprint: `<show>/.ezplayer/layouts/<fingerprint>.json`. One entry per layout version, shared by every file rendered against it, so a show with a hundred sequences and three layout versions has three files. The cloud carries the same objects and ships one alongside a download when the player lacks it.
+- When the descriptor is small enough (the common case for shows under a few hundred models) the `EZ` header also embeds it as deflate-compressed JSON, so a lone fseq copied between machines is self-describing. The registry is still written; the embedded copy is a convenience.
+
+### Precedence when a file is opened
+
+1. `EZ` stamp present and the fingerprint is in the registry (or embedded): use it.
+2. `EZ` stamp present, fingerprint unknown: log it, fall through. The stamp still identifies the file's layout version so the pin below is recorded against it.
+3. xLights `rgbeffects` embedded in the file (newer xLights writes it when it fits): derive the descriptor from it with the same adapter the layout compiler uses, store it in the registry under its fingerprint, and schedule a header rewrite (below).
+4. Nothing: **pin on first sight** to the current layout's descriptor, stored in the registry and recorded in `<show>/.ezplayer/layouts/pins.json` keyed by file identity. "Hope for the best" and "pin" are the same thing here; pinning just makes it stick after the layout changes instead of silently drifting, and the UI can show it and offer re-pin.
+
+### When it is computed
+
+- **xlrender and the cloud**: at render time. The renderer knows the layout; it writes the stamp and the embedded descriptor, and the cloud stores the registry object with the layout.
+- **Add song and cloud download**: after the bytes are on disk and before the record is registered, run the precedence above. This is the one place a header rewrite is cheap to do synchronously: the file was just written.
+- **First open by the player**: the same precedence, but a rewrite is never done during playback; it is queued for the maintenance path.
+- **Header rewrite**: an fseq cannot take a longer header in place, so a rewrite is a full copy to a temp file and a rename. It happens only in the maintenance path (add, download, an explicit "repair sequence headers" action) and only for files without an `EZ` stamp. Files the user owns are otherwise never modified.
+
+### Noticing that a file changed
+
+File identity is (path, size, mtime, the 32-byte fixed header including its 64-bit unique id). The cloud downloader writes new names, so it never trips this; a re-render into the show folder with the same name does. The player stats the file when a header is first fetched and again whenever a prefetch request arrives for a file whose entry is older than a few seconds. A changed identity drops the header entry and every cached chunk for that path. Today the cache keys by path alone, which is the pre-existing gap to close.
+
+### Cost model
+
+The pipeline caches compiled Input Maps by (fingerprint, layout version, sparse ranges). A show has a handful of fingerprints, so switching sequences is a map lookup; the stamp gives the fingerprint without hashing the model table. Compiling a map allocates once per fingerprint and never at frame time.
+
+## 13. Previews and the cloud
+
+The cloud serves old and new clients, so it keeps its per-point color handling. New players serve it a simplified model set derived from the layout manifest, already canonicalized (RGB, gamma and brightness moved to the output map), and the cloud passes that through for clients that understand it. The HDMI output exists only in new players and only ever reads canonical grids.
+
+## 14. Controller brightness, gamma and color order
+
+One player setting: **use controller brightness and gamma** (default off).
+
+- Off: every output uses the `player` policy. The Output Map applies brightness, gamma and color order; controller upload writes default settings (gamma 1.0, brightness 100, RGB) and the upload-path checkbox for that goes away. Controllers are byte-faithful transports.
+- On: models whose controller connection carries brightness, gamma or color order, on a controller that supports them, use the `controller` policy and the values are uploaded. Everything else still uses `player`. This is the mixed case the Output Map already handles per segment.
+
+Independently of the setting, a file whose descriptor says `curvesApplied` has its curves inverted on ingest so the canonical frame is renderer intent; the loss is logged per file.
+
+## 15. Implementation status (branch `moc/pixel-pipeline`, 2026-09-14)
 
 Done and verified against the integration harness (frame fidelity at the mock controller: zero unknown frames):
 
@@ -282,7 +335,7 @@ Not done yet, in the order they should come:
 - New preview readers for the canonical pool (the 3D preview still reads the channel-space export).
 - xlrender effect stage, effect sequences, coordinate kernels.
 
-## 13. Open questions
+## 16. Open questions
 
 - **Descriptor in the fseq header.** Which two-letter key, and will xLights upstream accept writing it. The sidecar and pin-on-first-sight paths do not depend on the answer.
 - **RGBW and single-color round trips are lossy by construction** under RGB8. Policy defaults need choosing: fold W into RGB on ingest or drop it; extract W as min(R,G,B) on output or use the temperature model. RGBX8 with `white` sidesteps it for shows that opt in.
