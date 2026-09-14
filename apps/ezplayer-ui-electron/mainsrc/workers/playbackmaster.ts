@@ -2139,7 +2139,6 @@ async function processQueue() {
             settings: { outputEnabled: !outputSuppressed, blackFramesEnabled: sendIdleBlackFrames, maxSlotFraction },
             legacyRing: frameExportBuffer,
             overlayPort: latestSettings?.advanced?.overlayPort ?? 4049,
-            showFolder,
             log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
         });
         curPipeline = pipeline;

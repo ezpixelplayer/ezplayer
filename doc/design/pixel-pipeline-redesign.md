@@ -281,15 +281,15 @@ The inline FSEQ v2 header is capped at 64 KB, but xLights' writer (`FSEQFile.cpp
 
 - Our renderer writes an extended `EZ` header: a 16-byte fixed prefix (format version, flags, layout fingerprint, model count, total channels) followed by the descriptor as zstd-compressed JSON. The prefix is enough to pick a cached Input Map without decompressing anything.
 - A file with `XR` and `XN` but no `EZ` is already self-describing: the player derives the descriptor from those two documents with the same `xllayoutcalcs` calls the layout compiler uses. That covers every file saved by xLights since the extended headers landed.
-- `<show>/.ezplayer/layouts/<fingerprint>.json` is a **derived cache**, not a source of truth: the descriptor a file yielded, keyed by fingerprint, so opening a file the player has seen the layout of costs one prefix read. The cloud can ship the same object with a download so the player never has to parse `XR` for a file it did not render.
+- Descriptors are cached in memory for the session, by fingerprint and by a hash of the embedded xLights bytes, so a second file rendered against the same layout costs one prefix read and no parse. There is no on-disk registry: the file and the current layout are the only sources of truth.
 
-Nothing here modifies a user's file. The rewrite step from the earlier draft is gone: files that carry `XR` need no `EZ`, files we render get `EZ` at render time, and files with neither are pinned.
+Nothing here modifies a user's file. The rewrite step from the earlier draft is gone: files that carry `XR` need no `EZ`, files we render get `EZ` at render time, and files with neither are assumed to match the current layout.
 
 ### Precedence when a file is opened
 
 1. Extended `EZ` header: use it. The prefix fingerprint selects the cached Input Map; the JSON is decompressed only on a cache miss.
 2. Extended `XR` and `XN` headers: derive the descriptor, cache it under its fingerprint, use it. Flags are those of an xLights render: curves applied, color order applied, xLights node order.
-3. Nothing: **pin on first sight** to the current layout's descriptor, recorded in `<show>/.ezplayer/layouts/pins.json` keyed by file identity. "Hope for the best" and "pin" are the same act; pinning makes it stick after the layout changes instead of silently drifting, and the UI can show it and offer re-pin.
+3. Nothing: assume the file was rendered against the current layout. A layout change after such a file was rendered shows up as mismatched channels, and the fix is a re-render, exactly as today. Persisting a per-file pin was considered and dropped: it would only serve files with no header, which every renderer we control now writes, and a stale pin is a worse failure than a visible mismatch.
 
 ### When it is computed
 
@@ -327,11 +327,11 @@ Done and verified against the integration harness (frame fidelity at the mock co
 - Overlay leases over HTTP and UDP, composited into every frame, with a Tetris client (`packages/epp/src/tools/overlay-tetris.ts`).
 - Virtual matrix outputs: `/api/ezp/pool/model/:name` and the `/matrix` page; kiosk windows per configured display; settings UI.
 
-- Layout descriptors (section 12): the fseq readers parse `ED` extended headers; `EZ` descriptors are encoded and decoded (prefix plus zstd JSON); descriptors are derived from embedded `XR`/`XN`; the player resolves EZ, then XR/XN, then the pin under `.ezplayer/layouts/`, and re-stats referenced files so a re-render under the same name drops its cached frames. Not yet: the re-pin UI, and xlrender writing `EZ`.
+- Layout descriptors (section 12): the fseq readers parse `ED` extended headers; `EZ` descriptors are encoded and decoded (prefix plus zstd JSON); descriptors are derived from embedded `XR`/`XN`; the player resolves EZ, then XR/XN, then the current layout, and re-stats referenced files so a re-render under the same name drops its cached frames. Not yet: xlrender writing `EZ`.
 
 Not done yet, in the order they should come:
 
-- Re-pin UI, and `EZ` written by xlrender and the cloud renderer.
+- `EZ` written by xlrender and the cloud renderer (`encodeDescriptorHeader` and `buildExtendedHeaders` exist in epp).
 - The compose pool (intraframe parallelism) and the params block are in place but composition still runs on the conductor thread.
 - Brightness schedules and per-controller `player` gamma policy have kernels and map support but no settings or reconcile UI.
 - New preview readers for the canonical pool (the 3D preview still reads the channel-space export).
