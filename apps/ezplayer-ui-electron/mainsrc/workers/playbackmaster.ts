@@ -2139,6 +2139,7 @@ async function processQueue() {
             settings: { outputEnabled: !outputSuppressed, blackFramesEnabled: sendIdleBlackFrames, maxSlotFraction },
             legacyRing: frameExportBuffer,
             overlayPort: latestSettings?.advanced?.overlayPort ?? 4049,
+            showFolder,
             log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
         });
         curPipeline = pipeline;
@@ -2453,6 +2454,8 @@ async function processQueue() {
                         if (!fsf) continue;
                         // Always fetch the header.
                         fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: play.atTime, tier });
+                        // A re-render under the same name must not keep serving stale frames.
+                        fseqCache!.checkFileIdentity(fsf);
                         // Frames only for the imminent window.
                         if (play.atTime >= frameGate) continue;
                         let ourDur = frameGate - play.atTime;

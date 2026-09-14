@@ -166,3 +166,25 @@ export {
     OVERLAY_MAX_DATA,
 } from './pipeline/Overlays';
 export type { OverlayFormat, OverlayLeaseRequest, OverlayLeaseInfo, OverlayPacket } from './pipeline/Overlays';
+export type { ExtendedHeaderRef } from './formats/FSeqUtil';
+export {
+    readExtendedHeader,
+    readExtendedText,
+    decompressExtended,
+    compressExtended,
+    buildExtendedHeaders,
+    XL_RGBEFFECTS_HEADER,
+    XL_NETWORKS_HEADER,
+    XL_SEQUENCE_HEADER,
+} from './formats/FSeqExtended';
+export {
+    encodeDescriptorHeader,
+    decodeDescriptorHeader,
+    peekDescriptorPrefix,
+    descriptorFromEmbeddedXlights,
+    EZ_DESCRIPTOR_HEADER,
+    EZ_DESCRIPTOR_VERSION,
+    EZ_PREFIX_BYTES,
+} from './pipeline/Descriptor';
+export type { DescriptorPrefix } from './pipeline/Descriptor';
+export type { FileIdentity } from './formats/FSeqPrefetcher';

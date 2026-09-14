@@ -5,12 +5,22 @@
  */
 
 import dgram from 'node:dgram';
+import * as fsp from 'node:fs/promises';
+import * as path from 'node:path';
 import {
     applyOutput,
     blendModeFromName,
     blendNodes,
+    decodeDescriptorHeader,
     decodeOverlayPacket,
+    decompressExtended,
+    descriptorFromEmbeddedXlights,
+    EZ_DESCRIPTOR_HEADER,
     OverlayManager,
+    peekDescriptorPrefix,
+    readExtendedHeader,
+    XL_NETWORKS_HEADER,
+    XL_RGBEFFECTS_HEADER,
     compileInputMap,
     compileLayout,
     compileOutputMap,
@@ -60,7 +70,24 @@ export interface PixelPipelineOptions {
     slotCount?: number;
     /** UDP port for overlay lease payloads; 0 disables the receiver. */
     overlayPort?: number;
+    /** Show folder; descriptors and pins persist under its .ezplayer/layouts. */
+    showFolder?: string;
     log: (level: 'info' | 'warn' | 'error', msg: string) => void;
+}
+
+/** Hash bytes the way fnv1a hashes strings. */
+function fnv1aBytes(b: Uint8Array): number {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < b.length; ++i) {
+        h ^= b[i];
+        h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+}
+
+/** A file's identity for pinning: cheap fields the header already has. */
+function fileIdentityKey(fseqfile: string, header: FSEQHeader): string {
+    return `${fseqfile}|${header.channels}|${header.frames}|${header.uuid1}|${header.uuid2}`;
 }
 
 export interface ComposeArgs {
@@ -97,6 +124,12 @@ export class PixelPipeline {
     private overlayBadPackets = 0;
     private lastExpire = 0;
     private readonly inputMaps = new Map<string, InputMapProgram>();
+    /** Descriptors seen this session, by fingerprint (and 'xl:<hash>' for ones derived from embedded xLights files). */
+    private readonly descriptors = new Map<string, ChannelDescriptor>();
+    private readonly layoutsDir?: string;
+    private pins: Record<string, { fingerprint: number; layoutVersion: number; at: number }> = {};
+    private pinsLoaded: Promise<void>;
+    private pinsDirty = false;
     private readonly log: PixelPipelineOptions['log'];
     private composeScratch: Uint8Array;
     private lastWasBlack = false;
@@ -121,8 +154,132 @@ export class PixelPipeline {
         this.output = new OutputWorkerHandle();
         this.output.onLog = opts.log;
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
+        this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
         this.composeScratch = new Uint8Array(0);
         this.overlays = new OverlayManager(layout);
+        this.layoutsDir = opts.showFolder ? path.join(opts.showFolder, '.ezplayer', 'layouts') : undefined;
+        this.pinsLoaded = this.loadPins();
+    }
+
+    // ----- descriptor registry: derived cache of descriptors and per-file pins under .ezplayer/layouts -----
+
+    private async loadPins(): Promise<void> {
+        if (!this.layoutsDir) return;
+        try {
+            const raw = await fsp.readFile(path.join(this.layoutsDir, 'pins.json'), 'utf8');
+            const parsed = JSON.parse(raw) as { pins?: Record<string, { fingerprint: number; layoutVersion: number; at: number }> };
+            if (parsed && typeof parsed === 'object' && parsed.pins) this.pins = parsed.pins;
+        } catch {
+            /* no pins yet */
+        }
+    }
+
+    private async savePins(): Promise<void> {
+        if (!this.layoutsDir || !this.pinsDirty) return;
+        this.pinsDirty = false;
+        try {
+            await fsp.mkdir(this.layoutsDir, { recursive: true });
+            await fsp.writeFile(path.join(this.layoutsDir, 'pins.json'), JSON.stringify({ version: 1, pins: this.pins }, null, 1));
+        } catch (e) {
+            this.log('warn', `[pipeline] could not save layout pins: ${(e as Error).message}`);
+        }
+    }
+
+    private async readRegistry(key: string): Promise<ChannelDescriptor | undefined> {
+        const mem = this.descriptors.get(key);
+        if (mem) return mem;
+        if (!this.layoutsDir) return undefined;
+        try {
+            const raw = await fsp.readFile(path.join(this.layoutsDir, `${key}.json`), 'utf8');
+            const d = JSON.parse(raw) as ChannelDescriptor;
+            if (!d || !Array.isArray(d.models) || typeof d.totalChannels !== 'number') return undefined;
+            this.descriptors.set(key, d);
+            return d;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private async writeRegistry(key: string, d: ChannelDescriptor): Promise<void> {
+        this.descriptors.set(key, d);
+        if (!this.layoutsDir) return;
+        try {
+            await fsp.mkdir(this.layoutsDir, { recursive: true });
+            await fsp.writeFile(path.join(this.layoutsDir, `${key}.json`), JSON.stringify(d));
+        } catch (e) {
+            this.log('warn', `[pipeline] could not save layout descriptor ${key}: ${(e as Error).message}`);
+        }
+    }
+
+    /**
+     * The descriptor for a sequence file, in precedence order: the file's own
+     * EZ header, the xLights show files it embeds, then the pin recorded for
+     * it, then the current layout (which pins it).
+     */
+    async descriptorFor(fseqfile: string, header: FSEQHeader): Promise<ChannelDescriptor> {
+        const ez = header.extendedHeaders[EZ_DESCRIPTOR_HEADER];
+        if (ez) {
+            try {
+                const bytes = await readExtendedHeader(fseqfile, ez);
+                const prefix = peekDescriptorPrefix(bytes);
+                if (prefix) {
+                    const cached = this.descriptors.get(String(prefix.fingerprint));
+                    if (cached) return cached;
+                    const d = decodeDescriptorHeader(bytes);
+                    if (d) {
+                        this.log('info', `[pipeline] ${fseqfile}: EZ descriptor, ${d.models.length} models, fingerprint ${prefix.fingerprint}`);
+                        void this.writeRegistry(String(prefix.fingerprint), d);
+                        return d;
+                    }
+                }
+                this.log('warn', `[pipeline] ${fseqfile}: EZ header present but unreadable; falling back`);
+            } catch (e) {
+                this.log('warn', `[pipeline] ${fseqfile}: EZ header read failed (${(e as Error).message}); falling back`);
+            }
+        }
+        const inline = descriptorFromFseqHeaders(header.headers);
+        if (inline) return inline;
+
+        const xr = header.extendedHeaders[XL_RGBEFFECTS_HEADER];
+        const xn = header.extendedHeaders[XL_NETWORKS_HEADER];
+        if (xr && xn) {
+            try {
+                const xrb = await readExtendedHeader(fseqfile, xr);
+                const xnb = await readExtendedHeader(fseqfile, xn);
+                const key = `xl-${fnv1aBytes(xrb).toString(16)}-${fnv1aBytes(xnb).toString(16)}`;
+                const cached = await this.readRegistry(key);
+                if (cached) return cached;
+                const dec = new TextDecoder('utf-8');
+                const d = descriptorFromEmbeddedXlights(dec.decode(decompressExtended(xrb)), dec.decode(decompressExtended(xnb)), {
+                    logger: (m) => this.log('warn', `[pipeline] ${fseqfile}: ${m}`),
+                });
+                this.log('info', `[pipeline] ${fseqfile}: descriptor derived from embedded xLights files, ${d.models.length} models, fingerprint ${d.fingerprint}`);
+                void this.writeRegistry(key, d);
+                if (d.fingerprint !== undefined) void this.writeRegistry(String(d.fingerprint), d);
+                return d;
+            } catch (e) {
+                this.log('warn', `[pipeline] ${fseqfile}: embedded xLights files unusable (${(e as Error).message}); falling back`);
+            }
+        }
+
+        await this.pinsLoaded;
+        const idKey = fileIdentityKey(fseqfile, header);
+        const pin = this.pins[idKey];
+        if (pin) {
+            const d = await this.readRegistry(String(pin.fingerprint));
+            if (d) {
+                if (pin.fingerprint !== this.pinnedDescriptor.fingerprint) {
+                    this.log('info', `[pipeline] ${fseqfile}: using pinned layout ${pin.fingerprint} (current is ${this.pinnedDescriptor.fingerprint})`);
+                }
+                return d;
+            }
+        }
+        // Pin on first sight: the current layout, remembered so a later layout change does not drift.
+        const fp = this.pinnedDescriptor.fingerprint!;
+        this.pins[idKey] = { fingerprint: fp, layoutVersion: this.layout.layoutVersion, at: Date.now() };
+        this.pinsDirty = true;
+        void this.writeRegistry(String(fp), this.pinnedDescriptor).then(() => this.savePins());
+        return this.pinnedDescriptor;
     }
 
     /** Listen for overlay payload packets. Failure to bind is logged, not fatal. */
@@ -211,22 +368,21 @@ export class PixelPipeline {
 
     minFrameTimes: number[] = [];
 
-    /** The Input Map for a sequence file: its own descriptor when it carries one, else the pinned one. */
-    canonicalizer = (fseqfile: string, header: FSEQHeader, fileLayout: FileLayoutLike): InputMapProgram | undefined => {
+    /** The Input Map for a sequence file, from whichever descriptor it resolves to. */
+    canonicalizer = async (fseqfile: string, header: FSEQHeader, fileLayout: FileLayoutLike): Promise<InputMapProgram | undefined> => {
         if (this.closed) return undefined;
-        let desc = descriptorFromFseqHeaders(header.headers);
-        if (desc) {
-            this.log('info', `[pipeline] ${fseqfile}: using channel descriptor from the file header (${desc.models.length} models)`);
-        } else {
-            desc = this.pinnedDescriptor;
-            if (header.channels !== desc.totalChannels && header.channels !== Math.max(...desc.models.map((m) => m.startChannel + m.nodeCount * m.channelsPerNode))) {
+        const desc = await this.descriptorFor(fseqfile, header);
+        if (desc.source === 'pinned' || !desc.source) {
+            const modelEnd = Math.max(0, ...desc.models.map((m) => m.startChannel + m.nodeCount * m.channelsPerNode));
+            if (header.channels !== desc.totalChannels && header.channels !== modelEnd) {
                 this.log('warn', `[pipeline] ${fseqfile}: file has ${header.channels} channels, layout expects ${desc.totalChannels}; mapping by channel number`);
             }
         }
         const sparse = fileLayout.isSparse
             ? fileLayout.scatterPlan.map((r) => ({ srcOffset: r.srcOffset, channelStart: r.dstOffset, length: r.length }))
             : undefined;
-        const key = `${descriptorHash(desc)}:${sparse ? JSON.stringify(sparse) : 'dense'}`;
+        const flags = `${desc.curvesApplied === false ? '' : 'c'}${desc.colorOrderApplied === false ? '' : 'o'}${desc.nodeOrder === 'canonical' ? 'n' : ''}`;
+        const key = `${desc.fingerprint ?? descriptorHash(desc)}:${flags}:${sparse ? JSON.stringify(sparse) : 'dense'}`;
         let program = this.inputMaps.get(key);
         if (!program) {
             const map = compileInputMap(desc, this.layout, sparse);

@@ -327,9 +327,11 @@ Done and verified against the integration harness (frame fidelity at the mock co
 - Overlay leases over HTTP and UDP, composited into every frame, with a Tetris client (`packages/epp/src/tools/overlay-tetris.ts`).
 - Virtual matrix outputs: `/api/ezp/pool/model/:name` and the `/matrix` page; kiosk windows per configured display; settings UI.
 
+- Layout descriptors (section 12): the fseq readers parse `ED` extended headers; `EZ` descriptors are encoded and decoded (prefix plus zstd JSON); descriptors are derived from embedded `XR`/`XN`; the player resolves EZ, then XR/XN, then the pin under `.ezplayer/layouts/`, and re-stats referenced files so a re-render under the same name drops its cached frames. Not yet: the re-pin UI, and xlrender writing `EZ`.
+
 Not done yet, in the order they should come:
 
-- Descriptor pinning is in memory only; persist per file under `.ezplayer/` and add the re-pin UI.
+- Re-pin UI, and `EZ` written by xlrender and the cloud renderer.
 - The compose pool (intraframe parallelism) and the params block are in place but composition still runs on the conductor thread.
 - Brightness schedules and per-controller `player` gamma policy have kernels and map support but no settings or reconcile UI.
 - New preview readers for the canonical pool (the 3D preview still reads the channel-space export).

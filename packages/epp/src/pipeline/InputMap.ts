@@ -25,8 +25,16 @@ export interface ChannelDescriptorModel {
 export interface ChannelDescriptor {
     totalChannels: number;
     models: ChannelDescriptorModel[];
-    /** Where the descriptor came from: 'header', 'sidecar', 'pinned'. */
+    /** Where the descriptor came from: 'header', 'xlights', 'pinned'. */
     source?: string;
+    /** descriptorHash of the model table, when known without recomputing. */
+    fingerprint?: number;
+    /** Model dimming curves (gamma, brightness) are baked into the data. Default true. */
+    curvesApplied?: boolean;
+    /** Bytes within a node follow the string type's color order. Default true; false means plain RGB(W). */
+    colorOrderApplied?: boolean;
+    /** Node order in the file: xLights physical order (default) or canonical row-major grids. */
+    nodeOrder?: 'xlights' | 'canonical';
 }
 
 export function descriptorHash(d: ChannelDescriptor): number {
@@ -192,6 +200,9 @@ export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout, 
     const seen = new Set<string>();
     const stride = layout.pixelStride;
     const white = stride === 4 && layout.xMeaning === X_MEANING_WHITE;
+    const curvesApplied = desc.curvesApplied !== false;
+    const colorOrderApplied = desc.colorOrderApplied !== false;
+    const canonicalOrder = desc.nodeOrder === 'canonical';
 
     for (const lm of layout.models) {
         if (lm.nodeStart < 0) continue; // raw models come through the raw spans
@@ -207,11 +218,19 @@ export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout, 
             missing.push(lm.name);
             continue;
         }
+        if (!colorOrderApplied && (codec.kind === 'rgb' || codec.kind === 'rgbw')) {
+            // The renderer wrote plain RGB(W) regardless of the string type.
+            codec.r = 0;
+            codec.g = 1;
+            codec.b = 2;
+            if (codec.kind === 'rgbw') codec.w = 3;
+        }
         const nodes = Math.min(dm.nodeCount, lm.nodeCount);
         if (dm.nodeCount !== lm.nodeCount) resized.push({ name: lm.name, file: dm.nodeCount, layout: lm.nodeCount });
-        const lut = b.lutFor(dm.gamma ?? 1, dm.brightness ?? 1);
+        const lut = curvesApplied ? b.lutFor(dm.gamma ?? 1, dm.brightness ?? 1) : -1;
         if (lut >= 0) inverted.push(lm.name);
-        const perm = b.permFor(lm.perm);
+        // A file already in canonical grid order needs no permutation.
+        const perm = canonicalOrder ? -1 : b.permFor(lm.perm);
         // Walk the file's runs in node order and cut them at the node budget.
         const cpn = dm.channelsPerNode;
         const tint = (codec.tintR << 16) | (codec.tintG << 8) | codec.tintB;
@@ -263,7 +282,9 @@ export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout, 
         resized,
         inverted,
     };
-    map.id = fnv1a(`${map.descriptorHash}:${map.layoutVersion}:${sparse ? JSON.stringify(sparse) : ''}`);
+    map.id = fnv1a(
+        `${map.descriptorHash}:${map.layoutVersion}:${sparse ? JSON.stringify(sparse) : ''}:${curvesApplied ? 'c' : ''}${colorOrderApplied ? 'o' : ''}${canonicalOrder ? 'n' : ''}`,
+    );
     return map;
 }
 

@@ -78,8 +78,19 @@ export class FSEQHeader {
     compblocklist: CompBlock[] = [];
     chranges: SparseRange[] = [];
 
+    /** Inline variable headers (string values). */
     headers: { [key: string]: string } = {};
+    /** Extended variable headers: an `ED` entry points at data stored after the channel data. */
+    extendedHeaders: { [key: string]: ExtendedHeaderRef } = {};
 }
+
+export interface ExtendedHeaderRef {
+    /** Absolute file offset of the data. */
+    offset: number;
+    length: number;
+}
+
+const ED_ENTRY_DATA_BYTES = 14; // code(2) + offset(8) + length(4)
 
 class CompBlockIndex {
     startFrame: number = 0; // Note that this is 0-based and inclusive
@@ -205,6 +216,7 @@ export class FSEQReaderSync {
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
+        const extHeaders: { [key: string]: ExtendedHeaderRef } = {};
         let comp = 0;
         let ccount = 0;
         let stepms = 50;
@@ -316,6 +328,12 @@ export class FSEQReaderSync {
                 const hlen = (await this.read16bit()) - 4;
                 const hname = utfDecoder.decode(await this.read(2));
                 //console.log ("Header "+hname+": "+str(hlen))
+                if (hname === 'ED' && hlen === ED_ENTRY_DATA_BYTES) {
+                    const ed = await this.read(ED_ENTRY_DATA_BYTES);
+                    const code = utfDecoder.decode(new Uint8Array(ed.buffer, 0, 2));
+                    extHeaders[code] = { offset: Number(ed.getBigUint64(2, true)), length: ed.getUint32(10, true) };
+                    continue;
+                }
                 const hval = utfDecoder.decode(await this.read(hlen)).replace(/\0+$/, '');
                 v1headers[hname] = hval;
             }
@@ -347,6 +365,7 @@ export class FSEQReaderSync {
             compblocklist: compblocklist,
             chranges: chrangelist,
             headers: v1headers,
+            extendedHeaders: extHeaders,
         };
     }
 
@@ -510,6 +529,7 @@ export class FSEQReaderAsync {
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
+        const extHeaders: { [key: string]: ExtendedHeaderRef } = {};
         let comp = 0;
         let ccount = 0;
         let stepms = 50;
@@ -648,6 +668,15 @@ export class FSEQReaderAsync {
                     const hname = utfDecoder.decode(ibuf.subarray(off, off + 2));
                     off += 2;
                     //console.log ("Header "+hname+": "+str(hlen))
+                    if (hname === 'ED' && hlen === ED_ENTRY_DATA_BYTES) {
+                        const code = utfDecoder.decode(ibuf.subarray(off, off + 2));
+                        extHeaders[code] = {
+                            offset: Number(buf.getBigUint64(off + 2, true)),
+                            length: buf.getUint32(off + 10, true),
+                        };
+                        off += ED_ENTRY_DATA_BYTES;
+                        continue;
+                    }
                     const hval = utfDecoder.decode(ibuf.subarray(off, off + hlen)).replace(/\0+$/, '');
                     off += hlen;
                     v1headers[hname] = hval;
@@ -682,6 +711,7 @@ export class FSEQReaderAsync {
             compblocklist: compblocklist,
             chranges: chrangelist,
             headers: v1headers,
+            extendedHeaders: extHeaders,
         };
         return header;
     }
