@@ -12,9 +12,12 @@ _Opens the Player Cloud Registration dialog instead of an inline panel._
 Use this tile to manage EZPlayer's connection to EZRGB Cloud. The same
 registration flow appears on first launch and on the **Cloud** sidebar screen.
 
-After you claim the player on [EZRGB](https://ezrgb.com), it appears under
-**EZPlayer** on your account — open **Manage Player** for the full remote UI.
-See [Registering](../cloud/registering.md) and
+After you claim the player on [EZRGB](https://ezrgb.com), the Cloud screen
+shows a **Remote Control Link** (QR and URL). Anyone with that link can
+control the player — no sign-in required. The player also appears under
+**EZPlayer** on your account; **Manage Player** there opens the same remote
+UI. See [Registering](../cloud/registering.md),
+[Cloud Status / Control UI](../cloud/status-control-ui.md), and
 [Using Full Cloud Control](../cloud/full-cloud-control.md).
 
 ## Status
@@ -31,7 +34,7 @@ The header shows one of:
 ## Polling Schedule
 
 Control when EZPlayer downloads new content from the cloud (sequences,
-playlists, schedule, layout):
+playlists, schedule, layout, and player settings):
 
 - **Always** — content polling runs continuously while cloud is enabled.
 - **During scheduled times** — content polling runs only inside the **Allowed
@@ -64,4 +67,5 @@ Expand **Advanced** for infrequently changed options:
   (**Save Intervals** to apply):
     - **Registration poll** (default 5 seconds) — heartbeat and command pickup.
     - **Manifest poll** (default 300 seconds / 5 minutes) — sequence list,
-      downloads, layout, playlists, and schedule sync.
+      downloads, layout, playlists, schedule, and cloud-managed player
+      settings.

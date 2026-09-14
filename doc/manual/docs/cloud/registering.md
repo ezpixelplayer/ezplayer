@@ -9,9 +9,11 @@ Registration links an EZPlayer show folder to your [EZRGB](https://ezrgb.com) ac
 Once connected, the player can:
 
 1. Download your sequences from the cloud
-2. Sync your layout with the cloud service
-3. Appear under **EZPlayer** on your EZRGB account, so you can open the full
-   player UI over the internet (**Manage Player**)
+2. Sync your layout, playlists, schedule, and some player settings with the
+   cloud service
+3. Show a **Remote Control Link** on the Cloud screen so you can open the full
+   player UI over the internet (the same UI is also available as **Manage
+   Player** under **EZPlayer** on your EZRGB account)
 
 You only need to register once per show folder. If you reopen a folder that is
 already registered, EZPlayer picks up where you left off.
@@ -46,8 +48,9 @@ time from either:
 ![Cloud screen — not connected](/img/cloud-screen.png)
 
 The QR code and link work the same way as on first launch. On a mid-session
-register, layout and sequences sync on the next cloud poll (or immediately if
-you click **Sync Content Now** / **Sync Layout + Content** on the Cloud screen).
+register, layout, sequences, playlists, and schedule sync on the next cloud
+poll (or immediately if you click **Sync Content Now** / **Sync Layout +
+Content** on the Cloud screen).
 
 You can also start a fresh cloud-managed folder later from
 **Settings → Show Folder → Download Cloud Show**, then register from the Cloud
@@ -69,9 +72,12 @@ When registration succeeds:
 
 - In EZPlayer, the status changes to **Player ID Registered** (green checkmark).
   EZPlayer detects this automatically — you do not need to restart the app.
-- On [EZRGB](https://ezrgb.com), the player appears under **EZPlayer** on your
-  account screen. From there, click **Manage Player** to open the full remote
-  player UI in the browser (open it in a new tab for more screen space).
+- The Cloud screen shows a **Remote Control Link** (QR and URL). Anyone with
+  that link can control the player — treat it like a key. See
+  [Cloud Status / Control UI](./status-control-ui.md#remote-control-link).
+- On [EZRGB](https://ezrgb.com), the player also appears under **EZPlayer** on
+  your account screen. **Manage Player** there opens the same remote UI (open
+  it in a new tab for more screen space).
 
 ## If cloud is paused
 
@@ -84,15 +90,16 @@ as usual. Your player ID and settings are kept while paused.
 What happens next depends on how your show folder is set up:
 
 - **Cloud-managed show** — EZPlayer downloads your layout from EZRGB, then keeps
-  sequences, playlists, and schedule in sync. Watch progress on the
-  [Cloud screen](./status-control-ui.md).
+  sequences, playlists, schedule, and some player settings in sync. Watch
+  progress on the [Cloud screen](./status-control-ui.md).
 - **xLights show folder** — your local layout stays in charge; the cloud mainly
   syncs sequences and other content. You can push layout updates to the cloud
   from the Cloud screen (**Push Layout**), or switch to cloud-managed later.
 
-From the website, use **Manage Player** for remote status and control, or manage
-layout / sequences / schedule on [EZRGB](https://ezrgb.com) and let them sync
-down. See [Using Full Cloud Control](./full-cloud-control.md).
+Use the Cloud screen's **Remote Control Link** (or **Manage Player** on the
+website) for remote status and control, or manage layout / sequences / schedule
+on [EZRGB](https://ezrgb.com) and let them sync down. See
+[Using Full Cloud Control](./full-cloud-control.md).
 
 ## Troubleshooting
 
@@ -110,6 +117,13 @@ down. See [Using Full Cloud Control](./full-cloud-control.md).
 - To reuse a player that is already registered in the cloud, paste its Player ID
   under **Advanced** in the registration dialog. See [Cloud settings](../settings/cloud.md)
   for details.
+
+**You shared the remote-control link and need to revoke it**
+
+- On the Cloud screen, click **Change Player ID**. That moves the existing
+  registration onto a new ID. Old links and QR codes stop working; you do not
+  re-claim the player. Do not use **Generate New** in Advanced for this — that
+  creates a blank ID and requires a full re-registration.
 
 **You want to change how often content syncs, pause cloud, or point at a different
 cloud server**
