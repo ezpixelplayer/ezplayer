@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fillE131PacketHeaderStatic, updateE131PacketHeader } from './E131';
+import { E131Sender, fillE131PacketHeaderStatic, updateE131PacketHeader } from './E131';
+import { UDP_WIRE_OVERHEAD, UdpClient } from './UDP';
+import { SenderJob, SendJob, SendJobSenderState } from '../SenderJob';
 
 /**
  * Reference: the original single-pass header builder (every field, every
@@ -73,5 +75,154 @@ describe('E1.31 data packet header', () => {
         const hdr = Buffer.alloc(HDR);
         fillE131PacketHeaderStatic(hdr, 'n');
         expect(() => updateE131PacketHeader(hdr, 1, 0, 513)).toThrow(/512/);
+    });
+});
+
+/**
+ * Packetization: sends are captured at the point they're handed to the
+ * client (the header buffers are reused per packet slot, so read them now).
+ * No socket is needed; the sender only asks the client isConnected/addSendToBatch.
+ */
+type Captured = { universe: number; seq: number; len: number; data: Buffer };
+function makeSender(): { sender: E131Sender; sends: Captured[] } {
+    const sender = new E131Sender();
+    const sends: Captured[] = [];
+    sender.client = {
+        isConnected: () => true,
+        addSendToBatch: (data: Uint8Array | Uint8Array[]) => {
+            const parts = Array.isArray(data) ? data : [data];
+            const hdr = parts[0];
+            const dv = new DataView(hdr.buffer, hdr.byteOffset, hdr.byteLength);
+            const payload = Buffer.concat(parts.slice(1));
+            // Length fields must agree with what was actually attached.
+            expect(dv.getUint16(123, false)).toBe(payload.length + 1);
+            expect(dv.getUint16(16, false) & 0x0fff).toBe(HDR + payload.length - 16);
+            sends.push({ universe: dv.getUint16(113, false), seq: hdr[111], len: payload.length, data: payload });
+        },
+    } as unknown as UdpClient;
+    return { sender, sends };
+}
+
+/** One frame of nCh channels (byte i = i & 0xff) split into the given parts; big burst unless given. */
+function makeJob(sender: E131Sender, partLens: number[], burstSize = 1_000_000) {
+    const nCh = partLens.reduce((a, b) => a + b, 0);
+    const buf = new Uint8Array(nCh);
+    for (let i = 0; i < nCh; ++i) buf[i] = i & 0xff;
+    const frame = new SendJob();
+    frame.dataBuffers = [buf];
+    const sj = new SenderJob();
+    sj.sender = sender;
+    sj.burstSize = burstSize;
+    let start = 0;
+    for (const len of partLens) {
+        sj.parts.push({ bufIdx: 0, bufStart: start, bufLen: len });
+        start += len;
+    }
+    frame.senders.push(sj);
+    return { frame, sj, buf };
+}
+
+/** Data must be the contiguous next slice of the frame, in order. */
+function expectInOrder(sends: Captured[], buf: Uint8Array) {
+    let off = 0;
+    for (const s of sends) {
+        expect(s.data.equals(Buffer.from(buf.subarray(off, off + s.len)))).toBe(true);
+        off += s.len;
+    }
+    expect(off).toBe(buf.length);
+}
+
+const WIRE = HDR + UDP_WIRE_OVERHEAD;
+
+describe('E131Sender universe plan', () => {
+    it('cuts packets on universe boundaries with mixed sizes', () => {
+        const { sender, sends } = makeSender();
+        sender.pushAtEnd = false;
+        sender.universes = [1, 2, 3, 4].map((universe, i) => ({ universe, size: [510, 510, 512, 100][i] }));
+        const { frame, sj, buf } = makeJob(sender, [1632]);
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        expect(sender.sendPortion(frame, sj, state)).toBe(true);
+        expect(sends.map((s) => s.universe)).toEqual([1, 2, 3, 4]);
+        expect(sends.map((s) => s.len)).toEqual([510, 510, 512, 100]);
+        expect(sends.map((s) => s.seq)).toEqual([0, 1, 2, 3]);
+        expectInOrder(sends, buf);
+        expect(state.wireBytesSent).toBe(1632 + 4 * WIRE);
+        expect(sender.frameWireBytes(sj)).toBe(1632 + 4 * WIRE);
+    });
+
+    it('uses non-consecutive universe numbers from the plan', () => {
+        const { sender, sends } = makeSender();
+        sender.pushAtEnd = false;
+        sender.universes = [1, 2, 7].map((universe) => ({ universe, size: 510 }));
+        const { frame, sj, buf } = makeJob(sender, [1530]);
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        expect(sender.sendPortion(frame, sj, state)).toBe(true);
+        expect(sends.map((s) => s.universe)).toEqual([1, 2, 7]);
+        expect(sends.map((s) => s.len)).toEqual([510, 510, 510]);
+        expectInOrder(sends, buf);
+    });
+
+    it('sends a partial last universe when the controller channel count ends early', () => {
+        const { sender, sends } = makeSender();
+        sender.pushAtEnd = false;
+        sender.universes = [1, 2, 3, 4].map((universe, i) => ({ universe, size: [510, 510, 512, 100][i] }));
+        const { frame, sj, buf } = makeJob(sender, [1200]);
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        expect(sender.sendPortion(frame, sj, state)).toBe(true);
+        expect(sends.map((s) => s.universe)).toEqual([1, 2, 3]);
+        expect(sends.map((s) => s.len)).toEqual([510, 510, 180]);
+        expectInOrder(sends, buf);
+        expect(state.wireBytesSent).toBe(1200 + 3 * WIRE);
+        expect(sender.frameWireBytes(sj)).toBe(1200 + 3 * WIRE);
+    });
+
+    it('falls back to consecutive universes of channelsPerPacket when the plan is empty', () => {
+        const { sender, sends } = makeSender();
+        sender.pushAtEnd = false;
+        sender.startUniverse = 5;
+        sender.channelsPerPacket = 510;
+        const { frame, sj, buf } = makeJob(sender, [1100]);
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        expect(sender.sendPortion(frame, sj, state)).toBe(true);
+        expect(sends.map((s) => s.universe)).toEqual([5, 6, 7]);
+        expect(sends.map((s) => s.len)).toEqual([510, 510, 80]);
+        expectInOrder(sends, buf);
+        expect(sender.frameWireBytes(sj)).toBe(1100 + 3 * WIRE);
+    });
+
+    it('never spans a universe across packets even when job parts split mid-universe', () => {
+        const { sender, sends } = makeSender();
+        sender.pushAtEnd = false;
+        sender.universes = [10, 11, 12].map((universe, i) => ({ universe, size: [510, 512, 300][i] }));
+        // Part boundaries at 300 and 900 fall inside universes 10 and 11.
+        const { frame, sj, buf } = makeJob(sender, [300, 600, 422]);
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        expect(sender.sendPortion(frame, sj, state)).toBe(true);
+        expect(sends.map((s) => s.universe)).toEqual([10, 11, 12]);
+        expect(sends.map((s) => s.len)).toEqual([510, 512, 300]);
+        expectInOrder(sends, buf);
+    });
+
+    it('yields at a packet boundary when the burst budget is spent and resumes on the next universe', () => {
+        const { sender, sends } = makeSender();
+        sender.pushAtEnd = false;
+        sender.universes = [1, 2, 7, 8].map((universe, i) => ({ universe, size: [510, 510, 512, 100][i] }));
+        // Budget covers two packets; the third would overrun.
+        const { frame, sj, buf } = makeJob(sender, [1632], 2 * (510 + WIRE));
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        expect(sender.sendPortion(frame, sj, state)).toBe(false);
+        expect(sends.map((s) => s.universe)).toEqual([1, 2]);
+        expect(sender.sendPortion(frame, sj, state)).toBe(true);
+        expect(sends.map((s) => s.universe)).toEqual([1, 2, 7, 8]);
+        expect(sends.map((s) => s.len)).toEqual([510, 510, 512, 100]);
+        expect(sends.map((s) => s.seq)).toEqual([0, 1, 2, 3]);
+        expectInOrder(sends, buf);
+        expect(state.wireBytesSent).toBe(1632 + 4 * WIRE);
     });
 });

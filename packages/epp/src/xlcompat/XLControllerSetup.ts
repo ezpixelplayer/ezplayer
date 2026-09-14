@@ -170,9 +170,14 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
             esender.localAddress = xc.forceLocalIP;
             esender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
             esender.pushAtEnd = false; // TODO try variety
-            // TODO!  Must fill in universe and ch per packet on multiple universes!  Do not do this now.
+            // Fallback for when xLights gives no usable per-universe plan.
             esender.startUniverse = xc.universeNumbers?.[0] ?? 1;
             esender.channelsPerPacket = xc.universeSizes?.[0] ?? 510;
+            const unums = xc.universeNumbers;
+            const usizes = xc.universeSizes;
+            if (unums && usizes && unums.length === usizes.length) {
+                esender.universes = unums.map((universe, i) => ({ universe, size: usizes[i] }));
+            }
             esender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             try {
                 await esender.connect();

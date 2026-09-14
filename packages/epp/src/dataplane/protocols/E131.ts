@@ -151,8 +151,12 @@ function buildE131SyncPacket(rsyncData: Uint8Array, syncUniverse: number, sequen
     syncData.setUint16(45, syncUniverse, false);
 }
 
+export type E131UniversePlan = { universe: number; size: number };
+
 export class E131Sender extends UDPSender {
-    startUniverse: number = 0; // Unclear how to do refragmentation on this...
+    /** Per-universe plan, in channel order. Empty: consecutive from startUniverse, channelsPerPacket each. */
+    universes: E131UniversePlan[] = [];
+    startUniverse: number = 0;
     syncUniverse: number = 0;
     channelsPerPacket: number = 510;
     pushAtEnd: boolean = true;
@@ -190,10 +194,29 @@ export class E131Sender extends UDPSender {
         return E131_PACKET_HEADERLEN + UDP_WIRE_OVERHEAD;
     }
 
+    /** Universe number and channel budget of the idx'th packet in a frame. */
+    private planAt(idx: number): E131UniversePlan {
+        const plan = this.universes;
+        let p: E131UniversePlan;
+        if (!plan.length) {
+            p = { universe: this.startUniverse + idx, size: this.channelsPerPacket };
+        } else if (idx < plan.length) {
+            p = plan[idx];
+        } else {
+            // Data past the plan keeps flowing on consecutive universes rather than being dropped.
+            const last = plan[plan.length - 1];
+            p = { universe: last.universe + (idx - plan.length + 1), size: last.size };
+        }
+        // A zero-size universe would never make progress; oversize would fail the header.
+        const size = Math.max(1, Math.min(E131_MAX_PAYLOAD, p.size));
+        return size === p.size ? p : { universe: p.universe, size };
+    }
+
     frameWireBytes(job: SenderJob): number {
         let payload = 0;
         for (const p of job.parts) payload += p.bufLen;
-        const packets = Math.ceil(payload / this.channelsPerPacket);
+        let packets = 0;
+        for (let left = payload; left > 0; ++packets) left -= this.planAt(packets).size;
         const push = this.pushAtEnd ? E131_SYNCPACKET_LEN + UDP_WIRE_OVERHEAD : 0;
         return payload + packets * this.packetWireOverhead() + push;
     }
@@ -209,10 +232,9 @@ export class E131Sender extends UDPSender {
         let bytesThisPacket = 0;
         let packetBufs: Uint8Array[] = [];
 
-        // TODO: We may be asked to do scattered universes and fractional packets.  Not now, but at some point.
         const sendOut = (sourceName: string, _last: boolean) => {
             if (!bytesThisPacket) return;
-            const univ = state.sendPacketNum() + this.startUniverse;
+            const univ = this.planAt(state.sendPacketNum()).universe;
             if (this.curPacketNum >= this.headers.length) {
                 const nh = Buffer.alloc(E131_PACKET_HEADERLEN);
                 fillE131PacketHeaderStatic(nh, sourceName);
@@ -230,8 +252,8 @@ export class E131Sender extends UDPSender {
             ++this.curPacketNum;
         };
 
-        // Go through the parts, packetizing; stop at a packet boundary once the
-        // burst budget is spent (the scheduler calls again at the paced time).
+        // Go through the parts, packetizing on universe boundaries; stop at a packet
+        // boundary once the burst budget is spent (the scheduler calls again at the paced time).
         for (; state.curPart < job.parts.length; ) {
             const part = job.parts[state.curPart];
             const leftThisJob = part.bufLen - state.curOffset;
@@ -241,7 +263,7 @@ export class E131Sender extends UDPSender {
                 continue;
             }
 
-            const avToSend = this.channelsPerPacket - bytesThisPacket;
+            const avToSend = this.planAt(state.sendPacketNumber).size - bytesThisPacket;
 
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.

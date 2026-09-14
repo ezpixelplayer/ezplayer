@@ -72,3 +72,75 @@ export {
     FSeqPrefetchCache,
     FrameTimeOrNumber,
 } from './formats/FSeqPrefetcher';
+
+export {
+    FramePool,
+    FRAME_POOL_FORMAT,
+    SLOT_FREE,
+    SLOT_COMPOSING,
+    SLOT_READY,
+    X_MEANING_NONE,
+    X_MEANING_ALPHA,
+    X_MEANING_WHITE,
+    X_MEANING_PRIORITY,
+} from './pipeline/FramePool';
+export type { FrameMeta, FramePoolOptions, AcquiredFrame, XMeaning } from './pipeline/FramePool';
+
+export { compileLayout, classifyRoles, layoutManifest, findModel, nodeOffset, parseHexColor, fnv1a } from './pipeline/Layout';
+export type {
+    RoleKind,
+    ChannelRoleSpec,
+    NodeRun,
+    LayoutModelSpec,
+    LayoutModel,
+    LayoutOptions,
+    DisplayLayout,
+    LayoutManifest,
+    NodeCodec,
+    NodeCodecKind,
+    RawSpan,
+} from './pipeline/Layout';
+
+export {
+    compileInputMap,
+    applyInputMap,
+    applyInputMapChunk,
+    inputMapProgram,
+    descriptorHash,
+    buildInverseLut,
+    IN_RAW,
+    IN_RGB,
+    IN_RGBW,
+    IN_MONO,
+    OP_INTS,
+} from './pipeline/InputMap';
+export type { ChannelDescriptor, ChannelDescriptorModel, InputMap, InputMapProgram } from './pipeline/InputMap';
+
+export { compileOutputMap, applyOutput, buildForwardLut, OUT_RAW, OUT_RGB, OUT_RGBW, OUT_MONO, OUT_OP_INTS } from './pipeline/OutputMap';
+export type { OutputSpec, OutputSegmentSpec, OutputPolicy, CompiledOutput, OutputMap } from './pipeline/OutputMap';
+
+export {
+    blendNodes,
+    blendModeFromName,
+    fillNodes,
+    lutNodes,
+    scaleNodes,
+    isBlack,
+    dynamicGammaNodes,
+    hsvToRgb,
+    testPatternNodes,
+    BLEND_MAX,
+    BLEND_REPLACE,
+    BLEND_UNDERLAY,
+    BLEND_ADD,
+    BLEND_SUBTRACT,
+    BLEND_MULTIPLY,
+    BLEND_SCREEN,
+    BLEND_ALPHA,
+    BLEND_MIN,
+    BLEND_MODE_NAMES,
+} from './pipeline/Kernels';
+export type { BlendMode, TestPatternKind, TestPatternParams } from './pipeline/Kernels';
+
+export { ParamsBlock } from './pipeline/Params';
+export { StatsBlock } from './pipeline/Stats';
