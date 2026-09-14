@@ -55,7 +55,6 @@ import {
 if (!parentPort) throw new Error('No parentPort in worker');
 
 import {
-    openControllersForDataSend,
     FSeqPrefetchCache,
     ModelRec,
     controllersFromParsedXlights,
@@ -98,7 +97,8 @@ import { begin as hirezTimerBegin } from '../win-hirez-timer/winhirestimer';
 
 import process from 'node:process';
 import { totalmem } from 'node:os';
-import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
+import { OverallFrameSendStats, resetFrameSendStats, xbusySleep } from './framesend';
+import { PixelPipeline, blendModeFromSettings } from './pixelpipeline';
 import { MultiSyncSender } from './multisync';
 import { fileBaseName } from './pathnames';
 
@@ -795,7 +795,7 @@ function processCommand(cmd: EZPlayerCommand) {
             // only the controller output (UDP) is gated. Used for dry-run/benchmark
             // playback where no controllers are reachable.
             outputSuppressed = cmd.command === 'suppressoutput';
-            if (curSender) curSender.outputEnabled = !outputSuppressed;
+            curPipeline?.settings({ outputEnabled: !outputSuppressed });
             emitInfo(outputSuppressed ? 'Controller output suppressed' : 'Controller output active');
             break;
         }
@@ -954,6 +954,8 @@ const playbackParams = {
     backgroundFseqPrefetchTime: 2 * 1000,
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
+    // Frames are composed this far ahead of their wire time so the output worker can pace the send.
+    composeLeadMs: 50,
 };
 
 type ResolvedPlay = {
@@ -1047,7 +1049,7 @@ function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
     multiSync.configure(settings.sync?.multisync);
     sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
-    if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
+    curPipeline?.settings({ blackFramesEnabled: sendIdleBlackFrames });
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1252,7 +1254,7 @@ const multiSync = new MultiSyncSender();
 let sendIdleBlackFrames = true;
 /** `suppressoutput` command: frames are produced but no packets go to controllers. */
 let outputSuppressed = false;
-let curSender: FrameSender | undefined;
+let curPipeline: PixelPipeline | undefined;
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
 // (folder change or an explicit forceRestart / "reload" from the UI) rather than a
@@ -2044,38 +2046,20 @@ async function processQueue() {
         });
     }
 
-    if (!fseqCache) {
-        fseqCache = new FSeqPrefetchCache(
-            {
-                now: performance.now(),
-                fseqSpace: playbackParams.fseqSpace,
-                decompZstd: decompressZStdWithWorker,
-            },
-            emitError,
-            emitWarning,
-            emitInfo,
-        );
-    }
-
-    const sender: FrameSender = new FrameSender();
-    sender.emitError = (e) => emitError(e.message);
-    sender.emitWarning = emitWarning;
     // Override for the paced-send slot fraction (0 = pacing off, one burst
     // per frame); the built-in default otherwise applies.
+    let maxSlotFraction = 0.5;
     {
         const f = Number(process.env.EZP_SEND_SLOT_FRACTION);
         if (process.env.EZP_SEND_SLOT_FRACTION !== undefined && Number.isFinite(f) && f >= 0 && f <= 0.95) {
-            sender.maxSlotFraction = f;
+            maxSlotFraction = f;
         }
         emitInfo(
-            sender.maxSlotFraction > 0
-                ? `Paced send: slot fraction ${sender.maxSlotFraction}`
+            maxSlotFraction > 0
+                ? `Paced send: slot fraction ${maxSlotFraction}`
                 : 'Paced send off: each frame goes out as one burst',
         );
     }
-    sender.blackFramesEnabled = sendIdleBlackFrames;
-    sender.outputEnabled = !outputSuppressed;
-    curSender = sender;
 
     try {
         if (!modelCoordinates || modelCoordinates.size === 0) {
@@ -2093,10 +2077,6 @@ async function processQueue() {
 
         // Per-controller max-FPS overrides from our records in the show folder
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
-        const sendJob = await openControllersForDataSend(controllers, {
-            ddpPort: latestSettings?.advanced?.ddpPort,
-            fpsOverrides,
-        });
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
             // Pings are cheap; a whole show's controllers go out in one burst.
@@ -2104,7 +2084,6 @@ async function processQueue() {
             maxSamples: 10,
             intervalS: 5,
         });
-        sender.job = sendJob;
         modelRecs = models;
         controllerStates = controllers;
         for (const c of controllers) {
@@ -2115,9 +2094,8 @@ async function processQueue() {
                 `Controller: ${xc?.name} ${xc?.address} ${xc?.activeState} ${xc?.type} ${xc?.universeNumbers} ${xc?.universeSizes} ${xc?.keepChannelNumbers}`,
             );
             emitInfo(
-                `Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}; ${c.sender?.minFrameTime()} ms frame time`,
+                `Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}`,
             );
-            emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
             emitInfo('');
         }
         // Start with the channel ceiling implied by the configured DMX controllers.
@@ -2146,9 +2124,6 @@ async function processQueue() {
             nChannels = modelChannelMax;
         }
 
-        sender.nChannels = nChannels;
-        sender.blackFrame = new Uint8Array(nChannels);
-        sender.mixFrame = new Uint8Array(nChannels);
         frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
         frameExportRing = new LatestFrameRingBuffer({
             buffer: frameExportBuffer,
@@ -2156,7 +2131,37 @@ async function processQueue() {
             slotCount: 4,
             isWriter: true,
         });
-        sender.exportBuffer = frameExportRing;
+
+        // The pipeline owns the layout, the frame pool, and the output worker (sockets included).
+        const pipeline = await PixelPipeline.create({
+            models: parsedControllerDoc?.models ?? [],
+            coords: modelCoordinates,
+            controllers,
+            nChannels,
+            openOpts: { ddpPort: latestSettings?.advanced?.ddpPort, fpsOverrides },
+            settings: { outputEnabled: !outputSuppressed, blackFramesEnabled: sendIdleBlackFrames, maxSlotFraction },
+            legacyRing: frameExportBuffer,
+            log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
+        });
+        curPipeline = pipeline;
+        for (const c of controllers) {
+            const r = c.report;
+            emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
+        }
+
+        // Frames are cached in canonical form for this layout; a new layout means a new cache.
+        if (fseqCache) await fseqCache.shutdown();
+        fseqCache = new FSeqPrefetchCache(
+            {
+                now: performance.now(),
+                fseqSpace: playbackParams.fseqSpace,
+                decompZstd: decompressZStdWithWorker,
+                canonicalizer: pipeline.canonicalizer,
+            },
+            emitError,
+            emitWarning,
+            emitInfo,
+        );
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
 
         // Allocate audio ring buffer: 50 slots × 12000 max samples ≈ 2.3 MB
@@ -2171,6 +2176,14 @@ async function processQueue() {
         console.error(`[processQueue] Full error object:`, e);
         playbackStats.lastError = err.message;
     }
+
+    if (!curPipeline || !fseqCache) {
+        emitError('[processQueue] pipeline did not start; playback loop not entered');
+        return;
+    }
+    const pipeline = curPipeline;
+    // Narrowed for the loop body; the cache is only replaced by a fresh processQueue.
+    const fseqCacheNow = fseqCache;
 
     emitInfo(`Player running`);
 
@@ -2193,11 +2206,7 @@ async function processQueue() {
         while (true) {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
-                await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({
-                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                    onlyIfEnabled: true,
-                });
+                await sleepms(60); // the output worker sends a final black as it closes
                 multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
@@ -2270,10 +2279,9 @@ async function processQueue() {
             }
             if (curPN - lastPStatusUpdatePN >= 1000 && iteration % 4 === 1) {
                 playbackStats.iteration = iteration;
-                playbackStats.avgSendTime = avgFrameSendTime(playbackStatsAgg);
+                pullOutputStats(pipeline);
                 playbackStats.measurementPeriod = curPN - playbackStatsAgg.intervalStart;
                 playbackStats.idleTimePeriod = playbackStatsAgg.totalIdleTime;
-                playbackStats.sendTimePeriod = playbackStatsAgg.totalSendTime;
                 // Histogram values are ns; max is 0 while no sample landed.
                 playbackStats.loopDelay = {
                     p50: loopDelayHist.percentile(50) / 1e6,
@@ -2283,6 +2291,7 @@ async function processQueue() {
                 loopDelayHist.reset();
                 sendPlayerStateUpdate();
                 playbackStats.maxSendTimeHistorical = 0;
+                pipeline.resetPeriodGauges();
                 resetFrameSendStats(playbackStatsAgg, curPN);
                 lastPStatusUpdatePN += 1000 * Math.floor((curPN - lastPStatusUpdatePN) / 1000);
             }
@@ -2668,10 +2677,7 @@ async function processQueue() {
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
                 multiSync.onIdle();
-                await sender.sendBlackFrame({
-                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                    onlyIfEnabled: true,
-                });
+                presentIdleBlack(pipeline, targetFrameRTC);
                 targetFrameRTC += playbackParams.idleSleepInterval;
 
                 await sleepUntil(targetFrameRTC - 50);
@@ -2682,10 +2688,7 @@ async function processQueue() {
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
                 multiSync.onIdle();
-                await sender.sendBlackFrame({
-                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                    onlyIfEnabled: true,
-                });
+                presentIdleBlack(pipeline, targetFrameRTC);
                 targetFrameRTC += playbackParams.idleSleepInterval;
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
@@ -2702,7 +2705,7 @@ async function processQueue() {
             }
 
             const frameTimeOffset = contentTimeMS(curForegroundSeq, foregroundAction.offsetMS ?? 0);
-            const header = fseqCache.getHeaderInfo({ fseqfile: fsf });
+            const header = fseqCacheNow.getHeaderInfo({ fseqfile: fsf });
             if (!header?.ref) {
                 emitError(`Sequence header for ${fsf} was not ready.`);
                 ++playbackStats.missedHeadersCumulative;
@@ -2729,7 +2732,7 @@ async function processQueue() {
                     emitError(`Error: No FSEQ in scheduled background item`);
                 } else {
                     const bframeTimeOffset = contentTimeMS(curBackgroundSeq, backgroundAction.offsetMS ?? 0);
-                    const header = fseqCache.getHeaderInfo({ fseqfile: bsf });
+                    const header = fseqCacheNow.getHeaderInfo({ fseqfile: bsf });
                     if (!header?.ref) {
                         emitError(`Sequence header for ${bsf} was not ready.`);
                         ++playbackStats.missedHeadersCumulative;
@@ -2737,7 +2740,7 @@ async function processQueue() {
                         bframeTimeOffset >= 0 &&
                         bframeTimeOffset < header.ref.header.frames * header.ref.header.msperframe
                     ) {
-                        const bres = fseqCache.getFrame(bsf, { time: bframeTimeOffset });
+                        const bres = fseqCacheNow.getFrame(bsf, { time: bframeTimeOffset });
                         bframeRef = bres?.ref;
                         bframeNum = Math.floor(bframeTimeOffset / header.ref.header.msperframe);
                         if (!bres?.ref?.frame) {
@@ -2751,25 +2754,19 @@ async function processQueue() {
             if (targetFrameNum < 0 || targetFrameNum >= header.ref.header.frames) {
                 // Lead/trail pad: the background still shows
                 if (bframeRef?.frame) {
-                    targetFrameRTC += await sender.sendNextFrameAt({
-                        frame: bframeRef,
-                        bframe: undefined,
-                        targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                        targetFrameNum: bframeNum,
-                        playbackStats,
-                        playbackStatsAgg,
+                    targetFrameRTC += await presentFrame(pipeline, {
+                        fg: bframeRef,
+                        targetRTC: targetFrameRTC,
+                        frameNumber: bframeNum,
                         frameInterval,
-                        skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
-                        dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
                     });
                 } else {
-                    await sender.sendBlackFrame({
-                        targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                        playbackStats,
-                        playbackStatsAgg,
+                    bframeRef?.release();
+                    targetFrameRTC += await presentFrame(pipeline, {
+                        targetRTC: targetFrameRTC,
+                        frameNumber: -1,
+                        frameInterval,
                     });
-                    targetFrameRTC += frameInterval;
-                    await sleepUntil(targetFrameRTC - 50);
                 }
                 continue;
             }
@@ -2778,21 +2775,95 @@ async function processQueue() {
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
             multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
-            const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
-            targetFrameRTC += await sender.sendNextFrameAt({
-                frame: frameRef?.ref,
-                bframe: bframeRef,
-                targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                targetFrameNum,
-                playbackStats,
-                playbackStatsAgg,
+            const frameRef = fseqCacheNow.getFrame(fsf, { num: targetFrameNum });
+            if (!frameRef?.ref?.frame) ++playbackStats.missedFramesCumulative;
+            targetFrameRTC += await presentFrame(pipeline, {
+                fg: frameRef?.ref,
+                bg: bframeRef,
+                targetRTC: targetFrameRTC,
+                frameNumber: targetFrameNum,
                 frameInterval,
-                skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
-                dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
             });
         }
     } finally {
-        sender.close();
+        curPipeline = undefined;
+        await pipeline.close();
+    }
+}
+
+/** Copy the output worker's counters into the reported statistics. */
+let lastOutputSent = 0;
+let lastOutputActiveMs = 0;
+function pullOutputStats(pipeline: PixelPipeline) {
+    const { counters, gauges } = pipeline.outputStats();
+    playbackStats.sentFramesCumulative = counters.framesSent;
+    playbackStats.cframesSkippedDueToDirectiveCumulative = counters.cframesSkippedDirective;
+    playbackStats.cframesSkippedDueToIncompletePriorCumulative = counters.cframesSkippedIncompletePrior;
+    playbackStats.cpacketsDroppedBySenderCumulative = gauges.packetsDroppedBySender;
+    playbackStats.maxSendTimeHistorical = Math.max(playbackStats.maxSendTimeHistorical, gauges.maxSendMs);
+    const sent = counters.framesSent - lastOutputSent;
+    const active = gauges.sendActiveMsTotal - lastOutputActiveMs;
+    playbackStats.avgSendTime = sent > 0 ? active / sent : 0;
+    playbackStats.sendTimePeriod = active;
+    lastOutputSent = counters.framesSent;
+    lastOutputActiveMs = gauges.sendActiveMsTotal;
+}
+
+/** An idle black frame: previews see it, and the output worker sends it only when idle black is enabled. */
+function presentIdleBlack(pipeline: PixelPipeline, targetRTC: number) {
+    pipeline.compose({ timeMs: targetRTC, frameIntervalMs: playbackParams.idleSleepInterval, frameNumber: -1, idle: true });
+}
+
+/**
+ * Compose the frame due on the wire at targetRTC, one lead ahead, and publish
+ * it for the output worker. No sources means a black frame. Returns the ms of
+ * frame advance (0 when the target is still far off and the loop should come back).
+ */
+async function presentFrame(
+    pipeline: PixelPipeline,
+    args: { fg?: FrameReference; bg?: FrameReference; targetRTC: number; frameNumber: number; frameInterval: number },
+): Promise<number> {
+    try {
+        const lead = Math.min(args.frameInterval, playbackParams.composeLeadMs);
+        const targetPN = rtcConverter.computePerfNow(args.targetRTC);
+        const composeAtPN = targetPN - lead;
+        const nowPN = performance.now();
+        if (composeAtPN - nowPN > args.frameInterval * 2) {
+            // Far ahead: keep the display black and come back around.
+            playbackStatsAgg.totalIdleTime += args.frameInterval;
+            await xbusySleep(nowPN + args.frameInterval, emitWarning);
+            presentIdleBlack(pipeline, rtcConverter.computeTime(performance.now()));
+            return 0;
+        }
+        if (nowPN - targetPN > playbackParams.skipFrameIfLateByMoreThan) {
+            ++playbackStats.skippedFramesCumulative;
+            return args.frameInterval;
+        }
+        const sleep = composeAtPN - nowPN;
+        if (sleep > playbackParams.dontSleepIfDurationLessThan) {
+            playbackStatsAgg.totalIdleTime += sleep;
+            await xbusySleep(composeAtPN, emitWarning);
+        }
+        const t = performance.now();
+        if (t < composeAtPN) {
+            playbackStats.worstAdvanceHistorical = Math.max(playbackStats.worstAdvanceHistorical, composeAtPN - t);
+        } else {
+            playbackStats.worstLagHistorical = Math.max(playbackStats.worstLagHistorical, t - composeAtPN);
+        }
+        const ok = pipeline.compose({
+            fg: args.fg?.frame,
+            bg: args.bg?.frame,
+            bgMode: blendModeFromSettings(latestSettings?.backgroundSequence === 'underlay' ? 'underlay' : 'max'),
+            timeMs: args.targetRTC,
+            frameIntervalMs: args.frameInterval,
+            frameNumber: args.frameNumber,
+        });
+        playbackStatsAgg.totalMixTime += performance.now() - t;
+        if (!ok) ++playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
+        return args.frameInterval;
+    } finally {
+        args.fg?.release();
+        args.bg?.release();
     }
 }
 

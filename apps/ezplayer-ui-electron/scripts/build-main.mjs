@@ -144,6 +144,7 @@ await run(
 await run('mainsrc/workers/playbackmaster.ts', 'dist/workers/playbackmaster.js');
 await run('mainsrc/workers/mp3decodeworker.ts', 'dist/workers/mp3decodeworker.js');
 await run('mainsrc/workers/zstdworker.ts', 'dist/workers/zstdworker.js');
+await run('mainsrc/workers/outputworker.ts', 'dist/workers/outputworker.js');
 await run('mainsrc/workers/pingworker.ts', 'dist/workers/pingworker.js');
 await run('mainsrc/workers/rfsync.ts', 'dist/workers/rfsync.js');
 await run('mainsrc/workers/ezvcsync.ts', 'dist/workers/ezvcsync.js');

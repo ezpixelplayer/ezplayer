@@ -155,3 +155,4 @@ export {
     descriptorToFseqHeader,
     FSEQ_DESCRIPTOR_HEADER,
 } from './pipeline/xlAdapter';
+export { FRAME_FLAG_IDLE, FRAME_FLAG_BLACK } from './pipeline/FramePool';
