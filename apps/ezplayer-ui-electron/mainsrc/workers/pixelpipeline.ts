@@ -6,7 +6,6 @@
 
 import dgram from 'node:dgram';
 import {
-    applyOutput,
     blendModeFromName,
     blendNodes,
     decodeDescriptorHeader,
@@ -22,7 +21,6 @@ import {
     compileInputMap,
     compileLayout,
     compileOutputMap,
-    descriptorFromFseqHeaders,
     descriptorFromSpecs,
     descriptorHash,
     FRAME_FLAG_BLACK,
@@ -36,7 +34,6 @@ import {
     StatsBlock,
     type BlendMode,
     type ChannelDescriptor,
-    type CompiledOutput,
     type ControllerState,
     type DisplayLayout,
     type FSEQHeader,
@@ -118,8 +115,6 @@ export class PixelPipeline {
     /** Descriptors seen this session: by fingerprint, and by a hash of the embedded xLights files they came from. */
     private readonly descriptors = new Map<string, ChannelDescriptor>();
     private readonly log: PixelPipelineOptions['log'];
-    private composeScratch: Uint8Array;
-    private lastWasBlack = false;
     private closed = false;
 
     private constructor(opts: PixelPipelineOptions, layout: DisplayLayout, specs: LayoutModelSpec[]) {
@@ -142,7 +137,6 @@ export class PixelPipeline {
         this.output.onLog = opts.log;
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
-        this.composeScratch = new Uint8Array(0);
         this.overlays = new OverlayManager(layout);
     }
 
@@ -172,9 +166,6 @@ export class PixelPipeline {
                 this.log('warn', `[pipeline] ${fseqfile}: EZ header read failed (${(e as Error).message}); falling back`);
             }
         }
-        const inline = descriptorFromFseqHeaders(header.headers);
-        if (inline) return inline;
-
         const xr = header.extendedHeaders[XL_RGBEFFECTS_HEADER];
         const xn = header.extendedHeaders[XL_NETWORKS_HEADER];
         if (xr && xn) {
@@ -280,12 +271,9 @@ export class PixelPipeline {
         opts.controllers.forEach((c, i) => {
             if (res.reports[i]) c.report = res.reports[i];
         });
-        p.minFrameTimes = res.minFrameTimes;
         p.startOverlayReceiver(opts.overlayPort ?? 0);
         return p;
     }
-
-    minFrameTimes: number[] = [];
 
     /** The Input Map for a sequence file, from whichever descriptor it resolves to. */
     canonicalizer = async (fseqfile: string, header: FSEQHeader, fileLayout: FileLayoutLike): Promise<InputMapProgram | undefined> => {
@@ -364,7 +352,6 @@ export class PixelPipeline {
         if (!black && a.brightness !== undefined && a.brightness < 1) {
             scaleNodes(bytes, stride, 0, L.nodeCount, a.brightness, L.xMeaning === 2);
         }
-        this.lastWasBlack = black;
         this.pool.publish(slot, {
             frameNumber: a.frameNumber,
             pipelineId: this.id,
@@ -403,11 +390,6 @@ export class PixelPipeline {
             this.overlaySocket = undefined;
         }
         await this.output.close();
-    }
-
-    /** Encode the latest frame into channel space on this thread (diagnostics / tests). */
-    encodeLegacy(frame: Uint8Array, out: Uint8Array, legacy: CompiledOutput) {
-        applyOutput(legacy, this.layout.pixelStride, frame, 0, out);
     }
 }
 

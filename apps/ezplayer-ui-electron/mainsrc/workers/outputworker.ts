@@ -127,11 +127,7 @@ class OutputLoop {
         });
         this.job = job;
         this.job.dataBuffers = this.wire;
-        post({
-            type: 'opened',
-            reports: this.controllers.map((c) => c.report),
-            minFrameTimes: this.controllers.map((c) => c.sender?.minFrameTime() ?? 0),
-        });
+        post({ type: 'opened', reports: this.controllers.map((c) => c.report) });
     }
 
     /** Leave room in the interval for the next frame's encode and the packetizing itself. */
@@ -295,7 +291,7 @@ port.on('message', async (msg: OutputWorkerInMsg) => {
                 void loop.run();
             } catch (e) {
                 log('error', `[output] open failed: ${(e as Error).message}`);
-                post({ type: 'opened', reports: msg.controllers.map(() => undefined), minFrameTimes: [] });
+                post({ type: 'opened', reports: msg.controllers.map(() => undefined) });
             }
             break;
         }

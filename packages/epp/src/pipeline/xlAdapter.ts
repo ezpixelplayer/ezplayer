@@ -8,9 +8,6 @@ import type { GetNodeResult, XlModelChannelInfo, ChannelRole } from 'xllayoutcal
 import { ChannelRoleSpec, LayoutModelSpec, NodeRun } from './Layout';
 import { ChannelDescriptor, ChannelDescriptorModel } from './InputMap';
 
-/** FSEQ v2 variable-header key carrying a channel descriptor as JSON. */
-export const FSEQ_DESCRIPTOR_HEADER = 'EZ';
-
 function rolesFromRgbOffsets(m: XlModelChannelInfo): ChannelRoleSpec[] {
     const cpn = m.nodeCount > 0 ? Math.round(m.channelCount / m.nodeCount) : 3;
     if (m.simple && cpn === 3) {
@@ -122,21 +119,3 @@ export function descriptorFromSpecs(specs: LayoutModelSpec[], totalChannels: num
     return { totalChannels, models, source };
 }
 
-/** Parse a descriptor from fseq variable headers, if the file carries one. */
-export function descriptorFromFseqHeaders(headers: Record<string, string> | undefined): ChannelDescriptor | undefined {
-    const raw = headers?.[FSEQ_DESCRIPTOR_HEADER];
-    if (!raw) return undefined;
-    try {
-        const d = JSON.parse(raw) as ChannelDescriptor;
-        if (!d || !Array.isArray(d.models) || typeof d.totalChannels !== 'number') return undefined;
-        d.source = 'header';
-        return d;
-    } catch {
-        return undefined;
-    }
-}
-
-/** Serialize a descriptor for an fseq variable header. */
-export function descriptorToFseqHeader(d: ChannelDescriptor): string {
-    return JSON.stringify({ totalChannels: d.totalChannels, models: d.models });
-}

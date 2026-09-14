@@ -39,7 +39,7 @@ export type OutputWorkerInMsg =
 
 export type OutputWorkerOutMsg =
     | { type: 'ready' }
-    | { type: 'opened'; reports: (OpenControllerReport | undefined)[]; minFrameTimes: number[] }
+    | { type: 'opened'; reports: (OpenControllerReport | undefined)[] }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string }
     | { type: 'closed' };
 

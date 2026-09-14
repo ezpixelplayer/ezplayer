@@ -29,7 +29,7 @@ export class OutputWorkerHandle {
     private ready: Promise<void>;
     private closed: Promise<void>;
     private resolveClosed: () => void = () => {};
-    private pendingOpen: ((r: { reports: (OpenControllerReport | undefined)[]; minFrameTimes: number[] }) => void) | undefined;
+    private pendingOpen: ((r: { reports: (OpenControllerReport | undefined)[] }) => void) | undefined;
     onLog: (level: 'info' | 'warn' | 'error', msg: string) => void = () => {};
 
     constructor() {
@@ -47,7 +47,7 @@ export class OutputWorkerHandle {
         this.worker.on('message', (msg: OutputWorkerOutMsg) => {
             switch (msg.type) {
                 case 'opened':
-                    this.pendingOpen?.({ reports: msg.reports, minFrameTimes: msg.minFrameTimes });
+                    this.pendingOpen?.({ reports: msg.reports });
                     this.pendingOpen = undefined;
                     break;
                 case 'log':
@@ -64,7 +64,7 @@ export class OutputWorkerHandle {
 
     async open(msg: Omit<OutputWorkerOpenMsg, 'type'>) {
         await this.ready;
-        return new Promise<{ reports: (OpenControllerReport | undefined)[]; minFrameTimes: number[] }>((resolve) => {
+        return new Promise<{ reports: (OpenControllerReport | undefined)[] }>((resolve) => {
             this.pendingOpen = resolve;
             this.post({ type: 'open', ...msg });
         });
