@@ -1,5 +1,5 @@
 /**
- * `action` — run a driver-enumerated management action (reboot, restart, …)
+ * `action` — run a driver-enumerated management action (reboot, restart, ...)
  * against one controller, headless.
  *
  * Standalone: probes and dispatches the driver action directly (no app needed
@@ -40,7 +40,7 @@ export async function run(args: string[]): Promise<number> {
         return 1;
     }
 
-    process.stderr.write(`Probing ${ip}${fppProxy ? ` via ${fppProxy}` : ''}…\n`);
+    process.stderr.write(`Probing ${ip}${fppProxy ? ` via ${fppProxy}` : ''}...\n`);
     const probe = await probeController(ip, fppProxy);
     if (!probe.success || !probe.driver) {
         console.error(`action: ${probe.error ?? 'no controller responded'} (${ip})`);

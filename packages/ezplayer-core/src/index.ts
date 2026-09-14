@@ -34,6 +34,8 @@ export type {
     CloudPlayerSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    AudioOutputConfig,
+    VolumeControlState,
     CloudPollScheduleEntry,
     PlayerWebSocketSnapshot,
     PlayerWebSocketPing,
@@ -64,6 +66,10 @@ export type {
     ReleaseInfo,
     UpdateCommand,
     AutoUpdateOpsState,
+    DiagnosticsConsent,
+    LoginItemState,
+    AppSettingsState,
+    AppSettingsCommand,
 } from './types/DataTypes';
 
 export type {
@@ -95,11 +101,25 @@ export type {
     PortDriftKind,
     PortReconcile,
     ControllerHealth,
+    ControllerSerialPortIntent,
+    ControllerSerialModelIntent,
+    ControllerPanelMatrixIntent,
+    ControllerVirtualMatrixIntent,
+    ControllerSerialPort,
+    SerialPortReconcile,
+    ControllerPanelMatrix,
+    ControllerVirtualMatrix,
+    PanelMatrixReconcile,
+    VirtualMatrixReconcile,
 } from './types/ControllerOps';
+export { effectiveMaxFps } from './types/ControllerOps';
 
 export {
     reconcileControllers,
     reconcilePorts,
+    reconcileSerialPorts,
+    reconcilePanelMatrices,
+    reconcileVirtualMatrices,
     hasPortDrift,
     reconcileInputs,
     overlayHealth,
@@ -117,7 +137,14 @@ export {
     portIntentFromModelIntents,
     PORTS_PER_SMARTREMOTE,
 } from './util/controllerPortMap';
-export type { PortMap, PortMapBox, PortMapRow, PortMapString } from './util/controllerPortMap';
+export type {
+    PortMap,
+    PortMapBox,
+    PortMapRow,
+    PortMapSerialRow,
+    PortMapString,
+    PortMapOptions,
+} from './util/controllerPortMap';
 
 export type {
     VcSong,
@@ -135,7 +162,6 @@ export type {
     AutoDetectedSongFiles,
     AudioDevice,
     AudioChunk,
-    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     GetNodeResult,
@@ -144,6 +170,7 @@ export type {
     ImageInfo,
     AudioTagMetadata,
     BatchImportFailure,
+    BatchImportProgress,
     BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
@@ -154,6 +181,19 @@ export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
 export { isSequencePlayable } from './util/seqFilter';
+
+export {
+    CONVERTIBLE_AUDIO_EXTENSIONS,
+    MP3_EXTENSION,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    audioExtension,
+    isSupportedAudioName,
+    needsAudioConversion,
+    songVolumeScale,
+} from './util/audioFormats';
+
+export { isPhysicalAudioOutput, resolveAudioOutputDevice } from './util/audioOutputs';
+export type { AudioOutputTarget } from './util/audioOutputs';
 
 export {
     type PlayAction,

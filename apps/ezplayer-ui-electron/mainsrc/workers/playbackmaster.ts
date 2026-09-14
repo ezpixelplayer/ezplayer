@@ -36,6 +36,9 @@ import type {
     ControllerPortIntent,
     ControllerModelIntent,
     ControllerOutputIntent,
+    ControllerSerialPortIntent,
+    ControllerPanelMatrixIntent,
+    ControllerVirtualMatrixIntent,
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
@@ -46,6 +49,7 @@ import {
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
+    songVolumeScale,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -61,6 +65,8 @@ import {
     CacheStats,
     loadXmlFile,
     resolveShowAssetPath,
+    ExplicitControllerDesc,
+    readControllerFpsOverrides,
 } from '@ezplayer/epp';
 
 import {
@@ -112,6 +118,7 @@ import {
     setEzvcSchedule,
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
+import { playableAudioPath } from '../data/derived-audio.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -1359,8 +1366,17 @@ async function loadXmlCoordinates() {
             const { controllers, models } = parsed;
             const portIntent = buildPortIntent(models);
             const modelIntents = buildModelIntents(models);
+            const serialIntent = buildSerialIntent(models);
+            const matrixIntent = buildMatrixIntents(models, verticalMatrixNames(xrgb));
             knownControllers = controllers.map((c) =>
-                xlControllerToKnown(c, portIntent.get(c.name), modelIntents.get(c.name)),
+                xlControllerToKnown(
+                    c,
+                    portIntent.get(c.name),
+                    modelIntents.get(c.name),
+                    serialIntent.get(c.name),
+                    matrixIntent.panels.get(c.name),
+                    matrixIntent.virtuals.get(c.name),
+                ),
             );
             emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
         } catch (cErr) {
@@ -1622,7 +1638,13 @@ function xlControllerToKnown(
     c: XlControllerInfo,
     ports?: ControllerPortIntent[],
     modelIntents?: ControllerModelIntent[],
+    serialPorts?: ControllerSerialPortIntent[],
+    panelMatrices?: ControllerPanelMatrixIntent[],
+    virtualMatrices?: ControllerVirtualMatrixIntent[],
 ): KnownController {
+    // The controller Description may carry our [MFT:<ms>] min-frame-time tag.
+    const mft = new ExplicitControllerDesc(c.description ?? '').minFrameTime;
+    const maxFps = mft > 0 ? Math.round(1000 / mft) : undefined;
     const enableState =
         c.activeState === 'Active'
             ? ('enabled' as const)
@@ -1646,9 +1668,106 @@ function xlControllerToKnown(
         channelCount: c.maxChannels,
         ports: ports && ports.length ? ports : undefined,
         modelIntents: modelIntents && modelIntents.length ? modelIntents : undefined,
+        serialPorts: serialPorts && serialPorts.length ? serialPorts : undefined,
+        panelMatrices: panelMatrices && panelMatrices.length ? panelMatrices : undefined,
+        virtualMatrices: virtualMatrices && virtualMatrices.length ? virtualMatrices : undefined,
         outputs: xlControllerOutputs(c),
+        maxFps,
         source: 'xlights',
     };
+}
+
+/**
+ * Serial protocol names. A model on
+ * one of these plugs into a serial (DMX/Renard/LOR/etc) connector, not a pixel port,
+ * so it must never be counted as pixels — 50 DMX channels are not 17 pixels.
+ */
+const SERIAL_PROTOCOLS = new Set([
+    'dmx',
+    'dmx512',
+    'dmx-open',
+    'opendmx',
+    'dmx-pro',
+    'lor',
+    'renard',
+    'genericserial',
+    'pixelnet',
+    'pixelnet-lynx',
+    'pixelnet-open',
+]);
+
+/**
+ * LED panel matrix protocols. A model on one of these is drawn on a HUB75 or
+ * ColorLight matrix the controller owns, not strung off a pixel port — treating
+ * it as pixels uploads a 192x32 panel as a pixel string on "port 1".
+ */
+const PANEL_MATRIX_PROTOCOLS = new Set([
+    'led panel matrix',
+    'led panel matrix - hat/cap/cape',
+    'led panel matrix - colorlight',
+]);
+
+/** The HDMI/framebuffer virtual matrix protocol. */
+const VIRTUAL_MATRIX_PROTOCOL = 'virtual matrix';
+
+function isPanelMatrixProtocol(protocol: string | undefined): boolean {
+    return !!protocol && PANEL_MATRIX_PROTOCOLS.has(protocol.toLowerCase());
+}
+
+function isVirtualMatrixProtocol(protocol: string | undefined): boolean {
+    return !!protocol && protocol.toLowerCase() === VIRTUAL_MATRIX_PROTOCOL;
+}
+
+/** Neither pixel nor serial: matrices have their own upload paths. */
+function isMatrixProtocol(protocol: string | undefined): boolean {
+    return isPanelMatrixProtocol(protocol) || isVirtualMatrixProtocol(protocol);
+}
+
+function isSerialProtocol(protocol: string | undefined): boolean {
+    return !!protocol && SERIAL_PROTOCOLS.has(protocol.toLowerCase());
+}
+
+/** Serial-port intent per controller: models on serial protocols grouped by
+ *  port, in channel order, with the port's total channel span. */
+function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, ControllerSerialPortIntent[]> {
+    const byKey = new Map<string, { controller: string; port: number; models: XlModelChannelInfo[] }>();
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0 || !isSerialProtocol(m.controllerProtocol)) continue;
+        const key = `${m.controllerName}\u0000${m.controllerPort}`;
+        const g = byKey.get(key) ?? { controller: m.controllerName, port: m.controllerPort, models: [] };
+        g.models.push(m);
+        byKey.set(key, g);
+    }
+    const out = new Map<string, ControllerSerialPortIntent[]>();
+    for (const g of byKey.values()) {
+        g.models.sort((a, b) => a.startChannel - b.startChannel);
+        const first = g.models[0];
+        const last = g.models[g.models.length - 1];
+        const arr = out.get(g.controller) ?? [];
+        arr.push({
+            port: g.port,
+            models: g.models.map((m) => m.name),
+            modelChannels: g.models.map((m) => ({
+                name: m.name,
+                startChannel: m.startChannel,
+                channels: m.channelCount,
+            })),
+            // The span the port must carry: first channel through the last
+            // model's last channel (gaps between models included).
+            channels: last.startChannel + last.channelCount - first.startChannel,
+            startChannel: first.startChannel,
+            // The name is the controller's own: xLights writes whichever
+            // spelling the target's capability list declares (a Falcon "dmx",
+            // an FPP TTY cape "DMX-Open" or "DMX-Pro"), and the upload check
+            // validates against that same list. The flavours differ on the
+            // wire, so the name is carried through and each driver narrows it
+            // to what its hardware does.
+            protocol: first.controllerProtocol,
+        });
+        out.set(g.controller, arr);
+    }
+    for (const arr of out.values()) arr.sort((a, b) => a.port - b.port);
+    return out;
 }
 
 /** The controller's outputs as upload intent: E131/ArtNet one entry per
@@ -1717,10 +1836,98 @@ function modelIntentOf(m: XlModelChannelInfo): ControllerModelIntent {
 
 /** Per-model upload intent grouped by controller name. Only models with a
  *  protocol qualify. */
+/**
+ * Names of the layout's vertical matrices. The parsed model info does not keep
+ * orientation, and the layout spells it two ways: `DisplayAs="Vert Matrix"`,
+ * or since the 2026.3 format `DisplayAs="Matrix"` with `Vertical="true"`.
+ */
+function verticalMatrixNames(xrgb: {
+    getElementsByTagName(tag: string): ArrayLike<{ getAttribute(name: string): string | null }>;
+}): Set<string> {
+    const names = new Set<string>();
+    const models = xrgb.getElementsByTagName('model');
+    for (let i = 0; i < models.length; i++) {
+        const el = models[i];
+        const displayAs = el.getAttribute('DisplayAs');
+        if (displayAs === 'Vert Matrix' || (displayAs === 'Matrix' && el.getAttribute('Vertical') === 'true')) {
+            const name = el.getAttribute('name');
+            if (name) names.add(name);
+        }
+    }
+    return names;
+}
+
+/**
+ * A matrix model's size in pixels, the way xLights sizes a virtual matrix: a
+ * vertical matrix is its strings wide and a string's nodes tall, anything else
+ * the other way round. Falls back to 64x32, xLights' own default, when the
+ * model's strings do not describe a grid.
+ */
+function matrixSize(m: XlModelChannelInfo, vertical: boolean): { width: number; height: number } {
+    const strings = m.numPhysicalStrings || 0;
+    const perString = m.stringNodeCounts?.[0] ?? (strings > 0 ? Math.floor(m.nodeCount / strings) : 0);
+    if (strings <= 0 || perString <= 0) return { width: 64, height: 32 };
+    return vertical ? { width: strings, height: perString } : { width: perString, height: strings };
+}
+
+/** Panel and virtual matrix intent per controller. */
+function buildMatrixIntents(
+    models: XlModelChannelInfo[],
+    verticalMatrices: ReadonlySet<string>,
+): {
+    panels: Map<string, ControllerPanelMatrixIntent[]>;
+    virtuals: Map<string, ControllerVirtualMatrixIntent[]>;
+} {
+    const panelGroups = new Map<string, { controller: string; port: number; models: XlModelChannelInfo[] }>();
+    const virtuals = new Map<string, ControllerVirtualMatrixIntent[]>();
+
+    for (const m of models) {
+        if (!m.controllerName || m.controllerPort <= 0) continue;
+        if (isPanelMatrixProtocol(m.controllerProtocol)) {
+            const key = `${m.controllerName}\u0000${m.controllerPort}`;
+            const g = panelGroups.get(key) ?? { controller: m.controllerName, port: m.controllerPort, models: [] };
+            g.models.push(m);
+            panelGroups.set(key, g);
+        } else if (isVirtualMatrixProtocol(m.controllerProtocol)) {
+            const arr = virtuals.get(m.controllerName) ?? [];
+            arr.push({
+                port: m.controllerPort,
+                model: m.name,
+                startChannel: m.startChannel,
+                channels: m.channelCount,
+                ...matrixSize(m, verticalMatrices.has(m.name)),
+            });
+            virtuals.set(m.controllerName, arr);
+        }
+    }
+
+    const panels = new Map<string, ControllerPanelMatrixIntent[]>();
+    for (const g of panelGroups.values()) {
+        g.models.sort((a, b) => a.startChannel - b.startChannel);
+        const first = g.models[0];
+        const last = g.models[g.models.length - 1];
+        const arr = panels.get(g.controller) ?? [];
+        arr.push({
+            port: g.port,
+            models: g.models.map((m) => m.name),
+            startChannel: first.startChannel,
+            channels: last.startChannel + last.channelCount - first.startChannel,
+            protocol: first.controllerProtocol,
+            ...matrixSize(first, verticalMatrices.has(first.name)),
+        });
+        panels.set(g.controller, arr);
+    }
+    for (const arr of panels.values()) arr.sort((a, b) => a.port - b.port);
+    for (const arr of virtuals.values()) arr.sort((a, b) => a.port - b.port || a.startChannel - b.startChannel);
+    return { panels, virtuals };
+}
+
 function buildModelIntents(models: XlModelChannelInfo[]): Map<string, ControllerModelIntent[]> {
     const by = new Map<string, ControllerModelIntent[]>();
     for (const m of models) {
         if (!m.controllerName || m.controllerPort <= 0 || !m.controllerProtocol) continue;
+        if (isSerialProtocol(m.controllerProtocol)) continue; // see buildSerialIntent
+        if (isMatrixProtocol(m.controllerProtocol)) continue; // see buildMatrixIntents
         const arr = by.get(m.controllerName) ?? [];
         arr.push(modelIntentOf(m));
         by.set(m.controllerName, arr);
@@ -1736,6 +1943,8 @@ function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPo
     const byController = new Map<string, ControllerModelIntent[]>();
     for (const m of models) {
         if (!m.controllerName || m.controllerPort <= 0) continue;
+        if (isSerialProtocol(m.controllerProtocol)) continue; // see buildSerialIntent
+        if (isMatrixProtocol(m.controllerProtocol)) continue; // see buildMatrixIntents
         const arr = byController.get(m.controllerName) ?? [];
         arr.push(modelIntentOf(m));
         byController.set(m.controllerName, arr);
@@ -1777,20 +1986,24 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
     }
 }
 
-/** Publish to the ring buffer (for web clients) then send via IPC (for Electron audio window). */
+/**
+ * Publish volume-scaled samples to the ring buffer (web clients), then send
+ * unity-gain PCM to main for Electron audio windows (per-sink GainNode).
+ */
 function sendAudioChunk(
-    samples: Float32Array,
+    samplesUnity: Float32Array,
     playAtRealTime: number,
     incarnation: number,
     sampleRate: number,
     channels: number,
     advanceSamples: number,
 ) {
-    audioExportRing?.publish(samples, playAtRealTime, incarnation, sampleRate, channels, advanceSamples);
-    const buf = samples.buffer as ArrayBuffer;
+    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, volumeSF);
+    const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
             type: 'audioChunk',
+            volumeSF,
             chunk: {
                 sampleRate,
                 channels,
@@ -1822,6 +2035,12 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            // Map record audio -> precomputed derived file. Never builds here; a
+            // missing derivation surfaces as an audio error for the song.
+            resolveFile: (audioFile, opts) => {
+                if (!showFolder) throw new Error(`No show folder to resolve audio for ${audioFile}`);
+                return playableAudioPath(audioFile, showFolder, opts);
+            },
         });
     }
 
@@ -1841,6 +2060,19 @@ async function processQueue() {
     const sender: FrameSender = new FrameSender();
     sender.emitError = (e) => emitError(e.message);
     sender.emitWarning = emitWarning;
+    // Override for the paced-send slot fraction (0 = pacing off, one burst
+    // per frame); the built-in default otherwise applies.
+    {
+        const f = Number(process.env.EZP_SEND_SLOT_FRACTION);
+        if (process.env.EZP_SEND_SLOT_FRACTION !== undefined && Number.isFinite(f) && f >= 0 && f <= 0.95) {
+            sender.maxSlotFraction = f;
+        }
+        emitInfo(
+            sender.maxSlotFraction > 0
+                ? `Paced send: slot fraction ${sender.maxSlotFraction}`
+                : 'Paced send off: each frame goes out as one burst',
+        );
+    }
     sender.blackFramesEnabled = sendIdleBlackFrames;
     sender.outputEnabled = !outputSuppressed;
     curSender = sender;
@@ -1859,12 +2091,16 @@ async function processQueue() {
                   logger: (msg) => emitWarning(msg),
               });
 
+        // Per-controller max-FPS overrides from our records in the show folder
+        const fpsOverrides = await readControllerFpsOverrides(showFolder!);
         const sendJob = await openControllersForDataSend(controllers, {
             ddpPort: latestSettings?.advanced?.ddpPort,
+            fpsOverrides,
         });
         setPingConfig({
             hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
-            concurrency: 10,
+            // Pings are cheap; a whole show's controllers go out in one burst.
+            concurrency: 64,
             maxSamples: 10,
             intervalS: 5,
         });
@@ -2170,6 +2406,7 @@ async function processQueue() {
                             estDurationSec: play.durationMS ? play.durationMS / 1000 : undefined,
                             tier,
                             expiry: targetFrameRTC + 7 * 24 * 3600_000,
+                            normalize: !!play.seq?.settings?.normalize,
                         });
                     }
                 };
@@ -2318,7 +2555,7 @@ async function processQueue() {
                     let saf = curAudioSeq?.files?.audio;
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
-                        audioref = mp3Cache.getMp3(saf);
+                        audioref = mp3Cache.getMp3(saf, !!curAudioSeq?.settings?.normalize);
                         if (!audioref) {
                             emitError(`Audio ${saf} not ready.`);
                             break;
@@ -2348,12 +2585,13 @@ async function processQueue() {
                             // down so it crossfades with the next chunk's ramped-up head.
                             const windowFrames = hopFrames + overlapFrames;
 
+                            // Per-song volume_adj is baked in; global volume is applied downstream.
                             const chunk = buildInterleavedAudioChunkFromSegments({
                                 channelData: audio.channelData,
                                 nSamplesInAudio: audio.nSamples,
                                 sampleOffset,
                                 nSamples: windowFrames,
-                                volumeSF,
+                                volumeSF: songVolumeScale(curAudioSeq?.settings?.volume_adj),
                             });
                             applyCrossfadeRamp(chunk, channels, overlapFrames);
 

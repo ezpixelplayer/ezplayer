@@ -1,4 +1,5 @@
 import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+import type { AudioDevice } from './EZPElectronAPI';
 
 export interface EZPlayerVersions {
     name: string;
@@ -33,6 +34,8 @@ export interface SequenceDetails {
 
 export interface SequenceSettings {
     volume_adj?: number;
+    /** Bake EBU R128 loudness normalization into the playable (cached) audio. */
+    normalize?: boolean;
     lead_time?: number;
     trail_time?: number;
     tags?: string[];
@@ -532,6 +535,7 @@ export interface UIConnectSnapshot {
     controllerops?: ControllerOpsState;
     /** Which remote-access tiles to offer. */
     remoteAccess?: RemoteAccessAvailability;
+    appSettings?: AppSettingsState;
 }
 
 export type ScheduleDays =
@@ -593,6 +597,19 @@ export interface VolumeControlState {
     schedule?: VolumeScheduleEntry[];
 }
 
+/** One named local output for the desktop player when the system default
+ *  output is not used. Identity is deviceId, re-matched by label/groupId if
+ *  the id changes. Each entry has its own volume and schedule. */
+export interface AudioOutputConfig {
+    id: string;
+    /** Chromium `MediaDeviceInfo.deviceId` for an `audiooutput` sink. */
+    deviceId: string;
+    /** Device label at the time it was selected; shown while disconnected. */
+    label: string;
+    groupId?: string;
+    volumeControl: VolumeControlState;
+}
+
 export interface JukeboxSettings {
     /**
      * Tags that always exclude a song from the jukebox.
@@ -608,6 +625,8 @@ export interface JukeboxSettings {
 
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
+    /** Default for `settings.normalize` on songs added locally; cloud songs arrive normalized. */
+    normalizeNewSongs?: boolean;
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
@@ -628,6 +647,12 @@ export interface PlaybackSettings {
      * co-located lookup fails (sequence import / autodetection).
      */
     mediaFolder?: string;
+    /** Desktop player: true/undefined plays to the system default output using
+     *  `volumeControl`; false plays only to `audioOutputs`. Machine-local. */
+    useDefaultAudioOutput?: boolean;
+    /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
+     *  not part of cloud-managed settings groups. */
+    audioOutputs?: AudioOutputConfig[];
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,
@@ -697,6 +722,9 @@ export interface CloudConfig {
      *  configured URL/token but suspends polling and downloads — the user can
      *  flip back without re-entering anything. */
     cloudEnabled?: boolean;
+    /** Whether the player accepts remote control from the cloud. Default true.
+     *  Sync, registration, and status reporting are unaffected. */
+    cloudRemoteControlEnabled?: boolean;
     /** When the worker is enabled, how aggressively it polls content. `'always'`
      *  polls on the configured cadence. `'scheduled'` polls only when current
      *  local time is inside any window in `cloudPollSchedule`. Registration
@@ -826,6 +854,10 @@ export type FullPlayerState = {
     remoteAccess?: RemoteAccessAvailability;
     /** Software-update settings/status/releases. One atomic snapshot. */
     autoUpdateOps?: AutoUpdateOpsState;
+    /** Physical audio outputs on the player machine, as seen by its desktop renderer. */
+    audioOutputDevices?: AudioDevice[];
+    /** App-global (machine-wide) settings: diagnostics consent, start at sign-in. */
+    appSettings?: AppSettingsState;
 };
 
 /**
@@ -837,6 +869,32 @@ export interface RemoteAccessAvailability {
     /** Show-folder files. */
     files: boolean;
 }
+
+/** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
+ *  on (opt-out); `includePlayerId` defaults off (opt-in) since it ties a
+ *  report to a specific installation. */
+export interface DiagnosticsConsent {
+    uploadEnabled: boolean;
+    includePlayerId: boolean;
+}
+
+/** OS login item ("start EZPlayer at sign-in") on the player machine. */
+export interface LoginItemState {
+    /** 'ok' when configurable; otherwise why not. */
+    availability: 'ok' | 'unsupported-platform' | 'dev-mode';
+    openAtLogin: boolean;
+}
+
+/** App-global settings that live outside the show folder (electron-store / OS).
+ *  Pushed to every UI as one snapshot; changed via `AppSettingsCommand`. */
+export interface AppSettingsState {
+    diagnostics: DiagnosticsConsent;
+    loginItem: LoginItemState;
+}
+
+export type AppSettingsCommand =
+    | { type: 'setDiagnosticsConsent'; patch: Partial<DiagnosticsConsent> }
+    | { type: 'setOpenAtLogin'; openAtLogin: boolean };
 
 export type PlayerWebSocketSnapshot = {
     type: 'snapshot';
@@ -928,6 +986,7 @@ export type CloudCommand =
     | { type: 'setCloudServiceUrl'; url: string } // persist + reconfigure
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
+    | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud remote control
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so
            *  callers can change one knob without re-sending the others). To clear the
@@ -957,7 +1016,10 @@ export type PlayerClientWebSocketMessage =
     | { type: 'controllerCommand'; command: ControllerCommand }
     // Software-update verbs. Fire and forget; results flow back via the
     // broadcast `autoUpdateOps` state.
-    | { type: 'updateCommand'; cmd: UpdateCommand };
+    | { type: 'updateCommand'; cmd: UpdateCommand }
+    // App-global settings verbs. Fire and forget; results flow back via the
+    // broadcast `appSettings` state.
+    | { type: 'appSettingsCommand'; cmd: AppSettingsCommand };
 
 /// Cloud check-in (lightweight heartbeat + command pickup)
 

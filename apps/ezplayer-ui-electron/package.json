@@ -10,7 +10,7 @@
     },
     "private": true,
     "license": "AGPL-3.0",
-    "version": "0.6.6",
+    "version": "0.6.7",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -28,10 +28,12 @@
             "node_modules/@ezplayer/icmp-ping/package.json",
             "node_modules/@ezplayer/icmp-ping/build/Release/*.node",
             "node_modules/@lydell/node-pty/**/*",
-            "node_modules/@lydell/node-pty-*/**/*"
+            "node_modules/@lydell/node-pty-*/**/*",
+            "node_modules/ffmpeg-static/**/*"
         ],
         "asarUnpack": [
-            "**/*.node"
+            "**/*.node",
+            "**/ffmpeg-static/**"
         ],
         "extraResources": [
             {
@@ -66,9 +68,21 @@
         },
         "mac": {
             "artifactName": "${productName}-${version}-${arch}.${ext}",
+            "hardenedRuntime": true,
+            "gatekeeperAssess": false,
+            "entitlements": "assets/entitlements.mac.plist",
+            "entitlementsInherit": "assets/entitlements.mac.plist",
+            "notarize": true,
             "target": [
                 {
                     "target": "dmg",
+                    "arch": [
+                        "x64",
+                        "arm64"
+                    ]
+                },
+                {
+                    "target": "zip",
                     "arch": [
                         "x64",
                         "arm64"
@@ -149,7 +163,7 @@
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
-        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.16.tgz",
+        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.23.tgz",
         "@ezplayer/ezplayer-client": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/icmp-ping": "workspace:*",
@@ -174,6 +188,7 @@
         "debug": "^4.4.3",
         "electron-store": "^10.1.0",
         "electron-updater": "^6.8.9",
+        "ffmpeg-static": "^5.2.0",
         "i18next": "catalog:",
         "jszip": "catalog:",
         "koa": "^3.2.1",
@@ -194,7 +209,7 @@
         "react-toastify": "catalog:",
         "uuid": "catalog:",
         "ws": "^8.21.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.3.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.4.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.1.0"
     }

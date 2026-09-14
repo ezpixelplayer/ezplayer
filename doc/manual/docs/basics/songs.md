@@ -12,8 +12,8 @@ are the building blocks for [playlists](./playlists.md),
 control.
 
 The `.fseq` file is required. Audio is optional for silent animation sequences;
-musical songs should include a matching `.mp3`. Duration is taken from the file
-header and updated when you add or replace a sequence file.
+musical songs should include a matching audio (such as `.mp3`). Duration is taken
+from the file header and updated when you add or replace a sequence file.
 
 ## The Songs screen
 
@@ -38,7 +38,7 @@ player's show folder. The kiosk page has no song management — see
 
 1. Open **Songs** and click **Add Song**.
 2. Select a **`.fseq` file** (required).
-3. Optionally select a **`.mp3`** and an **image** for the jukebox and song list.
+3. Optionally select a **`.mp3`** or other audio and an **image** for the jukebox and song list.
 4. Fill in **title** and **artist** (required), then optional fields — vendor,
    tags, lead/trail time, volume adjustment — and click **Save**.
 
@@ -93,18 +93,22 @@ In **Edit Song Details** you can change title, artist, vendor, files, image URL,
 lead/trail time, volume adjustment, and tags. Title and artist remain required.
 Unrelated edits do not interrupt a song that is currently playing.
 
-**Lead time** and **trail time** (seconds, −5.0 to 5.0) trim or extend the
-sequence.  You might want to do this if there is too much, or not enough, "dead time"
-at the start or end of the sequences.  Negative values remove sequence material, positive
-values add "dead time".
+**Tags** are free-form labels (for example `christmas` or `nojukebox`). They
+appear in the Songs table and drive jukebox filtering — see
+[Jukebox settings](../settings/jukebox.md).
 
 **Volume adjustment** (−100 to +100)
 balances songs mastered at different levels; show-wide loudness is under
 [Volume](../advanced/volume.md).
 
-**Tags** are free-form labels (for example `christmas` or `nojukebox`). They
-appear in the Songs table and drive jukebox filtering — see
-[Jukebox settings](../settings/jukebox.md).
+**Normalize volume** If checked, the song volume is normalized to be consistent
+in overall volume level and to play well on FM radio, outdoor speakers, phones,
+etc.
+
+**Lead time** and **trail time** (seconds, −5.0 to 5.0) trim or extend the
+sequence.  You might want to do this if there is too much, or not enough, "dead time"
+at the start or end of the sequences.  Negative values remove sequence material, positive
+values add "dead time".
 
 Click the delete icon and confirm to remove a song from the catalog and from
 every playlist that referenced it. Deletion is a **soft delete**: the record is

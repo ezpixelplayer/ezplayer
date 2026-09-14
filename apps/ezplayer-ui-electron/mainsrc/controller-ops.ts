@@ -13,13 +13,16 @@ import type {
     ControllerOp,
     ControllerOpOrigin,
     ControllerOpsState,
+    ControllerPanelMatrix,
     ControllerPort,
+    ControllerSerialPort,
+    ControllerVirtualMatrix,
     DiscoveredController,
     EzpControllerRecord,
     KnownController,
     NetworkPolicy,
 } from '@ezplayer/ezplayer-core';
-import { applyOverrides } from '@ezplayer/ezplayer-core';
+import { applyOverrides, ipInCidr } from '@ezplayer/ezplayer-core';
 import type {
     DiscoveryDevice,
     DiscoveryJob,
@@ -27,7 +30,14 @@ import type {
     DiscoveryResult,
     ModelPortIntent,
     OutputConfig,
+    PanelMatrixConfig,
+    PanelMatrixInfo,
     PixelPortInfo,
+    SerialPortConfig,
+    SerialPortInfo,
+    SetOutputsOptions,
+    VirtualMatrixConfig,
+    VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
 import {
     discover,
@@ -36,6 +46,7 @@ import {
     deriveXlightsPortConfigs,
     expandModelStrings,
     getCapabilities,
+    loadBundledCapabilities,
     checkUpload,
 } from '@ezplayer/epp-controllers';
 import { hostNetworks } from '../cli/net.js';
@@ -43,16 +54,22 @@ import * as fsp from 'fs/promises';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// The capability registry (xLights .xcontroller definitions, bundled in the
+// lib) is empty until loaded; every getCapabilities() below depends on it.
+loadBundledCapabilities();
+
 // Hard cap on concurrent local discovery scans.
 const MAX_CONCURRENT_SCANS = 2;
-// Keep at most this many finished ops around for late-joining clients.
-const MAX_RETAINED_OPS = 20;
 
 let activeScans = 0;
 let opCounter = 0;
 
 // Live job handles for running scan ops, so `cancel` can reach the engine.
 const scanJobs = new Map<string, DiscoveryJob>();
+
+// Bumped by resetControllerOps; a scan started before a reset must not merge
+// what it finds into the cleared state.
+let resetGeneration = 0;
 
 const state: ControllerOpsState = { interfaces: [], devices: {}, operations: {}, known: [], networkPolicies: [] };
 
@@ -88,7 +105,21 @@ function recordFile(showFolder: string, name: string): string {
 }
 
 function deriveKnown(): void {
-    state.known = applyOverrides(xlightsKnown, records);
+    state.known = applyOverrides(xlightsKnown, records).map(withPortCounts);
+}
+
+/** Stamp the pixel/serial port counts from the controller's capability
+ *  definition (vendor/model/variant), so the port map can draw every port the
+ *  controller has rather than only the ones in use. */
+function withPortCounts(k: KnownController): KnownController {
+    if ((k.pixelPortCount !== undefined && k.serialPortCount !== undefined) || !k.vendor || !k.model) return k;
+    const caps = getCapabilities(k.vendor, k.model, k.variant ?? '');
+    if (!caps) return k;
+    return {
+        ...k,
+        pixelPortCount: k.pixelPortCount ?? caps.maxPixelPort,
+        serialPortCount: k.serialPortCount ?? caps.maxSerialPort,
+    };
 }
 
 function parseRecord(data: unknown): EzpControllerRecord | null {
@@ -280,6 +311,48 @@ function toControllerPort(p: PixelPortInfo): ControllerPort {
     };
 }
 
+/** Driver serial-port report -> ControllerSerialPort (the "actual" side). */
+function toControllerSerialPort(p: SerialPortInfo): ControllerSerialPort {
+    return {
+        port: p.port,
+        protocol: p.protocol,
+        startChannel: p.startChannel,
+        channels: p.channels,
+        universe: p.universe,
+        device: p.device,
+        model: p.model,
+    };
+}
+
+/** Driver panel matrix report -> ControllerPanelMatrix. */
+function toControllerPanelMatrix(m: PanelMatrixInfo): ControllerPanelMatrix {
+    return {
+        port: m.port,
+        driver: m.driver,
+        enabled: m.enabled,
+        startChannel: m.startChannel,
+        channels: m.channelCount,
+        width: m.width,
+        height: m.height,
+        panelCount: m.panelCount,
+        name: m.name,
+    };
+}
+
+/** Driver virtual matrix report -> ControllerVirtualMatrix. */
+function toControllerVirtualMatrix(m: VirtualMatrixInfo): ControllerVirtualMatrix {
+    return {
+        name: m.name,
+        port: m.port,
+        enabled: m.enabled,
+        startChannel: m.startChannel,
+        channels: m.channelCount,
+        width: m.width,
+        height: m.height,
+        device: m.device,
+    };
+}
+
 /** epp-controllers DiscoveryDevice → lean core DiscoveredController. */
 function toController(d: DiscoveryDevice): DiscoveredController {
     return {
@@ -298,6 +371,11 @@ function toController(d: DiscoveryDevice): DiscoveredController {
         detail: d.detail as DiscoveredController['detail'],
         // Structured per-port config (full depth only) — reconcile's "actual" side.
         pixelPorts: d.report?.pixelPorts?.map(toControllerPort),
+        pixelPortCount: d.report?.pixelPortCount,
+        serialPorts: d.report?.serialPorts?.map(toControllerSerialPort),
+        serialPortCount: d.report?.serialPortCount,
+        panelMatrices: d.report?.panelMatrices?.map(toControllerPanelMatrix),
+        virtualMatrices: d.report?.virtualMatrices?.map(toControllerVirtualMatrix),
         inputs: d.report?.inputs,
         error: d.error,
         seenAt: nowIso(),
@@ -314,6 +392,11 @@ function mergeDevice(d: DiscoveryDevice): void {
         // carries no driver identity — keep the previous values in that case.
         if (next.detail === undefined) next.detail = prev.detail;
         if (next.pixelPorts === undefined) next.pixelPorts = prev.pixelPorts;
+        if (next.pixelPortCount === undefined) next.pixelPortCount = prev.pixelPortCount;
+        if (next.serialPorts === undefined) next.serialPorts = prev.serialPorts;
+        if (next.serialPortCount === undefined) next.serialPortCount = prev.serialPortCount;
+        if (next.panelMatrices === undefined) next.panelMatrices = prev.panelMatrices;
+        if (next.virtualMatrices === undefined) next.virtualMatrices = prev.virtualMatrices;
         if (next.inputs === undefined) next.inputs = prev.inputs;
         if (next.driverType === undefined) next.driverType = prev.driverType;
         if (next.vendor === undefined) next.vendor = prev.vendor;
@@ -323,23 +406,105 @@ function mergeDevice(d: DiscoveryDevice): void {
         if (next.oui === undefined) next.oui = prev.oui;
         if (next.hostname === undefined) next.hostname = prev.hostname;
     }
+    // Seen by a scan again, keep whatever an earlier refresh found.
+    next.unreachable = false;
     state.devices[key] = next;
 }
 
 /** An already-running op of this kind for this target, if any (dedup/coalesce). */
-function findRunningOp(kind: ControllerOp['kind'], target: string): ControllerOp | undefined {
+/** An op of this kind against this target that has not finished (queued or running). */
+function findActiveOp(kind: ControllerOp['kind'], target: string): ControllerOp | undefined {
     return Object.values(state.operations).find(
-        (o) => o.status === 'running' && o.kind === kind && o.target === target,
+        (o) => (o.status === 'running' || o.status === 'queued') && o.kind === kind && o.target === target,
     );
 }
 
-function pruneOps(): void {
-    const done = Object.values(state.operations).filter((o) => o.status !== 'running');
-    if (done.length <= MAX_RETAINED_OPS) return;
-    done.sort((a, b) => (a.finishedAt ?? '').localeCompare(b.finishedAt ?? ''));
-    for (const o of done.slice(0, done.length - MAX_RETAINED_OPS)) {
-        delete state.operations[o.id];
+// ---------------------------------------------------------------------------
+// Per-kind concurrency. Each controller is independent, so a bulk run is just
+// every command issued at once; the player runs a few of each kind at a time
+// and the rest wait as `queued`, which every client sees.
+// ---------------------------------------------------------------------------
+
+type SlotKind = Exclude<ControllerOp['kind'], 'scan'>;
+const OP_CONCURRENCY: Record<SlotKind, number> = { status: 8, action: 8, upload: 6 };
+const slotsInUse: Record<SlotKind, number> = { status: 0, action: 0, upload: 0 };
+const slotWaiters: Record<SlotKind, (() => void)[]> = { status: [], action: [], upload: [] };
+
+/** A new op, `running` if a slot of its kind is free now, else `queued`. */
+function newOp(kind: SlotKind, target: string, label: string, origin: ControllerOpOrigin): ControllerOp {
+    return {
+        id: `op_${Date.now()}_${++opCounter}`,
+        kind,
+        target,
+        label,
+        status: slotsInUse[kind] < OP_CONCURRENCY[kind] ? 'running' : 'queued',
+        origin,
+        startedAt: nowIso(),
+    };
+}
+
+/**
+ * Take a slot for `op`, waiting while its kind is at the limit. Resolves false
+ * when the op was cancelled while it waited (it then holds no slot). Must be
+ * called straight after `newOp`, so a free slot is taken before anything else
+ * can claim it.
+ */
+async function waitForSlot(op: ControllerOp): Promise<boolean> {
+    const kind = op.kind as SlotKind;
+    if (slotsInUse[kind] < OP_CONCURRENCY[kind]) {
+        slotsInUse[kind]++;
+    } else {
+        // releaseSlot hands its slot straight to the next waiter.
+        await new Promise<void>((resolve) => slotWaiters[kind].push(resolve));
     }
+    if (op.status === 'cancelled') {
+        releaseSlot(kind);
+        return false;
+    }
+    if (op.status === 'queued') {
+        op.status = 'running';
+        op.startedAt = nowIso();
+        publish();
+    }
+    return true;
+}
+
+function releaseSlot(kind: SlotKind): void {
+    const next = slotWaiters[kind].shift();
+    if (next) next();
+    else slotsInUse[kind]--;
+}
+
+/**
+ * History is kept per target: once an op finishes, older finished ops of the
+ * same kind against the same controller (or scan target) are dropped, so each
+ * keeps only its latest result per kind. A failure stays until it is dismissed
+ * or a newer op of that kind replaces it.
+ */
+function retireOlderOps(finished: ControllerOp): void {
+    if (finished.status === 'error') {
+        console.warn(`[controller-ops] ${finished.label} failed: ${finished.error ?? 'unknown error'}`);
+    }
+    for (const [id, o] of Object.entries(state.operations)) {
+        if (id === finished.id || o.status === 'running' || o.status === 'queued') continue;
+        if (o.kind === finished.kind && o.target === finished.target) delete state.operations[id];
+    }
+}
+
+/**
+ * Whether there is reason to believe a controller answers at this device: a
+ * driver identified it before, or xLights or a record gives a controller type
+ * for its address.
+ */
+function expectsController(dev: DiscoveredController): boolean {
+    if (dev.driverType) return true;
+    const host = dev.hostname?.toLowerCase();
+    return (state.known ?? []).some(
+        (k) =>
+            !!(k.vendor || k.model) &&
+            !!k.address &&
+            (k.address === dev.ip || (!!host && k.address.toLowerCase() === host)),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -374,14 +539,65 @@ export async function dispatchControllerCommand(
         case 'cancel':
             runCancel(command);
             return undefined;
+        case 'dismiss':
+            runDismiss(command);
+            return undefined;
     }
 }
 
-/** Cancel a running scan op by op id. The job's cancel() resolves result()
- *  with what was found so far; runScan then marks the op `cancelled`. */
+/** True while any controller operation (scan, read, action, upload) runs or waits to. */
+export function hasRunningControllerOps(): boolean {
+    return Object.values(state.operations).some((o) => o.status === 'running' || o.status === 'queued');
+}
+
+/**
+ * Forget everything learned from the network: scan results, device details
+ * and finished operations. Part of reloading the show, alongside re-reading the
+ * persisted records. Running scans are cancelled; other running operations are
+ * left to finish, since stopping an upload part-way could leave a controller
+ * half-configured.
+ */
+export function resetControllerOps(): void {
+    resetGeneration++;
+    for (const job of scanJobs.values()) job.cancel();
+    state.devices = {};
+    for (const [id, op] of Object.entries(state.operations)) {
+        // A queued op never starts: it would act on state just cleared.
+        if (op.status === 'queued') {
+            op.status = 'cancelled';
+            op.finishedAt = nowIso();
+        }
+        if (op.status !== 'running') delete state.operations[id];
+    }
+    state.interfaces = hostNetworks();
+    publish();
+}
+
+/** Drop a finished op for every client. Already gone is fine: another client
+ *  may have dismissed it first. */
+function runDismiss(command: Extract<ControllerCommand, { cmd: 'dismiss' }>): void {
+    const op = state.operations[command.opId];
+    if (!op) return;
+    if (op.status === 'running' || op.status === 'queued') {
+        throw new Error(`operation ${command.opId} has not finished`);
+    }
+    delete state.operations[command.opId];
+    publish();
+}
+
+/** Cancel an op by id. A queued op is dropped before it starts. A running
+ *  scan's cancel() resolves result() with what was found so far; runScan then
+ *  marks the op `cancelled`. */
 function runCancel(command: Extract<ControllerCommand, { cmd: 'cancel' }>): void {
     const op = state.operations[command.opId];
     if (!op) throw new Error(`unknown operation: ${command.opId}`);
+    if (op.status === 'queued') {
+        op.status = 'cancelled';
+        op.finishedAt = nowIso();
+        retireOlderOps(op);
+        publish();
+        return;
+    }
     if (op.status !== 'running') return; // already finished — nothing to do
     const job = scanJobs.get(command.opId);
     if (!job) throw new Error(`operation ${command.opId} (${op.kind}) is not cancelable`);
@@ -395,6 +611,8 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
     const { name, patch } = command;
     const existing = records.find((r) => r.name === name);
     const merged: EzpControllerRecord = { ...(existing ?? { name }), ...patch, name };
+    // A patch is a merge, so "clear the override" arrives as an explicit 0
+    if (merged.fpsOverride !== undefined && !(merged.fpsOverride > 0)) delete merged.fpsOverride;
 
     const dir = recordsDir(recordsShowFolder);
     await fsp.mkdir(dir, { recursive: true });
@@ -428,23 +646,42 @@ async function runStatus(
     }
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
     // Same-target ops are coalesced.
-    if (findRunningOp('status', command.id)) return;
+    if (findActiveOp('status', command.id)) return;
 
-    const op: ControllerOp = {
-        id: `op_${Date.now()}_${++opCounter}`,
-        kind: 'status',
-        target: command.id,
-        label: `Read ${dev.model || dev.driverType || dev.ip}`,
-        status: 'running',
-        origin,
-        startedAt: nowIso(),
-    };
+    const op = newOp('status', command.id, `Read ${dev.model || dev.driverType || dev.ip}`, origin);
     state.operations[op.id] = op;
+    const started = waitForSlot(op);
     publish();
 
+    let slot = false;
     try {
-        const probe = await probeController(dev.ip, proxyFor(dev), { detail: true, preferDriver: dev.driverType });
+        slot = await started;
+        if (!slot) return;
+        const probe = await probeController(dev.ip, proxyFor(dev), {
+            detail: true,
+            preferDriver: dev.driverType,
+            expectController: expectsController(dev),
+        });
+        if (!probe.success && probe.noWebService) {
+            // An ordinary host with no web service: note it, but it is not a
+            // failed read, since nothing said a controller was there.
+            state.devices[command.id] = { ...dev, error: probe.error, unreachable: false, seenAt: nowIso() };
+            op.status = 'done';
+            op.finishedAt = nowIso();
+            return;
+        }
         if (!probe.success || !probe.report) {
+            if (probe.unreachable && state.devices[command.id]) {
+                // Seen before, gone now.
+                state.devices[command.id] = {
+                    ...dev,
+                    unreachable: true,
+                    error: 'not responding — powered off or unreachable',
+                };
+                throw new Error(
+                    `${dev.model || dev.driverType || dev.ip} is not responding (powered off or unreachable)`,
+                );
+            }
             throw new Error(probe.error ?? 'no controller responded');
         }
         state.devices[command.id] = {
@@ -456,9 +693,15 @@ async function runStatus(
             firmwareVersion: probe.report.firmwareVersion ?? dev.firmwareVersion,
             detail: reportToTree(probe.report) as DiscoveredController['detail'],
             pixelPorts: probe.report.pixelPorts?.map(toControllerPort),
+            pixelPortCount: probe.report.pixelPortCount ?? dev.pixelPortCount,
+            serialPorts: probe.report.serialPorts?.map(toControllerSerialPort),
+            serialPortCount: probe.report.serialPortCount ?? dev.serialPortCount,
+            panelMatrices: probe.report.panelMatrices?.map(toControllerPanelMatrix),
+            virtualMatrices: probe.report.virtualMatrices?.map(toControllerVirtualMatrix),
             inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
             error: undefined,
+            unreachable: false,
             seenAt: nowIso(),
         };
         op.status = 'done';
@@ -469,8 +712,9 @@ async function runStatus(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        if (slot) releaseSlot('status');
         publish();
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 
@@ -482,22 +726,21 @@ async function runAction(
     const dev = state.devices[command.id];
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
     // Same-target ops are coalesced.
-    if (findRunningOp('action', command.id)) return;
+    if (findActiveOp('action', command.id)) return;
 
-    const op: ControllerOp = {
-        id: `op_${Date.now()}_${++opCounter}`,
-        kind: 'action',
-        target: command.id,
-        label: `${command.action} ${dev.model || dev.driverType || dev.ip}`,
-        status: 'running',
-        origin,
-        startedAt: nowIso(),
-    };
+    const op = newOp('action', command.id, `${command.action} ${dev.model || dev.driverType || dev.ip}`, origin);
     state.operations[op.id] = op;
+    const started = waitForSlot(op);
     publish();
 
+    let slot = false;
     try {
-        const probe = await probeController(dev.ip, proxyFor(dev), { preferDriver: dev.driverType });
+        slot = await started;
+        if (!slot) return;
+        const probe = await probeController(dev.ip, proxyFor(dev), {
+            preferDriver: dev.driverType,
+            expectController: expectsController(dev),
+        });
         if (!probe.success || !probe.driver) {
             throw new Error(probe.error ?? 'no controller responded');
         }
@@ -511,8 +754,9 @@ async function runAction(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        if (slot) releaseSlot('action');
         publish();
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 
@@ -574,33 +818,40 @@ async function runUpload(
 ): Promise<void> {
     const dev = state.devices[command.id];
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
-    if (findRunningOp('upload', command.id)) return;
+    if (findActiveOp('upload', command.id)) return;
 
     const rec = (state.known ?? []).find((k) => k.address === dev.ip || (dev.hostname && k.address === dev.hostname));
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
     const wantStrings = command.scope !== 'inputs';
     const wantInputs = command.scope !== 'strings';
-    if (wantStrings && !rec.modelIntents?.length) {
+    const hasIntent =
+        !!rec.modelIntents?.length ||
+        !!rec.serialPorts?.length ||
+        !!rec.panelMatrices?.length ||
+        !!rec.virtualMatrices?.length;
+    // A controller in the xLights layout with no models on it is intent too:
+    // uploading clears its ports. Only a record of our own has nothing to say.
+    if (wantStrings && !hasIntent && rec.source === 'ezp') {
         throw new Error(`"${rec.name}" has no model/port intent from xLights to upload`);
     }
     if (wantInputs && !rec.outputs?.length) {
         throw new Error(`"${rec.name}" has no outputs (universes) from xLights to upload`);
     }
 
-    const op: ControllerOp = {
-        id: `op_${Date.now()}_${++opCounter}`,
-        kind: 'upload',
-        target: command.id,
-        label: `Upload ${command.scope} → ${rec.name}`,
-        status: 'running',
-        origin,
-        startedAt: nowIso(),
-    };
+    const op = newOp('upload', command.id, `Upload ${command.scope} → ${rec.name}`, origin);
     state.operations[op.id] = op;
+    const started = waitForSlot(op);
     publish();
 
+    let slot = false;
     try {
-        const probe = await probeController(dev.ip, proxyFor(dev), { preferDriver: dev.driverType });
+        slot = await started;
+        if (!slot) return;
+        // Upload needs xLights intent, so a controller is expected here.
+        const probe = await probeController(dev.ip, proxyFor(dev), {
+            preferDriver: dev.driverType,
+            expectController: true,
+        });
         if (!probe.success || !probe.driver) {
             throw new Error(probe.error ?? 'no controller responded');
         }
@@ -674,12 +925,61 @@ async function runUpload(
                 }
             }
             for (const s of derived.skipped) warnings.push(`port ${s.port} skipped: ${s.detail}`);
-            if (derived.ports.length === 0) throw new Error('derivation produced no uploadable ports');
-            capCheck({ pixelPorts: derived.ports, serialPorts: [] });
-            const r = await probe.driver.setOutputs(derived.ports, []);
-            if (!r.success)
-                throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
-            if (r.warnings) warnings.push(...r.warnings);
+            // Serial (DMX/Renard/LOR) ports ride alongside, never as pixels.
+            const serialPorts: SerialPortConfig[] = (rec.serialPorts ?? [])
+                .filter((sp) => sp.channels > 0 && sp.startChannel !== undefined)
+                .map((sp) => ({
+                    port: sp.port - 1, // 1-based xLights port → 0-based config index
+                    protocol: sp.protocol ?? 'dmx',
+                    startChannel: sp.startChannel!,
+                    channels: sp.channels,
+                }));
+            const panelMatrices: PanelMatrixConfig[] = (rec.panelMatrices ?? []).map((pm) => ({
+                port: pm.port,
+                startChannel: pm.startChannel,
+                protocol: pm.protocol,
+            }));
+            const virtualMatrices: VirtualMatrixConfig[] = (rec.virtualMatrices ?? []).map((vm) => ({
+                name: vm.model,
+                port: vm.port,
+                startChannel: vm.startChannel,
+                channelCount: vm.channels,
+                width: vm.width,
+                height: vm.height,
+            }));
+            const hasMatrices = panelMatrices.length > 0 || virtualMatrices.length > 0;
+            capCheck({ pixelPorts: derived.ports, serialPorts, panelMatrices, virtualMatrices });
+            const setOpts: SetOutputsOptions = {
+                inputMode: rec.protocol?.toUpperCase(),
+                outputs: outputs.length
+                    ? outputs.map((o) => ({
+                          universe: o.universe ?? 0,
+                          startChannel: o.startChannel,
+                          channels: o.channels,
+                      }))
+                    : undefined,
+            };
+            // A controller driving only matrices has no string configuration to
+            // write. Otherwise an empty one is sent on purpose: the layout puts
+            // nothing on those ports, so they are cleared.
+            if (derived.ports.length > 0 || serialPorts.length > 0 || !hasMatrices) {
+                const r = await probe.driver.setOutputs(derived.ports, serialPorts, setOpts);
+                if (!r.success)
+                    throw new Error(`string upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
+                if (r.warnings) warnings.push(...r.warnings);
+            }
+            // LED panel matrices are bound to channels, never created: their
+            // panel geometry lives on the controller.
+            if (panelMatrices.length) {
+                const r = await probe.driver.setPanelMatrices(panelMatrices);
+                if (r.warnings) warnings.push(...r.warnings);
+                if (!r.success) throw new Error(`panel matrix upload failed: ${r.message ?? 'unknown error'}`);
+            }
+            if (virtualMatrices.length) {
+                const r = await probe.driver.setVirtualMatrices(virtualMatrices);
+                if (r.warnings) warnings.push(...r.warnings);
+                if (!r.success) throw new Error(`virtual matrix upload failed: ${r.message ?? 'unknown error'}`);
+            }
         }
         try {
             const applied = await probe.driver.applyConfig();
@@ -693,14 +993,24 @@ async function runUpload(
         }
         // Read back so the reconcile grid reflects the device's new truth.
         try {
-            const verify = await probeController(dev.ip, proxyFor(dev), { detail: true, preferDriver: dev.driverType });
+            const verify = await probeController(dev.ip, proxyFor(dev), {
+                detail: true,
+                preferDriver: dev.driverType,
+                expectController: true,
+            });
             if (verify.success && verify.report) {
                 state.devices[command.id] = {
                     ...dev,
                     detail: reportToTree(verify.report) as DiscoveredController['detail'],
                     pixelPorts: verify.report.pixelPorts?.map(toControllerPort),
+                    pixelPortCount: verify.report.pixelPortCount ?? dev.pixelPortCount,
+                    serialPorts: verify.report.serialPorts?.map(toControllerSerialPort),
+                    serialPortCount: verify.report.serialPortCount ?? dev.serialPortCount,
+                    panelMatrices: verify.report.panelMatrices?.map(toControllerPanelMatrix),
+                    virtualMatrices: verify.report.virtualMatrices?.map(toControllerVirtualMatrix),
                     inputs: verify.report.inputs,
                     error: undefined,
+                    unreachable: false,
                     seenAt: nowIso(),
                 };
             }
@@ -715,8 +1025,9 @@ async function runUpload(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        if (slot) releaseSlot('upload');
         publish();
-        pruneOps();
+        retireOlderOps(op);
     }
 }
 
@@ -732,7 +1043,7 @@ async function runScan(
     if (activeScans >= MAX_CONCURRENT_SCANS) {
         throw new Error(`too many concurrent discovery scans (max ${MAX_CONCURRENT_SCANS})`);
     }
-    if (findRunningOp('scan', scanTarget(command))) {
+    if (findActiveOp('scan', scanTarget(command))) {
         throw new Error('an identical scan is already running');
     }
 
@@ -757,21 +1068,25 @@ async function runScan(
             // recurseEzpProxies intentionally not forwarded: a run must not
             // chain federation onward.
         };
+        const generation = resetGeneration;
         const job = startScanJob(request, (ev) => {
             if (ev.ev === 'progress') {
                 op.progress = ev.progress;
                 publish();
-            } else if (ev.ev === 'device') {
+            } else if (ev.ev === 'device' && generation === resetGeneration) {
                 mergeDevice(ev.device);
                 publish();
             }
         });
         scanJobs.set(op.id, job);
         const result = await job.result();
-        for (const d of result.devices) mergeDevice(d);
+        if (generation === resetGeneration) for (const d of result.devices) mergeDevice(d);
         // A cancelled job still resolves result(); the final progress phase
         // says how the run actually ended.
         op.status = op.progress?.phase === 'cancelled' ? 'cancelled' : 'done';
+        if (op.status === 'done' && generation === resetGeneration) {
+            markUnseenUnreachable(request.networks, result.devices);
+        }
         op.finishedAt = nowIso();
         publish();
         return result;
@@ -784,7 +1099,24 @@ async function runScan(
     } finally {
         scanJobs.delete(op.id);
         activeScans--;
-        pruneOps();
+        retireOlderOps(op);
+    }
+}
+
+/**
+ * After a completed scan, flag directly-reached devices that the scan did
+ *  NOT find as unreachable so the grid shows its record absent.
+ */
+function markUnseenUnreachable(networks: { cidr: string }[], found: DiscoveryDevice[]): void {
+    if (networks.length === 0) return;
+    const seen = new Set(found.map(deviceKey));
+    for (const dev of Object.values(state.devices)) {
+        if (dev.source.via !== 'direct' || seen.has(dev.id)) continue;
+        if (!networks.some((n) => ipInCidr(dev.ip, n.cidr))) continue;
+        if (!dev.unreachable) {
+            dev.unreachable = true;
+            dev.error = 'not found by the last scan of its network';
+        }
     }
 }
 

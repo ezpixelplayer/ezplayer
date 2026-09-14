@@ -48,12 +48,14 @@ import {
     onLayoutInstalled,
     onVcResync,
     pollCloudNow,
+    setCloudRemoteControlEnabled,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
     uploadLayoutNow,
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
+import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio } from './data/derived-audio.js';
 
 import type {
     CloudCommand,
@@ -72,9 +74,11 @@ import type {
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
 import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
-import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
-import { getDiagnosticsConsent, reportDiagEvent, setDiagnosticsConsent } from './diagnostics.js';
+import type { AppSettingsCommand, AudioDevice } from '@ezplayer/ezplayer-core';
+import { reportDiagEvent } from './diagnostics.js';
+import { dispatchAppSettingsCommand, getAppSettingsState } from './appSettings.js';
 import { safeSend } from './safe-send.js';
+import { syncAudioOutputsFromSettings, broadcastAudioChunk } from './audioWindows.js';
 
 import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
 
@@ -92,6 +96,8 @@ import {
     getControllerOpsState,
     loadControllerRecords,
     loadNetworkPolicies,
+    resetControllerOps,
+    hasRunningControllerOps,
     setKnownControllers,
 } from './controller-ops.js';
 import type { ControllerCommand } from '@ezplayer/ezplayer-core';
@@ -275,6 +281,16 @@ async function runGcSweep(): Promise<void> {
     }
 }
 
+const derivedAudioItem = (s: SequenceRecord) => ({ audio: s.files?.audio, normalize: s.settings?.normalize });
+
+/** Drop derived audio no current record maps to. Rides the cloud gc trigger. */
+async function pruneStaleDerivedAudioNow(): Promise<void> {
+    const showFolder = getCurrentShowFolder();
+    if (!showFolder) return;
+    const live = curSequences.filter((s) => !s.deleted).map(derivedAudioItem);
+    await pruneStaleDerivedAudio(showFolder, live).catch((e) => console.warn('[DerivedAudio] prune failed:', e));
+}
+
 export function getSequenceThumbnail(id: string) {
     const seq = curSequences?.find((s) => s.id === id);
     if (seq?.files?.thumb) {
@@ -345,9 +361,9 @@ export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<
     return filtered;
 }
 
-/** Adopt cloud-managed player settings (one-way show-builder → player). Each
+/** Adopt cloud-managed player settings (one-way show-builder -> player). Each
  *  of the three groups is taken only when the cloud's `*_updated` stamp beats
- *  the locally-recorded one — so a player-side override survives until a fresh
+ *  the locally-recorded one, so a player-side override survives until a fresh
  *  show-builder save supersedes it. Adopted settings are persisted, the
  *  per-group stamps advanced, and the merged result pushed to the renderer +
  *  playback worker. */
@@ -401,6 +417,7 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
 
     applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
     await saveCloudSettingsMeta(metaPath, newMeta);
+    syncAudioOutputsFromSettings(next);
     safeSend(updateWindow, 'update:playbacksettings', next);
     broadcastToWebSocket('playbackSettings', next);
     playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
@@ -417,10 +434,7 @@ let lastAppliedCloudCfg: CloudConfig | undefined;
 
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
- *  the playback worker, and refreshes the cloud worker's local-sequences cache.
- *  Serialized: cloud-install events can fire several records in quick succession,
- *  and concurrent commits would race on the same `sequences.json` (Windows
- *  EPERM on rename, plus a merge-against-stale-curSequences silent record loss). */
+ *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
 let commitChain: Promise<unknown> = Promise.resolve();
 async function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
     const next = commitChain.then(() => commitSequenceUpdatesInner(uppl));
@@ -442,6 +456,53 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     return filtered;
 }
 
+/** Cloud installs are committed in batches. Each commit rewrites sequences.json,
+ *  pushes the full sequence list to the renderer + web clients, restarts the
+ *  playback queue (schedupdate) and refreshes the cloud worker's snapshot. */
+const INSTALL_COMMIT_MIN_INTERVAL_MS = 1000;
+let pendingInstalls = new Map<string, { record: SequenceRecord; showFolder: string | null | undefined }>();
+let installCommitTimer: NodeJS.Timeout | undefined;
+let lastInstallCommitAt = 0;
+
+async function flushPendingInstalls(): Promise<void> {
+    if (installCommitTimer) {
+        clearTimeout(installCommitTimer);
+        installCommitTimer = undefined;
+    }
+    lastInstallCommitAt = Date.now();
+    const folder = getCurrentShowFolder();
+    const queued = [...pendingInstalls.values()];
+    pendingInstalls = new Map();
+    const batch = queued.filter((p) => p.showFolder === folder).map((p) => p.record);
+    if (batch.length !== queued.length) {
+        console.warn(
+            `[cloud-install] dropped ${queued.length - batch.length} queued installs from a previous show folder`,
+        );
+    }
+    if (batch.length === 0) return;
+    // Same code path the renderer uses when it adds a song.
+    try {
+        await commitSequenceUpdates(batch);
+    } catch (e) {
+        console.error('[cloud-install] commit failed:', e);
+        return;
+    }
+    // Track the newly-installed files. A re-render lands at a new versioned path,
+    // so the old file stops being referenced and the next sweep reclaims it.
+    for (const record of batch) trackInstalledFiles(record);
+}
+
+function queueInstallCommit(record: SequenceRecord): void {
+    pendingInstalls.set(record.id, { record, showFolder: getCurrentShowFolder() });
+    if (installCommitTimer) return; // armed; it will commit whatever is queued
+    const since = Date.now() - lastInstallCommitAt;
+    if (since >= INSTALL_COMMIT_MIN_INTERVAL_MS) {
+        void flushPendingInstalls();
+        return;
+    }
+    installCommitTimer = setTimeout(() => void flushPendingInstalls(), INSTALL_COMMIT_MIN_INTERVAL_MS - since);
+}
+
 /** Sequence upsert shared by the renderer IPC and the server-worker RPC.
  *  API clients may send show-relative file names and omit ids. */
 export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
@@ -460,6 +521,24 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             for (const key of ['fseq', 'audio', 'thumb'] as const) {
                 const p = ups.files[key];
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
+            }
+        }
+        // Pin the normalization choice: new local songs take the setting default,
+        // edits that omit it keep the record's value. Cloud songs arrive normalized.
+        if (!ups.cloud && ups.settings?.normalize === undefined) {
+            const existing = curSequences?.find((s) => s.id === ups.id);
+            const normalize = existing?.settings?.normalize ?? getSettingsCache()?.normalizeNewSongs ?? false;
+            ups.settings = { ...(ups.settings ?? {}), normalize };
+        }
+        // A committed song must be playable, so its derived audio is built before save.
+        if (!ups.deleted && ups.files?.audio && showFolder) {
+            try {
+                await deriveAudioForRecord(derivedAudioItem(ups), showFolder);
+            } catch (err) {
+                const title = ups.work?.title || path.basename(ups.files.audio);
+                throw new Error(
+                    `Cannot derive playable audio for "${title}": ${err instanceof Error ? err.message : String(err)}`,
+                );
             }
         }
         if (!ups?.work?.length && ups.files?.fseq) {
@@ -498,33 +577,34 @@ export async function loadShowFolder(forceRestart?: boolean) {
         return;
     }
 
-    // Immediately clear cached show data in the server worker so stale
-    // model coordinates, view objects, layout settings, and frame buffers
-    // from the previous show folder are never served to the frontend.
+    // Immediately clear cached show data so stale data is not sent to frontend.
     clearShowData();
 
-    // Reset combined player status at the folder boundary. content / controller /
-    // player snapshots are folder-scoped (cloud content, controller config from
-    // this show, current playback). Without this, switching to a fresh folder
-    // would carry the old folder's cstatus/nstatus/pstatus through `update:combinedstatus`
-    // until each writer (cloud worker, playback worker) happens to push a fresh frame.
+    // Reset combined player status.
     curStatus = {};
     curErrors = [];
+    // Flush out any pending writes (e.g. downloads) to show data in previous folder.
+    await flushPendingInstalls();
 
     // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
     // loader so that, on first run against an old folder, root-level files are moved
     // into the subdir and the loaders read the migrated copies on this same tick.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
+    resetControllerOps();
     await loadControllerRecords(showFolder);
     await loadNetworkPolicies(showFolder);
 
     curSequences = await loadSequencesAPI(showFolder);
+    // Derived audio is disposable; rebuild whatever is missing (recipe bump, deleted
+    // files) in the background.
+    void reconcileDerivedAudio(curSequences.filter((s) => !s.deleted).map(derivedAudioItem), showFolder);
     curPlaylists = await loadPlaylistsAPI(showFolder);
     curSchedule = await loadScheduleAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
     const cloudActive = cloudConfig.cloudEnabled !== false;
+    setCloudRemoteControlEnabled(cloudConfig.cloudRemoteControlEnabled !== false);
     setCloudWorkerConfig(
         cloudActive ? cloudConfig.cloudServiceUrl : '',
         cloudActive ? cloudConfig.playerIdToken : '',
@@ -588,6 +668,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     const settings = getSettingsCache();
     if (settings) {
+        syncAudioOutputsFromSettings(settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -659,6 +740,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
         case 'setCloudEnabled':
             applyCloudEnabled(cmd.enabled);
             break;
+        case 'setCloudRemoteControlEnabled':
+            applyCloudRemoteControlEnabled(cmd.enabled);
+            break;
         case 'setCloudPolling':
             applyCloudPolling({
                 mode: cmd.mode,
@@ -681,6 +765,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
  *  one place so applyXxx helpers don't need to know about every field. */
 function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
+    setCloudRemoteControlEnabled(cfg.cloudRemoteControlEnabled !== false);
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
         cloudActive ? cfg.playerIdToken : '',
@@ -743,6 +828,13 @@ export function applyCloudEnabled(enabled: boolean) {
     broadcastCloudConfig(cfg);
 }
 
+/** Allow / refuse cloud remote control. */
+export function applyCloudRemoteControlEnabled(enabled: boolean) {
+    const cfg = updateCloudConfig({ cloudRemoteControlEnabled: enabled });
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
+}
+
 /** Update the persisted player ID token and reconfigure the cloud poller. Called from
  *  the renderer (electron IPC) and from the embedded UI (koa worker → RPC). */
 export function applyPlayerIdToken(token: string) {
@@ -779,11 +871,7 @@ export async function applyRotatePlayerToken(): Promise<void> {
     applyPlayerIdToken(newToken);
 }
 
-export async function registerContentHandlers(
-    mainWindow: BrowserWindow | null,
-    audioWindow: BrowserWindow | null,
-    nPlayWorker: Worker,
-) {
+export async function registerContentHandlers(mainWindow: BrowserWindow | null, nPlayWorker: Worker) {
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
@@ -802,6 +890,7 @@ export async function registerContentHandlers(
             cloudStatus: getCurrentCloudStatus(),
             controllerops: getControllerOpsState(),
             remoteAccess: await getRemoteAccessAvailability(),
+            appSettings: getAppSettingsState(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
@@ -873,6 +962,9 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequences(fseqPaths ?? [], {
             mediaFolder,
+            showFolder: getCurrentShowFolder() ?? undefined,
+            normalize: getSettingsCache()?.normalizeNewSongs,
+            onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -881,6 +973,9 @@ export async function registerContentHandlers(
         const mediaFolder = getSettingsCache()?.mediaFolder;
         return batchImportSequencesFromFolder(folderPath, {
             mediaFolder,
+            showFolder: getCurrentShowFolder() ?? undefined,
+            normalize: getSettingsCache()?.normalizeNewSongs,
+            onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
             putSequences: putSequencesWithDurations,
         });
@@ -907,6 +1002,11 @@ export async function registerContentHandlers(
 
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
+            // Reloading clears controller state an operation is still writing to.
+            if (hasRunningControllerOps()) {
+                console.warn('[resetplayback] refused: a controller operation is running');
+                return false;
+            }
             await loadShowFolder(true);
             return true;
         }
@@ -920,9 +1020,14 @@ export async function registerContentHandlers(
         } as PlayerCommand);
         return true;
     });
+    ipcMain.on('ipcAudioOutputDevices', (_event, devices: AudioDevice[]) => {
+        broadcastToWebSocket('audioOutputDevices', devices);
+    });
+
     ipcMain.handle('ipcSetPlaybackSettings', async (_event, settings: PlaybackSettings): Promise<boolean> => {
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
+        syncAudioOutputsFromSettings(settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -944,10 +1049,9 @@ export async function registerContentHandlers(
     ipcMain.handle('ipcCloudCommand', async (_event, cmd: CloudCommand) => {
         await dispatchCloudCommand(cmd);
     });
-    ipcMain.handle('ipcGetDiagnosticsConsent', async () => getDiagnosticsConsent());
-    ipcMain.handle('ipcSetDiagnosticsConsent', async (_event, patch: Partial<DiagnosticsConsent>) =>
-        setDiagnosticsConsent(patch),
-    );
+    ipcMain.handle('ipcAppSettingsCommand', async (_event, cmd: AppSettingsCommand) => {
+        await dispatchAppSettingsCommand(cmd);
+    });
     ipcMain.handle('ipcReportRendererError', async (_event, message: unknown, stack: unknown) => {
         console.error('[renderer-error]', message, stack ?? '');
         reportDiagEvent(
@@ -979,6 +1083,7 @@ export async function registerContentHandlers(
         // Opportunistic gc — runs whenever the worker reports back, no-op when
         // queue is empty or player isn't idle.
         void runGcSweep();
+        void pruneStaleDerivedAudioNow();
     });
 
     onLayoutInstalled((layoutMeta) => {
@@ -1047,16 +1152,7 @@ export async function registerContentHandlers(
                 console.warn('[cloud-install] cover-art extract failed:', e);
             }
         }
-        // Same code path the renderer uses when it adds a song.
-        try {
-            await commitSequenceUpdates([record]);
-        } catch (e) {
-            console.error('[cloud-install] commit failed:', e);
-            return;
-        }
-        // Track the newly-installed files. A re-render lands at a new versioned path,
-        // so the old file stops being referenced and the next sweep reclaims it.
-        trackInstalledFiles(record);
+        queueInstallCommit(record);
     });
 
     /// Connection from player worker thread
@@ -1067,8 +1163,7 @@ export async function registerContentHandlers(
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                //safeSend(mainWindow, 'audio:chunk', msg.chunk);
-                safeSend(audioWindow, 'audio:chunk', msg.chunk, [msg.chunk.buffer]);
+                broadcastAudioChunk(msg.chunk, msg.volumeSF);
                 break;
             }
             case 'pixelbuffer': {

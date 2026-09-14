@@ -15,6 +15,7 @@ import Store from 'electron-store';
 import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { DEFAULT_CLOUD_SERVICE_URL, getCloudConfigCache } from './data/CloudConfigStorage.js';
 import { ezpVersions } from '../versions.js';
+import { getDiagEnv } from './diagEnv.js';
 
 const store = new Store<{ diagnostics?: DiagnosticsConsent }>({ name: 'diagnostics' });
 
@@ -65,6 +66,11 @@ export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: st
             platform: process.platform,
             arch: process.arch,
             electron: process.versions.electron,
+            // OS / distro / GPU / memory / session snapshot; see diagEnv.ts.
+            ...(() => {
+                const env = getDiagEnv();
+                return env ? { env: JSON.stringify(env).slice(0, 4096) } : {};
+            })(),
             ...(getDiagnosticsConsent().includePlayerId && cfg.playerIdToken
                 ? { player_token: cfg.playerIdToken }
                 : {}),

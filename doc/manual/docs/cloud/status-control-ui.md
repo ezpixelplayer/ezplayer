@@ -120,6 +120,16 @@ have sequences assigned on EZRGB. A **halted** chip means content sync stopped
 with an error — check **Last Error** and try **Sync Content Now** (or
 **Sync Layout + Content**) after fixing the underlying problem.
 
+## Remote Control Link
+
+Shown once the player is registered. The QR code and link open the player's
+control page in any browser with no sign-in. The link contains the Player ID,
+so share it only with people who should be able to control the player.
+
+Turn off **Enable Cloud Remote Control** to refuse remote control from the
+cloud. The link and QR code are hidden and anyone currently connected is
+disconnected. Registration, status reporting, and content sync continue.
+
 ## Cloud Configuration
 
 Shows this folder's cloud URL and Player ID.
@@ -134,6 +144,14 @@ Shows this folder's cloud URL and Player ID.
 - **Edit** — opens the same registration / settings dialog as
   **Settings → Cloud**. Use it for polling schedule, cloud URL, or pasting an
   existing Player ID.
+
+## On the EZRGB website
+
+Once registered, open your [EZRGB](https://ezrgb.com) account and find the
+player under **EZPlayer**. Click **Manage Player** to use the full EZPlayer UI
+over the internet — playlists, schedule, playback, volume, and the rest of the
+management screens — without being on the show network. Prefer opening
+**Manage Player** in a new browser tab so the player UI has full screen space.
 
 For building the show entirely from the website, see
 [Using Full Cloud Control](./full-cloud-control.md).

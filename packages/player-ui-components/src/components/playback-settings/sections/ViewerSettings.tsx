@@ -1,4 +1,4 @@
-import { Add, Delete } from '@mui/icons-material';
+import { Add, Delete, Visibility, VisibilityOff } from '@mui/icons-material';
 import {
     Button,
     Chip,
@@ -8,6 +8,7 @@ import {
     Divider,
     FormControl,
     IconButton,
+    InputAdornment,
     List,
     ListItem,
     ListItemSecondaryAction,
@@ -48,6 +49,7 @@ export const ViewerSettings: React.FC = () => {
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<ViewerControlScheduleEntry>>(FRESH_ENTRY);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [showRemoteFalconToken, setShowRemoteFalconToken] = useState(false);
 
     // The schedule config is backend-agnostic; `'ezplayer'` reuses the same
     // schedule UI. Only the token field below is backend-specific.
@@ -121,11 +123,27 @@ export const ViewerSettings: React.FC = () => {
                 <TextField
                     fullWidth
                     size="small"
+                    type={showRemoteFalconToken ? 'text' : 'password'}
                     label="Remote Falcon Token"
                     value={settings.viewerControl.remoteFalconToken}
                     onChange={(e) => dispatch(playbackSettingsActions.setRemoteFalconToken(e.target.value))}
                     placeholder="Enter your Remote Falcon token"
+                    autoComplete="off"
                     sx={{ mb: 3 }}
+                    InputProps={{
+                        endAdornment: (
+                            <InputAdornment position="end">
+                                <IconButton
+                                    aria-label={showRemoteFalconToken ? 'Hide token' : 'Show token'}
+                                    onClick={() => setShowRemoteFalconToken((visible) => !visible)}
+                                    edge="end"
+                                    size="small"
+                                >
+                                    {showRemoteFalconToken ? <VisibilityOff /> : <Visibility />}
+                                </IconButton>
+                            </InputAdornment>
+                        ),
+                    }}
                 />
             )}
 

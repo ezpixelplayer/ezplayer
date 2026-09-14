@@ -15,6 +15,7 @@ export { SongList } from './components/song/SongList';
 export { AddSongDialogBrowser } from './components/song/AddSongDialogBrowser';
 export { ServerFilePickerDialog } from './components/song/ServerFilePickerDialog';
 export { EditSongDetailsDialog } from './components/song/EditSongDetailsDialog';
+export { SongSaveProgress, describeSongSave, saveErrorMessage } from './components/song/SongSaveProgress';
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
@@ -57,6 +58,8 @@ export { Viewer3D } from './components/preview-3d/Viewer3D';
 export type { Viewer3DProps } from './components/preview-3d/Viewer3D';
 export { Viewer2D } from './components/preview-3d/Viewer2D';
 export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
+export { RenderBridge } from './components/preview-3d/RenderBridge';
+export type { PreviewRenderHandle } from './components/preview-3d/RenderBridge';
 export { ModelList } from './components/preview-3d/ModelList';
 export type { ModelListProps } from './components/preview-3d/ModelList';
 export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState, LayoutSettings, ViewObject } from './types/model3d';
@@ -145,6 +148,10 @@ export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatu
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 export { remoteAccessActions } from './store/slices/RemoteAccessStore';
 export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';
+export { audioDevicesActions } from './store/slices/AudioDevicesStore';
+export type { AudioDevicesState } from './store/slices/AudioDevicesStore';
+export { appSettingsActions, sendAppSettingsCommand } from './store/slices/AppSettingsStore';
+export type { AppSettingsSliceState } from './store/slices/AppSettingsStore';
 
 export { themeCreator, ezrgbThemeOptions, useThemeContext, ThemeProviderWrapper } from './theme/ThemeBase';
 

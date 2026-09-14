@@ -1,7 +1,35 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { PlaybackSettings, ViewerControlScheduleEntry, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
+import {
+    AudioOutputConfig,
+    PlaybackSettings,
+    ViewerControlScheduleEntry,
+    VolumeControlState,
+    VolumeScheduleEntry,
+} from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
+
+function newAudioOutputId(): string {
+    return `aout-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function defaultVolumeControl(): VolumeControlState {
+    return { defaultVolume: 100, schedule: [] };
+}
+
+function normalizeAudioOutputs(list: AudioOutputConfig[] | undefined): AudioOutputConfig[] | undefined {
+    if (!list || list.length === 0) return undefined;
+    return list.map((o) => ({
+        id: o.id || newAudioOutputId(),
+        deviceId: o.deviceId ?? '',
+        label: o.label ?? '',
+        groupId: o.groupId,
+        volumeControl: {
+            defaultVolume: o.volumeControl?.defaultVolume ?? 100,
+            schedule: o.volumeControl?.schedule ?? [],
+        },
+    }));
+}
 
 /**
  * Playback settings slice — durable, user-editable settings (audio sync, jukebox
@@ -52,6 +80,7 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             includedTags: includedNormalized,
         },
         testSequenceTags: normalizeTagList(input.testSequenceTags, DEFAULT_TEST_SEQUENCE_TAGS),
+        audioOutputs: normalizeAudioOutputs(input.audioOutputs),
     };
 }
 
@@ -144,6 +173,10 @@ const playbackSettingsSlice = createSlice({
             state.settings.sendIdleBlackFrames = action.payload;
         },
 
+        setNormalizeNewSongs(state, action: PayloadAction<boolean>) {
+            state.settings.normalizeNewSongs = action.payload;
+        },
+
         // Sync output (FPP MultiSync master; future timecode strategies join here)
         setMultisyncEnabled(state, action: PayloadAction<boolean>) {
             const sync = (state.settings.sync ??= {});
@@ -184,6 +217,46 @@ const playbackSettingsSlice = createSlice({
                 (e) => e.id !== action.payload,
             );
         },
+
+        /** Desktop: true = system default output with `volumeControl`; false = `audioOutputs`. */
+        setUseDefaultAudioOutput(state, action: PayloadAction<boolean>) {
+            state.settings.useDefaultAudioOutput = action.payload ? undefined : false;
+        },
+        addAudioOutput(state, action: PayloadAction<Omit<AudioOutputConfig, 'id' | 'volumeControl'>>) {
+            (state.settings.audioOutputs ??= []).push({
+                ...action.payload,
+                id: newAudioOutputId(),
+                volumeControl: defaultVolumeControl(),
+            });
+        },
+        removeAudioOutput(state, action: PayloadAction<string>) {
+            const next = (state.settings.audioOutputs ?? []).filter((o) => o.id !== action.payload);
+            state.settings.audioOutputs = next.length > 0 ? next : undefined;
+        },
+        /** Refresh stored identity after a re-match (deviceId changed, label edited). */
+        setAudioOutputDevice(
+            state,
+            action: PayloadAction<{ id: string; deviceId: string; label: string; groupId?: string }>,
+        ) {
+            const entry = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (!entry) return;
+            entry.deviceId = action.payload.deviceId;
+            entry.label = action.payload.label;
+            entry.groupId = action.payload.groupId;
+        },
+        setAudioOutputVolume(state, action: PayloadAction<{ id: string; volume: number }>) {
+            const entry = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (entry) entry.volumeControl.defaultVolume = action.payload.volume;
+        },
+        addAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entry: VolumeScheduleEntry }>) {
+            const entry = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (entry) (entry.volumeControl.schedule ??= []).push(action.payload.entry);
+        },
+        removeAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entryId: string }>) {
+            const entry = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            if (!entry?.volumeControl.schedule) return;
+            entry.volumeControl.schedule = entry.volumeControl.schedule.filter((e) => e.id !== action.payload.entryId);
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -213,6 +286,7 @@ export const {
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
     setSendIdleBlackFrames,
+    setNormalizeNewSongs,
     setMultisyncEnabled,
     setMultisyncRemotes,
     setMultisyncPort,
@@ -222,6 +296,13 @@ export const {
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
+    setUseDefaultAudioOutput,
+    addAudioOutput,
+    removeAudioOutput,
+    setAudioOutputDevice,
+    setAudioOutputVolume,
+    addAudioOutputScheduleEntry,
+    removeAudioOutputScheduleEntry,
 } = playbackSettingsSlice.actions;
 
 export const playbackSettingsActions = playbackSettingsSlice.actions;

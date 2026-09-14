@@ -1,5 +1,5 @@
 // TimelineBySchedule.tsx - Replaced scatter chart with timeline component
-import React from 'react';
+import React, { useMemo } from 'react';
 import { type ParallelSchedulePreviewData } from '../../types/SchedulePreviewTypes';
 import TimelineBySchedule from './TimelineBySchedule';
 
@@ -18,11 +18,14 @@ const GraphForSchedule: React.FC<ScatterChartByScheduleProps> = ({
     selectedStartTime,
     selectedEndTime,
 }) => {
-    // Combine logs from both background and main schedules for the timeline
-    const combinedLogs = [...data.background.logs, ...data.main.logs];
-
-    // Sort by event time to ensure proper chronological order
-    combinedLogs.sort((a, b) => a.eventTime - b.eventTime);
+    // Combine logs from both background and main schedules for the timeline.
+    // Memoized so a parent re-render does not hand the timeline a new array
+    // (which would make it rebuild from scratch).
+    const combinedLogs = useMemo(() => {
+        const logs = [...data.background.logs, ...data.main.logs];
+        logs.sort((a, b) => a.eventTime - b.eventTime);
+        return logs;
+    }, [data.background.logs, data.main.logs]);
 
     return (
         <TimelineBySchedule

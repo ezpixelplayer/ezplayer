@@ -28,5 +28,5 @@ On the **desktop app**, this lives inside the Show Folder dialog (**Choose Media
 Folder** / **Clear**). On the **LAN UI**, open the separate **Media Folder**
 tile and type the path as the player PC sees it (then **Save**).
 
-Use this when your `.mp3` files live outside the show folder — for example a
+Use this when your `.mp3` and other audio files live outside the show folder — for example a
 shared media library or an xLights render output folder.

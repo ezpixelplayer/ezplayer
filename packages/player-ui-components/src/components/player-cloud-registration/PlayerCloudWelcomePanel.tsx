@@ -6,6 +6,11 @@ import {
     AccordionSummary,
     Button,
     CircularProgress,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
     Divider,
     Link,
     TextField,
@@ -25,6 +30,7 @@ import { API_ENDPOINTS } from '../../store/api/ApiEndpoints';
 import { postSetCloudUrl, postSetPlayerIdToken } from '../../store/slices/AuthStore';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
 import { CloudPollingIntervalEditor, CloudPollingScheduleEditor } from './CloudPollingEditor';
+import { MaskedPlayerId } from './MaskedPlayerId';
 import type { AppDispatch, RootState } from '../../store/Store';
 
 declare global {
@@ -65,13 +71,11 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
     const playerIdIsRegistered = useSelector(selectIsRegistered);
     const cloudActive = useSelector(selectCloudActive);
 
+    // Advanced-section popups; each seeds its draft from the current value on open.
     const [manualPlayerId, setManualPlayerId] = useState('');
+    const [manualOpen, setManualOpen] = useState(false);
     const [cloudUrlInput, setCloudUrlInput] = useState('');
-    const [isEditingCloudUrl, setIsEditingCloudUrl] = useState(false);
-
-    useEffect(() => {
-        setCloudUrlInput(cloudServiceUrl || '');
-    }, [cloudServiceUrl]);
+    const [cloudUrlOpen, setCloudUrlOpen] = useState(false);
 
     // Auto-generate a Player ID on mount when none is set, so the friendly QR-and-go
     // path lights up immediately. Skip while paused — generating a token whose
@@ -108,26 +112,27 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
     const handleGenerateNew = () => {
         void dispatch(postSetPlayerIdToken({ playerIdToken: uuidv4() }));
     };
+    const openManual = () => {
+        setManualPlayerId('');
+        setManualOpen(true);
+    };
     const handleApplyManual = () => {
         const id = manualPlayerId.trim();
         if (!id) return;
         void dispatch(postSetPlayerIdToken({ playerIdToken: id }));
+        setManualOpen(false);
     };
-    const handleClear = () => {
-        setManualPlayerId('');
-        void dispatch(postSetPlayerIdToken({ playerIdToken: '' }));
+    const openCloudUrl = () => {
+        setCloudUrlInput(cloudServiceUrl || '');
+        setCloudUrlOpen(true);
     };
     const handleCloudUrlSave = async () => {
         try {
-            await dispatch(postSetCloudUrl({ cloudUrl: cloudUrlInput })).unwrap();
-            setIsEditingCloudUrl(false);
+            await dispatch(postSetCloudUrl({ cloudUrl: cloudUrlInput.trim() })).unwrap();
+            setCloudUrlOpen(false);
         } catch (e) {
             console.error('Error updating cloud URL:', e);
         }
-    };
-    const handleCloudUrlCancel = () => {
-        setCloudUrlInput(cloudServiceUrl || '');
-        setIsEditingCloudUrl(false);
     };
 
     return (
@@ -253,78 +258,31 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                 </AccordionSummary>
                 <AccordionDetails>
                     {/* Cloud Service URL */}
-                    <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
-                        Cloud Service URL
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-                        <TextField
-                            fullWidth
-                            size="small"
-                            value={cloudUrlInput}
-                            onChange={(e) => setCloudUrlInput(e.target.value)}
-                            disabled={!isEditingCloudUrl}
-                            placeholder="Enter cloud service URL"
-                        />
-                        {!isEditingCloudUrl ? (
-                            <Button size="small" variant="contained" onClick={() => setIsEditingCloudUrl(true)}>
-                                Edit
-                            </Button>
-                        ) : (
-                            <>
-                                <Button size="small" variant="contained" onClick={handleCloudUrlSave}>
-                                    Save
-                                </Button>
-                                <Button size="small" variant="outlined" onClick={handleCloudUrlCancel}>
-                                    Cancel
-                                </Button>
-                            </>
-                        )}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140 }}>
+                            Cloud Service URL:
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', flex: 1 }}>
+                            {cloudServiceUrl || '(not set)'}
+                        </Typography>
+                        <Button size="small" variant="outlined" onClick={openCloudUrl}>
+                            Edit
+                        </Button>
                     </Box>
 
-                    {/* Current ID + manual override */}
-                    <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
-                        Current Player ID
-                    </Typography>
-                    <TextField
-                        fullWidth
-                        size="small"
-                        value={playerIdToken}
-                        InputProps={{ readOnly: true }}
-                        sx={{ mb: 2 }}
-                    />
-                    <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                    {/* Current Player ID */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140 }}>
+                            Current Player ID:
+                        </Typography>
+                        <MaskedPlayerId value={playerIdToken} />
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap', pl: { sm: '148px' } }}>
                         <Button size="small" variant="outlined" onClick={handleGenerateNew}>
                             Generate New
                         </Button>
-                        <Button
-                            size="small"
-                            variant="outlined"
-                            color="error"
-                            onClick={handleClear}
-                            disabled={!playerIdToken && !manualPlayerId}
-                        >
-                            Clear
-                        </Button>
-                    </Box>
-
-                    <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
-                        Set a specific Player ID
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <TextField
-                            fullWidth
-                            size="small"
-                            placeholder="Paste a Player ID"
-                            value={manualPlayerId}
-                            onChange={(e) => setManualPlayerId(e.target.value)}
-                        />
-                        <Button
-                            size="small"
-                            variant="contained"
-                            onClick={handleApplyManual}
-                            disabled={!manualPlayerId.trim()}
-                        >
-                            Apply
+                        <Button size="small" variant="outlined" onClick={openManual}>
+                            Enter Manually
                         </Button>
                     </Box>
 
@@ -336,6 +294,63 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                     )}
                 </AccordionDetails>
             </Accordion>
+
+            {/* Edit Cloud Service URL */}
+            <Dialog open={cloudUrlOpen} onClose={() => setCloudUrlOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Cloud Service URL</DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ mb: 2 }}>
+                        Only change this if you have been given a different cloud service address. Registration and sync
+                        restart against the new URL when you save.
+                    </DialogContentText>
+                    <TextField
+                        autoFocus
+                        fullWidth
+                        size="small"
+                        label="Cloud Service URL"
+                        value={cloudUrlInput}
+                        onChange={(e) => setCloudUrlInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') void handleCloudUrlSave();
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setCloudUrlOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void handleCloudUrlSave()}>
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Enter a specific Player ID */}
+            <Dialog open={manualOpen} onClose={() => setManualOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Enter Player ID</DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ mb: 2 }}>
+                        Paste a Player ID from another player or from your EZRGB account to make this player take over
+                        that registration. The current ID is replaced.
+                    </DialogContentText>
+                    <TextField
+                        autoFocus
+                        fullWidth
+                        size="small"
+                        label="Player ID"
+                        placeholder="Paste a Player ID"
+                        value={manualPlayerId}
+                        onChange={(e) => setManualPlayerId(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleApplyManual();
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setManualOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={handleApplyManual} disabled={!manualPlayerId.trim()}>
+                        Apply
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

@@ -1,12 +1,33 @@
-import type { AudioChunk, AudioDevice, EZPElectronAPI } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, AudioDevice, AudioOutputTarget, EZPElectronAPI } from '@ezplayer/ezplayer-core';
 import type { IpcRendererEvent } from 'electron';
 
 export interface M2RIPC<Payload> {
     reqid: number;
-    req: Payload;
+    payload: Payload;
 }
 
 const { contextBridge, ipcRenderer } = require('electron');
+
+/** Output identity passed from main via webPreferences.additionalArguments. */
+function outputFromArgv(): AudioOutputTarget {
+    const prefix = '--ezp-audio-output=';
+    const raw = process.argv.find((a: string) => a.startsWith(prefix));
+    if (!raw) return { deviceId: '', label: '' };
+    try {
+        return JSON.parse(decodeURIComponent(raw.slice(prefix.length))) as AudioOutputTarget;
+    } catch {
+        return { deviceId: '', label: '' };
+    }
+}
+
+const configuredOutput = outputFromArgv();
+
+export interface AudioWindowAPI {
+    getAudioOutput(): AudioOutputTarget;
+    onAudioChunk(callback: (data: AudioChunk) => void): void;
+    /** Linear amplitude 0..1 for this window's GainNode. */
+    onAudioGain(callback: (gain: number) => void): void;
+}
 
 contextBridge.exposeInMainWorld('electronAPI', {
     connect() {
@@ -14,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     disconnect() {
         return ipcRenderer.invoke('ipcUIDisconnect');
+    },
+    getAudioOutput(): AudioOutputTarget {
+        return configuredOutput;
     },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
         ipcRenderer.on('audio:get-devices', async (_event: IpcRendererEvent, req: M2RIPC<void>) => {
@@ -27,4 +51,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-} satisfies Partial<EZPElectronAPI>);
+    onAudioGain: (callback: (gain: number) => void) => {
+        ipcRenderer.on('audio:gain', (_event: IpcRendererEvent, gain: number) => {
+            callback(gain);
+        });
+    },
+} satisfies Partial<EZPElectronAPI> & AudioWindowAPI);

@@ -4,19 +4,33 @@ import {
     Autocomplete,
     Box,
     Button,
+    Checkbox,
     Dialog,
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     Typography,
 } from '@mui/material';
 
 import { TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
-import { AppDispatch, postSequenceData, RootState, setSequenceTags } from '@ezplayer/player-ui-components';
+import {
+    AppDispatch,
+    postSequenceData,
+    RootState,
+    saveErrorMessage,
+    setSequenceTags,
+    SongSaveProgress,
+} from '@ezplayer/player-ui-components';
 
-import { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
+import {
+    SequenceFiles,
+    SequenceRecord,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    isSupportedAudioName,
+} from '@ezplayer/ezplayer-core';
 
 import { ElectronFileButton } from './ElectronSelectFileButton';
 
@@ -39,6 +53,14 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
     const [imageFile, setImageFile] = useState<string | undefined>(undefined);
     const [imageUrl, setImageUrl] = useState<string>('');
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
+    /** Save in flight: derived audio is built before the record commits. */
+    const [saving, setSaving] = useState(false);
+    const normalizeNewSongs = useSelector((state: RootState) => state.playbackSettings.settings.normalizeNewSongs);
+    /** Normalize volume for this song; defaults from Audio Settings each time the dialog opens. */
+    const [normalize, setNormalize] = useState(false);
+    useEffect(() => {
+        if (open) setNormalize(normalizeNewSongs === true);
+    }, [open, normalizeNewSongs]);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -173,8 +195,8 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     setFseqFile(undefined);
                 }
             } else if (type === 'mp3') {
-                if (lowerFile.endsWith('.mp3')) {
-                    console.log(`[AddSong][MP3] Selected MP3 file: "${file}"`);
+                if (isSupportedAudioName(lowerFile)) {
+                    console.log(`[AddSong][Audio] Selected audio file: "${file}"`);
                     setMp3File(file);
                     if (typeof window !== 'undefined' && window.electronAPI?.extractAudioTagMetadata) {
                         try {
@@ -219,6 +241,8 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
 
     const handleNewSongSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
+        setSaving(true);
 
         try {
             // Generate UUID for id and instanceId
@@ -258,6 +282,7 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                     lead_time: parseFloat(newSongData.lead_time) || 0,
                     trail_time: parseFloat(newSongData.trail_time) || 0,
                     volume_adj: parseFloat(newSongData.volume_adj) || 0,
+                    normalize,
                     tags: newSongData.tags,
                 },
             };
@@ -275,11 +300,13 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
             onClose();
         } catch (error) {
             console.error('Error adding song:', error);
-            ToastMsgs.showErrorMessage('Failed to add song', {
+            ToastMsgs.showErrorMessage(saveErrorMessage(error, 'Failed to add song'), {
                 theme: 'colored',
                 position: 'bottom-right',
-                autoClose: 2000,
+                autoClose: 6000,
             });
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -319,13 +346,13 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={12}>
                             <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                Upload .mp3 File{' '}
+                                Upload Audio File{' '}
                                 <Typography component="span" variant="body2" color="text.secondary">
-                                    (optional)
+                                    (optional: {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                 </Typography>
                             </Typography>
                             <ElectronFileButton
-                                fileType={{ name: 'Audio', extensions: ['.mp3'] }}
+                                fileType={{ name: 'Audio', extensions: [...SUPPORTED_AUDIO_EXTENSIONS] }}
                                 isMultipleFile={false}
                                 onChange={(e) => handleFileChange(e?.target?.files[0]?.path, 'mp3')}
                             />
@@ -397,6 +424,23 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             />
                         </Grid>
                         <Grid item xs={6}>
+                            <Autocomplete
+                                multiple
+                                freeSolo
+                                options={availableTags}
+                                value={newSongData.tags}
+                                onChange={(_, newValue) => {
+                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
+                                    newValue.forEach((tag) => {
+                                        if (tag && !availableTags.includes(tag)) {
+                                            dispatch(setSequenceTags([...availableTags, tag]));
+                                        }
+                                    });
+                                }}
+                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
                             <TextField
                                 label="Volume Adjustment"
                                 name="volume_adj"
@@ -405,6 +449,23 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 inputProps={{ min: -100, max: 100 }}
                                 fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <FormControlLabel
+                                sx={{ mt: 1 }}
+                                control={
+                                    <Checkbox
+                                        checked={normalize}
+                                        onChange={(e) => {
+                                            const next = e.target.checked;
+                                            setNormalize(next);
+                                            // Normalized audio makes a manual offset redundant; start from 0.
+                                            if (next) setNewSongData((prev) => ({ ...prev, volume_adj: '0' }));
+                                        }}
+                                    />
+                                }
+                                label="Normalize volume"
                             />
                         </Grid>
                         <Grid item xs={6}>
@@ -427,24 +488,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                 onChange={handleNewSongDataChange}
                                 inputProps={{ min: -5, max: 5 }}
                                 fullWidth
-                            />
-                        </Grid>
-
-                        <Grid item xs={6}>
-                            <Autocomplete
-                                multiple
-                                freeSolo
-                                options={availableTags}
-                                value={newSongData.tags}
-                                onChange={(_, newValue) => {
-                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
-                                    newValue.forEach((tag) => {
-                                        if (tag && !availableTags.includes(tag)) {
-                                            dispatch(setSequenceTags([...availableTags, tag]));
-                                        }
-                                    });
-                                }}
-                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
                             />
                         </Grid>
                     </Grid>
@@ -474,14 +517,15 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                             variant="contained"
                             color="primary"
                             onClick={handleNewSongSubmit}
-                            disabled={!fseqFile || !newSongData.title || !newSongData.artist}
+                            disabled={saving || !fseqFile || !newSongData.title || !newSongData.artist}
                         >
                             Save
                         </Button>
-                        <Button type="button" variant="outlined" color="secondary" onClick={onClose}>
+                        <Button type="button" variant="outlined" color="secondary" onClick={onClose} disabled={saving}>
                             Cancel
                         </Button>
                     </Box>
+                    <SongSaveProgress saving={saving} audio={mp3File} normalize={normalize} />
                 </form>
             </>
         </Box>

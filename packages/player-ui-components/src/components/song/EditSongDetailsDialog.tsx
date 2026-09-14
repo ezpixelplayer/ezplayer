@@ -1,12 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Autocomplete, Button, Dialog, DialogContent, DialogTitle, Divider, Grid, Typography } from '@mui/material';
+import {
+    Autocomplete,
+    Button,
+    Checkbox,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    Divider,
+    FormControlLabel,
+    Grid,
+    Typography,
+} from '@mui/material';
 import { Box } from '../box/Box';
 
 import { FileButton, isElectron, TextField, ToastMsgs } from '@ezplayer/shared-ui-components';
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
+import { SUPPORTED_AUDIO_EXTENSIONS } from '@ezplayer/ezplayer-core';
 import {
     AppDispatch,
     extractShowAudioMetadata,
@@ -17,6 +29,7 @@ import {
 } from '../..';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
+import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
@@ -37,7 +50,7 @@ const FileSelectButton = ({
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
-                                      ? ['.mp3']
+                                      ? [...SUPPORTED_AUDIO_EXTENSIONS]
                                       : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
@@ -85,6 +98,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         lead_time: '',
         trail_time: '',
         volume_adj: '',
+        normalize: false,
         tags: [] as string[],
     });
     const [errors, setErrors] = useState({
@@ -99,6 +113,8 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
     const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
+    /** Save in flight: derived audio is built before the record commits. */
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if (open && selectedSongId) {
@@ -114,6 +130,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 lead_time: selectedSong?.settings?.lead_time?.toString() || '0',
                 trail_time: selectedSong?.settings?.trail_time?.toString() || '0',
                 volume_adj: selectedSong?.settings?.volume_adj?.toString() || '0',
+                normalize: selectedSong?.settings?.normalize === true,
                 tags: selectedSong?.settings?.tags || [],
             });
 
@@ -279,6 +296,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleSubmit = async (e: any) => {
         e.preventDefault();
+        if (saving) return;
         const newErrors = {
             title: formData.title.trim() === '',
             artist: formData.artist.trim() === '',
@@ -333,14 +351,17 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         lead_time: parseFloat(formData.lead_time),
                         trail_time: parseFloat(formData.trail_time),
                         volume_adj: parseFloat(formData.volume_adj),
+                        normalize: formData.normalize,
                         update_time: new Date().toISOString(),
                         tags: formData.tags,
                     },
                 };
 
                 // Send to the server
+                setSaving(true);
                 try {
                     await dispatch(postSequenceData([updatedSong])).unwrap();
+                    setSaving(false);
                     ToastMsgs.showSuccessMessage('Song settings updated successfully', {
                         theme: 'colored',
                         position: 'bottom-right',
@@ -349,11 +370,12 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                     onClose();
                 } catch (error) {
                     console.error('Error updating song:', error);
-                    onClose();
-                    ToastMsgs.showErrorMessage('Failed to update song', {
+                    setSaving(false);
+                    // Stay open so the user can fix the file or flag and retry.
+                    ToastMsgs.showErrorMessage(saveErrorMessage(error, 'Failed to update song'), {
                         theme: 'colored',
                         position: 'bottom-right',
-                        autoClose: 2000,
+                        autoClose: 6000,
                     });
                 }
             }
@@ -370,6 +392,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             lead_time: originalSong?.settings?.lead_time?.toString() || '0',
             trail_time: originalSong?.settings?.trail_time?.toString() || '0',
             volume_adj: originalSong?.settings?.volume_adj?.toString() || '0',
+            normalize: originalSong?.settings?.normalize === true,
             tags: originalSong?.settings?.tags || [],
         });
         setSelectedTags(originalSong?.settings?.tags || []);
@@ -459,7 +482,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </form>
                     </Grid>
 
-                    {/* File Management — native picker in Electron, upload on web */}
+                    {/* File Management - native picker in Electron, upload on web */}
                     <Grid item xs={12}>
                         <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
                             Files
@@ -501,7 +524,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                 ) : (
                                     <>
                                         <FileButton
-                                            fileType={['.mp3']}
+                                            fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
                                             isMultipleFile={false}
                                             onChange={(e) =>
                                                 handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
@@ -513,7 +536,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                     </>
                                 )}
                                 <Typography variant="body1">
-                                    {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No MP3 file'}
+                                    {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No audio file'}
                                 </Typography>
                             </Box>
 
@@ -614,6 +637,28 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                     />
                                 </Grid>
                                 <Grid item xs={6}>
+                                    <FormControlLabel
+                                        sx={{ mt: 2 }}
+                                        control={
+                                            <Checkbox
+                                                checked={formData.normalize}
+                                                onChange={(e) => {
+                                                    const normalize = e.target.checked;
+                                                    // Normalized audio makes a manual offset redundant; start from 0.
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        normalize,
+                                                        volume_adj: normalize ? '0' : prev.volume_adj,
+                                                    }));
+                                                    if (normalize)
+                                                        setErrors((prev) => ({ ...prev, volume_adj: false }));
+                                                }}
+                                            />
+                                        }
+                                        label="Normalize volume"
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
                                     <Autocomplete
                                         multiple
                                         freeSolo
@@ -674,13 +719,18 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         marginTop: 3,
                     }}
                 >
-                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary">
+                    <Button onClick={handleSubmit} type="button" variant="contained" color="primary" disabled={saving}>
                         Save
                     </Button>
-                    <Button type="button" variant="outlined" color="secondary" onClick={handleCancel}>
+                    <Button type="button" variant="outlined" color="secondary" onClick={handleCancel} disabled={saving}>
                         Cancel
                     </Button>
                 </Box>
+                <SongSaveProgress
+                    saving={saving}
+                    audio={newFiles?.audio || uploadedFiles?.audio}
+                    normalize={formData.normalize}
+                />
             </>
         </Box>
     );

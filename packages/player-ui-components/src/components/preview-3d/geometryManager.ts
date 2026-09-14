@@ -15,6 +15,32 @@ import {
     getGammaFromModelConfiguration,
 } from './pointShaders';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { stringColorHex } from './wiringColors';
+
+/**
+ * Pixels per world unit for point sizing.
+ * Perspective: divide by view-space distance. Ortho: already includes zoom.
+ */
+function worldToPixelScale(camera: THREE.Camera, heightCssPx: number): number {
+    const anyCam = camera as THREE.Camera & {
+        isPerspectiveCamera?: boolean;
+        isOrthographicCamera?: boolean;
+    };
+    if (anyCam.isPerspectiveCamera) {
+        const cam = camera as THREE.PerspectiveCamera;
+        const fovRad = (cam.fov * Math.PI) / 180;
+        return heightCssPx / (2 * Math.tan(fovRad / 2));
+    }
+    if (anyCam.isOrthographicCamera) {
+        const cam = camera as THREE.OrthographicCamera;
+        const frustumHeight = Math.max(0.0001, cam.top - cam.bottom);
+        return (heightCssPx / frustumHeight) * (cam.zoom ?? 1.0);
+    }
+    return 1.0;
+}
 
 /**
  * Manages a single geometry group's rendering state
@@ -111,23 +137,7 @@ export class GeometryGroupRenderer {
             renderer.getSize(this._sizeVec);
             const heightCssPx = Math.max(1, this._sizeVec.y);
 
-            // Compute scale factor to convert world units to pixels for point sizing.
-            // Perspective: pixels = worldSize * (H / (2*tan(fov/2))) / distance
-            // Ortho: pixels = worldSize * (H / frustumHeight) * zoom
-            let scale = 1.0;
-            const anyCam = camera as THREE.Camera & {
-                isPerspectiveCamera?: boolean;
-                isOrthographicCamera?: boolean;
-            };
-            if (anyCam?.isPerspectiveCamera) {
-                const cam = camera as THREE.PerspectiveCamera;
-                const fovRad = (cam.fov * Math.PI) / 180;
-                scale = heightCssPx / (2 * Math.tan(fovRad / 2));
-            } else if (anyCam?.isOrthographicCamera) {
-                const cam = camera as THREE.OrthographicCamera;
-                const frustumHeight = Math.max(0.0001, cam.top - cam.bottom);
-                scale = (heightCssPx / frustumHeight) * (cam.zoom ?? 1.0);
-            }
+            const scale = worldToPixelScale(camera, heightCssPx);
 
             // Max supported point size (GPU dependent); query once per material/context.
             if (material.uniforms.maxPointSize?.value === 2048.0) {
@@ -191,8 +201,12 @@ export class GeometryGroupRenderer {
      */
     updateLiveDataColors(liveData?: LatestFrameRingBuffer): void {
         if (!liveData) {
-            // No live data available - use procedural colors
+            // No live data available - use procedural colors.
+            // Forget the last consumed seq so that when live data returns (e.g. the fullscreen
+            // test-pattern toggle is switched off) the current frame is re-read immediately,
+            // even if the player is paused and no new frame has been published since.
             this.material.uniforms.useLiveData.value = 0.0;
+            this._lastFrameSeq = 0;
             return;
         }
 
@@ -305,9 +319,8 @@ export class GeometryManager {
     private viewPlane?: 'xy' | 'xz' | 'yz';
     private gamma: number;
     private pointIdToModelNameCache: Map<string, string | null> = new Map();
-    // Wiring-order overlay: one polyline per selected model, tracing its nodes
-    // in data order (node 1 → last). Lives in its own group the viewer adds
-    // alongside the point objects.
+    // Wiring-order overlay: one polyline per physical string of each selected
+    // model, in data order. Lives in its own group the viewer adds to the scene.
     private wiringGroup: THREE.Group = new THREE.Group();
     private wiringShownKey: string = '';
     private modelPointsCache: Map<string, Point3D[]> | null = null;
@@ -315,6 +328,8 @@ export class GeometryManager {
     private modelPixelStyleMap: Map<string, string> = new Map(); // Store pixelStyle as string from XML
     private modelTransparencyMap: Map<string, number> = new Map(); // Store transparency (0–100) from XML
     private pixelSizeMultiplier: number; // Multiplier for pixel size (from settings)
+    private _sizeVec = new THREE.Vector2();
+    private _tmpVec = new THREE.Vector3();
 
     constructor(
         points: Point3D[],
@@ -509,42 +524,89 @@ export class GeometryManager {
         return map;
     }
 
-    /** Rebuild the per-model wiring polylines when the selected set changes. */
+    /** Rebuild the per-string wiring polylines when the selected set changes. */
     private updateWiringPaths(selectedModelNames?: Set<string>): void {
-        const key = selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join(' ') : '';
+        const key =
+            selectedModelNames && selectedModelNames.size > 0 ? [...selectedModelNames].sort().join('\u0000') : '';
         if (key === this.wiringShownKey) return;
         this.wiringShownKey = key;
 
         for (const child of [...this.wiringGroup.children]) {
             this.wiringGroup.remove(child);
-            const line = child as THREE.Line;
+            const line = child as Line2;
             line.geometry?.dispose();
-            (line.material as THREE.Material | undefined)?.dispose();
+            line.material?.dispose();
         }
         if (!key) return;
 
         this.modelPointsCache ??= this.buildModelPointsCache();
         selectedModelNames!.forEach((name) => {
             const pts = this.modelPointsCache!.get(name);
-            if (!pts || pts.length < 2) return;
-            // Mirror the point shader's 2D flattening so the line lies in the
-            // same plane as the flattened points.
-            const positions = new Float32Array(pts.length * 3);
-            pts.forEach((p, i) => {
-                positions[i * 3] = this.viewPlane === 'yz' ? 0 : p.x;
-                positions[i * 3 + 1] = this.viewPlane === 'xz' ? 0 : p.y;
-                positions[i * 3 + 2] = this.viewPlane === 'xy' ? 0 : p.z;
+            if (!pts) return;
+            const modelPixelSize = this.modelPixelSizeMap.get(name);
+            const nodeSize = Math.max(0.1, Number(modelPixelSize) || this.pointSize);
+
+            // One polyline per physical string, in data order.
+            const byString = new Map<number, Point3D[]>();
+            for (const p of pts) {
+                const s = p.metadata?.stringIndex ?? 0;
+                let arr = byString.get(s);
+                if (!arr) byString.set(s, (arr = []));
+                arr.push(p);
+            }
+            byString.forEach((spts, stringIndex) => {
+                if (spts.length < 2) return;
+                // Mirror the point shader's 2D flattening so the line lies in the
+                // same plane as the flattened points.
+                const positions = new Float32Array(spts.length * 3);
+                const box = new THREE.Box3();
+                spts.forEach((p, i) => {
+                    positions[i * 3] = this.viewPlane === 'yz' ? 0 : p.x;
+                    positions[i * 3 + 1] = this.viewPlane === 'xz' ? 0 : p.y;
+                    positions[i * 3 + 2] = this.viewPlane === 'xy' ? 0 : p.z;
+                    box.expandByPoint(this._tmpVec.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]));
+                });
+                const center = box.getCenter(new THREE.Vector3());
+                const geom = new LineGeometry();
+                geom.setPositions(positions);
+                const mat = new LineMaterial({
+                    color: stringColorHex(stringIndex),
+                    linewidth: 1,
+                    transparent: true,
+                    opacity: 0.9,
+                    depthWrite: false,
+                    depthTest: false,
+                });
+                const line = new Line2(geom, mat);
+                // Draw after the points so the wire is always on top.
+                line.renderOrder = 1;
+                // Wires are display-only; keep them out of the scene raycasts.
+                line.raycast = () => {};
+                (line as THREE.Object3D).onBeforeRender = (renderer, _scene, camera) => {
+                    this.updateWireWidth(renderer, camera, mat, center, nodeSize);
+                };
+                this.wiringGroup.add(line);
             });
-            const geom = new THREE.BufferGeometry();
-            geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const mat = new THREE.LineBasicMaterial({
-                color: 0x00c853, // matches the node-1 marker green
-                transparent: true,
-                opacity: 0.55,
-                depthWrite: false,
-            });
-            this.wiringGroup.add(new THREE.Line(geom, mat));
         });
+    }
+
+    /** Wire width = 1/3 of the model's on-screen node size, at least 1 px. */
+    private updateWireWidth(
+        renderer: THREE.WebGLRenderer,
+        camera: THREE.Camera,
+        mat: LineMaterial,
+        center: THREE.Vector3,
+        nodeSize: number,
+    ): void {
+        // Points are sized in device px from the CSS height; match that here.
+        renderer.getSize(this._sizeVec);
+        let px = nodeSize * this.pixelSizeMultiplier * worldToPixelScale(camera, Math.max(1, this._sizeVec.y));
+        mat.resolution.copy(renderer.getDrawingBufferSize(this._sizeVec));
+        if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+            const viewZ = this._tmpVec.copy(center).applyMatrix4(camera.matrixWorldInverse).z;
+            px /= Math.max(0.0001, -viewZ);
+        }
+        mat.linewidth = Math.max(1, px / 3);
     }
 
     /**

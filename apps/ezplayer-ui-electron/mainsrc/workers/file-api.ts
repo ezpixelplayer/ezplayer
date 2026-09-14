@@ -48,9 +48,11 @@ export interface FileApiDeps {
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
     /** Playback-settings media folder for audio autodetection. */
     getMediaFolder?: () => string | undefined;
+    /** Playback-settings "normalize new songs" default for imported records. */
+    getNormalizeNewSongs?: () => boolean | undefined;
 }
 
-const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac', '.wma']);
+const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac', '.wma', '.mp4']);
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg']);
 const IMAGE_EXTS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const SEQ_EXTS = new Set(['.fseq']);
@@ -836,6 +838,8 @@ export async function batchImportSequencesCore(
     try {
         const summary = await batchImportSequences(unique, {
             mediaFolder: deps.getMediaFolder?.(),
+            showFolder: deps.getShowFolder(),
+            normalize: deps.getNormalizeNewSongs?.(),
             // Upload flow: restrict show-folder audio to this request's
             // companions. Existing-files flow: unrestricted (undefined),
             // exact-match still applies.

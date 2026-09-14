@@ -1,16 +1,16 @@
 {
     "name": "@ezplayer/ui-embedded",
     "private": true,
-    "version": "0.6.6",
+    "version": "0.6.7",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
         ".": {
+            "types": "./dist/index.d.ts",
             "development": "./src/index.ts",
             "import": "./dist/index.js",
-            "require": "./dist/index.js",
-            "types": "./dist/index.d.ts"
+            "require": "./dist/index.js"
         }
     },
     "typesVersions": {
@@ -48,7 +48,7 @@
         "react-redux": "catalog:",
         "react-router-dom": "catalog:",
         "react-toastify": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.3.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.4.tgz"
     },
     "peerDependencies": {
         "react": "^18.0.0",

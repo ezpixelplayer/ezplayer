@@ -9,6 +9,7 @@ import type {
     EZPlayerCommand,
     PlaybackSettings,
     BatchImportSummary,
+    AppSettingsCommand,
 } from '@ezplayer/ezplayer-core';
 
 import { AppDispatch } from '../..';
@@ -131,6 +132,10 @@ export interface DataStorageAPI {
     /** Single umbrella for software-update verbs. Fire and forget: results and
      *  progress arrive via the pushed `autoUpdateOps` state. */
     issueUpdateCommand?: (cmd: UpdateCommand) => Promise<void>;
+
+    /** App-global settings verbs (diagnostics consent, start at sign-in). Fire and
+     *  forget: the new state arrives via the pushed `appSettings` state. */
+    issueAppSettingsCommand?: (cmd: AppSettingsCommand) => Promise<void>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;

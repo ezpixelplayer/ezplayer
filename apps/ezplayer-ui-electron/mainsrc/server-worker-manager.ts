@@ -25,6 +25,7 @@ import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
 import { reportDiagEvent } from './diagnostics.js';
 import { safeSend } from './safe-send.js';
+import { syncAudioOutputsFromSettings } from './audioWindows.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
 import { isFeatureEnabled } from './remoteaccess.js';
 import {
@@ -36,8 +37,14 @@ import {
     startShellSession,
     writeToShellSession,
 } from './shell-session.js';
-import { dispatchControllerCommand, setControllerOpsBroadcaster, refreshInterfaces } from './controller-ops.js';
+import {
+    dispatchControllerCommand,
+    setControllerOpsBroadcaster,
+    refreshInterfaces,
+    hasRunningControllerOps,
+} from './controller-ops.js';
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
+import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
 import { ezpVersions } from '../versions.js';
 import type {
     PlaybackSettings,
@@ -100,6 +107,11 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
         if (cmd.command === 'resetplayback') {
+            // Reloading clears controller state an operation is still writing to.
+            if (hasRunningControllerOps()) {
+                console.warn('[resetplayback] refused: a controller operation is running');
+                return;
+            }
             // Same path as folder change: reload everything and force worker restart
             loadShowFolder(true);
             return;
@@ -112,10 +124,12 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         }
     },
     sendPlaybackSettings: (settings: unknown) => {
+        const playbackSettings = settings as PlaybackSettings;
+        syncAudioOutputsFromSettings(playbackSettings);
         if (playWorkerRef) {
             playWorkerRef.postMessage({
                 type: 'settings',
-                settings: settings as PlaybackSettings,
+                settings: playbackSettings,
             });
         }
         const mainWindow = getMainWindowRef?.();
@@ -130,6 +144,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     updateCommand: async (cmd) => {
         await dispatchUpdateCommand(cmd);
+    },
+    appSettingsCommand: async (cmd) => {
+        await dispatchAppSettingsCommand(cmd);
     },
     controllerCommand: async (command, origin) => {
         return dispatchControllerCommand(command, origin);
@@ -219,6 +236,12 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     // (The Electron push channel is handled inside ipcautoupdate itself.)
     setAutoUpdateOpsBroadcaster((s) => {
         broadcastToWebSocket('autoUpdateOps', s);
+    });
+
+    // App-global settings go to both front-ends like controller ops.
+    setAppSettingsBroadcaster((s) => {
+        broadcastToWebSocket('appSettings', s);
+        safeSend(getMainWindowRef?.(), 'update:appsettings', s);
     });
 
     // Handle messages from server worker

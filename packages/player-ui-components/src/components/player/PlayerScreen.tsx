@@ -7,6 +7,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../../store/Store';
 import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
+import { DEFAULT_SCHEDULE_PREVIEW_SETTINGS } from '../../constants/schedulePreviewConstants';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
 import { getControllerStats } from '../status/ControllerHelpers';
@@ -206,7 +207,7 @@ const TimelineView = () => {
             endDate: new Date(endTime),
             startTime: '00:00',
             endTime: '23:59',
-            maxEvents: 1000,
+            maxEvents: DEFAULT_SCHEDULE_PREVIEW_SETTINGS.maxEvents,
             scheduleTypeFilter: 'all',
         }),
         [startTime, endTime],

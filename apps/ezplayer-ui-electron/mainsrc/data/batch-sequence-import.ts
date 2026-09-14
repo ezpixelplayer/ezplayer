@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type {
     BatchImportFailure,
+    BatchImportProgress,
     BatchImportSkipped,
     BatchImportSuccess,
     BatchImportSummary,
@@ -13,12 +14,19 @@ import {
     type AutoDetectOptions,
     type AutoDetectedSongFiles,
 } from './song-file-autodetect.js';
+import { deriveAudioForRecord } from './derived-audio.js';
 
 export interface BatchImportOptions extends AutoDetectOptions {
     /** Persist one or more SequenceRecords (typically putSequencesWithDurations). */
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
     /** Current catalog. Basename matches are skipped. */
     existingSequences?: SequenceRecord[];
+    /** Show folder; derived audio is built under it before a song is saved. */
+    showFolder?: string;
+    /** `settings.normalize` for the imported songs (the "normalize new songs" default). */
+    normalize?: boolean;
+    /** Called as each fseq starts importing (audio derivation makes this slow) and once at the end. */
+    onProgress?: (p: BatchImportProgress) => void;
 }
 
 /**
@@ -67,7 +75,7 @@ export function buildSequenceRecordFromDetected(fseqPath: string, detected: Auto
 
 async function importOneFseq(
     fseqPath: string,
-    options: AutoDetectOptions,
+    options: AutoDetectOptions & Pick<BatchImportOptions, 'showFolder' | 'normalize'>,
 ): Promise<
     { ok: true; success: BatchImportSuccess; record: SequenceRecord } | { ok: false; failure: BatchImportFailure }
 > {
@@ -101,7 +109,30 @@ async function importOneFseq(
             };
         }
 
+        // A saved song is a playable song: derive its audio now, so one bad
+        // file fails only its own import instead of the whole batch at commit.
+        if (detected.audioFile && options.showFolder) {
+            try {
+                await deriveAudioForRecord(
+                    { audio: detected.audioFile, normalize: options.normalize },
+                    options.showFolder,
+                );
+            } catch (error) {
+                return {
+                    ok: false,
+                    failure: {
+                        fseqPath,
+                        fseqName,
+                        reason: `Cannot derive playable audio: ${error instanceof Error ? error.message : String(error)}`,
+                    },
+                };
+            }
+        }
+
         const record = buildSequenceRecordFromDetected(fseqPath, detected);
+        if (options.normalize !== undefined) {
+            record.settings = { ...(record.settings ?? {}), normalize: options.normalize };
+        }
 
         return {
             ok: true,
@@ -158,6 +189,11 @@ export async function batchImportSequences(
             console.log(`[BatchImport] Skipped "${fseqName}" (already imported)`);
             continue;
         }
+        options.onProgress?.({
+            done: successes.length + failures.length + skipped.length,
+            total: unique.length,
+            fseqName,
+        });
         const result = await importOneFseq(fseqPath, options);
         if (result.ok) {
             successes.push(result.success);
@@ -173,6 +209,7 @@ export async function batchImportSequences(
         await options.putSequences(recordsToSave);
     }
 
+    options.onProgress?.({ done: unique.length, total: unique.length });
     const summary: BatchImportSummary = {
         total: unique.length,
         imported: successes.length,

@@ -60,6 +60,9 @@ const nodeExternals = [
     // require — `@lydell/node-pty-${platform}-${arch}` — which esbuild cannot
     // follow. It has to stay external and ship unbundled in node_modules.
     '@lydell/node-pty',
+    // ffmpeg-static exports a path to a native binary next to the package;
+    // bundling would break that __dirname resolution.
+    'ffmpeg-static',
     'ws',
     'http',
     'fs/promises',

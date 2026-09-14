@@ -37,6 +37,16 @@ function sessionKey(cloudUrl: string, playerIdToken: string, showFolder: string)
     return `${cloudUrl}\0${playerIdToken}\0${showFolder}`;
 }
 
+let remoteControlEnabled = true;
+
+/** Disabling also drops any live bridge, so an attached viewer is cut off now
+ *  rather than at TTL expiry. */
+export function setCloudRemoteControlEnabled(enabled: boolean): void {
+    if (remoteControlEnabled === enabled) return;
+    remoteControlEnabled = enabled;
+    if (!enabled) cloudBridgeClose();
+}
+
 let statusListener: ((s: CloudStatus) => void) | undefined;
 let cStatusListener: ((s: PlayerCStatusContent) => void) | undefined;
 let installListener: ((record: SequenceRecord) => void) | undefined;
@@ -63,6 +73,7 @@ function applyOutOfBandCommand(cmd: OutOfBandCommand) {
                 console.warn('[cloudpoll] openCloudWS missing wsUrl; ignoring command');
                 return;
             }
+            if (!remoteControlEnabled) return;
             cloudBridgeOpen(cmd.wsUrl, cmd.proxyWsUrl, cmd.audioWsUrl, cmd.sessionId, cmd.ttlSeconds);
             return;
         case 'closeCloudWS':

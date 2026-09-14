@@ -10,16 +10,19 @@ import type {
     PlaybackSettings,
     BatchImportSummary,
     PlayerWebSocketMessage,
+    AppSettingsCommand,
 } from '@ezplayer/ezplayer-core';
 
 import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/player-ui-components';
 
 import {
     AppDispatch,
+    appSettingsActions,
     authSliceActions,
     autoUpdateActions,
     cloudConfigActions,
     remoteAccessActions,
+    audioDevicesActions,
     cloudStatusActions,
     controllerOpsActions,
     hydratePlaybackSettings,
@@ -105,8 +108,14 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             if (data.remoteAccess !== undefined) {
                 dispatch(remoteAccessActions.setRemoteAccess(data.remoteAccess));
             }
+            if (data.audioOutputDevices !== undefined) {
+                dispatch(audioDevicesActions.setAudioOutputDevices(data.audioOutputDevices));
+            }
             if (data.autoUpdateOps !== undefined) {
                 dispatch(autoUpdateActions.setOps(data.autoUpdateOps));
+            }
+            if (data.appSettings !== undefined) {
+                dispatch(appSettingsActions.setAppSettings(data.appSettings));
             }
         });
 
@@ -429,6 +438,10 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     async issueUpdateCommand(cmd: UpdateCommand): Promise<void> {
         wsService.send({ type: 'updateCommand', cmd });
+    }
+
+    async issueAppSettingsCommand(cmd: AppSettingsCommand): Promise<void> {
+        wsService.send({ type: 'appSettingsCommand', cmd });
     }
 
     async postRegisterPlayer(_data: { playerId: string }): Promise<{ message: string }> {

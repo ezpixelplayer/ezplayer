@@ -8,6 +8,10 @@ export interface ModelPointMetadata {
     modelIndex?: number;
     nodeIndex?: number;
     coordIndex?: number;
+    /** 0-based physical string this node is on. */
+    stringIndex?: number;
+    /** True on the first node of each physical string (where its wire attaches). */
+    stringStart?: boolean;
     key?: string;
     itemIndex?: number;
     /** Baked channel-to-RGB mixer derived from xllayoutcalcs `channelRoles`.

@@ -18,11 +18,11 @@ EZPlayer can be used completely locally, supporting:
 
 - A flexible schedule of playlists of sequences
 - A jukebox view of songs to choose from for immediate / queued playback
-- .mp3 and .fseq playback from an xLights show folder
+- Audio (.mp3, and auto-conversion from other formats) and .fseq playback from an xLights show folder
 - DDP and E1.31 controllers on attached IPv4 networks
 - Live view of the show
 - Status screens
-- Network scan, controller status, and actions
+- Network scan, controller status, and controller actions for many common controllers
 - Remote Falcon viewer control
 - Local (LAN) Web UI
 - Background sequences, volume control automation, etc.
@@ -71,7 +71,7 @@ Just download the installer or portable build and run it.
 
 #### Signed Images
 
-EZPlayer images are currently not signed, and you may have to approve installation. We're working on that.
+EZPlayer Mac images are signed thanks to EZRGB.
 
 #### Linux notes
 
@@ -114,7 +114,7 @@ When you first run EZPlayer, you will choose your show folder. This should conta
 
 The player opens to the "Player" screen, but there will not be much here yet. So, navigate between screens using the sidebar menu. (If no sidebar is visible, click the 3 bars in the upper right corner.)
 
-Start on the "Songs" screen. Here you can add songs (aka "sequences"). Start by choosing the .fseq; hopefully the music and metadata will be found automatically. If not, associate the .fseq file with its .mp3 file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists. You can then try playing your songs from the "Jukebox" gallery.
+Start on the "Songs" screen. Here you can add songs (aka "sequences"). Start by choosing the .fseq; hopefully the music and metadata will be found automatically. If not, associate the .fseq file with its audio file, the song title, etc. If you have image files (or URLs) handy, you can enter those as well, this way your songs will show with images in the jukebox gallery. It is recommended to add some tags to your songs, as this will help build playlists. You can then try playing your songs from the "Jukebox" gallery.
 
 After adding some songs, create playlists on the "Playlists" screen. You can think of a playlist as an ordered list of songs to play, but it can also be used as a "set" of songs that are not taken in order. As we'll see later, you might want to make an "intro" playlist, a few main playlists, and an "outro" playlist.
 
@@ -143,7 +143,7 @@ For any general discussion, join us on [Discord](https://discord.gg/gpwxM4bR94).
 
 ## About EZPlayer
 
-### 🧩 What This App Does
+### What This App Does
 
 EZPlayer is a show player and scheduler app for animated light shows based on pixel controllers. It reads files and sends the data over the network at show time, and plays the audio in sync. This is very similar to what xLights [xSchedule](https://xlights.org) does.
 
@@ -165,7 +165,7 @@ So, we started a new one, featuring:
 
 ### Roadmap
 
-August 2026: With 0.6 wrapping up, we expect 0.7 to contain one more round of architectural features related to the playback pipeline (pixel data and audio).  We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements).  October onward will be focused on stability and fixes.
+September 2026: With 0.6 wrapping up, we expect 0.7 to contain one more round of architectural features related to the playback pipeline (pixel data and audio).  We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements).  October onward will be focused on stability and fixes.
 
 We have a lot of features planned for the coming years. We aim to simplify the way the xLights ecosystem works, while solving long-standing problems. We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
 
@@ -181,7 +181,7 @@ EZPlayer is developed in part by [EZRGB](https://ezrgb.com/). EZRGB feels that t
 
 ---
 
-## 🛠️ Building From Source (Developers)
+## Building From Source (Developers)
 
 See [DEVELOPING.md](./DEVELOPING.md).
 

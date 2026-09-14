@@ -320,6 +320,12 @@ wsBroadcaster.setClientMessageHandler((msg) => {
         void rpc.call('updateCommand', msg.cmd).catch((err) => {
             console.error('[server-worker] updateCommand failed:', err);
         });
+    } else if (msg.type === 'appSettingsCommand') {
+        // App-global settings verb. Results flow back via the
+        // broadcast `appSettings` state.
+        void rpc.call('appSettingsCommand', msg.cmd).catch((err) => {
+            console.error('[server-worker] appSettingsCommand failed:', err);
+        });
     }
 });
 
@@ -934,6 +940,8 @@ async function dispatchProxyWrite(
                 putSequences: async (recs) => await rpc.call('putSequences', recs),
                 getMediaFolder: () =>
                     (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder,
+                getNormalizeNewSongs: () =>
+                    (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.normalizeNewSongs,
             };
             const p = parsed as
                 { fseqNames?: unknown; companionAudioNames?: unknown; allowExistingAudio?: unknown } | undefined;
@@ -1352,6 +1360,8 @@ async function startServer(config: ServerWorkerData) {
         getSequences: () => wsBroadcaster.get('sequences') as SequenceRecord[] | undefined,
         putSequences: async (recs) => await rpc.call('putSequences', recs),
         getMediaFolder: () => (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder,
+        getNormalizeNewSongs: () =>
+            (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.normalizeNewSongs,
     };
     const fileApiRouter = createFileApiRouter(fileApiDeps);
     webApp.use(fileApiRouter.routes());

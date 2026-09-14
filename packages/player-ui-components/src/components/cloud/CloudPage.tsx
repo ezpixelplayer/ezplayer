@@ -8,10 +8,12 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
+    FormControlLabel,
     IconButton,
     LinearProgress,
     Link,
     Stack,
+    Switch,
     Table,
     TableBody,
     TableCell,
@@ -37,7 +39,8 @@ import LinkOffIcon from '@mui/icons-material/LinkOff';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import Tooltip from '@mui/material/Tooltip';
 import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
-import React, { useState } from 'react';
+import { MaskedPlayerId } from '../player-cloud-registration/MaskedPlayerId';
+import React, { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { QRCodeSVG } from 'qrcode.react';
 import { isElectron, PageHeader } from '@ezplayer/shared-ui-components';
@@ -148,11 +151,15 @@ async function copyToClipboard(text: string): Promise<void> {
     }
 }
 
-const SequenceRow: React.FC<{
+const SequenceRow = React.memo(function SequenceRow({
+    seq,
+    files,
+    showFolder,
+}: {
     seq: CloudSequenceProgress;
     files: CloudFileEntry[];
     showFolder?: string;
-}> = ({ seq, files, showFolder }) => {
+}) {
     const [open, setOpen] = useState(false);
     const status = rollUpStatus(seq, files);
     const totalBytes = files.reduce((s, f) => s + (f.totalBytes ?? 0), 0);
@@ -262,7 +269,62 @@ const SequenceRow: React.FC<{
             </TableRow>
         </>
     );
-};
+});
+
+const EMPTY_SEQUENCES: Record<string, CloudSequenceProgress> = {};
+const EMPTY_FILES: Record<string, CloudFileEntry> = {};
+
+/** The per-sequence table, memoized on the worker's `sequences` / `files`
+ *  maps. Those references only change when cloud content status changes; the
+ *  5 s registration heartbeat and other cStatus/cloudStatus churn re-render
+ *  the parent's header cards (cheap) but bail out here — with many sequences
+ *  this table is by far the most expensive thing on the page. */
+const CloudSequenceTable = React.memo(function CloudSequenceTable({
+    sequences = EMPTY_SEQUENCES,
+    files = EMPTY_FILES,
+    showFolder,
+}: {
+    sequences?: Record<string, CloudSequenceProgress>;
+    files?: Record<string, CloudFileEntry>;
+    showFolder?: string;
+}) {
+    const rows = useMemo(
+        () =>
+            Object.values(sequences)
+                .sort((a, b) => describeSequence(a).localeCompare(describeSequence(b)))
+                .map((seq) => ({
+                    seq,
+                    files: seq.fileIds.map((id) => files[id]).filter((f): f is CloudFileEntry => Boolean(f)),
+                })),
+        [sequences, files],
+    );
+
+    if (rows.length === 0) {
+        return (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                No sequences reported yet.
+            </Typography>
+        );
+    }
+    return (
+        <Table size="small" sx={{ mt: 2 }}>
+            <TableHead>
+                <TableRow>
+                    <TableCell sx={{ width: 32 }} />
+                    <TableCell>Sequence</TableCell>
+                    <TableCell>Last Updated</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Size</TableCell>
+                </TableRow>
+            </TableHead>
+            <TableBody>
+                {rows.map(({ seq, files: seqFiles }) => (
+                    <SequenceRow key={seq.vseq_id} seq={seq} files={seqFiles} showFolder={showFolder} />
+                ))}
+            </TableBody>
+        </Table>
+    );
+});
 
 export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRegistration = true }) => {
     const cloudConfig = useSelector((s: RootState) => s.cloudConfig);
@@ -273,12 +335,6 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
     // Reachability is derived from the last poll: a clean reply means we reached the cloud,
     // an error means we didn't, no checks yet means we don't know.
     const reachableLabel = cloudStatus.lastCheckedAt === undefined ? '(unknown)' : cloudStatus.lastError ? 'no' : 'yes';
-
-    const sequencesMap = cStatus?.sequences ?? {};
-    const filesMap = cStatus?.files ?? {};
-    const seqEntries = Object.values(sequencesMap).sort((a, b) =>
-        describeSequence(a).localeCompare(describeSequence(b)),
-    );
 
     const dispatch = useDispatch<AppDispatch>();
     const [syncing, setSyncing] = useState(false);
@@ -371,6 +427,11 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
 
     const isRegistered = cloudStatus.playerIdIsRegistered;
 
+    // Remote control off → the link/QR is withheld too; it would not connect anyway.
+    const remoteControlEnabled = cloudConfig.cloudRemoteControlEnabled !== false;
+    const handleRemoteControlToggle = (enabled: boolean) =>
+        void dispatch(issueCloudCommand({ type: 'setCloudRemoteControlEnabled', enabled }));
+
     // Cloud remote-control URL — prefer the elected regional home server,
     // fall back to the configured cloud service URL (central).
     const controlBase = (cloudStatus.homeServerUrl ?? cloudConfig.cloudServiceUrl ?? '').replace(/\/+$/, '');
@@ -378,12 +439,19 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
         isRegistered && cloudConfig.playerIdToken && controlBase
             ? `${controlBase}/ezpui/p/${cloudConfig.playerIdToken}`
             : undefined;
-    const anyDownloading = Object.values(cStatus?.files ?? {}).some((f) => f.status === 'downloading');
-    const totalSeq = Object.keys(cStatus?.sequences ?? {}).length;
-    const installedSeq = Object.values(cStatus?.sequences ?? {}).reduce((acc, s) => {
-        const files = s.fileIds.map((id) => cStatus?.files?.[id]).filter(Boolean) as CloudFileEntry[];
-        return acc + (files.length > 0 && files.every((f) => f.status === 'installed') ? 1 : 0);
-    }, 0);
+    const seqMap = cStatus?.sequences;
+    const fileMap = cStatus?.files;
+    const { anyDownloading, totalSeq, installedSeq } = useMemo(() => {
+        const seqs = Object.values(seqMap ?? EMPTY_SEQUENCES);
+        return {
+            anyDownloading: Object.values(fileMap ?? EMPTY_FILES).some((f) => f.status === 'downloading'),
+            totalSeq: seqs.length,
+            installedSeq: seqs.reduce((acc, s) => {
+                const files = s.fileIds.map((id) => fileMap?.[id]).filter(Boolean) as CloudFileEntry[];
+                return acc + (files.length > 0 && files.every((f) => f.status === 'installed') ? 1 : 0);
+            }, 0),
+        };
+    }, [seqMap, fileMap]);
 
     // -- Top-card mode + status ---------------------------------------------
     // Four mutually exclusive modes drive the icon, headline, mode chip,
@@ -661,63 +729,91 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
                 </Card>
 
+                {/* Remote control link + enable switch. The switch is hidden where
+                    registration is, since a cloud viewer would cut its own session. */}
                 {controlUrl && (
                     <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
                             <Typography variant="h6" sx={{ color: 'primary.main' }}>
                                 Remote Control Link
                             </Typography>
                             <Box sx={{ flexGrow: 1 }} />
-                            <Tooltip title="Copy link">
-                                <IconButton size="small" onClick={() => void copyToClipboard(controlUrl)}>
-                                    <ContentCopyIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
+                            {allowRegistration && (
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            size="small"
+                                            checked={remoteControlEnabled}
+                                            onChange={(e) => handleRemoteControlToggle(e.target.checked)}
+                                        />
+                                    }
+                                    label={
+                                        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+                                            Enable Cloud Remote Control
+                                        </Typography>
+                                    }
+                                    sx={{ mr: 0 }}
+                                />
+                            )}
+                            {remoteControlEnabled && (
+                                <Tooltip title="Copy link">
+                                    <IconButton size="small" onClick={() => void copyToClipboard(controlUrl)}>
+                                        <ContentCopyIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
                         </Box>
-                        <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap">
-                            <Box
-                                sx={{
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    borderRadius: 1,
-                                    p: 1,
-                                    bgcolor: 'background.paper',
-                                    lineHeight: 0,
-                                }}
-                            >
-                                <QRCodeSVG value={controlUrl} size={132} level="M" includeMargin={false} />
-                            </Box>
-                            <Box sx={{ flex: 1, minWidth: 240 }}>
-                                <Typography
-                                    variant="body2"
-                                    sx={{ fontFamily: 'monospace', wordBreak: 'break-all', mb: 1 }}
+                        {remoteControlEnabled ? (
+                            <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap">
+                                <Box
+                                    sx={{
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                        p: 1,
+                                        bgcolor: 'background.paper',
+                                        lineHeight: 0,
+                                    }}
                                 >
-                                    {isElectron() ? (
-                                        <Link
-                                            component="button"
-                                            underline="hover"
-                                            onClick={() => window.electronAPI?.openExternal(controlUrl)}
-                                            sx={{ textAlign: 'left' }}
-                                        >
-                                            {controlUrl}
-                                        </Link>
-                                    ) : (
-                                        <Link
-                                            href={controlUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            underline="hover"
-                                        >
-                                            {controlUrl}
-                                        </Link>
-                                    )}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    Control this player from any browser — no sign-in needed. Anyone with this link can
-                                    control the player, so share it carefully.
-                                </Typography>
-                            </Box>
-                        </Stack>
+                                    <QRCodeSVG value={controlUrl} size={132} level="M" includeMargin={false} />
+                                </Box>
+                                <Box sx={{ flex: 1, minWidth: 240 }}>
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ fontFamily: 'monospace', wordBreak: 'break-all', mb: 1 }}
+                                    >
+                                        {isElectron() ? (
+                                            <Link
+                                                component="button"
+                                                underline="hover"
+                                                onClick={() => window.electronAPI?.openExternal(controlUrl)}
+                                                sx={{ textAlign: 'left' }}
+                                            >
+                                                {controlUrl}
+                                            </Link>
+                                        ) : (
+                                            <Link
+                                                href={controlUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                underline="hover"
+                                            >
+                                                {controlUrl}
+                                            </Link>
+                                        )}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Control this player from any browser — no sign-in needed. Anyone with this link
+                                        can control the player, so share it carefully.
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary">
+                                Cloud remote control is off. The player ignores remote-control connections from the
+                                cloud; sync and status reporting continue. Turn it on to show the link and QR code.
+                            </Typography>
+                        )}
                     </Card>
                 )}
 
@@ -783,38 +879,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     </Box>
                     <Field label="Last Manifest" value={formatTimestamp(cStatus?.lastManifestAt)} />
                     <Field label="Last Error" value={cStatus?.lastError ?? '(none)'} />
-                    {seqEntries.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                            No sequences reported yet.
-                        </Typography>
-                    ) : (
-                        <Table size="small" sx={{ mt: 2 }}>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell sx={{ width: 32 }} />
-                                    <TableCell>Sequence</TableCell>
-                                    <TableCell>Last Updated</TableCell>
-                                    <TableCell>Status</TableCell>
-                                    <TableCell>Size</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {seqEntries.map((seq) => {
-                                    const files = seq.fileIds
-                                        .map((id) => filesMap[id])
-                                        .filter((f): f is CloudFileEntry => Boolean(f));
-                                    return (
-                                        <SequenceRow
-                                            key={seq.vseq_id}
-                                            seq={seq}
-                                            files={files}
-                                            showFolder={showFolder}
-                                        />
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    )}
+                    <CloudSequenceTable sequences={seqMap} files={fileMap} showFolder={showFolder} />
                 </Card>
 
                 {/* Configuration last — stable reference info plus an Edit entry into
@@ -850,7 +915,13 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                         )}
                     </Box>
                     <Field label="Cloud Service URL" value={cloudConfig.cloudServiceUrl || '(not set)'} />
-                    <Field label="Player ID Token" value={cloudConfig.playerIdToken || '(not set)'} />
+                    {/* Masked; the token is a credential. */}
+                    <Box sx={{ ...fieldRowSx, alignItems: 'center' }}>
+                        <Typography className="label" variant="body2">
+                            Player ID
+                        </Typography>
+                        <MaskedPlayerId value={cloudConfig.playerIdToken} />
+                    </Box>
                 </Card>
             </Box>
             {allowRegistration && (

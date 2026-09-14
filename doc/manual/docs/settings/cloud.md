@@ -44,11 +44,11 @@ Registration heartbeat polling **always runs** while cloud is enabled, even in
 scheduled mode — this keeps the player visible to the cloud and responsive to
 remote commands.
 
-If you choose **During scheduled times** but define no allowed times, content
-polling is suspended entirely.
-
-Add windows with **Add Sync Time Window to Schedule** (days + start/end time,
-same day/time format as viewer control).
+Selecting **During scheduled times** shows the **Allowed Times** list. Add
+windows with **Add Sync Time Window to Schedule** (days + start/end time, same
+day/time format as viewer control). With no allowed times defined, content
+polling is suspended entirely. Switching back to **Always** keeps your windows
+for later.
 
 ## Advanced
 
@@ -56,17 +56,13 @@ same day/time format as viewer control).
 
 Expand **Advanced** for infrequently changed options:
 
-- **Cloud Service URL** — override the default EZRGB cloud endpoint (for
-  development/staging or self-hosted installs).
-- **Current Player ID** — read-only view of the token for this show folder.
-  **Generate New** creates a **blank** ID and requires a full re-registration
-  (the old player is not moved). **Clear** removes the current ID. To revoke
-  a leaked remote-control link **without** re-claiming the player, use
-  **Change Player ID** on the Cloud screen instead — that moves the existing
-  registration onto a new ID. See
-  [Cloud Status / Control UI](../cloud/status-control-ui.md#cloud-configuration).
-- **Set a specific Player ID** — paste an existing token to reconnect this
-  folder to a player already registered in the cloud.
+- **Cloud Service URL** — click **Edit** to override the default EZRGB cloud
+  endpoint (for development/staging or self-hosted installs).
+- **Current Player ID** — the ID for this show folder, masked by default; use
+  the eye icon to reveal it or the copy icon to copy it. **Generate New**
+  creates a fresh ID (requires re-registration). **Enter Manually** lets you
+  paste an existing ID to reconnect this folder to a player already registered
+  in the cloud.
 - **Polling Interval** — how often the player checks in with the cloud
   (**Save Intervals** to apply):
     - **Registration poll** (default 5 seconds) — heartbeat and command pickup.

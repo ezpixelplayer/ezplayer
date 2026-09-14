@@ -115,7 +115,15 @@ function log(level: 'info' | 'warn' | 'error', msg: string) {
     post({ type: 'log', level, msg });
 }
 
-function pushCStatus() {
+/** cStatus posts are coalesced to avoid sending too much data to the renderer
+ *    when there are lots of small files downloaded in quick succession. */
+const CSTATUS_MIN_INTERVAL_MS = 1000;
+let lastCStatusPostAt = 0;
+let cStatusTimer: NodeJS.Timeout | undefined;
+
+function postCStatusNow() {
+    cStatusTimer = undefined;
+    lastCStatusPostAt = Date.now();
     post({
         type: 'cStatus',
         status: {
@@ -124,6 +132,25 @@ function pushCStatus() {
             halted,
         },
     });
+}
+
+function pushCStatus() {
+    if (cStatusTimer) return; // already armed; it will post the latest snapshot
+    const since = Date.now() - lastCStatusPostAt;
+    if (since >= CSTATUS_MIN_INTERVAL_MS) {
+        postCStatusNow();
+        return;
+    }
+    cStatusTimer = setTimeout(postCStatusNow, CSTATUS_MIN_INTERVAL_MS - since);
+}
+
+/** Drop any armed post so a queued snapshot cannot resurrect state that a
+ *  session reset just wiped. */
+function cancelPendingCStatus() {
+    if (cStatusTimer) {
+        clearTimeout(cStatusTimer);
+        cStatusTimer = undefined;
+    }
 }
 
 function setFile(file_id: string, entry: CloudFileEntry) {
@@ -746,11 +773,17 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             // flag (`disabled` vs `pending`) so the cloud panel can label
             // why — important for the curious operator watching a granted
             // sequence not yet show up because render is still queued.
-            const record = buildDisabledSequenceRecord(entry, existing);
-            post({ type: 'installSequence', record });
-            const idx = existingSequences.findIndex((s) => s.id === record.id);
-            if (idx >= 0) existingSequences[idx] = record;
-            else existingSequences.push(record);
+            // Only emit when the tombstone would actually change the local
+            // record. Every emit costs the parent a full commit (sequences.json
+            // rewrite, renderer + web push, playback schedupdate), and the
+            // manifest lists these entries on every tick.
+            if (!isDisabledRecordCurrent(entry, existing)) {
+                const record = buildDisabledSequenceRecord(entry, existing);
+                post({ type: 'installSequence', record });
+                const idx = existingSequences.findIndex((s) => s.id === record.id);
+                if (idx >= 0) existingSequences[idx] = record;
+                else existingSequences.push(record);
+            }
             newSequences[entry.vseq_id] = {
                 vseq_id: entry.vseq_id,
                 title: entry.title || '',
@@ -1154,6 +1187,19 @@ function sanitize(s: string): string {
 
 /** Cleared `cloud` so a future re-enable doesn't short-circuit `needsDownload`
  *  when the file has since been reaped. */
+/** True when `existing` already is the tombstone `buildDisabledSequenceRecord`
+ *  would produce for `entry` — same title/artist, no files, no cloud refs,
+ *  render disabled — so re-emitting it would be a no-op commit. */
+function isDisabledRecordCurrent(entry: CloudSeqManifestEntry, existing: SequenceRecord | undefined): boolean {
+    if (!existing) return false;
+    if (existing.render_enabled !== false) return false;
+    if (existing.cloud !== undefined) return false;
+    if (existing.files && Object.keys(existing.files).length > 0) return false;
+    const title = entry.title ?? existing.work?.title ?? '';
+    const artist = entry.artist ?? existing.work?.artist ?? '';
+    return existing.work?.title === title && existing.work?.artist === artist;
+}
+
 function buildDisabledSequenceRecord(
     entry: CloudSeqManifestEntry,
     existing: SequenceRecord | undefined,
@@ -1677,6 +1723,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
                 // download that started before a folder switch does not land
                 // in the new folder.
                 abortAllAndReset();
+                cancelPendingCStatus();
                 for (const k of Object.keys(cStatus)) {
                     delete (cStatus as Record<string, unknown>)[k];
                 }
@@ -1752,6 +1799,11 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             log('info', 'stop requested');
             stopped = true;
             clearTimers();
+            // Flush (not drop) so the last transition of an in-flight burst lands.
+            if (cStatusTimer) {
+                clearTimeout(cStatusTimer);
+                postCStatusNow();
+            }
             cancelElectionRetry();
             break;
         }

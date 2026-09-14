@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import type { PreviewRenderHandle } from './RenderBridge';
 import {
     ToggleButton,
     ToggleButtonGroup,
@@ -24,6 +25,7 @@ import VideocamIcon from '@mui/icons-material/Videocam';
 import View2DIcon from '@mui/icons-material/ViewQuilt';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import GradientIcon from '@mui/icons-material/Gradient';
 import ListIcon from '@mui/icons-material/List';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
@@ -147,7 +149,21 @@ export interface Preview3DProps {
     /** Registers a callback returning the LIVE view state (mode + current camera + settings) as
      *  storage-shaped JSON */
     captureViewStateRef?: React.MutableRefObject<(() => string | null) | null>;
+    /** Stop the active viewer's frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
+     *  Used for deterministic offline rendering (video export). */
+    renderOnDemand?: boolean;
+    /** Registers the active viewer's imperative render handle (null when the viewer unmounts). */
+    onRenderHandle?: (handle: PreviewRenderHandle | null) => void;
 }
+
+/**
+ * Active-state style for the toggles on the fullscreen overlay.
+ */
+const overlayActiveSx = {
+    bgcolor: 'primary.main',
+    color: 'primary.contrastText',
+    '&:hover': { bgcolor: 'primary.dark' },
+} as const;
 
 export const Preview3D: React.FC<Preview3DProps> = ({
     modelData: initialModelData,
@@ -167,6 +183,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     mode = 'standalone',
     compact = false,
     captureViewStateRef,
+    renderOnDemand = false,
+    onRenderHandle,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
@@ -183,6 +201,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     // Expanded (pop-out) mode: the preview takes over the whole window — just
     // the view and the model list, plus a small floating control cluster.
     const [expanded, setExpanded] = useState(false);
+    // Fullscreen-only: withhold live data from the viewers so the shader falls back to its
+    // animated procedural rainbow.
+    const [forceTestPattern, setForceTestPattern] = useState(false);
     const [modelData, setModelData] = useState<Model3DData | null>(initialModelData || null);
     const [modelData2D, setModelData2D] = useState<Model3DData | null>(null);
     // Lazy init from the prop so the first render already has live data when available.
@@ -382,7 +403,12 @@ export const Preview3D: React.FC<Preview3DProps> = ({
 
     // Expanded mode: Esc exits.
     useEffect(() => {
-        if (!expanded) return undefined;
+        if (!expanded) {
+            // The test-pattern toggle only lives on the fullscreen panel; drop it on exit so the
+            // normal view can never be stuck showing the rainbow with no button to turn it off.
+            setForceTestPattern(false);
+            return undefined;
+        }
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setExpanded(false);
         };
@@ -1241,31 +1267,6 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             </IconButton>
                         </Tooltip>
                     )}
-                    <Menu
-                        anchorEl={viewpointMenuAnchor}
-                        open={Boolean(viewpointMenuAnchor)}
-                        onClose={handleViewpointMenuClose}
-                        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                    >
-                        {defaultViewpoint3D && (
-                            <MenuItem onClick={() => handleViewpointPick(defaultViewpoint3D)}>
-                                Default ({defaultViewpoint3D.name})
-                            </MenuItem>
-                        )}
-                        {defaultViewpoint3D && userViewpoints3D.length > 0 && <Divider />}
-                        {userViewpoints3D.length > 0 && [
-                            <ListSubheader key="__hdr" sx={{ lineHeight: 1.8 }}>
-                                Saved viewpoints
-                            </ListSubheader>,
-                            ...userViewpoints3D.map((vp) => (
-                                <MenuItem key={vp.name} onClick={() => handleViewpointPick(vp)}>
-                                    {vp.name}
-                                </MenuItem>
-                            )),
-                        ]}
-                    </Menu>
-
                     <Divider orientation="vertical" flexItem sx={{ height: 24 }} />
 
                     {/* Settings Button */}
@@ -1336,7 +1337,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 <Viewer3D
                                     points={renderedModelData?.points ?? []}
                                     shapes={renderedModelData?.shapes}
-                                    liveData={liveData}
+                                    liveData={forceTestPattern ? undefined : liveData}
                                     selectedIds={selectionState.selectedIds}
                                     hoveredId={selectionState.hoveredId}
                                     onPointClick={disableModelSelection ? undefined : handleItemClick}
@@ -1358,12 +1359,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onGetCurrentCameraState={handleGetCurrentCameraState3D}
                                     fillContainer
                                     forceOrbitControls={preferOrbitControls}
+                                    renderOnDemand={renderOnDemand}
+                                    onRenderHandle={onRenderHandle}
                                 />
                             ) : (
                                 <Viewer2D
                                     points={renderedModelData2D.points}
                                     shapes={renderedModelData2D.shapes}
-                                    liveData={liveData}
+                                    liveData={forceTestPattern ? undefined : liveData}
                                     selectedIds={selectionState.selectedIds}
                                     hoveredId={selectionState.hoveredId}
                                     onPointClick={disableModelSelection ? undefined : handleItemClick}
@@ -1384,6 +1387,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     cameraStateLoaded={cameraStateLoaded}
                                     onGetCurrentCameraState={handleGetCurrentCameraState2D}
                                     fillContainer
+                                    renderOnDemand={renderOnDemand}
+                                    onRenderHandle={onRenderHandle}
                                 />
                             );
                         })()
@@ -1409,12 +1414,28 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     <IconButton
                                         size="small"
                                         onClick={() => setShowItemList(!showItemList)}
-                                        color={showItemList ? 'primary' : 'default'}
+                                        sx={showItemList ? overlayActiveSx : undefined}
                                     >
                                         <ListIcon />
                                     </IconButton>
                                 </Tooltip>
                             )}
+                            {viewMode === '3d' && hasAnyViewpoints && (
+                                <Tooltip title="Camera viewpoints">
+                                    <IconButton size="small" onClick={handleViewpointMenuOpen}>
+                                        <VideocamIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                            <Tooltip title={forceTestPattern ? 'Show live pixel data' : 'Show test pattern'}>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => setForceTestPattern((v) => !v)}
+                                    sx={forceTestPattern ? overlayActiveSx : undefined}
+                                >
+                                    <GradientIcon />
+                                </IconButton>
+                            </Tooltip>
                             <Tooltip title="Exit expanded preview">
                                 <IconButton size="small" onClick={() => setExpanded(false)}>
                                     <FullscreenExitIcon />
@@ -1452,6 +1473,32 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     </Paper>
                 )}
             </Box>
+
+            {/* Camera viewpoint menu: shared by the toolbar button and the fullscreen overlay button */}
+            <Menu
+                anchorEl={viewpointMenuAnchor}
+                open={Boolean(viewpointMenuAnchor)}
+                onClose={handleViewpointMenuClose}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            >
+                {defaultViewpoint3D && (
+                    <MenuItem onClick={() => handleViewpointPick(defaultViewpoint3D)}>
+                        Default ({defaultViewpoint3D.name})
+                    </MenuItem>
+                )}
+                {defaultViewpoint3D && userViewpoints3D.length > 0 && <Divider />}
+                {userViewpoints3D.length > 0 && [
+                    <ListSubheader key="__hdr" sx={{ lineHeight: 1.8 }}>
+                        Saved viewpoints
+                    </ListSubheader>,
+                    ...userViewpoints3D.map((vp) => (
+                        <MenuItem key={vp.name} onClick={() => handleViewpointPick(vp)}>
+                            {vp.name}
+                        </MenuItem>
+                    )),
+                ]}
+            </Menu>
 
             {/* Settings Popover */}
             <PreviewSettings

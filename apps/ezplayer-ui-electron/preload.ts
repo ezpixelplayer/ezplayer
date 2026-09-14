@@ -3,9 +3,10 @@ import type {
     AudioDevice,
     AutoUpdateOpsState,
     UpdateCommand,
+    AppSettingsCommand,
+    AppSettingsState,
     CloudConfig,
     CloudStatus,
-    DiagnosticsConsent,
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
@@ -27,6 +28,7 @@ import type {
     PlayerPStatusContent,
 } from '@ezplayer/ezplayer-core';
 
+import type { BatchImportProgress } from '@ezplayer/ezplayer-core';
 import type { IpcRendererEvent } from 'electron';
 
 export interface M2RIPC<Payload> {
@@ -47,6 +49,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     batchImportSequences: (fseqPaths: string[]) => ipcRenderer.invoke('ipcBatchImportSequences', fseqPaths),
     batchImportSequencesFromFolder: (folderPath: string) =>
         ipcRenderer.invoke('ipcBatchImportSequencesFromFolder', folderPath),
+    onBatchImportProgress: (callback: (p: BatchImportProgress) => void) => {
+        ipcRenderer.on('update:batchImportProgress', (_event: IpcRendererEvent, p: BatchImportProgress) => {
+            callback(p);
+        });
+    },
 
     selectDirectory: (options?: Omit<FileSelectOptions, 'types'>) =>
         ipcRenderer.invoke('dialog:openDirectory', options),
@@ -126,11 +133,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cloudCommand(cmd: CloudCommand): Promise<void> {
         return ipcRenderer.invoke('ipcCloudCommand', cmd);
     },
-    getDiagnosticsConsent(): Promise<DiagnosticsConsent> {
-        return ipcRenderer.invoke('ipcGetDiagnosticsConsent');
+    appSettingsCommand(cmd: AppSettingsCommand): Promise<void> {
+        return ipcRenderer.invoke('ipcAppSettingsCommand', cmd);
     },
-    setDiagnosticsConsent(patch: Partial<DiagnosticsConsent>): Promise<DiagnosticsConsent> {
-        return ipcRenderer.invoke('ipcSetDiagnosticsConsent', patch);
+    onAppSettingsUpdated: (callback: (state: AppSettingsState) => void) => {
+        ipcRenderer.on('update:appsettings', (_event: IpcRendererEvent, state: AppSettingsState) => {
+            callback(state);
+        });
     },
     reportRendererError(message: string, stack?: string): Promise<void> {
         return ipcRenderer.invoke('ipcReportRendererError', message, stack);
@@ -163,6 +172,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('update:remoteaccess', (_event: IpcRendererEvent, state: RemoteAccessAvailability) => {
             callback(state);
         });
+    },
+    reportAudioOutputDevices: (devices: AudioDevice[]) => {
+        ipcRenderer.send('ipcAudioOutputDevices', devices);
     },
 
     onShowFolderUpdated: (callback: (data: string) => void) => {
@@ -228,11 +240,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-
-    isLoginItemPlatformSupported: () => ipcRenderer.invoke('login-item:isPlatformSupported'),
-    isLoginItemSupported: () => ipcRenderer.invoke('login-item:isSupported'),
-    getOpenAtLogin: () => ipcRenderer.invoke('login-item:get'),
-    setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('login-item:set', openAtLogin),
 
     // Auto-update
     updateCommand: (cmd: UpdateCommand) => ipcRenderer.invoke('autoupdate:command', cmd),
