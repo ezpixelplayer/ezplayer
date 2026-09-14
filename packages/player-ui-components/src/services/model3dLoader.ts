@@ -60,6 +60,15 @@ function buildColorMix(channelRoles: ChannelRole[] | undefined): { mix: Float32A
  * Converts XML model coordinates (from getModelCoordinates) to Model3DData format
  * This function handles the structure returned by xllayoutcalcs getModelCoordinates
  */
+type NodeRun = NonNullable<GetNodeResult['channelMapping']>['nodeChannelMap'][number];
+
+/** Physical string of a node: from geometry when set, else from the channel run that owns it. */
+function stringIndexOf(node: GetNodeResult['nodes'][number], runs: NodeRun[] | undefined): number {
+    if ((node.physicalStrand ?? -1) >= 0) return node.physicalStrand;
+    const run = runs?.find((r) => node.physicalNum >= r.nodeStart && node.physicalNum < r.nodeStart + r.nodeCount);
+    return run?.stringIndex ?? 0;
+}
+
 export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, GetNodeResult>): Model3DData {
     const allPoints: Point3D[] = [];
     const modelMetadata: ModelMetadata[] = [];
@@ -93,7 +102,12 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
         if (modelData) {
             // Case 1: Structure with nodes array
             if (Array.isArray(modelData.nodes)) {
+                const runs = modelData.channelMapping?.nodeChannelMap;
+                const seenStrings = new Set<number>();
                 modelData.nodes.forEach((node, nodeIndex: number) => {
+                    const stringIndex = stringIndexOf(node, runs);
+                    const stringStart = !seenStrings.has(stringIndex);
+                    seenStrings.add(stringIndex);
                     if (node.coords && Array.isArray(node.coords)) {
                         node.coords.forEach((coord, coordIndex: number) => {
                             allPoints.push({
@@ -108,6 +122,8 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                                     modelIndex,
                                     nodeIndex,
                                     coordIndex,
+                                    stringIndex,
+                                    stringStart,
                                     colorMix,
                                     colorMixMaxOffset,
                                     brightness,

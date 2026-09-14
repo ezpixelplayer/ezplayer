@@ -20,7 +20,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import { useSelector } from 'react-redux';
-import type { KnownController } from '@ezplayer/ezplayer-core';
+import { expandIntentStrings, type KnownController } from '@ezplayer/ezplayer-core';
 import type { RootState } from '../../store/Store';
 import { Model3DData, ModelMetadata } from '../../types/model3d';
 
@@ -36,10 +36,10 @@ export interface ModelListProps {
 /** Where a model plugs in, joined from known controllers' modelIntents by name. */
 interface ModelControllerInfo {
     controllerName: string;
-    /** 1-based physical port. */
-    port: number;
-    /** xLights smart-remote index (0/undefined = none, 1 = A, 2 = B, ...). */
-    smartRemote?: number;
+    /** 1-based physical port of each string. */
+    ports: number[];
+    /** xLights smart-remote index of each string (0 = none, 1 = A, 2 = B, ...). */
+    smartRemotes: number[];
     protocol?: string;
     /** Matches for this model name; the first wins for display, extras show as "+N". */
     matchCount: number;
@@ -50,10 +50,19 @@ function smartRemoteLetter(sr: number): string {
     return sr >= 1 && sr <= 26 ? String.fromCharCode(64 + sr) : String(sr);
 }
 
-/** "Port 5" / "Port 5 SR B". */
+/** Lowest-to-highest range, or a single value. */
+function formatRange(values: number[], fmt: (n: number) => string): string {
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    return lo === hi ? fmt(lo) : `${fmt(lo)}-${fmt(hi)}`;
+}
+
+/** "Port 5" / "Ports 5-8" / "Port 5 SR B" / "Ports 5-6 SR A-B". */
 function formatPort(info: ModelControllerInfo): string {
-    const sr = info.smartRemote && info.smartRemote > 0 ? ` SR ${smartRemoteLetter(info.smartRemote)}` : '';
-    return `Port ${info.port}${sr}`;
+    const ports = formatRange(info.ports, String);
+    const srs = info.smartRemotes.filter((sr) => sr > 0);
+    const sr = srs.length ? ` SR ${formatRange(srs, smartRemoteLetter)}` : '';
+    return `${ports.includes('-') ? 'Ports' : 'Port'} ${ports}${sr}`;
 }
 
 /** Build the model-name → controller/port lookup once per `known` change. */
@@ -65,10 +74,11 @@ function buildControllerInfoMap(known: KnownController[] | undefined): Map<strin
             if (existing) {
                 existing.matchCount += 1;
             } else {
+                const strings = expandIntentStrings([mi]);
                 map.set(mi.name, {
                     controllerName: kc.name,
-                    port: mi.controllerPort,
-                    smartRemote: mi.smartRemote,
+                    ports: strings.map((s) => s.port),
+                    smartRemotes: strings.map((s) => s.smartRemote),
                     protocol: mi.protocol || kc.protocol,
                     matchCount: 1,
                 });
@@ -149,7 +159,7 @@ export const ModelList = React.memo(function ModelList({
 
             container.scrollTo({
                 top: Math.max(0, targetScrollTop),
-                behavior: 'smooth',
+                behavior: 'auto',
             });
         }
     }, [selectedModelNames, filteredModels]);
@@ -355,38 +365,6 @@ export const ModelList = React.memo(function ModelList({
                                                             >
                                                                 {pointCount.toLocaleString()} points
                                                             </Typography>
-                                                            {model.pixelSize && (
-                                                                <>
-                                                                    <Typography
-                                                                        variant="caption"
-                                                                        color="text.secondary"
-                                                                    >
-                                                                        •
-                                                                    </Typography>
-                                                                    <Typography
-                                                                        variant="caption"
-                                                                        color="text.secondary"
-                                                                    >
-                                                                        Size: {model.pixelSize}
-                                                                    </Typography>
-                                                                </>
-                                                            )}
-                                                            {model.firstNodeChannel !== undefined && (
-                                                                <>
-                                                                    <Typography
-                                                                        variant="caption"
-                                                                        color="text.secondary"
-                                                                    >
-                                                                        •
-                                                                    </Typography>
-                                                                    <Typography
-                                                                        variant="caption"
-                                                                        color="text.secondary"
-                                                                    >
-                                                                        Ch: {model.firstNodeChannel.toLocaleString()}
-                                                                    </Typography>
-                                                                </>
-                                                            )}
                                                         </Box>
                                                         {controllerInfo ? (
                                                             <Box
@@ -454,22 +432,6 @@ export const ModelList = React.memo(function ModelList({
                                                                     — no controller
                                                                 </Typography>
                                                             )
-                                                        )}
-                                                        {model.pixelStyle && (
-                                                            <Chip
-                                                                label={model.pixelStyle}
-                                                                size="small"
-                                                                sx={{
-                                                                    height: 18,
-                                                                    fontSize: '0.65rem',
-                                                                    alignSelf: 'flex-start',
-                                                                    backgroundColor:
-                                                                        theme.palette.mode === 'dark'
-                                                                            ? theme.palette.grey[700]
-                                                                            : theme.palette.grey[200],
-                                                                    color: theme.palette.text.secondary,
-                                                                }}
-                                                            />
                                                         )}
                                                     </Box>
                                                 }
