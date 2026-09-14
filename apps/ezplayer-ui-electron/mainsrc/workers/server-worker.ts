@@ -1744,7 +1744,8 @@ async function startServer(config: ServerWorkerData) {
         try {
             const res = await rpc.call('overlayCommand', cmd);
             if (!res.ok) {
-                ctx.status = 400;
+                // Not up yet (player starting) is a 503; a bad request is a 400.
+                ctx.status = res.error === 'player not running' ? 503 : 400;
                 ctx.body = res;
                 return;
             }

@@ -85,6 +85,26 @@ export async function startEzPlayer(showFolder: string, opts?: { port?: number }
         await new Promise((r) => setTimeout(r, 500));
     }
 
+    // The web server answers before the playback worker has opened its
+    // controllers; the first statistics publish means the playback loop is up.
+    const readyDeadline = Date.now() + 30_000;
+    for (;;) {
+        if (child.exitCode !== null) {
+            throw new Error(`EZPlayer exited with code ${child.exitCode} before playback started (log: ${logFile})`);
+        }
+        try {
+            const res = await fetch(`${base}/api/ezp/playback-stats`, { signal: AbortSignal.timeout(2000) });
+            if (res.ok) break;
+        } catch {
+            /* not up yet */
+        }
+        if (Date.now() > readyDeadline) {
+            killTree(child);
+            throw new Error(`EZPlayer playback did not start within 30s (log: ${logFile})`);
+        }
+        await new Promise((r) => setTimeout(r, 250));
+    }
+
     return {
         port,
         base,
