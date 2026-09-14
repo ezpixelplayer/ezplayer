@@ -99,6 +99,7 @@ import process from 'node:process';
 import { totalmem } from 'node:os';
 import { OverallFrameSendStats, resetFrameSendStats, xbusySleep } from './framesend';
 import { PixelPipeline, blendModeFromSettings } from './pixelpipeline';
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
 import { MultiSyncSender } from './multisync';
 import { fileBaseName } from './pathnames';
 
@@ -276,6 +277,7 @@ const handlers: PlayWorkerRPCAPI = {
     getFrameExportBuffer: async () => {
         return frameExportBuffer;
     },
+    overlay: async (cmd: OverlayCommand): Promise<OverlayResult> => overlayCommand(cmd),
 };
 
 function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
@@ -1173,6 +1175,7 @@ function resetCumulativeCounters() {
 
     playbackStats.lastError = undefined;
 
+    resetOutputStatsBase();
     resetZstdStats();
 
     // Temp diagnostic
@@ -2141,6 +2144,7 @@ async function processQueue() {
             openOpts: { ddpPort: latestSettings?.advanced?.ddpPort, fpsOverrides },
             settings: { outputEnabled: !outputSuppressed, blackFramesEnabled: sendIdleBlackFrames, maxSlotFraction },
             legacyRing: frameExportBuffer,
+            overlayPort: latestSettings?.advanced?.overlayPort ?? 4049,
             log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
         });
         curPipeline = pipeline;
@@ -2678,7 +2682,7 @@ async function processQueue() {
                 );
                 multiSync.onIdle();
                 presentIdleBlack(pipeline, targetFrameRTC);
-                targetFrameRTC += playbackParams.idleSleepInterval;
+                targetFrameRTC += pipeline.idleIntervalMs(playbackParams.idleSleepInterval);
 
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
@@ -2689,7 +2693,7 @@ async function processQueue() {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
                 multiSync.onIdle();
                 presentIdleBlack(pipeline, targetFrameRTC);
-                targetFrameRTC += playbackParams.idleSleepInterval;
+                targetFrameRTC += pipeline.idleIntervalMs(playbackParams.idleSleepInterval);
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
@@ -2791,15 +2795,26 @@ async function processQueue() {
     }
 }
 
-/** Copy the output worker's counters into the reported statistics. */
+/**
+ * Copy the output worker's counters into the reported statistics. The worker's
+ * counters only grow; a stats reset moves the baseline they are reported against.
+ */
 let lastOutputSent = 0;
 let lastOutputActiveMs = 0;
+const outputBase = { framesSent: 0, cframesSkippedDirective: 0, cframesSkippedIncompletePrior: 0, packetsDroppedBySender: 0 };
+function resetOutputStatsBase() {
+    const snap = curPipeline?.outputStats();
+    outputBase.framesSent = snap?.counters.framesSent ?? 0;
+    outputBase.cframesSkippedDirective = snap?.counters.cframesSkippedDirective ?? 0;
+    outputBase.cframesSkippedIncompletePrior = snap?.counters.cframesSkippedIncompletePrior ?? 0;
+    outputBase.packetsDroppedBySender = snap?.gauges.packetsDroppedBySender ?? 0;
+}
 function pullOutputStats(pipeline: PixelPipeline) {
     const { counters, gauges } = pipeline.outputStats();
-    playbackStats.sentFramesCumulative = counters.framesSent;
-    playbackStats.cframesSkippedDueToDirectiveCumulative = counters.cframesSkippedDirective;
-    playbackStats.cframesSkippedDueToIncompletePriorCumulative = counters.cframesSkippedIncompletePrior;
-    playbackStats.cpacketsDroppedBySenderCumulative = gauges.packetsDroppedBySender;
+    playbackStats.sentFramesCumulative = counters.framesSent - outputBase.framesSent;
+    playbackStats.cframesSkippedDueToDirectiveCumulative = counters.cframesSkippedDirective - outputBase.cframesSkippedDirective;
+    playbackStats.cframesSkippedDueToIncompletePriorCumulative = counters.cframesSkippedIncompletePrior - outputBase.cframesSkippedIncompletePrior;
+    playbackStats.cpacketsDroppedBySenderCumulative = gauges.packetsDroppedBySender - outputBase.packetsDroppedBySender;
     playbackStats.maxSendTimeHistorical = Math.max(playbackStats.maxSendTimeHistorical, gauges.maxSendMs);
     const sent = counters.framesSent - lastOutputSent;
     const active = gauges.sendActiveMsTotal - lastOutputActiveMs;
@@ -2807,6 +2822,50 @@ function pullOutputStats(pipeline: PixelPipeline) {
     playbackStats.sendTimePeriod = active;
     lastOutputSent = counters.framesSent;
     lastOutputActiveMs = gauges.sendActiveMsTotal;
+}
+
+/** Overlay lease operations from the HTTP API. */
+function overlayCommand(cmd: OverlayCommand): OverlayResult {
+    const p = curPipeline;
+    if (!p) return { ok: false, error: 'player not running' };
+    const ov = p.overlays;
+    try {
+        switch (cmd.op) {
+            case 'targets':
+                return { ok: true, targets: ov.targets(), layoutVersion: p.layout.layoutVersion };
+            case 'list':
+                return { ok: true, leases: ov.list() };
+            case 'open': {
+                const lease = ov.open(cmd.request, Date.now());
+                emitInfo(`[overlay] lease ${lease.id} opened on ${lease.model ?? '<display>'} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
+                return { ok: true, lease, udpPort: p.overlayPort };
+            }
+            case 'close': {
+                const info = ov.get(cmd.id);
+                if (!info) return { ok: false, error: 'no such lease' };
+                if (cmd.token !== undefined && cmd.token !== 0 && cmd.token !== info.token) return { ok: false, error: 'bad token' };
+                ov.close(cmd.id);
+                emitInfo(`[overlay] lease ${cmd.id} closed`);
+                return { ok: true };
+            }
+            case 'keepalive': {
+                const info = ov.get(cmd.id);
+                if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
+                ov.touch(cmd.id, Date.now());
+                return { ok: true };
+            }
+            case 'frame': {
+                const info = ov.get(cmd.id);
+                if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
+                if (cmd.data.length !== info.frameBytes) return { ok: false, error: `payload must be ${info.frameBytes} bytes` };
+                ov.write(cmd.id, cmd.token, cmd.seq, 0, cmd.data, true, Date.now());
+                return { ok: true };
+            }
+        }
+    } catch (e) {
+        return { ok: false, error: (e as Error).message };
+    }
+    return { ok: false, error: 'unknown op' };
 }
 
 /** An idle black frame: previews see it, and the output worker sends it only when idle black is enabled. */

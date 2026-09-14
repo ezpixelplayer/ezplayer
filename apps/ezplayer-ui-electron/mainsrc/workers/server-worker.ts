@@ -1,3 +1,5 @@
+import type { OverlayCommand } from './overlaytypes.js';
+import type { OverlayLeaseRequest } from '@ezplayer/epp';
 /**
  * Server worker - runs Koa server in a worker thread
  */
@@ -1717,6 +1719,39 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/ezp/frames - binary frame data for 3D viewer
     // ----------------------------------------------
     const frameBufferPool = new BufferPool();
+
+    // ----------------------------------------------
+    // Overlay leases: an external producer paints a model (or the whole
+    // display) through a lease; payloads arrive over UDP (see overlaytypes.ts
+    // and epp Overlays.ts) or as a raw PUT for simple clients.
+    // ----------------------------------------------
+    const overlayCall = async (ctx: Koa.Context, cmd: OverlayCommand) => {
+        try {
+            const res = await rpc.call('overlayCommand', cmd);
+            if (!res.ok) {
+                ctx.status = 400;
+                ctx.body = res;
+                return;
+            }
+            ctx.body = res;
+        } catch (error) {
+            console.error('[server-worker] overlay command failed:', error);
+            ctx.status = 500;
+            ctx.body = { ok: false, error: 'Internal server error' };
+        }
+    };
+    const overlayId = (ctx: Koa.Context) => Number(ctx.params.id);
+    const overlayToken = (ctx: Koa.Context) => Number(ctx.query.token ?? ctx.get('x-ezp-token') ?? 0);
+    router.get('/api/ezp/overlays/targets', (ctx) => overlayCall(ctx, { op: 'targets' }));
+    router.get('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'list' }));
+    router.post('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'open', request: (ctx.request.body ?? {}) as OverlayLeaseRequest }));
+    router.delete('/api/ezp/overlays/:id', (ctx) => overlayCall(ctx, { op: 'close', id: overlayId(ctx), token: overlayToken(ctx) }));
+    router.post('/api/ezp/overlays/:id/keepalive', (ctx) => overlayCall(ctx, { op: 'keepalive', id: overlayId(ctx), token: overlayToken(ctx) }));
+    router.put('/api/ezp/overlays/:id/frame', async (ctx) => {
+        const raw = await getRawBody(ctx.req, { limit: '16mb' });
+        const seq = Number(ctx.query.seq ?? Date.now() & 0x7fffffff);
+        await overlayCall(ctx, { op: 'frame', id: overlayId(ctx), token: overlayToken(ctx), seq, data: new Uint8Array(raw) });
+    });
 
     router.get('/api/ezp/frames', async (ctx) => {
         // CORS headers for Electron renderer (file:// origin)

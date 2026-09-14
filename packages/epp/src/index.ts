@@ -156,3 +156,13 @@ export {
     FSEQ_DESCRIPTOR_HEADER,
 } from './pipeline/xlAdapter';
 export { FRAME_FLAG_IDLE, FRAME_FLAG_BLACK } from './pipeline/FramePool';
+export {
+    OverlayManager,
+    encodeOverlayPacket,
+    decodeOverlayPacket,
+    packetizeOverlayFrame,
+    OVERLAY_MAGIC,
+    OVERLAY_HEADER_BYTES,
+    OVERLAY_MAX_DATA,
+} from './pipeline/Overlays';
+export type { OverlayFormat, OverlayLeaseRequest, OverlayLeaseInfo, OverlayPacket } from './pipeline/Overlays';

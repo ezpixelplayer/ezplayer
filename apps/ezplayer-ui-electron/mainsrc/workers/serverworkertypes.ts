@@ -1,3 +1,4 @@
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
 /**
  * Types for communication between main thread and server worker
  */
@@ -106,6 +107,8 @@ export interface ServerWorkerRPCAPI {
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
+    /** Overlay lease operations, forwarded to the playback worker. */
+    overlayCommand(cmd: OverlayCommand): Promise<OverlayResult>;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;

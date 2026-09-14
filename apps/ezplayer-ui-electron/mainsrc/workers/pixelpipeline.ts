@@ -4,10 +4,13 @@
  * composes frames into pool slots; everything downstream lives here.
  */
 
+import dgram from 'node:dgram';
 import {
     applyOutput,
     blendModeFromName,
     blendNodes,
+    decodeOverlayPacket,
+    OverlayManager,
     compileInputMap,
     compileLayout,
     compileOutputMap,
@@ -55,6 +58,8 @@ export interface PixelPipelineOptions {
     /** Existing channel-space ring for preview readers. */
     legacyRing: SharedArrayBuffer;
     slotCount?: number;
+    /** UDP port for overlay lease payloads; 0 disables the receiver. */
+    overlayPort?: number;
     log: (level: 'info' | 'warn' | 'error', msg: string) => void;
 }
 
@@ -84,6 +89,13 @@ export class PixelPipeline {
     readonly nChannels: number;
     /** Descriptor the current layout implies; files without their own get pinned to it. */
     readonly pinnedDescriptor: ChannelDescriptor;
+    /** Externally produced layers blended into every frame. */
+    readonly overlays: OverlayManager;
+    overlayPort = 0;
+    private overlaySocket?: dgram.Socket;
+    private overlayPackets = 0;
+    private overlayBadPackets = 0;
+    private lastExpire = 0;
     private readonly inputMaps = new Map<string, InputMapProgram>();
     private readonly log: PixelPipelineOptions['log'];
     private composeScratch: Uint8Array;
@@ -110,6 +122,45 @@ export class PixelPipeline {
         this.output.onLog = opts.log;
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.composeScratch = new Uint8Array(0);
+        this.overlays = new OverlayManager(layout);
+    }
+
+    /** Listen for overlay payload packets. Failure to bind is logged, not fatal. */
+    private startOverlayReceiver(port: number) {
+        if (!port || port <= 0) return;
+        const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+        sock.on('error', (e) => {
+            this.log('warn', `[overlay] UDP receiver on port ${port} failed: ${e.message}`);
+            try {
+                sock.close();
+            } catch {
+                /* already closed */
+            }
+            if (this.overlaySocket === sock) this.overlaySocket = undefined;
+        });
+        sock.on('message', (buf) => {
+            const p = decodeOverlayPacket(buf);
+            if (!p) {
+                ++this.overlayBadPackets;
+                return;
+            }
+            ++this.overlayPackets;
+            this.overlays.write(p.id, p.token, p.seq, p.offset, p.data, p.last, Date.now());
+        });
+        sock.bind(port, () => {
+            this.overlayPort = port;
+            this.log('info', `[overlay] receiving lease payloads on UDP ${port}`);
+        });
+        this.overlaySocket = sock;
+    }
+
+    /** Idle frames can go slower unless an overlay is animating. */
+    idleIntervalMs(fallback: number): number {
+        return this.overlays.size > 0 ? Math.min(fallback, 50) : fallback;
+    }
+
+    overlayStats() {
+        return { leases: this.overlays.size, packets: this.overlayPackets, badPackets: this.overlayBadPackets, port: this.overlayPort };
     }
 
     static async create(opts: PixelPipelineOptions): Promise<PixelPipeline> {
@@ -154,6 +205,7 @@ export class PixelPipeline {
             if (res.reports[i]) c.report = res.reports[i];
         });
         p.minFrameTimes = res.minFrameTimes;
+        p.startOverlayReceiver(opts.overlayPort ?? 0);
         return p;
     }
 
@@ -219,11 +271,21 @@ export class PixelPipeline {
         } else if (a.bg) {
             bytes.set(a.bg.subarray(0, L.frameBytes));
         } else {
-            // Black: skip the fill when the slot already holds a black frame we published.
             bytes.fill(0);
             black = true;
-            flags |= FRAME_FLAG_BLACK;
         }
+        // Overlays draw on top of whatever is there, black included.
+        const now = Date.now();
+        if (now - this.lastExpire > 1000) {
+            this.lastExpire = now;
+            for (const id of this.overlays.expire(now)) this.log('info', `[overlay] lease ${id} expired`);
+        }
+        if (this.overlays.size > 0) {
+            this.overlays.composite(bytes, stride);
+            black = false;
+            flags &= ~FRAME_FLAG_IDLE;
+        }
+        if (black) flags |= FRAME_FLAG_BLACK;
         if (!black && a.brightness !== undefined && a.brightness < 1) {
             scaleNodes(bytes, stride, 0, L.nodeCount, a.brightness, L.xMeaning === 2);
         }
@@ -257,6 +319,14 @@ export class PixelPipeline {
     async close() {
         if (this.closed) return;
         this.closed = true;
+        if (this.overlaySocket) {
+            try {
+                this.overlaySocket.close();
+            } catch {
+                /* already closed */
+            }
+            this.overlaySocket = undefined;
+        }
         await this.output.close();
     }
 

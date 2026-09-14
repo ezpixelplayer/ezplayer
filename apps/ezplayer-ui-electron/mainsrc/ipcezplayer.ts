@@ -1,3 +1,4 @@
+import type { OverlayCommand, OverlayResult } from './workers/overlaytypes.js';
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
 import { ezpVersions } from '../versions.js';
@@ -146,6 +147,12 @@ function applyStatusSummary() {
 }
 export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
+
+/** Forward an overlay lease command to the playback worker. */
+export async function playWorkerOverlay(cmd: OverlayCommand): Promise<OverlayResult> {
+    if (!rpcc) return { ok: false, error: 'player not running' };
+    return rpcc.call('overlay', cmd);
+}
 
 /** Ledger of files the cloud has installed into the show folder. `runGcSweep` deletes
  *  any tracked file no longer referenced by a current sequence record or by live

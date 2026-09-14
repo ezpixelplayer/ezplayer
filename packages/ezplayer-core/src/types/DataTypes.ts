@@ -677,6 +677,9 @@ export interface AdvancedPlaybackSettings {
     /** DDP output port override (default 4048). Takes effect when controllers
      *  reopen (show folder reload or player restart). */
     ddpPort?: number;
+    /** UDP port for overlay lease payloads (default 4049). Takes effect when the
+     *  pipeline restarts (show folder reload or player restart). */
+    overlayPort?: number;
 }
 
 /** The "playback" cloud-managed settings group — the part of PlaybackSettings

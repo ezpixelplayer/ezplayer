@@ -1,3 +1,4 @@
+import type { OverlayCommand } from './workers/overlaytypes.js';
 /**
  * Server Worker Manager - manages the Koa server running in a worker thread
  */
@@ -20,6 +21,7 @@ import {
     loadShowFolder,
     dispatchCloudCommand,
     putSequencesWithDurations,
+    playWorkerOverlay,
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
@@ -104,6 +106,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     applySettingsFromRenderer: (settingsPath: string, settings: unknown) => {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
     },
+    overlayCommand: (cmd: unknown) => playWorkerOverlay(cmd as OverlayCommand),
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
         if (cmd.command === 'resetplayback') {

@@ -1,3 +1,4 @@
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
 import {
     GetNodeResult,
     type ImageInfo,
@@ -91,6 +92,8 @@ export type PlayWorkerRPCAPI = {
     getModelCoordinates: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getModelCoordinates2D: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
+    /** Overlay lease operations (see overlaytypes.ts). */
+    overlay: (cmd: OverlayCommand) => Promise<OverlayResult>;
 };
 
 export type MainRPCAPI = {
