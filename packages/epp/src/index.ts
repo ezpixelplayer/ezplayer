@@ -144,3 +144,14 @@ export type { BlendMode, TestPatternKind, TestPatternParams } from './pipeline/K
 
 export { ParamsBlock } from './pipeline/Params';
 export { StatsBlock } from './pipeline/Stats';
+export type { DecompPost, Canonicalizer } from './formats/FSeqPrefetcher';
+export { runDecompPost } from './formats/FSeqPrefetcher';
+export { sharedInputMapProgram } from './pipeline/InputMap';
+export type { SparseRangeSpec } from './pipeline/InputMap';
+export {
+    layoutSpecsFromXlights,
+    descriptorFromSpecs,
+    descriptorFromFseqHeaders,
+    descriptorToFseqHeader,
+    FSEQ_DESCRIPTOR_HEADER,
+} from './pipeline/xlAdapter';

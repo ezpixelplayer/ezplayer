@@ -156,8 +156,33 @@ function runsOf(m: ChannelDescriptorModel): NodeRun[] {
     return [{ nodeStart: 0, nodeCount: m.nodeCount, channelStart: m.startChannel }];
 }
 
-/** Compile the translation from a file's channel space into a layout's canonical frame. */
-export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout): InputMap {
+/** A sparse-file range: absolute channels [channelStart, channelStart+length) live at byte srcOffset of each frame. */
+export interface SparseRangeSpec {
+    srcOffset: number;
+    channelStart: number;
+    length: number;
+}
+
+/** Pieces of [ch, ch+count) that exist in the source, each with its byte offset. */
+function remapChannels(sparse: SparseRangeSpec[] | undefined, ch: number, count: number): { src: number; ch: number; count: number }[] {
+    if (!sparse) return [{ src: ch, ch, count }];
+    const out: { src: number; ch: number; count: number }[] = [];
+    for (const r of sparse) {
+        const lo = Math.max(ch, r.channelStart);
+        const hi = Math.min(ch + count, r.channelStart + r.length);
+        if (hi <= lo) continue;
+        out.push({ src: r.srcOffset + (lo - r.channelStart), ch: lo, count: hi - lo });
+    }
+    out.sort((a, b) => a.ch - b.ch);
+    return out;
+}
+
+/**
+ * Compile the translation from a file's channel space into a layout's
+ * canonical frame. `sparse` describes an fseq whose frames hold only some
+ * channel ranges; ops then read the packed offsets directly.
+ */
+export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout, sparse?: SparseRangeSpec[]): InputMap {
     const b = new OpBuilder();
     const byName = new Map<string, ChannelDescriptorModel>();
     for (const m of desc.models) byName.set(m.name, m);
@@ -188,16 +213,24 @@ export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout):
         if (lut >= 0) inverted.push(lm.name);
         const perm = b.permFor(lm.perm);
         // Walk the file's runs in node order and cut them at the node budget.
+        const cpn = dm.channelsPerNode;
+        const tint = (codec.tintR << 16) | (codec.tintG << 8) | codec.tintB;
+        const kind = codec.kind === 'rgb' ? IN_RGB : codec.kind === 'rgbw' ? (white ? IN_RGBW : IN_RGB) : IN_MONO;
+        const r = kind === IN_MONO ? codec.mono : codec.r;
         let done = 0;
         for (const run of runsOf(dm)) {
             if (done >= nodes) break;
             const n = Math.min(run.nodeCount, nodes - done);
-            const dstNode = lm.nodeStart + done;
-            const permOff = perm >= 0 ? perm + done : -1;
-            const tint = (codec.tintR << 16) | (codec.tintG << 8) | codec.tintB;
-            const kind = codec.kind === 'rgb' ? IN_RGB : codec.kind === 'rgbw' ? (white ? IN_RGBW : IN_RGB) : IN_MONO;
-            const r = kind === IN_MONO ? codec.mono : codec.r;
-            b.push(kind, run.channelStart, dstNode, n, dm.channelsPerNode, r, codec.g, codec.b, codec.w, lut, permOff, tint, lm.nodeStart);
+            for (const piece of remapChannels(sparse, run.channelStart, n * cpn)) {
+                // Only whole nodes inside the piece; a range edge through a node drops that node.
+                const firstNode = Math.ceil((piece.ch - run.channelStart) / cpn);
+                const lastNode = Math.floor((piece.ch + piece.count - run.channelStart) / cpn) - 1;
+                if (lastNode < firstNode) continue;
+                const src = piece.src + (run.channelStart + firstNode * cpn - piece.ch);
+                const dstNode = lm.nodeStart + done + firstNode;
+                const permOff = perm >= 0 ? perm + done + firstNode : -1;
+                b.push(kind, src, dstNode, lastNode - firstNode + 1, cpn, r, codec.g, codec.b, codec.w, lut, permOff, tint, lm.nodeStart);
+            }
             done += n;
         }
     }
@@ -206,16 +239,19 @@ export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout):
         const s = span.channelStart;
         const e = Math.min(span.channelStart + span.count, desc.totalChannels);
         if (e <= s) continue;
-        b.push(IN_RAW, s, layout.rawOffset + span.rawOffset, e - s, 1, 0, 0, 0, 0, -1, -1, 0, 0);
+        for (const piece of remapChannels(sparse, s, e - s)) {
+            b.push(IN_RAW, piece.src, layout.rawOffset + span.rawOffset + (piece.ch - s), piece.count, 1, 0, 0, 0, 0, -1, -1, 0, 0);
+        }
     }
     const extra = desc.models.filter((m) => !seen.has(m.name) && !layout.models.some((lm) => lm.name === m.name)).map((m) => m.name);
 
     const ops = Int32Array.from(b.ops);
+    const srcChannels = sparse ? sparse.reduce((a, r) => Math.max(a, r.srcOffset + r.length), 0) : desc.totalChannels;
     const map: InputMap = {
         id: 0,
         descriptorHash: descriptorHash(desc),
         layoutVersion: layout.layoutVersion,
-        srcChannels: desc.totalChannels,
+        srcChannels,
         frameBytes: layout.frameBytes,
         pixelStride: stride,
         ops,
@@ -227,8 +263,27 @@ export function compileInputMap(desc: ChannelDescriptor, layout: DisplayLayout):
         resized,
         inverted,
     };
-    map.id = fnv1a(`${map.descriptorHash}:${map.layoutVersion}`);
+    map.id = fnv1a(`${map.descriptorHash}:${map.layoutVersion}:${sparse ? JSON.stringify(sparse) : ''}`);
     return map;
+}
+
+/** Copy a program's tables into SharedArrayBuffers so workers can receive it without copying. */
+export function sharedInputMapProgram(map: InputMap): InputMapProgram {
+    const share = <T extends Int32Array | Uint8Array>(a: T, ctor: { new (b: SharedArrayBuffer): T; BYTES_PER_ELEMENT: number }) => {
+        const sab = new SharedArrayBuffer(Math.max(1, a.length) * ctor.BYTES_PER_ELEMENT);
+        const v = new ctor(sab);
+        v.set(a as never);
+        return a.length ? v : new ctor(new SharedArrayBuffer(0));
+    };
+    return {
+        id: map.id,
+        srcChannels: map.srcChannels,
+        frameBytes: map.frameBytes,
+        pixelStride: map.pixelStride,
+        ops: share(map.ops, Int32Array),
+        luts: share(map.luts, Uint8Array),
+        perms: share(map.perms, Int32Array),
+    };
 }
 
 /** Fields of an InputMap that can cross a worker boundary (typed arrays over plain buffers). */

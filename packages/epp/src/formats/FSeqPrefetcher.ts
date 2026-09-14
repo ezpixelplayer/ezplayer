@@ -5,6 +5,7 @@ import { ArrayBufferPool } from '../util/BufferRecycler';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '../util/PrefetchCache';
 import { CompBlockCache, FSEQHeader, FSEQReaderAsync, summarizeFSEQHeader } from './FSeqUtil';
 import { readHandleRange } from '../util/FileUtil';
+import { applyInputMapChunk, InputMapProgram } from '../pipeline/InputMap';
 
 /**
  * Make a request for the sequence metadata... none of its frames... just let us know about it
@@ -32,13 +33,34 @@ export type PrefetchSeqFramesRequest = {
     tier?: number;
 };
 
+/**
+ * Work to do on the decompressed chunk before it is handed back: apply an
+ * Input Map so the cache holds canonical frames instead of channel space.
+ * Runs wherever the decompression runs (a worker thread, ideally).
+ */
+export interface DecompPost {
+    program: InputMapProgram;
+    /** Receives nframes * program.frameBytes. */
+    outBuf: ArrayBuffer;
+    nframes: number;
+    /** Bytes per decompressed frame in the file's own layout. */
+    srcStride: number;
+    /** compbuf already holds decompressed data at compoff..compoff+complen; skip decoding. */
+    raw?: boolean;
+}
+
 export type DecompZStd = (
     decompbuf: ArrayBuffer,
     compbuf: ArrayBuffer,
     compoff: number,
     complen: number,
     explen: number,
-) => Promise<{ decompBuf: ArrayBuffer; compBuf: ArrayBuffer }>;
+    post?: DecompPost,
+) => Promise<{ decompBuf: ArrayBuffer; compBuf: ArrayBuffer; outBuf?: ArrayBuffer }>;
+
+export function runDecompPost(decomp: Uint8Array, post: DecompPost): void {
+    applyInputMapChunk(post.program, decomp, post.srcStride, new Uint8Array(post.outBuf), post.nframes);
+}
 
 export async function defDecompZStd(
     decompbuf: ArrayBuffer,
@@ -46,12 +68,21 @@ export async function defDecompZStd(
     compoff: number,
     complen: number,
     explen: number,
+    post?: DecompPost,
 ) {
+    if (post?.raw) {
+        runDecompPost(new Uint8Array(compbuf, compoff, complen), post);
+        return { compBuf: compbuf, decompBuf: decompbuf, outBuf: post.outBuf };
+    }
     const decoder = new ZSTDDecoder();
     await decoder.init();
     new Uint8Array(decompbuf, 0, explen).set(decoder.decode(new Uint8Array(compbuf, compoff, complen), explen));
-    return { compBuf: compbuf, decompBuf: decompbuf };
+    if (post) runDecompPost(new Uint8Array(decompbuf, 0, explen), post);
+    return { compBuf: compbuf, decompBuf: decompbuf, outBuf: post?.outBuf };
 }
+
+/** Decide how a file's frames become canonical; undefined keeps channel space. */
+export type Canonicalizer = (fseqfile: string, header: FSEQHeader, layout: FileLayout) => InputMapProgram | undefined;
 
 /**
  * Make a prefetch for a time range
@@ -74,6 +105,8 @@ export interface FSeqFileVal {
     header: FSEQHeader;
     chunkMap: CompBlockCache;
     layout: FileLayout;
+    /** Set when frames of this file are cached in canonical form. */
+    inputMap?: InputMapProgram;
 }
 
 export interface ScatterRange {
@@ -95,11 +128,14 @@ interface DecompCacheKey {
     fileOffset: number;
     fileLen: number;
     compression: number;
-    decompLen: number; // dense output size: nframes * denseStep
+    decompLen: number; // cached chunk size: nframes * outStep
     nframes: number;
     fileStride: number;
     denseStep: number;
     scatterPlan: ScatterRange[];
+    /** Bytes per cached frame: denseStep, or the canonical frame size when inputMap is set. */
+    outStep: number;
+    inputMap?: InputMapProgram;
 }
 
 interface DecompCacheVal {
@@ -207,6 +243,7 @@ export class FSeqPrefetchCache {
             now: number;
             fseqSpace?: number;
             decompZstd?: DecompZStd; // Allow a worker thread...
+            canonicalizer?: Canonicalizer;
         },
         emitError: (msg: string) => void,
         emitWarning?: (msg: string) => void,
@@ -215,6 +252,7 @@ export class FSeqPrefetchCache {
         this.now = arg.now;
         this.emitWarning = emitWarning ?? emitError;
         this.emitInfo = emitInfo;
+        this.canonicalizer = arg.canonicalizer;
         this.decompDataPool = new ArrayBufferPool();
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
         this.decompPrefetchCache = new PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>({
@@ -239,6 +277,37 @@ export class FSeqPrefetchCache {
                             throw new Error(
                                 `File read of ${key.fseqfile} expected ${key.fileLen} bytes but could only read ${rlen}`,
                             );
+
+                        // Canonical path: the decoder applies the Input Map (reading sparse
+                        // offsets directly), and the cache holds canonical frames.
+                        if (key.inputMap) {
+                            const outBuf = this.decompDataPool.get(denseChunkLen);
+                            const post: DecompPost = {
+                                program: key.inputMap,
+                                outBuf,
+                                nframes: key.nframes,
+                                srcStride: key.fileStride,
+                            };
+                            try {
+                                if (key.compression === 1) {
+                                    const dbuf = this.decompDataPool.get(fileChunkLen);
+                                    const res = await this.decompFunc(dbuf, readBuf, 0, key.fileLen, fileChunkLen, post);
+                                    readBuf = res.compBuf;
+                                    this.decompDataPool.release(res.decompBuf);
+                                    return { decompChunk: res.outBuf ?? outBuf };
+                                } else if (key.compression === 0) {
+                                    const dummy = this.decompDataPool.get(64);
+                                    const res = await this.decompFunc(dummy, readBuf, 0, key.fileLen, fileChunkLen, { ...post, raw: true });
+                                    readBuf = res.compBuf;
+                                    this.decompDataPool.release(res.decompBuf);
+                                    return { decompChunk: res.outBuf ?? outBuf };
+                                }
+                                throw new Error('Compression type 2 not supported');
+                            } catch (e) {
+                                this.decompDataPool.release(outBuf);
+                                throw e;
+                            }
+                        }
 
                         // Non-sparse path: decode (or pass through) straight into the dense buffer;
                         // the file's on-disk frame stride already equals denseStep.
@@ -315,7 +384,7 @@ export class FSeqPrefetchCache {
             },
             budgetPredictor: (key) => key.decompLen,
             budgetCalculator: (key) => key.decompLen,
-            keyToId: (key) => `${key.fseqfile}:${key.chunknum}`,
+            keyToId: (key) => `${key.fseqfile}:${key.chunknum}:${key.inputMap?.id ?? 'raw'}`,
             budgetLimit: arg.fseqSpace ?? 512_000_000,
             maxConcurrency: 4,
             priorityComparator: needTimePriorityCompare,
@@ -431,18 +500,21 @@ export class FSeqPrefetchCache {
         const nframes = cidx.endFrame - cidx.startFrame;
         const comptype = hdr.header.compression;
         const layout = hdr.layout;
+        const outStep = hdr.inputMap ? hdr.inputMap.frameBytes : layout.denseStep;
 
         const dk: DecompCacheKey = {
             fseqfile: fseq,
             chunknum: chunk,
             fileLen: cidx.fileSize,
             fileOffset: cidx.fileOffset,
-            decompLen: nframes * layout.denseStep,
+            decompLen: nframes * outStep,
             compression: comptype,
             nframes,
             fileStride: layout.fileStride,
             denseStep: layout.denseStep,
             scatterPlan: layout.scatterPlan,
+            outStep,
+            inputMap: hdr.inputMap,
         };
         return { dk, hdr };
     }
@@ -458,7 +530,7 @@ export class FSeqPrefetchCache {
 
         const cnum = fk.dk.chunknum;
         const chunk = fk.hdr.chunkMap.index[cnum];
-        const denseStep = fk.hdr.layout.denseStep;
+        const denseStep = fk.dk.outStep;
         const frameOffset = (frame.num - chunk.startFrame) * denseStep;
         const decompBytes = cref.ref.v.decompChunk.byteLength;
         if (frameOffset + denseStep > decompBytes) {
@@ -498,16 +570,19 @@ export class FSeqPrefetchCache {
             const chunkMap = new CompBlockCache();
             FSEQReaderAsync.createCompBlockCache(header, chunkMap);
             const layout = computeFileLayout(header);
+            const inputMap = this.canonicalizer?.(key.fseqfile, header, layout);
             if (this.emitInfo) {
                 this.emitInfo(
                     `[fseq] opened ${key.fseqfile}; ${summarizeFSEQHeader(header)}; ` +
-                        `layout: isSparse=${layout.isSparse} fileStride=${layout.fileStride} denseStep=${layout.denseStep}`,
+                        `layout: isSparse=${layout.isSparse} fileStride=${layout.fileStride} denseStep=${layout.denseStep}` +
+                        (inputMap ? `; canonical frameBytes=${inputMap.frameBytes} map=${inputMap.id}` : ''),
                 );
             }
             return {
                 header,
                 chunkMap,
                 layout,
+                inputMap,
             };
         },
         budgetPredictor: (_key) => 1,
@@ -521,6 +596,7 @@ export class FSeqPrefetchCache {
 
     decompDataPool: ArrayBufferPool;
     decompFunc: DecompZStd;
+    canonicalizer?: Canonicalizer;
     decompPrefetchCache: PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>;
     fileReadTimeCumulative: number = 0;
     private emitWarning: (msg: string) => void;

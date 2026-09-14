@@ -47,6 +47,12 @@ const S_TIME_LO = 5;
 const S_TIME_HI = 6;
 const S_SEQ = 7;
 const S_SOURCE_STAMP = 8;
+const S_FRAME_INTERVAL = 9;
+const S_FLAGS = 10;
+
+/** Frame flags. */
+export const FRAME_FLAG_IDLE = 1; // black frame produced while nothing plays; outputs may drop it
+export const FRAME_FLAG_BLACK = 2; // frame is known to be all black
 
 // Pool counters (Int32)
 const COUNTER_INTS = 8;
@@ -57,9 +63,12 @@ export interface FrameMeta {
     frameNumber: number;
     pipelineId: number;
     paramsSlot: number;
-    /** Wall or perf time in ms; stored as two Int32 halves of the integer part. */
+    /** Wall-clock target time in ms (Date.now basis, so it survives a thread hop); integer part stored as two Int32 halves. */
     timeMs: number;
     sourceStamp: number;
+    /** Nominal frame interval in ms; outputs pace their send inside it. */
+    frameIntervalMs?: number;
+    flags?: number;
 }
 
 export interface FramePoolOptions {
@@ -175,6 +184,8 @@ export class FramePool {
         Atomics.store(t, b + S_TIME_LO, tInt % 0x80000000 | 0);
         Atomics.store(t, b + S_TIME_HI, Math.floor(tInt / 0x80000000) | 0);
         Atomics.store(t, b + S_SOURCE_STAMP, meta.sourceStamp | 0);
+        Atomics.store(t, b + S_FRAME_INTERVAL, (meta.frameIntervalMs ?? 0) | 0);
+        Atomics.store(t, b + S_FLAGS, (meta.flags ?? 0) | 0);
         Atomics.store(t, b + S_SEQ, seq);
         Atomics.store(t, b + S_STATE, SLOT_READY);
 
@@ -268,6 +279,8 @@ export class FramePool {
             paramsSlot: Atomics.load(t, b + S_PARAMS_SLOT),
             timeMs: hi * 0x80000000 + lo,
             sourceStamp: Atomics.load(t, b + S_SOURCE_STAMP),
+            frameIntervalMs: Atomics.load(t, b + S_FRAME_INTERVAL),
+            flags: Atomics.load(t, b + S_FLAGS),
         };
     }
 

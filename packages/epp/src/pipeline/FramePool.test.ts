@@ -11,7 +11,7 @@ function legacyReadLatest(buffer: SharedArrayBuffer, lastSeq?: number) {
     return { seq, frameSizeBytes: frameSize, bytes: new Uint8Array(buffer, 32 + slot * frameSize, frameSize) };
 }
 
-const meta = (n: number) => ({ frameNumber: n, pipelineId: 7, paramsSlot: n & 1, timeMs: 1e12 + n, sourceStamp: 3 });
+const meta = (n: number) => ({ frameNumber: n, pipelineId: 7, paramsSlot: n & 1, timeMs: 1e12 + n, sourceStamp: 3, frameIntervalMs: 25, flags: 2 });
 
 describe('FramePool', () => {
     it('allocates, composes, publishes, and pins the latest slot', () => {
@@ -36,6 +36,8 @@ describe('FramePool', () => {
         expect(m.frameNumber).toBe(1);
         expect(m.pipelineId).toBe(7);
         expect(m.timeMs).toBe(1e12 + 1);
+        expect(m.frameIntervalMs).toBe(25);
+        expect(m.flags).toBe(2);
 
         // Latest is pinned: publishing more frames never recycles it until it is superseded.
         const s2 = pool.acquire();
