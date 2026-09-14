@@ -277,25 +277,25 @@ Per model: name, 0-based start channel, node count, channels per node, channel r
 
 ### Where it lives
 
-The 64 KB header cap rules out the whole descriptor for large shows (a few thousand models with names is well past it), so the design is content-addressed:
+The inline FSEQ v2 header is capped at 64 KB, but xLights' writer (`FSEQFile.cpp`) has an escape: an `ED` entry in the inline header names a real code, an 8-byte file offset and a 4-byte length, and the data sits after the channel data. Desktop and headless xLights already use it to embed the zstd-compressed `xlights_rgbeffects.xml` (`XR`), `xlights_networks.xml` (`XN`) and the `.xsq` (`XS`). So the descriptor goes in the file, whole:
 
-- The fseq variable header `EZ` always carries a small **stamp**: descriptor format version, the layout fingerprint, the flags, model count, total channels. This fits in well under 100 bytes and never fails to fit.
-- The full descriptor lives in a **registry** keyed by fingerprint: `<show>/.ezplayer/layouts/<fingerprint>.json`. One entry per layout version, shared by every file rendered against it, so a show with a hundred sequences and three layout versions has three files. The cloud carries the same objects and ships one alongside a download when the player lacks it.
-- When the descriptor is small enough (the common case for shows under a few hundred models) the `EZ` header also embeds it as deflate-compressed JSON, so a lone fseq copied between machines is self-describing. The registry is still written; the embedded copy is a convenience.
+- Our renderer writes an extended `EZ` header: a 16-byte fixed prefix (format version, flags, layout fingerprint, model count, total channels) followed by the descriptor as zstd-compressed JSON. The prefix is enough to pick a cached Input Map without decompressing anything.
+- A file with `XR` and `XN` but no `EZ` is already self-describing: the player derives the descriptor from those two documents with the same `xllayoutcalcs` calls the layout compiler uses. That covers every file saved by xLights since the extended headers landed.
+- `<show>/.ezplayer/layouts/<fingerprint>.json` is a **derived cache**, not a source of truth: the descriptor a file yielded, keyed by fingerprint, so opening a file the player has seen the layout of costs one prefix read. The cloud can ship the same object with a download so the player never has to parse `XR` for a file it did not render.
+
+Nothing here modifies a user's file. The rewrite step from the earlier draft is gone: files that carry `XR` need no `EZ`, files we render get `EZ` at render time, and files with neither are pinned.
 
 ### Precedence when a file is opened
 
-1. `EZ` stamp present and the fingerprint is in the registry (or embedded): use it.
-2. `EZ` stamp present, fingerprint unknown: log it, fall through. The stamp still identifies the file's layout version so the pin below is recorded against it.
-3. xLights `rgbeffects` embedded in the file (newer xLights writes it when it fits): derive the descriptor from it with the same adapter the layout compiler uses, store it in the registry under its fingerprint, and schedule a header rewrite (below).
-4. Nothing: **pin on first sight** to the current layout's descriptor, stored in the registry and recorded in `<show>/.ezplayer/layouts/pins.json` keyed by file identity. "Hope for the best" and "pin" are the same thing here; pinning just makes it stick after the layout changes instead of silently drifting, and the UI can show it and offer re-pin.
+1. Extended `EZ` header: use it. The prefix fingerprint selects the cached Input Map; the JSON is decompressed only on a cache miss.
+2. Extended `XR` and `XN` headers: derive the descriptor, cache it under its fingerprint, use it. Flags are those of an xLights render: curves applied, color order applied, xLights node order.
+3. Nothing: **pin on first sight** to the current layout's descriptor, recorded in `<show>/.ezplayer/layouts/pins.json` keyed by file identity. "Hope for the best" and "pin" are the same act; pinning makes it stick after the layout changes instead of silently drifting, and the UI can show it and offer re-pin.
 
 ### When it is computed
 
-- **xlrender and the cloud**: at render time. The renderer knows the layout; it writes the stamp and the embedded descriptor, and the cloud stores the registry object with the layout.
-- **Add song and cloud download**: after the bytes are on disk and before the record is registered, run the precedence above. This is the one place a header rewrite is cheap to do synchronously: the file was just written.
-- **First open by the player**: the same precedence, but a rewrite is never done during playback; it is queued for the maintenance path.
-- **Header rewrite**: an fseq cannot take a longer header in place, so a rewrite is a full copy to a temp file and a rename. It happens only in the maintenance path (add, download, an explicit "repair sequence headers" action) and only for files without an `EZ` stamp. Files the user owns are otherwise never modified.
+- **xlrender and the cloud**: at render time; the renderer knows the layout and writes `EZ`.
+- **Add song and cloud download**: after the bytes are on disk and before the record is registered, run the precedence above so a problem (missing models, a resize) is reported at import rather than at show time.
+- **First open by the player**: the same precedence; deriving from `XR` is a few milliseconds of XML parsing, done once per fingerprint.
 
 ### Noticing that a file changed
 
