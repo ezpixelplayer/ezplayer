@@ -5,6 +5,7 @@ import { Select } from '@ezplayer/shared-ui-components';
 import type { AppSettingsCommand, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
+import { VirtualMatrixSettings } from './VirtualMatrixSettings';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import { sendAppSettingsCommand } from '../../../store/slices/AppSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
@@ -123,6 +124,9 @@ export const PlayerSettings: React.FC = () => {
                     the same controllers — lights then hold their last frame when playback stops.
                 </Typography>
             </Box>
+
+            <Divider sx={{ my: 3 }} />
+            <VirtualMatrixSettings />
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

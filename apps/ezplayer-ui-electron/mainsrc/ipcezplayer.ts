@@ -1,3 +1,4 @@
+import { syncMatrixWindowsFromSettings } from './matrixWindows.js';
 import type { OverlayCommand, OverlayResult } from './workers/overlaytypes.js';
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
@@ -104,6 +105,7 @@ import {
 import type { ControllerCommand } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
+    updatePixelPool,
     updateAudioBuffer,
     broadcastToWebSocket,
     pushModelCoordinates,
@@ -425,6 +427,7 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
     applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
     await saveCloudSettingsMeta(metaPath, newMeta);
     syncAudioOutputsFromSettings(next);
+    syncMatrixWindowsFromSettings(next);
     safeSend(updateWindow, 'update:playbacksettings', next);
     broadcastToWebSocket('playbackSettings', next);
     playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
@@ -676,6 +679,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     const settings = getSettingsCache();
     if (settings) {
         syncAudioOutputsFromSettings(settings);
+        syncMatrixWindowsFromSettings(settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -1035,6 +1039,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
         syncAudioOutputsFromSettings(settings);
+        syncMatrixWindowsFromSettings(settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -1171,6 +1176,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         switch (msg.type) {
             case 'audioChunk': {
                 broadcastAudioChunk(msg.chunk, msg.volumeSF);
+                break;
+            }
+            case 'pixelpool': {
+                updatePixelPool(msg.buffer, msg.manifest);
                 break;
             }
             case 'pixelbuffer': {

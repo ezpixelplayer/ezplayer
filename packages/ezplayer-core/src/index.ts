@@ -35,6 +35,7 @@ export type {
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
     AudioOutputConfig,
+    VirtualMatrixOutput,
     VolumeControlState,
     CloudPollScheduleEntry,
     PlayerWebSocketSnapshot,

@@ -1,3 +1,5 @@
+import { FramePool, type LayoutManifest } from '@ezplayer/epp';
+import { MATRIX_PAGE_HTML } from './matrixpage.js';
 import type { OverlayCommand } from './overlaytypes.js';
 import type { OverlayLeaseRequest } from '@ezplayer/epp';
 /**
@@ -339,6 +341,9 @@ let cachedLayoutSettings: LayoutSettings = {};
 let cachedMovingHeads: Array<MhFixtureInfo> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
+// Canonical frame pool from the playback worker, read by the /api/ezp/pool endpoints.
+let curPixelPool: FramePool | undefined = undefined;
+let curPoolManifest: LayoutManifest | undefined = undefined;
 let curAudioRing: AudioChunkRingBuffer | undefined = undefined;
 let serverStarted = false;
 
@@ -354,6 +359,14 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
     } else if (msg.type === 'response') {
         rpc.handleResponse(msg.id, msg.result, msg.error);
+    } else if (msg.type === 'updatePixelPool') {
+        try {
+            curPixelPool = msg.buffer ? new FramePool(msg.buffer) : undefined;
+        } catch (e) {
+            console.error('[server-worker] bad pixel pool:', e);
+            curPixelPool = undefined;
+        }
+        curPoolManifest = msg.manifest;
     } else if (msg.type === 'updateFrameBuffer') {
         curFrameBuffer = msg.buffer;
     } else if (msg.type === 'updateAudioBuffer') {
@@ -376,6 +389,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         cachedLayoutSettings = {};
         cachedMovingHeads = [];
         curFrameBuffer = undefined;
+        curPixelPool = undefined;
+        curPoolManifest = undefined;
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
         cachedModelCoordinates2D = msg.coords2D;
@@ -1751,6 +1766,78 @@ async function startServer(config: ServerWorkerData) {
         const raw = await getRawBody(ctx.req, { limit: '16mb' });
         const seq = Number(ctx.query.seq ?? Date.now() & 0x7fffffff);
         await overlayCall(ctx, { op: 'frame', id: overlayId(ctx), token: overlayToken(ctx), seq, data: new Uint8Array(raw) });
+    });
+
+    // ----------------------------------------------
+    // Canonical frame pool: RGB per node in layout order. The manifest says
+    // which nodes belong to which model; /pool/model/:name serves one model's
+    // run (row-major for grids) for virtual matrix outputs and other viewers.
+    // ----------------------------------------------
+    router.get('/api/ezp/pool/manifest', (ctx) => {
+        if (!curPoolManifest) {
+            ctx.status = 204;
+            return;
+        }
+        ctx.set('Cache-Control', 'no-store');
+        ctx.body = curPoolManifest;
+    });
+    // Binary: u16 width, u16 height, u32 seq, u8 stride, u8 flags (bit0: rows bottom-first), u16 reserved, then pixels.
+    router.get('/api/ezp/pool/model/:name', (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Cache-Control', 'no-store');
+        const pool = curPixelPool;
+        const manifest = curPoolManifest;
+        if (!pool || !manifest) {
+            ctx.status = 204;
+            return;
+        }
+        const m = manifest.models.find((x) => x.name === ctx.params.name);
+        if (!m || m.nodeStart < 0) {
+            ctx.status = 404;
+            ctx.body = { error: 'no such pixel model' };
+            return;
+        }
+        const after = Number(ctx.query.after ?? -1);
+        const f = pool.acquireLatest();
+        if (!f) {
+            ctx.status = 204;
+            return;
+        }
+        try {
+            if (f.seq === after) {
+                ctx.status = 204;
+                return;
+            }
+            const stride = pool.pixelStride;
+            const w = m.grid?.width ?? m.nodeCount;
+            const h = m.grid?.height ?? 1;
+            const bytes = m.nodeCount * stride;
+            const out = frameBufferPool.get(12 + bytes);
+            out.writeUInt16LE(w, 0);
+            out.writeUInt16LE(h, 2);
+            out.writeUInt32LE(f.seq >>> 0, 4);
+            out.writeUInt8(stride, 8);
+            out.writeUInt8(1, 9);
+            out.writeUInt16LE(0, 10);
+            out.set(f.bytes.subarray(m.nodeStart * stride, m.nodeStart * stride + bytes), 12);
+            ctx.res.on('finish', () => frameBufferPool.release(out));
+            ctx.type = 'application/octet-stream';
+            ctx.body = out.subarray(0, 12 + bytes);
+        } finally {
+            pool.release(f.slot);
+        }
+    });
+    router.get('/api/ezp/displays', async (ctx) => {
+        try {
+            ctx.body = { displays: await rpc.call('listDisplays') };
+        } catch (e) {
+            ctx.status = 500;
+            ctx.body = { error: (e as Error).message };
+        }
+    });
+    router.get('/matrix', (ctx) => {
+        ctx.type = 'text/html';
+        ctx.body = MATRIX_PAGE_HTML;
     });
 
     router.get('/api/ezp/frames', async (ctx) => {

@@ -653,6 +653,23 @@ export interface PlaybackSettings {
     /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
      *  not part of cloud-managed settings groups. */
     audioOutputs?: AudioOutputConfig[];
+    /** Full-screen windows showing a model's pixels on a display (HDMI, projector,
+     *  panel). Machine-local. */
+    virtualMatrixOutputs?: VirtualMatrixOutput[];
+}
+
+/** One virtual matrix output: a model shown full-screen on a display of the player computer. */
+export interface VirtualMatrixOutput {
+    id: string;
+    /** Pixel model to show; grid models (matrices, trees) look like an image, others like a strip. */
+    model: string;
+    /** Index into the player computer's displays (0 = first). */
+    display?: number;
+    /** Smooth scaling instead of crisp pixels. */
+    smooth?: boolean;
+    /** Refresh rate of the window (default 30). */
+    fps?: number;
+    enabled: boolean;
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,

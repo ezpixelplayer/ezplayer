@@ -1,3 +1,4 @@
+import type { LayoutManifest } from '@ezplayer/epp';
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
 import {
     GetNodeResult,
@@ -134,6 +135,8 @@ export type WorkerToMainMessage =
     | { type: 'ready' }
     | { type: 'audioChunk'; chunk: AudioChunk; volumeSF: number }
     | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
+    /** The canonical frame pool and the layout that explains it (see epp FramePool / Layout). */
+    | { type: 'pixelpool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }
     | { type: 'stats'; stats: PlaybackStatistics }

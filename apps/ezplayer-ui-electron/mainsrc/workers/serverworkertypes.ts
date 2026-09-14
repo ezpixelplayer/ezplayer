@@ -1,3 +1,15 @@
+import type { LayoutManifest } from '@ezplayer/epp';
+
+export interface DisplayInfo {
+    index: number;
+    id: number;
+    label: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    primary: boolean;
+}
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
 /**
  * Types for communication between main thread and server worker
@@ -46,6 +58,7 @@ export type MainToServerWorkerMessage =
     | { type: 'init'; data: ServerWorkerData }
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
+    | { type: 'updatePixelPool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'updateAudioBuffer'; buffer: SharedArrayBuffer }
     | { type: 'broadcast'; key: string; value: unknown }
     | {
@@ -107,6 +120,8 @@ export interface ServerWorkerRPCAPI {
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
+    /** Displays attached to the player computer, for virtual matrix outputs. */
+    listDisplays(): Promise<DisplayInfo[]>;
     /** Overlay lease operations, forwarded to the playback worker. */
     overlayCommand(cmd: OverlayCommand): Promise<OverlayResult>;
     sendPlaybackSettings(settings: unknown): void;

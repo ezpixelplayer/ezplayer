@@ -1963,7 +1963,6 @@ function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPo
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
-let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
 
 let audioExportBuffer: SharedArrayBuffer | undefined = undefined;
 let audioExportRing: AudioChunkRingBuffer | undefined = undefined;
@@ -2092,7 +2091,6 @@ async function processQueue() {
         for (const c of controllers) {
             const xc = c.xlRecord;
             const cs = c.setup;
-            const r = c.report;
             emitInfo(
                 `Controller: ${xc?.name} ${xc?.address} ${xc?.activeState} ${xc?.type} ${xc?.universeNumbers} ${xc?.universeSizes} ${xc?.keepChannelNumbers}`,
             );
@@ -2127,13 +2125,9 @@ async function processQueue() {
             nChannels = modelChannelMax;
         }
 
+        // The output worker is the writer; this thread only hands the buffer out.
         frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
-        frameExportRing = new LatestFrameRingBuffer({
-            buffer: frameExportBuffer,
-            frameSize: nChannels,
-            slotCount: 4,
-            isWriter: true,
-        });
+        new LatestFrameRingBuffer({ buffer: frameExportBuffer, frameSize: nChannels, slotCount: 4, isWriter: true });
 
         // The pipeline owns the layout, the frame pool, and the output worker (sockets included).
         const pipeline = await PixelPipeline.create({
@@ -2167,6 +2161,7 @@ async function processQueue() {
             emitInfo,
         );
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
+        send({ type: 'pixelpool', buffer: pipeline.pool.buffer, manifest: pipeline.manifest });
 
         // Allocate audio ring buffer: 50 slots × 12000 max samples ≈ 2.3 MB
         audioExportBuffer = AudioChunkRingBuffer.allocate(50, 12000);

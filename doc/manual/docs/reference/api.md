@@ -915,6 +915,87 @@ The 8-byte header is **not** compressed. Decompress the payload starting at offs
 
 ---
 
+### Overlay leases (`/api/ezp/overlays`)
+
+An overlay lease lets an external program paint a model (or the whole display) while the player runs. The player composites the latest complete overlay payload into every frame it sends, on top of the sequence that is playing (or on top of black while idle), until the lease expires. Games, test tools, and GPU renderers on another machine all use the same path.
+
+A lease targets a **model** by name. Grid models (matrices, trees) take an RGB grid `width` x `height`, top row first; any model can take one RGB triple per node (`format: "nodes"`). A grid smaller or larger than the model's own grid is resampled nearest-neighbour.
+
+Payloads travel over UDP (fast, lossy, meant for animation) or as a raw `PUT` (simple clients). Either one also renews the lease. A lease with no traffic for `ttlMs` is dropped.
+
+#### GET /api/ezp/overlays/targets
+
+Models that can take an overlay, with their grid sizes.
+
+```json
+{ "ok": true, "layoutVersion": 4232670734, "targets": [{ "model": "Matrix", "nodeCount": 2048, "width": 64, "height": 32 }] }
+```
+
+#### POST /api/ezp/overlays
+
+Open a lease. Body (all optional except that a grid needs a size when the model has none):
+
+| Field     | Meaning                                                          |
+| --------- | ---------------------------------------------------------------- |
+| `model`   | Model name; the whole display when omitted                       |
+| `format`  | `grid` (default for grid models) or `nodes`                      |
+| `width`   | Grid width; defaults to the model's grid                         |
+| `height`  | Grid height                                                      |
+| `blend`   | `replace` (default), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha`, `min` |
+| `opacity` | 0..1, default 1                                                  |
+| `ttlMs`   | Expiry after the last payload, default 30000                     |
+| `name`    | Free text, shown in the lease list                               |
+
+Response:
+
+```json
+{
+  "ok": true,
+  "udpPort": 4049,
+  "lease": { "id": 3, "token": 2810465117, "model": "Matrix", "format": "grid", "width": 64, "height": 32,
+             "nodeStart": 4096, "nodeCount": 2048, "frameBytes": 6144, "blend": "replace", "opacity": 1,
+             "ttlMs": 30000, "expiresAt": 1789357165034, "frames": 0 }
+}
+```
+
+`frameBytes` is the exact payload size the lease expects (`width * height * 3`, or `nodeCount * 3`). The `token` must accompany every payload and every later call.
+
+#### PUT /api/ezp/overlays/:id/frame?token=T[&seq=N]
+
+Whole payload as `application/octet-stream`, exactly `frameBytes` long. Commits immediately.
+
+#### POST /api/ezp/overlays/:id/keepalive?token=T
+
+Renew without sending pixels.
+
+#### DELETE /api/ezp/overlays/:id?token=T
+
+Close the lease; the model returns to the sequence.
+
+#### GET /api/ezp/overlays
+
+Open leases.
+
+#### UDP payload packets
+
+Sent to the player's overlay port (`udpPort` in the open response; `advanced.overlayPort` in playback settings, default 4049). One payload may span several packets; the packet with the `last` flag commits the frame. All integers are big-endian.
+
+| Offset | Size | Field                                    |
+| ------ | ---- | ---------------------------------------- |
+| 0      | 4    | Magic `EZO1`                             |
+| 4      | 4    | Lease id                                 |
+| 8      | 4    | Token                                    |
+| 12     | 4    | Frame sequence (increment per payload)   |
+| 16     | 1    | Flags: bit 0 = last packet of this frame |
+| 17     | 4    | Byte offset of this data in the payload  |
+| 21     | 2    | Data length (at most 1400)               |
+| 23     | 1    | Reserved                                 |
+| 24     | N    | Payload bytes                            |
+
+Packets for a frame may arrive in any order; a packet for a new sequence number starts a new payload. `packetizeOverlayFrame` in `@ezplayer/epp` builds these, and `src/tools/overlay-tetris.ts` in that package is a complete example client.
+
+---
+
 ### GET /api/ezp/time
 
 Server clock for client clock-offset estimation. Returns the server's current `Date.now()` value. Clients can measure the round-trip time of this request and compute the offset between their local clock and the server's clock, enabling accurate audio scheduling on remote devices.

@@ -5,7 +5,7 @@
  * the ingest worker, so play time never pays for it.
  */
 
-import { ChannelRoleSpec, classifyRoles, DisplayLayout, fnv1a, LayoutModel, NodeRun } from './Layout';
+import { ChannelRoleSpec, classifyRoles, DisplayLayout, fnv1a, NodeRun } from './Layout';
 import { X_MEANING_WHITE } from './FramePool';
 
 /** One model as the file that was rendered understood it. */

@@ -5,6 +5,7 @@ import {
     ViewerControlScheduleEntry,
     VolumeControlState,
     VolumeScheduleEntry,
+    VirtualMatrixOutput,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
@@ -171,6 +172,19 @@ const playbackSettingsSlice = createSlice({
 
         setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
             state.settings.sendIdleBlackFrames = action.payload;
+        },
+
+        // Virtual matrix outputs (machine-local)
+        addVirtualMatrixOutput(state, action: PayloadAction<VirtualMatrixOutput>) {
+            (state.settings.virtualMatrixOutputs ??= []).push(action.payload);
+        },
+        updateVirtualMatrixOutput(state, action: PayloadAction<{ id: string; patch: Partial<VirtualMatrixOutput> }>) {
+            const o = (state.settings.virtualMatrixOutputs ?? []).find((x) => x.id === action.payload.id);
+            if (o) Object.assign(o, action.payload.patch);
+        },
+        removeVirtualMatrixOutput(state, action: PayloadAction<string>) {
+            const next = (state.settings.virtualMatrixOutputs ?? []).filter((o) => o.id !== action.payload);
+            state.settings.virtualMatrixOutputs = next.length > 0 ? next : undefined;
         },
 
         setNormalizeNewSongs(state, action: PayloadAction<boolean>) {

@@ -1,3 +1,5 @@
+import type { LayoutManifest } from '@ezplayer/epp';
+import { listDisplays, setMatrixWindowsWebPort, syncMatrixWindowsFromSettings } from './matrixWindows.js';
 import type { OverlayCommand } from './workers/overlaytypes.js';
 /**
  * Server Worker Manager - manages the Koa server running in a worker thread
@@ -107,6 +109,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
     },
     overlayCommand: (cmd: unknown) => playWorkerOverlay(cmd as OverlayCommand),
+    listDisplays: async () => listDisplays(),
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
         if (cmd.command === 'resetplayback') {
@@ -129,6 +132,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendPlaybackSettings: (settings: unknown) => {
         const playbackSettings = settings as PlaybackSettings;
         syncAudioOutputsFromSettings(playbackSettings);
+        syncMatrixWindowsFromSettings(playbackSettings);
         if (playWorkerRef) {
             playWorkerRef.postMessage({
                 type: 'settings',
@@ -267,6 +271,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     kioskPort: msg.kioskPort,
                     kioskPortSource: msg.kioskPortSource,
                 };
+                setMatrixWindowsWebPort(msg.status === 'listening' ? msg.port : undefined);
                 console.log(
                     `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
                         (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
@@ -441,6 +446,13 @@ async function handleRPCRequest(id: string, method: string, args: unknown[]) {
 /**
  * Update frame buffer in server worker
  */
+/** Hand the canonical frame pool (and its layout manifest) to the server worker. */
+export function updatePixelPool(buffer: SharedArrayBuffer | undefined, manifest: LayoutManifest | undefined) {
+    if (!serverWorker) return;
+    const message: MainToServerWorkerMessage = { type: 'updatePixelPool', buffer, manifest };
+    serverWorker.postMessage(message);
+}
+
 export function updateFrameBuffer(buffer: SharedArrayBuffer) {
     if (!serverWorker) return;
 

@@ -213,28 +213,15 @@ export function hsvToRgb(h: number, s: number, v: number): [number, number, numb
     const p = v * (1 - s);
     const q = v * (1 - f * s);
     const t = v * (1 - (1 - f) * s);
-    let r = 0,
-        g = 0,
-        b = 0;
-    switch (i % 6) {
-        case 0:
-            (r = v), (g = t), (b = p);
-            break;
-        case 1:
-            (r = q), (g = v), (b = p);
-            break;
-        case 2:
-            (r = p), (g = v), (b = t);
-            break;
-        case 3:
-            (r = p), (g = q), (b = v);
-            break;
-        case 4:
-            (r = t), (g = p), (b = v);
-            break;
-        default:
-            (r = v), (g = p), (b = q);
-    }
+    const sextants: [number, number, number][] = [
+        [v, t, p],
+        [q, v, p],
+        [p, v, t],
+        [p, q, v],
+        [t, p, v],
+        [v, p, q],
+    ];
+    const [r, g, b] = sextants[((i % 6) + 6) % 6];
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 

@@ -33,11 +33,21 @@ function parseArgs(argv: string[]): Args {
     for (let i = 0; i < argv.length; ++i) {
         const k = argv[i];
         const v = argv[i + 1];
-        if (k === '--player') (a.player = v), ++i;
-        else if (k === '--model') (a.model = v), ++i;
-        else if (k === '--fps') (a.fps = Number(v)), ++i;
-        else if (k === '--blend') (a.blend = v), ++i;
-        else if (k === '--http') a.http = true;
+        if (k === '--player') {
+            a.player = v;
+            ++i;
+        } else if (k === '--model') {
+            a.model = v;
+            ++i;
+        } else if (k === '--fps') {
+            a.fps = Number(v);
+            ++i;
+        } else if (k === '--blend') {
+            a.blend = v;
+            ++i;
+        } else if (k === '--http') {
+            a.http = true;
+        }
     }
     return a;
 }
