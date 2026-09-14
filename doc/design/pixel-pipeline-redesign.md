@@ -265,7 +265,24 @@ Each phase ships on its own and is verified with the integration harness's mock 
 
 **Phase 5: sources.** A canonical sequence format designed for random access and per-model chunking, whole-display input as a `FrameSource`, audio-overlay hooks alongside effect sequences.
 
-## 12. Open questions
+## 12. Implementation status (branch `moc/pixel-pipeline`, 2026-09-14)
+
+Done and verified against the integration harness (frame fidelity at the mock controller: zero unknown frames):
+
+- `packages/epp/src/pipeline/`: `FramePool`, `Layout` (with RGB8/RGBX8 stride and the white X byte), `InputMap` (sparse-aware, applied in the zstd worker), `OutputMap` (channel-range derivation, port segments, player/controller policy), `Kernels` (blend modes, LUTs, dynamic gamma, test patterns), `Params`, `Stats`, `Overlays`, and the xLights adapter with pin-on-first-sight descriptors. Unit tests cover the byte-exact round trip.
+- Playback runs through the pipeline: the conductor composes one interval ahead into the pool; a new output worker owns the sockets, encodes per output, publishes the legacy channel-space export for existing previews, and runs the paced send. Idle, pause and pad black are ordinary frames. E1.31 honors per-universe sizes.
+- Overlay leases over HTTP and UDP, composited into every frame, with a Tetris client (`packages/epp/src/tools/overlay-tetris.ts`).
+- Virtual matrix outputs: `/api/ezp/pool/model/:name` and the `/matrix` page; kiosk windows per configured display; settings UI.
+
+Not done yet, in the order they should come:
+
+- Descriptor pinning is in memory only; persist per file under `.ezplayer/` and add the re-pin UI.
+- The compose pool (intraframe parallelism) and the params block are in place but composition still runs on the conductor thread.
+- Brightness schedules and per-controller `player` gamma policy have kernels and map support but no settings or reconcile UI.
+- New preview readers for the canonical pool (the 3D preview still reads the channel-space export).
+- xlrender effect stage, effect sequences, coordinate kernels.
+
+## 13. Open questions
 
 - **Descriptor in the fseq header.** Which two-letter key, and will xLights upstream accept writing it. The sidecar and pin-on-first-sight paths do not depend on the answer.
 - **RGBW and single-color round trips are lossy by construction** under RGB8. Policy defaults need choosing: fold W into RGB on ingest or drop it; extract W as min(R,G,B) on output or use the temperature model. RGBX8 with `white` sidesteps it for shows that opt in.
