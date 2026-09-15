@@ -274,7 +274,12 @@ const TimelineView = () => {
 
             <Box sx={{ height: '100%', overflow: 'hidden' }}>
                 {renderableData ? (
-                    <GraphForSchedule data={renderableData} selectedStartTime={startTime} selectedEndTime={endTime} />
+                    <GraphForSchedule
+                        data={renderableData}
+                        selectedStartTime={startTime}
+                        selectedEndTime={endTime}
+                        showScheduledMarkers={false}
+                    />
                 ) : isLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                         <CircularProgress />

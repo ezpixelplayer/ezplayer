@@ -3,7 +3,8 @@ import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Box } from '../../box/Box';
 import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';
-import { Typography } from '@mui/material';
+import { Typography, useTheme } from '@mui/material';
+import { getScheduleColorSwatch } from '../../../util/scheduleDisplayColor';
 
 export type CalendarViewMode = 'monthly' | 'weekly' | 'daily';
 export type ScheduleChipScheduleType = 'main' | 'background';
@@ -13,6 +14,8 @@ export interface ScheduleChipProps {
     scheduleItem: ScheduledPlaylist;
     view: CalendarViewMode;
     scheduleType: ScheduleChipScheduleType;
+    /** 0 = exact theme color; later indices are stronger light/dark variants. */
+    colorIndex?: number;
     resolvedPlaylistTitle?: string;
     sourceDateKey?: string;
     onScheduleClick?: (scheduleItem: ScheduledPlaylist) => void;
@@ -25,12 +28,14 @@ export const ScheduleChip: React.FC<ScheduleChipProps> = ({
     scheduleItem,
     view,
     scheduleType,
+    colorIndex = 0,
     resolvedPlaylistTitle,
     sourceDateKey,
     onScheduleClick,
     draggable = true,
     isDragOverlay = false,
 }) => {
+    const theme = useTheme();
     const isBackground = scheduleType === 'background';
 
     const draggableState = useDraggable({
@@ -63,9 +68,13 @@ export const ScheduleChip: React.FC<ScheduleChipProps> = ({
         onScheduleClick(scheduleItem);
     };
 
-    const backgroundColor = isBackground ? 'secondary.main' : 'primary.main';
-    const textColor = isBackground ? 'secondary.contrastText' : 'primary.contrastText';
-    const hoverColor = isBackground ? 'secondary.dark' : 'primary.dark';
+    const swatch = getScheduleColorSwatch(
+        isBackground ? theme.palette.secondary : theme.palette.primary,
+        colorIndex,
+    );
+    const backgroundColor = swatch.main;
+    const textColor = swatch.contrastText;
+    const hoverColor = swatch.dark;
 
     if (view === 'monthly') {
         return (

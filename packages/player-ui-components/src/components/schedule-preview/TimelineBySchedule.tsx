@@ -9,7 +9,12 @@ import { formatDateStandard } from '../../util/dateUtils';
 import { Card, CardContent, Typography, Chip, Stack, Tooltip, IconButton, useTheme, Theme } from '@mui/material';
 import { Box } from '../box/Box';
 import { ZoomIn, ZoomOut, FitScreen, Refresh } from '@mui/icons-material';
-import { alpha } from '@mui/material/styles';
+import { alpha, darken } from '@mui/material/styles';
+import {
+    buildScheduleColorIndexById,
+    getScheduleColorSwatch,
+} from '../../util/scheduleDisplayColor';
+import type { PaletteColor } from '@mui/material/styles';
 
 interface TimelineByScheduleProps {
     data: PlaybackLogDetail[];
@@ -20,6 +25,8 @@ interface TimelineByScheduleProps {
     // Horizontal scroll limits
     minScrollTime?: Date | number;
     maxScrollTime?: Date | number;
+    /** When false, hides the grey scheduled-time comparison strips behind bars. Default true. */
+    showScheduledMarkers?: boolean;
 }
 
 interface TimelineItem {
@@ -61,11 +68,9 @@ interface TimelineGroup {
 
 type Priority = 'high' | 'normal' | 'low';
 
-interface TimelinePalette {
-    high: string;
-    normal: string;
-    low: string;
-    background: string;
+interface TimelineScheduleColors {
+    main: PaletteColor;
+    background: PaletteColor;
 }
 
 const SCHEDULE_EVENT_TYPES = new Set<string>([
@@ -114,8 +119,9 @@ function timingLines(scheduledStart: Date | undefined, actualStart: Date): strin
 function buildTimelineData(
     data: PlaybackLogDetail[],
     schedules: ScheduledPlaylist[],
-    palette: TimelinePalette,
+    scheduleColors: TimelineScheduleColors,
     simulationEndTime?: number,
+    showScheduledMarkers: boolean = true,
 ): { items: TimelineItem[]; groups: TimelineGroup[] } {
     const items: TimelineItem[] = [];
     const groups: TimelineGroup[] = [];
@@ -127,7 +133,12 @@ function buildTimelineData(
     const nameOf = (id: string) => scheduleById.get(id)?.title || `Schedule ${id.slice(0, 8)}`;
     const priorityOf = (id: string) => toPriority(scheduleById.get(id)?.priority);
     const isBackground = (id: string) => scheduleById.get(id)?.scheduleType === 'background';
-    const colorOf = (id: string) => (isBackground(id) ? palette.background : palette[priorityOf(id)]);
+    // Earliest series gets index 0 (exact theme color); later series get stronger light/dark variants.
+    const colorIndexById = buildScheduleColorIndexById(schedules);
+    const colorOf = (id: string) => {
+        const base = isBackground(id) ? scheduleColors.background : scheduleColors.main;
+        return getScheduleColorSwatch(base, colorIndexById.get(id) ?? 0).main;
+    };
     const scheduledTimesOf = (id: string) => {
         const schedule = scheduleById.get(id);
         if (!schedule) return { scheduledStart: undefined, scheduledEnd: undefined };
@@ -153,8 +164,10 @@ function buildTimelineData(
         const background = isBackground(scheduleId);
         const color = colorOf(scheduleId);
         const { scheduledStart, scheduledEnd } = scheduledTimesOf(scheduleId);
-        // Background schedules are colored by CSS; main schedules carry their priority color inline.
-        const barStyle = background ? undefined : `background-color: ${color}; border-color: ${color};`;
+        // Per-item colors (including subtle variants) so multiple schedules stay distinguishable.
+        const barStyle = background
+            ? `background-color: ${color}; border-color: ${darken(color, 0.2)};`
+            : `background-color: ${color}; border-color: ${color};`;
 
         let currentSegmentStart: Date | null = null;
         let lastSuspendTime: Date | null = null;
@@ -259,7 +272,7 @@ function buildTimelineData(
         }
 
         // Scheduled-time marker for comparison against what actually ran
-        if (scheduledStart && scheduledEnd) {
+        if (showScheduledMarkers && scheduledStart && scheduledEnd) {
             const ran = items.some((item) => item.scheduleId === scheduleId && item.actualStart && item.actualEnd);
             let title = `${scheduleName} - ${ran ? 'Scheduled Time' : 'Scheduled Only'}`;
             title += `\nScheduled: ${format(scheduledStart, 'HH:mm:ss')} - ${format(scheduledEnd, 'HH:mm:ss')}`;
@@ -368,6 +381,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
     simulationEndTime,
     minScrollTime,
     maxScrollTime,
+    showScheduledMarkers = true,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const timelineRef = useRef<Timeline | null>(null);
@@ -385,19 +399,17 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
     const theme = useTheme();
     const schedules = useSelector((state: RootState) => state.schedule.scheduledPlaylists || []);
 
-    const palette = useMemo<TimelinePalette>(
+    const scheduleColors = useMemo<TimelineScheduleColors>(
         () => ({
-            high: theme.palette.error.main,
-            normal: theme.palette.primary.main,
-            low: theme.palette.info.main,
-            background: theme.palette.info.main,
+            main: theme.palette.primary,
+            background: theme.palette.secondary,
         }),
         [theme],
     );
 
     const timelineData = useMemo(
-        () => buildTimelineData(data, schedules, palette, simulationEndTime),
-        [data, schedules, palette, simulationEndTime],
+        () => buildTimelineData(data, schedules, scheduleColors, simulationEndTime, showScheduledMarkers),
+        [data, schedules, scheduleColors, simulationEndTime, showScheduledMarkers],
     );
 
     const hasData = data.length > 0;
@@ -822,8 +834,8 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
           }
 
           .vis-item.schedule-background {
-            background-color: ${theme.palette.info.main} !important;
-            border: 3px solid ${theme.palette.info.dark} !important;
+            border-width: 3px !important;
+            border-style: solid !important;
             color: ${theme.palette.info.contrastText};
             font-style: italic;
             opacity: 0.95;

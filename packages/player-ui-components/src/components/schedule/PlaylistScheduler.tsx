@@ -72,6 +72,7 @@ import {
     type ScheduleDragDialogType,
     type ScheduleDragOperation,
 } from '../../util/scheduleDragDrop';
+import { buildScheduleColorIndexById } from '../../util/scheduleDisplayColor';
 import { AppDispatch, RootState } from '../../store/Store';
 import DailyView from './DailyView';
 import MonthlyView from './MonthlyView';
@@ -1157,6 +1158,11 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         }
     };
 
+    const scheduleColorIndexById = useMemo(
+        () => buildScheduleColorIndexById(scheduledPlaylists),
+        [scheduledPlaylists],
+    );
+
     const renderScheduledPlaylist = (scheduleItem: ScheduledPlaylist) => {
         const selectedPlaylist = availablePlaylists.find((p) => p.id === scheduleItem.playlistId);
         const sourceDateKey = format(timestampToDate(scheduleItem.date), 'yyyy-MM-dd');
@@ -1168,6 +1174,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 scheduleItem={scheduleItem}
                 view={view as CalendarViewMode}
                 scheduleType={scheduleType}
+                colorIndex={scheduleColorIndexById.get(scheduleItem.id) ?? 0}
                 resolvedPlaylistTitle={selectedPlaylist?.title}
                 sourceDateKey={sourceDateKey}
                 onScheduleClick={handleScheduleClick}
@@ -1564,6 +1571,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             scheduleItem={activeDragSchedule}
                             view={view as CalendarViewMode}
                             scheduleType={scheduleType}
+                            colorIndex={scheduleColorIndexById.get(activeDragSchedule.id) ?? 0}
                             resolvedPlaylistTitle={
                                 availablePlaylists.find((p) => p.id === activeDragSchedule.playlistId)?.title
                             }
