@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildScheduleColorIndexById,
+    getContrastTextForColor,
     getScheduleColorSeriesKey,
     getScheduleColorSwatch,
     getScheduleColorVariant,
+    resolveScheduleDisplaySwatch,
 } from './scheduleDisplayColor';
 import type { PaletteColor } from '@mui/material/styles';
 
@@ -57,5 +59,23 @@ describe('scheduleDisplayColor', () => {
         ]);
         expect(map.get('earlier')).toBe(0);
         expect(map.get('later')).toBe(1);
+    });
+
+    it('prefers a saved custom color over the auto-assigned swatch', () => {
+        const fallback = getScheduleColorSwatch(base, 0);
+        const swatch = resolveScheduleDisplaySwatch('#ffcc00', fallback);
+        expect(swatch.main).toBe('#ffcc00');
+        expect(swatch.contrastText).toBe('#111111');
+        expect(swatch.dark).not.toBe('#ffcc00');
+    });
+
+    it('falls back to the auto swatch when no custom color is set', () => {
+        const fallback = getScheduleColorSwatch(base, 1);
+        expect(resolveScheduleDisplaySwatch(undefined, fallback)).toBe(fallback);
+        expect(resolveScheduleDisplaySwatch('', fallback)).toBe(fallback);
+    });
+
+    it('uses light text on dark fills', () => {
+        expect(getContrastTextForColor('#1976d2')).toBe('#ffffff');
     });
 });

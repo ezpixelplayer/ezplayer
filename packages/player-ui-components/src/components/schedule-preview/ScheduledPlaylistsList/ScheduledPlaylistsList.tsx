@@ -22,9 +22,13 @@ import {
 import { Box } from '../../box/Box';
 import { alpha } from '@mui/material/styles';
 import { format } from 'date-fns';
-import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, startTransition, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../../store/Store';
+import {
+    ChronologicalLoopsList,
+    shouldSkipAccordionTransition,
+} from './ChronologicalLoopsList';
 
 export interface LogEvent {
     eventType: string;
@@ -150,17 +154,23 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
         const sequences = useSelector((state: RootState) => state.sequences.sequenceData || []);
 
         const handleDateAccordionChange = (date: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
-            setExpandedDate(isExpanded ? date : false);
+            startTransition(() => {
+                setExpandedDate(isExpanded ? date : false);
+            });
         };
 
         const handleScheduleAccordionChange =
             (scheduleId: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
-                setExpandedSchedule(isExpanded ? scheduleId : false);
+                startTransition(() => {
+                    setExpandedSchedule(isExpanded ? scheduleId : false);
+                });
             };
 
         const handlePlaylistAccordionChange =
             (playlistKey: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
-                setExpandedPlaylist(isExpanded ? playlistKey : false);
+                startTransition(() => {
+                    setExpandedPlaylist(isExpanded ? playlistKey : false);
+                });
             };
 
         // Helper function to get sequence name
@@ -458,13 +468,21 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                             }
 
                             // Find sequence in the appropriate playlist based on determined type
+                            const resolveSequenceName = (sequenceId: string) => {
+                                const sequence = sequences.find((s) => s.id === sequenceId);
+                                return (
+                                    sequence?.work?.title ||
+                                    `Sequence ${sequenceId.split('|')[1]?.slice(0, 8) || sequenceId.slice(0, 8)}`
+                                );
+                            };
+
                             if (playlistType === 'intro' && schedule.introPlaylist) {
                                 const introSequence = schedule.introPlaylist.sequences.find(
                                     (s) => s.id === event.sequenceId,
                                 );
                                 if (introSequence) {
                                     sequenceDetails = {
-                                        name: getSequenceName(event.sequenceId),
+                                        name: resolveSequenceName(event.sequenceId),
                                         artist: introSequence.artist || 'Unknown Artist',
                                         order: introSequence.order,
                                         playlistType: 'intro',
@@ -476,7 +494,7 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                 );
                                 if (outroSequence) {
                                     sequenceDetails = {
-                                        name: getSequenceName(event.sequenceId),
+                                        name: resolveSequenceName(event.sequenceId),
                                         artist: outroSequence.artist || 'Unknown Artist',
                                         order: outroSequence.order,
                                         playlistType: 'outro',
@@ -487,7 +505,7 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                 const mainSequence = schedule.sequences.find((s) => s.id === event.sequenceId);
                                 if (mainSequence) {
                                     sequenceDetails = {
-                                        name: getSequenceName(event.sequenceId),
+                                        name: resolveSequenceName(event.sequenceId),
                                         artist: mainSequence.artist || 'Unknown Artist',
                                         order: mainSequence.order,
                                         playlistType: 'main',
@@ -559,7 +577,7 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
             });
 
             return Object.values(schedules);
-        }, [data, playlists, sequences, schedulesList, getSequenceName]);
+        }, [data, playlists, sequences, schedulesList]);
 
         // Group processed schedules by date
         const schedulesByDate = useMemo(() => {
@@ -746,314 +764,6 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
             };
         };
 
-        // Helper function to render chronological sequences
-        const renderChronologicalView = (schedule: ProcessedSchedule) => {
-            if (schedule.chronologicalInstances.length === 0) {
-                return (
-                    <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                            fontStyle: 'italic',
-                            textAlign: 'center',
-                            py: 4,
-                        }}
-                    >
-                        No loop instances found for this schedule.
-                    </Typography>
-                );
-            }
-
-            // Detect suspensions by checking for explicit suspension events only
-            const suspensionIndicators: Array<{
-                index: number;
-                type: 'suspension';
-                startTime: number;
-                endTime: number;
-                duration: number;
-                reason: string;
-            }> = [];
-
-            // Check for explicit Schedule Suspended events
-            const scheduleEvents =
-                data?.logs?.filter(
-                    (event) =>
-                        event.scheduleId === schedule.scheduleId &&
-                        (event.eventType === 'Schedule Suspended' || event.eventType === 'Schedule Resumed'),
-                ) || [];
-
-            const pendingSuspensions = new Map<string, number>();
-            scheduleEvents.forEach((event) => {
-                if (event.eventType === 'Schedule Suspended') {
-                    pendingSuspensions.set(event.scheduleId!, event.eventTime);
-                } else if (event.eventType === 'Schedule Resumed') {
-                    const suspendTime = pendingSuspensions.get(event.scheduleId!);
-                    if (suspendTime !== undefined) {
-                        // Find the appropriate index to insert the suspension
-                        let insertIndex = schedule.chronologicalInstances.findIndex(
-                            (instance) => instance.startTime > suspendTime,
-                        );
-                        if (insertIndex === -1) insertIndex = schedule.chronologicalInstances.length;
-
-                        suspensionIndicators.push({
-                            index: insertIndex,
-                            type: 'suspension',
-                            startTime: suspendTime,
-                            endTime: event.eventTime,
-                            duration: event.eventTime - suspendTime,
-                            reason: 'Schedule Suspended',
-                        });
-                        pendingSuspensions.delete(event.scheduleId!);
-                    }
-                }
-            });
-
-            // Sort suspension indicators by index
-            suspensionIndicators.sort((a, b) => a.index - b.index);
-
-            // Render suspension indicator row
-            const renderSuspensionRow = (suspension: (typeof suspensionIndicators)[0]) => (
-                <Box
-                    key={`suspension-${suspension.startTime}`}
-                    sx={{
-                        py: 1.5,
-                        px: 2,
-                        backgroundColor: (theme: Theme) => alpha(theme.palette.error.main, 0.08),
-                        borderLeft: '4px solid',
-                        borderLeftColor: (theme: Theme) => theme.palette.error.main,
-                        ml: 0.5,
-                        border: '1px dashed',
-                        borderColor: (theme: Theme) => alpha(theme.palette.error.main, 0.5),
-                        borderRadius: 1,
-                    }}
-                >
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
-                            <Chip
-                                label="Suspended"
-                                size="small"
-                                color="error"
-                                variant="filled"
-                                sx={{ height: 24, minWidth: 80, flexShrink: 0 }}
-                            />
-
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                <Typography
-                                    variant="body1"
-                                    sx={{
-                                        fontWeight: 600,
-                                        color: (theme: Theme) => theme.palette.error.dark,
-                                        lineHeight: 1.2,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.5,
-                                    }}
-                                >
-                                    ⏸️ {suspension.reason}
-                                    <Typography
-                                        component="span"
-                                        variant="caption"
-                                        sx={{
-                                            color: (theme: Theme) => theme.palette.text.secondary,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 0.5,
-                                            ml: 1,
-                                        }}
-                                    >
-                                        No music playing
-                                    </Typography>
-                                </Typography>
-                            </Box>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    fontWeight: 500,
-                                    color: (theme: Theme) => theme.palette.error.main,
-                                    fontFamily: 'monospace',
-                                }}
-                            >
-                                {format(suspension.startTime, 'HH:mm:ss')}
-                            </Typography>
-                            <Typography
-                                variant="caption"
-                                sx={{ color: (theme: Theme) => theme.palette.text.secondary }}
-                            >
-                                →
-                            </Typography>
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    fontWeight: 500,
-                                    color: (theme: Theme) => theme.palette.error.main,
-                                    fontFamily: 'monospace',
-                                }}
-                            >
-                                {format(suspension.endTime, 'HH:mm:ss')}
-                            </Typography>
-                            <Chip
-                                label={formatDuration(suspension.duration)}
-                                size="small"
-                                color="error"
-                                variant="outlined"
-                                sx={{
-                                    height: 20,
-                                    fontSize: '0.7rem',
-                                    fontFamily: 'monospace',
-                                }}
-                            />
-                        </Box>
-                    </Box>
-                </Box>
-            );
-
-            // Build the final list of items with suspensions inserted
-            const itemsWithSuspensions: React.ReactNode[] = [];
-            let suspensionIndex = 0;
-
-            schedule.chronologicalInstances.forEach((instance: ChronologicalSequenceInstance, index: number) => {
-                // Check if we need to insert suspension(s) before this item
-                while (
-                    suspensionIndex < suspensionIndicators.length &&
-                    suspensionIndicators[suspensionIndex].index === index
-                ) {
-                    itemsWithSuspensions.push(renderSuspensionRow(suspensionIndicators[suspensionIndex]));
-                    suspensionIndex++;
-                }
-
-                // Add the regular sequence item
-                const typeConfig = getPlaylistTypeConfig(instance.playlistType);
-                itemsWithSuspensions.push(
-                    <Box
-                        key={`${instance.sequenceId}-${instance.startTime}-${instance.loopNumber}`}
-                        sx={{
-                            py: 1.5,
-                            px: 2,
-                            backgroundColor:
-                                index % 2 === 0
-                                    ? (theme: Theme) => alpha(theme.palette.action.hover, 0.3)
-                                    : 'transparent',
-                            borderBottom: index < schedule.chronologicalInstances.length - 1 ? '1px solid' : 'none',
-                            borderColor: 'divider',
-                            '&:hover': {
-                                backgroundColor: (theme: Theme) => alpha(theme.palette.action.selected, 0.4),
-                            },
-                            transition: (theme: Theme) => theme.transitions.create(['background-color']),
-                            borderLeft: '4px solid',
-                            borderLeftColor: `${typeConfig.color}.main`,
-                            ml: 0.5,
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                width: '100%',
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
-                                <Chip
-                                    label={typeConfig.label}
-                                    size="small"
-                                    color={typeConfig.color}
-                                    variant="outlined"
-                                    sx={{ height: 24, minWidth: 60, flexShrink: 0 }}
-                                />
-
-                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                    <Typography
-                                        variant="body1"
-                                        sx={{
-                                            fontWeight: 600,
-                                            color: 'text.primary',
-                                            lineHeight: 1.2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 0.5,
-                                        }}
-                                    >
-                                        Loop {instance.loopNumber} - {instance.sequenceName}
-                                        <Typography
-                                            component="span"
-                                            variant="caption"
-                                            sx={{
-                                                color: 'text.secondary',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 0.5,
-                                                ml: 1,
-                                            }}
-                                        >
-                                            <PersonIcon sx={{ fontSize: 12 }} />
-                                            {instance.artist}
-                                        </Typography>
-                                    </Typography>
-                                </Box>
-                            </Box>
-
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        fontFamily: 'monospace',
-                                    }}
-                                >
-                                    {format(instance.startTime, 'HH:mm:ss')}
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    →
-                                </Typography>
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        fontFamily: 'monospace',
-                                    }}
-                                >
-                                    {format(instance.endTime, 'HH:mm:ss')}
-                                </Typography>
-                                <Chip
-                                    label={formatDuration(instance.endTime - instance.startTime)}
-                                    size="small"
-                                    color="default"
-                                    variant="outlined"
-                                    sx={{
-                                        height: 20,
-                                        fontSize: '0.7rem',
-                                        fontFamily: 'monospace',
-                                    }}
-                                />
-                            </Box>
-                        </Box>
-                    </Box>,
-                );
-            });
-
-            // Add any remaining suspensions at the end
-            while (suspensionIndex < suspensionIndicators.length) {
-                itemsWithSuspensions.push(renderSuspensionRow(suspensionIndicators[suspensionIndex]));
-                suspensionIndex++;
-            }
-
-            return (
-                <List
-                    dense
-                    sx={{
-                        p: 0,
-                    }}
-                >
-                    {itemsWithSuspensions}
-                </List>
-            );
-        };
-
         // Helper function to render playlist section
         const renderPlaylistSection = (
             playlistData: ProcessedPlaylist | { sequences: ProcessedSchedule['sequences']; playlistType?: string },
@@ -1073,6 +783,9 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                     key={playlistKey}
                     expanded={isExpanded}
                     onChange={handlePlaylistAccordionChange(playlistKey)}
+                    TransitionProps={{
+                        unmountOnExit: true,
+                    }}
                     sx={{
                         mb: 1,
                         border: '1px solid',
@@ -1140,7 +853,8 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                             p: 0,
                         }}
                     >
-                        {sequences.length === 0 ? (
+                        {isExpanded &&
+                            (sequences.length === 0 ? (
                             <Typography
                                 variant="body2"
                                 color="text.secondary"
@@ -1222,7 +936,7 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                     </Box>
                                 ))}
                             </List>
-                        )}
+                        ))}
                     </AccordionDetails>
                 </Accordion>
             );
@@ -1284,11 +998,19 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                         </Box>
 
                         <List>
-                            {Array.from(schedulesByDate.entries()).map(([date, schedules]) => (
+                            {Array.from(schedulesByDate.entries()).map(([date, schedules]) => {
+                                const dateHasLargeLoops = schedules.some((schedule) =>
+                                    shouldSkipAccordionTransition(schedule.chronologicalInstances.length),
+                                );
+                                return (
                                 <Accordion
                                     key={date}
                                     expanded={expandedDate === date}
                                     onChange={handleDateAccordionChange(date)}
+                                    TransitionProps={{
+                                        unmountOnExit: true,
+                                        timeout: dateHasLargeLoops ? 0 : undefined,
+                                    }}
                                     sx={{
                                         mb: 1,
                                         boxShadow: (theme: Theme) => theme.shadows[1],
@@ -1326,15 +1048,24 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                         </Box>
                                     </AccordionSummary>
                                     <AccordionDetails sx={{ p: 1 }}>
+                                        {expandedDate === date && (
                                         <Stack spacing={1}>
                                             {schedules.map((schedule: ProcessedSchedule) => {
                                                 const { priorityLabel, priorityClass, typeLabel, typeClass } =
                                                     getSchedulePriorityConfig(schedule.scheduleId);
+                                                const isScheduleExpanded = expandedSchedule === schedule.scheduleId;
+                                                const skipTransition = shouldSkipAccordionTransition(
+                                                    schedule.chronologicalInstances.length,
+                                                );
                                                 return (
                                                     <Accordion
                                                         key={schedule.scheduleId}
-                                                        expanded={expandedSchedule === schedule.scheduleId}
+                                                        expanded={isScheduleExpanded}
                                                         onChange={handleScheduleAccordionChange(schedule.scheduleId)}
+                                                        TransitionProps={{
+                                                            unmountOnExit: true,
+                                                            timeout: skipTransition ? 0 : undefined,
+                                                        }}
                                                         ref={(el) => {
                                                             if (el) {
                                                                 scheduleRefs.current.set(schedule.scheduleId, el);
@@ -1592,6 +1323,7 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                 p: 0.5,
                                                             }}
                                                         >
+                                                            {isScheduleExpanded && (
                                                             <Box
                                                                 sx={{
                                                                     width: '100%',
@@ -1608,7 +1340,10 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                             overflow: 'hidden',
                                                                         }}
                                                                     >
-                                                                        {renderChronologicalView(schedule)}
+                                                                        <ChronologicalLoopsList
+                                                                            schedule={schedule}
+                                                                            logs={data?.logs}
+                                                                        />
                                                                     </Box>
                                                                 ) : (
                                                                     <Box
@@ -1659,14 +1394,17 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                                                     </Box>
                                                                 )}
                                                             </Box>
+                                                            )}
                                                         </AccordionDetails>
                                                     </Accordion>
                                                 );
                                             })}
                                         </Stack>
+                                        )}
                                     </AccordionDetails>
                                 </Accordion>
-                            ))}
+                                );
+                            })}
                         </List>
                     </CardContent>
                 </Card>

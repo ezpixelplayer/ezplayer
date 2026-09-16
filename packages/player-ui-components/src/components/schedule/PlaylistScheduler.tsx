@@ -1,6 +1,7 @@
 import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { ScheduleChip, type CalendarViewMode } from './ScheduleChip/ScheduleChip';
+import { ScheduleColorPicker } from './ScheduleColorPicker/ScheduleColorPicker';
 import {
     CalendarViewDay,
     CalendarViewMonth,
@@ -38,6 +39,7 @@ import {
     Tooltip,
     Typography,
     styled,
+    useTheme,
 } from '@mui/material';
 import {
     DndContext,
@@ -135,6 +137,9 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     onScheduleTypeChange,
     onOpenPreview,
 }) => {
+    const theme = useTheme();
+    const defaultScheduleColor =
+        scheduleType === 'background' ? theme.palette.secondary.main : theme.palette.primary.main;
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<'monthly' | 'weekly' | 'daily'>('monthly');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -160,6 +165,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         hardCutIn: false,
         preferHardCutIn: false,
         keepToScheduleWhenPreempted: false,
+        color: '',
     });
     const [isLoopAutoEnabled, setIsLoopAutoEnabled] = useState(false);
     const [isAdvancedOptionsExpanded, setIsAdvancedOptionsExpanded] = useState(false);
@@ -283,6 +289,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             toTime: '',
             playlistId: '',
             startDate: date,
+            color: defaultScheduleColor,
         }));
         setIsDialogOpen(true);
     };
@@ -319,6 +326,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 preferHardCutIn: schedule.preferHardCutIn ?? false,
                 endPolicy: schedule.endPolicy ?? 'seqboundearly',
                 keepToScheduleWhenPreempted: schedule.keepToScheduleWhenPreempted ?? false,
+                color: schedule.color || '',
             }));
 
             setIsDialogOpen(true);
@@ -353,6 +361,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             preferHardCutIn: false,
             endPolicy: 'seqboundearly',
             keepToScheduleWhenPreempted: false,
+            color: '',
         });
     };
 
@@ -463,6 +472,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 scheduleType: scheduleType, // Use the scheduleType prop
                 updatedAt: convertDateToMilliseconds(new Date()),
                 deleted: false,
+                ...(formData.color ? { color: formData.color } : {}),
             };
 
             // Date selection logic:
@@ -1647,6 +1657,10 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 onChange={handleTitleChange}
                             />
                         </Box>
+                        <ScheduleColorPicker
+                            value={formData.color || defaultScheduleColor}
+                            onChange={(color) => setFormData((prev) => ({ ...prev, color }))}
+                        />
                         <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
                             <TextField
                                 name="fromTime"
@@ -2265,23 +2279,23 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 maxWidth="xs"
                 fullWidth
             >
-                <DialogTitle>Schedule Conflict</DialogTitle>
+                <DialogTitle>Confirm Schedule Overlap</DialogTitle>
                 <DialogContent>
                     <Typography gutterBottom>
-                        This destination day has unresolved schedule conflicts. You must explicitly confirm the operation.
+                        This change overlaps another schedule on the destination day. Do you want to continue?
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                         {conflictConfirmDialogState.operation === 'copy'
                             ? 'Copy'
                             : conflictConfirmDialogState.operation === 'move'
-                                ? 'Move'
-                                : conflictConfirmDialogState.operation === 'fill'
-                                    ? 'Fill'
-                                    : conflictConfirmDialogState.operation === 'changeStartDate'
-                                        ? 'Change start date'
-                                        : conflictConfirmDialogState.operation === 'changeEndDate'
-                                            ? 'Change end date'
-                                            : 'Update'}{' '}
+                              ? 'Move'
+                              : conflictConfirmDialogState.operation === 'fill'
+                                ? 'Fill'
+                                : conflictConfirmDialogState.operation === 'changeStartDate'
+                                  ? 'Change start date'
+                                  : conflictConfirmDialogState.operation === 'changeEndDate'
+                                    ? 'Change end date'
+                                    : 'Update'}{' '}
                         to{' '}
                         {conflictConfirmDialogState.destinationDate
                             ? formatDateStandard(conflictConfirmDialogState.destinationDate)
@@ -2289,10 +2303,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         .
                     </Typography>
                     {conflictConfirmDialogState.conflictErrors.length > 0 && (
-                        <Box sx={{ mt: 1 }}>
-                            {conflictConfirmDialogState.conflictErrors.slice(0, 3).map((err, i) => (
-                                <Typography key={i} variant="caption" color="error.main" sx={{ display: 'block' }}>
-                                    ERR: {err}
+                        <Box sx={{ mt: 1.5 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                Overlaps with:
+                            </Typography>
+                            {conflictConfirmDialogState.conflictErrors.slice(0, 3).map((overlap, i) => (
+                                <Typography key={i} variant="body2" color="text.primary" sx={{ display: 'block' }}>
+                                    {overlap}
                                 </Typography>
                             ))}
                         </Box>
@@ -2317,14 +2334,14 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                         {conflictConfirmDialogState.operation === 'copy'
                             ? 'Copy Anyway'
                             : conflictConfirmDialogState.operation === 'move'
-                                ? 'Move Anyway'
-                                : conflictConfirmDialogState.operation === 'fill'
-                                    ? 'Fill Anyway'
-                                    : conflictConfirmDialogState.operation === 'changeStartDate'
-                                        ? 'Change Start Date Anyway'
-                                        : conflictConfirmDialogState.operation === 'changeEndDate'
-                                            ? 'Change End Date Anyway'
-                                            : 'Confirm Anyway'}
+                              ? 'Move Anyway'
+                              : conflictConfirmDialogState.operation === 'fill'
+                                ? 'Fill Anyway'
+                                : conflictConfirmDialogState.operation === 'changeStartDate'
+                                  ? 'Change Start Date Anyway'
+                                  : conflictConfirmDialogState.operation === 'changeEndDate'
+                                    ? 'Change End Date Anyway'
+                                    : 'Continue'}
                     </Button>
                 </DialogActions>
             </Dialog>

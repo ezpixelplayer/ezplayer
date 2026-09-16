@@ -60,6 +60,59 @@ export function getScheduleColorSwatch(base: PaletteColor, index: number): Sched
     };
 }
 
+function parseCssColorToRgb(color: string): { r: number; g: number; b: number } | null {
+    const trimmed = color.trim();
+    const hex6 = /^#([0-9a-fA-F]{6})$/.exec(trimmed);
+    if (hex6) {
+        return {
+            r: parseInt(hex6[1].slice(0, 2), 16),
+            g: parseInt(hex6[1].slice(2, 4), 16),
+            b: parseInt(hex6[1].slice(4, 6), 16),
+        };
+    }
+    const hex3 = /^#([0-9a-fA-F]{3})$/.exec(trimmed);
+    if (hex3) {
+        const [r, g, b] = hex3[1];
+        return {
+            r: parseInt(r + r, 16),
+            g: parseInt(g + g, 16),
+            b: parseInt(b + b, 16),
+        };
+    }
+    const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(trimmed);
+    if (rgb) {
+        return { r: Number(rgb[1]), g: Number(rgb[2]), b: Number(rgb[3]) };
+    }
+    return null;
+}
+
+/** Light text on dark fills, dark text on light fills. */
+export function getContrastTextForColor(background: string): string {
+    const rgb = parseCssColorToRgb(background);
+    if (!rgb) return '#ffffff';
+    const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+    return luminance > 0.55 ? '#111111' : '#ffffff';
+}
+
+/**
+ * Prefer a user-saved color; otherwise keep the auto-assigned theme swatch.
+ */
+export function resolveScheduleDisplaySwatch(
+    customColor: string | undefined,
+    fallback: ScheduleColorSwatch,
+): ScheduleColorSwatch {
+    if (!customColor) return fallback;
+    try {
+        return {
+            main: customColor,
+            dark: darken(customColor, 0.18),
+            contrastText: getContrastTextForColor(customColor),
+        };
+    } catch {
+        return fallback;
+    }
+}
+
 /**
  * Assign color indices by logical schedule series.
  * The earliest series (by date, then series key) gets index 0 → exact theme color.

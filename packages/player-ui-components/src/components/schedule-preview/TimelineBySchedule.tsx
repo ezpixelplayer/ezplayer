@@ -136,6 +136,8 @@ function buildTimelineData(
     // Earliest series gets index 0 (exact theme color); later series get stronger light/dark variants.
     const colorIndexById = buildScheduleColorIndexById(schedules);
     const colorOf = (id: string) => {
+        const schedule = scheduleById.get(id);
+        if (schedule?.color) return schedule.color;
         const base = isBackground(id) ? scheduleColors.background : scheduleColors.main;
         return getScheduleColorSwatch(base, colorIndexById.get(id) ?? 0).main;
     };

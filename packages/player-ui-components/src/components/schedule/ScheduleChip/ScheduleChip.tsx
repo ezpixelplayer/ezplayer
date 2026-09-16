@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Box } from '../../box/Box';
 import { ScheduledPlaylist } from '@ezplayer/ezplayer-core';
 import { Typography, useTheme } from '@mui/material';
-import { getScheduleColorSwatch } from '../../../util/scheduleDisplayColor';
+import { getScheduleColorSwatch, resolveScheduleDisplaySwatch } from '../../../util/scheduleDisplayColor';
 
 export type CalendarViewMode = 'monthly' | 'weekly' | 'daily';
 export type ScheduleChipScheduleType = 'main' | 'background';
@@ -68,9 +68,9 @@ export const ScheduleChip: React.FC<ScheduleChipProps> = ({
         onScheduleClick(scheduleItem);
     };
 
-    const swatch = getScheduleColorSwatch(
-        isBackground ? theme.palette.secondary : theme.palette.primary,
-        colorIndex,
+    const swatch = resolveScheduleDisplaySwatch(
+        scheduleItem.color,
+        getScheduleColorSwatch(isBackground ? theme.palette.secondary : theme.palette.primary, colorIndex),
     );
     const backgroundColor = swatch.main;
     const textColor = swatch.contrastText;
