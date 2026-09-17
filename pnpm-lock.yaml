@@ -298,8 +298,8 @@ importers:
         specifier: 'catalog:'
         version: 8.18.1
       audiofile:
-        specifier: file:..\..\libs\audiofile-0.0.3.tgz
-        version: file:libs/audiofile-0.0.3.tgz
+        specifier: file:..\..\libs\audiofile-0.0.5.tgz
+        version: file:libs/audiofile-0.0.5.tgz
       axios:
         specifier: 'catalog:'
         version: 1.20.0(debug@4.4.3)
@@ -2892,9 +2892,9 @@ packages:
     resolution: {integrity: sha512-0bDNnY/u6pPwHDMoF0FieU354oBi0a8rD9FcsLwzcGWbc8KS8KPIi7y+s13OlVY+gMWc/9xEMUgNE6Qm8ZllYQ==}
     engines: {node: '>=4'}
 
-  audiofile@file:libs/audiofile-0.0.3.tgz:
-    resolution: {integrity: sha512-8eioNZiUCQx7rGvUJYY5vLkrmGCp3v/cxSD0NgEbRQm/5NpwbCwFIclwLSWolq/uSchvFeIMKGGWsR+rtCQv2Q==, tarball: file:libs/audiofile-0.0.3.tgz}
-    version: 0.0.3
+  audiofile@file:libs/audiofile-0.0.5.tgz:
+    resolution: {integrity: sha512-Tzo8qx4KQrRlH5N2cu9qT4iOmGqdsAALBpqEcVl7J9yuCp82rDYWupLTcWZMPolb39ACAeDiIbc/Jt3Ji/lFBA==, tarball: file:libs/audiofile-0.0.5.tgz}
+    version: 0.0.5
 
   aws4@1.13.2:
     resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
@@ -7666,7 +7666,7 @@ snapshots:
 
   attr-accept@2.2.5: {}
 
-  audiofile@file:libs/audiofile-0.0.3.tgz: {}
+  audiofile@file:libs/audiofile-0.0.5.tgz: {}
 
   aws4@1.13.2: {}
 

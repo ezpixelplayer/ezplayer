@@ -24,6 +24,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import { CLOUD } from '../../constants/routes';
 
 // Types
 import { AppDispatch, RootState } from '../../store/Store';
@@ -101,6 +103,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     } | null>(null);
 
     const dispatch = useDispatch<AppDispatch>();
+    const navigate = useNavigate();
     const runtime = useSelector((s: RootState) => s.runtime);
     const testSequenceTags = useSelector((s: RootState) => s.playbackSettings.settings.testSequenceTags);
     const sequenceData = useSelector((s: RootState) => s.sequences.sequenceData);
@@ -463,6 +466,18 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 <Typography variant="body1">
                                     Need Download: {content.n_needing_download ?? '—'}
                                 </Typography>
+                                {(content.n_rights_unmet ?? 0) > 0 && (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', my: 0.5 }}>
+                                        <Chip
+                                            color="warning"
+                                            size="small"
+                                            label={`Music proof needed: ${content.n_rights_unmet} sequence${content.n_rights_unmet === 1 ? '' : 's'}`}
+                                        />
+                                        <Button size="small" variant="outlined" color="warning" onClick={() => navigate(CLOUD)}>
+                                            Fix on Cloud page
+                                        </Button>
+                                    </Box>
+                                )}
                                 <Typography variant="body1">
                                     Schedule Sync: {formatTime(content.schedule_sync_time)}
                                 </Typography>
