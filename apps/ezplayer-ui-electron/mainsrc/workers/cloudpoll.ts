@@ -646,6 +646,19 @@ function findExisting(id: string): SequenceRecord | undefined {
     return existingSequences.find((s) => s.id === id);
 }
 
+/** Persisted records store show-relative file names; resolve before any disk check. */
+function absShowPath(p: string | undefined): string | undefined {
+    if (!p) return undefined;
+    return path.isAbsolute(p) ? p : path.resolve(showFolder, p);
+}
+
+/** Presigned thumb URLs re-sign on every manifest; compare the object path only. */
+function thumbKey(url: string | undefined): string | undefined {
+    if (!url) return undefined;
+    const i = url.indexOf('?');
+    return i >= 0 ? url.slice(0, i) : url;
+}
+
 function needsDownload(
     existing: SequenceRecord | undefined,
     kind: CloudFileKind,
@@ -660,21 +673,30 @@ function needsDownload(
     if (knownPath && fs.existsSync(knownPath)) return false;
     const cur = existing?.cloud?.[kind];
     if (!cur) return true;
-    return cur.file_id !== file_id || cur.file_time !== file_time;
+    if (cur.file_id !== file_id || String(cur.file_time) !== String(file_time)) return true;
+    // The record claims this version; trust it only if the versioned file is
+    // actually on disk. A record can carry a newer ref than its file when an
+    // earlier pass updated refs without landing bytes, or the file was reaped.
+    const onDisk = absShowPath(existing?.files?.[kind]);
+    if (!onDisk || !fs.existsSync(onDisk)) return true;
+    if (kind !== 'thumb' && file_time && !path.basename(onDisk).includes(`__${file_time}`)) return true;
+    return false;
 }
 
 function seedInstalledFiles() {
     installedFiles.clear();
     for (const s of existingSequences) {
-        if (s.cloud?.fseq?.file_id && s.files?.fseq) {
-            installedFiles.set(fileKey(s.cloud.fseq.file_id, s.cloud.fseq.file_time), s.files.fseq);
+        for (const kind of ['fseq', 'audio'] as const) {
+            const ref = s.cloud?.[kind];
+            const p = absShowPath(s.files?.[kind]);
+            if (!ref?.file_id || !p) continue;
+            // Only a file whose name carries the ref's version counts as that version.
+            if (ref.file_time && !path.basename(p).includes(`__${ref.file_time}`)) continue;
+            installedFiles.set(fileKey(ref.file_id, ref.file_time), p);
         }
-        if (s.cloud?.audio?.file_id && s.files?.audio) {
-            installedFiles.set(fileKey(s.cloud.audio.file_id, s.cloud.audio.file_time), s.files.audio);
-        }
-        if (s.cloud?.thumb?.file_id && s.files?.thumb) {
-            installedFiles.set(fileKey(s.cloud.thumb.file_id, s.cloud.thumb.file_time), s.files.thumb);
-        }
+        const t = s.cloud?.thumb;
+        const tp = absShowPath(s.files?.thumb);
+        if (t?.file_id && tp) installedFiles.set(fileKey(thumbKey(t.file_id)!, t.file_time), tp);
     }
 }
 
@@ -869,16 +891,17 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             );
         }
         if (entry.thumb) {
-            const cur = existing?.cloud?.thumb?.file_id;
-            const need = cur !== entry.thumb;
+            const curKey = thumbKey(existing?.cloud?.thumb?.file_id);
+            const curPath = absShowPath(existing?.files?.thumb);
+            const need = curKey !== thumbKey(entry.thumb) || !curPath || !fs.existsSync(curPath);
             seedFile(
                 'thumb',
-                entry.thumb,
+                thumbKey(entry.thumb)!,
                 undefined,
                 need
                     ? {
                           kind: 'thumb',
-                          file_id: entry.thumb,
+                          file_id: thumbKey(entry.thumb)!,
                           fetchVia: 'directUrl',
                           directUrl: entry.thumb,
                       }
@@ -1491,23 +1514,19 @@ async function buildSequenceRecord(
             ...(installed.audio ? { audio: installed.audio.absPath } : {}),
             ...(installed.thumb ? { thumb: installed.thumb.absPath } : {}),
         },
+        // A cloud ref means "this version's bytes are on disk". Only a file
+        // that landed in this pass may advance its ref; adopting the manifest's
+        // ref for a file that was skipped (rights-withheld, failed) would make
+        // needsDownload believe the newer version is installed forever.
         cloud: {
             ...(existing?.cloud ?? {}),
             ...(installed.fseq
                 ? { fseq: { file_id: installed.fseq.file_id, file_time: installed.fseq.file_time ?? 0 } }
-                : entry.fseq
-                  ? { fseq: { file_id: entry.fseq.file_id, file_time: entry.fseq.file_time } }
-                  : {}),
+                : {}),
             ...(installed.audio
                 ? { audio: { file_id: installed.audio.file_id, file_time: installed.audio.file_time ?? 0 } }
-                : entry.audio
-                  ? { audio: { file_id: entry.audio.file_id, file_time: entry.audio.file_time } }
-                  : {}),
-            ...(installed.thumb
-                ? { thumb: { file_id: installed.thumb.file_id, file_time: 0 } }
-                : entry.thumb
-                  ? { thumb: { file_id: entry.thumb, file_time: 0 } }
-                  : {}),
+                : {}),
+            ...(installed.thumb ? { thumb: { file_id: thumbKey(installed.thumb.file_id)!, file_time: 0 } } : {}),
         },
         updatedAt: Date.now(),
     };
