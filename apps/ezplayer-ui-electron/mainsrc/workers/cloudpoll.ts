@@ -14,6 +14,8 @@ import {
     type CloudFileEntry,
     type CloudFileKind,
     type CloudPollScheduleEntry,
+    type CloudRightsRequirement,
+    type CloudRightsScanInfo,
     type CloudSeqManifestEntry,
     type CloudSequenceProgress,
     type ElectHomeServerRequest,
@@ -28,6 +30,7 @@ import {
 import type { CloudPollInMessage, CloudPollOutMessage, CloudWorkerTuning } from './cloudpolltypes';
 import { collectReferencedAssets } from '../data/layoutAssets.js';
 import { FSEQReaderAsync } from '@ezplayer/epp';
+import { canonicalIdTags, crc32, generateNodeFingerprint, parseAudioTags } from 'audiofile';
 import { trustSystemCAs } from '../trustSystemCAs.js';
 
 // Trust the OS cert store before any cloud fetch in this worker.
@@ -53,6 +56,8 @@ let layoutMeta: NonNullable<CloudConfig['layoutMeta']> = {};
 let layoutSource: 'xlights' | 'cloud' = 'xlights';
 let pollMode: 'always' | 'scheduled' = 'always';
 let pollSchedule: CloudPollScheduleEntry[] = [];
+let mediaFolder: string | undefined;
+let ffmpegPath: string | undefined;
 
 /** Last setConfig identity (url + token + folder). Soft updates (poll mode /
  *  schedule / intervals / layoutSource) keep this key and must not abort
@@ -641,6 +646,19 @@ function findExisting(id: string): SequenceRecord | undefined {
     return existingSequences.find((s) => s.id === id);
 }
 
+/** Persisted records store show-relative file names; resolve before any disk check. */
+function absShowPath(p: string | undefined): string | undefined {
+    if (!p) return undefined;
+    return path.isAbsolute(p) ? p : path.resolve(showFolder, p);
+}
+
+/** Presigned thumb URLs re-sign on every manifest; compare the object path only. */
+function thumbKey(url: string | undefined): string | undefined {
+    if (!url) return undefined;
+    const i = url.indexOf('?');
+    return i >= 0 ? url.slice(0, i) : url;
+}
+
 function needsDownload(
     existing: SequenceRecord | undefined,
     kind: CloudFileKind,
@@ -655,21 +673,30 @@ function needsDownload(
     if (knownPath && fs.existsSync(knownPath)) return false;
     const cur = existing?.cloud?.[kind];
     if (!cur) return true;
-    return cur.file_id !== file_id || cur.file_time !== file_time;
+    if (cur.file_id !== file_id || String(cur.file_time) !== String(file_time)) return true;
+    // The record claims this version; trust it only if the versioned file is
+    // actually on disk. A record can carry a newer ref than its file when an
+    // earlier pass updated refs without landing bytes, or the file was reaped.
+    const onDisk = absShowPath(existing?.files?.[kind]);
+    if (!onDisk || !fs.existsSync(onDisk)) return true;
+    if (kind !== 'thumb' && file_time && !path.basename(onDisk).includes(`__${file_time}`)) return true;
+    return false;
 }
 
 function seedInstalledFiles() {
     installedFiles.clear();
     for (const s of existingSequences) {
-        if (s.cloud?.fseq?.file_id && s.files?.fseq) {
-            installedFiles.set(fileKey(s.cloud.fseq.file_id, s.cloud.fseq.file_time), s.files.fseq);
+        for (const kind of ['fseq', 'audio'] as const) {
+            const ref = s.cloud?.[kind];
+            const p = absShowPath(s.files?.[kind]);
+            if (!ref?.file_id || !p) continue;
+            // Only a file whose name carries the ref's version counts as that version.
+            if (ref.file_time && !path.basename(p).includes(`__${ref.file_time}`)) continue;
+            installedFiles.set(fileKey(ref.file_id, ref.file_time), p);
         }
-        if (s.cloud?.audio?.file_id && s.files?.audio) {
-            installedFiles.set(fileKey(s.cloud.audio.file_id, s.cloud.audio.file_time), s.files.audio);
-        }
-        if (s.cloud?.thumb?.file_id && s.files?.thumb) {
-            installedFiles.set(fileKey(s.cloud.thumb.file_id, s.cloud.thumb.file_time), s.files.thumb);
-        }
+        const t = s.cloud?.thumb;
+        const tp = absShowPath(s.files?.thumb);
+        if (t?.file_id && tp) installedFiles.set(fileKey(thumbKey(t.file_id)!, t.file_time), tp);
     }
 }
 
@@ -760,6 +787,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
     const newSequences: Record<string, CloudSequenceProgress> = {};
     const newFiles: Record<string, CloudFileEntry> = {};
     const perEntryPending = new Map<string, PendingFile[]>();
+    let rightsUnmetCount = 0;
 
     for (const entry of manifest) {
         const existing = findExisting(entry.id);
@@ -796,6 +824,13 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             continue;
         }
 
+        // Cloud withholds the audio until the user proves ownership. Don't
+        // queue any of this entry's downloads (a record without audio is
+        // worse than no record) and label the audio so the UI can explain.
+        const unmet: CloudRightsRequirement[] = entry.rights?.requirements?.filter((r) => !r.satisfied) ?? [];
+        const rightsBlocked = unmet.length > 0;
+        if (rightsBlocked) rightsUnmetCount += 1;
+
         const seedFile = (
             kind: CloudFileKind,
             file_id: string,
@@ -810,15 +845,17 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             const knownPath = installedFiles.get(key);
             const alreadyInstalled = !!knownPath && fs.existsSync(knownPath);
             const filename = knownPath ? path.basename(knownPath) : undefined;
+            const blocked = rightsBlocked && !alreadyInstalled && kind !== 'thumb';
             newFiles[file_id] = {
                 vseq_id: entry.vseq_id,
                 kind,
                 file_id,
                 file_time,
                 filename,
-                status: alreadyInstalled ? 'installed' : 'known',
+                status: alreadyInstalled ? 'installed' : blocked ? 'rights' : 'known',
+                ...(blocked && kind === 'audio' ? { error: 'Music ownership not proven — see Cloud page' } : {}),
             };
-            if (!alreadyInstalled && pf) pending.push(pf);
+            if (!alreadyInstalled && !blocked && pf) pending.push(pf);
         };
 
         if (entry.fseq) {
@@ -854,16 +891,17 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             );
         }
         if (entry.thumb) {
-            const cur = existing?.cloud?.thumb?.file_id;
-            const need = cur !== entry.thumb;
+            const curKey = thumbKey(existing?.cloud?.thumb?.file_id);
+            const curPath = absShowPath(existing?.files?.thumb);
+            const need = curKey !== thumbKey(entry.thumb) || !curPath || !fs.existsSync(curPath);
             seedFile(
                 'thumb',
-                entry.thumb,
+                thumbKey(entry.thumb)!,
                 undefined,
                 need
                     ? {
                           kind: 'thumb',
-                          file_id: entry.thumb,
+                          file_id: thumbKey(entry.thumb)!,
                           fetchVia: 'directUrl',
                           directUrl: entry.thumb,
                       }
@@ -877,6 +915,7 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
             artist: entry.artist || '',
             vendor: entry.vendor,
             fileIds,
+            ...(rightsBlocked ? { rightsUnmet: unmet } : {}),
         };
         perEntryPending.set(entry.id, pending);
     }
@@ -884,7 +923,14 @@ async function reconcileManifest(manifest: CloudSeqManifestEntry[]) {
     // Replace the published views in one shot (drops sequences the cloud removed).
     cStatus.sequences = newSequences;
     cStatus.files = newFiles;
+    cStatus.n_rights_unmet = rightsUnmetCount;
     pushCStatus();
+    // First sight of withheld audio this session: try the local media once
+    // without being asked. The user can always re-run from the Cloud page.
+    if (rightsUnmetCount > 0 && !autoRightsScanDone) {
+        autoRightsScanDone = true;
+        void scanMediaRights(mediaFolder, ffmpegPath, false);
+    }
 
     // -------- Work phase: download what's needed, sequence by sequence. --------
     let allOk = true;
@@ -936,6 +982,198 @@ interface DownloadResult {
     installed: Partial<Record<CloudFileKind, { absPath: string; file_id: string; file_time?: number }>>;
 }
 
+/** The cloud refused the audio ticket because music ownership is unproven. */
+class RightsDeniedError extends Error {
+    constructor() {
+        super('music rights not satisfied');
+        this.name = 'RightsDeniedError';
+    }
+}
+
+// -- music-rights media scan ---------------------------------------------------
+// Walks the show folder (+ optional media folder), derives ownership proof
+// for every audio file (CRC32, tag ids, and an ffmpeg-decoded fingerprint
+// when a binary is available) and posts the identifiers to the cloud. The
+// audio itself never leaves the machine. Results are cached per path+size+
+// mtime under .ezplayer/cloud so repeat scans are cheap.
+
+const RIGHTS_AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav']);
+const RIGHTS_SKIP_DIRS = new Set(['.git', 'node_modules', '.ezplayer', '__MACOSX', '.Trash', '$RECYCLE.BIN']);
+const RIGHTS_MAX_FILE_BYTES = 200 * 1024 * 1024;
+const RIGHTS_SUBMIT_BATCH = 100;
+
+interface RightsScanCacheEntry {
+    size: number;
+    mtimeMs: number;
+    identifier: Record<string, string>;
+    title?: string;
+    artist?: string;
+    submittedAt?: number;
+}
+type RightsScanCache = Record<string, RightsScanCacheEntry>;
+
+let rightsScanInFlight = false;
+let autoRightsScanDone = false;
+
+function rightsCachePath(): string {
+    return path.join(showFolder, '.ezplayer', 'cloud', 'rights-scan.json');
+}
+
+async function loadRightsCache(): Promise<RightsScanCache> {
+    try {
+        const raw = await fsp.readFile(rightsCachePath(), 'utf8');
+        const parsed = JSON.parse(raw) as unknown;
+        return parsed && typeof parsed === 'object' ? (parsed as RightsScanCache) : {};
+    } catch {
+        return {};
+    }
+}
+
+async function saveRightsCache(cache: RightsScanCache): Promise<void> {
+    const p = rightsCachePath();
+    await fsp.mkdir(path.dirname(p), { recursive: true });
+    await fsp.writeFile(p, JSON.stringify(cache));
+}
+
+async function listAudioFiles(root: string, out: Set<string>): Promise<void> {
+    const stack = [root];
+    while (stack.length) {
+        const dir = stack.pop()!;
+        let entries: fs.Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+        for (const entry of entries) {
+            const name = String(entry.name);
+            if (entry.isDirectory()) {
+                if (!RIGHTS_SKIP_DIRS.has(name)) stack.push(path.join(dir, name));
+                continue;
+            }
+            if (entry.isFile() && RIGHTS_AUDIO_EXTS.has(path.extname(name).toLowerCase())) {
+                out.add(path.resolve(dir, name));
+            }
+        }
+    }
+}
+
+function setRightsScan(patch: Partial<CloudRightsScanInfo>) {
+    cStatus.rightsScan = { ...(cStatus.rightsScan ?? { status: 'idle' }), ...patch };
+    pushCStatus();
+}
+
+/** Identifier kinds for one file. ffmpeg failure degrades to CRC + tags. */
+async function identifyAudioFile(file: string): Promise<{ identifier: Record<string, string>; title?: string; artist?: string }> {
+    const buf = await fsp.readFile(file);
+    const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    const identifier: Record<string, string> = { crc: crc32(bytes) };
+    let title: string | undefined;
+    let artist: string | undefined;
+    try {
+        const tags = parseAudioTags(bytes);
+        title = tags.title;
+        artist = tags.artist;
+        const canon = canonicalIdTags(tags);
+        for (const k of ['isrc', 'mbid', 'acoustid', 'mediasha256', 'ta', 'amazon_song_id'] as const) {
+            if (canon[k]) identifier[k] = canon[k]!;
+        }
+    } catch {
+        /* untagged or unparseable container — CRC still counts */
+    }
+    if (ffmpegPath) {
+        try {
+            const fp = await generateNodeFingerprint(file, { ffmpegPath });
+            if (fp.hash && fp.hash !== '0') identifier.audiosig_hk = fp.hash;
+        } catch (e) {
+            log('warn', `rights scan: fingerprint failed for ${path.basename(file)}: ${(e as Error).message}`);
+        }
+    }
+    return { identifier, title, artist };
+}
+
+/** `full` resubmits everything already cached (user-initiated); otherwise
+ *  only files not yet accepted by the cloud go up. */
+async function scanMediaRights(folder: string | undefined, ffmpeg: string | undefined, full: boolean): Promise<void> {
+    if (rightsScanInFlight) return;
+    if (!cloudUrl || !playerIdToken || !showFolder) {
+        setRightsScan({ status: 'error', error: 'Cloud not configured' });
+        return;
+    }
+    rightsScanInFlight = true;
+    if (folder !== undefined) mediaFolder = folder;
+    if (ffmpeg !== undefined) ffmpegPath = ffmpeg;
+    try {
+        setRightsScan({ status: 'scanning', scanned: 0, total: 0, added: 0, error: undefined });
+        const files = new Set<string>();
+        await listAudioFiles(showFolder, files);
+        if (mediaFolder) await listAudioFiles(mediaFolder, files);
+        const list = [...files].sort();
+        setRightsScan({ total: list.length });
+        log('info', `rights scan: ${list.length} audio files (ffmpeg ${ffmpegPath ? 'available' : 'unavailable'})`);
+
+        const cache = await loadRightsCache();
+        const live = new Set<string>();
+        let scanned = 0;
+        for (const file of list) {
+            if (stopped) return;
+            live.add(file);
+            try {
+                const st = await fsp.stat(file);
+                if (st.size > RIGHTS_MAX_FILE_BYTES) continue;
+                const cached = cache[file];
+                if (!cached || cached.size !== st.size || cached.mtimeMs !== st.mtimeMs) {
+                    const id = await identifyAudioFile(file);
+                    cache[file] = { size: st.size, mtimeMs: st.mtimeMs, ...id };
+                }
+            } catch (e) {
+                log('warn', `rights scan: skipped ${path.basename(file)}: ${(e as Error).message}`);
+            }
+            scanned += 1;
+            if (scanned % 5 === 0 || scanned === list.length) setRightsScan({ scanned });
+        }
+        for (const k of Object.keys(cache)) if (!live.has(k)) delete cache[k];
+        await saveRightsCache(cache);
+
+        const toSubmit = Object.entries(cache).filter(([, e]) => full || !e.submittedAt);
+        setRightsScan({ status: 'submitting', scanned });
+        let added = 0;
+        let unmet: number | undefined;
+        for (let i = 0; i < toSubmit.length; i += RIGHTS_SUBMIT_BATCH) {
+            if (stopped) return;
+            const batch = toSubmit.slice(i, i + RIGHTS_SUBMIT_BATCH);
+            const submissions = batch.map(([file, e]) => ({
+                identifier: e.identifier,
+                title: e.title,
+                artist: e.artist,
+                file_name: path.basename(file),
+            }));
+            const res = await fetchWithTimeout(
+                `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_SUBMIT_MUSIC_RIGHTS}${playerIdToken}`,
+                DEFAULT_POLL_TIMEOUT_MS,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submissions }) },
+            );
+            if (!res.ok) throw new Error(`submit HTTP ${res.status}`);
+            const body = (await res.json()) as { added?: number; unmet?: number };
+            added += body.added ?? 0;
+            unmet = body.unmet;
+            const now = Date.now();
+            for (const [, e] of batch) e.submittedAt = now;
+            await saveRightsCache(cache);
+        }
+        setRightsScan({ status: 'done', added, unmet, lastRunAt: Date.now() });
+        log('info', `rights scan: submitted ${toSubmit.length} files, ${added} new identifiers, ${unmet ?? '?'} sequences still unmet`);
+        // Newly proven music unblocks downloads on the next manifest pass.
+        if (toSubmit.length > 0) void pollManifest();
+    } catch (e) {
+        const msg = (e as Error).message;
+        log('warn', `rights scan failed: ${msg}`);
+        setRightsScan({ status: 'error', error: msg, lastRunAt: Date.now() });
+    } finally {
+        rightsScanInFlight = false;
+    }
+}
+
 async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[]): Promise<DownloadResult> {
     const installed: DownloadResult['installed'] = {};
     for (const pf of pending) {
@@ -945,6 +1183,22 @@ async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[])
             installed[pf.kind] = { absPath, file_id: pf.file_id, file_time: pf.file_time };
         } catch (e) {
             const err = e as Error;
+            if (err instanceof RightsDeniedError) {
+                // Not a transport failure: the cloud is withholding the audio
+                // until music ownership is proven. Never count it toward the
+                // circuit breaker — one unproven song must not stall every
+                // other download for an hour.
+                log('info', `download ${pf.kind} ${pf.file_id} withheld: music ownership not proven`);
+                setFile(pf.file_id, {
+                    vseq_id: entry.vseq_id,
+                    kind: pf.kind,
+                    file_id: pf.file_id,
+                    file_time: pf.file_time,
+                    status: 'rights',
+                    error: 'Music ownership not proven — see Cloud page',
+                });
+                return { ok: false, installed };
+            }
             log('warn', `download ${pf.kind} ${pf.file_id} failed: ${err.message}`);
             setFile(pf.file_id, {
                 vseq_id: entry.vseq_id,
@@ -984,6 +1238,7 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
             pf.fetchVia === 'seqfile' ? CLOUD_API_ENDPOINTS.EZP_GET_SEQ_FILE : CLOUD_API_ENDPOINTS.EZP_GET_MEDIA_FILE;
         const ticketUrl = `${cloudUrl}${endpoint}${playerIdToken}/${pf.file_id}`;
         const res = await fetchWithTimeout(ticketUrl, downloadTimeoutMs);
+        if (res.status === 403 && pf.fetchVia === 'mediafile') throw new RightsDeniedError();
         if (!res.ok) throw new Error(`ticket HTTP ${res.status}`);
         const body = (await res.json()) as { url?: string; filename?: string };
         if (!body.url) throw new Error('ticket missing url');
@@ -1259,23 +1514,19 @@ async function buildSequenceRecord(
             ...(installed.audio ? { audio: installed.audio.absPath } : {}),
             ...(installed.thumb ? { thumb: installed.thumb.absPath } : {}),
         },
+        // A cloud ref means "this version's bytes are on disk". Only a file
+        // that landed in this pass may advance its ref; adopting the manifest's
+        // ref for a file that was skipped (rights-withheld, failed) would make
+        // needsDownload believe the newer version is installed forever.
         cloud: {
             ...(existing?.cloud ?? {}),
             ...(installed.fseq
                 ? { fseq: { file_id: installed.fseq.file_id, file_time: installed.fseq.file_time ?? 0 } }
-                : entry.fseq
-                  ? { fseq: { file_id: entry.fseq.file_id, file_time: entry.fseq.file_time } }
-                  : {}),
+                : {}),
             ...(installed.audio
                 ? { audio: { file_id: installed.audio.file_id, file_time: installed.audio.file_time ?? 0 } }
-                : entry.audio
-                  ? { audio: { file_id: entry.audio.file_id, file_time: entry.audio.file_time } }
-                  : {}),
-            ...(installed.thumb
-                ? { thumb: { file_id: installed.thumb.file_id, file_time: 0 } }
-                : entry.thumb
-                  ? { thumb: { file_id: entry.thumb, file_time: 0 } }
-                  : {}),
+                : {}),
+            ...(installed.thumb ? { thumb: { file_id: thumbKey(installed.thumb.file_id)!, file_time: 0 } } : {}),
         },
         updatedAt: Date.now(),
     };
@@ -1712,6 +1963,8 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             layoutSource = msg.layoutSource === 'cloud' ? 'cloud' : 'xlights';
             pollMode = msg.pollMode === 'scheduled' ? 'scheduled' : 'always';
             pollSchedule = msg.pollSchedule ?? [];
+            mediaFolder = msg.mediaFolder || undefined;
+            ffmpegPath = msg.ffmpegPath || undefined;
             seedInstalledFiles();
             applyTuning(msg.tuning);
 
@@ -1736,6 +1989,7 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
                 stopped = false;
                 halted = false;
                 consecutiveFailures = 0;
+                autoRightsScanDone = false;
             }
 
             log(
@@ -1772,6 +2026,10 @@ parentPort?.on('message', (msg: CloudPollInMessage) => {
             existingSequences = msg.existingSequences ?? [];
             seedInstalledFiles();
             log('info', `updateSequences: ${existingSequences.length} records cached`);
+            break;
+        }
+        case 'scanMediaRights': {
+            void scanMediaRights(msg.mediaFolder, msg.ffmpegPath, true);
             break;
         }
         case 'pollNow': {

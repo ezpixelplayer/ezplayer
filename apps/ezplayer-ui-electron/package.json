@@ -181,7 +181,7 @@
         "@mui/x-date-pickers": "catalog:",
         "@reduxjs/toolkit": "catalog:",
         "@types/ws": "catalog:",
-        "audiofile": "file:..\\..\\libs\\audiofile-0.0.3.tgz",
+        "audiofile": "file:..\\..\\libs\\audiofile-0.0.5.tgz",
         "axios": "catalog:",
         "bindings": "^1.5.0",
         "crc-32": "^1.2.2",

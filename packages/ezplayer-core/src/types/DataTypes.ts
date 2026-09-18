@@ -206,6 +206,24 @@ export interface PlayerPStatusContent {
     //   TODO figure out how to make sure that gets reflected...
 }
 
+/** One music-ownership requirement of a cloud sequence, redacted: what to
+ *  go get (title/artist/buy link) and whether the user has proven it. The
+ *  cloud never sends the identifiers it matches against. */
+export interface CloudRightsRequirement {
+    /** Stable handle the cloud keys claims and overrides by. */
+    key: string;
+    title?: string;
+    artist?: string;
+    sourceURL?: string;
+    satisfied: boolean;
+}
+
+/** Redacted music-rights projection for one sequence. */
+export interface CloudRightsStatus {
+    free?: boolean;
+    requirements?: CloudRightsRequirement[];
+}
+
 /** Manifest entry returned by the cloud's per-player sequence list endpoint
  *  (currently /fppapi/player/getseqforplayer/:token). One per sequence the
  *  player is entitled to. The sub-records identify each downloadable file
@@ -241,6 +259,9 @@ export interface CloudSeqManifestEntry {
      *    the jukebox never offers a song that can't play.
      *  Absent value treated as `active` for back-compat. */
     status?: 'active' | 'disabled' | 'pending';
+    /** Present only when the cloud would refuse the audio download: the
+     *  user still has to prove ownership of some of the music. */
+    rights?: CloudRightsStatus;
 }
 
 /** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
@@ -258,6 +279,9 @@ export interface CloudSequenceProgress {
      *  surfaces this as "rendering" so the operator can see why a granted
      *  sequence isn't in the jukebox yet. */
     pending?: boolean;
+    /** Music requirements the user has not proven yet; the cloud withholds
+     *  the audio (and the player skips the sequence) until they are. */
+    rightsUnmet?: CloudRightsRequirement[];
 }
 
 /** Per-file status used by the cloud content sync. */
@@ -267,6 +291,7 @@ export type CloudFileStatus =
     | 'downloading' // fetch in progress
     | 'staged' // bytes on disk under .ezplayer/cloud, not yet promoted
     | 'installed' // active in show folder root, sequence record updated
+    | 'rights' // cloud withholds the file until music ownership is proven
     | 'error'; // last attempt failed
 
 export interface CloudFileEntry {
@@ -298,6 +323,23 @@ export interface PlayerCStatusContent {
     lastError?: string;
     /** True when the circuit breaker has tripped after consecutive download failures. */
     halted?: boolean;
+    /** Sequences whose audio the cloud withholds pending music proof. */
+    n_rights_unmet?: number;
+    /** Progress of the local media scan that submits proof of ownership. */
+    rightsScan?: CloudRightsScanInfo;
+}
+
+export interface CloudRightsScanInfo {
+    status: 'idle' | 'scanning' | 'submitting' | 'done' | 'error';
+    /** Audio files examined so far / total found. */
+    scanned?: number;
+    total?: number;
+    /** New identifiers the cloud accepted on the last run. */
+    added?: number;
+    /** Granted sequences still missing music proof after the last run. */
+    unmet?: number;
+    lastRunAt?: number;
+    error?: string;
 }
 
 export type CloudLayoutStatus =
@@ -989,6 +1031,7 @@ export type CloudCommand =
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
     | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud remote control
+    | { type: 'scanMediaRights' } // fingerprint local media (media folder + show folder) and submit proof of ownership
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so
            *  callers can change one knob without re-sending the others). To clear the
