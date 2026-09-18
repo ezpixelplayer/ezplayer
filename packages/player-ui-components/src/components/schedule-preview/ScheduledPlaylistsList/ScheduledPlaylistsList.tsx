@@ -22,9 +22,24 @@ import {
 import { Box } from '../../box/Box';
 import { alpha } from '@mui/material/styles';
 import { format } from 'date-fns';
-import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, {
+    forwardRef,
+    startTransition,
+    useCallback,
+    useEffect,
+    useImperativeHandle,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../../store/Store';
+import {
+    buildScheduleColorIndexByType,
+    getScheduleColorSwatch,
+    resolveScheduleDisplaySwatch,
+} from '../../../util/scheduleDisplayColor';
+import { ChronologicalLoopsList, shouldSkipAccordionTransition } from './ChronologicalLoopsList';
 
 export interface LogEvent {
     eventType: string;
@@ -149,27 +164,51 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
         const playlists = useSelector((state: RootState) => state.playlists.playlists || []);
         const sequences = useSelector((state: RootState) => state.sequences.sequenceData || []);
 
+        // Same per-series colors as the calendar chips and timeline bars, so a schedule is
+        // recognizable across all three views.
+        const scheduleSwatchById = useMemo(() => {
+            const indexById = buildScheduleColorIndexByType(schedulesList);
+            return new Map(
+                schedulesList.map((schedule) => {
+                    const base =
+                        schedule.scheduleType === 'background' ? theme.palette.secondary : theme.palette.primary;
+                    const auto = getScheduleColorSwatch(base, indexById.get(schedule.id) ?? 0);
+                    return [schedule.id, resolveScheduleDisplaySwatch(schedule.color, auto)];
+                }),
+            );
+        }, [schedulesList, theme]);
+
         const handleDateAccordionChange = (date: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
-            setExpandedDate(isExpanded ? date : false);
+            startTransition(() => {
+                setExpandedDate(isExpanded ? date : false);
+            });
         };
 
         const handleScheduleAccordionChange =
             (scheduleId: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
-                setExpandedSchedule(isExpanded ? scheduleId : false);
+                startTransition(() => {
+                    setExpandedSchedule(isExpanded ? scheduleId : false);
+                });
             };
 
         const handlePlaylistAccordionChange =
             (playlistKey: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
-                setExpandedPlaylist(isExpanded ? playlistKey : false);
+                startTransition(() => {
+                    setExpandedPlaylist(isExpanded ? playlistKey : false);
+                });
             };
 
-        // Helper function to get sequence name
-        const getSequenceName = (sequenceId: string) => {
-            const sequence = sequences.find((s) => s.id === sequenceId);
-            return (
-                sequence?.work?.title || `Sequence ${sequenceId.split('|')[1]?.slice(0, 8) || sequenceId.slice(0, 8)}`
-            );
-        };
+        // Helper function to get sequence name (memoized: it feeds the processedSchedules memo below)
+        const getSequenceName = useCallback(
+            (sequenceId: string) => {
+                const sequence = sequences.find((s) => s.id === sequenceId);
+                return (
+                    sequence?.work?.title ||
+                    `Sequence ${sequenceId.split('|')[1]?.slice(0, 8) || sequenceId.slice(0, 8)}`
+                );
+            },
+            [sequences],
+        );
 
         // Helper function to get schedule name
         const getScheduleName = (scheduleId: string) => {
@@ -620,37 +659,34 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
             return sortedGroupedSchedules;
         }, [processedSchedules, schedulesList]);
 
-        // Function to scroll to specific schedule
-        const scrollToSchedule = (scheduleId: string) => {
-            const scheduleElement = scheduleRefs.current.get(scheduleId);
-            if (scheduleElement) {
-                // Expand the date accordion first if needed
+        // Schedule accordions are only mounted while their date is expanded (unmountOnExit),
+        // so a scroll request expands first and the effect below scrolls once the element exists.
+        const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
+
+        const scrollToSchedule = useCallback(
+            (scheduleId: string) => {
                 const scheduleData = processedSchedules.find((schedule) => schedule.scheduleId === scheduleId);
-                if (scheduleData) {
-                    const scheduleDate = format(new Date(scheduleData.startTime), 'yyyy-MM-dd');
-                    setExpandedDate(scheduleDate);
-                    // Small delay to allow accordion to expand before scrolling
-                    setTimeout(() => {
-                        setExpandedSchedule(scheduleId);
-                        setTimeout(() => {
-                            scheduleElement.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center',
-                            });
-                        }, 100);
-                    }, 100);
-                }
-            }
-        };
+                if (!scheduleData) return;
+                setExpandedDate(format(scheduleData.startTime, 'yyyy-MM-dd'));
+                setExpandedSchedule(scheduleId);
+                setPendingScrollId(scheduleId);
+            },
+            [processedSchedules],
+        );
+
+        useEffect(() => {
+            if (!pendingScrollId) return;
+            const scheduleElement = scheduleRefs.current.get(pendingScrollId);
+            if (!scheduleElement) return; // not mounted yet; re-run when expansion state settles
+            setPendingScrollId(null);
+            // Let the expand transition finish so the centered position is right.
+            setTimeout(() => {
+                scheduleElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 250);
+        }, [pendingScrollId, expandedDate, expandedSchedule]);
 
         // Expose ref methods
-        useImperativeHandle(
-            ref,
-            () => ({
-                scrollToSchedule,
-            }),
-            [processedSchedules, scrollToSchedule],
-        );
+        useImperativeHandle(ref, () => ({ scrollToSchedule }), [scrollToSchedule]);
 
         // Helper function to get playlist type icon and color
         const getPlaylistTypeConfig = (playlistType: 'intro' | 'main' | 'outro') => {
@@ -746,314 +782,6 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
             };
         };
 
-        // Helper function to render chronological sequences
-        const renderChronologicalView = (schedule: ProcessedSchedule) => {
-            if (schedule.chronologicalInstances.length === 0) {
-                return (
-                    <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                            fontStyle: 'italic',
-                            textAlign: 'center',
-                            py: 4,
-                        }}
-                    >
-                        No loop instances found for this schedule.
-                    </Typography>
-                );
-            }
-
-            // Detect suspensions by checking for explicit suspension events only
-            const suspensionIndicators: Array<{
-                index: number;
-                type: 'suspension';
-                startTime: number;
-                endTime: number;
-                duration: number;
-                reason: string;
-            }> = [];
-
-            // Check for explicit Schedule Suspended events
-            const scheduleEvents =
-                data?.logs?.filter(
-                    (event) =>
-                        event.scheduleId === schedule.scheduleId &&
-                        (event.eventType === 'Schedule Suspended' || event.eventType === 'Schedule Resumed'),
-                ) || [];
-
-            const pendingSuspensions = new Map<string, number>();
-            scheduleEvents.forEach((event) => {
-                if (event.eventType === 'Schedule Suspended') {
-                    pendingSuspensions.set(event.scheduleId!, event.eventTime);
-                } else if (event.eventType === 'Schedule Resumed') {
-                    const suspendTime = pendingSuspensions.get(event.scheduleId!);
-                    if (suspendTime !== undefined) {
-                        // Find the appropriate index to insert the suspension
-                        let insertIndex = schedule.chronologicalInstances.findIndex(
-                            (instance) => instance.startTime > suspendTime,
-                        );
-                        if (insertIndex === -1) insertIndex = schedule.chronologicalInstances.length;
-
-                        suspensionIndicators.push({
-                            index: insertIndex,
-                            type: 'suspension',
-                            startTime: suspendTime,
-                            endTime: event.eventTime,
-                            duration: event.eventTime - suspendTime,
-                            reason: 'Schedule Suspended',
-                        });
-                        pendingSuspensions.delete(event.scheduleId!);
-                    }
-                }
-            });
-
-            // Sort suspension indicators by index
-            suspensionIndicators.sort((a, b) => a.index - b.index);
-
-            // Render suspension indicator row
-            const renderSuspensionRow = (suspension: (typeof suspensionIndicators)[0]) => (
-                <Box
-                    key={`suspension-${suspension.startTime}`}
-                    sx={{
-                        py: 1.5,
-                        px: 2,
-                        backgroundColor: (theme: Theme) => alpha(theme.palette.error.main, 0.08),
-                        borderLeft: '4px solid',
-                        borderLeftColor: (theme: Theme) => theme.palette.error.main,
-                        ml: 0.5,
-                        border: '1px dashed',
-                        borderColor: (theme: Theme) => alpha(theme.palette.error.main, 0.5),
-                        borderRadius: 1,
-                    }}
-                >
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
-                            <Chip
-                                label="Suspended"
-                                size="small"
-                                color="error"
-                                variant="filled"
-                                sx={{ height: 24, minWidth: 80, flexShrink: 0 }}
-                            />
-
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                <Typography
-                                    variant="body1"
-                                    sx={{
-                                        fontWeight: 600,
-                                        color: (theme: Theme) => theme.palette.error.dark,
-                                        lineHeight: 1.2,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.5,
-                                    }}
-                                >
-                                    ⏸️ {suspension.reason}
-                                    <Typography
-                                        component="span"
-                                        variant="caption"
-                                        sx={{
-                                            color: (theme: Theme) => theme.palette.text.secondary,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 0.5,
-                                            ml: 1,
-                                        }}
-                                    >
-                                        No music playing
-                                    </Typography>
-                                </Typography>
-                            </Box>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    fontWeight: 500,
-                                    color: (theme: Theme) => theme.palette.error.main,
-                                    fontFamily: 'monospace',
-                                }}
-                            >
-                                {format(suspension.startTime, 'HH:mm:ss')}
-                            </Typography>
-                            <Typography
-                                variant="caption"
-                                sx={{ color: (theme: Theme) => theme.palette.text.secondary }}
-                            >
-                                →
-                            </Typography>
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    fontWeight: 500,
-                                    color: (theme: Theme) => theme.palette.error.main,
-                                    fontFamily: 'monospace',
-                                }}
-                            >
-                                {format(suspension.endTime, 'HH:mm:ss')}
-                            </Typography>
-                            <Chip
-                                label={formatDuration(suspension.duration)}
-                                size="small"
-                                color="error"
-                                variant="outlined"
-                                sx={{
-                                    height: 20,
-                                    fontSize: '0.7rem',
-                                    fontFamily: 'monospace',
-                                }}
-                            />
-                        </Box>
-                    </Box>
-                </Box>
-            );
-
-            // Build the final list of items with suspensions inserted
-            const itemsWithSuspensions: React.ReactNode[] = [];
-            let suspensionIndex = 0;
-
-            schedule.chronologicalInstances.forEach((instance: ChronologicalSequenceInstance, index: number) => {
-                // Check if we need to insert suspension(s) before this item
-                while (
-                    suspensionIndex < suspensionIndicators.length &&
-                    suspensionIndicators[suspensionIndex].index === index
-                ) {
-                    itemsWithSuspensions.push(renderSuspensionRow(suspensionIndicators[suspensionIndex]));
-                    suspensionIndex++;
-                }
-
-                // Add the regular sequence item
-                const typeConfig = getPlaylistTypeConfig(instance.playlistType);
-                itemsWithSuspensions.push(
-                    <Box
-                        key={`${instance.sequenceId}-${instance.startTime}-${instance.loopNumber}`}
-                        sx={{
-                            py: 1.5,
-                            px: 2,
-                            backgroundColor:
-                                index % 2 === 0
-                                    ? (theme: Theme) => alpha(theme.palette.action.hover, 0.3)
-                                    : 'transparent',
-                            borderBottom: index < schedule.chronologicalInstances.length - 1 ? '1px solid' : 'none',
-                            borderColor: 'divider',
-                            '&:hover': {
-                                backgroundColor: (theme: Theme) => alpha(theme.palette.action.selected, 0.4),
-                            },
-                            transition: (theme: Theme) => theme.transitions.create(['background-color']),
-                            borderLeft: '4px solid',
-                            borderLeftColor: `${typeConfig.color}.main`,
-                            ml: 0.5,
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                width: '100%',
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
-                                <Chip
-                                    label={typeConfig.label}
-                                    size="small"
-                                    color={typeConfig.color}
-                                    variant="outlined"
-                                    sx={{ height: 24, minWidth: 60, flexShrink: 0 }}
-                                />
-
-                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                    <Typography
-                                        variant="body1"
-                                        sx={{
-                                            fontWeight: 600,
-                                            color: 'text.primary',
-                                            lineHeight: 1.2,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 0.5,
-                                        }}
-                                    >
-                                        Loop {instance.loopNumber} - {instance.sequenceName}
-                                        <Typography
-                                            component="span"
-                                            variant="caption"
-                                            sx={{
-                                                color: 'text.secondary',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 0.5,
-                                                ml: 1,
-                                            }}
-                                        >
-                                            <PersonIcon sx={{ fontSize: 12 }} />
-                                            {instance.artist}
-                                        </Typography>
-                                    </Typography>
-                                </Box>
-                            </Box>
-
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        fontFamily: 'monospace',
-                                    }}
-                                >
-                                    {format(instance.startTime, 'HH:mm:ss')}
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    →
-                                </Typography>
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        fontFamily: 'monospace',
-                                    }}
-                                >
-                                    {format(instance.endTime, 'HH:mm:ss')}
-                                </Typography>
-                                <Chip
-                                    label={formatDuration(instance.endTime - instance.startTime)}
-                                    size="small"
-                                    color="default"
-                                    variant="outlined"
-                                    sx={{
-                                        height: 20,
-                                        fontSize: '0.7rem',
-                                        fontFamily: 'monospace',
-                                    }}
-                                />
-                            </Box>
-                        </Box>
-                    </Box>,
-                );
-            });
-
-            // Add any remaining suspensions at the end
-            while (suspensionIndex < suspensionIndicators.length) {
-                itemsWithSuspensions.push(renderSuspensionRow(suspensionIndicators[suspensionIndex]));
-                suspensionIndex++;
-            }
-
-            return (
-                <List
-                    dense
-                    sx={{
-                        p: 0,
-                    }}
-                >
-                    {itemsWithSuspensions}
-                </List>
-            );
-        };
-
         // Helper function to render playlist section
         const renderPlaylistSection = (
             playlistData: ProcessedPlaylist | { sequences: ProcessedSchedule['sequences']; playlistType?: string },
@@ -1073,6 +801,9 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                     key={playlistKey}
                     expanded={isExpanded}
                     onChange={handlePlaylistAccordionChange(playlistKey)}
+                    TransitionProps={{
+                        unmountOnExit: true,
+                    }}
                     sx={{
                         mb: 1,
                         border: '1px solid',
@@ -1284,389 +1015,441 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                         </Box>
 
                         <List>
-                            {Array.from(schedulesByDate.entries()).map(([date, schedules]) => (
-                                <Accordion
-                                    key={date}
-                                    expanded={expandedDate === date}
-                                    onChange={handleDateAccordionChange(date)}
-                                    sx={{
-                                        mb: 1,
-                                        boxShadow: (theme: Theme) => theme.shadows[1],
-                                        borderRadius: 1,
-                                        '&:before': { display: 'none' },
-                                        '&.Mui-expanded': {
-                                            margin: (theme: Theme) => theme.spacing(2, 0),
-                                            backgroundColor: 'background.default',
-                                        },
-                                    }}
-                                >
-                                    <AccordionSummary
-                                        expandIcon={<ExpandMoreIcon />}
+                            {Array.from(schedulesByDate.entries()).map(([date, schedules]) => {
+                                const dateHasLargeLoops = schedules.some((schedule) =>
+                                    shouldSkipAccordionTransition(schedule.chronologicalInstances.length),
+                                );
+                                return (
+                                    <Accordion
+                                        key={date}
+                                        expanded={expandedDate === date}
+                                        onChange={handleDateAccordionChange(date)}
+                                        TransitionProps={{
+                                            unmountOnExit: true,
+                                            timeout: dateHasLargeLoops ? 0 : undefined,
+                                        }}
                                         sx={{
-                                            backgroundColor: 'background.default',
-                                            borderRadius: (theme: Theme) =>
-                                                `${theme.shape.borderRadius}px ${theme.shape.borderRadius}px 0 0`,
-                                            transition: (theme: Theme) =>
-                                                theme.transitions.create(['background-color']),
-                                            '&:hover': {
-                                                backgroundColor: 'action.hover',
+                                            mb: 1,
+                                            boxShadow: (theme: Theme) => theme.shadows[1],
+                                            borderRadius: 1,
+                                            '&:before': { display: 'none' },
+                                            '&.Mui-expanded': {
+                                                margin: (theme: Theme) => theme.spacing(2, 0),
+                                                backgroundColor: 'background.default',
                                             },
                                         }}
                                     >
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                            <CalendarTodayIcon sx={{ color: 'primary.main' }} />
-                                            <Typography variant="h6" sx={{ fontWeight: 500 }}>
-                                                {format(new Date(date), 'dd-MMM-yyyy HH:mm:ss')}
-                                            </Typography>
-                                            <Chip
-                                                label={`${schedules.length} schedule${schedules.length !== 1 ? 's' : ''}`}
-                                                size="small"
-                                                color="secondary"
-                                            />
-                                        </Box>
-                                    </AccordionSummary>
-                                    <AccordionDetails sx={{ p: 1 }}>
-                                        <Stack spacing={1}>
-                                            {schedules.map((schedule: ProcessedSchedule) => {
-                                                const { priorityLabel, priorityClass, typeLabel, typeClass } =
-                                                    getSchedulePriorityConfig(schedule.scheduleId);
-                                                return (
-                                                    <Accordion
-                                                        key={schedule.scheduleId}
-                                                        expanded={expandedSchedule === schedule.scheduleId}
-                                                        onChange={handleScheduleAccordionChange(schedule.scheduleId)}
-                                                        ref={(el) => {
-                                                            if (el) {
-                                                                scheduleRefs.current.set(schedule.scheduleId, el);
-                                                            } else {
-                                                                scheduleRefs.current.delete(schedule.scheduleId);
-                                                            }
-                                                        }}
-                                                        sx={{
-                                                            boxShadow: (theme: Theme) => theme.shadows[1],
-                                                            borderRadius: 1,
-                                                            '&:before': { display: 'none' },
-                                                            '&.Mui-expanded': {
-                                                                margin: '0 !important',
-                                                                backgroundColor: 'background.paper',
-                                                            },
-                                                        }}
-                                                    >
-                                                        <AccordionSummary
-                                                            expandIcon={<ExpandMoreIcon />}
+                                        <AccordionSummary
+                                            expandIcon={<ExpandMoreIcon />}
+                                            sx={{
+                                                backgroundColor: 'background.default',
+                                                borderRadius: (theme: Theme) =>
+                                                    `${theme.shape.borderRadius}px ${theme.shape.borderRadius}px 0 0`,
+                                                transition: (theme: Theme) =>
+                                                    theme.transitions.create(['background-color']),
+                                                '&:hover': {
+                                                    backgroundColor: 'action.hover',
+                                                },
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                <CalendarTodayIcon sx={{ color: 'primary.main' }} />
+                                                <Typography variant="h6" sx={{ fontWeight: 500 }}>
+                                                    {format(new Date(date), 'dd-MMM-yyyy HH:mm:ss')}
+                                                </Typography>
+                                                <Chip
+                                                    label={`${schedules.length} schedule${schedules.length !== 1 ? 's' : ''}`}
+                                                    size="small"
+                                                    color="secondary"
+                                                />
+                                            </Box>
+                                        </AccordionSummary>
+                                        <AccordionDetails sx={{ p: 1 }}>
+                                            <Stack spacing={1}>
+                                                {schedules.map((schedule: ProcessedSchedule) => {
+                                                    const { priorityLabel, priorityClass, typeLabel, typeClass } =
+                                                        getSchedulePriorityConfig(schedule.scheduleId);
+                                                    const isScheduleExpanded = expandedSchedule === schedule.scheduleId;
+                                                    const skipTransition = shouldSkipAccordionTransition(
+                                                        schedule.chronologicalInstances.length,
+                                                    );
+                                                    const scheduleColor = scheduleSwatchById.get(
+                                                        schedule.scheduleId,
+                                                    )?.main;
+                                                    return (
+                                                        <Accordion
+                                                            key={schedule.scheduleId}
+                                                            expanded={isScheduleExpanded}
+                                                            onChange={handleScheduleAccordionChange(
+                                                                schedule.scheduleId,
+                                                            )}
+                                                            TransitionProps={{
+                                                                unmountOnExit: true,
+                                                                timeout: skipTransition ? 0 : undefined,
+                                                            }}
+                                                            ref={(el) => {
+                                                                if (el) {
+                                                                    scheduleRefs.current.set(schedule.scheduleId, el);
+                                                                } else {
+                                                                    scheduleRefs.current.delete(schedule.scheduleId);
+                                                                }
+                                                            }}
                                                             sx={{
-                                                                backgroundColor: 'background.paper',
+                                                                boxShadow: (theme: Theme) => theme.shadows[1],
                                                                 borderRadius: 1,
-                                                                py: 1,
-                                                                px: 2,
-                                                                minHeight: 40,
+                                                                borderLeft: '4px solid',
+                                                                borderLeftColor: scheduleColor ?? 'divider',
+                                                                '&:before': { display: 'none' },
                                                                 '&.Mui-expanded': {
-                                                                    minHeight: 40,
-                                                                    py: 1,
-                                                                },
-                                                                '& .MuiAccordionSummary-content': {
-                                                                    my: 0,
-                                                                },
-                                                                '& .MuiAccordionSummary-content.Mui-expanded': {
-                                                                    my: 0,
-                                                                },
-                                                                '&:hover': {
-                                                                    backgroundColor: 'action.hover',
+                                                                    margin: '0 !important',
+                                                                    backgroundColor: 'background.paper',
                                                                 },
                                                             }}
                                                         >
-                                                            <Box
+                                                            <AccordionSummary
+                                                                expandIcon={<ExpandMoreIcon />}
                                                                 sx={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'space-between',
-                                                                    width: '100%',
+                                                                    backgroundColor: 'background.paper',
+                                                                    borderRadius: 1,
+                                                                    py: 1,
+                                                                    px: 2,
+                                                                    minHeight: 40,
+                                                                    '&.Mui-expanded': {
+                                                                        minHeight: 40,
+                                                                        py: 1,
+                                                                    },
+                                                                    '& .MuiAccordionSummary-content': {
+                                                                        my: 0,
+                                                                    },
+                                                                    '& .MuiAccordionSummary-content.Mui-expanded': {
+                                                                        my: 0,
+                                                                    },
+                                                                    '&:hover': {
+                                                                        backgroundColor: 'action.hover',
+                                                                    },
                                                                 }}
                                                             >
-                                                                <Box>
-                                                                    <Box
-                                                                        sx={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: 1,
-                                                                        }}
-                                                                    >
-                                                                        <Typography
-                                                                            variant="subtitle1"
+                                                                <Box
+                                                                    sx={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'space-between',
+                                                                        width: '100%',
+                                                                    }}
+                                                                >
+                                                                    <Box>
+                                                                        <Box
                                                                             sx={{
-                                                                                fontWeight: 600,
-                                                                                color: 'text.primary',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 1,
                                                                             }}
                                                                         >
-                                                                            {getScheduleName(schedule.scheduleId)} -
-                                                                        </Typography>
-                                                                        <Typography
-                                                                            variant="body2"
-                                                                            sx={{
-                                                                                fontWeight: 500,
-                                                                                color: 'text.primary',
-                                                                                fontFamily: 'monospace',
-                                                                            }}
-                                                                        >
-                                                                            {(() => {
-                                                                                const reduxSchedule =
-                                                                                    schedulesList.find(
-                                                                                        (s) =>
-                                                                                            s.id ===
-                                                                                            schedule.scheduleId,
-                                                                                    );
-                                                                                const timeString = reduxSchedule
-                                                                                    ? formatExtendedTime(
-                                                                                          reduxSchedule.fromTime,
-                                                                                      )
-                                                                                    : format(
-                                                                                          new Date(schedule.startTime),
-                                                                                          'HH:mm',
-                                                                                      );
-                                                                                const isExtended =
-                                                                                    reduxSchedule &&
-                                                                                    parseInt(
-                                                                                        reduxSchedule.fromTime.split(
-                                                                                            ':',
-                                                                                        )[0],
-                                                                                    ) >= 24;
-                                                                                return (
-                                                                                    <Tooltip
-                                                                                        title={
-                                                                                            isExtended
-                                                                                                ? `Extended time: ${reduxSchedule.fromTime} (${parseInt(reduxSchedule.fromTime.split(':')[0]) - 24}:${reduxSchedule.fromTime.split(':')[1]} next day)`
-                                                                                                : `Start time: ${timeString}`
-                                                                                        }
-                                                                                        arrow
-                                                                                    >
-                                                                                        <span>{timeString}</span>
-                                                                                    </Tooltip>
-                                                                                );
-                                                                            })()}
-                                                                        </Typography>
-                                                                        <Typography
-                                                                            variant="caption"
-                                                                            sx={{ color: 'text.secondary' }}
-                                                                        >
-                                                                            →
-                                                                        </Typography>
-                                                                        <Typography
-                                                                            variant="body2"
-                                                                            sx={{
-                                                                                fontWeight: 500,
-                                                                                color: 'text.primary',
-                                                                                fontFamily: 'monospace',
-                                                                            }}
-                                                                        >
-                                                                            {(() => {
-                                                                                const reduxSchedule =
-                                                                                    schedulesList.find(
-                                                                                        (s) =>
-                                                                                            s.id ===
-                                                                                            schedule.scheduleId,
-                                                                                    );
-                                                                                const timeString = reduxSchedule
-                                                                                    ? formatExtendedTime(
-                                                                                          reduxSchedule.toTime,
-                                                                                      )
-                                                                                    : format(
-                                                                                          new Date(schedule.endTime),
-                                                                                          'HH:mm',
-                                                                                      );
-                                                                                const isExtended =
-                                                                                    reduxSchedule &&
-                                                                                    parseInt(
-                                                                                        reduxSchedule.toTime.split(
-                                                                                            ':',
-                                                                                        )[0],
-                                                                                    ) >= 24;
-                                                                                return (
-                                                                                    <Tooltip
-                                                                                        title={
-                                                                                            isExtended
-                                                                                                ? `Extended time: ${reduxSchedule.toTime} (${parseInt(reduxSchedule.toTime.split(':')[0]) - 24}:${reduxSchedule.toTime.split(':')[1]} next day)`
-                                                                                                : `End time: ${timeString}`
-                                                                                        }
-                                                                                        arrow
-                                                                                    >
-                                                                                        <span>{timeString}</span>
-                                                                                    </Tooltip>
-                                                                                );
-                                                                            })()}
-                                                                        </Typography>
-                                                                        <Chip
-                                                                            label={formatDuration(
-                                                                                schedule.totalDuration,
+                                                                            {scheduleColor && (
+                                                                                <Box
+                                                                                    aria-hidden
+                                                                                    sx={{
+                                                                                        width: 12,
+                                                                                        height: 12,
+                                                                                        borderRadius: '50%',
+                                                                                        bgcolor: scheduleColor,
+                                                                                        border: '1px solid',
+                                                                                        borderColor: 'divider',
+                                                                                        flexShrink: 0,
+                                                                                    }}
+                                                                                />
                                                                             )}
-                                                                            size="small"
-                                                                            color="primary"
-                                                                            variant="outlined"
+                                                                            <Typography
+                                                                                variant="subtitle1"
+                                                                                sx={{
+                                                                                    fontWeight: 600,
+                                                                                    color: 'text.primary',
+                                                                                }}
+                                                                            >
+                                                                                {getScheduleName(schedule.scheduleId)} -
+                                                                            </Typography>
+                                                                            <Typography
+                                                                                variant="body2"
+                                                                                sx={{
+                                                                                    fontWeight: 500,
+                                                                                    color: 'text.primary',
+                                                                                    fontFamily: 'monospace',
+                                                                                }}
+                                                                            >
+                                                                                {(() => {
+                                                                                    const reduxSchedule =
+                                                                                        schedulesList.find(
+                                                                                            (s) =>
+                                                                                                s.id ===
+                                                                                                schedule.scheduleId,
+                                                                                        );
+                                                                                    const timeString = reduxSchedule
+                                                                                        ? formatExtendedTime(
+                                                                                              reduxSchedule.fromTime,
+                                                                                          )
+                                                                                        : format(
+                                                                                              new Date(
+                                                                                                  schedule.startTime,
+                                                                                              ),
+                                                                                              'HH:mm',
+                                                                                          );
+                                                                                    const isExtended =
+                                                                                        reduxSchedule &&
+                                                                                        parseInt(
+                                                                                            reduxSchedule.fromTime.split(
+                                                                                                ':',
+                                                                                            )[0],
+                                                                                        ) >= 24;
+                                                                                    return (
+                                                                                        <Tooltip
+                                                                                            title={
+                                                                                                isExtended
+                                                                                                    ? `Extended time: ${reduxSchedule.fromTime} (${parseInt(reduxSchedule.fromTime.split(':')[0]) - 24}:${reduxSchedule.fromTime.split(':')[1]} next day)`
+                                                                                                    : `Start time: ${timeString}`
+                                                                                            }
+                                                                                            arrow
+                                                                                        >
+                                                                                            <span>{timeString}</span>
+                                                                                        </Tooltip>
+                                                                                    );
+                                                                                })()}
+                                                                            </Typography>
+                                                                            <Typography
+                                                                                variant="caption"
+                                                                                sx={{ color: 'text.secondary' }}
+                                                                            >
+                                                                                →
+                                                                            </Typography>
+                                                                            <Typography
+                                                                                variant="body2"
+                                                                                sx={{
+                                                                                    fontWeight: 500,
+                                                                                    color: 'text.primary',
+                                                                                    fontFamily: 'monospace',
+                                                                                }}
+                                                                            >
+                                                                                {(() => {
+                                                                                    const reduxSchedule =
+                                                                                        schedulesList.find(
+                                                                                            (s) =>
+                                                                                                s.id ===
+                                                                                                schedule.scheduleId,
+                                                                                        );
+                                                                                    const timeString = reduxSchedule
+                                                                                        ? formatExtendedTime(
+                                                                                              reduxSchedule.toTime,
+                                                                                          )
+                                                                                        : format(
+                                                                                              new Date(
+                                                                                                  schedule.endTime,
+                                                                                              ),
+                                                                                              'HH:mm',
+                                                                                          );
+                                                                                    const isExtended =
+                                                                                        reduxSchedule &&
+                                                                                        parseInt(
+                                                                                            reduxSchedule.toTime.split(
+                                                                                                ':',
+                                                                                            )[0],
+                                                                                        ) >= 24;
+                                                                                    return (
+                                                                                        <Tooltip
+                                                                                            title={
+                                                                                                isExtended
+                                                                                                    ? `Extended time: ${reduxSchedule.toTime} (${parseInt(reduxSchedule.toTime.split(':')[0]) - 24}:${reduxSchedule.toTime.split(':')[1]} next day)`
+                                                                                                    : `End time: ${timeString}`
+                                                                                            }
+                                                                                            arrow
+                                                                                        >
+                                                                                            <span>{timeString}</span>
+                                                                                        </Tooltip>
+                                                                                    );
+                                                                                })()}
+                                                                            </Typography>
+                                                                            <Chip
+                                                                                label={formatDuration(
+                                                                                    schedule.totalDuration,
+                                                                                )}
+                                                                                size="small"
+                                                                                color="primary"
+                                                                                variant="outlined"
+                                                                                sx={{
+                                                                                    height: 20,
+                                                                                    fontSize: '0.7rem',
+                                                                                    fontFamily: 'monospace',
+                                                                                }}
+                                                                            />
+                                                                        </Box>
+                                                                        <Box
                                                                             sx={{
-                                                                                height: 20,
-                                                                                fontSize: '0.7rem',
-                                                                                fontFamily: 'monospace',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 1,
+                                                                                mt: 0.5,
                                                                             }}
-                                                                        />
-                                                                    </Box>
-                                                                    <Box
-                                                                        sx={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: 1,
-                                                                            mt: 0.5,
-                                                                        }}
-                                                                    >
-                                                                        <Chip
-                                                                            label={typeLabel}
-                                                                            size="small"
-                                                                            variant="outlined"
-                                                                            sx={{
-                                                                                height: 20,
-                                                                                fontSize: '0.7rem',
-                                                                                fontFamily: 'monospace',
-                                                                                backgroundColor:
-                                                                                    typeClass === 'type-main'
-                                                                                        ? theme.palette.primary.light
-                                                                                        : theme.palette.info.light,
-                                                                                color:
-                                                                                    typeClass === 'type-main'
-                                                                                        ? theme.palette.primary.dark
-                                                                                        : theme.palette.info.dark,
-                                                                                borderColor:
-                                                                                    typeClass === 'type-main'
-                                                                                        ? theme.palette.primary.main
-                                                                                        : theme.palette.info.main,
-                                                                                fontWeight: 600,
-                                                                                letterSpacing: 0.3,
-                                                                                boxShadow:
-                                                                                    '0 1px 3px rgba(0, 0, 0, 0.2)',
-                                                                            }}
-                                                                        />
-                                                                        <Chip
-                                                                            label={priorityLabel}
-                                                                            size="small"
-                                                                            variant="outlined"
-                                                                            sx={{
-                                                                                height: 20,
-                                                                                fontSize: '0.7rem',
-                                                                                fontFamily: 'monospace',
-                                                                                backgroundColor:
-                                                                                    priorityClass === 'priority-high'
-                                                                                        ? theme.palette.error.main
-                                                                                        : priorityClass ===
-                                                                                            'priority-normal'
-                                                                                          ? theme.palette.primary.main
-                                                                                          : theme.palette.info.main,
-                                                                                color:
-                                                                                    priorityClass === 'priority-high'
-                                                                                        ? theme.palette.error
-                                                                                              .contrastText
-                                                                                        : priorityClass ===
-                                                                                            'priority-normal'
-                                                                                          ? theme.palette.primary
-                                                                                                .contrastText
-                                                                                          : theme.palette.info
-                                                                                                .contrastText,
-                                                                                borderColor:
-                                                                                    priorityClass === 'priority-high'
-                                                                                        ? theme.palette.error.dark
-                                                                                        : priorityClass ===
-                                                                                            'priority-normal'
-                                                                                          ? theme.palette.primary.dark
-                                                                                          : theme.palette.info.dark,
-                                                                                fontWeight: 600,
-                                                                                letterSpacing: 0.3,
-                                                                                boxShadow:
-                                                                                    '0 1px 3px rgba(0, 0, 0, 0.2)',
-                                                                            }}
-                                                                        />
+                                                                        >
+                                                                            <Chip
+                                                                                label={typeLabel}
+                                                                                size="small"
+                                                                                variant="outlined"
+                                                                                sx={{
+                                                                                    height: 20,
+                                                                                    fontSize: '0.7rem',
+                                                                                    fontFamily: 'monospace',
+                                                                                    backgroundColor:
+                                                                                        typeClass === 'type-main'
+                                                                                            ? theme.palette.primary
+                                                                                                  .light
+                                                                                            : theme.palette.info.light,
+                                                                                    color:
+                                                                                        typeClass === 'type-main'
+                                                                                            ? theme.palette.primary.dark
+                                                                                            : theme.palette.info.dark,
+                                                                                    borderColor:
+                                                                                        typeClass === 'type-main'
+                                                                                            ? theme.palette.primary.main
+                                                                                            : theme.palette.info.main,
+                                                                                    fontWeight: 600,
+                                                                                    letterSpacing: 0.3,
+                                                                                    boxShadow:
+                                                                                        '0 1px 3px rgba(0, 0, 0, 0.2)',
+                                                                                }}
+                                                                            />
+                                                                            <Chip
+                                                                                label={priorityLabel}
+                                                                                size="small"
+                                                                                variant="outlined"
+                                                                                sx={{
+                                                                                    height: 20,
+                                                                                    fontSize: '0.7rem',
+                                                                                    fontFamily: 'monospace',
+                                                                                    backgroundColor:
+                                                                                        priorityClass ===
+                                                                                        'priority-high'
+                                                                                            ? theme.palette.error.main
+                                                                                            : priorityClass ===
+                                                                                                'priority-normal'
+                                                                                              ? theme.palette.primary
+                                                                                                    .main
+                                                                                              : theme.palette.info.main,
+                                                                                    color:
+                                                                                        priorityClass ===
+                                                                                        'priority-high'
+                                                                                            ? theme.palette.error
+                                                                                                  .contrastText
+                                                                                            : priorityClass ===
+                                                                                                'priority-normal'
+                                                                                              ? theme.palette.primary
+                                                                                                    .contrastText
+                                                                                              : theme.palette.info
+                                                                                                    .contrastText,
+                                                                                    borderColor:
+                                                                                        priorityClass ===
+                                                                                        'priority-high'
+                                                                                            ? theme.palette.error.dark
+                                                                                            : priorityClass ===
+                                                                                                'priority-normal'
+                                                                                              ? theme.palette.primary
+                                                                                                    .dark
+                                                                                              : theme.palette.info.dark,
+                                                                                    fontWeight: 600,
+                                                                                    letterSpacing: 0.3,
+                                                                                    boxShadow:
+                                                                                        '0 1px 3px rgba(0, 0, 0, 0.2)',
+                                                                                }}
+                                                                            />
+                                                                        </Box>
                                                                     </Box>
                                                                 </Box>
-                                                            </Box>
-                                                        </AccordionSummary>
-                                                        <AccordionDetails
-                                                            sx={{
-                                                                backgroundColor: 'background.default',
-                                                                borderRadius: (theme: Theme) =>
-                                                                    `0 0 ${theme.shape.borderRadius}px ${theme.shape.borderRadius}px`,
-                                                                p: 0.5,
-                                                            }}
-                                                        >
-                                                            <Box
+                                                            </AccordionSummary>
+                                                            <AccordionDetails
                                                                 sx={{
-                                                                    width: '100%',
-                                                                    borderTop: (theme: Theme) =>
-                                                                        `1px solid ${theme.palette.divider}`,
-                                                                    pt: 1,
+                                                                    backgroundColor: 'background.default',
+                                                                    borderRadius: (theme: Theme) =>
+                                                                        `0 0 ${theme.shape.borderRadius}px ${theme.shape.borderRadius}px`,
+                                                                    p: 0.5,
                                                                 }}
                                                             >
-                                                                {showLoops ? (
-                                                                    <Box
-                                                                        sx={{
-                                                                            backgroundColor: 'background.default',
-                                                                            borderRadius: 1,
-                                                                            overflow: 'hidden',
-                                                                        }}
-                                                                    >
-                                                                        {renderChronologicalView(schedule)}
-                                                                    </Box>
-                                                                ) : (
-                                                                    <Box
-                                                                        sx={{
-                                                                            backgroundColor: 'background.default',
-                                                                            borderRadius: 1,
-                                                                            overflow: 'hidden',
-                                                                        }}
-                                                                    >
-                                                                        {/* Render intro playlist if exists */}
-                                                                        {schedule.introPlaylist &&
-                                                                            renderPlaylistSection(
-                                                                                schedule.introPlaylist,
+                                                                <Box
+                                                                    sx={{
+                                                                        width: '100%',
+                                                                        borderTop: (theme: Theme) =>
+                                                                            `1px solid ${theme.palette.divider}`,
+                                                                        pt: 1,
+                                                                    }}
+                                                                >
+                                                                    {showLoops ? (
+                                                                        <Box
+                                                                            sx={{
+                                                                                backgroundColor: 'background.default',
+                                                                                borderRadius: 1,
+                                                                                overflow: 'hidden',
+                                                                            }}
+                                                                        >
+                                                                            <ChronologicalLoopsList
+                                                                                schedule={schedule}
+                                                                                logs={data?.logs}
+                                                                            />
+                                                                        </Box>
+                                                                    ) : (
+                                                                        <Box
+                                                                            sx={{
+                                                                                backgroundColor: 'background.default',
+                                                                                borderRadius: 1,
+                                                                                overflow: 'hidden',
+                                                                            }}
+                                                                        >
+                                                                            {/* Render intro playlist if exists */}
+                                                                            {schedule.introPlaylist &&
+                                                                                renderPlaylistSection(
+                                                                                    schedule.introPlaylist,
+                                                                                    schedule,
+                                                                                )}
+
+                                                                            {/* Render main playlist */}
+                                                                            {renderPlaylistSection(
+                                                                                {
+                                                                                    sequences: schedule.sequences,
+                                                                                    playlistType: 'main',
+                                                                                },
                                                                                 schedule,
                                                                             )}
 
-                                                                        {/* Render main playlist */}
-                                                                        {renderPlaylistSection(
-                                                                            {
-                                                                                sequences: schedule.sequences,
-                                                                                playlistType: 'main',
-                                                                            },
-                                                                            schedule,
-                                                                        )}
+                                                                            {/* Render outro playlist if exists */}
+                                                                            {schedule.outroPlaylist &&
+                                                                                renderPlaylistSection(
+                                                                                    schedule.outroPlaylist,
+                                                                                    schedule,
+                                                                                )}
 
-                                                                        {/* Render outro playlist if exists */}
-                                                                        {schedule.outroPlaylist &&
-                                                                            renderPlaylistSection(
-                                                                                schedule.outroPlaylist,
-                                                                                schedule,
-                                                                            )}
-
-                                                                        {!schedule.introPlaylist &&
-                                                                            schedule.sequences.length === 0 &&
-                                                                            !schedule.outroPlaylist && (
-                                                                                <Typography
-                                                                                    variant="body2"
-                                                                                    color="text.secondary"
-                                                                                    sx={{
-                                                                                        fontStyle: 'italic',
-                                                                                        textAlign: 'center',
-                                                                                        py: 4,
-                                                                                    }}
-                                                                                >
-                                                                                    No songs found for this schedule.
-                                                                                </Typography>
-                                                                            )}
-                                                                    </Box>
-                                                                )}
-                                                            </Box>
-                                                        </AccordionDetails>
-                                                    </Accordion>
-                                                );
-                                            })}
-                                        </Stack>
-                                    </AccordionDetails>
-                                </Accordion>
-                            ))}
+                                                                            {!schedule.introPlaylist &&
+                                                                                schedule.sequences.length === 0 &&
+                                                                                !schedule.outroPlaylist && (
+                                                                                    <Typography
+                                                                                        variant="body2"
+                                                                                        color="text.secondary"
+                                                                                        sx={{
+                                                                                            fontStyle: 'italic',
+                                                                                            textAlign: 'center',
+                                                                                            py: 4,
+                                                                                        }}
+                                                                                    >
+                                                                                        No songs found for this
+                                                                                        schedule.
+                                                                                    </Typography>
+                                                                                )}
+                                                                        </Box>
+                                                                    )}
+                                                                </Box>
+                                                            </AccordionDetails>
+                                                        </Accordion>
+                                                    );
+                                                })}
+                                            </Stack>
+                                        </AccordionDetails>
+                                    </Accordion>
+                                );
+                            })}
                         </List>
                     </CardContent>
                 </Card>

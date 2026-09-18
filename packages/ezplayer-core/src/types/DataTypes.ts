@@ -142,6 +142,8 @@ export interface ScheduledPlaylist {
     priority?: 'high' | 'normal' | 'low';
     /** Suspend without delete; same semantics as `PlaylistRecord.enabled`. */
     enabled?: boolean;
+    /** Calendar/timeline chip color (CSS). Playback ignores this. Omitted → UI auto-color. */
+    color?: string;
 }
 
 interface RecurrenceRule {
