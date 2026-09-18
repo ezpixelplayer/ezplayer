@@ -7,6 +7,8 @@ export type ScheduleColorIdentity = {
     baseScheduleId?: string;
     /** Used to decide which series is "first" (earliest date gets theme color). */
     date?: number;
+    /** Main and background schedules are indexed independently. */
+    scheduleType?: string;
 };
 
 export type ScheduleColorSwatch = {
@@ -56,7 +58,7 @@ export function getScheduleColorSwatch(base: PaletteColor, index: number): Sched
     return {
         main,
         dark: darken(main, 0.18),
-        contrastText: base.contrastText,
+        contrastText: getContrastTextForColor(main),
     };
 }
 
@@ -140,4 +142,15 @@ export function buildScheduleColorIndexById(schedules: ReadonlyArray<ScheduleCol
         result.set(schedule.id, indexBySeries.get(getScheduleColorSeriesKey(schedule)) ?? 0);
     }
     return result;
+}
+
+/**
+ * Like {@link buildScheduleColorIndexById}, but main and background schedules are
+ * indexed separately so each type's first series gets its exact theme color.
+ * Use this wherever the list may mix types so calendar and timeline agree.
+ */
+export function buildScheduleColorIndexByType(schedules: ReadonlyArray<ScheduleColorIdentity>): Map<string, number> {
+    const background = schedules.filter((s) => s.scheduleType === 'background');
+    const main = schedules.filter((s) => s.scheduleType !== 'background');
+    return new Map([...buildScheduleColorIndexById(background), ...buildScheduleColorIndexById(main)]);
 }

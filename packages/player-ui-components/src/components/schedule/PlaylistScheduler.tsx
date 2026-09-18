@@ -74,7 +74,7 @@ import {
     type ScheduleDragDialogType,
     type ScheduleDragOperation,
 } from '../../util/scheduleDragDrop';
-import { buildScheduleColorIndexById } from '../../util/scheduleDisplayColor';
+import { buildScheduleColorIndexByType, getScheduleColorSwatch } from '../../util/scheduleDisplayColor';
 import { AppDispatch, RootState } from '../../store/Store';
 import DailyView from './DailyView';
 import MonthlyView from './MonthlyView';
@@ -138,8 +138,6 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     onOpenPreview,
 }) => {
     const theme = useTheme();
-    const defaultScheduleColor =
-        scheduleType === 'background' ? theme.palette.secondary.main : theme.palette.primary.main;
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<'monthly' | 'weekly' | 'daily'>('monthly');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -289,7 +287,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             toTime: '',
             playlistId: '',
             startDate: date,
-            color: defaultScheduleColor,
+            // Leave empty so the schedule keeps automatic per-series coloring unless the user picks one.
+            color: '',
         }));
         setIsDialogOpen(true);
     };
@@ -472,7 +471,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 scheduleType: scheduleType, // Use the scheduleType prop
                 updatedAt: convertDateToMilliseconds(new Date()),
                 deleted: false,
-                ...(formData.color ? { color: formData.color } : {}),
+                // Empty → automatic coloring. Written explicitly so an edit can clear a previously saved color.
+                color: formData.color || undefined,
             };
 
             // Date selection logic:
@@ -1169,9 +1169,23 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     };
 
     const scheduleColorIndexById = useMemo(
-        () => buildScheduleColorIndexById(scheduledPlaylists),
+        () => buildScheduleColorIndexByType(scheduledPlaylists),
         [scheduledPlaylists],
     );
+
+    // Color the dialog swatch shows with no custom color: the edited series' own auto color,
+    // or the next unused variant for a brand-new schedule.
+    const autoScheduleColor = useMemo(() => {
+        const base = scheduleType === 'background' ? theme.palette.secondary : theme.palette.primary;
+        let index = selectedSchedule ? (scheduleColorIndexById.get(selectedSchedule.id) ?? 0) : -1;
+        if (index < 0) {
+            index = 0;
+            scheduleColorIndexById.forEach((value) => {
+                if (value >= index) index = value + 1;
+            });
+        }
+        return getScheduleColorSwatch(base, index).main;
+    }, [scheduleType, theme, selectedSchedule, scheduleColorIndexById]);
 
     const renderScheduledPlaylist = (scheduleItem: ScheduledPlaylist) => {
         const selectedPlaylist = availablePlaylists.find((p) => p.id === scheduleItem.playlistId);
@@ -1238,7 +1252,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
     const applyDragScheduleOperation = async (operation: ScheduleDragOperation, proceedAfterConflict: boolean) => {
         const sourceSchedule = dragDropDialogState.sourceSchedule ?? conflictConfirmDialogState.sourceSchedule;
         const destinationDate = dragDropDialogState.destinationDate ?? conflictConfirmDialogState.destinationDate;
-        const destinationDateKey = dragDropDialogState.destinationDateKey ?? conflictConfirmDialogState.destinationDateKey;
+        const destinationDateKey =
+            dragDropDialogState.destinationDateKey ?? conflictConfirmDialogState.destinationDateKey;
 
         if (!sourceSchedule || !destinationDate || !destinationDateKey) return;
 
@@ -1262,9 +1277,9 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                     ? [sourceSchedule.id]
                     : []
                 : [
-                    ...payload.schedulesToDelete.map((schedule) => schedule.id),
-                    ...payload.schedulesToUpdate.map((schedule) => schedule.id),
-                ],
+                      ...payload.schedulesToDelete.map((schedule) => schedule.id),
+                      ...payload.schedulesToUpdate.map((schedule) => schedule.id),
+                  ],
         );
 
         const conflictErrors = findScheduleConflicts(candidateSchedules, scheduledPlaylists, excludeIds);
@@ -1596,24 +1611,18 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
 
             {/* Playlist Selection Dialog */}
             <Dialog open={isDialogOpen} onClose={handleClose} maxWidth="sm" fullWidth>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <DialogTitle>
-                        <Box sx={{ display: 'flex' }}>
-                            <Typography sx={{ marginRight: 2 }}>
-                                {selectedSchedule
-                                    ? `Edit ${scheduleType === 'background' ? 'Background ' : ''}Schedule`
-                                    : `Schedule ${scheduleType === 'background' ? 'Background ' : ''}Playlist`}
-                            </Typography>
-                            <Typography>
-                                {selectedDate && (
-                                    <Typography variant="subtitle1">
-                                        Date: {formatDateStandard(selectedDate)}
-                                    </Typography>
-                                )}
-                            </Typography>
-                        </Box>
-                    </DialogTitle>
-                </Box>
+                <DialogTitle sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}>
+                    <span>
+                        {selectedSchedule
+                            ? `Edit ${scheduleType === 'background' ? 'Background ' : ''}Schedule`
+                            : `Schedule ${scheduleType === 'background' ? 'Background ' : ''}Playlist`}
+                    </span>
+                    {selectedDate && (
+                        <Typography component="span" variant="subtitle1" color="text.secondary">
+                            Date: {formatDateStandard(selectedDate)}
+                        </Typography>
+                    )}
+                </DialogTitle>
                 <DialogContent>
                     <Box
                         sx={{
@@ -1623,7 +1632,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                             mt: 1,
                         }}
                     >
-                        <Box sx={{ display: 'flex', gap: 2 }}>
+                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                             <FormControl fullWidth>
                                 <InputLabel id="playlist-select-label">Select Playlist</InputLabel>
                                 <Select
@@ -1656,11 +1665,12 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 value={formData.title}
                                 onChange={handleTitleChange}
                             />
+                            <ScheduleColorPicker
+                                value={formData.color}
+                                autoColor={autoScheduleColor}
+                                onChange={(color) => setFormData((prev) => ({ ...prev, color }))}
+                            />
                         </Box>
-                        <ScheduleColorPicker
-                            value={formData.color || defaultScheduleColor}
-                            onChange={(color) => setFormData((prev) => ({ ...prev, color }))}
-                        />
                         <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
                             <TextField
                                 name="fromTime"
@@ -1706,8 +1716,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 }}
                                 helperText={
                                     formData.fromTime &&
-                                        formData.toTime &&
-                                        !isToTimeAfterFromTime(formData.fromTime, formData.toTime)
+                                    formData.toTime &&
+                                    !isToTimeAfterFromTime(formData.fromTime, formData.toTime)
                                         ? `To Time must be after From Time. Try ${suggestValidToTime(formData.fromTime)} or later.`
                                         : 'Extended time format (e.g., 14:30, 25:00, 26:30). Use 25:00 for 1:00 AM next day, 48:00 for midnight 2 days later.'
                                 }
@@ -2147,8 +2157,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 <DialogTitle>Delete Schedule</DialogTitle>
                 <DialogContent>
                     {selectedSchedule &&
-                        ['daily', 'selectedDays'].includes(formData.recurrence) &&
-                        !deleteDialogState.mode ? (
+                    ['daily', 'selectedDays'].includes(formData.recurrence) &&
+                    !deleteDialogState.mode ? (
                         <>
                             <Typography gutterBottom>
                                 Would you like to delete this event or all related events?
@@ -2180,12 +2190,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             </Dialog>
 
             {/* Drag-drop confirmation dialog */}
-            <Dialog
-                open={dragDropDialogState.open}
-                onClose={handleCancelDragDrop}
-                maxWidth="xs"
-                fullWidth
-            >
+            <Dialog open={dragDropDialogState.open} onClose={handleCancelDragDrop} maxWidth="xs" fullWidth>
                 <DialogTitle>Schedule</DialogTitle>
                 <DialogContent>
                     {dragDropDialogState.dialogType === 'single' && (

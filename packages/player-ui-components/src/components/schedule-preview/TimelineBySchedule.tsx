@@ -9,10 +9,11 @@ import { formatDateStandard } from '../../util/dateUtils';
 import { Card, CardContent, Typography, Chip, Stack, Tooltip, IconButton, useTheme, Theme } from '@mui/material';
 import { Box } from '../box/Box';
 import { ZoomIn, ZoomOut, FitScreen, Refresh } from '@mui/icons-material';
-import { alpha, darken } from '@mui/material/styles';
+import { alpha } from '@mui/material/styles';
 import {
-    buildScheduleColorIndexById,
+    buildScheduleColorIndexByType,
     getScheduleColorSwatch,
+    resolveScheduleDisplaySwatch,
 } from '../../util/scheduleDisplayColor';
 import type { PaletteColor } from '@mui/material/styles';
 
@@ -133,13 +134,14 @@ function buildTimelineData(
     const nameOf = (id: string) => scheduleById.get(id)?.title || `Schedule ${id.slice(0, 8)}`;
     const priorityOf = (id: string) => toPriority(scheduleById.get(id)?.priority);
     const isBackground = (id: string) => scheduleById.get(id)?.scheduleType === 'background';
-    // Earliest series gets index 0 (exact theme color); later series get stronger light/dark variants.
-    const colorIndexById = buildScheduleColorIndexById(schedules);
-    const colorOf = (id: string) => {
+    // Earliest series of each type gets index 0 (exact theme color); later series get stronger variants.
+    // Indexed per type so the timeline matches the calendar, which only ever shows one type at a time.
+    const colorIndexById = buildScheduleColorIndexByType(schedules);
+    const swatchOf = (id: string) => {
         const schedule = scheduleById.get(id);
-        if (schedule?.color) return schedule.color;
         const base = isBackground(id) ? scheduleColors.background : scheduleColors.main;
-        return getScheduleColorSwatch(base, colorIndexById.get(id) ?? 0).main;
+        // A saved custom color wins; unparseable values fall back to the auto swatch instead of throwing.
+        return resolveScheduleDisplaySwatch(schedule?.color, getScheduleColorSwatch(base, colorIndexById.get(id) ?? 0));
     };
     const scheduledTimesOf = (id: string) => {
         const schedule = scheduleById.get(id);
@@ -164,12 +166,14 @@ function buildTimelineData(
 
         const scheduleName = nameOf(scheduleId);
         const background = isBackground(scheduleId);
-        const color = colorOf(scheduleId);
+        const swatch = swatchOf(scheduleId);
         const { scheduledStart, scheduledEnd } = scheduledTimesOf(scheduleId);
-        // Per-item colors (including subtle variants) so multiple schedules stay distinguishable.
-        const barStyle = background
-            ? `background-color: ${color}; border-color: ${darken(color, 0.2)};`
-            : `background-color: ${color}; border-color: ${color};`;
+        // Per-item colors (including variants) so multiple schedules stay distinguishable;
+        // text color follows the fill so light variants stay readable.
+        const barStyle =
+            `background-color: ${swatch.main}; ` +
+            `border-color: ${background ? swatch.dark : swatch.main}; ` +
+            `color: ${swatch.contrastText};`;
 
         let currentSegmentStart: Date | null = null;
         let lastSuspendTime: Date | null = null;
@@ -825,11 +829,7 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
             top: 4px !important;
           }
 
-          /* Main schedules: background/border color is set per item from its priority */
-          .vis-item.schedule-started {
-            color: ${theme.palette.common.white};
-          }
-
+          /* Main and background schedules: fill, border and text color are set per item */
           .vis-item.schedule-suspended {
             border-style: dashed !important;
             opacity: 0.8;
@@ -838,7 +838,6 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
           .vis-item.schedule-background {
             border-width: 3px !important;
             border-style: solid !important;
-            color: ${theme.palette.info.contrastText};
             font-style: italic;
             opacity: 0.95;
           }

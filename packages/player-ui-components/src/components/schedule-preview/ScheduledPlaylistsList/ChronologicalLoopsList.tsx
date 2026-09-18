@@ -2,7 +2,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import { Chip, List, Theme, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { format } from 'date-fns';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '../../box/Box';
 
 export interface ChronologicalSequenceInstance {
@@ -365,6 +365,14 @@ export const ChronologicalLoopsList = React.memo(function ChronologicalLoopsList
     const [scrollTop, setScrollTop] = useState(0);
     const rafRef = useRef<number | null>(null);
 
+    // Drop a queued scroll update if the list unmounts first (accordion collapse with unmountOnExit).
+    useEffect(
+        () => () => {
+            if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+        },
+        [],
+    );
+
     const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
         const nextScrollTop = event.currentTarget.scrollTop;
         if (rafRef.current !== null) {
@@ -393,14 +401,7 @@ export const ChronologicalLoopsList = React.memo(function ChronologicalLoopsList
         if (row.kind === 'suspension') {
             return <SuspensionRow key={row.key} suspension={row.suspension} />;
         }
-        return (
-            <SequenceRow
-                key={row.key}
-                instance={row.instance}
-                zebraIndex={row.zebraIndex}
-                isLast={isLast}
-            />
-        );
+        return <SequenceRow key={row.key} instance={row.instance} zebraIndex={row.zebraIndex} isLast={isLast} />;
     };
 
     if (rows.length <= VIRTUALIZE_THRESHOLD) {
@@ -412,10 +413,7 @@ export const ChronologicalLoopsList = React.memo(function ChronologicalLoopsList
     }
 
     const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-    const endIndex = Math.min(
-        rows.length,
-        Math.ceil((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + OVERSCAN,
-    );
+    const endIndex = Math.min(rows.length, Math.ceil((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + OVERSCAN);
     const visibleRows = rows.slice(startIndex, endIndex);
     const offsetY = startIndex * ROW_HEIGHT;
     const totalHeight = rows.length * ROW_HEIGHT;
@@ -435,9 +433,7 @@ export const ChronologicalLoopsList = React.memo(function ChronologicalLoopsList
         >
             <Box sx={{ height: totalHeight, position: 'relative' }}>
                 <Box sx={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
-                    {visibleRows.map((row, i) =>
-                        renderRow(row, startIndex + i === rows.length - 1),
-                    )}
+                    {visibleRows.map((row, i) => renderRow(row, startIndex + i === rows.length - 1))}
                 </Box>
             </Box>
         </Box>
@@ -446,5 +442,4 @@ export const ChronologicalLoopsList = React.memo(function ChronologicalLoopsList
 
 ChronologicalLoopsList.displayName = 'ChronologicalLoopsList';
 
-export const shouldSkipAccordionTransition = (instanceCount: number) =>
-    instanceCount > VIRTUALIZE_THRESHOLD;
+export const shouldSkipAccordionTransition = (instanceCount: number) => instanceCount > VIRTUALIZE_THRESHOLD;

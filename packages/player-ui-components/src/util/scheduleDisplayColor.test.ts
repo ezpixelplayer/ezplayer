@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildScheduleColorIndexById,
+    buildScheduleColorIndexByType,
     getContrastTextForColor,
     getScheduleColorSeriesKey,
     getScheduleColorSwatch,
@@ -77,5 +78,32 @@ describe('scheduleDisplayColor', () => {
 
     it('uses light text on dark fills', () => {
         expect(getContrastTextForColor('#1976d2')).toBe('#ffffff');
+    });
+
+    it('picks readable text for lightened variants instead of reusing the base contrast text', () => {
+        const pale: PaletteColor = { ...base, main: '#FFE7A3', contrastText: '#ffffff' };
+        expect(getScheduleColorSwatch(pale, 0).contrastText).toBe('#ffffff');
+        expect(getScheduleColorSwatch(pale, 1).contrastText).toBe('#111111');
+        expect(getScheduleColorSwatch(pale, 3).contrastText).toBe('#111111');
+    });
+
+    it('falls back to the auto swatch when the custom color cannot be parsed', () => {
+        const fallback = getScheduleColorSwatch(base, 0);
+        expect(resolveScheduleDisplaySwatch('not-a-color', fallback)).toBe(fallback);
+    });
+
+    it('indexes main and background series independently', () => {
+        const map = buildScheduleColorIndexByType([
+            { id: 'bg-early', scheduleType: 'background', date: 50 },
+            { id: 'main-a', scheduleType: 'main', date: 100 },
+            { id: 'main-b', scheduleType: 'main', date: 200 },
+            { id: 'bg-late', scheduleType: 'background', date: 300 },
+            { id: 'untyped', date: 400 },
+        ]);
+        expect(map.get('bg-early')).toBe(0);
+        expect(map.get('bg-late')).toBe(1);
+        expect(map.get('main-a')).toBe(0);
+        expect(map.get('main-b')).toBe(1);
+        expect(map.get('untyped')).toBe(2);
     });
 });
