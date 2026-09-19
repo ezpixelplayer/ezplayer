@@ -136,7 +136,7 @@ export class FSEQReaderBrowser {
 
             shdrlen = this.read16bit();
             ccount = this.read32bit();
-            stepsz = Math.floor((ccount + 3) / 4) * 4;
+            stepsz = ccount;
             nframes = this.read32bit();
             stepms = this.read8bit();
             reserved = this.read8bit();
@@ -148,7 +148,7 @@ export class FSEQReaderBrowser {
                 colorenc = this.read8bit();
                 reserved2 = this.read16bit();
 
-                compblocklist.push({ framenum: 0, blocksize: nframes * ccount });
+                compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
             } else {
                 const compandblks = this.read8bit();
                 comp = compandblks & 15;

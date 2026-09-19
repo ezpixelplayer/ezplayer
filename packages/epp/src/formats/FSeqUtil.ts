@@ -254,7 +254,7 @@ export class FSEQReaderSync {
 
             shdrlen = await this.read16bit();
             ccount = await this.read32bit();
-            stepsz = Math.floor((ccount + 3) / 4) * 4;
+            stepsz = ccount;
             nframes = await this.read32bit();
             stepms = await this.read8bit();
             reserved = await this.read8bit();
@@ -266,8 +266,7 @@ export class FSEQReaderSync {
                 colorenc = await this.read8bit();
                 reserved2 = await this.read16bit();
 
-                // Double check this math, is it rounded up?
-                compblocklist.push({ framenum: 0, blocksize: nframes * ccount });
+                compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
             } else {
                 const compandblks = await this.read8bit();
                 comp = compandblks & 15;
@@ -564,7 +563,7 @@ export class FSEQReaderAsync {
             off += 2;
             ccount = buf.getUint32(off, true);
             off += 4;
-            stepsz = Math.floor((ccount + 3) / 4) * 4;
+            stepsz = ccount;
             nframes = buf.getUint32(off, true);
             off += 4;
             stepms = buf.getUint8(off);
@@ -584,8 +583,7 @@ export class FSEQReaderAsync {
                 reserved2 = buf.getUint16(off, true);
                 off += 2;
 
-                // Double check this math, is it rounded up?
-                compblocklist.push({ framenum: 0, blocksize: nframes * ccount });
+                compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
             } else {
                 const compandblks = buf.getUint8(off);
                 off += 1;
@@ -811,11 +809,6 @@ export function summarizeFSEQHeader(hdr: FSEQHeader): string {
 export function formatFSEQHeader(hdr: FSEQHeader): string {
     const lines: string[] = [];
     lines.push(summarizeFSEQHeader(hdr));
-    if (hdr.channels !== hdr.stepsize) {
-        lines.push(
-            `  NOTE: stepsize (${hdr.stepsize}) != channels (${hdr.channels}) — frame data padded by ${hdr.stepsize - hdr.channels} byte(s)`,
-        );
-    }
     for (const k of Object.keys(hdr.headers)) {
         lines.push(`  extra[${k}]=${hdr.headers[k]}`);
     }

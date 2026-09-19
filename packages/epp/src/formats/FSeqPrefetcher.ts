@@ -85,7 +85,7 @@ export interface ScatterRange {
 export interface FileLayout {
     isSparse: boolean;
     fileStride: number; // per-frame byte stride in decompressed file data
-    denseStep: number; // per-frame byte stride in dense output (padded to 4)
+    denseStep: number; // per-frame byte stride in dense output
     scatterPlan: ScatterRange[]; // empty when isSparse=false
 }
 
