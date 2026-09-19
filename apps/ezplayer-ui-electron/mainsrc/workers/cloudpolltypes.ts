@@ -45,8 +45,15 @@ export type CloudPollInMessage =
           pollMode?: 'always' | 'scheduled';
           pollSchedule?: CloudPollScheduleEntry[];
           tuning?: CloudWorkerTuning;
+          /** Optional media folder (playback setting) the rights scan walks
+           *  in addition to the show folder. */
+          mediaFolder?: string;
+          /** Bundled ffmpeg binary for audio fingerprinting; without it only
+           *  CRC / tag identifiers are submitted. */
+          ffmpegPath?: string;
       }
     | { type: 'updateSequences'; existingSequences: SequenceRecord[] }
+    | { type: 'scanMediaRights'; mediaFolder?: string; ffmpegPath?: string }
     | { type: 'pollNow' }
     | { type: 'manifestNow' }
     | { type: 'fetchLayoutNow' }

@@ -39,6 +39,9 @@ export const CLOUD_API_ENDPOINTS = {
     EZP_GET_SEQ_FILE: 'ezpapi/player/getseqfile/',
     /** GET ${cloudUrl}ezpapi/player/getmediafile/<token>/<file_id> -> { url, filename } */
     EZP_GET_MEDIA_FILE: 'ezpapi/player/getmediafile/',
+    /** POST ${cloudUrl}ezpapi/player/submitmusicrights/<token>  body: { submissions } -> { added, unmet }
+     *  Proof of music ownership (fingerprints / tag ids of local files; never the audio). */
+    EZP_SUBMIT_MUSIC_RIGHTS: 'ezpapi/player/submitmusicrights/',
     /** GET ${cloudUrl}ezpapi/player/getlatestlayout/<token>
      *   -> { zip?, rgbeffects?, networks?: { url, filename, file_id, file_time } } */
     EZP_GET_LATEST_LAYOUT: 'ezpapi/player/getlatestlayout/',

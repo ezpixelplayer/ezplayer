@@ -162,6 +162,8 @@ export function setCloudWorkerConfig(
     tuning?: CloudWorkerTuning,
     pollMode?: 'always' | 'scheduled',
     pollSchedule?: CloudPollScheduleEntry[],
+    mediaFolder?: string,
+    ffmpegPath?: string,
 ) {
     console.log(
         `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '...' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
@@ -193,7 +195,14 @@ export function setCloudWorkerConfig(
         pollMode,
         pollSchedule,
         tuning,
+        mediaFolder,
+        ffmpegPath,
     });
+}
+
+/** Fingerprint local media and submit proof of music ownership to the cloud. */
+export function scanMediaRightsNow(mediaFolder?: string, ffmpegPath?: string) {
+    send({ type: 'scanMediaRights', mediaFolder, ffmpegPath });
 }
 
 /** Refresh the worker's cached snapshot of local sequences (used to diff against
