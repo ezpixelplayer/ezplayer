@@ -10,7 +10,7 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
-import { reportDiagEvent } from './mainsrc/diagnostics.js';
+import { isExpectedProcessExit, noteSessionEnding, reportDiagEvent } from './mainsrc/diagnostics.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
@@ -104,13 +104,17 @@ process.on('unhandledRejection', (reason) => {
 // optional: also force console logging
 app.commandLine.appendSwitch('enable-logging', 'js-flags');
 
+// Still logged locally either way; only real faults are uploaded — Windows
+// killing our processes at logoff/shutdown is not a crash.
 app.on('render-process-gone', (_event, _webContents, details) => {
     console.error('app render-process-gone', details);
+    if (isExpectedProcessExit(details)) return;
     reportDiagEvent('render-process-gone', details.reason, undefined, details);
 });
 
 app.on('child-process-gone', (_event, details) => {
     console.error('app child-process-gone', details);
+    if (isExpectedProcessExit(details)) return;
     reportDiagEvent('child-process-gone', details.reason, undefined, details);
 });
 
@@ -204,6 +208,12 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     });
     mainWindow.webContents.on('responsive', () => {
         console.error('main window responsive again');
+    });
+    // Windows only: logoff / shutdown / restart is now unstoppable, so the
+    // process deaths that follow are not crashes.
+    mainWindow.on('session-end', () => {
+        console.log('session-end: suppressing process-gone diagnostics');
+        noteSessionEnding();
     });
 
     const url = !app.isPackaged
