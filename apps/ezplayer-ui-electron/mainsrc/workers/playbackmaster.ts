@@ -351,12 +351,14 @@ function sendPlayerStateUpdate() {
             // (within the readahead window) is upcoming, not playing.
             if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
                 playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
-                playStatus.status = isPaused ? 'Paused' : 'Playing';
+                playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
             } else {
                 playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
             }
         }
     }
+    // Over once nothing is playing: a later schedule must not inherit it.
+    if (!playStatus.now_playing) stoppingGracefully = false;
     playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
@@ -711,6 +713,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+                stoppingGracefully = false;
                 // pendingSchedule (not yet installed by the loop) is newer than curSequences
                 const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
                 const seq = liveSequences?.find((s) => s.id === cmd.songId);
@@ -802,6 +805,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playplaylist':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
+                stoppingGracefully = false;
                 const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
                 const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
                 if (!pl) {
@@ -834,12 +838,14 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         case 'stopgraceful': {
             emitInfo('Stop graceful command received');
+            stoppingGracefully = true;
             foregroundPlayerRunState.stopGracefully(foregroundPlayerRunState.currentTime);
             sendPlayerStateUpdate();
             break;
         }
         case 'stopnow': {
             emitInfo('Stop now command received');
+            stoppingGracefully = false;
             foregroundPlayerRunState.stopImmediately(foregroundPlayerRunState.currentTime);
             audioPlayerRunTime = foregroundPlayerRunState.currentTime;
             ++curAudioSyncNum;
@@ -1215,6 +1221,9 @@ const _pollTimes = setInterval(async () => {
 // The actual variables here
 let showFolder: string | undefined = undefined;
 let isPaused = false;
+/** A graceful stop is in progress: still playing, but ending at the next
+ *  convenient point. Reported as "Stopping". */
+let stoppingGracefully = false;
 let volume = 100;
 let muted = false;
 let curAudioSyncNum = 1;

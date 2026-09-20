@@ -27,6 +27,8 @@ import {
     buildFppStatus,
     buildFppdVersion,
     buildSystemInfo,
+    fppClockString,
+    fppDateTimeString,
     fppCompatVersion,
     FPP_COMPAT_MAJOR,
     FPP_COMPAT_MINOR,
@@ -34,8 +36,14 @@ import {
     type FppStatusSources,
 } from './fpp-status.js';
 import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
+import { buildFppdPlaylistConfig, buildFppdPlaylists, buildPlayerCurrent, buildPlayerStatus } from './fpp-player.js';
 import { fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
-import { fppScheduleToRecords, recordsToFppSchedule, type FppScheduleEntry } from './fpp-schedule.js';
+import {
+    buildFppdSchedule,
+    fppScheduleToRecords,
+    recordsToFppSchedule,
+    type FppScheduleEntry,
+} from './fpp-schedule.js';
 
 export interface FppApiDeps {
     getShowFolder: () => string | undefined;
@@ -117,6 +125,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         sendPlayerCommand: deps.sendPlayerCommand,
         getPlaylists: deps.getPlaylists,
         getSequences: deps.getSequences,
+        getPStatus: deps.getPStatus,
     };
 
     // ---- status / identity -------------------------------------------------
@@ -127,12 +136,55 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     router.get('/api/system/status', serveStatus);
     router.get('/api/fppd/status', serveStatus);
 
+    /** Free/total bytes of the filesystem holding `dir`, when it can be read. */
+    const diskUsage = async (dir: string | undefined): Promise<{ Free: number; Total: number } | undefined> => {
+        if (!dir) return undefined;
+        try {
+            const st = await fsp.statfs(dir);
+            return { Free: st.bavail * st.bsize, Total: st.blocks * st.bsize };
+        } catch {
+            return undefined;
+        }
+    };
+
     router.get('/api/system/info', async (ctx) => {
-        ctx.body = buildSystemInfo(await identityOf(deps), { freemem: os.freemem(), totalmem: os.totalmem() });
+        const [media, root] = await Promise.all([
+            diskUsage(deps.getShowFolder()),
+            diskUsage(path.parse(process.execPath).root),
+        ]);
+        ctx.body = buildSystemInfo(await identityOf(deps), {
+            freemem: os.freemem(),
+            totalmem: os.totalmem(),
+            osVersion: os.version(),
+            osRelease: `${os.type()} ${os.release()}`,
+            media,
+            root,
+        });
     });
 
     router.get('/api/fppd/version', async (ctx) => {
         ctx.body = buildFppdVersion(await identityOf(deps));
+    });
+
+    // ---- player / running playlist ------------------------------------------
+
+    const servePlayerStatus = (ctx: RouterContext) => {
+        ctx.body = buildPlayerStatus(statusSources(deps), Date.now());
+    };
+    router.get('/api/player', servePlayerStatus);
+    router.get('/api/player/status', servePlayerStatus);
+    router.get('/api/player/current', (ctx) => {
+        ctx.body = buildPlayerCurrent(statusSources(deps), Date.now());
+    });
+    router.get('/api/fppd/playlists', (ctx) => {
+        ctx.body = buildFppdPlaylists(statusSources(deps), Date.now());
+    });
+    router.get('/api/fppd/playlist/config', (ctx) => {
+        ctx.body = buildFppdPlaylistConfig(statusSources(deps), Date.now());
+    });
+
+    router.get('/api/time', (ctx) => {
+        ctx.body = { time: fppClockString(Date.now()) };
     });
 
     // Some discovery flows probe the plugin list; an empty one is accurate.
@@ -145,8 +197,26 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     // omitted — they don't speak the FPP systems protocol.
     router.get('/api/fppd/multiSyncSystems', async (ctx) => {
         const identity = await identityOf(deps);
+        const now = Date.now();
+        /** The fields FPP reports for every system. `channelRanges` is empty:
+         *  EZPlayer drives outputs from the show, not a published channel map. */
+        const common = (seenMs: number, isLocal: boolean) => ({
+            HostDescription: '',
+            capeInfo: { present: false },
+            channelInputsEnabled: false,
+            channelOutputsEnabled: isLocal,
+            channelRanges: '',
+            fppMode: 2,
+            fppModeString: 'player',
+            lastSeen: Math.floor(seenMs / 1000),
+            lastSeenStr: fppDateTimeString(seenMs),
+            local: isLocal ? 1 : 0,
+            multiSyncCapable: 1,
+            multisync: false,
+        });
         const systems: Record<string, unknown>[] = [
             {
+                ...common(now, true),
                 address: identity.ips[0] ?? '127.0.0.1',
                 hostname: identity.hostName,
                 type: 'EZPlayer',
@@ -155,9 +225,6 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
                 majorVersion: FPP_COMPAT_MAJOR,
                 minorVersion: FPP_COMPAT_MINOR,
                 typeId: 0xee,
-                fppModeString: 'player',
-                multisync: false,
-                local: true,
                 uuid: identity.uuid,
             },
         ];
@@ -169,14 +236,14 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
             seen.add(dev.ip);
             const fw = dev.firmwareVersion ?? '';
             const verMatch = /^(\d+)\.(\d+)/.exec(fw);
+            const seenMs = Date.parse(dev.seenAt);
             const entry: Record<string, unknown> = {
+                ...common(Number.isNaN(seenMs) ? now : seenMs, false),
                 address: dev.ip,
                 hostname: dev.hostname ?? '',
                 type: dev.driverType,
                 model: dev.model ?? '',
                 version: fw,
-                multisync: false,
-                local: false,
             };
             if (verMatch) {
                 entry.majorVersion = Number(verMatch[1]);
@@ -184,7 +251,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
             }
             systems.push(entry);
         }
-        ctx.body = { systems };
+        ctx.body = { Status: 'OK', Message: '', respCode: 200, systems };
     });
 
     // ---- command API -------------------------------------------------------
@@ -338,8 +405,19 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
             ...ingest.warnings,
             ...ingest.unresolved.map((n) => `sequence '${n}' not found in the show folder — entry skipped`),
         ];
-        await deps.updatePlaylists([ingest.record]);
-        ctx.body = { Status: 'OK', Message: warnings.join('; ') };
+        const record = ingest.record;
+        if (!record) {
+            ctx.status = 500;
+            ctx.body = { Status: 'Error', Message: 'Playlist could not be stored', Warnings: warnings };
+            return;
+        }
+        await deps.updatePlaylists([record]);
+        // FPP answers a write with the stored playlist; our status rides along.
+        ctx.body = {
+            ...recordToFppPlaylist(record, deps.getSequences()),
+            Status: 'OK',
+            Message: warnings.join('; '),
+        };
     };
 
     router.post('/api/playlist/:name', async (ctx) => {
@@ -381,7 +459,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     });
 
     router.get('/api/fppd/schedule', (ctx) => {
-        ctx.body = { schedule: recordsToFppSchedule(deps.getSchedule()), Status: 'OK' };
+        ctx.body = buildFppdSchedule(deps.getSchedule(), Date.now());
     });
 
     // Full replace, FPP semantics: entries not in the new set are deleted.
