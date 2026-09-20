@@ -1,0 +1,50 @@
+{
+    "playlists": [
+        {
+            "blankAtEnd": 0,
+            "currentEntry": null,
+            "currentState": "idle",
+            "desc": "",
+            "details": {
+                "blankAtEnd": 0,
+                "configTime": 1789817978,
+                "currentEntry": null,
+                "currentState": "idle",
+                "desc": "",
+                "globalPauseBetweenSequencesMS": 0,
+                "loop": 0,
+                "loopCount": 0,
+                "name": "",
+                "playlistInfo": {
+                    "leadIn_duration": 0,
+                    "leadIn_items": 0,
+                    "leadOut_duration": 0,
+                    "leadOut_items": 0,
+                    "mainPlaylist_duration": 0,
+                    "mainPlaylist_items": 1,
+                    "total_duration": 0,
+                    "total_items": 1
+                },
+                "random": 0,
+                "repeat": 0,
+                "size": 0
+            },
+            "lastModified": 1789816792,
+            "loop": 0,
+            "loopCount": 0,
+            "name": "",
+            "origStartTime": 0,
+            "origStopTime": 0,
+            "position": 0,
+            "priority": -1,
+            "random": 0,
+            "repeat": 0,
+            "scheduled": false,
+            "size": 0,
+            "startTime": 1789817972,
+            "status": 0,
+            "stopMethod": 0,
+            "stopTime": 0
+        }
+    ]
+}

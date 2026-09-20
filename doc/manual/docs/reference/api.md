@@ -47,7 +47,8 @@ Get current show data. Returns the complete current show state, including sequen
 **Response:**
 
 - Status: 200 OK
-- Body: FullPlayerState object
+- Body: the cached broadcast state — the same keys the WebSocket `snapshot`
+  carries for the show itself
 
 ```json
 {
@@ -55,13 +56,16 @@ Get current show data. Returns the complete current show state, including sequen
   "sequences": [...],
   "playlists": [...],
   "schedule": [...],
-  "user": {...},
-  "show": {...},
   "pStatus": {...},
   "cStatus": {...},
   "nStatus": {...}
 }
 ```
+
+The three status objects are absent until their workers have reported once,
+so a freshly started player answers with the arrays and `showFolder` alone.
+The other `FullPlayerState` keys (settings, cloud, controller ops) come from
+the WebSocket snapshot or their own endpoints.
 
 ---
 
@@ -74,6 +78,7 @@ Get sequence thumbnail image. Serves thumbnail images for sequences by sequence 
 - Method: GET
 - Path Parameters:
     - `sequenceId` (string, required) - Sequence identifier (alphanumeric, hyphens, underscores only)
+- Query form: `GET /api/ezp/getimage?id=<sequenceId>` is also accepted
 
 **Response:**
 
@@ -184,6 +189,7 @@ Send player command. Sends a command to control player playback, volume, or requ
 | `playplaylist`      | Play or enqueue a playlist                                                           | `playlistId`, `immediate`, `priority`, `requestId` |
 | `deleterequest`     | Cancel a pending song or playlist request                                            | `requestId`                                        |
 | `clearrequests`     | Clear all pending requests                                                           |                                                    |
+| `endsong`           | End the current song (skip to the next item)                                         | `songId?` (only skip if this song is playing)      |
 | `setvolume`         | Set volume level and/or mute                                                         | `volume?`, `mute?`                                 |
 
 **Request Body Examples:**
@@ -397,7 +403,7 @@ to the show folder root with an extension filter:
 | `:dirName`  | Contents                                              |
 | ----------- | ----------------------------------------------------- |
 | `sequences` | `*.fseq`                                              |
-| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma`          |
+| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma *.mp4`    |
 | `videos`    | `*.mp4 *.mkv *.avi *.mov *.mpg *.mpeg`                |
 | `images`    | `*.gif *.jpg *.jpeg *.png *.webp *.bmp`               |
 | `uploads`   | everything (minus protected/dot files)                |
@@ -406,14 +412,17 @@ to the show folder root with an extension filter:
 | -------- | --------------------------- | -------------------------------------------------------------------------------------------- |
 | `GET`    | `/api/files/:dirName`       | List: `{status:"ok", files:[{name,mtime,sizeBytes,sizeHuman,playtimeSeconds}]}`; `?nameOnly=1` returns a plain name array |
 | `GET`    | `/api/file/:dirName/:name`  | Download (attachment); `?play=1` streams inline with a media content type                     |
-| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body                                        |
+| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body. Answers `{status:"OK", file, dir, written, size, offset}`, with the byte counts as strings, as FPP does |
 | `POST`   | `/api/file/:dirName`        | Chunked-upload init; returns an id (plain text)                                               |
 | `PATCH`  | `/api/file/:dirName`        | Upload one chunk; headers `Upload-Name`, `Upload-Offset`, `Upload-Length` (raw body = chunk)  |
-| `DELETE` | `/api/file/:dirName/:name`  | Delete a file                                                                                 |
+| `DELETE` | `/api/file/:dirName/:name`  | Delete a file; answers `{status:"OK", file, dir}`                                             |
 | `GET`    | `/api/media`                | Music + video file names (array)                                                              |
 | `GET`    | `/api/sequence`             | Sequence base names, no `.fseq` extension (array)                                             |
 | `GET`    | `/api/sequence/:name`       | Download `<name>.fseq`                                                                        |
 | `POST`   | `/api/sequence/:name`       | Upload `<name>.fseq` (raw body) → `{"Status":"OK","Message":""}`                              |
+| `GET`    | `/api/sequence/:name/meta`  | FSEQ header summary, as FPP's `fsequtils -j` prints it (see [FPP-compat](./fpp-compat.md#files)) |
+| `GET`    | `/api/media/:name/meta`     | The part of FPP's ffprobe dump EZPlayer can answer truthfully: a `format` block with the file, its size, and its duration when a sequence record knows it |
+| `GET`    | `/api/media/:name/duration` | `{"<name>": {"duration": seconds}}` for audio belonging to a registered sequence; `404` otherwise |
 
 Uploads are **raw request bodies** (not multipart). Chunked uploads assemble in
 `.ezplayer/tmp-uploads/` and move into place atomically on completion, so a
@@ -553,6 +562,8 @@ to what the desktop/LAN/cloud UIs issue. One endpoint covers every verb:
 | `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`. |
 | `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`. |
 | `refreshInterfaces` | Re-enumerate this host's networks.                                 |
+| `cancel`            | Stop a running operation: `{ "cmd": "cancel", "opId": "op_…" }`. Partial results are kept and the op ends as `cancelled`. |
+| `dismiss`           | Clear a finished operation (and its error) from the shared state: `{ "cmd": "dismiss", "opId": "op_…" }`. Dismissal is shared, so every UI stops showing it. |
 
 Verbs other than `scan` return `{"ok":true}` immediately; results and progress
 ride the shared `controllerops` state (WebSocket broadcast, or re-poll the GET).
@@ -788,6 +799,12 @@ output (see [FPP compatibility](./fpp-compat.md#multisync-master)); empty
 overrides. `advanced.ddpPort` overrides the DDP output port (default 4048)
 and takes effect when controllers reopen.
 
+The example is not the whole object: `PlaybackSettings` also carries
+`normalizeNewSongs`, `jukebox`, `testSequenceTags`, `mediaFolder` and the
+machine-local audio-output choice (`useDefaultAudioOutput`, `audioOutputs`).
+A POST **replaces** the stored object, so read the current one from the
+WebSocket snapshot (`playbackSettings`) and send it back with your changes.
+
 **Response:**
 
 - Status: 200 OK - Settings updated successfully
@@ -931,9 +948,13 @@ Server clock for client clock-offset estimation. Returns the server's current `D
 
 ```json
 {
-    "now": 1704067200000
+    "now": 1704067200000,
+    "timeZone": "America/New_York"
 }
 ```
+
+`timeZone` is the player's IANA zone, for clients that render show times in
+the player's local time rather than their own.
 
 **Response Headers:**
 
@@ -1240,6 +1261,29 @@ To render a live beam, slice `channelOffset … channelOffset + numChannels` byt
 
 ---
 
+### POST /api/ezp/shell/reload
+
+Re-read the remote-access configuration (remote shell / file manager enable
+flags and password) without restarting the player. The `EZPlayer shell` CLI
+calls this after changing the password so a running player picks it up.
+
+**Request:**
+
+- Method: POST
+- Body: none
+
+**Response:**
+
+- Status: 200 OK — the new `RemoteAccessAvailability` state
+- Status: 403 Forbidden — `{"error": "this endpoint is loopback-only"}`
+
+This endpoint is **loopback-only**: any client that is not on
+`127.0.0.1`/`::1` is refused. Disabling a tile takes
+effect on sessions already in flight — an open remote shell or file-manager
+session is closed rather than left running.
+
+---
+
 ### GET /api/ezp/debug-show-folder
 
 Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
@@ -1377,14 +1421,19 @@ State update broadcast. Broadcasts player state updates. Contains version number
 | `sequences`          | SequenceRecord[]     | Array of sequences           |
 | `playlists`          | PlaylistRecord[]     | Array of playlists           |
 | `schedule`           | ScheduledPlaylist[]  | Array of scheduled playlists |
-| `user`               | EndUser              | User object                  |
-| `show`               | EndUserShowSettings  | Show settings object         |
 | `cStatus`            | PlayerCStatusContent | Controller status            |
 | `pStatus`            | PlayerPStatusContent | Playback status              |
 | `nStatus`            | PlayerNStatusContent | Network status               |
 | `playbackSettings`   | PlaybackSettings     | Playback settings            |
 | `playbackStatistics` | PlaybackStatistics   | Playback statistics          |
 | `versions`           | EZPlayerVersions     | Version info                 |
+| `cloudConfig`        | CloudConfig          | Cloud connection settings    |
+| `cloudStatus`        | CloudStatus          | Cloud link status            |
+| `controllerops`      | ControllerOpsState   | Controller discovery, operations, known controllers and network policies — one atomic snapshot |
+| `remoteAccess`       | RemoteAccessAvailability | Which password-gated remote-access tiles this player offers |
+| `autoUpdateOps`      | AutoUpdateOpsState   | Update settings, status and available releases |
+| `audioOutputDevices` | AudioDevice[]        | Physical audio outputs on the player machine |
+| `appSettings`        | AppSettingsState     | Machine-wide settings: diagnostics consent, start at sign-in |
 
 **Behavior:**
 
@@ -1427,6 +1476,23 @@ Server-initiated disconnection. Server sends this before disconnecting a client.
 
 - `"heartbeat timeout"` - Client didn't respond to pings within 15 seconds
 - `"backpressure: buffered={bytes}"` - Client buffer exceeded 8MB limit
+
+#### bridgeStatus
+
+Sent by the **cloud bridge only**, never by a player's own WebSocket: it tells
+cloud viewers whether the player↔cloud socket is currently up. Viewers get one
+on connect with the current state, and one whenever the player connects or
+disconnects at the bridge. A client talking straight to a player will never
+see it.
+
+**Message Format:**
+
+```json
+{
+    "type": "bridgeStatus",
+    "playerConnected": true
+}
+```
 - `"socket closed"` - Connection closed
 - `"socket error"` - Connection error
 - `"send failed"` - Failed to send message

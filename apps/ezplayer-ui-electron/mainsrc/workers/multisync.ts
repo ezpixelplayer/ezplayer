@@ -14,10 +14,12 @@ const FPP_CTRL_PORT = 32320;
 const MULTISYNC_ADDR = '239.70.80.80';
 const CTRL_PKT_SYNC = 1;
 
-const SYNC_OPEN = 0;
-const SYNC_START = 1;
-const SYNC_STOP = 2;
-const SYNC_SYNC = 3;
+// FPP's own codes (src/MultiSync.h SYNC_PKT_*), which are not in flow
+// order: START is 0, OPEN is 3.
+const SYNC_START = 0;
+const SYNC_STOP = 1;
+const SYNC_SYNC = 2;
+const SYNC_OPEN = 3;
 const FILE_SEQ = 0;
 
 /** Send every frame early so remotes lock on fast, then back off. Remotes

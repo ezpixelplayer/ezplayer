@@ -24,6 +24,25 @@ function makeDeps(): { deps: FppCommandDeps; sent: EZPlayerCommand[] } {
 }
 
 describe('runFppCommand', () => {
+    it('Insert Playlist Immediate reads FPP’s arguments: name, start item, end item, if-not-running', async () => {
+        const { deps, sent } = makeDeps();
+        const res = await runFppCommand('Insert Playlist Immediate', ['Main Show', '3', '0', '0'], deps);
+        expect(res.status).toBe(200);
+        expect(res.message).toMatch(/start item not supported/);
+        // The second argument is a start item, never a repeat flag.
+        expect(sent[0]).toMatchObject({ command: 'playplaylist', loop: false });
+    });
+
+    it('honors "if not running" on Start Playlist and Insert Playlist Immediate', async () => {
+        const { deps, sent } = makeDeps();
+        deps.getPStatus = () => ({ ptype: 'EZP', status: 'Playing', reported_time: 0 });
+        expect((await runFppCommand('Start Playlist', ['Main Show', '0', '1'], deps)).status).toBe(200);
+        expect((await runFppCommand('Insert Playlist Immediate', ['Main Show', '0', '0', '1'], deps)).status).toBe(200);
+        expect(sent).toEqual([]);
+        await runFppCommand('Start Playlist', ['Main Show', '0', '0'], deps);
+        expect(sent).toHaveLength(1);
+    });
+
     it('Start Playlist resolves by title (case-insensitive) and maps repeat', async () => {
         const { deps, sent } = makeDeps();
         const res = await runFppCommand('Start Playlist', ['main show', '1', '0', '0'], deps);
