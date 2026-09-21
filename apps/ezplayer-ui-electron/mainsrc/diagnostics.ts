@@ -43,6 +43,38 @@ export type DiagEventKind =
     | 'worker-error'
     | 'renderer-error';
 
+/**
+ * Exit codes Windows hands to processes it terminates at logoff / shutdown /
+ * restart: DBG_TERMINATE_PROCESS (utility processes) and
+ * STATUS_CONTROL_C_EXIT (renderers). Electron surfaces these as
+ * reason 'killed' — the OS ending the session, not a crash.
+ */
+const WIN_SESSION_END_EXIT_CODES = new Set([0x40010004, 0xc000013a]);
+
+let sessionEnding = false;
+
+/** Call once the OS session is definitely ending (BrowserWindow 'session-end'). */
+export function noteSessionEnding(): void {
+    sessionEnding = true;
+}
+
+/**
+ * True for render/child-process-gone events that are the OS or a normal exit
+ * taking the process down rather than a fault. Windows kills the children
+ * before (or racing) 'session-end', so the exit codes are checked as well as
+ * the flag.
+ */
+export function isExpectedProcessExit(details: { reason: string; exitCode: number }): boolean {
+    if (sessionEnding) return true;
+    if (details.reason === 'clean-exit') return true;
+    return (
+        process.platform === 'win32' &&
+        details.reason === 'killed' &&
+        // exitCode arrives signed for renderers (-1073741510 === 0xC000013A)
+        WIN_SESSION_END_EXIT_CODES.has(details.exitCode >>> 0)
+    );
+}
+
 const MAX_REPORTS_PER_HOUR = 10;
 let sentTimestamps: number[] = [];
 
