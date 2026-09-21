@@ -491,6 +491,8 @@ export interface ControllerGridRow {
     serialPortCount?: number;
     /** xLights output/universe intent, reconciled against the device's `inputs`. */
     outputs?: ControllerOutputIntent[];
+    /** The controller's absolute 1-based start channel in xLights. */
+    startChannel?: number;
     /** Frame-rate cap: xLights declaration and our override (see KnownController). */
     maxFps?: number;
     fpsOverride?: number;
@@ -528,6 +530,8 @@ export interface ControllerPortIntent {
     pixels: number;
     /** Pixel protocol declared for the port, when present. */
     protocol?: string;
+    /** Absolute 1-based start channel of the port's first string. */
+    startChannel?: number;
 }
 
 /** One input universe as configured on the device (E1.31/ArtNet). */
@@ -566,6 +570,9 @@ export interface ControllerPort {
     colorOrder?: string;
     startChannel?: number;
     endChannel?: number;
+    /** Set when the port is addressed by universe (e.g. AlphaPix); its
+     *  `startChannel` is then within that universe, not a show channel. */
+    universe?: number;
 }
 
 /** Per-port outcome:
@@ -573,8 +580,10 @@ export interface ControllerPort {
  *  - `missing`    xLights expects pixels here but the controller has none → reconfig
  *  - `unexpected` the controller has pixels here but xLights assigns none → stale/extra
  *  - `count`      both present but the pixel counts differ; for a matrix, any
- *                 difference in its configuration (see the row's `notes`) */
-export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count';
+ *                 difference in its configuration (see the row's `notes`)
+ *  - `start`      counts agree but the port starts at the wrong channel, so it
+ *                 shows another part of the show */
+export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start';
 
 /** One port's intent-vs-actual reconciliation. */
 export interface PortReconcile {
@@ -594,6 +603,9 @@ export interface PortReconcile {
     missingModels?: string[];
     /** Device-reported models xLights assigns elsewhere (or nowhere). */
     extraModels?: string[];
+    /** Start channels, set when they disagree (`drift: 'start'`). */
+    intendedStart?: number;
+    actualStart?: number;
     drift: PortDriftKind;
 }
 

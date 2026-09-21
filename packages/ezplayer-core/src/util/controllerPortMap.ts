@@ -242,12 +242,14 @@ export function portIntentFromModelIntents(intents: ControllerModelIntent[]): Co
             else perModel.set(s.model, [s]);
         }
         const models = [...perModel.keys()];
+        const starts = ss.map((s) => s.startChannel).filter((c): c is number => c !== undefined);
         out.push({
             port,
             models,
             modelLabels: models.map((m) => portModelLabel(m, perModel.get(m)!)),
             pixels: ss.reduce((sum, s) => sum + (s.nodeCount ?? 0), 0),
             protocol: ss.find((s) => s.protocol)?.protocol,
+            ...(starts.length ? { startChannel: Math.min(...starts) } : {}),
         });
     }
     return out.sort((a, b) => a.port - b.port);

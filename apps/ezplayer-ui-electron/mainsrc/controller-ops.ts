@@ -308,6 +308,7 @@ function toControllerPort(p: PixelPortInfo): ControllerPort {
         colorOrder: p.colorOrder,
         startChannel: p.startChannel,
         endChannel: p.endChannel,
+        universe: p.universe,
     };
 }
 
