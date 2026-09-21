@@ -107,5 +107,6 @@ export type CloudPollOutMessage =
           type: 'cloudSettings';
           settings: CloudPlayerSettings;
       }
-    | { type: 'homeServerUrl'; url: string }
+    /** `url` undefined = no longer bound to a home server. */
+    | { type: 'homeServerUrl'; url: string | undefined }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string };

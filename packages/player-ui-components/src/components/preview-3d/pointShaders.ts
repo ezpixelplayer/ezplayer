@@ -173,7 +173,10 @@ void main() {
     // - Treat size as a world-unit diameter (matching xLights model coordinates).
     // - Convert world units to pixels based on camera + viewport.
     // - Attenuate in perspective with distance; in orthographic scale with zoom.
-    float pointSizePx = size;
+    // A string's first node draws at 2x while its model is selected (startColor is non-black
+    // only on a first node). Applied before attenuation and the max-size clamp.
+    float startBoost = (selectionState > 0.5 && dot(startColor, vec3(1.0)) > 0.0) ? 2.0 : 1.0;
+    float pointSizePx = size * startBoost;
     if (sizeAttenuation > 0.5) {
         if (isPerspectiveMatrix(projectionMatrix)) {
             // Perspective: shrink/grow with distance in view space (mvPosition.z is negative in front of camera).
