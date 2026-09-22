@@ -287,7 +287,9 @@ function buildWsUrlAt(cloudUrlIn: string, path: string, token: string, sessionId
 // -- home-server election ------------------------------------------------------
 // Retries with backoff until the first successful bind.
 
-const ELECTION_PROBE_TIMEOUT_MS = 2_000;
+const ELECTION_PROBE_TIMEOUT_MS = 5_000;
+/** A URL-less openCloudWS is ignored this soon after binding. */
+const ELECTION_REBIND_GRACE_MS = 30_000;
 const ELECTION_RETRY_BASE_MS = 10_000;
 const ELECTION_RETRY_MAX_MS = 300_000;
 /** Soft cutoff: when every candidate exceeds it, fall through to the full
@@ -318,14 +320,18 @@ async function electHomeServerOnce(): Promise<boolean> {
     if (!cloudUrl || !playerIdToken) return false;
     try {
         const candUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.CANDIDATE_SERVERS}${playerIdToken}`;
-        const res = await fetch(candUrl);
+        const res = await fetchWithTimeout(candUrl, DEFAULT_POLL_TIMEOUT_MS);
         if (!res.ok) {
             log('warn', `electHomeServer: candidateServers ${res.status}`);
+            // 404 = token not claimed yet
+            electionIssue =
+                res.status === 404 ? undefined : `The cloud could not list regional servers (HTTP ${res.status}).`;
             return false;
         }
         const body = (await res.json()) as CandidateServersResponse;
         if (!body.candidates?.length) {
-            log('info', 'electHomeServer: no candidates available');
+            log('warn', 'electHomeServer: no candidates available');
+            electionIssue = 'The cloud has no regional servers available right now.';
             return false;
         }
         const probed = await Promise.all(
@@ -333,42 +339,49 @@ async function electHomeServerOnce(): Promise<boolean> {
         );
         const reachable = probed.filter((p): p is typeof p & { rtt_ms: number } => typeof p.rtt_ms === 'number');
         if (reachable.length === 0) {
-            log('warn', 'electHomeServer: no candidates reachable');
+            log('warn', `electHomeServer: none of ${probed.length} candidates reachable`);
+            electionIssue = `None of the ${probed.length} regional server(s) could be reached from this network.`;
             return false;
         }
         const underCutoff = reachable.filter((p) => p.load_hint < ELECTION_LOAD_CUTOFF);
         const pool = underCutoff.length > 0 ? underCutoff : reachable;
         pool.sort((a, b) => a.rtt_ms - b.rtt_ms);
         const winner = pool[0]!;
-        // Announce on every election (including "kept current") so ezvc
-        // re-targets after a worker restart.
-        electedHomeServerUrl = winner.url;
-        post({ type: 'homeServerUrl', url: winner.url });
+        // Announce only after central has recorded the binding.
+        const announce = () => {
+            electedHomeServerUrl = winner.url;
+            electionIssue = undefined;
+            post({ type: 'homeServerUrl', url: winner.url });
+        };
 
         if (winner.key === body.current_key) {
             log(
                 'info',
                 `electHomeServer: keeping key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)}`,
             );
+            announce();
             return true;
         }
         const electUrl = `${cloudUrl}api/${CLOUD_API_ENDPOINTS.ELECT_HOME_SERVER}${playerIdToken}`;
-        const electRes = await fetch(electUrl, {
+        const electRes = await fetchWithTimeout(electUrl, DEFAULT_POLL_TIMEOUT_MS, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key: winner.key } satisfies ElectHomeServerRequest),
         });
         if (!electRes.ok) {
             log('warn', `electHomeServer: elect ${electRes.status}`);
+            electionIssue = `The cloud did not accept the regional server choice (HTTP ${electRes.status}).`;
             return false;
         }
         log(
             'info',
             `electHomeServer: chose key=${winner.key} rtt=${winner.rtt_ms.toFixed(0)}ms load=${winner.load_hint.toFixed(2)} (was ${body.current_key ?? 'unbound'})`,
         );
+        announce();
         return true;
     } catch (e) {
         log('warn', `electHomeServer: ${(e as Error).message}`);
+        electionIssue = `Choosing a regional server failed: ${(e as Error).message}`;
         return false;
     }
 }
@@ -382,6 +395,9 @@ let wasRegistered = false;
 /** Elected home server base URL, surfaced on cloudStatus so UIs can build the
  *  cloud control URL against the regional host. */
 let electedHomeServerUrl: string | undefined;
+/** Why no home server is bound, worded for the Cloud page. */
+let electionIssue: string | undefined;
+let electionBoundAtMs = 0;
 
 function cancelElectionRetry() {
     if (electionRetryTimer) {
@@ -395,7 +411,15 @@ function resetElectionState() {
     electionBound = false;
     electionAttempts = 0;
     wasRegistered = false;
+    electionIssue = undefined;
+    forgetHomeServer();
+}
+
+/** Clear the announced home server and notify the main process. */
+function forgetHomeServer() {
+    if (electedHomeServerUrl === undefined) return;
     electedHomeServerUrl = undefined;
+    post({ type: 'homeServerUrl', url: undefined });
 }
 
 async function runHomeServerElection(): Promise<void> {
@@ -405,6 +429,7 @@ async function runHomeServerElection(): Promise<void> {
     try {
         if (await electHomeServerOnce()) {
             electionBound = true;
+            electionBoundAtMs = Date.now();
             electionAttempts = 0;
         } else {
             const delay = Math.min(ELECTION_RETRY_BASE_MS * 2 ** electionAttempts, ELECTION_RETRY_MAX_MS);
@@ -421,6 +446,9 @@ async function runHomeServerElection(): Promise<void> {
 }
 
 // -- registration heartbeat ----------------------------------------------------
+
+/** Re-run the check-in after it bound a home server. */
+let repollAfterBind = false;
 
 async function pollRegistration() {
     if (regInFlight || !canRun()) return;
@@ -458,21 +486,30 @@ async function pollRegistration() {
         }
         const reply = (await res.json()) as PlayerCheckinResponse;
         const nowRegistered = !!reply.registered;
-        if (nowRegistered && !wasRegistered) {
-            // Just claimed (or checkin recovered) — bind a home server now
-            // instead of waiting out the retry backoff. No-op once bound.
-            void runHomeServerElection();
-        }
+        const justRegistered = nowRegistered && !wasRegistered;
         wasRegistered = nowRegistered;
-        post({
-            type: 'cloudStatus',
-            status: {
-                playerIdIsRegistered: nowRegistered,
-                lastCheckedAt: Date.now(),
-                lastError: undefined,
-                homeServerUrl: electedHomeServerUrl,
-            },
-        });
+        const postStatus = () =>
+            post({
+                type: 'cloudStatus',
+                status: {
+                    playerIdIsRegistered: nowRegistered,
+                    lastCheckedAt: Date.now(),
+                    lastError: undefined,
+                    homeServerUrl: electedHomeServerUrl,
+                    homeServerIssue: nowRegistered && !electedHomeServerUrl ? electionIssue : undefined,
+                },
+            });
+        postStatus();
+        if (justRegistered && !electionBound) {
+            // Just claimed (or checkin recovered): bind a home server, then re-poll so the
+            // bridge commands reflect the binding.
+            await runHomeServerElection();
+            if (electionBound) {
+                postStatus();
+                repollAfterBind = true;
+                return;
+            }
+        }
         if (reply.commands && reply.commands.length > 0) {
             // Synthesize the bridge WS URL on our side from the cloud URL we
             // just polled — `cloudUrl` is the authoritative answer for "where
@@ -494,6 +531,22 @@ async function pollRegistration() {
                     : cmd,
             );
             post({ type: 'outOfBandCommands', commands });
+
+            // A URL-less openCloudWS while bound: central no longer routes to our home server. Re-elect.
+            const routedHome = reply.commands.some((c) => c.type === 'openCloudWS' && !!c.wsUrl);
+            const sentBridge = reply.commands.some((c) => c.type === 'openCloudWS');
+            if (
+                sentBridge &&
+                !routedHome &&
+                electionBound &&
+                Date.now() - electionBoundAtMs > ELECTION_REBIND_GRACE_MS
+            ) {
+                log('warn', 'checkin: cloud no longer routes to our home server; re-electing');
+                electionBound = false;
+                electionAttempts = 0;
+                forgetHomeServer();
+                void runHomeServerElection();
+            }
         }
     } catch (e) {
         const err = e as Error;
@@ -509,6 +562,10 @@ async function pollRegistration() {
         });
     } finally {
         regInFlight = false;
+        if (repollAfterBind) {
+            repollAfterBind = false;
+            void pollRegistration();
+        }
     }
 }
 
@@ -1064,7 +1121,9 @@ function setRightsScan(patch: Partial<CloudRightsScanInfo>) {
 }
 
 /** Identifier kinds for one file. ffmpeg failure degrades to CRC + tags. */
-async function identifyAudioFile(file: string): Promise<{ identifier: Record<string, string>; title?: string; artist?: string }> {
+async function identifyAudioFile(
+    file: string,
+): Promise<{ identifier: Record<string, string>; title?: string; artist?: string }> {
     const buf = await fsp.readFile(file);
     const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     const identifier: Record<string, string> = { crc: crc32(bytes) };
@@ -1151,7 +1210,11 @@ async function scanMediaRights(folder: string | undefined, ffmpeg: string | unde
             const res = await fetchWithTimeout(
                 `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_SUBMIT_MUSIC_RIGHTS}${playerIdToken}`,
                 DEFAULT_POLL_TIMEOUT_MS,
-                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submissions }) },
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ submissions }),
+                },
             );
             if (!res.ok) throw new Error(`submit HTTP ${res.status}`);
             const body = (await res.json()) as { added?: number; unmet?: number };
@@ -1162,7 +1225,10 @@ async function scanMediaRights(folder: string | undefined, ffmpeg: string | unde
             await saveRightsCache(cache);
         }
         setRightsScan({ status: 'done', added, unmet, lastRunAt: Date.now() });
-        log('info', `rights scan: submitted ${toSubmit.length} files, ${added} new identifiers, ${unmet ?? '?'} sequences still unmet`);
+        log(
+            'info',
+            `rights scan: submitted ${toSubmit.length} files, ${added} new identifiers, ${unmet ?? '?'} sequences still unmet`,
+        );
         // Newly proven music unblocks downloads on the next manifest pass.
         if (toSubmit.length > 0) void pollManifest();
     } catch (e) {
@@ -1948,7 +2014,9 @@ async function uploadLayout(): Promise<void> {
 parentPort?.on('message', (msg: CloudPollInMessage) => {
     switch (msg.type) {
         case 'setConfig': {
-            const nextUrl = msg.cloudUrl ?? '';
+            // Every request is built as `${cloudUrl}api/...`.
+            const rawUrl = (msg.cloudUrl ?? '').trim();
+            const nextUrl = rawUrl && !rawUrl.endsWith('/') ? `${rawUrl}/` : rawUrl;
             const nextToken = msg.playerIdToken ?? '';
             const nextFolder = msg.showFolder ?? '';
             const nextKey = sessionKey(nextUrl, nextToken, nextFolder);

@@ -168,6 +168,18 @@ let lastPlaylistHash: string | null = null;
 let lastScheduleHash: string | null = null;
 let lastCatalogHash: string | null = null;
 let lastPlayingHash: string | null = null;
+
+// An unchanged feed is sent again once it is this old (the cloud holds show state in memory only).
+/** Now-playing doubles as the player's heartbeat to the box. */
+const PLAYING_RESEND_MS = 15_000;
+/** Enabled / playlists / schedule / catalog. */
+const FEED_RESEND_MS = 4 * 60_000;
+const lastSentAt: Record<string, number> = Object.create(null);
+
+/** True when `key` was sent with this same content recently enough to skip. */
+function sentRecently(key: string, unchanged: boolean, resendMs: number): boolean {
+    return unchanged && Date.now() - (lastSentAt[key] ?? 0) < resendMs;
+}
 /** Last `centralEpoch` we observed in a vc/next response. Central regenerates
  *  it on every process start; when it flips here, central lost its in-RAM
  *  viewer-control state and we need to re-push our hash-suppressed sync calls. */
@@ -223,6 +235,7 @@ function handleSetConfig(newConfig: EzvcConfig) {
     lastScheduleHash = null;
     lastCatalogHash = null;
     lastPlayingHash = null;
+    for (const k of Object.keys(lastSentAt)) delete lastSentAt[k];
     try {
         ensureClient(); // validate eagerly so bad config surfaces now
         send({ type: 'configStatus', ok: true });
@@ -235,9 +248,10 @@ async function handleUpdatePlayback(update: VcPlayingUpdate) {
     const c = ensureClient();
     await runGuarded('updatePlayback', async () => {
         const hash = JSON.stringify(update);
-        if (hash === lastPlayingHash) return;
+        if (sentRecently('playing', hash === lastPlayingHash, PLAYING_RESEND_MS)) return;
         await c.updatePlaying(update);
         lastPlayingHash = hash;
+        lastSentAt['playing'] = Date.now();
         send({ type: 'playbackUpdated', nowPlaying: update.nowPlaying, nextScheduled: update.nextScheduled });
     });
 }
@@ -245,9 +259,10 @@ async function handleUpdatePlayback(update: VcPlayingUpdate) {
 async function handleSetControlEnabled(enabled: boolean) {
     const c = ensureClient();
     await runGuarded('setControlEnabled', async () => {
-        if (lastEnabled === enabled) return;
+        if (sentRecently('enabled', lastEnabled === enabled, FEED_RESEND_MS)) return;
         await c.setEnabled(enabled);
         lastEnabled = enabled;
+        lastSentAt['enabled'] = Date.now();
         send({ type: 'controlUpdated', enabled });
     });
 }
@@ -256,9 +271,10 @@ async function handleSyncPlaylists(songs: VcSong[]) {
     const c = ensureClient();
     await runGuarded('syncPlaylists', async () => {
         const hash = JSON.stringify(songs);
-        if (hash === lastPlaylistHash) return;
+        if (sentRecently('playlists', hash === lastPlaylistHash, FEED_RESEND_MS)) return;
         await c.syncPlaylists(songs);
         lastPlaylistHash = hash;
+        lastSentAt['playlists'] = Date.now();
         send({ type: 'playlistsSynced', count: songs.length });
     });
 }
@@ -267,9 +283,10 @@ async function handleSyncSchedule(schedule: VcScheduleEntry[], requestWindows: V
     const c = ensureClient();
     await runGuarded('syncSchedule', async () => {
         const hash = JSON.stringify([schedule, requestWindows]);
-        if (hash === lastScheduleHash) return;
+        if (sentRecently('schedule', hash === lastScheduleHash, FEED_RESEND_MS)) return;
         await c.syncSchedule(schedule, requestWindows);
         lastScheduleHash = hash;
+        lastSentAt['schedule'] = Date.now();
         send({
             type: 'scheduleSynced',
             scheduleCount: schedule.length,
@@ -282,9 +299,10 @@ async function handleSyncCatalog(catalog: VcSong[]) {
     const c = ensureClient();
     await runGuarded('syncCatalog', async () => {
         const hash = JSON.stringify(catalog);
-        if (hash === lastCatalogHash) return;
+        if (sentRecently('catalog', hash === lastCatalogHash, FEED_RESEND_MS)) return;
         await c.syncCatalog(catalog);
         lastCatalogHash = hash;
+        lastSentAt['catalog'] = Date.now();
         send({ type: 'catalogSynced', count: catalog.length });
     });
 }

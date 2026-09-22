@@ -281,7 +281,8 @@ const handlers: PlayWorkerRPCAPI = {
 function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
     if (!item?.seqId) return '<Unknown>';
     const nps = (runState ?? foregroundPlayerRunState).sequencesById.get(item.seqId);
-    return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+    const parts = [nps?.work?.title, nps?.work?.artist, nps?.sequence?.vendor].filter((p): p is string => !!p);
+    return parts.length ? parts.join(' - ') : '<Unknown>';
 }
 
 // TODO: Should this move to the run state?
@@ -483,6 +484,10 @@ let ezvcConfigInitialized = false;
 let lastEzvcKey: string | undefined = undefined;
 let lastEzvcCheck: number = Date.now();
 let lastEzvcPlayingKey: string | undefined = undefined;
+/** When now-playing was last offered to the worker; re-offered on a timer because the
+ *  worker may drop or fail a push. */
+let lastEzvcPlayingOfferedAt = 0;
+const EZVC_PLAYING_REOFFER_MS = 5_000;
 
 /** ScheduleDays → JS day numbers (0=Sun .. 6=Sat) for the request-window
  *  feed. Best-effort; the calendar UI interprets. */
@@ -507,6 +512,8 @@ function configureEzvc() {
     if (ezvcConfigInitialized && key === lastEzvcKey) return;
     ezvcConfigInitialized = true;
     lastEzvcKey = key;
+    // New target: reset our now-playing dedup along with the worker's.
+    lastEzvcPlayingKey = undefined;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
         if (!next.songId) return;
@@ -582,8 +589,10 @@ function sendEzvcUpdate() {
     // Push on lineup-identity change, not per-tick timestamp drift; the page
     // interpolates between pushes.
     const lineupKey = `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
-    if (lineupKey !== lastEzvcPlayingKey) {
+    const offerAtMs = Date.now();
+    if (lineupKey !== lastEzvcPlayingKey || offerAtMs - lastEzvcPlayingOfferedAt >= EZVC_PLAYING_REOFFER_MS) {
         lastEzvcPlayingKey = lineupKey;
+        lastEzvcPlayingOfferedAt = offerAtMs;
         setEzvcPlaying({
             nowPlaying: now_playing?.sequence_id ?? undefined,
             nextScheduled: upcomingItems[0]?.sequence_id ?? undefined,
