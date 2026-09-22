@@ -862,6 +862,17 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <Field label="Cloud Version" value={cloudStatus.cloudVersion ?? '(unknown)'} />
                     <Field label="Last Checked" value={formatTimestamp(cloudStatus.lastCheckedAt)} />
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
+                    {isRegistered && (
+                        <Field
+                            label="Regional Server"
+                            value={
+                                cloudStatus.homeServerUrl ??
+                                (cloudStatus.homeServerIssue
+                                    ? `None, using the central server. ${cloudStatus.homeServerIssue}`
+                                    : 'Choosing…')
+                            }
+                        />
+                    )}
                 </Card>
 
                 {/* Remote control link + enable switch. The switch is hidden where

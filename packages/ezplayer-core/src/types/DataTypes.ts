@@ -808,6 +808,8 @@ export interface CloudStatus {
      *  session. UIs building the cloud control URL should prefer this and
      *  fall back to the configured cloud service URL. */
     homeServerUrl?: string;
+    /** Why no home server is bound while registered, worded for the user. */
+    homeServerIssue?: string;
 }
 
 /// Auto-update (software update) types — shared by Electron IPC, LAN WS, and cloud.
