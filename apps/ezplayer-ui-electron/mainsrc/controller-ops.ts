@@ -877,7 +877,7 @@ async function runUpload(
                 keepChannelNumbers: o.keepChannelNumbers,
             }));
             capCheck({ inputUniverses: cfg });
-            const r = await probe.driver.setInputUniverses(cfg);
+            const r = await probe.driver.setInputUniverses(cfg, { boardMode: caps?.v4BoardMode });
             if (!r.success)
                 throw new Error(`input upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
@@ -953,6 +953,8 @@ async function runUpload(
             capCheck({ pixelPorts: derived.ports, serialPorts, panelMatrices, virtualMatrices });
             const setOpts: SetOutputsOptions = {
                 inputMode: rec.protocol?.toUpperCase(),
+                // Falcon V4/V5: the layout's variant fixes the board mode.
+                boardMode: caps?.v4BoardMode,
                 outputs: outputs.length
                     ? outputs.map((o) => ({
                           universe: o.universe ?? 0,
