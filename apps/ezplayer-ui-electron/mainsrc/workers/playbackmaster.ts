@@ -1798,7 +1798,15 @@ function xlControllerOutputs(c: XlControllerInfo): ControllerOutputIntent[] | un
         return outs;
     }
     if (!c.maxChannels) return undefined;
-    return [{ type: proto || 'ddp', startChannel: c.startChannel, channels: c.maxChannels }];
+    const type = proto || 'ddp';
+    return [
+        {
+            type,
+            startChannel: c.startChannel,
+            channels: c.maxChannels,
+            ...(type === 'ddp' ? { keepChannelNumbers: c.keepChannelNumbers } : {}),
+        },
+    ];
 }
 
 /** One model's rich upload intent. Absent fields stay absent — set-vs-unset

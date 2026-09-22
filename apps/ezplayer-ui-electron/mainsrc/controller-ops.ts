@@ -874,6 +874,7 @@ async function runUpload(
                 startChannel: o.startChannel,
                 channels: o.channels,
                 protocol: o.type,
+                keepChannelNumbers: o.keepChannelNumbers,
             }));
             capCheck({ inputUniverses: cfg });
             const r = await probe.driver.setInputUniverses(cfg);

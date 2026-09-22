@@ -419,6 +419,8 @@ export interface ControllerOutputIntent {
     /** Absolute 1-based start channel of this output. */
     startChannel: number;
     channels: number;
+    /** DDP: xLights' Keep Channel Numbers option (data offsets are absolute). */
+    keepChannelNumbers?: boolean;
 }
 
 /**
