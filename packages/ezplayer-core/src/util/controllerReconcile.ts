@@ -129,6 +129,7 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             pixelPortCount: k.pixelPortCount ?? device?.pixelPortCount,
             serialPortCount: k.serialPortCount ?? device?.serialPortCount,
             outputs: k.outputs,
+            startChannel: k.startChannel,
             maxFps: k.maxFps,
             fpsOverride: k.fpsOverride,
         });
@@ -154,15 +155,27 @@ export function reconcileControllers(known: KnownController[], devices: Discover
  * Reconcile per-port intent against the device's actual config, over the union
  * of both port sets — the non-`ok` rows are the "reconfiguration needed" list.
  * Model names compare as sets (case-insensitive match, case-preserving output)
- * and inform display only; pixel counts decide the drift kind.
+ * and inform display only; pixel counts, then start channels, decide the kind.
+ *
+ * Devices number channels either absolutely (as xLights does) or relative to
+ * the controller's own start, so a port's start is right when it is at the
+ * intended channel in either frame; `controllerStart` (absolute, 1-based)
+ * gives the relative frame. Without it only the absolute frame is accepted.
  */
 /** Canonical form for model-set comparison: multi-string models upload as
  *  "<model>-str-<n>" (xLights naming), so strip that suffix before matching
  *  against the intent's bare model names. */
 const modelCompareKey = (name: string): string => name.toLowerCase().replace(/-str-\d+$/, '');
 
-export function reconcilePorts(intent: ControllerPortIntent[], actual: ControllerPort[]): PortReconcile[] {
+export function reconcilePorts(
+    intent: ControllerPortIntent[],
+    actual: ControllerPort[],
+    controllerStart?: number,
+): PortReconcile[] {
     const byPort = new Map<number, PortReconcile>();
+    const intendedStarts = new Map(intent.map((i) => [i.port, i.startChannel]));
+    const startOk = (intended: number, actualStart: number): boolean =>
+        actualStart === intended || (controllerStart !== undefined && actualStart === intended - (controllerStart - 1));
 
     for (const i of intent) {
         if (!i.models.length && !i.pixels) continue; // nothing intended here
@@ -191,10 +204,20 @@ export function reconcilePorts(intent: ControllerPortIntent[], actual: Controlle
                 row.extraModels = actualModels.filter((m) => !intendedSet.has(modelCompareKey(m)));
             }
             row.actualPixels = a.pixels;
+            const intendedStart = intendedStarts.get(a.port);
             if (!active) row.drift = 'missing';
             else if (row.intendedPixels !== undefined && a.pixels !== undefined && row.intendedPixels !== a.pixels)
                 row.drift = 'count';
-            else row.drift = 'ok';
+            else if (
+                intendedStart !== undefined &&
+                a.startChannel !== undefined &&
+                a.universe === undefined &&
+                !startOk(intendedStart, a.startChannel)
+            ) {
+                row.drift = 'start';
+                row.intendedStart = intendedStart;
+                row.actualStart = a.startChannel;
+            } else row.drift = 'ok';
         } else if (active) {
             byPort.set(a.port, {
                 port: a.port,

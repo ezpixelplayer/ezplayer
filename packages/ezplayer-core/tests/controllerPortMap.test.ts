@@ -31,6 +31,20 @@ describe('portIntentFromModelIntents', () => {
         expect(out[0].protocol).toBe('ws2811');
     });
 
+    it("gives each port its first string's absolute start channel", () => {
+        const out = portIntentFromModelIntents([
+            mi({
+                name: 'Mega',
+                controllerPort: 2,
+                startChannel: 1,
+                nodeCount: 350,
+                stringStartChannels: [1, 301, 751],
+                stringNodeCounts: [100, 150, 100],
+            }),
+        ]);
+        expect(out.map((p) => p.startChannel)).toEqual([1, 301, 751]);
+    });
+
     it('lists every model landing on a port, in chain order, with the port pixel sum', () => {
         const out = portIntentFromModelIntents([
             mi({
@@ -92,7 +106,9 @@ describe('portIntentFromModelIntents', () => {
         const out = portIntentFromModelIntents([
             mi({ name: 'Star', controllerPort: 5, startChannel: 1, nodeCount: 25, smartRemote: 2 }),
         ]);
-        expect(out).toEqual([{ port: 5, models: ['Star'], modelLabels: ['Star [B]'], pixels: 25, protocol: 'ws2811' }]);
+        expect(out).toEqual([
+            { port: 5, models: ['Star'], modelLabels: ['Star [B]'], pixels: 25, protocol: 'ws2811', startChannel: 1 },
+        ]);
     });
 
     it('agrees with expandIntentStrings/getPortSR on placement (same cascade rules)', () => {
