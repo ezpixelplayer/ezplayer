@@ -10,7 +10,7 @@
     },
     "private": true,
     "license": "AGPL-3.0",
-    "version": "0.6.8",
+    "version": "0.6.9",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -163,7 +163,7 @@
     },
     "dependencies": {
         "@ezplayer/epp": "workspace:*",
-        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.23.tgz",
+        "@ezplayer/epp-controllers": "file:..\\..\\libs\\ezplayer-epp-controllers-0.0.31.tgz",
         "@ezplayer/ezplayer-client": "workspace:*",
         "@ezplayer/ezplayer-core": "workspace:*",
         "@ezplayer/icmp-ping": "workspace:*",
@@ -181,7 +181,7 @@
         "@mui/x-date-pickers": "catalog:",
         "@reduxjs/toolkit": "catalog:",
         "@types/ws": "catalog:",
-        "audiofile": "file:..\\..\\libs\\audiofile-0.0.3.tgz",
+        "audiofile": "file:..\\..\\libs\\audiofile-0.0.5.tgz",
         "axios": "catalog:",
         "bindings": "^1.5.0",
         "crc-32": "^1.2.2",

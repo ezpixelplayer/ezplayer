@@ -1,0 +1,14 @@
+{
+    "playlist": {
+        "blankAtEnd": 0,
+        "currentEntry": null,
+        "currentState": "idle",
+        "desc": "",
+        "loop": 0,
+        "loopCount": 0,
+        "name": "",
+        "random": 0,
+        "repeat": 0,
+        "size": 0
+    }
+}

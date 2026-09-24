@@ -33,11 +33,43 @@ import * as crypto from 'crypto';
 import type { IncomingMessage } from 'http';
 import { Readable } from 'stream';
 import { send } from '@koa/send';
-import { FSEQReaderAsync } from '@ezplayer/epp';
+import { FSEQReaderAsync, type FSEQHeader } from '@ezplayer/epp';
 import type { SequenceRecord } from '@ezplayer/ezplayer-core';
 import { batchImportSequences } from '../data/batch-sequence-import.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from '../data/song-file-autodetect.js';
 import { fileBaseName } from './pathnames.js';
+
+const FSEQ_COMPRESSION_NAMES = ['none', 'zstd', 'zlib'];
+
+/**
+ * GET /api/sequence/{name}/meta, as FPP's `fsequtils -j` prints it: identity,
+ * timing and size, the variable headers, and (v2) sparse ranges and
+ * compression. MaxChannel is the larger of the channel count and the end of
+ * the highest sparse range.
+ */
+export function fseqMeta(name: string, h: FSEQHeader): Record<string, unknown> {
+    const id = (BigInt(h.uuid2 >>> 0) << 32n) | BigInt(h.uuid1 >>> 0);
+    // The reader fills in a whole-file range when there are none; only the
+    // header's own sparse ranges count.
+    const ranges = h.nsparseranges > 0 ? (h.chranges ?? []).slice(0, h.nsparseranges) : [];
+    const maxChannel = ranges.reduce((m, r) => Math.max(m, r.startch + r.chcount), h.channels);
+    const meta: Record<string, unknown> = {
+        Name: name,
+        Version: `${h.majver}.${h.minver}`,
+        ID: id.toString(),
+        StepTime: h.msperframe,
+        NumFrames: h.frames,
+        MaxChannel: maxChannel,
+        ChannelCount: h.channels,
+    };
+    if (Object.keys(h.headers ?? {}).length > 0) meta.variableHeaders = { ...h.headers };
+    if (h.majver >= 2) {
+        if (ranges.length > 0) meta.Ranges = ranges.map((r) => ({ Start: r.startch, Length: r.chcount }));
+        meta.CompressionType = h.compression;
+        meta.CompressionTypeString = FSEQ_COMPRESSION_NAMES[h.compression] ?? 'unknown';
+    }
+    return meta;
+}
 
 /** Loose view of caught errors: fs/upload failures carry optional status/code/message. */
 type ErrLike = { status?: number; code?: string; message?: string } | undefined;
@@ -552,7 +584,8 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
             files.push({
                 name,
                 mtime: fppMtime(st.mtime),
-                sizeBytes: st.size,
+                // FPP reports the size as a string.
+                sizeBytes: String(st.size),
                 sizeHuman: fppSizeHuman(st.size),
                 playtimeSeconds: fppPlaytime(await playtimeSecondsFor(showFolder, name)),
             });
@@ -566,6 +599,59 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const music = await listDir(showFolder, AUDIO_EXTS);
         const videos = await listDir(showFolder, VIDEO_EXTS);
         ctx.body = [...music, ...videos].sort((a, b) => a.localeCompare(b));
+    });
+
+    /** The media file `name` refers to, or undefined with the 404 already sent. */
+    async function mediaTarget(ctx: Koa.Context, showFolder: string): Promise<string | undefined> {
+        const target = requireTarget(ctx, showFolder, false);
+        if (!target) return undefined;
+        try {
+            const st = await fsp.stat(target);
+            if (st.isFile()) return target;
+        } catch {
+            /* falls through to the 404 below */
+        }
+        ctx.status = 404;
+        ctx.type = 'text/plain';
+        ctx.body = `Not found: ${String(ctx.params.name ?? '')}`;
+        return undefined;
+    }
+
+    /**
+     * GET /api/media/{name}/meta: the part of FPP's ffprobe dump we can answer
+     * without decoding media — the file, its size, and its duration when a
+     * sequence record knows it. `streams` is left out rather than faked.
+     */
+    router.get('/api/media/:name/meta', async (ctx) => {
+        const showFolder = requireShowFolder(ctx);
+        if (!showFolder) return;
+        const target = await mediaTarget(ctx, showFolder);
+        if (!target) return;
+        const st = await fsp.stat(target);
+        const seconds = await playtimeSecondsFor(showFolder, path.basename(target));
+        const format: Record<string, unknown> = {
+            filename: target,
+            size: String(st.size),
+        };
+        if (seconds !== undefined) format.duration = seconds.toFixed(6);
+        ctx.body = { format };
+    });
+
+    /** GET /api/media/{name}/duration: `{"<name>": {"duration": seconds}}`. */
+    router.get('/api/media/:name/duration', async (ctx) => {
+        const showFolder = requireShowFolder(ctx);
+        if (!showFolder) return;
+        const target = await mediaTarget(ctx, showFolder);
+        if (!target) return;
+        const name = path.basename(target);
+        const seconds = await playtimeSecondsFor(showFolder, name);
+        if (seconds === undefined) {
+            ctx.status = 404;
+            ctx.type = 'text/plain';
+            ctx.body = `No duration known for ${name} — it is not a registered sequence's audio`;
+            return;
+        }
+        ctx.body = { [name]: { duration: seconds } };
     });
 
     router.get('/api/sequence', async (ctx) => {
@@ -605,6 +691,28 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         await serveDownload(ctx, target, ctx.query.play !== undefined || ctx.query.attach === '0');
     });
 
+    router.get('/api/sequence/:name/meta', async (ctx) => {
+        const showFolder = requireShowFolder(ctx);
+        if (!showFolder) return;
+        ctx.params.name = /\.fseq$/i.test(String(ctx.params.name)) ? ctx.params.name : `${ctx.params.name}.fseq`;
+        const target = requireTarget(ctx, showFolder, false);
+        if (!target) return;
+        const rdr = new FSEQReaderAsync(target);
+        try {
+            await rdr.open();
+        } catch {
+            ctx.status = 404;
+            ctx.type = 'text/plain';
+            ctx.body = `Not found: ${path.basename(target)}`;
+            return;
+        }
+        try {
+            ctx.body = fseqMeta(path.basename(target), rdr.header!);
+        } finally {
+            await rdr.close();
+        }
+    });
+
     router.get('/api/sequence/:name', async (ctx) => {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
@@ -628,8 +736,8 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
                 status: 'OK',
                 file: path.basename(target),
                 dir: String(ctx.params.dirName ?? 'sequences').toLowerCase(),
-                written,
-                size: written,
+                written: String(written),
+                size: String(written),
                 offset: 0,
             };
         } catch (err) {
@@ -704,7 +812,11 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         if (!target) return;
         try {
             await fsp.unlink(target);
-            ctx.body = { status: 'OK', file: path.basename(target) };
+            ctx.body = {
+                status: 'OK',
+                file: path.basename(target),
+                dir: String(ctx.params.dirName ?? '').toLowerCase(),
+            };
         } catch (err) {
             const e = err as ErrLike;
             ctx.status = e?.code === 'ENOENT' ? 404 : 500;

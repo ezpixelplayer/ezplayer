@@ -1,0 +1,41 @@
+# A throwaway FPP for API-compatibility and upload tests. Not for shows:
+# no sound card, no pixel hardware, and the media volume is discarded by
+# `docker compose down -v`.
+#
+#   FPP_TAG=9.5 FPP_HTTP_PORT=8095 docker compose -p fpp95 up -d
+#
+# FPP_TAG picks the release (Docker Hub falconchristmas/fpp tags: 5.5, 6.3,
+# 7.5, 8.5, 9.5, 10.1.2, latest); FPP_HTTP_PORT is the host port for its web
+# UI and API, FPP_SYNC_PORT the host port for MultiSync UDP. Give each
+# version its own project name (-p) to run several.
+services:
+    fpp:
+        image: falconchristmas/fpp:${FPP_TAG:-latest}
+        hostname: fpp-test-${FPP_TAG:-latest}
+        # Comes back with Docker, e.g. after WSL restarts its VM.
+        restart: unless-stopped
+        # Some releases (8.5, 9.5) leave Apache's pid file behind after an
+        # unclean stop and then refuse to start, so clear it before FPP's own
+        # startup script runs.
+        entrypoint:
+            - /bin/sh
+            - -c
+            - rm -f /var/run/apache2/*.pid /run/apache2/*.pid; exec /opt/fpp/Docker/runDocker.sh
+        environment:
+            - TZ=UTC
+        cap_add:
+            - SYS_NICE
+        ulimits:
+            nofile:
+                soft: 1024
+                hard: 1024
+        volumes:
+            - media:/home/fpp/media
+        ports:
+            - '${FPP_HTTP_PORT:-8090}:80/tcp'
+            # MultiSync: a master on the host sends here, unicast — a
+            # container never sees the multicast group. Under WSL2 send to the
+            # WSL VM's IP (`wsl hostname -I`): localhost forwards only TCP.
+            - '${FPP_SYNC_PORT:-32320}:32320/udp'
+volumes:
+    media:

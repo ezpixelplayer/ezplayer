@@ -12,6 +12,9 @@ export interface ModelPointMetadata {
     stringIndex?: number;
     /** True on the first node of each physical string (where its wire attaches). */
     stringStart?: boolean;
+    /** Position in wiring order (xLights `physicalNum`); differs from nodeIndex when
+     *  the model is wired right-to-left / top-down etc. */
+    wireOrder?: number;
     key?: string;
     itemIndex?: number;
     /** Baked channel-to-RGB mixer derived from xllayoutcalcs `channelRoles`.

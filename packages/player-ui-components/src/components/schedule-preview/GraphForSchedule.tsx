@@ -9,6 +9,8 @@ interface ScatterChartByScheduleProps {
     onItemClick?: (scheduleId?: string, playlistId?: string) => void;
     selectedStartTime?: number; // Add selected start time from settings
     selectedEndTime?: number; // Add selected end time from settings
+    /** When false, hides grey scheduled-time comparison strips. Default true. */
+    showScheduledMarkers?: boolean;
 }
 
 const GraphForSchedule: React.FC<ScatterChartByScheduleProps> = ({
@@ -17,6 +19,7 @@ const GraphForSchedule: React.FC<ScatterChartByScheduleProps> = ({
     onItemClick,
     selectedStartTime,
     selectedEndTime,
+    showScheduledMarkers = true,
 }) => {
     // Combine logs from both background and main schedules for the timeline.
     // Memoized so a parent re-render does not hand the timeline a new array
@@ -36,6 +39,7 @@ const GraphForSchedule: React.FC<ScatterChartByScheduleProps> = ({
             simulationEndTime={data.endTime}
             minScrollTime={selectedStartTime}
             maxScrollTime={selectedEndTime}
+            showScheduledMarkers={showScheduledMarkers}
         />
     );
 };

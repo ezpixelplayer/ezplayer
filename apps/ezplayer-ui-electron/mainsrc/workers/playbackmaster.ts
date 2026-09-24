@@ -283,7 +283,8 @@ const handlers: PlayWorkerRPCAPI = {
 function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
     if (!item?.seqId) return '<Unknown>';
     const nps = (runState ?? foregroundPlayerRunState).sequencesById.get(item.seqId);
-    return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+    const parts = [nps?.work?.title, nps?.work?.artist, nps?.sequence?.vendor].filter((p): p is string => !!p);
+    return parts.length ? parts.join(' - ') : '<Unknown>';
 }
 
 // TODO: Should this move to the run state?
@@ -353,12 +354,14 @@ function sendPlayerStateUpdate() {
             // (within the readahead window) is upcoming, not playing.
             if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
                 playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
-                playStatus.status = isPaused ? 'Paused' : 'Playing';
+                playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
             } else {
                 playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
             }
         }
     }
+    // Over once nothing is playing: a later schedule must not inherit it.
+    if (!playStatus.now_playing) stoppingGracefully = false;
     playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
     playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
@@ -483,6 +486,10 @@ let ezvcConfigInitialized = false;
 let lastEzvcKey: string | undefined = undefined;
 let lastEzvcCheck: number = Date.now();
 let lastEzvcPlayingKey: string | undefined = undefined;
+/** When now-playing was last offered to the worker; re-offered on a timer because the
+ *  worker may drop or fail a push. */
+let lastEzvcPlayingOfferedAt = 0;
+const EZVC_PLAYING_REOFFER_MS = 5_000;
 
 /** ScheduleDays → JS day numbers (0=Sun .. 6=Sat) for the request-window
  *  feed. Best-effort; the calendar UI interprets. */
@@ -507,6 +514,8 @@ function configureEzvc() {
     if (ezvcConfigInitialized && key === lastEzvcKey) return;
     ezvcConfigInitialized = true;
     lastEzvcKey = key;
+    // New target: reset our now-playing dedup along with the worker's.
+    lastEzvcPlayingKey = undefined;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
         if (!next.songId) return;
@@ -582,8 +591,10 @@ function sendEzvcUpdate() {
     // Push on lineup-identity change, not per-tick timestamp drift; the page
     // interpolates between pushes.
     const lineupKey = `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
-    if (lineupKey !== lastEzvcPlayingKey) {
+    const offerAtMs = Date.now();
+    if (lineupKey !== lastEzvcPlayingKey || offerAtMs - lastEzvcPlayingOfferedAt >= EZVC_PLAYING_REOFFER_MS) {
         lastEzvcPlayingKey = lineupKey;
+        lastEzvcPlayingOfferedAt = offerAtMs;
         setEzvcPlaying({
             nowPlaying: now_playing?.sequence_id ?? undefined,
             nextScheduled: upcomingItems[0]?.sequence_id ?? undefined,
@@ -713,6 +724,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
+                stoppingGracefully = false;
                 // pendingSchedule (not yet installed by the loop) is newer than curSequences
                 const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
                 const seq = liveSequences?.find((s) => s.id === cmd.songId);
@@ -804,6 +816,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playplaylist':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
+                stoppingGracefully = false;
                 const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
                 const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
                 if (!pl) {
@@ -836,12 +849,14 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         case 'stopgraceful': {
             emitInfo('Stop graceful command received');
+            stoppingGracefully = true;
             foregroundPlayerRunState.stopGracefully(foregroundPlayerRunState.currentTime);
             sendPlayerStateUpdate();
             break;
         }
         case 'stopnow': {
             emitInfo('Stop now command received');
+            stoppingGracefully = false;
             foregroundPlayerRunState.stopImmediately(foregroundPlayerRunState.currentTime);
             audioPlayerRunTime = foregroundPlayerRunState.currentTime;
             ++curAudioSyncNum;
@@ -1220,6 +1235,9 @@ const _pollTimes = setInterval(async () => {
 // The actual variables here
 let showFolder: string | undefined = undefined;
 let isPaused = false;
+/** A graceful stop is in progress: still playing, but ending at the next
+ *  convenient point. Reported as "Stopping". */
+let stoppingGracefully = false;
 let volume = 100;
 let muted = false;
 let curAudioSyncNum = 1;
@@ -1794,7 +1812,15 @@ function xlControllerOutputs(c: XlControllerInfo): ControllerOutputIntent[] | un
         return outs;
     }
     if (!c.maxChannels) return undefined;
-    return [{ type: proto || 'ddp', startChannel: c.startChannel, channels: c.maxChannels }];
+    const type = proto || 'ddp';
+    return [
+        {
+            type,
+            startChannel: c.startChannel,
+            channels: c.maxChannels,
+            ...(type === 'ddp' ? { keepChannelNumbers: c.keepChannelNumbers } : {}),
+        },
+    ];
 }
 
 /** One model's rich upload intent. Absent fields stay absent — set-vs-unset

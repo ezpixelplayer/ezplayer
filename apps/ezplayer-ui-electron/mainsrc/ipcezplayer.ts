@@ -50,6 +50,7 @@ import {
     onLayoutInstalled,
     onVcResync,
     pollCloudNow,
+    scanMediaRightsNow,
     setCloudRemoteControlEnabled,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
@@ -57,7 +58,7 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio } from './data/derived-audio.js';
+import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio, resolveFfmpegBinary } from './data/derived-audio.js';
 
 import type {
     CloudCommand,
@@ -717,6 +718,17 @@ const handlers: MainRPCAPI = {
     },
 };
 
+/** Bundled ffmpeg for the cloud worker's rights scan; undefined when the
+ *  binary is missing (scan degrades to CRC + tag identifiers). */
+function ffmpegPathForRightsScan(): string | undefined {
+    try {
+        return resolveFfmpegBinary();
+    } catch (e) {
+        console.warn('[cloud-command] ffmpeg unavailable for rights scan:', (e as Error).message);
+        return undefined;
+    }
+}
+
 /** Single dispatcher for renderer-issued cloud commands. New verbs only need a
  *  variant on `CloudCommand` and a case here. The renderer hits this via either
  *  `ipcCloudCommand` (electron) or the koa server-worker's RPC route (embedded).
@@ -765,6 +777,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
             // Fire-and-forget: results reach clients via the broadcast state.
             void dispatchControllerCommand(cmd.command, 'cloud');
             break;
+        case 'scanMediaRights':
+            scanMediaRightsNow(getSettingsCache()?.mediaFolder, ffmpegPathForRightsScan());
+            break;
         default: {
             const _exhaustive: never = cmd;
             console.warn('[cloud-command] unknown verb', _exhaustive);
@@ -790,6 +805,8 @@ function reconfigureCloudWorker(cfg: CloudConfig) {
         },
         cfg.cloudPollMode,
         cfg.cloudPollSchedule,
+        getSettingsCache()?.mediaFolder,
+        ffmpegPathForRightsScan(),
     );
     playWorker?.postMessage({
         type: 'cloudidentity',

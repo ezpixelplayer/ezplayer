@@ -250,3 +250,132 @@ export function recordsToFppSchedule(records: ScheduledPlaylist[] | undefined): 
     }
     return out;
 }
+
+// ---------------------------------------------------------------------------
+// The live scheduler view: GET /api/fppd/schedule
+// ---------------------------------------------------------------------------
+
+/** How far ahead FPP lists scheduled items (its ScheduleDistance default). */
+const SCHEDULE_DISTANCE_DAYS = 28;
+
+/** Scheduler::GetDayTextFromDayIndex. */
+function fppDayText(day: number | undefined): string {
+    const named: Record<number, string> = {
+        0: 'Sunday',
+        1: 'Monday',
+        2: 'Tuesday',
+        3: 'Wednesday',
+        4: 'Thursday',
+        5: 'Friday',
+        6: 'Saturday',
+        7: 'Everyday',
+        8: 'Weekdays',
+        9: 'Weekends',
+        10: 'Mon/Wed/Fri',
+        11: 'Tues-Thurs',
+        12: 'Sun-Thurs',
+        13: 'Fri/Sat',
+        14: 'Odd Days',
+        15: 'Even Days',
+    };
+    if (day === undefined) return 'Error';
+    if (day & 0x10000) {
+        const letters = MASK_BITS.map(([name, bit]) => ((day & bit) === bit ? name[0] : '-')).join('');
+        return `Mask: ${letters}`;
+    }
+    return named[day] ?? 'Error';
+}
+
+const STOP_TYPE_NAMES: Record<number, string> = { 0: 'Graceful', 1: 'Hard', 2: 'Graceful Loop' };
+
+/** "YYYY-MM-DD" → 20260101, the integer form FPP reports alongside the date. */
+function dateInt(date: string | undefined): number {
+    return date ? Number(date.replace(/-/g, '')) : 0;
+}
+
+/** Epoch ms for a record's "HH:MM" time on its own date. */
+function occurrenceTime(rec: ScheduledPlaylist, time: string): number {
+    const [h, m, s] = hhmmss(time).split(':').map(Number);
+    const d = new Date(rec.date);
+    d.setHours(h, m, s ?? 0, 0);
+    return d.getTime();
+}
+
+/** FPP's item time labels: DateFormat + " @ " + TimeFormat ("Sun Sep 20 @ 06:00 PM"). */
+function itemTimeStr(ms: number): string {
+    const d = new Date(ms);
+    const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const h12 = d.getHours() % 12 || 12;
+    return `${day} ${month} ${String(d.getDate()).padStart(2, ' ')} @ ${pad(h12)}:${pad(d.getMinutes())} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
+}
+
+const dateIntOf = (ms: number): number => {
+    const d = new Date(ms);
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+};
+
+/**
+ * GET /api/fppd/schedule: the scheduler as it is running, not the stored
+ * file. `entries` are the rules (our collapsed FPP entries plus the display
+ * strings FPP adds); `items` are the occurrences due within the look-ahead
+ * window, as the "Start Playlist" commands FPP would run. EZPlayer stores
+ * one record per occurrence, so items come straight from the records.
+ */
+export function buildFppdSchedule(records: ScheduledPlaylist[] | undefined, now: number): Record<string, unknown> {
+    const entries = recordsToFppSchedule(records).map((e, id) => ({
+        ...e,
+        id,
+        type: 'playlist',
+        dayStr: fppDayText(e.day),
+        startTimeStr: e.startTime,
+        endTimeStr: e.endTime,
+        startTimeOffset: 0,
+        endTimeOffset: 0,
+        startDateInt: dateInt(e.startDate),
+        endDateInt: dateInt(e.endDate),
+        startDateOffset: 0,
+        endDateOffset: 0,
+        repeatInterval: 0,
+        stopTypeStr: STOP_TYPE_NAMES[e.stopType ?? 0] ?? 'Graceful',
+    }));
+
+    const horizon = now + SCHEDULE_DISTANCE_DAYS * 86_400_000;
+    const items = (records ?? [])
+        .filter((r) => !r.deleted && r.enabled !== false)
+        .map((r) => ({ rec: r, start: occurrenceTime(r, r.fromTime), end: occurrenceTime(r, r.toTime) }))
+        .filter(({ end, start }) => end >= now && start <= horizon)
+        .sort((a, b) => a.start - b.start)
+        .map(({ rec, start, end }, id) => ({
+            id,
+            command: 'Start Playlist',
+            args: [rec.playlistTitle || rec.title, rec.loop ? 'true' : 'false', 'false'],
+            priority: 0,
+            multisyncCommand: false,
+            multisyncHosts: '',
+            startTime: Math.floor(start / 1000),
+            startTimeStr: itemTimeStr(start),
+            startDateInt: dateIntOf(start),
+            startDateStr: String(dateIntOf(start)),
+            endTime: Math.floor(end / 1000),
+            endTimeStr: itemTimeStr(end),
+            endDateInt: dateIntOf(end),
+            endDateStr: String(dateIntOf(end)),
+        }));
+
+    return {
+        Status: 'OK',
+        Message: '',
+        respCode: 200,
+        schedule: {
+            enabled: 1,
+            entries,
+            items,
+            scheduleDistance: SCHEDULE_DISTANCE_DAYS,
+            schedulesExtendBeyondDistance: (records ?? []).some(
+                (r) => !r.deleted && occurrenceTime(r, r.fromTime) > horizon,
+            ),
+        },
+    };
+}

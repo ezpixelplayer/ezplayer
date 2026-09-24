@@ -281,6 +281,7 @@ const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     missing: 'not on controller',
     unexpected: 'not in xLights',
     count: 'count differs',
+    start: 'start channel differs',
 };
 
 /** One model name per line; names in `flagged` render amber. `labels` is the
@@ -344,6 +345,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                 />
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                     {r.intendedPixels ?? 0} px
+                                    {r.drift === 'start' && ` @ ch ${r.intendedStart}`}
                                 </Typography>
                             </>
                         ) : (
@@ -362,6 +364,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                 )}
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                     {r.actualPixels} px
+                                    {r.drift === 'start' && ` @ ch ${r.actualStart}`}
                                 </Typography>
                             </>
                         ) : (
@@ -651,7 +654,7 @@ const GridRow: React.FC<{
     // Drift is only meaningful once the device's port config has actually been
     // read (depth=full); before that every intended port would read "missing".
     const portsRead = d?.pixelPorts !== undefined;
-    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? []);
+    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? [], row.startChannel);
     // Serial (DMX/…) ports are compared in channels, apart from the pixels.
     const serialRead = d?.serialPorts !== undefined;
     const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
