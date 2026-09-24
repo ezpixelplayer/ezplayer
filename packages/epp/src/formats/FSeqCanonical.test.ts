@@ -16,7 +16,8 @@ function writeFseq(
     file: string,
     opts: { channels: number; frames: number; sparse?: { start: number; count: number }[]; zstd?: boolean; fill: (f: number, ch: Uint8Array) => void },
 ) {
-    const fileStride = opts.sparse ? opts.sparse.reduce((a, r) => a + r.count, 0) : Math.floor((opts.channels + 3) / 4) * 4;
+    // Real writers never pad a frame: the stride is exactly the channel count.
+    const fileStride = opts.sparse ? opts.sparse.reduce((a, r) => a + r.count, 0) : opts.channels;
     const nranges = opts.sparse?.length ?? 0;
     const headerLen = 32 + 8 + nranges * 6;
     const data = Buffer.alloc(opts.frames * fileStride);

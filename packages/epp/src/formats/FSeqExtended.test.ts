@@ -31,7 +31,8 @@ const NETWORKS = `<?xml version="1.0" encoding="UTF-8"?>
 
 /** FSEQ v2 with uncompressed frames and extended headers after the channel data, as xLights lays it out. */
 function writeFseqWithExtended(file: string, channels: number, frames: number, extended: { code: string; data: Uint8Array }[], fill: (f: number, ch: Uint8Array) => void) {
-    const stepSize = Math.floor((channels + 3) / 4) * 4;
+    const stepSize = channels; // frames are never padded
+
     const inlineBytes = 18 * extended.length;
     const headerLen = Math.ceil((32 + 8 + inlineBytes) / 4) * 4;
     const dataStart = headerLen + frames * stepSize;
