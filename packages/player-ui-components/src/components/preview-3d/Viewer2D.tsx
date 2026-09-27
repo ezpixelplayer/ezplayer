@@ -498,7 +498,13 @@ function BackgroundImage2D({
     backgroundBrightnessOverride?: number;
 }) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
-    const { backgroundImage, backgroundBrightness: layoutBrightness, previewWidth, previewHeight } = layoutSettings;
+    const {
+        backgroundImage,
+        backgroundBrightness: layoutBrightness,
+        previewWidth,
+        previewHeight,
+        scaleImage,
+    } = layoutSettings;
     // Use override if provided, otherwise use layout setting
     const backgroundBrightness =
         backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
@@ -555,11 +561,25 @@ function BackgroundImage2D({
     const bf = Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100));
     const brightnessColor = new THREE.Color().setRGB(bf, bf, bf, THREE.SRGBColorSpace);
 
-    // Position the plane so it fills (0,0) to (previewWidth, previewHeight),
-    // centered at (previewWidth/2, previewHeight/2), behind points at z=-1.
+    // xLights ModelPreview::Render: with "Fill" (scaleImage) off, the image keeps its
+    // aspect ratio, fits inside the preview canvas, and is anchored at the origin.
+    let planeWidth = previewWidth;
+    let planeHeight = previewHeight;
+    if (!scaleImage) {
+        const img = texture.image as { width?: number; height?: number } | undefined;
+        const nscaleh = img?.height ? img.height / previewHeight : 1;
+        const nscalew = img?.width ? img.width / previewWidth : 1;
+        if (nscalew < nscaleh) {
+            planeWidth = previewWidth * (nscalew / nscaleh);
+        } else {
+            planeHeight = previewHeight * (nscaleh / nscalew);
+        }
+    }
+
+    // The plane spans (0,0) to (planeWidth, planeHeight), behind points at z=-1.
     return (
-        <mesh position={[previewWidth / 2, previewHeight / 2, -1]} renderOrder={-1}>
-            <planeGeometry args={[previewWidth, previewHeight]} />
+        <mesh position={[planeWidth / 2, planeHeight / 2, -1]} renderOrder={-1}>
+            <planeGeometry args={[planeWidth, planeHeight]} />
             <meshBasicMaterial
                 map={texture}
                 depthWrite={true}
