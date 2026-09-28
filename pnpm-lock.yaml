@@ -297,6 +297,9 @@ importers:
       '@types/ws':
         specifier: 'catalog:'
         version: 8.18.1
+      '@wasm-audio-decoders/common':
+        specifier: 9.0.7
+        version: 9.0.7
       audiofile:
         specifier: file:..\..\libs\audiofile-0.0.5.tgz
         version: file:libs/audiofile-0.0.5.tgz
@@ -661,9 +664,15 @@ importers:
       '@ezplayer/epp-mock-controller':
         specifier: file:..\..\libs\ezplayer-epp-mock-controller-0.0.1-dev.6.tgz
         version: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.6.tgz
+      '@ezplayer/ezplayer-core':
+        specifier: workspace:*
+        version: link:../ezplayer-core
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      opusscript:
+        specifier: ^0.1.1
+        version: 0.1.1
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

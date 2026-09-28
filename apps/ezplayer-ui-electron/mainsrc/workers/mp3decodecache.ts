@@ -122,7 +122,7 @@ export class MP3PrefetchCache {
     }) {
         this.now = arg.now;
         this.readBufPool = new ArrayBufferPool();
-        this.decodewc = new Mp3DecodeWorkerClient();
+        this.decodewc = new Mp3DecodeWorkerClient(arg.log);
         this.mp3PrefetchCache = new PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>({
             fetchFunction: async (key, _abort) => {
                 arg.log(`Starting mp3 load of ${key.mp3file}`);
@@ -226,16 +226,32 @@ export class MP3PrefetchCache {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/** A decode that takes longer than this has wedged (a 15-minute song decodes in
+ *  a few seconds even on a small player). The worker is replaced. */
+const DECODE_TIMEOUT_MS = 120_000;
+
+/**
+ * Talks to mp3decodeworker.js. The worker is a separate thread that can die at
+ * load (a broken decoder module) or wedge; both used to be invisible — the
+ * client posted into a dead worker and every decode hung forever, which the
+ * playback loop reported only as "unknown condition". Now a dead worker is
+ * logged, in-flight and later requests fail with the reason, and the worker is
+ * respawned for the next request.
+ */
 export class Mp3DecodeWorkerClient {
-    private worker: Worker;
+    private worker: Worker | undefined;
+    private dead: Error | undefined;
     private nextId = 1;
     private inflight = new Map<
         number,
         {
             resolve: (v: DecodedAudio) => void;
             reject: (e: Error) => void;
+            timer: ReturnType<typeof setTimeout>;
+            filePath: string;
         }
     >();
+    private readonly log: (msg: string) => void;
 
     fileReadTimeCumulative: number = 0;
     decodeTimeCumulative: number = 0;
@@ -245,78 +261,120 @@ export class Mp3DecodeWorkerClient {
         this.decodeTimeCumulative = 0;
     }
 
-    constructor() {
-        this.worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
+    constructor(log?: (msg: string) => void) {
+        this.log = log ?? ((m) => console.error(m));
+        this.spawn();
+    }
+
+    private spawn(): Worker {
+        const worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
             workerData: {
                 name: 'mp3decode',
             },
         });
+        this.worker = worker;
+        this.dead = undefined;
 
-        this.worker.on('message', (msg: DecodedAudioResp) => {
+        worker.on('message', (msg: DecodedAudioResp) => {
             if (msg.type !== 'result') return;
             const pending = this.inflight.get(msg.id);
             if (!pending) return;
+            clearTimeout(pending.timer);
+            this.inflight.delete(msg.id);
 
             this.fileReadTimeCumulative += msg.fileReadTime;
             this.decodeTimeCumulative += msg.decodeTime;
-
-            this.inflight.delete(msg.id);
 
             if (!msg.ok || !msg.result) {
                 pending.reject(new Error(msg.error));
                 return;
             }
-
             pending.resolve(msg.result!);
         });
 
-        this.worker.on('error', (e) => {
-            // Hard error: reject all inflight
-            const errs = Array.from(this.inflight.values());
-            this.inflight.clear();
-            errs.forEach(({ reject }) => reject(e));
+        worker.on('error', (e) => {
+            if (this.worker !== worker) return;
+            this.markDead(new Error(`mp3 decode worker failed: ${e?.stack ?? e?.message ?? String(e)}`));
         });
 
-        this.worker.on('exit', (code) => {
-            if (code !== 0) {
-                const e = new Error(`mp3 worker exited with code ${code}`);
-                const errs = Array.from(this.inflight.values());
-                this.inflight.clear();
-                errs.forEach(({ reject }) => reject(e));
+        worker.on('exit', (code) => {
+            if (this.worker !== worker) return;
+            if (code !== 0 || this.inflight.size > 0) {
+                this.markDead(new Error(`mp3 decode worker exited with code ${code}`));
+            }
+        });
+        return worker;
+    }
+
+    /** Record the death, fail everything waiting, and drop the worker so the
+     *  next request spawns a fresh one. */
+    private markDead(reason: Error): void {
+        this.log(`[mp3decode] ${reason.message}`);
+        this.dead = reason;
+        const w = this.worker;
+        this.worker = undefined;
+        if (w) void w.terminate().catch(() => undefined);
+        const errs = Array.from(this.inflight.values());
+        this.inflight.clear();
+        for (const p of errs) {
+            clearTimeout(p.timer);
+            p.reject(reason);
+        }
+    }
+
+    async decodeFile({ filePath }: { filePath: string }): Promise<DecodedAudio> {
+        const worker = this.worker ?? this.respawn();
+        const id = this.nextId++;
+        return new Promise<DecodedAudio>((resolve, reject) => {
+            const timer = setTimeout(() => {
+                if (!this.inflight.has(id)) return;
+                this.markDead(new Error(`mp3 decode of ${filePath} timed out after ${DECODE_TIMEOUT_MS / 1000} s`));
+            }, DECODE_TIMEOUT_MS);
+            this.inflight.set(id, { resolve, reject, timer, filePath });
+            try {
+                worker.postMessage({
+                    type: 'decode',
+                    id,
+                    filePath,
+                } satisfies DecodeReq);
+            } catch (err) {
+                clearTimeout(timer);
+                this.inflight.delete(id);
+                reject(err instanceof Error ? err : new Error(String(err)));
             }
         });
     }
 
-    async decodeFile({ filePath }: { filePath: string }): Promise<DecodedAudio> {
-        const id = this.nextId++;
-        return new Promise((resolve, reject) => {
-            this.inflight.set(id, { resolve, reject });
-
-            this.worker.postMessage({
-                type: 'decode',
-                id,
-                filePath,
-            } satisfies DecodeReq);
-        }) as Promise<DecodedAudio>;
+    private respawn(): Worker {
+        this.log(`[mp3decode] respawning decode worker${this.dead ? ` after: ${this.dead.message}` : ''}`);
+        return this.spawn();
     }
 
     returnBuffer(v: DecodedAudio) {
+        const worker = this.worker;
+        if (!worker) return; // a fresh worker allocates its own pool
         const buffers: ArrayBuffer[] = [];
         for (const bo of v.channelData) {
             for (const b of bo) {
                 buffers.push(b.buffer);
             }
         }
-        this.worker.postMessage(
-            {
-                type: 'return',
+        try {
+            worker.postMessage(
+                {
+                    type: 'return',
+                    buffers,
+                } satisfies DecodeReq,
                 buffers,
-            } satisfies DecodeReq,
-            buffers,
-        );
+            );
+        } catch {
+            /* worker is going away; buffers are just garbage-collected */
+        }
     }
 
     terminate() {
-        return this.worker.terminate();
+        const w = this.worker;
+        this.worker = undefined;
+        return w ? w.terminate() : Promise.resolve(0);
     }
 }

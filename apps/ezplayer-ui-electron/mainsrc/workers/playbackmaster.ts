@@ -176,6 +176,10 @@ function emitError(msg: string) {
     console.log(msg);
 }
 
+/** Per-file throttle for the "audio still decoding" notice (see the audio loop). */
+const audioPendingLoggedAt = new Map<string, number>();
+const AUDIO_PENDING_LOG_INTERVAL_MS = 5_000;
+
 function emitWarning(msg: string) {
     playLogger.log(msg);
     console.log(msg);
@@ -2590,7 +2594,16 @@ async function processQueue() {
                                 emitError(`Audio error for ${saf}: ${audioref.err.message}.`);
                                 break;
                             } else if (!audioref.ref) {
-                                emitError(`Audio unknown condition ${saf}.`);
+                                // Still decoding (or the decode is stuck — the decoder client
+                                // times out and reports that as an audio error). Log at most
+                                // once per file every few seconds; this branch runs every tick.
+                                const lastAt = audioPendingLoggedAt.get(saf) ?? 0;
+                                if (performance.now() - lastAt > AUDIO_PENDING_LOG_INTERVAL_MS) {
+                                    audioPendingLoggedAt.set(saf, performance.now());
+                                    emitWarning(
+                                        `Audio still decoding ${saf}; playing lights without sound until it is ready.`,
+                                    );
+                                }
                                 break;
                             }
                         }

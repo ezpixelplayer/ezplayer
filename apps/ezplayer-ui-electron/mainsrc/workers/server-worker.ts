@@ -429,6 +429,11 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
+/** Open, or still dialing (CONNECTING). Anything else is dead and gets redialed. */
+function bridgeAlive(b: { ws: WebSocket; open: boolean }): boolean {
+    return b.open || b.ws.readyState === WebSocket.CONNECTING;
+}
+
 function openCloudBridge(
     wsUrl: string,
     proxyWsUrl: string | undefined,
@@ -439,7 +444,11 @@ function openCloudBridge(
     if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
     if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
 
-    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && cloudBridge.open) {
+    // Same session + same URL + a socket that is open OR still dialing: keep it and
+    // refresh the TTL. Redialing over a CONNECTING socket (checkins arrive every 5 s;
+    // a slow TLS handshake can take longer) tore the dial down each time, so the
+    // bridge never came up and logged "closed before the connection was established".
+    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && bridgeAlive(cloudBridge)) {
         clearTimeout(cloudBridge.ttlTimer);
         cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -475,6 +484,7 @@ function openCloudBridge(
         wsBroadcaster.attachClient(ws);
     });
     ws.on('error', (err) => {
+        if (cloudBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud bridge error:', err);
     });
     ws.on('close', () => {
@@ -516,7 +526,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         cloudProxyBridge &&
         cloudProxyBridge.sessionId === sessionId &&
         cloudProxyBridge.url === wsUrl &&
-        cloudProxyBridge.open
+        bridgeAlive(cloudProxyBridge)
     ) {
         clearTimeout(cloudProxyBridge.ttlTimer);
         cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
@@ -682,6 +692,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         }
     });
     ws.on('error', (err) => {
+        if (cloudProxyBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud proxy bridge error:', err);
     });
     ws.on('close', () => {
@@ -853,7 +864,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         cloudAudioBridge &&
         cloudAudioBridge.sessionId === sessionId &&
         cloudAudioBridge.url === wsUrl &&
-        cloudAudioBridge.open
+        bridgeAlive(cloudAudioBridge)
     ) {
         clearTimeout(cloudAudioBridge.ttlTimer);
         cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
@@ -902,6 +913,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         ensureAudioPump();
     });
     ws.on('error', (err) => {
+        if (cloudAudioBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud audio bridge error:', err);
     });
     ws.on('close', () => {
