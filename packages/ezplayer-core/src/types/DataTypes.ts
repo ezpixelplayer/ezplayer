@@ -1,4 +1,5 @@
 import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+import type { ViewerStatsSummary } from '../util/viewerStats';
 import type { AudioDevice } from './EZPElectronAPI';
 
 export interface EZPlayerVersions {
@@ -580,6 +581,7 @@ export interface UIConnectSnapshot {
     /** Which remote-access tiles to offer. */
     remoteAccess?: RemoteAccessAvailability;
     appSettings?: AppSettingsState;
+    viewerStats?: ViewerStatsSummary;
 }
 
 export type ScheduleDays =
@@ -751,6 +753,12 @@ export interface LayoutFileMeta {
     file_time: number;
 }
 
+/** When the player streams live audio up to the cloud for browser listeners.
+ *  `'auto'` streams only while the relay reports someone listening, `'always'`
+ *  streams whenever the bridge is up (a diagnostic / experiment setting),
+ *  `'never'` leaves the audio bridge closed. */
+export type CloudAudioMode = 'auto' | 'always' | 'never';
+
 /** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
 export interface CloudConfig {
     cloudServiceUrl: string;
@@ -769,6 +777,8 @@ export interface CloudConfig {
     /** Whether the player accepts remote control from the cloud. Default true.
      *  Sync, registration, and status reporting are unaffected. */
     cloudRemoteControlEnabled?: boolean;
+    /** Live-audio streaming policy for the cloud bridge. Absent defaults to `'auto'`. */
+    cloudAudioMode?: CloudAudioMode;
     /** When the worker is enabled, how aggressively it polls content. `'always'`
      *  polls on the configured cadence. `'scheduled'` polls only when current
      *  local time is inside any window in `cloudPollSchedule`. Registration
@@ -904,6 +914,9 @@ export type FullPlayerState = {
     audioOutputDevices?: AudioDevice[];
     /** App-global (machine-wide) settings: diagnostics consent, start at sign-in. */
     appSettings?: AppSettingsState;
+    /** Owner viewer-activity summary (requests / votes / audience), computed by
+     *  the player from events pulled off its player_server. */
+    viewerStats?: ViewerStatsSummary;
 };
 
 /**
@@ -1033,6 +1046,7 @@ export type CloudCommand =
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
     | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud remote control
+    | { type: 'setCloudAudioMode'; mode: CloudAudioMode } // when to stream live audio to the cloud
     | { type: 'scanMediaRights' } // fingerprint local media (media folder + show folder) and submit proof of ownership
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so

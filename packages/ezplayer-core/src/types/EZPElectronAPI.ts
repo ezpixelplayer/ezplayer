@@ -20,6 +20,7 @@ import type {
     AppSettingsCommand,
     AppSettingsState,
 } from './DataTypes';
+import type { ViewerStatsSummary } from '../util/viewerStats';
 import type { ControllerCommand, ControllerOpsState } from './ControllerOps';
 
 export interface AudioDevice {
@@ -176,6 +177,9 @@ export interface EZPElectronAPI {
 
     /** Pushed whenever remote-access availability changes. */
     onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => void;
+
+    /** Pushed whenever the owner viewer-activity summary is recomputed. */
+    onViewerStatsUpdated: (callback: (summary: ViewerStatsSummary) => void) => void;
 
     /** Renderer reports the machine's audio outputs (startup and devicechange) for LAN clients. */
     reportAudioOutputDevices: (devices: AudioDevice[]) => void;

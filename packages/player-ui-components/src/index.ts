@@ -22,6 +22,7 @@ export { PlaybackControls } from './components/player/PlaybackControls';
 export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
+export { ViewerStatsScreen } from './components/viewer-stats/ViewerStatsScreen';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
@@ -147,6 +148,8 @@ export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 export { remoteAccessActions } from './store/slices/RemoteAccessStore';
+export { viewerStatsActions } from './store/slices/ViewerStatsStore';
+export type { ViewerStatsSliceState } from './store/slices/ViewerStatsStore';
 export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';
 export { audioDevicesActions } from './store/slices/AudioDevicesStore';
 export type { AudioDevicesState } from './store/slices/AudioDevicesStore';
@@ -165,4 +168,24 @@ export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';
 
 export { useFrameServerUrl } from './hooks/useFrameServerUrl';
+export {
+    AudioListenSession,
+    getAudioListenSession,
+    useAudioListenSession,
+    deriveAudioStreamOptions,
+    RealTimeChunkPlayer,
+    ChunkDecoder,
+    createClockOffsetRef,
+    estimateClockOffset,
+} from './audio';
+export type {
+    AudioListenDiagnostics,
+    AudioListenOptions,
+    AudioListenStatus,
+    UseAudioListenSessionResult,
+    ChunkPlaybackEvent,
+    DecodedChunk,
+    ClockOffsetRef,
+    ClockOffsetSample,
+} from './audio';
 export type { UseFrameServerUrlOptions, UseFrameServerUrlResult } from './hooks/useFrameServerUrl';

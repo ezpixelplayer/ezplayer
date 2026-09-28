@@ -158,3 +158,55 @@ export interface VcPublicShowState {
     viewerHasActed: boolean;
     [k: string]: unknown;
 }
+
+// -- owner activity stats ------------------------------------------------------
+
+export type VcStatsEventKind = 'request' | 'vote' | 'refused' | 'pick' | 'play' | 'viewers' | 'listeners';
+
+/** One viewer-activity event from the player_server's RAM ring. The player
+ *  pulls these (`GET /api/player/vc/stats/:player_token?afterSeq=N`) and is
+ *  the durable home for them; the cloud keeps ~72 h and no database. */
+export interface VcStatsEvent {
+    /** Increasing within one server process (`VcStatsResponse.epoch`). */
+    seq: number;
+    /** Epoch ms. */
+    ts: number;
+    kind: VcStatsEventKind;
+    songId?: string;
+    title?: string;
+    mode?: 'request' | 'vote';
+    /** `refused` only. */
+    reason?: VcSelectionReason;
+    /** Salted short hash of the viewer id; never the address. */
+    viewer?: string;
+    /** `viewers` / `listeners`: the new count. `request`: queue position.
+     *  `vote`: the song's tally after the vote. */
+    count?: number;
+    [k: string]: unknown;
+}
+
+/** Live picture of the request line at pull time. */
+export interface VcStatsSnapshot {
+    at: number;
+    mode: 'off' | 'request' | 'vote';
+    online: boolean;
+    viewers: number;
+    listeners: number;
+    nowPlaying?: string;
+    nextUp?: string;
+    queue: Array<{ songId: string; title?: string; position: number; requestedAt: number; viewer?: string }>;
+    votes: Array<{ songId: string; title?: string; votes: number; lastVoteAt: number }>;
+    [k: string]: unknown;
+}
+
+export interface VcStatsResponse {
+    /** Server process epoch; `seq` restarts when it changes. */
+    epoch: string;
+    latestSeq: number;
+    /** Events with `seq > afterSeq`, oldest first. */
+    events: VcStatsEvent[];
+    /** True when `afterSeq` predates what the ring still holds. */
+    truncated: boolean;
+    snapshot: VcStatsSnapshot;
+    [k: string]: unknown;
+}

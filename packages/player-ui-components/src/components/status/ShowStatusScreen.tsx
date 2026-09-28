@@ -25,7 +25,7 @@ import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { CLOUD } from '../../constants/routes';
+import { CLOUD, VIEWER_STATS } from '../../constants/routes';
 
 // Types
 import { AppDispatch, RootState } from '../../store/Store';
@@ -467,13 +467,26 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     Need Download: {content.n_needing_download ?? '—'}
                                 </Typography>
                                 {(content.n_rights_unmet ?? 0) > 0 && (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', my: 0.5 }}>
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1.5,
+                                            flexWrap: 'wrap',
+                                            my: 0.5,
+                                        }}
+                                    >
                                         <Chip
                                             color="warning"
                                             size="small"
                                             label={`Music proof needed: ${content.n_rights_unmet} sequence${content.n_rights_unmet === 1 ? '' : 's'}`}
                                         />
-                                        <Button size="small" variant="outlined" color="warning" onClick={() => navigate(CLOUD)}>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            color="warning"
+                                            onClick={() => navigate(CLOUD)}
+                                        >
                                             Fix on Cloud page
                                         </Button>
                                     </Box>
@@ -482,7 +495,19 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     Schedule Sync: {formatTime(content.schedule_sync_time)}
                                 </Typography>
                                 <Typography variant="body1">Schedules: {content.n_schedules ?? '—'}</Typography>
-                                <Typography variant="body1">Viewer Control: {vcLabel}</Typography>
+                                <Typography variant="body1">
+                                    Viewer Control: {vcLabel}
+                                    {show?.viewer_control_enabled ? (
+                                        <Button
+                                            size="small"
+                                            variant="text"
+                                            sx={{ ml: 1, textTransform: 'none' }}
+                                            onClick={() => navigate(VIEWER_STATS)}
+                                        >
+                                            Viewer activity
+                                        </Button>
+                                    ) : null}
+                                </Typography>
                             </CardContent>
                         </Card>
                     </Grid>

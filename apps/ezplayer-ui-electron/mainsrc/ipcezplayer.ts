@@ -32,6 +32,13 @@ import {
     loadCloudConfigFromDisk,
     updateCloudConfig,
 } from './data/CloudConfigStorage.js';
+import { loadViewerStatsFromDisk, resetViewerStatsStore } from './data/ViewerStatsStorage.js';
+import {
+    configureViewerStatsSync,
+    getViewerStatsSummary,
+    publishViewerStats,
+    setViewerStatsBroadcaster,
+} from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
 import {
@@ -56,10 +63,16 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio, resolveFfmpegBinary } from './data/derived-audio.js';
+import {
+    deriveAudioForRecord,
+    pruneStaleDerivedAudio,
+    reconcileDerivedAudio,
+    resolveFfmpegBinary,
+} from './data/derived-audio.js';
 
 import type {
     CloudCommand,
+    CloudAudioMode,
     CloudConfig,
     CloudPlayerSettings,
     CloudPollScheduleEntry,
@@ -91,7 +104,7 @@ import {
     pickAnotherShowFolder,
     pickCloudShowFolder,
 } from '../showfolder.js';
-import { getServerStatus } from './server-worker-manager.js';
+import { getServerStatus, setCloudAudioMode } from './server-worker-manager.js';
 import {
     dispatchControllerCommand,
     getControllerOpsState,
@@ -593,6 +606,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
     resetControllerOps();
+    resetViewerStatsStore();
     await loadControllerRecords(showFolder);
     await loadNetworkPolicies(showFolder);
 
@@ -604,8 +618,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curSchedule = await loadScheduleAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
+    await loadViewerStatsFromDisk(settingsPath(showFolder, 'viewer-stats.json'));
+    publishViewerStats();
     const cloudActive = cloudConfig.cloudEnabled !== false;
     setCloudRemoteControlEnabled(cloudConfig.cloudRemoteControlEnabled !== false);
+    setCloudAudioMode(cloudConfig.cloudAudioMode ?? 'auto');
     setCloudWorkerConfig(
         cloudActive ? cloudConfig.cloudServiceUrl : '',
         cloudActive ? cloudConfig.playerIdToken : '',
@@ -685,6 +702,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
         playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cloudConfig.playerIdToken : '',
+    });
     scheduleUpdated(forceRestart);
 }
 
@@ -698,6 +720,11 @@ function resendCloudIdentity(): void {
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cfg.playerIdToken : '',
+    });
 }
 
 const handlers: MainRPCAPI = {
@@ -755,6 +782,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
         case 'setCloudRemoteControlEnabled':
             applyCloudRemoteControlEnabled(cmd.enabled);
             break;
+        case 'setCloudAudioMode':
+            applyCloudAudioMode(cmd.mode);
+            break;
         case 'setCloudPolling':
             applyCloudPolling({
                 mode: cmd.mode,
@@ -781,6 +811,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
 function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
     setCloudRemoteControlEnabled(cfg.cloudRemoteControlEnabled !== false);
+    setCloudAudioMode(cfg.cloudAudioMode ?? 'auto');
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
         cloudActive ? cfg.playerIdToken : '',
@@ -803,12 +834,22 @@ function reconfigureCloudWorker(cfg: CloudConfig) {
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cfg.playerIdToken : '',
+    });
 }
 
 function broadcastCloudConfig(cfg: CloudConfig) {
     safeSend(updateWindow, 'update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
+
+setViewerStatsBroadcaster((summary) => {
+    safeSend(updateWindow, 'update:viewerStats', summary);
+    broadcastToWebSocket('viewerStats', summary);
+});
 
 /** Update the persisted layout-source mode (`xlights` or `cloud`). Reconfigures the
  *  worker so it knows whether to auto-fetch layout at the head of each manifest tick. */
@@ -848,6 +889,14 @@ export function applyCloudEnabled(enabled: boolean) {
 /** Allow / refuse cloud remote control. */
 export function applyCloudRemoteControlEnabled(enabled: boolean) {
     const cfg = updateCloudConfig({ cloudRemoteControlEnabled: enabled });
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
+}
+
+/** Persist the cloud live-audio policy and push it to the server worker,
+ *  which owns the audio bridge and pump. */
+export function applyCloudAudioMode(mode: CloudAudioMode) {
+    const cfg = updateCloudConfig({ cloudAudioMode: mode });
     reconfigureCloudWorker(cfg);
     broadcastCloudConfig(cfg);
 }
@@ -908,6 +957,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             controllerops: getControllerOpsState(),
             remoteAccess: await getRemoteAccessAvailability(),
             appSettings: getAppSettingsState(),
+            viewerStats: getViewerStatsSummary(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {

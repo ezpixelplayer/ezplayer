@@ -342,6 +342,9 @@ importers:
       nprogress:
         specifier: 'catalog:'
         version: 0.2.0
+      opusscript:
+        specifier: ^0.1.1
+        version: 0.1.1
       path:
         specifier: ^0.12.7
         version: 0.12.7
@@ -745,6 +748,9 @@ importers:
       nprogress:
         specifier: 'catalog:'
         version: 0.2.0
+      opus-decoder:
+        specifier: ^0.7.12
+        version: 0.7.12
       prop-types:
         specifier: 'catalog:'
         version: 15.8.1
@@ -4414,6 +4420,12 @@ packages:
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
+
+  opus-decoder@0.7.12:
+    resolution: {integrity: sha512-6zpHFDi/MhYvMwyYiuJPqJ2lcRkfm7wHblSvT3lUtx/kLvHkunoe/rhTn1dLKxqVGLeQj3gQi7CnR0N2p3RuOg==}
+
+  opusscript@0.1.1:
+    resolution: {integrity: sha512-mL0fZZOUnXdZ78woRXp18lApwpp0lF5tozJOD1Wut0dgrA9WuQTgSels/CSmFleaAZrJi/nci5KOVtbuxeWoQA==}
 
   p-cancelable@2.1.1:
     resolution: {integrity: sha512-BZOr3nRQHOntUjTrH8+Lh54smKHoHyur8We1V8DSMVrl5A2malOOwuJRnKRDjSnkoeBh4at6BwEnb5I7Jl31wg==}
@@ -9347,6 +9359,12 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
       word-wrap: 1.2.5
+
+  opus-decoder@0.7.12:
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+
+  opusscript@0.1.1: {}
 
   p-cancelable@2.1.1: {}
 

@@ -15,6 +15,7 @@ import type {
     ControllerCommand,
     ControllerOpsState,
     RemoteAccessAvailability,
+    ViewerStatsSummary,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -171,6 +172,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => {
         ipcRenderer.on('update:remoteaccess', (_event: IpcRendererEvent, state: RemoteAccessAvailability) => {
             callback(state);
+        });
+    },
+    onViewerStatsUpdated: (callback: (summary: ViewerStatsSummary) => void) => {
+        ipcRenderer.on('update:viewerStats', (_event: IpcRendererEvent, summary: ViewerStatsSummary) => {
+            callback(summary);
         });
     },
     reportAudioOutputDevices: (devices: AudioDevice[]) => {

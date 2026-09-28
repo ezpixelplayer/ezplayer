@@ -57,6 +57,7 @@
         "jszip": "catalog:",
         "jwt-decode": "catalog:",
         "nprogress": "catalog:",
+        "opus-decoder": "^0.7.12",
         "prop-types": "catalog:",
         "qrcode": "catalog:",
         "qrcode.react": "catalog:",

@@ -1,4 +1,5 @@
 export type {
+    CloudAudioMode,
     CloudConfig,
     CloudStatus,
     EZPlayerVersions,
@@ -159,6 +160,10 @@ export type {
     VcSelectionOutcome,
     VcPublicSong,
     VcPublicShowState,
+    VcStatsEventKind,
+    VcStatsEvent,
+    VcStatsSnapshot,
+    VcStatsResponse,
 } from './types/ViewerControlWire';
 
 export type {
@@ -229,3 +234,30 @@ export {
     type AudioChunkReadResult,
     AudioChunkRingBuffer
 } from './util/AudioChunkRingBuffer';
+
+export {
+    AUDIO_WIRE_MAGIC,
+    AUDIO_WIRE_VERSION,
+    AUDIO_WIRE_HEADER_BYTES,
+    AudioWireCodec,
+    type AudioWireHeader,
+    type AudioWireFrame,
+    type AudioBridgeControlMessage,
+    buildAudioWireFrame,
+    parseAudioWireFrame,
+    splitOpusPackets,
+    joinOpusPackets
+} from './util/AudioStreamWire';
+
+export {
+    summarizeViewerStats,
+    trimViewerStatsEvents,
+    viewerStatsDayKey,
+    viewerStatsDayKeys,
+    type StoredViewerStatsEvent,
+    type ViewerStatsCounts,
+    type ViewerStatsDay,
+    type ViewerStatsSong,
+    type ViewerStatsSummary,
+    type SummarizeOptions
+} from './util/viewerStats';
