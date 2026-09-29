@@ -1339,6 +1339,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     assetResolver={assetResolver}
                                     movingHeadFixtures={movingHeadFixtures}
                                     backgroundBrightness={undefined}
+                                    brightnessMultiplier={previewSettings.brightnessMultiplier}
                                     pixelSizeMultiplier={previewSettings.pixelSize}
                                     cameraState={cameraState2D}
                                     shouldAutoFit={shouldAutoFit}
