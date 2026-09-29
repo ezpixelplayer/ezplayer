@@ -109,6 +109,6 @@
         "vite": "catalog:",
         "vite-plugin-svgr": "catalog:",
         "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.3.4.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.0-dev.2.tgz"
     }
 }

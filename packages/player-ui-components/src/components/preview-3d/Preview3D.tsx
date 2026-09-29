@@ -297,6 +297,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             backgroundBrightness: activeLayoutGroup.backgroundBrightness ?? layoutSettings.backgroundBrightness,
             previewWidth: activeLayoutGroup.paneWidth ?? layoutSettings.previewWidth,
             previewHeight: activeLayoutGroup.paneHeight ?? layoutSettings.previewHeight,
+            // Per-group "Fill" is its own xLights attribute (default off), not inherited
+            // from the default preview.
+            scaleImage: activeLayoutGroup.scaleImage ?? false,
         };
     }, [layoutSettings, activeLayoutGroup]);
     const renderedModelData = filteredModelData;
@@ -1335,6 +1338,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     assetResolver={assetResolver}
                                     movingHeadFixtures={movingHeadFixtures}
                                     backgroundBrightness={undefined}
+                                    brightnessMultiplier={previewSettings.brightnessMultiplier}
                                     pixelSizeMultiplier={previewSettings.pixelSize}
                                     cameraState={cameraState2D}
                                     shouldAutoFit={shouldAutoFit}

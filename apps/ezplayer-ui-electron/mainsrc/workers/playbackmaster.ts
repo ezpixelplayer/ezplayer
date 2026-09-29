@@ -1571,13 +1571,16 @@ async function loadXmlCoordinates() {
                 if (parsedSettings.previewHeight !== undefined) {
                     layoutSettings.previewHeight = parsedSettings.previewHeight;
                 }
+                if (parsedSettings.scaleImage !== undefined) {
+                    layoutSettings.scaleImage = parsedSettings.scaleImage;
+                }
                 if (parsedSettings.layoutMode3D !== undefined) {
                     layoutSettings.layoutMode3D = parsedSettings.layoutMode3D;
                 }
 
                 if (layoutSettings.backgroundImage) {
                     emitInfo(
-                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight} fill=${layoutSettings.scaleImage}`,
                     );
                 }
             } catch (parseErr) {
@@ -1599,6 +1602,7 @@ async function loadXmlCoordinates() {
                         paneHeight: g.paneHeight,
                         backgroundBrightness: g.backgroundBrightness,
                         backgroundAlpha: g.backgroundAlpha,
+                        scaleImage: g.scaleImage,
                     }));
 
                     const names = parsedGroups

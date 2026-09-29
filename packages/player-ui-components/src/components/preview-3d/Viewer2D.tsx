@@ -42,6 +42,7 @@ export interface Viewer2DProps {
     assetResolver?: AssetResolver;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number; // 0-100, affects background images only
+    brightnessMultiplier?: number; // 0-200 percent from the preview Brightness slider
     pixelSizeMultiplier?: number; // Multiplier for pixel size (from settings)
     cameraState?: CameraState2D | null; // Saved camera state to restore
     onCameraStateChange?: (state: CameraState2D) => void; // Callback when camera state changes
@@ -492,13 +493,21 @@ function BackgroundImage2D({
     layoutSettings,
     assetResolver,
     backgroundBrightnessOverride,
+    brightnessMultiplier,
 }: {
     layoutSettings: LayoutSettings;
     assetResolver: AssetResolver;
     backgroundBrightnessOverride?: number;
+    brightnessMultiplier?: number;
 }) {
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
-    const { backgroundImage, backgroundBrightness: layoutBrightness, previewWidth, previewHeight } = layoutSettings;
+    const {
+        backgroundImage,
+        backgroundBrightness: layoutBrightness,
+        previewWidth,
+        previewHeight,
+        scaleImage,
+    } = layoutSettings;
     // Use override if provided, otherwise use layout setting
     const backgroundBrightness =
         backgroundBrightnessOverride !== undefined ? backgroundBrightnessOverride : layoutBrightness;
@@ -552,14 +561,31 @@ function BackgroundImage2D({
     // This matches xLights exactly.
     // toneMapped=false bypasses R3F's default ACESFilmic tone mapping which would
     // otherwise darken/compress the result.
-    const bf = Math.max(0, Math.min(1, (backgroundBrightness ?? 100) / 100));
+    // The preview Brightness slider scales the layout brightness, as Viewer3D does for
+    // image view objects. Clamped so 200% cannot blow out the image.
+    const sliderScale = (brightnessMultiplier ?? 100) / 100;
+    const bf = Math.max(0, Math.min(1, ((backgroundBrightness ?? 100) / 100) * sliderScale));
     const brightnessColor = new THREE.Color().setRGB(bf, bf, bf, THREE.SRGBColorSpace);
 
-    // Position the plane so it fills (0,0) to (previewWidth, previewHeight),
-    // centered at (previewWidth/2, previewHeight/2), behind points at z=-1.
+    // xLights ModelPreview::Render: with "Fill" (scaleImage) off, the image keeps its
+    // aspect ratio, fits inside the preview canvas, and is anchored at the origin.
+    let planeWidth = previewWidth;
+    let planeHeight = previewHeight;
+    if (!scaleImage) {
+        const img = texture.image as { width?: number; height?: number } | undefined;
+        const nscaleh = img?.height ? img.height / previewHeight : 1;
+        const nscalew = img?.width ? img.width / previewWidth : 1;
+        if (nscalew < nscaleh) {
+            planeWidth = previewWidth * (nscalew / nscaleh);
+        } else {
+            planeHeight = previewHeight * (nscaleh / nscalew);
+        }
+    }
+
+    // The plane spans (0,0) to (planeWidth, planeHeight), behind points at z=-1.
     return (
-        <mesh position={[previewWidth / 2, previewHeight / 2, -1]} renderOrder={-1}>
-            <planeGeometry args={[previewWidth, previewHeight]} />
+        <mesh position={[planeWidth / 2, planeHeight / 2, -1]} renderOrder={-1}>
+            <planeGeometry args={[planeWidth, planeHeight]} />
             <meshBasicMaterial
                 map={texture}
                 depthWrite={true}
@@ -588,6 +614,7 @@ function Scene2DContent({
     assetResolver,
     movingHeadFixtures,
     backgroundBrightness,
+    brightnessMultiplier,
     pixelSizeMultiplier,
     cameraState,
     onCameraStateChange,
@@ -612,6 +639,7 @@ function Scene2DContent({
     assetResolver?: AssetResolver;
     movingHeadFixtures?: MhFixtureInfo[];
     backgroundBrightness?: number;
+    brightnessMultiplier?: number;
     pixelSizeMultiplier?: number;
     cameraState?: CameraState2D | null;
     onCameraStateChange?: (state: CameraState2D) => void;
@@ -920,6 +948,7 @@ function Scene2DContent({
                     layoutSettings={layoutSettings}
                     assetResolver={assetResolver ?? createShowFileResolver(frameServerUrl)}
                     backgroundBrightnessOverride={backgroundBrightness}
+                    brightnessMultiplier={brightnessMultiplier}
                 />
             )}
 
@@ -970,7 +999,8 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     frameServerUrl,
     assetResolver,
     movingHeadFixtures,
-    backgroundBrightness = 100,
+    backgroundBrightness,
+    brightnessMultiplier = 100,
     pixelSizeMultiplier = 1.0,
     cameraState,
     onCameraStateChange,
@@ -1135,6 +1165,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             assetResolver={assetResolver}
                             movingHeadFixtures={movingHeadFixtures}
                             backgroundBrightness={backgroundBrightness}
+                            brightnessMultiplier={brightnessMultiplier}
                             pixelSizeMultiplier={pixelSizeMultiplier}
                             cameraState={cameraState}
                             onCameraStateChange={onCameraStateChange}
