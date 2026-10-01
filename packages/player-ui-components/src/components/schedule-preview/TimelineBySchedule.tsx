@@ -447,6 +447,11 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
         return { minTime: start, maxTime: end };
     }, [minScrollTime, maxScrollTime, simulationStartTime, simulationEndTime, data]);
 
+    const displayRangeRef = useRef(displayRange);
+    const scrollBoundariesRef = useRef(scrollBoundaries);
+    displayRangeRef.current = displayRange;
+    scrollBoundariesRef.current = scrollBoundaries;
+
     // Create the timeline once the container exists; updates below are applied in place
     useEffect(() => {
         const container = containerRef.current;
@@ -509,6 +514,25 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                     },
                 },
             });
+
+            // The library's first paint calls fit(), which moves the current-time bar
+            // without redrawing the axis. Start and end options would keep the whole
+            // timeline hidden until a later range change, so re-apply the window once
+            // that first paint has shown the timeline. Zoom forces the same redraw.
+            let placedMarker = false;
+            const placeCurrentTimeMarker = () => {
+                if (placedMarker) return;
+                placedMarker = true;
+                requestAnimationFrame(() => {
+                    if (timelineRef.current !== timeline) return;
+                    const range = displayRangeRef.current;
+                    const bounds = scrollBoundariesRef.current;
+                    timeline.setOptions({ min: bounds.minTime, max: bounds.maxTime });
+                    timeline.setWindow(range.start, range.end, { animation: false });
+                    timeline.redraw();
+                });
+            };
+            timeline.on('changed', placeCurrentTimeMarker);
 
             timeline.on('select', (properties: { items: (string | number)[] }) => {
                 if (properties.items.length > 0) {

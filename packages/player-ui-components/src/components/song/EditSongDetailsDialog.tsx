@@ -31,6 +31,16 @@ import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
+/** Purpose and typical extension for a song file row. Selection behavior is unchanged. */
+const FileFieldLabel = ({ title, extension }: { title: string; extension: string }) => (
+    <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 600 }}>
+        {title}{' '}
+        <Typography component="span" variant="body2" color="text.secondary" fontWeight={400}>
+            {extension}
+        </Typography>
+    </Typography>
+);
+
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
     fileType,
@@ -489,81 +499,104 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </Typography>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {/* FSEQ File */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                {isElectron() ? (
-                                    <FileSelectButton
-                                        fileType="fseq"
-                                        onFileSelect={(file) => handleFileChange(file, 'fseq')}
-                                    />
-                                ) : (
-                                    <>
-                                        <FileButton
-                                            fileType={['.fseq']}
-                                            isMultipleFile={false}
-                                            onChange={(e) =>
-                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'fseq')
-                                            }
+                            <Box>
+                                <FileFieldLabel title="Sequence File" extension=".fseq" />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    {isElectron() ? (
+                                        <FileSelectButton
+                                            fileType="fseq"
+                                            onFileSelect={(file) => handleFileChange(file, 'fseq')}
                                         />
-                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
-                                            On player
-                                        </Button>
-                                    </>
-                                )}
-                                <Typography variant="body1">
-                                    {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
-                                </Typography>
+                                    ) : (
+                                        <>
+                                            <FileButton
+                                                fileType={['.fseq']}
+                                                isMultipleFile={false}
+                                                onChange={(e) =>
+                                                    handleWebFileReplace(
+                                                        e as React.ChangeEvent<HTMLInputElement>,
+                                                        'fseq',
+                                                    )
+                                                }
+                                            />
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={() => setPickerFor('fseq')}
+                                            >
+                                                On player
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Typography variant="body1">
+                                        {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
+                                    </Typography>
+                                </Box>
                             </Box>
 
                             {/* MP3 File (optional) */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                {isElectron() ? (
-                                    <FileSelectButton
-                                        fileType="mp3"
-                                        onFileSelect={(file) => handleFileChange(file, 'mp3')}
-                                    />
-                                ) : (
-                                    <>
-                                        <FileButton
-                                            fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
-                                            isMultipleFile={false}
-                                            onChange={(e) =>
-                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
-                                            }
+                            <Box>
+                                <FileFieldLabel title="Audio File" extension=".mp3" />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    {isElectron() ? (
+                                        <FileSelectButton
+                                            fileType="mp3"
+                                            onFileSelect={(file) => handleFileChange(file, 'mp3')}
                                         />
-                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
-                                            On player
-                                        </Button>
-                                    </>
-                                )}
-                                <Typography variant="body1">
-                                    {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No audio file'}
-                                </Typography>
+                                    ) : (
+                                        <>
+                                            <FileButton
+                                                fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
+                                                isMultipleFile={false}
+                                                onChange={(e) =>
+                                                    handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
+                                                }
+                                            />
+                                            <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                                On player
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Typography variant="body1">
+                                        {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No audio file'}
+                                    </Typography>
+                                </Box>
                             </Box>
 
                             {/* Image File */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                {isElectron() ? (
-                                    <FileSelectButton
-                                        fileType="image"
-                                        onFileSelect={(file) => handleFileChange(file, 'image')}
-                                    />
-                                ) : (
-                                    <>
-                                        <FileButton
-                                            fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
-                                            isMultipleFile={false}
-                                            onChange={(e) =>
-                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'image')
-                                            }
+                            <Box>
+                                <FileFieldLabel title="Image File" extension=".jpg" />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    {isElectron() ? (
+                                        <FileSelectButton
+                                            fileType="image"
+                                            onFileSelect={(file) => handleFileChange(file, 'image')}
                                         />
-                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
-                                            On player
-                                        </Button>
-                                    </>
-                                )}
-                                <Typography variant="body1">
-                                    {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
-                                </Typography>
+                                    ) : (
+                                        <>
+                                            <FileButton
+                                                fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
+                                                isMultipleFile={false}
+                                                onChange={(e) =>
+                                                    handleWebFileReplace(
+                                                        e as React.ChangeEvent<HTMLInputElement>,
+                                                        'image',
+                                                    )
+                                                }
+                                            />
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={() => setPickerFor('image')}
+                                            >
+                                                On player
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Typography variant="body1">
+                                        {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
+                                    </Typography>
+                                </Box>
                             </Box>
                         </Box>
                     </Grid>
