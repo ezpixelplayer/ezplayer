@@ -192,8 +192,15 @@ export interface PlayerPStatusContent {
     preemptedItems?: PlayingItem[];
 
     volume?: {
-        level: number; // 0-100
+        /** 0-100. The default output's level, or in `outputs` mode the loudest
+         *  named output (0 when none are selected). */
+        level: number;
         muted?: boolean;
+        /** `default`: the system default output follows `volumeControl`.
+         *  `outputs`: each named output follows its own `AudioOutputConfig`. */
+        mode?: 'default' | 'outputs';
+        /** Live per-output levels in `outputs` mode; empty when none selected. */
+        outputs?: Array<{ id: string; label: string; level: number; deviceId?: string; groupId?: string }>;
     };
 
     /** Files pinned by currently-loaded playback (foreground + background), as stored

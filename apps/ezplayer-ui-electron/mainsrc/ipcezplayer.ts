@@ -1230,7 +1230,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                broadcastAudioChunk(msg.chunk, msg.volumeSF);
+                broadcastAudioChunk(msg.chunk, msg.volumeSF, msg.outputGains);
                 break;
             }
             case 'pixelbuffer': {

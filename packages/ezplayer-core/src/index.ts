@@ -261,3 +261,12 @@ export {
     type ViewerStatsSummary,
     type SummarizeOptions
 } from './util/viewerStats';
+
+export {
+    DEFAULT_VOLUME_TARGET_ID,
+    resolveVolumeTargets,
+    scheduledVolumeLevel,
+    type VolumeOutputMode,
+    type VolumeTarget,
+    type VolumeTargets
+} from './util/volumeTargets';

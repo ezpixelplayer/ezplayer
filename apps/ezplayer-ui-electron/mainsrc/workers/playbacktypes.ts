@@ -131,7 +131,15 @@ export type PlayerCommand =
 
 export type WorkerToMainMessage =
     | { type: 'ready' }
-    | { type: 'audioChunk'; chunk: AudioChunk; volumeSF: number }
+    | {
+          type: 'audioChunk';
+          chunk: AudioChunk;
+          /** Gain for the web/cloud listener ring and the legacy single output. */
+          volumeSF: number;
+          /** Linear gain per output key (`DEFAULT_VOLUME_TARGET_ID` or
+           *  `AudioOutputConfig.id`), mute applied. */
+          outputGains?: Record<string, number>;
+      }
     | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }

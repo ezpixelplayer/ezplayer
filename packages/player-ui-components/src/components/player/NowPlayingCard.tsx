@@ -12,8 +12,8 @@ import {
     DialogContent,
 } from '@mui/material';
 import { Box } from '../box/Box';
-import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
-import { VolumeOff, VolumeUp, Refresh, Tune, Close } from '@mui/icons-material';
+import { PlayerPStatusContent, resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
+import { VolumeOff, VolumeUp, Refresh, Tune, Close, WarningAmber } from '@mui/icons-material';
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
@@ -61,6 +61,8 @@ export const NowPlayingCard = ({
     const controllerOpRunning = useSelector((s: RootState) =>
         Object.values(s.controllerOps?.operations ?? {}).some((o) => o.status === 'running' || o.status === 'queued'),
     );
+    // Devices the player has enumerated; null until it reports them (marks outputs not connected).
+    const knownOutputs = useSelector((s: RootState) => s.audioDevices.outputs);
 
     if (player.ptype !== 'EZP') {
         return null;
@@ -77,6 +79,24 @@ export const NowPlayingCard = ({
         !!backgroundItem?.at && backgroundItem.at > (player.engine_time ?? player.reported_time);
     const volume = player.volume?.level ?? 100;
     const muted = player.volume?.muted ?? false;
+    // One row per output. `default` mode: the single system-default level. `outputs`
+    // mode: each named device at its own (scheduled) level; a device the player has
+    // enumerated but cannot find right now is marked not connected.
+    const volumeRows: Array<{ id: string; label: string; level: number; connected?: boolean }> =
+        player.volume?.mode === 'outputs'
+            ? (player.volume.outputs ?? []).map((o) => ({
+                  id: o.id,
+                  label: o.label,
+                  level: Math.round(o.level),
+                  connected: knownOutputs
+                      ? !!resolveAudioOutputDevice(
+                            { deviceId: o.deviceId ?? '', label: o.label, groupId: o.groupId },
+                            knownOutputs,
+                        )
+                      : undefined,
+              }))
+            : [{ id: 'default', label: '', level: Math.round(volume) }];
+    const silent = muted || volumeRows.every((r) => r.level === 0);
     const openAudioSettings = () => setAudioSettingsOpen(true);
 
     return (
@@ -99,16 +119,17 @@ export const NowPlayingCard = ({
                     <PlayerSystemTime />
                 </Box>
 
-                {/* The level is automated toward the default/scheduled target, so it's shown
-                    read-only here — change it via the settings dialog. Mute is a live toggle
-                    (operator contexts only); the gear opens the volume settings. */}
+                {/* Volume is automated toward the scheduled target(s), so it is shown read-only
+                    here — change it via the settings dialog (click anywhere on the meter). Mute is
+                    a live toggle (operator contexts only). With named outputs each device has its
+                    own level and schedule, so there is one row per output. */}
                 <Box
                     onClick={allowVolumeControl ? openAudioSettings : undefined}
                     role={allowVolumeControl ? 'button' : undefined}
                     aria-label={allowVolumeControl ? 'Open volume settings' : undefined}
                     sx={{
                         display: 'flex',
-                        alignItems: 'center',
+                        alignItems: volumeRows.length > 1 ? 'flex-start' : 'center',
                         gap: 1,
                         ml: 2,
                         ...(allowVolumeControl ? { cursor: 'pointer' } : {}),
@@ -123,21 +144,50 @@ export const NowPlayingCard = ({
                                 dispatch(callImmediateCommand({ command: 'setvolume', mute: !muted }));
                             }}
                         >
-                            {muted || volume === 0 ? <VolumeOff fontSize="small" /> : <VolumeUp fontSize="small" />}
+                            {silent ? <VolumeOff fontSize="small" /> : <VolumeUp fontSize="small" />}
                         </IconButton>
-                    ) : muted || volume === 0 ? (
+                    ) : silent ? (
                         <VolumeOff fontSize="small" color="disabled" />
                     ) : (
                         <VolumeUp fontSize="small" color="disabled" />
                     )}
-                    <LinearProgress
-                        variant="determinate"
-                        value={muted ? 0 : volume}
-                        sx={{ width: compact ? 80 : 120, height: 6, borderRadius: 3 }}
-                    />
-                    <Typography variant="caption" color="text.secondary">
-                        {muted ? 0 : volume}%
-                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, minWidth: 0 }}>
+                        {volumeRows.length === 0 ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <WarningAmber fontSize="small" color="warning" />
+                                <Typography variant="caption" color="warning.main">
+                                    No audio outputs selected
+                                </Typography>
+                            </Box>
+                        ) : (
+                            volumeRows.map((row) => (
+                                <Box key={row.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={muted ? 0 : row.level}
+                                        sx={{
+                                            width: compact ? 80 : 120,
+                                            height: 6,
+                                            borderRadius: 3,
+                                            flexShrink: 0,
+                                            opacity: row.connected === false ? 0.4 : 1,
+                                        }}
+                                    />
+                                    <Typography
+                                        variant="caption"
+                                        color={row.connected === false ? 'text.disabled' : 'text.secondary'}
+                                        noWrap
+                                        title={row.label || undefined}
+                                    >
+                                        {muted ? 0 : row.level}%
+                                        {row.label
+                                            ? ` (${row.label}${row.connected === false ? ', not connected' : ''})`
+                                            : ''}
+                                    </Typography>
+                                </Box>
+                            ))
+                        )}
+                    </Box>
                     {allowVolumeControl && (
                         <Tooltip title="Volume settings">
                             <IconButton size="small" aria-label="Open volume settings" onClick={openAudioSettings}>

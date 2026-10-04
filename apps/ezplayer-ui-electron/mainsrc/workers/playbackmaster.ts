@@ -43,13 +43,14 @@ import type {
 import {
     AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
-    getActiveVolumeSchedule,
     getScheduleTimes,
     getSeqTimesMS,
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
     songVolumeScale,
+    resolveVolumeTargets,
+    type VolumeTarget,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -344,6 +345,17 @@ function sendPlayerStateUpdate() {
         volume: {
             level: volume,
             muted,
+            mode: volumeMode,
+            outputs:
+                volumeMode === 'outputs'
+                    ? volumeTargetsNow.map((t) => ({
+                          id: t.id,
+                          label: t.label,
+                          deviceId: t.deviceId,
+                          groupId: t.groupId,
+                          level: outputLevels.get(t.id) ?? t.level,
+                      }))
+                    : undefined,
         },
     };
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
@@ -695,15 +707,26 @@ function doVolumeAdjust(dn: number) {
         lastVolCheck = dn; // unconfigured: keep the slew clock fresh, don't bank credit
         return;
     }
-    const volsched = getActiveVolumeSchedule(settings.volumeControl);
-    let tgtvol = settings.volumeControl.defaultVolume ?? 100;
-    if (volsched) {
-        tgtvol = volsched.volumeLevel;
+    // One resolver for every output (default sink, or each named device with its
+    // own schedule). The worker owns the slew and mute; main just applies gains.
+    const resolved = resolveVolumeTargets(settings);
+    volumeMode = resolved.mode;
+    volumeTargetsNow = resolved.targets;
+    for (const id of [...outputLevels.keys()]) {
+        if (!resolved.targets.some((t) => t.id === id)) outputLevels.delete(id);
     }
-
-    const diff = tgtvol - volume;
-    if (diff === 0) {
+    let maxDiff = 0;
+    for (const t of resolved.targets) {
+        const cur = outputLevels.get(t.id);
+        if (cur === undefined) {
+            outputLevels.set(t.id, t.level); // a new output starts at its target
+            continue;
+        }
+        maxDiff = Math.max(maxDiff, Math.abs(t.level - cur));
+    }
+    if (maxDiff === 0) {
         lastVolCheck = dn; // at target: reset so a future change starts from now
+        recomputeVolumeGains();
         return;
     }
 
@@ -712,11 +735,36 @@ function doVolumeAdjust(dn: number) {
 
     // One 1% step per whole interval elapsed, capped by the remaining distance.
     const maxSteps = Math.floor(elapsed / VOLUME_SLEW_INTERVAL_MS);
-    const step = Math.min(Math.abs(diff), maxSteps);
-    volume += Math.sign(diff) * step;
+    let used = 0;
+    for (const t of resolved.targets) {
+        const cur = outputLevels.get(t.id)!;
+        const diff = t.level - cur;
+        if (diff === 0) continue;
+        const step = Math.min(Math.abs(diff), maxSteps);
+        outputLevels.set(t.id, cur + Math.sign(diff) * step);
+        used = Math.max(used, step);
+    }
     // Consume only the time we used so a sub-interval remainder carries forward.
-    lastVolCheck += step * VOLUME_SLEW_INTERVAL_MS;
-    volumeSF = muted ? 0 : volume / 100;
+    lastVolCheck += used * VOLUME_SLEW_INTERVAL_MS;
+    recomputeVolumeGains();
+}
+
+/** Derive the per-output gains, the headline `volume`, and the listener-ring
+ *  gain from the current levels and mute. */
+function recomputeVolumeGains() {
+    const gains: Record<string, number> = {};
+    let headline = 0;
+    for (const t of volumeTargetsNow) {
+        const lvl = outputLevels.get(t.id) ?? t.level;
+        gains[t.id] = muted ? 0 : lvl / 100;
+        headline = Math.max(headline, lvl);
+    }
+    if (volumeTargetsNow.length === 0) headline = volumeMode === 'default' ? 100 : 0;
+    volume = headline;
+    outputGains = gains;
+    // Legacy single gain, consumed by main for the default-sink window when a
+    // chunk carries no per-output gains. Listeners never see it (see sendAudioChunk).
+    volumeSF = muted ? 0 : volumeMode === 'default' ? volume / 100 : 1;
 }
 
 /////////
@@ -771,12 +819,15 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'setvolume': {
             if (cmd?.volume !== undefined) {
+                // Applies to every output; the schedule slew then pulls each back
+                // toward its own target (pre-existing semantics).
                 volume = cmd.volume;
+                for (const id of outputLevels.keys()) outputLevels.set(id, cmd.volume);
             }
             if (cmd.mute !== undefined) {
                 muted = cmd.mute;
             }
-            volumeSF = muted ? 0 : volume / 100;
+            recomputeVolumeGains();
             sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
@@ -1237,8 +1288,15 @@ let isPaused = false;
 /** A graceful stop is in progress: still playing, but ending at the next
  *  convenient point. Reported as "Stopping". */
 let stoppingGracefully = false;
+/** Headline level for status / legacy consumers (see recomputeVolumeGains). */
 let volume = 100;
 let muted = false;
+/** Current (slewed) level per output target id. */
+const outputLevels = new Map<string, number>();
+let volumeMode: 'default' | 'outputs' = 'default';
+let volumeTargetsNow: VolumeTarget[] = [];
+/** Linear gain per output key, mute applied; shipped with every audio chunk. */
+let outputGains: Record<string, number> = {};
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
@@ -2021,8 +2079,9 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
 }
 
 /**
- * Publish volume-scaled samples to the ring buffer (web clients), then send
- * unity-gain PCM to main for Electron audio windows (per-sink GainNode).
+ * Publish unity-gain samples to the ring buffer (web/cloud listeners, who set
+ * their own volume), then send the same PCM to main for the Electron audio
+ * windows, which apply the per-output gains.
  */
 function sendAudioChunk(
     samplesUnity: Float32Array,
@@ -2032,12 +2091,15 @@ function sendAudioChunk(
     channels: number,
     advanceSamples: number,
 ) {
-    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, volumeSF);
+    // Web/cloud listeners are an independent path: they get the song at unity, never
+    // modulated by the local output schedules or mute (they have their own volume).
+    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, 1);
     const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
             type: 'audioChunk',
             volumeSF,
+            outputGains,
             chunk: {
                 sampleRate,
                 channels,
