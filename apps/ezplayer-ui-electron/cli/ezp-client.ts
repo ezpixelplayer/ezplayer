@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import type { ControllerCommand, ControllerOpsState } from '@ezplayer/ezplayer-core';
 import { resolveHost, unreachableHint } from '@ezplayer/ezplayer-client';
-import { SUBDIR_NAME } from '../mainsrc/data/SettingsMigration.js';
+import { SUBDIR_NAME } from '../mainsrc/data/SettingsDir.js';
 import { runningPlayerWebPort } from '../mainsrc/showfolder-lock.js';
 
 export { resolveHost, unreachableHint };

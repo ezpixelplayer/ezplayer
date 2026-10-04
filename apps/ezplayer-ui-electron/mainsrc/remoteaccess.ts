@@ -17,7 +17,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
 import { atomicWriteFile } from './data/atomicWrite.js';
-import { settingsPath } from './data/SettingsMigration.js';
+import { settingsPath } from './data/SettingsDir.js';
 
 const scrypt = promisify(scryptCb) as (
     password: string | Buffer,
