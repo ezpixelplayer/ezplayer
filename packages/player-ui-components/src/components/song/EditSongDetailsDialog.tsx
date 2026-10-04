@@ -31,12 +31,14 @@ import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
-/** Purpose and typical extension for a song file row. Selection behavior is unchanged. */
-const FileFieldLabel = ({ title, extension }: { title: string; extension: string }) => (
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+/** Purpose and accepted extensions for a song file row. Selection behavior is unchanged. */
+const FileFieldLabel = ({ title, extensions }: { title: string; extensions: readonly string[] }) => (
     <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 600 }}>
         {title}{' '}
         <Typography component="span" variant="body2" color="text.secondary" fontWeight={400}>
-            {extension}
+            {extensions.join(', ')}
         </Typography>
     </Typography>
 );
@@ -488,6 +490,39 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         placeholder="e.g., Local, xLights, etc."
                                     />
                                 </Grid>
+                                <Grid item xs={6}>
+                                    <Autocomplete
+                                        multiple
+                                        freeSolo
+                                        options={availableTags}
+                                        value={selectedTags}
+                                        onChange={(_, newValue) => {
+                                            setSelectedTags(newValue);
+                                            setFormData((prev) => ({ ...prev, tags: newValue }));
+                                            setErrors((prev) => ({ ...prev, tags: false }));
+                                            newValue.forEach((tag) => {
+                                                if (tag && !availableTags.includes(tag)) {
+                                                    dispatch(setSequenceTags([...availableTags, tag]));
+                                                }
+                                            });
+                                        }}
+                                        onInputChange={(event, newInputValue) => {
+                                            // Only create a new tag when Enter is pressed
+                                            if (
+                                                event?.type === 'keydown' &&
+                                                (event as React.KeyboardEvent).key === 'Enter' &&
+                                                newInputValue
+                                            ) {
+                                                if (!availableTags.includes(newInputValue)) {
+                                                    dispatch(setSequenceTags([...availableTags, newInputValue]));
+                                                }
+                                            }
+                                        }}
+                                        renderInput={(params) => (
+                                            <TextField {...params} label="Tags" fullWidth margin="normal" />
+                                        )}
+                                    />
+                                </Grid>
                             </Grid>
                         </form>
                     </Grid>
@@ -500,7 +535,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {/* FSEQ File */}
                             <Box>
-                                <FileFieldLabel title="Sequence File" extension=".fseq" />
+                                <FileFieldLabel title="Sequence File" extensions={['.fseq']} />
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                     {isElectron() ? (
                                         <FileSelectButton
@@ -536,7 +571,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
                             {/* MP3 File (optional) */}
                             <Box>
-                                <FileFieldLabel title="Audio File" extension=".mp3" />
+                                <FileFieldLabel title="Audio File" extensions={SUPPORTED_AUDIO_EXTENSIONS} />
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                     {isElectron() ? (
                                         <FileSelectButton
@@ -549,7 +584,10 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                                 fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
                                                 isMultipleFile={false}
                                                 onChange={(e) =>
-                                                    handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
+                                                    handleWebFileReplace(
+                                                        e as React.ChangeEvent<HTMLInputElement>,
+                                                        'mp3',
+                                                    )
                                                 }
                                             />
                                             <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
@@ -565,7 +603,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
                             {/* Image File */}
                             <Box>
-                                <FileFieldLabel title="Image File" extension=".jpg" />
+                                <FileFieldLabel title="Image File" extensions={IMAGE_EXTENSIONS} />
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                     {isElectron() ? (
                                         <FileSelectButton
@@ -575,7 +613,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                     ) : (
                                         <>
                                             <FileButton
-                                                fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
+                                                fileType={IMAGE_EXTENSIONS}
                                                 isMultipleFile={false}
                                                 onChange={(e) =>
                                                     handleWebFileReplace(
@@ -689,39 +727,6 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                             />
                                         }
                                         label="Normalize volume"
-                                    />
-                                </Grid>
-                                <Grid item xs={6}>
-                                    <Autocomplete
-                                        multiple
-                                        freeSolo
-                                        options={availableTags}
-                                        value={selectedTags}
-                                        onChange={(_, newValue) => {
-                                            setSelectedTags(newValue);
-                                            setFormData((prev) => ({ ...prev, tags: newValue }));
-                                            setErrors((prev) => ({ ...prev, tags: false }));
-                                            newValue.forEach((tag) => {
-                                                if (tag && !availableTags.includes(tag)) {
-                                                    dispatch(setSequenceTags([...availableTags, tag]));
-                                                }
-                                            });
-                                        }}
-                                        onInputChange={(event, newInputValue) => {
-                                            // Only create a new tag when Enter is pressed
-                                            if (
-                                                event?.type === 'keydown' &&
-                                                (event as React.KeyboardEvent).key === 'Enter' &&
-                                                newInputValue
-                                            ) {
-                                                if (!availableTags.includes(newInputValue)) {
-                                                    dispatch(setSequenceTags([...availableTags, newInputValue]));
-                                                }
-                                            }
-                                        }}
-                                        renderInput={(params) => (
-                                            <TextField {...params} label="Tags" fullWidth margin="normal" />
-                                        )}
                                     />
                                 </Grid>
                             </Grid>

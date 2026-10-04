@@ -23,6 +23,9 @@ interface TimelineByScheduleProps {
     onItemClick?: (scheduleId?: string, playlistId?: string) => void;
     simulationStartTime?: number;
     simulationEndTime?: number;
+    /** Window shown on first load and by Fit to Screen. Defaults to the simulation range. */
+    viewStartTime?: number;
+    viewEndTime?: number;
     // Horizontal scroll limits
     minScrollTime?: Date | number;
     maxScrollTime?: Date | number;
@@ -385,6 +388,8 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
     onItemClick,
     simulationStartTime,
     simulationEndTime,
+    viewStartTime,
+    viewEndTime,
     minScrollTime,
     maxScrollTime,
     showScheduledMarkers = true,
@@ -422,11 +427,14 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
 
     // The window the user asked to look at
     const displayRange = useMemo(() => {
+        if (viewStartTime && viewEndTime) {
+            return { start: new Date(viewStartTime), end: new Date(viewEndTime) };
+        }
         if (simulationStartTime && simulationEndTime) {
             return { start: new Date(simulationStartTime), end: new Date(simulationEndTime) };
         }
         return dayWindow();
-    }, [simulationStartTime, simulationEndTime]);
+    }, [viewStartTime, viewEndTime, simulationStartTime, simulationEndTime]);
 
     // How far the user may scroll
     const scrollBoundaries = useMemo(() => {
@@ -515,10 +523,6 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                 },
             });
 
-            // The library's first paint calls fit(), which moves the current-time bar
-            // without redrawing the axis. Start and end options would keep the whole
-            // timeline hidden until a later range change, so re-apply the window once
-            // that first paint has shown the timeline. Zoom forces the same redraw.
             let placedMarker = false;
             const placeCurrentTimeMarker = () => {
                 if (placedMarker) return;
