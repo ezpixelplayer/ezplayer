@@ -42,6 +42,8 @@ const launchArgs: string[] = Array.isArray(process.argv) ? process.argv : [];
 const shouldShowWelcomeOnLaunch = launchArgs.includes('--show-welcome=true');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    piAvailable: (): Promise<boolean> => ipcRenderer.invoke('pi:available'),
+    piRequest: (request: Record<string, unknown>): Promise<unknown> => ipcRenderer.invoke('pi:request', request),
     shouldShowWelcomeOnLaunch: () => shouldShowWelcomeOnLaunch,
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
     autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),

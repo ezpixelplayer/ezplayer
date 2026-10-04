@@ -123,6 +123,8 @@ export interface BatchImportProgress {
 export type { GetNodeResult, ChannelRole, ChannelRoleKind, ImageInfo } from 'xllayoutcalcs';
 
 export interface EZPElectronAPI {
+    piAvailable?: () => Promise<boolean>;
+    piRequest?: (request: Record<string, unknown>) => Promise<unknown>;
     shouldShowWelcomeOnLaunch: () => boolean;
 
     // FS Utilities

@@ -32,7 +32,8 @@ import {
     useFilesSection,
 } from '@ezplayer/player-ui-components';
 import type { MenuRoute, SettingsSection } from '@ezplayer/player-ui-components';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { PiSettings, PiAudioTest } from '../components/PiSettings';
 
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
 import PlayArrow from '@mui/icons-material/PlayArrow';
@@ -70,6 +71,13 @@ const ErrorPage = Loader(lazy(() => ERROR_PAGE));
 const getStatusArea = () => [];
 
 const ElectronSettingsPage = () => {
+    const [piAvailable, setPiAvailable] = useState(false);
+    useEffect(() => {
+        void window.electronAPI
+            ?.piAvailable?.()
+            .then(setPiAvailable)
+            .catch(() => setPiAvailable(false));
+    }, []);
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
@@ -103,7 +111,12 @@ const ElectronSettingsPage = () => {
             key: 'audio',
             label: 'Audio',
             icon: <VolumeUpIcon sx={{ fontSize: 56 }} />,
-            content: <AudioSettings />,
+            content: (
+                <>
+                    <AudioSettings />
+                    {piAvailable && <PiAudioTest />}
+                </>
+            ),
         },
         {
             key: 'cloud',
@@ -123,8 +136,22 @@ const ElectronSettingsPage = () => {
             label: 'Software Update',
             icon: <SystemUpdateAltIcon sx={{ fontSize: 56 }} />,
             title: 'Software Update',
-            available: canControlUpdates(),
+            available: canControlUpdates() && !piAvailable,
             content: <SoftwareUpdateSettings />,
+        },
+        {
+            key: 'piNetwork',
+            label: 'Pi Network',
+            icon: <RouterIcon sx={{ fontSize: 56 }} />,
+            available: piAvailable,
+            content: <PiSettings />,
+        },
+        {
+            key: 'piSystem',
+            label: 'Pi System',
+            icon: <TuneIcon sx={{ fontSize: 56 }} />,
+            available: piAvailable,
+            content: <PiSettings system />,
         },
         shellSection,
         filesSection,

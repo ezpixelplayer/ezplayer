@@ -1,7 +1,19 @@
-import { Box, Button, Card, CardActionArea, LinearProgress, Paper, Typography } from '@mui/material';
+import {
+    Box,
+    Button,
+    Card,
+    CardActionArea,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    LinearProgress,
+    Paper,
+    Typography,
+} from '@mui/material';
 import CloudIcon from '@mui/icons-material/Cloud';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import React from 'react';
+import { PiSettings } from '../../components/PiSettings';
 import { useNavigate } from 'react-router-dom';
 import { PlayerCloudWelcomePanel, Routes as ROUTES, issueCloudCommand } from '@ezplayer/player-ui-components';
 import { useDispatch, useSelector } from 'react-redux';
@@ -12,6 +24,14 @@ export const WELCOME_ROUTE = '/welcome';
 type WelcomeStage = 'choose' | 'cloud-bootstrap-register' | 'cloud-bootstrap-layout';
 
 export const WelcomeScreen = () => {
+    const [piAvailable, setPiAvailable] = React.useState(false);
+    const [piNetworkOpen, setPiNetworkOpen] = React.useState(false);
+    React.useEffect(() => {
+        void window.electronAPI
+            ?.piAvailable?.()
+            .then(setPiAvailable)
+            .catch(() => setPiAvailable(false));
+    }, []);
     const navigate = useNavigate();
     const dispatch = useDispatch<AppDispatch>();
     const [isOpening, setIsOpening] = React.useState(false);
@@ -128,6 +148,19 @@ export const WelcomeScreen = () => {
                     Welcome to EZPlayer
                 </Typography>
 
+                {piAvailable && (
+                    <>
+                        <Button onClick={() => setPiNetworkOpen(true)} sx={{ mb: 2 }}>
+                            Set up Pi Wi-Fi / Ethernet
+                        </Button>
+                        <Dialog open={piNetworkOpen} onClose={() => setPiNetworkOpen(false)} fullWidth maxWidth="md">
+                            <DialogTitle>
+                                Pi Network <Button onClick={() => setPiNetworkOpen(false)}>Close</Button>
+                            </DialogTitle>
+                            <DialogContent>{piNetworkOpen && <PiSettings />}</DialogContent>
+                        </Dialog>
+                    </>
+                )}
                 {stage === 'choose' && (
                     <>
                         <Typography variant="body1" sx={{ mb: 3 }}>
