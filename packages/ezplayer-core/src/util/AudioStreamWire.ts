@@ -12,7 +12,7 @@
  *   0    u32   magic        AUDIO_WIRE_MAGIC ("EZAU")
  *   4    u8    version      AUDIO_WIRE_VERSION (2)
  *   5    u8    codec        AudioWireCodec
- *   6    u16   flags        reserved (0)
+ *   6    u16   flags        AUDIO_WIRE_FLAG_* bits
  *   8    f64   serverNow    player Date.now() at send time (clock-offset refinement)
  *   16   f64   playAt       player Date.now() at which the first frame should be audible
  *   24   u32   incarnation  bumps on a clean break (new song); contiguity key
@@ -27,9 +27,13 @@
  *
  * Payloads:
  *   PcmF32  — interleaved Float32, `frames * channels` samples.
- *   Opus    — sequence of `[u16 len][opus packet]`, each packet one 20 ms frame,
- *             encoded from a freshly reset encoder so the chunk decodes standalone.
- *             Decoded output is `nPackets * 960` frames; discard `preSkip`, keep `frames`.
+ *   Opus    — sequence of `[u16 len][opus packet]`, each packet one 20 ms frame.
+ *             With FLAG_CONTINUOUS the packets continue one encoder stream across
+ *             frames: decode with one decoder, the output lags the input by
+ *             `preSkip` frames, so schedule it at `playAt - preSkip/sampleRate`;
+ *             on FLAG_STREAM_START the first `preSkip` decoded frames are the
+ *             codec's startup transient. Without the flag each frame was encoded
+ *             standalone: discard `preSkip`, keep `frames` (legacy).
  *   Silence — no payload; the chunk is all zeros. Listeners advance their schedule
  *             without rendering anything.
  *
@@ -41,6 +45,10 @@
 export const AUDIO_WIRE_MAGIC = 0x55415a45; // "EZAU" read little-endian
 export const AUDIO_WIRE_VERSION = 2;
 export const AUDIO_WIRE_HEADER_BYTES = 52;
+/** Opus payload continues the previous frame's encoder stream (see header doc). */
+export const AUDIO_WIRE_FLAG_CONTINUOUS = 0x0001;
+/** First frame after the encoder (re)started; its first `preSkip` decoded frames are transient. */
+export const AUDIO_WIRE_FLAG_STREAM_START = 0x0002;
 const LEGACY_HEADER_BYTES = 36;
 
 export enum AudioWireCodec {
@@ -51,6 +59,8 @@ export enum AudioWireCodec {
 
 export interface AudioWireHeader {
     codec: AudioWireCodec;
+    /** AUDIO_WIRE_FLAG_* bits; absent = 0. */
+    flags?: number;
     serverNow: number;
     playAt: number;
     incarnation: number;
@@ -79,7 +89,7 @@ export function buildAudioWireFrame(h: AudioWireHeader, payload: Uint8Array): Ui
     dv.setUint32(0, AUDIO_WIRE_MAGIC, true);
     dv.setUint8(4, AUDIO_WIRE_VERSION);
     dv.setUint8(5, h.codec);
-    dv.setUint16(6, 0, true);
+    dv.setUint16(6, (h.flags ?? 0) & 0xffff, true);
     dv.setFloat64(8, h.serverNow, true);
     dv.setFloat64(16, h.playAt, true);
     dv.setUint32(24, h.incarnation >>> 0, true);
@@ -122,6 +132,7 @@ export function parseAudioWireFrame(data: ArrayBuffer | ArrayBufferView): AudioW
         return {
             version: 2,
             codec,
+            flags: dv.getUint16(6, true),
             serverNow: dv.getFloat64(8, true),
             playAt: dv.getFloat64(16, true),
             incarnation: dv.getUint32(24, true),
@@ -147,6 +158,7 @@ export function parseAudioWireFrame(data: ArrayBuffer | ArrayBufferView): AudioW
     return {
         version: 1,
         codec: AudioWireCodec.PcmF32,
+        flags: 0,
         serverNow: dv.getFloat64(0, true),
         playAt: dv.getFloat64(8, true),
         incarnation: dv.getUint32(16, true),

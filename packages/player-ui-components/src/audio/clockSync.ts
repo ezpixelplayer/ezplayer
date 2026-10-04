@@ -31,6 +31,10 @@ export interface ClockOffsetRef {
     httpSample?: number;
     /** Round trip of the accepted HTTP sample (ms), for diagnostics. */
     httpRtt?: number;
+    /** Consecutive refinements that wanted a snap; see `maybeSnap`. */
+    pendingSnaps?: number;
+    /** Times `value` has been snapped (diagnostics). */
+    snaps?: number;
 }
 
 export interface ClockOffsetSample {
@@ -41,6 +45,11 @@ export interface ClockOffsetSample {
 export const CLOCK_REFRESH_INTERVAL_MS = 30_000;
 const CLOCK_SYNC_SAMPLES = 6;
 const SNAP_THRESHOLD_MS = 50;
+/** A disagreement this large is applied at once (clock step, wake-up). */
+const HARD_SNAP_MS = 250;
+/** Smaller disagreements must persist this many refinements before applying:
+ *  one noisy clock reading must not move the audio schedule. */
+const SNAP_PERSISTENCE = 3;
 /** ~100 ms per chunk → about 6 s of history. */
 const CHUNK_CANDIDATE_WINDOW = 64;
 
@@ -102,5 +111,15 @@ function combinedEstimate(ref: ClockOffsetRef): number {
 }
 
 function maybeSnap(ref: ClockOffsetRef): void {
-    if (Math.abs(ref.estimate - ref.value) >= SNAP_THRESHOLD_MS) ref.value = ref.estimate;
+    const diff = Math.abs(ref.estimate - ref.value);
+    if (diff < SNAP_THRESHOLD_MS) {
+        ref.pendingSnaps = 0;
+        return;
+    }
+    ref.pendingSnaps = (ref.pendingSnaps ?? 0) + 1;
+    if (diff >= HARD_SNAP_MS || ref.pendingSnaps >= SNAP_PERSISTENCE) {
+        ref.value = ref.estimate;
+        ref.pendingSnaps = 0;
+        ref.snaps = (ref.snaps ?? 0) + 1;
+    }
 }

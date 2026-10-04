@@ -7,7 +7,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { startMockController, type MockController } from '@ezplayer/epp-mock-controller';
-import { AudioWireCodec, parseAudioWireFrame, splitOpusPackets, type AudioWireFrame } from '@ezplayer/ezplayer-core';
+import {
+    AUDIO_WIRE_FLAG_CONTINUOUS,
+    AUDIO_WIRE_FLAG_STREAM_START,
+    AudioWireCodec,
+    parseAudioWireFrame,
+    splitOpusPackets,
+    type AudioWireFrame,
+} from '@ezplayer/ezplayer-core';
 import OpusScript from 'opusscript';
 import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
 import { FppClient } from '../harness/fpp-client.js';
@@ -58,20 +65,25 @@ function listen(wsUrl: string, until: (frames: AudioWireFrame[]) => boolean, tim
     return { opened, done, close: () => ws.close() };
 }
 
-/** RMS of the left channel of an opus frame, after the encoder's pre-skip. */
-function decodeRms(f: AudioWireFrame): number {
+/** Decode a run of continuous opus frames with ONE decoder (as the browser does)
+ *  and return the left-channel RMS of each frame. */
+function decodeRunRms(frames: AudioWireFrame[]): number[] {
     const dec = new OpusScript(48000, 2, OpusScript.Application.AUDIO);
     try {
-        const pcm: number[] = [];
-        for (const p of splitOpusPackets(f.payload)) {
-            const out = dec.decode(Buffer.from(p));
-            const s16 = new Int16Array(out.buffer, out.byteOffset, out.byteLength / 2);
-            for (let i = 0; i < s16.length; i += 2) pcm.push(s16[i]! / 32768);
-        }
-        const body = pcm.slice(f.preSkip, f.preSkip + f.frames);
-        let sum = 0;
-        for (const v of body) sum += v * v;
-        return Math.sqrt(sum / Math.max(1, body.length));
+        return frames.map((f) => {
+            let sum = 0;
+            let n = 0;
+            for (const p of splitOpusPackets(f.payload)) {
+                const out = dec.decode(Buffer.from(p));
+                const s16 = new Int16Array(out.buffer, out.byteOffset, out.byteLength / 2);
+                for (let i = 0; i < s16.length; i += 2) {
+                    const v = s16[i]! / 32768;
+                    sum += v * v;
+                    n++;
+                }
+            }
+            return Math.sqrt(sum / Math.max(1, n));
+        });
     } finally {
         dec.delete();
     }
@@ -117,8 +129,7 @@ afterAll(async () => {
 describe('live audio stream', () => {
     it('delivers opus audio of the playing song, timestamped ahead of the player clock', async () => {
         const wsUrl = `${app.base.replace(/^http/, 'ws')}/api/ezp/audiostream`;
-        const isMusic = (f: AudioWireFrame) => f.codec !== AudioWireCodec.Silence;
-        const stream = listen(wsUrl, (frames) => frames.filter(isMusic).length >= 20, 40_000);
+        const stream = listen(wsUrl, (frames) => frames.length >= 40, 40_000);
         await stream.opened;
 
         await fpp.command('Start Playlist', 'ToneList', 0, 0, 0);
@@ -137,27 +148,51 @@ describe('live audio stream', () => {
             expect(f.frames).toBeGreaterThanOrEqual(f.hopFrames);
         }
 
-        // Music is opus, not the PCM fallback (that would mean the encoder failed to load).
-        const music = frames.filter(isMusic);
-        const codecs = new Set(music.map((f) => f.codec));
+        // Everything is one continuous opus stream (the player encodes silence too),
+        // not the PCM fallback (that would mean the encoder failed to load).
+        const codecs = new Set(frames.map((f) => f.codec));
         expect(codecs).toEqual(new Set([AudioWireCodec.Opus]));
-        for (const f of music) expect(f.preSkip).toBeGreaterThan(0);
-        // Compressed: a 110 ms stereo chunk is ~42 KB raw.
-        for (const f of music) expect(f.payload.byteLength).toBeLessThan(6000);
+        for (const f of frames) {
+            expect((f.flags ?? 0) & AUDIO_WIRE_FLAG_CONTINUOUS).toBeTruthy();
+            expect(f.preSkip).toBeGreaterThan(0);
+            // Compressed: a 100 ms stereo chunk is ~38 KB raw; ~1.6 KB at 128 kbps.
+            expect(f.payload.byteLength).toBeLessThan(6000);
+        }
 
         // It is the tone we uploaded: a 0.5-amplitude sine has RMS ≈ 0.35; silence
-        // or garbage would be near zero. Check a few frames past the start.
-        const rms = music.slice(5, 10).map(decodeRms);
-        for (const r of rms) expect(r).toBeGreaterThan(0.15);
+        // or garbage would be near zero. The stream starts before the song does, so
+        // judge the loud frames, and require a good run of them.
+        const rms = decodeRunRms(frames);
+        expect(Math.max(...rms)).toBeGreaterThan(0.2);
+        expect(rms.filter((r) => r > 0.2).length).toBeGreaterThanOrEqual(10);
+        const music = frames;
 
         // Timing: chunks are contiguous 100 ms hops within one song, stamped a
         // little ahead of the player's clock (never in the past by the time they
         // are sent), and the player's clock is this machine's clock.
+        const dump = () =>
+            music
+                .map(
+                    (f) =>
+                        `${f.seq}:+${(f.playAt - music[0]!.playAt).toFixed(1)}/${f.frames}f/fl${f.flags}/i${f.incarnation}/${f.payload.byteLength}B`,
+                )
+                .join(' ');
+        // Idle silence is generated contiguously too, so the stream (re)starts at most
+        // when the pump starts; the song itself must never restart it.
+        const restarts = music.filter((f) => ((f.flags ?? 0) & AUDIO_WIRE_FLAG_STREAM_START) !== 0);
+        expect(restarts.length, `stream restarts: ${dump()}`).toBeLessThanOrEqual(2);
+        expect(music[0]!.flags! & AUDIO_WIRE_FLAG_STREAM_START).toBeTruthy();
         for (let i = 1; i < music.length; i++) {
             const a = music[i - 1]!;
             const b = music[i]!;
-            if (a.incarnation !== b.incarnation) continue;
-            expect(Math.abs(b.playAt - a.playAt - 100)).toBeLessThanOrEqual(1);
+            if ((b.flags ?? 0) & AUDIO_WIRE_FLAG_STREAM_START) continue; // a real jump, not a hole
+            // Consecutive frames: the next starts where this one ends (frames may be
+            // shorter than 100 ms right after a flush).
+            const expectedGap = (a.frames * 1000) / a.sampleRate;
+            expect(
+                Math.abs(b.playAt - a.playAt - expectedGap),
+                `frames ${a.seq}->${b.seq}: ${dump()}`,
+            ).toBeLessThanOrEqual(1);
         }
         for (const f of music) {
             expect(f.playAt - f.serverNow).toBeGreaterThan(-150);

@@ -49,6 +49,15 @@ export interface AudioListenDiagnostics {
     chunksReceived: number;
     chunksDropped: number;
     chunksTrimmed: number;
+    /** Chained schedule abandoned for the ideal start (audible as a chop). */
+    chunksSnapped: number;
+    /** Applied clock offset re-snapped. */
+    offsetSnaps: number;
+    /** Where the wall↔AudioContext mapping comes from. */
+    mapping?: 'outputTimestamp' | 'currentTime';
+    /** Smallest observed step of `performance.now()` in ms (100 under Firefox
+     *  resistFingerprinting; ~0.1 or less normally). */
+    timerPrecisionMs?: number;
     decodeErrors: number;
     reconnects: number;
     httpAttempts: number;
@@ -88,6 +97,9 @@ export class AudioListenSession {
     private chunksReceived = 0;
     private chunksDropped = 0;
     private chunksTrimmed = 0;
+    private chunksSnapped = 0;
+    private lastSnapLogAt = 0;
+    private timerPrecisionMs?: number;
     private reconnects = 0;
     private httpAttempts = 0;
     private lastChunk?: ChunkPlaybackEvent;
@@ -137,6 +149,10 @@ export class AudioListenSession {
             chunksReceived: this.chunksReceived,
             chunksDropped: this.chunksDropped,
             chunksTrimmed: this.chunksTrimmed,
+            chunksSnapped: this.chunksSnapped,
+            offsetSnaps: this.offsetRef.snaps ?? 0,
+            mapping: this.player?.mapping,
+            timerPrecisionMs: this.timerPrecisionMs,
             decodeErrors: this.decoder?.decodeErrors ?? 0,
             reconnects: this.reconnects,
             httpAttempts: this.httpAttempts,
@@ -161,6 +177,8 @@ export class AudioListenSession {
         this.chunksReceived = 0;
         this.chunksDropped = 0;
         this.chunksTrimmed = 0;
+        this.chunksSnapped = 0;
+        this.timerPrecisionMs = measureTimerPrecision();
         this.reconnects = 0;
         this.httpAttempts = 0;
         this.lastChunk = undefined;
@@ -170,6 +188,17 @@ export class AudioListenSession {
             this.lastChunk = ev;
             if (ev.dropped) this.chunksDropped++;
             else if (ev.trimmedMs > 0) this.chunksTrimmed++;
+            if (ev.snapped) {
+                this.chunksSnapped++;
+                // Breadcrumb for the LAN pages, which have no debug overlay.
+                const now = Date.now();
+                if (now - this.lastSnapLogAt > 1000) {
+                    this.lastSnapLogAt = now;
+                    console.debug(
+                        `[audio] schedule snap: deviation ${ev.deviationMs.toFixed(0)} ms, offset ${ev.offsetValue.toFixed(0)} ms, mapping ${ev.mapping}, timer precision ${this.timerPrecisionMs ?? '?'} ms`,
+                    );
+                }
+            }
         });
         void this.player.resume();
         this.player.context.onstatechange = () => {
@@ -427,6 +456,23 @@ export class AudioListenSession {
         this.currentStatus = s;
         for (const cb of this.listeners) cb(s);
     }
+}
+
+/** Smallest non-zero step `performance.now()` takes in a quick burst of reads. */
+function measureTimerPrecision(): number | undefined {
+    if (typeof performance === 'undefined') return undefined;
+    let min = Infinity;
+    let prev = performance.now();
+    const deadline = prev + 20;
+    let t = prev;
+    while (t < deadline) {
+        t = performance.now();
+        if (t > prev) {
+            min = Math.min(min, t - prev);
+            prev = t;
+        }
+    }
+    return Number.isFinite(min) ? Math.round(min * 1000) / 1000 : undefined;
 }
 
 // -- registry ------------------------------------------------------------------

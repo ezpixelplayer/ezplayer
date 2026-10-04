@@ -799,6 +799,11 @@ function stopAudioPump(): void {
     if (!audioPumpTimer) return;
     clearInterval(audioPumpTimer);
     audioPumpTimer = undefined;
+    // Let listeners hear the queued tail, and start a fresh stream next time.
+    if (audioEncoder) {
+        const toCloud = cloudAudioWanted();
+        for (const frame of audioEncoder.flush(Date.now())) sendAudioFrame(frame, toCloud);
+    }
     console.log('[server-worker] audio pump stopped');
 }
 
@@ -814,13 +819,19 @@ function audioPumpTick(): void {
     const serverNow = Date.now();
     for (const chunk of chunks) {
         audioPumpAfterSeq = chunk.seq;
-        let frame: Uint8Array;
+        let frames: Uint8Array[];
         try {
-            frame = audioEncoder.encodeChunk(chunk, serverNow);
+            frames = audioEncoder.push(chunk, serverNow);
         } catch (err) {
             console.error('[server-worker] audio encode failed:', err);
             continue;
         }
+        for (const frame of frames) sendAudioFrame(frame, toCloud);
+    }
+}
+
+function sendAudioFrame(frame: Uint8Array, toCloud: boolean): void {
+    {
         for (const client of lanAudioClients) {
             if (client.readyState !== WebSocket.OPEN || client.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) continue;
             try {
@@ -831,7 +842,7 @@ function audioPumpTick(): void {
         }
         const cloud = cloudAudioBridge;
         if (toCloud && cloud?.open && cloud.ws.readyState === WebSocket.OPEN) {
-            if (cloud.ws.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) continue;
+            if (cloud.ws.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) return;
             try {
                 cloud.ws.send(frame, { binary: true });
             } catch (err) {

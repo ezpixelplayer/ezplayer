@@ -3,7 +3,13 @@
  * legacy / fallback PCM is just de-interleaved.
  */
 
-import { AudioWireCodec, splitOpusPackets, type AudioWireFrame } from '@ezplayer/ezplayer-core';
+import {
+    AUDIO_WIRE_FLAG_CONTINUOUS,
+    AUDIO_WIRE_FLAG_STREAM_START,
+    AudioWireCodec,
+    splitOpusPackets,
+    type AudioWireFrame,
+} from '@ezplayer/ezplayer-core';
 import { OpusDecoder } from 'opus-decoder';
 
 import type { DecodedChunk } from './chunkScheduler';
@@ -85,6 +91,28 @@ export class ChunkDecoder {
                     return null;
                 }
                 if (decoded.errors.length) this.decodeErrors += decoded.errors.length;
+                const flags = frame.flags ?? 0;
+                if (flags & AUDIO_WIRE_FLAG_CONTINUOUS) {
+                    // One encoder stream across frames: play everything, shifted earlier by
+                    // the codec delay. The startup transient after a (re)start is silenced.
+                    const n = decoded.samplesDecoded;
+                    if (n <= 0) return null;
+                    const planar = decoded.channelData.map((c) => c.slice(0, n));
+                    if (flags & AUDIO_WIRE_FLAG_STREAM_START) {
+                        const z = Math.min(frame.preSkip, n);
+                        for (const c of planar) c.fill(0, 0, z);
+                    }
+                    return {
+                        ...base,
+                        sampleRate: decoded.sampleRate,
+                        frames: n,
+                        hopFrames: n,
+                        playAt: frame.playAt - (frame.preSkip * 1000) / decoded.sampleRate,
+                        planar,
+                        silent: false,
+                    };
+                }
+                // Legacy standalone frames: discard the lookahead, keep `frames`.
                 const start = Math.min(frame.preSkip, decoded.samplesDecoded);
                 const end = Math.min(start + frame.frames, decoded.samplesDecoded);
                 const frames = end - start;

@@ -2,21 +2,28 @@
  * Schedules decoded audio chunks on the Web Audio clock so each one is
  * audible at its `playAt` instant on the player's clock.
  *
- * Chunks are hop + a trailing crossfade tail: every chunk is rendered in full
- * and the next one starts `hopFrames` later, so the ramped edges overlap and
- * sum to unity. That masks codec warm-up, resampling seams and any sub-ms
- * scheduling rounding the browser applies.
+ * Chunks may carry a trailing crossfade tail (PCM fallback): every chunk is
+ * rendered in full and the next one starts `hopFrames` later so the ramped
+ * edges overlap and sum to unity. Continuous opus chunks have no tail and
+ * butt-join.
  *
  * Contiguous chunks (same incarnation, playAt exactly where the previous one
- * left off) are butt-joined on the AudioContext clock rather than
- * re-anchored, so the clock offset's jitter doesn't reach the audio. A drift
- * of more than DRIFT_SNAP_MS between the chained schedule and the ideal one
- * snaps back, and a new incarnation (new song) re-anchors.
+ * left off) are chained on the AudioContext clock rather than re-anchored, so
+ * the clock offset's jitter never reaches the audio. The chained schedule is
+ * compared against the ideal (wall-clock derived) start on every chunk, but
+ * only a PERSISTENT deviation re-anchors: the median of the last few readings
+ * must exceed DRIFT_SNAP_MS. A single noisy reading of the browser's clocks
+ * (Firefox quantizes timers under resistFingerprinting, and its output
+ * timestamp pairing is coarser than Chrome's) used to snap the schedule on
+ * its own, which was audible as a chop about once a second. A gross error
+ * still snaps immediately.
  *
  * Output latency: `getOutputTimestamp()` pairs a context time that is being
  * output right now with a performance timestamp, so mapping wall time through
- * it accounts for the device's output latency (Bluetooth included). Browsers
- * without it fall back to `currentTime − outputLatency`.
+ * it accounts for the device's output latency (Bluetooth included). The pair
+ * is sanity-checked against `currentTime` / `performance.now()`; browsers
+ * without it, or with an inconsistent pair, fall back to
+ * `currentTime − outputLatency`.
  */
 
 import type { ClockOffsetRef } from './clockSync';
@@ -50,21 +57,39 @@ export interface ChunkPlaybackEvent {
     dropped: boolean;
     /** Started part-way through to catch up. */
     trimmedMs: number;
+    /** The chained schedule was abandoned for the ideal start. */
     snapped: boolean;
+    /** Ideal − chained start for this chunk, ms (0 when re-anchored). */
+    deviationMs: number;
+    /** Where the wall↔context mapping came from. */
+    mapping: 'outputTimestamp' | 'currentTime';
 }
 
+/** Persistent deviation that re-anchors the chained schedule. */
 const DRIFT_SNAP_MS = 50;
+/** A single reading this far off re-anchors at once. */
+const DRIFT_HARD_SNAP_MS = 400;
+const DRIFT_WINDOW = 10;
+const DRIFT_MIN_SAMPLES = 6;
 /** Lead-in when a late chunk has to start "now". */
 const CATCHUP_MARGIN_S = 0.004;
+
+function median(values: number[]): number {
+    const s = [...values].sort((a, b) => a - b);
+    const mid = s.length >> 1;
+    return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+}
 
 export class RealTimeChunkPlayer {
     readonly context: AudioContext;
     private incarnation: number | undefined;
     private nextPlayAt: number | undefined;
     private nextStartCtx: number | undefined;
+    private deviations: number[] = [];
     private readonly offsetRef: ClockOffsetRef;
     private readonly onChunk?: (ev: ChunkPlaybackEvent) => void;
     private gain: GainNode;
+    private lastMapping: ChunkPlaybackEvent['mapping'] = 'currentTime';
 
     constructor(offsetRef: ClockOffsetRef, onChunk?: (ev: ChunkPlaybackEvent) => void) {
         this.offsetRef = offsetRef;
@@ -96,6 +121,12 @@ export class RealTimeChunkPlayer {
         this.incarnation = undefined;
         this.nextPlayAt = undefined;
         this.nextStartCtx = undefined;
+        this.deviations.length = 0;
+    }
+
+    /** Which mapping the last chunk used (diagnostics). */
+    get mapping(): ChunkPlaybackEvent['mapping'] {
+        return this.lastMapping;
     }
 
     /** Context time at which audio scheduled would be audible, paired with the
@@ -104,8 +135,15 @@ export class RealTimeChunkPlayer {
         const c = this.context;
         const ts = typeof c.getOutputTimestamp === 'function' ? c.getOutputTimestamp() : undefined;
         if (ts && typeof ts.contextTime === 'number' && typeof ts.performanceTime === 'number' && ts.contextTime > 0) {
-            return { ctx: ts.contextTime, wall: Date.now() - performance.now() + ts.performanceTime };
+            // Trust the pair only when it is close to the clocks it claims to relate:
+            // a stale or mismatched pair would move every ideal start with it.
+            const perfNow = performance.now();
+            if (Math.abs(ts.performanceTime - perfNow) < 1000 && Math.abs(c.currentTime - ts.contextTime) < 1) {
+                this.lastMapping = 'outputTimestamp';
+                return { ctx: ts.contextTime, wall: Date.now() - perfNow + ts.performanceTime };
+            }
         }
+        this.lastMapping = 'currentTime';
         return { ctx: c.currentTime - (c.outputLatency || 0), wall: Date.now() };
     }
 
@@ -123,19 +161,27 @@ export class RealTimeChunkPlayer {
 
         let start: number;
         let snapped = false;
+        let deviationMs = 0;
         if (
             incarnation !== this.incarnation ||
             this.nextPlayAt === undefined ||
-            Math.abs(playAt - this.nextPlayAt) > 1 ||
+            Math.abs(playAt - this.nextPlayAt) > 1.5 ||
             this.nextStartCtx === undefined
         ) {
             this.incarnation = incarnation;
             start = idealStart;
+            this.deviations.length = 0;
         } else {
             start = this.nextStartCtx;
-            if (Math.abs(start - idealStart) > DRIFT_SNAP_MS / 1000) {
+            deviationMs = (idealStart - start) * 1000;
+            this.deviations.push(deviationMs);
+            if (this.deviations.length > DRIFT_WINDOW) this.deviations.shift();
+            const persistent =
+                this.deviations.length >= DRIFT_MIN_SAMPLES && Math.abs(median(this.deviations)) > DRIFT_SNAP_MS;
+            if (Math.abs(deviationMs) > DRIFT_HARD_SNAP_MS || persistent) {
                 start = idealStart;
                 snapped = true;
+                this.deviations.length = 0;
             }
         }
         this.nextPlayAt = playAt + hopMs;
@@ -166,6 +212,8 @@ export class RealTimeChunkPlayer {
             dropped,
             trimmedMs,
             snapped,
+            deviationMs,
+            mapping: this.lastMapping,
         });
         if (dropped || chunk.silent || chunk.planar.length === 0) return;
 

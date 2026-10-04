@@ -239,6 +239,8 @@ export {
     AUDIO_WIRE_MAGIC,
     AUDIO_WIRE_VERSION,
     AUDIO_WIRE_HEADER_BYTES,
+    AUDIO_WIRE_FLAG_CONTINUOUS,
+    AUDIO_WIRE_FLAG_STREAM_START,
     AudioWireCodec,
     type AudioWireHeader,
     type AudioWireFrame,

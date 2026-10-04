@@ -2581,16 +2581,21 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - Fseq prefetched`);
 
-            function sendSilence(startTime: number, ms: number) {
-                if (ms <= 0) return;
+            /** Send up to one chunk of silence starting at `startTime`; returns the ms it
+             *  covers so the caller advances the audio clock by exactly that and loops for
+             *  the rest. Silence must be as contiguous as music: the listener stream is one
+             *  continuous opus encoding and restarts on any hole. */
+            function sendSilence(startTime: number, ms: number): number {
+                if (ms <= 0) return 0;
                 if (ms > playbackParams.sendAudioChunkMs) {
                     ms = playbackParams.sendAudioChunkMs;
                 }
                 ms = Math.ceil(ms);
-                const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
+                const quiet = new Float32Array(ms * 48);
                 // Silence carries no overlap: advance by its full length. Transitions to/from
                 // music fade naturally against the music chunk's ramped edge.
                 sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1, quiet.length);
+                return ms;
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -2622,15 +2627,24 @@ async function processQueue() {
                 );
                 const audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
-                    sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
-                    audioPlayerRunTime = audioAction.atTime;
+                    const want = audioAction.atTime - audioPlayerRunTime;
+                    const sent = sendSilence(startTime, want);
+                    audioPlayerRunTime = sent >= want ? audioAction.atTime : audioPlayerRunTime + sent;
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    const etime = Math.max(audioPlayerRunTime, targetFrameRTC);
-                    sendSilence(startTime, etime - audioPlayerRunTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
-                    audioPlayerRunTime = etime;
-                    break;
+                    // Idle: fill silence contiguously out to the same lead as music. The old
+                    // code sent one chunk "up to now" and jumped the clock past the rest,
+                    // leaving holes that restarted the listener stream every chunk.
+                    if (audioPlayerRunTime < targetFrameRTC - 1000) {
+                        audioPlayerRunTime = targetFrameRTC; // far behind (e.g. unpause): don't flood
+                    }
+                    const lead = targetFrameRTC + playbackParams.sendAudioInAdvanceMs;
+                    const want = lead - audioPlayerRunTime;
+                    if (want <= 0) break;
+                    const sent = sendSilence(startTime, want);
+                    audioPlayerRunTime = sent >= want ? lead : audioPlayerRunTime + sent;
+                    continue;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
                     curAudioSyncNum++;
