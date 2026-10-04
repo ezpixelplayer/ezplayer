@@ -40,7 +40,7 @@ import {
     setViewerStatsBroadcaster,
 } from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
-import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
+import { ensureEzplayerSubdir, settingsPath } from './data/SettingsDir.js';
 import {
     getCurrentCloudStatus,
     fetchLayoutNow,
@@ -600,9 +600,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // Flush out any pending writes (e.g. downloads) to show data in previous folder.
     await flushPendingInstalls();
 
-    // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
-    // loader so that, on first run against an old folder, root-level files are moved
-    // into the subdir and the loaders read the migrated copies on this same tick.
+    // All our JSON lives under `.ezplayer/` in the show folder.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
     resetControllerOps();
