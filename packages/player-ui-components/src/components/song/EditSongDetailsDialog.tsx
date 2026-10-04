@@ -31,6 +31,18 @@ import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+/** Purpose and accepted extensions for a song file row. Selection behavior is unchanged. */
+const FileFieldLabel = ({ title, extensions }: { title: string; extensions: readonly string[] }) => (
+    <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 600 }}>
+        {title}{' '}
+        <Typography component="span" variant="body2" color="text.secondary" fontWeight={400}>
+            {extensions.join(', ')}
+        </Typography>
+    </Typography>
+);
+
 // Component to handle file selection in Electron context
 const FileSelectButton = ({
     fileType,
@@ -478,6 +490,39 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                         placeholder="e.g., Local, xLights, etc."
                                     />
                                 </Grid>
+                                <Grid item xs={6}>
+                                    <Autocomplete
+                                        multiple
+                                        freeSolo
+                                        options={availableTags}
+                                        value={selectedTags}
+                                        onChange={(_, newValue) => {
+                                            setSelectedTags(newValue);
+                                            setFormData((prev) => ({ ...prev, tags: newValue }));
+                                            setErrors((prev) => ({ ...prev, tags: false }));
+                                            newValue.forEach((tag) => {
+                                                if (tag && !availableTags.includes(tag)) {
+                                                    dispatch(setSequenceTags([...availableTags, tag]));
+                                                }
+                                            });
+                                        }}
+                                        onInputChange={(event, newInputValue) => {
+                                            // Only create a new tag when Enter is pressed
+                                            if (
+                                                event?.type === 'keydown' &&
+                                                (event as React.KeyboardEvent).key === 'Enter' &&
+                                                newInputValue
+                                            ) {
+                                                if (!availableTags.includes(newInputValue)) {
+                                                    dispatch(setSequenceTags([...availableTags, newInputValue]));
+                                                }
+                                            }
+                                        }}
+                                        renderInput={(params) => (
+                                            <TextField {...params} label="Tags" fullWidth margin="normal" />
+                                        )}
+                                    />
+                                </Grid>
                             </Grid>
                         </form>
                     </Grid>
@@ -489,81 +534,107 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                         </Typography>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {/* FSEQ File */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                {isElectron() ? (
-                                    <FileSelectButton
-                                        fileType="fseq"
-                                        onFileSelect={(file) => handleFileChange(file, 'fseq')}
-                                    />
-                                ) : (
-                                    <>
-                                        <FileButton
-                                            fileType={['.fseq']}
-                                            isMultipleFile={false}
-                                            onChange={(e) =>
-                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'fseq')
-                                            }
+                            <Box>
+                                <FileFieldLabel title="Sequence File" extensions={['.fseq']} />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    {isElectron() ? (
+                                        <FileSelectButton
+                                            fileType="fseq"
+                                            onFileSelect={(file) => handleFileChange(file, 'fseq')}
                                         />
-                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
-                                            On player
-                                        </Button>
-                                    </>
-                                )}
-                                <Typography variant="body1">
-                                    {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
-                                </Typography>
+                                    ) : (
+                                        <>
+                                            <FileButton
+                                                fileType={['.fseq']}
+                                                isMultipleFile={false}
+                                                onChange={(e) =>
+                                                    handleWebFileReplace(
+                                                        e as React.ChangeEvent<HTMLInputElement>,
+                                                        'fseq',
+                                                    )
+                                                }
+                                            />
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={() => setPickerFor('fseq')}
+                                            >
+                                                On player
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Typography variant="body1">
+                                        {getFileName(newFiles?.fseq || uploadedFiles?.fseq) || 'No FSEQ file'}
+                                    </Typography>
+                                </Box>
                             </Box>
 
                             {/* MP3 File (optional) */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                {isElectron() ? (
-                                    <FileSelectButton
-                                        fileType="mp3"
-                                        onFileSelect={(file) => handleFileChange(file, 'mp3')}
-                                    />
-                                ) : (
-                                    <>
-                                        <FileButton
-                                            fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
-                                            isMultipleFile={false}
-                                            onChange={(e) =>
-                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
-                                            }
+                            <Box>
+                                <FileFieldLabel title="Audio File" extensions={SUPPORTED_AUDIO_EXTENSIONS} />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    {isElectron() ? (
+                                        <FileSelectButton
+                                            fileType="mp3"
+                                            onFileSelect={(file) => handleFileChange(file, 'mp3')}
                                         />
-                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
-                                            On player
-                                        </Button>
-                                    </>
-                                )}
-                                <Typography variant="body1">
-                                    {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No audio file'}
-                                </Typography>
+                                    ) : (
+                                        <>
+                                            <FileButton
+                                                fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
+                                                isMultipleFile={false}
+                                                onChange={(e) =>
+                                                    handleWebFileReplace(
+                                                        e as React.ChangeEvent<HTMLInputElement>,
+                                                        'mp3',
+                                                    )
+                                                }
+                                            />
+                                            <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                                On player
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Typography variant="body1">
+                                        {getFileName(newFiles?.audio || uploadedFiles?.audio) || 'No audio file'}
+                                    </Typography>
+                                </Box>
                             </Box>
 
                             {/* Image File */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                {isElectron() ? (
-                                    <FileSelectButton
-                                        fileType="image"
-                                        onFileSelect={(file) => handleFileChange(file, 'image')}
-                                    />
-                                ) : (
-                                    <>
-                                        <FileButton
-                                            fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
-                                            isMultipleFile={false}
-                                            onChange={(e) =>
-                                                handleWebFileReplace(e as React.ChangeEvent<HTMLInputElement>, 'image')
-                                            }
+                            <Box>
+                                <FileFieldLabel title="Image File" extensions={IMAGE_EXTENSIONS} />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    {isElectron() ? (
+                                        <FileSelectButton
+                                            fileType="image"
+                                            onFileSelect={(file) => handleFileChange(file, 'image')}
                                         />
-                                        <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
-                                            On player
-                                        </Button>
-                                    </>
-                                )}
-                                <Typography variant="body1">
-                                    {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
-                                </Typography>
+                                    ) : (
+                                        <>
+                                            <FileButton
+                                                fileType={IMAGE_EXTENSIONS}
+                                                isMultipleFile={false}
+                                                onChange={(e) =>
+                                                    handleWebFileReplace(
+                                                        e as React.ChangeEvent<HTMLInputElement>,
+                                                        'image',
+                                                    )
+                                                }
+                                            />
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={() => setPickerFor('image')}
+                                            >
+                                                On player
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Typography variant="body1">
+                                        {getFileName(newFiles?.thumb || uploadedFiles?.thumb) || 'No image file'}
+                                    </Typography>
+                                </Box>
                             </Box>
                         </Box>
                     </Grid>
@@ -656,39 +727,6 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                             />
                                         }
                                         label="Normalize volume"
-                                    />
-                                </Grid>
-                                <Grid item xs={6}>
-                                    <Autocomplete
-                                        multiple
-                                        freeSolo
-                                        options={availableTags}
-                                        value={selectedTags}
-                                        onChange={(_, newValue) => {
-                                            setSelectedTags(newValue);
-                                            setFormData((prev) => ({ ...prev, tags: newValue }));
-                                            setErrors((prev) => ({ ...prev, tags: false }));
-                                            newValue.forEach((tag) => {
-                                                if (tag && !availableTags.includes(tag)) {
-                                                    dispatch(setSequenceTags([...availableTags, tag]));
-                                                }
-                                            });
-                                        }}
-                                        onInputChange={(event, newInputValue) => {
-                                            // Only create a new tag when Enter is pressed
-                                            if (
-                                                event?.type === 'keydown' &&
-                                                (event as React.KeyboardEvent).key === 'Enter' &&
-                                                newInputValue
-                                            ) {
-                                                if (!availableTags.includes(newInputValue)) {
-                                                    dispatch(setSequenceTags([...availableTags, newInputValue]));
-                                                }
-                                            }
-                                        }}
-                                        renderInput={(params) => (
-                                            <TextField {...params} label="Tags" fullWidth margin="normal" />
-                                        )}
                                     />
                                 </Grid>
                             </Grid>
