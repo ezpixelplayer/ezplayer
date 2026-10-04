@@ -12,6 +12,7 @@ import { ZoomIn, ZoomOut, FitScreen, Refresh } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import {
     buildScheduleColorIndexByType,
+    getScheduleColorSeriesKey,
     getScheduleColorSwatch,
     resolveScheduleDisplaySwatch,
 } from '../../util/scheduleDisplayColor';
@@ -117,7 +118,7 @@ function timingLines(scheduledStart: Date | undefined, actualStart: Date): strin
 }
 
 /**
- * Turn the simulation log into vis-timeline items (one row per schedule).
+ * Turn the simulation log into vis-timeline items (one row per schedule; repeats share a row).
  * Pure so it can be memoized on its inputs.
  */
 function buildTimelineData(
@@ -146,6 +147,13 @@ function buildTimelineData(
         // A saved custom color wins; unparseable values fall back to the auto swatch instead of throwing.
         return resolveScheduleDisplaySwatch(schedule?.color, getScheduleColorSwatch(base, colorIndexById.get(id) ?? 0));
     };
+    // Repeats of one schedule share a row. The row label shows name, type and priority, so an
+    // occurrence edited to differ in any of those gets its own row rather than a wrong label.
+    const rowIdOf = (id: string) => {
+        const schedule = scheduleById.get(id);
+        if (!schedule) return id;
+        return JSON.stringify([getScheduleColorSeriesKey(schedule), isBackground(id), priorityOf(id), nameOf(id)]);
+    };
     const scheduledTimesOf = (id: string) => {
         const schedule = scheduleById.get(id);
         if (!schedule) return { scheduledStart: undefined, scheduledEnd: undefined };
@@ -168,6 +176,7 @@ function buildTimelineData(
         events.sort((a, b) => a.eventTime - b.eventTime);
 
         const scheduleName = nameOf(scheduleId);
+        const rowId = rowIdOf(scheduleId);
         const background = isBackground(scheduleId);
         const swatch = swatchOf(scheduleId);
         const { scheduledStart, scheduledEnd } = scheduledTimesOf(scheduleId);
@@ -207,7 +216,7 @@ function buildTimelineData(
                 content: scheduleName,
                 start,
                 end,
-                group: scheduleId,
+                group: rowId,
                 className,
                 title,
                 type: 'range',
@@ -243,7 +252,7 @@ function buildTimelineData(
                         content: 'Interruption',
                         start: lastSuspendTime,
                         end: eventTime,
-                        group: scheduleId,
+                        group: rowId,
                         className: 'schedule-interruption',
                         title,
                         type: 'range',
@@ -292,7 +301,7 @@ function buildTimelineData(
                 content: `${scheduleName} (Scheduled)`,
                 start: scheduledStart,
                 end: scheduledEnd,
-                group: scheduleId,
+                group: rowId,
                 className: ran ? 'schedule-scheduled-marker' : 'schedule-scheduled-only',
                 title,
                 type: 'range',
@@ -310,13 +319,18 @@ function buildTimelineData(
         }
     });
 
-    // One row per schedule that produced something to draw. (A schedule that only
+    // One row per schedule series that produced something to draw. (A schedule that only
     // appears in Deferred/Prevented events with no known scheduled time has no bar,
-    // and an empty row would just be confusing.)
-    const rowIds = Array.from(new Set(items.map((item) => item.scheduleId)));
+    // and an empty row would just be confusing.) Every schedule in a row has the same
+    // name, type and priority, so any one of them can stand in for the row.
+    const scheduleIdByRow = new Map<string, string>();
+    items.forEach((item) => {
+        if (!scheduleIdByRow.has(item.group)) scheduleIdByRow.set(item.group, item.scheduleId);
+    });
+    const rows = Array.from(scheduleIdByRow, ([rowId, scheduleId]) => ({ rowId, scheduleId }));
 
     // Background schedules first, then by priority (high first), then by name
-    rowIds.sort((a, b) => {
+    rows.sort(({ scheduleId: a }, { scheduleId: b }) => {
         const bgA = isBackground(a);
         const bgB = isBackground(b);
         if (bgA !== bgB) return bgA ? -1 : 1;
@@ -326,11 +340,11 @@ function buildTimelineData(
         return nameOf(a).localeCompare(nameOf(b));
     });
 
-    rowIds.forEach((scheduleId) => {
+    rows.forEach(({ rowId, scheduleId }) => {
         const background = isBackground(scheduleId);
         const priority = priorityOf(scheduleId);
         groups.push({
-            id: scheduleId,
+            id: rowId,
             content: nameOf(scheduleId),
             className: background ? 'schedule-background-group' : `schedule-main-${priority}-priority`,
             typeLabel: background ? 'Background' : 'Main',
