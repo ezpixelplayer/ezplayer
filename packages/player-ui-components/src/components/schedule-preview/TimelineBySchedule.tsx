@@ -23,6 +23,9 @@ interface TimelineByScheduleProps {
     onItemClick?: (scheduleId?: string, playlistId?: string) => void;
     simulationStartTime?: number;
     simulationEndTime?: number;
+    /** Window shown on first load and by Fit to Screen. Defaults to the simulation range. */
+    viewStartTime?: number;
+    viewEndTime?: number;
     // Horizontal scroll limits
     minScrollTime?: Date | number;
     maxScrollTime?: Date | number;
@@ -385,6 +388,8 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
     onItemClick,
     simulationStartTime,
     simulationEndTime,
+    viewStartTime,
+    viewEndTime,
     minScrollTime,
     maxScrollTime,
     showScheduledMarkers = true,
@@ -422,11 +427,14 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
 
     // The window the user asked to look at
     const displayRange = useMemo(() => {
+        if (viewStartTime && viewEndTime) {
+            return { start: new Date(viewStartTime), end: new Date(viewEndTime) };
+        }
         if (simulationStartTime && simulationEndTime) {
             return { start: new Date(simulationStartTime), end: new Date(simulationEndTime) };
         }
         return dayWindow();
-    }, [simulationStartTime, simulationEndTime]);
+    }, [viewStartTime, viewEndTime, simulationStartTime, simulationEndTime]);
 
     // How far the user may scroll
     const scrollBoundaries = useMemo(() => {
@@ -446,6 +454,11 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
         const { start, end } = dayWindow();
         return { minTime: start, maxTime: end };
     }, [minScrollTime, maxScrollTime, simulationStartTime, simulationEndTime, data]);
+
+    const displayRangeRef = useRef(displayRange);
+    const scrollBoundariesRef = useRef(scrollBoundaries);
+    displayRangeRef.current = displayRange;
+    scrollBoundariesRef.current = scrollBoundaries;
 
     // Create the timeline once the container exists; updates below are applied in place
     useEffect(() => {
@@ -509,6 +522,21 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                     },
                 },
             });
+
+            let placedMarker = false;
+            const placeCurrentTimeMarker = () => {
+                if (placedMarker) return;
+                placedMarker = true;
+                requestAnimationFrame(() => {
+                    if (timelineRef.current !== timeline) return;
+                    const range = displayRangeRef.current;
+                    const bounds = scrollBoundariesRef.current;
+                    timeline.setOptions({ min: bounds.minTime, max: bounds.maxTime });
+                    timeline.setWindow(range.start, range.end, { animation: false });
+                    timeline.redraw();
+                });
+            };
+            timeline.on('changed', placeCurrentTimeMarker);
 
             timeline.on('select', (properties: { items: (string | number)[] }) => {
                 if (properties.items.length > 0) {
