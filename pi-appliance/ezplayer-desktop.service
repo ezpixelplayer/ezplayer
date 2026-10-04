@@ -1,0 +1,13 @@
+[Unit]
+Description=EZPlayer graphical Pi player
+
+[Service]
+Type=simple
+Environment=EZPLAYER_PI_APPLIANCE=1
+ExecStart=/opt/EZPlayer/ezplayer-ui-electron --no-sandbox --no-update-check
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# This unit is started by the graphical session's XDG autostart entry.
+# Do not run the existing EZPlayer 'headless' command: it disables local audio.
