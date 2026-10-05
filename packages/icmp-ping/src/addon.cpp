@@ -326,9 +326,53 @@ struct PendingPing {
     std::chrono::steady_clock::time_point deadline;
 };
 
+/**
+ * Open the ICMP socket.  Unprivileged datagram ICMP is the normal path
+ * (Linux ping_group_range, macOS by default); raw is the root fallback.
+ * On failure `why` carries both errnos, so callers can say what went wrong.
+ */
+static int open_icmp_socket(std::string& why) {
+    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (s >= 0) return s;
+    const std::string dgram_err = strerror(errno);
+    s = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (s >= 0) return s;
+    why = "ICMP socket unavailable (dgram: " + dgram_err +
+          "; raw: " + strerror(errno) + ")";
+    return -1;
+}
+
+/**
+ * No socket: fail every ping with `why` until shutdown.  The thread must keep
+ * draining the queue — if it just exited, callers' promises would stay pending
+ * forever and the health pinger would freeze with no diagnosis.
+ */
+static void fail_all_pings(AddonState* st, const std::string& why) {
+    while (!st->shutting_down.load()) {
+        {
+            std::lock_guard<std::mutex> lk(st->queue_mutex);
+            for (auto* req : st->ping_queue) {
+                req->error = why;
+                post_result(st, req);
+            }
+            st->ping_queue.clear();
+        }
+        struct pollfd wake = {st->wake_pipe[0], POLLIN, 0};
+        poll(&wake, 1, 200);
+        if (wake.revents & POLLIN) {
+            char buf[64];
+            while (read(st->wake_pipe[0], buf, sizeof(buf)) > 0) {}
+        }
+    }
+}
+
 static void ping_thread_func(AddonState* st) {
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
-    if (sock < 0) return;   // can't ping — give up silently
+    std::string why;
+    int sock = open_icmp_socket(why);
+    if (sock < 0) {
+        fail_all_pings(st, why);
+        return;
+    }
 
     int fl = fcntl(sock, F_GETFL, 0);
     fcntl(sock, F_SETFL, fl | O_NONBLOCK);
@@ -417,9 +461,23 @@ static void ping_thread_func(AddonState* st) {
                                      reinterpret_cast<struct sockaddr*>(&from),
                                      &fl2);
                 if (n <= 0) break;
-                if (n < 8 || static_cast<uint8_t>(rbuf[0]) != 0) continue;
 
-                uint16_t rseq = ntohs(*reinterpret_cast<uint16_t*>(rbuf + 6));
+                // Linux ping sockets hand back the ICMP header first; macOS
+                // and raw sockets include the IP header.  Skip it when present
+                // (an IPv4 header starts 0x4N; an echo reply's type byte is 0).
+                const uint8_t* icmp = reinterpret_cast<const uint8_t*>(rbuf);
+                size_t len = static_cast<size_t>(n);
+                if (len >= 20 && (icmp[0] >> 4) == 4) {
+                    const size_t ihl = (icmp[0] & 0x0F) * 4;
+                    if (len <= ihl) continue;
+                    icmp += ihl;
+                    len  -= ihl;
+                }
+                if (len < 8 || icmp[0] != 0) continue;   // not an echo reply
+
+                uint16_t rseq_net;
+                std::memcpy(&rseq_net, icmp + 6, sizeof(rseq_net));
+                const uint16_t rseq = ntohs(rseq_net);
 
                 for (int i = static_cast<int>(pending.size()) - 1; i >= 0; --i) {
                     if (pending[i].seq == rseq &&

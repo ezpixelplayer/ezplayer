@@ -57,6 +57,20 @@ jobs:
             - name: Build project
               run: pnpm run build
 
+            # Unprivileged ICMP is off by default on some kernels; the runner
+            # can turn it on, which is what a packaged Linux install expects.
+            - name: Allow unprivileged ICMP (linux)
+              if: matrix.os == 'ubuntu-latest'
+              run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+
+            # Pings loopback through the native addon on each platform we ship.
+            # REQUIRE_ICMP turns "no ICMP socket here" from a skip into a
+            # failure, so a platform regression cannot hide as a skipped test.
+            - name: Run ICMP ping tests
+              run: pnpm --filter @ezplayer/icmp-ping test
+              env:
+                  REQUIRE_ICMP: '1'
+
             # Includes the real-ffmpeg conversion tests; fails if the ffmpeg-static
             # binary for this platform is missing.
             - name: Run app unit tests
