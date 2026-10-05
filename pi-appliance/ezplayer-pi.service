@@ -19,6 +19,9 @@ ProtectHome=read-only
 ProtectSystem=strict
 RestrictAddressFamilies=AF_UNIX
 ReadWritePaths=/run/ezplayer-pi
+StateDirectory=ezplayer-pi
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/ezplayer-pi
 
 [Install]
 WantedBy=multi-user.target

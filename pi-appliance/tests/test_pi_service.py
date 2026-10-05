@@ -99,6 +99,7 @@ class TransactionTests(unittest.TestCase):
 
 
 class FakeDBus:
+    DBusException = type('DBusException', (Exception,), {})
     Boolean = staticmethod(bool)
     UInt32 = staticmethod(int)
     Int32 = staticmethod(int)
@@ -153,5 +154,34 @@ class DBusProfileTests(unittest.TestCase):
         with patch.object(m.time, 'sleep') as sleep:
             backend.activate({'interface': 'eth0', 'method': 'auto'})
             sleep.assert_called_once()
+
+    def test_hotspot_profile_uses_wpa2_and_shared_subnet(self):
+        from types import SimpleNamespace
+        backend = self.backend()
+        backend.status = lambda: []
+        backend.props = lambda path, kind: {'WirelessCapabilities': 0x40} if kind.endswith('Wireless') else {'State': 100, 'ActiveConnection': 'new-active'}
+        def missing_profile(uuid): raise FakeDBus.DBusException()
+        backend.interface = lambda path, kind: SimpleNamespace(GetConnectionByUuid=missing_profile)
+        backend.activate_hotspot('wlan0', {'ssid': 'EZPlayer-ABC123', 'password': 'unique-password'})
+        self.assertFalse(self.settings['connection']['autoconnect'])
+        self.assertEqual(self.settings['802-11-wireless']['mode'], 'ap')
+        self.assertEqual(self.settings['802-11-wireless-security']['proto'], ['rsn'])
+        self.assertEqual(self.settings['ipv4']['method'], 'shared')
+        self.assertEqual(self.settings['ipv4']['address-data'], [{'address': '192.168.4.1', 'prefix': 24}])
+
+    def test_non_ap_adapter_is_rejected_before_activation(self):
+        backend = self.backend()
+        backend.props = lambda path, kind: {'WirelessCapabilities': 0}
+        with self.assertRaisesRegex(ValueError, 'access point'):
+            backend.activate_hotspot('wlan0', {'ssid': 'EZPlayer-ABC123', 'password': 'unique-password'})
+        self.assertIsNone(self.settings)
+
+    def test_hotspot_subnet_overlap_is_rejected(self):
+        backend = self.backend()
+        backend.props = lambda path, kind: {'WirelessCapabilities': 0x40}
+        backend.status = lambda: [{'name': 'eth0', 'addresses': ['192.168.4.100/24']}]
+        with self.assertRaisesRegex(ValueError, 'overlaps'):
+            backend.activate_hotspot('wlan0', {'ssid': 'EZPlayer-ABC123', 'password': 'unique-password'})
+        self.assertIsNone(self.settings)
 
 if __name__ == '__main__': unittest.main()

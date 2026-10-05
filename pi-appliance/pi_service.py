@@ -4,6 +4,7 @@ import grp
 import ipaddress
 import json
 import os
+import pwd
 import re
 import secrets
 import socket
@@ -55,7 +56,8 @@ class NetworkManager:
     def __init__(self):
         import dbus
         self.d = dbus
-        self.bus = dbus.SystemBus()
+        # Hotspot monitoring and the Unix request handler run on separate threads.
+        self.bus = dbus.SystemBus(private=True)
         self.manager = self.interface(ROOT, NM)
 
     def interface(self, path, kind):
@@ -81,6 +83,14 @@ class NetworkManager:
                 continue
             entry = {'name': str(p['Interface']), 'type': 'wifi' if int(p['DeviceType']) == 2 else 'ethernet',
                      'state': int(p['State']), 'addresses': [], 'gateway': '', 'dns': []}
+            if int(p['DeviceType']) == 2:
+                entry['apSupported'] = bool(int(self.props(path, NM + '.Device.Wireless')['WirelessCapabilities']) & 0x40)
+            if int(p['DeviceType']) == 2 and str(p['ActiveConnection']) != '/':
+                active = self.props(p['ActiveConnection'], NM + '.Connection.Active')
+                profile = self.interface(active['Connection'], NM + '.Settings.Connection').GetSettings()
+                wifi = profile.get('802-11-wireless', {})
+                entry['wifiMode'] = str(wifi.get('mode', 'infrastructure'))
+                entry['ssid'] = bytes(wifi.get('ssid', [])).decode('utf-8', errors='replace')
             if str(p['Ip4Config']) != '/':
                 ip = self.props(p['Ip4Config'], NM + '.IP4Config')
                 entry['addresses'] = [str(a['address']) + '/' + str(a['prefix']) for a in ip['AddressData']]
@@ -124,6 +134,69 @@ class NetworkManager:
     def confirm(self, checkpoint):
         self.manager.CheckpointDestroy(checkpoint)
 
+    @staticmethod
+    def validate_wifi(req):
+        text(req.get('ssid'), 'SSID', 32)
+        if not isinstance(req.get('hidden', False), bool):
+            raise ValueError('Invalid hidden network option')
+        security = req.get('security')
+        if security not in ('open', 'personal'):
+            raise ValueError('Only open and WPA/WPA2 personal Wi-Fi are supported in this build')
+        if security == 'personal':
+            password = text(req.get('password'), 'Wi-Fi password', 64)
+            if not (8 <= len(password) <= 63 or re.fullmatch('[0-9a-fA-F]{64}', password)):
+                raise ValueError('WPA password must be 8–63 characters or 64 hexadecimal digits')
+
+    def stop_hotspot(self, name, ssid):
+        path, props = self.device(name, 2)
+        active = props['ActiveConnection']
+        if str(active) == '/':
+            return
+        profile_path = self.props(active, NM + '.Connection.Active')['Connection']
+        wifi = self.interface(profile_path, NM + '.Settings.Connection').GetSettings().get('802-11-wireless', {})
+        if str(wifi.get('mode')) == 'ap' and bytes(wifi.get('ssid', [])).decode('utf-8') == ssid:
+            self.manager.DeactivateConnection(active)
+
+    def activate_hotspot(self, name, config):
+        from pi_hotspot import ADDRESS
+        path, _ = self.device(name, 2)
+        caps = int(self.props(path, NM + '.Device.Wireless')['WirelessCapabilities'])
+        if not caps & 0x40:
+            raise ValueError('This Wi-Fi adapter does not support access point mode')
+        for device in self.status():
+            if device['name'] != name and any(ipaddress.IPv4Interface(a).network.overlaps(ipaddress.IPv4Network(ADDRESS + '/24', strict=False)) for a in device['addresses']):
+                raise ValueError('The setup hotspot subnet overlaps another network')
+        d = self.d
+        profile_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, config['ssid'] + '.' + name))
+        settings = {
+            'connection': {'id': 'EZPlayer-Setup-' + name, 'uuid': profile_uuid,
+                           'type': '802-11-wireless', 'interface-name': name, 'autoconnect': d.Boolean(False)},
+            '802-11-wireless': {'ssid': d.ByteArray(config['ssid'].encode()), 'mode': 'ap', 'band': 'bg'},
+            '802-11-wireless-security': {'key-mgmt': 'wpa-psk', 'psk': config['password'],
+                                       'proto': d.Array(['rsn'], signature='s')},
+            'ipv4': {'method': 'shared', 'never-default': d.Boolean(True),
+                     'address-data': d.Array([d.Dictionary({'address': ADDRESS, 'prefix': d.UInt32(24)}, signature='sv')], signature='a{sv}')},
+            'ipv6': {'method': 'disabled'},
+        }
+        connection = d.Dictionary({k: d.Dictionary(v, signature='sv') for k, v in settings.items()}, signature='sa{sv}')
+        manager = self.interface(ROOT + '/Settings', NM + '.Settings')
+        try:
+            profile = manager.GetConnectionByUuid(profile_uuid)
+        except d.DBusException:
+            _, active = self.manager.AddAndActivateConnection(connection, path, d.ObjectPath('/'))
+        else:
+            self.interface(profile, NM + '.Settings.Connection').Update(connection)
+            active = self.manager.ActivateConnection(profile, path, d.ObjectPath('/'))
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            current = self.props(path, NM + '.Device')
+            if int(current['State']) == 100 and current['ActiveConnection'] == active:
+                return
+            if int(current['State']) == 120:
+                raise RuntimeError('Hotspot activation failed')
+            time.sleep(0.5)
+        raise RuntimeError('Hotspot activation timed out')
+
     def activate(self, req, wifi=False):
         name = req['interface']
         path, _ = self.device(name, 2 if wifi else 1)
@@ -144,15 +217,13 @@ class NetworkManager:
             'ipv6': {'method': 'disabled' if controller else 'auto', 'never-default': d.Boolean(controller)},
         }
         if wifi:
+            self.validate_wifi(req)
             ssid = text(req.get('ssid'), 'SSID', 32)
             security = req.get('security')
-            if security not in ('open', 'personal'):
-                raise ValueError('Only open and WPA/WPA2 personal Wi-Fi are supported in this build')
-            settings['802-11-wireless'] = {'ssid': d.ByteArray(ssid.encode()), 'mode': 'infrastructure'}
+            settings['802-11-wireless'] = {'ssid': d.ByteArray(ssid.encode()), 'mode': 'infrastructure',
+                                         'hidden': d.Boolean(req.get('hidden', False))}
             if security == 'personal':
                 password = text(req.get('password'), 'Wi-Fi password', 64)
-                if not (8 <= len(password) <= 63 or re.fullmatch('[0-9a-fA-F]{64}', password)):
-                    raise ValueError('WPA password must be 8–63 characters or 64 hexadecimal digits')
                 settings['802-11-wireless-security'] = {'key-mgmt': 'wpa-psk', 'psk': password}
         else:
             settings['802-3-ethernet'] = d.Dictionary({}, signature='sv')
@@ -171,8 +242,9 @@ class NetworkManager:
 
 
 class Appliance:
-    def __init__(self, network):
+    def __init__(self, network, hotspot=None):
         self.network = network
+        self.hotspot = hotspot
         self.pending = None
         self.lock = threading.Lock()
 
@@ -181,6 +253,16 @@ class Appliance:
             raise ValueError('Invalid request')
         action = req.get('action')
         with self.lock:
+            if action == 'registerWeb':
+                expected_uid = int(open('/etc/ezplayer-pi-player-uid').read().strip())
+                port = req.get('port')
+                if uid != expected_uid or type(port) is not int or not 1024 <= port <= 65535:
+                    raise ValueError('Invalid player web registration')
+                from pi_hotspot import save_config
+                save_config('/run/ezplayer-pi/web-port.json', {'port': port})
+                os.chown('/run/ezplayer-pi/web-port.json', 0, grp.getgrnam('ezplayer-system').gr_gid)
+                os.chmod('/run/ezplayer-pi/web-port.json', 0o640)
+                return {'ok': True}
             if self.pending and time.monotonic() >= self.pending['expires']:
                 self.pending = None  # NetworkManager's timer owns automatic rollback.
             if action == 'status':
@@ -189,13 +271,24 @@ class Appliance:
                     pending = {'token': self.pending['token'], 'seconds': max(0, int(self.pending['expires'] - time.monotonic()))}
                 stat = os.statvfs('/home')
                 return {'devices': self.network.status(), 'pending': pending, 'hostname': socket.gethostname(),
+                        'hotspot': self.hotspot.status() if self.hotspot else None,
                         'freeBytes': stat.f_bavail * stat.f_frsize, 'timezone': open('/etc/timezone').read().strip() if os.path.isfile('/etc/timezone') else os.path.realpath('/etc/localtime').split('/zoneinfo/')[-1]}
             if action == 'scan':
                 return self.network.scan(req.get('interface'))
+            if action == 'hotspot':
+                if not self.hotspot:
+                    raise ValueError('Tethering is unavailable')
+                if self.pending:
+                    raise ValueError('Confirm or revert the pending network change first')
+                return self.hotspot.set_mode(req.get('mode'), req.get('ssid'), req.get('password'))
             if action in ('wifi', 'ethernet'):
                 if self.pending:
                     raise ValueError('Confirm or revert the pending network change first')
                 self.network.device(req.get('interface'), 2 if action == 'wifi' else 1)
+                if self.hotspot and self.hotspot.busy:
+                    raise ValueError('Wait for the Wi-Fi connection attempt to finish')
+                if action == 'wifi' and self.hotspot and self.hotspot.status()['active']:
+                    return self.hotspot.queue_wifi(req)
                 if action == 'ethernet':
                     ipv4_config(req)
                 checkpoint = self.network.checkpoint(req['interface'])
@@ -224,12 +317,20 @@ class Appliance:
                     raise ValueError('Invalid IANA time zone')
                 subprocess.run(['/usr/bin/timedatectl', 'set-timezone', zone], check=True, timeout=10, capture_output=True)
                 return {'ok': True}
-            if action in ('reboot', 'shutdown'):
+            if action in ('reboot', 'shutdown', 'restartPlayer'):
                 if self.pending:
                     raise ValueError('Confirm or revert the network change before powering off')
                 # Delay gives the IPC/UI time to receive success. No arbitrary command arguments.
-                command = 'reboot' if action == 'reboot' else 'poweroff'
-                threading.Timer(2, lambda: subprocess.run(['/usr/bin/systemctl', command], check=False)).start()
+                if action == 'restartPlayer':
+                    player_uid = int(open('/etc/ezplayer-pi-player-uid').read().strip())
+                    player = pwd.getpwuid(player_uid).pw_name
+                    command = ['/usr/sbin/runuser', '-u', player, '--', '/usr/bin/env',
+                               'XDG_RUNTIME_DIR=/run/user/' + str(player_uid),
+                               'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/' + str(player_uid) + '/bus',
+                               '/usr/bin/systemctl', '--user', 'restart', 'ezplayer-desktop.service']
+                else:
+                    command = ['/usr/bin/systemctl', 'reboot' if action == 'reboot' else 'poweroff']
+                threading.Timer(2, lambda: subprocess.run(command, check=False)).start()
                 return {'ok': True}
             raise ValueError('Unsupported action')
 
@@ -256,7 +357,10 @@ if __name__ == '__main__':
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
         os.unlink(path)
-    appliance = Appliance(NetworkManager())
+    from pi_hotspot import Hotspot
+    hotspot = Hotspot(NetworkManager)
+    appliance = Appliance(NetworkManager(), hotspot)
+    threading.Thread(target=hotspot.run, daemon=True).start()
     with socketserver.UnixStreamServer(path, Handler) as server:
         os.chown(path, 0, grp.getgrnam('ezplayer-system').gr_gid)
         os.chmod(path, 0o660)

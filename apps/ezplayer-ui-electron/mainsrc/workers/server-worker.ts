@@ -61,6 +61,8 @@ import {
 import { http09Request, isHeaderlessResponse } from './http09-fallback.js';
 import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
+import { registerPiApiRoutes } from './pi-api.js';
+import { requestPi } from '../pi-client.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
 
@@ -1369,6 +1371,11 @@ async function startServer(config: ServerWorkerData) {
 
     // Add body parser middleware for JSON requests
     webApp.use(jsonBody());
+    // Pi administration stays on the control web app, never the public kiosk.
+    const piRouter = new Router();
+    registerPiApiRoutes(piRouter);
+    webApp.use(piRouter.routes());
+    webApp.use(piRouter.allowedMethods());
 
     // EZP-native sequence registration/autodetect (JSON bodies, shared router).
     registerSequenceApiRoutes(router, fileApiDeps);
@@ -2037,6 +2044,12 @@ async function startServer(config: ServerWorkerData) {
         return;
     }
     boundWebPort = boundPort;
+    if (process.env.EZPLAYER_PI_APPLIANCE === '1') {
+        const register = () => void requestPi({ action: 'registerWeb', port: boundPort }).catch(() => {});
+        register();
+        // Recover portal discovery if the Pi helper restarts independently.
+        setInterval(register, 30000).unref();
+    }
     console.log(`[server-worker] Koa server running at http://localhost:${boundPort}`);
     console.log(`[server-worker] WebSocket server available at ws://localhost:${boundPort}/ws`);
     // Reused below so the post-kiosk status re-asserts the actual web port + source.

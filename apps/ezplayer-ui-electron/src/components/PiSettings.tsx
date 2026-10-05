@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { v4 as uuidv4 } from 'uuid';
+import { postSetPlayerIdToken, type AppDispatch, type RootState } from '@ezplayer/player-ui-components';
+import { playerRegistrationUrl } from './piRegistration';
 import { Alert, Box, Button, Checkbox, FormControlLabel, MenuItem, TextField, Typography } from '@mui/material';
 
 type Device = { name: string; type: string; state: number; addresses: string[]; gateway: string; dns: string[] };
@@ -8,14 +12,53 @@ type Status = {
     hostname: string;
     freeBytes: number;
     timezone: string;
+    hotspot?: {
+        mode: string;
+        ssid: string;
+        password: string;
+        active: boolean;
+        interface: string;
+        url: string;
+        error: string;
+        setup: { state: string; ssid: string; error?: string } | null;
+    } | null;
 };
 type Network = { ssid: string; signal: number; security: string };
+function ipv4Octets(value: string): number[] | null {
+    const parts = value.trim().split('.');
+    if (parts.length !== 4 || parts.some((part) => !/^(0|[1-9]\d{0,2})$/.test(part) || Number(part) > 255)) {
+        return null;
+    }
+    return parts.map(Number);
+}
+
+function subnetMaskPrefix(value: string): number | null {
+    const octets = ipv4Octets(value);
+    if (!octets) return null;
+    const bits = octets.map((octet) => octet.toString(2).padStart(8, '0')).join('');
+    if (!/^1*0*$/.test(bits)) return null;
+    return bits.indexOf('0') === -1 ? 32 : bits.indexOf('0');
+}
+
 const request = async <T,>(value: Record<string, unknown>): Promise<T> => {
-    if (!window.electronAPI?.piRequest) throw new Error('Pi service is unavailable.');
-    return (await window.electronAPI.piRequest(value)) as T;
+    const api = (
+        window as Window & { electronAPI?: { piRequest?: (value: Record<string, unknown>) => Promise<unknown> } }
+    ).electronAPI;
+    if (api?.piRequest) return (await api.piRequest(value)) as T;
+    const response = await fetch('/api/ezp/pi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-EZPlayer-Pi': '1' },
+        body: JSON.stringify(value),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Pi service is unavailable.');
+    return result as T;
 };
 
 export function PiSettings({ system = false }: { system?: boolean }) {
+    const dispatch = useDispatch<AppDispatch>();
+    const cloudConfig = useSelector((s: RootState) => s.cloudConfig);
+    const [handoff, setHandoff] = useState<{ url: string; started: number } | null>(null);
     const [status, setStatus] = useState<Status | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
@@ -23,9 +66,15 @@ export function PiSettings({ system = false }: { system?: boolean }) {
     const [iface, setIface] = useState('');
     const [networks, setNetworks] = useState<Network[]>([]);
     const [networkIndex, setNetworkIndex] = useState('');
+    const [manualSsid, setManualSsid] = useState('');
+    const [manualSecurity, setManualSecurity] = useState('personal');
+    const [hotspotMode, setHotspotMode] = useState('');
+    const [setupSsid, setSetupSsid] = useState<string | null>(null);
+    const [setupPassword, setSetupPassword] = useState('');
     const [password, setPassword] = useState('');
     const [method, setMethod] = useState('auto');
     const [address, setAddress] = useState('');
+    const [subnetMask, setSubnetMask] = useState('255.255.255.0');
     const [gateway, setGateway] = useState('');
     const [dns, setDns] = useState('');
     const [controllerOnly, setControllerOnly] = useState(true);
@@ -37,7 +86,11 @@ export function PiSettings({ system = false }: { system?: boolean }) {
         const poll = () =>
             request<Status>({ action: 'status' })
                 .then((s) => {
-                    if (active) setStatus(s);
+                    if (active) {
+                        setStatus(s);
+                        if (s.hotspot?.setup?.state === 'failed') setHandoff(null);
+                    }
+                    if (active) setIface((current) => current || s.devices.find((d) => d.type === 'wifi')?.name || '');
                 })
                 .catch((e) => {
                     if (active) setError(String(e.message));
@@ -49,6 +102,31 @@ export function PiSettings({ system = false }: { system?: boolean }) {
             window.clearInterval(timer);
         };
     }, []);
+    useEffect(() => {
+        if (!handoff) return;
+        let cancelled = false;
+        const check = async () => {
+            // A single radio loses the setup connection before it can report success.
+            // Wait for the phone's internet to return; this does not prove Pi connectivity.
+            if (Date.now() - handoff.started < 30000) return;
+            try {
+                await fetch(new URL('/favicon.ico', handoff.url).href, {
+                    mode: 'no-cors',
+                    credentials: 'omit',
+                    cache: 'no-store',
+                    signal: AbortSignal.timeout(4000),
+                });
+                if (!cancelled) window.location.assign(handoff.url);
+            } catch {
+                // Keep the registration link visible while the phone reconnects.
+            }
+        };
+        const timer = window.setInterval(() => void check(), 5000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [handoff]);
     const run = async (fn: () => Promise<void>) => {
         setBusy(true);
         setError('');
@@ -63,12 +141,29 @@ export function PiSettings({ system = false }: { system?: boolean }) {
         }
     };
     const device = status?.devices.find((d) => d.name === iface);
-    const network = networks[Number(networkIndex)];
+    const network =
+        networkIndex === 'manual'
+            ? { ssid: manualSsid.trim(), security: manualSecurity, signal: 0 }
+            : networks[Number(networkIndex)];
     const pending = status?.pending;
+    const addressValid = ipv4Octets(address) !== null;
+    const prefix = subnetMaskPrefix(subnetMask);
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {error && <Alert severity="error">{error}</Alert>}
             {notice && <Alert severity="success">{notice}</Alert>}
+            {handoff && (
+                <Alert severity="info">
+                    Wi-Fi setup is in progress. When setup Wi-Fi disconnects, join your home Wi-Fi or use mobile data.
+                    This page will try to open registration with your player ID when internet returns. If Wi-Fi setup
+                    fails, rejoin the player's setup Wi-Fi and correct the password.
+                    <Box sx={{ mt: 1 }}>
+                        <Button href={handoff.url}>Open player registration</Button>
+                        <Button onClick={() => setHandoff(null)}>Cancel redirect</Button>
+                    </Box>
+                    If your phone closes this setup window, open this link in your normal browser first.
+                </Alert>
+            )}
             {pending && (
                 <Alert severity="warning">
                     Network settings are temporary. Check that the connection works, then keep it. Automatic rollback in
@@ -162,6 +257,91 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                         Use Wi-Fi for internet and Ethernet for controllers. Controller-only Ethernet has no default
                         route. Stop the show before changing network settings.
                     </Alert>
+                    {status?.hotspot && (
+                        <>
+                            <TextField
+                                select
+                                label="Tethering"
+                                value={hotspotMode || status.hotspot.mode}
+                                disabled={busy || !!pending || status.hotspot.setup?.state === 'connecting'}
+                                onChange={(e) => setHotspotMode(e.target.value)}
+                                helperText="Auto offers setup Wi-Fi until the player connects to a Wi-Fi network."
+                            >
+                                <MenuItem value="auto">Auto</MenuItem>
+                                <MenuItem value="off">Off</MenuItem>
+                            </TextField>
+                            <TextField
+                                label="Setup Wi-Fi name (SSID)"
+                                value={setupSsid ?? status.hotspot.ssid}
+                                disabled={busy || !!pending}
+                                onChange={(e) => setSetupSsid(e.target.value)}
+                                helperText="1–32 bytes. Changing this name disconnects devices using setup Wi-Fi."
+                            />
+                            <TextField
+                                label="New setup Wi-Fi password"
+                                type="password"
+                                value={setupPassword}
+                                disabled={busy || !!pending}
+                                onChange={(e) => setSetupPassword(e.target.value)}
+                                helperText="8–63 characters. Leave blank to keep the current password. Save the new credentials before applying."
+                            />
+                            <Button
+                                disabled={
+                                    busy ||
+                                    !!pending ||
+                                    (!hotspotMode && setupSsid === null && !setupPassword) ||
+                                    status.hotspot.setup?.state === 'connecting'
+                                }
+                                onClick={() =>
+                                    void run(async () => {
+                                        await request({
+                                            action: 'hotspot',
+                                            mode: hotspotMode || status.hotspot!.mode,
+                                            ...(setupSsid !== null ? { ssid: setupSsid } : {}),
+                                            ...(setupPassword ? { password: setupPassword } : {}),
+                                        });
+                                        setSetupSsid(null);
+                                        setSetupPassword('');
+                                        setHotspotMode('');
+                                        setNotice(
+                                            'Setup Wi-Fi settings saved. If the name or password changed, reconnect using the new credentials. Off disconnects your phone.',
+                                        );
+                                    })
+                                }
+                            >
+                                Save setup Wi-Fi settings
+                            </Button>
+                            <Typography>
+                                Setup Wi-Fi: {status.hotspot.ssid} · {status.hotspot.active ? 'On' : 'Off'}
+                            </Typography>
+                            <TextField
+                                label="Setup Wi-Fi password"
+                                value={status.hotspot.password}
+                                InputProps={{ readOnly: true }}
+                                helperText={`Connect your phone to this Wi-Fi, then open ${status.hotspot.url} if the setup page does not open automatically.`}
+                            />
+                            <Typography variant="caption">
+                                Auto keeps setup Wi-Fi available while no home Wi-Fi is connected, including when
+                                Ethernet is connected to controllers. Connecting to home Wi-Fi turns setup Wi-Fi off.
+                                Off disables setup Wi-Fi.
+                            </Typography>
+                            {status.hotspot.error && <Alert severity="warning">{status.hotspot.error}</Alert>}
+                            {status.hotspot.active && (
+                                <Alert severity="info">
+                                    Select your home Wi-Fi below and enter its password. After a successful connection,
+                                    Auto turns setup Wi-Fi off. Your phone will disconnect; reconnect it to your home
+                                    Wi-Fi to access the player there. If the connection fails, rejoin setup Wi-Fi and
+                                    try again.
+                                </Alert>
+                            )}
+                            {status.hotspot.setup?.state === 'connecting' && (
+                                <Alert severity="info">Connecting to Wi-Fi…</Alert>
+                            )}
+                            {status.hotspot.setup?.state === 'failed' && (
+                                <Alert severity="error">{status.hotspot.setup.error}</Alert>
+                            )}
+                        </>
+                    )}
                     {status?.devices.map((d) => (
                         <Typography key={d.name}>
                             {d.name} ({d.type}): {d.state === 100 ? 'Connected' : 'Not connected'} ·{' '}
@@ -214,12 +394,33 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                                     setPassword('');
                                 }}
                             >
+                                <MenuItem value="manual">Enter network name manually</MenuItem>
                                 {networks.map((n, i) => (
                                     <MenuItem key={i} value={String(i)} disabled={n.security === 'unsupported'}>
                                         {n.ssid} · {n.signal}% · {n.security}
                                     </MenuItem>
                                 ))}
                             </TextField>
+                            {networkIndex === 'manual' && (
+                                <>
+                                    <TextField
+                                        label="Wi-Fi network name (SSID)"
+                                        value={manualSsid}
+                                        disabled={busy || !!pending}
+                                        onChange={(e) => setManualSsid(e.target.value)}
+                                    />
+                                    <TextField
+                                        select
+                                        label="Wi-Fi security"
+                                        value={manualSecurity}
+                                        disabled={busy || !!pending}
+                                        onChange={(e) => setManualSecurity(e.target.value)}
+                                    >
+                                        <MenuItem value="personal">WPA/WPA2 personal</MenuItem>
+                                        <MenuItem value="open">Open network</MenuItem>
+                                    </TextField>
+                                </>
+                            )}
                             {network?.security === 'personal' && (
                                 <TextField
                                     label="Wi-Fi password"
@@ -235,18 +436,45 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                                     !!pending ||
                                     networkIndex === '' ||
                                     !network ||
+                                    !network.ssid ||
+                                    status?.hotspot?.setup?.state === 'connecting' ||
                                     network.security === 'unsupported'
                                 }
                                 onClick={() =>
                                     void run(async () => {
-                                        await request({
+                                        const phoneSetup =
+                                            window.location.hostname === '192.168.4.1' ||
+                                            window.location.hostname === 'ezplayer.setup';
+                                        let registrationUrl = '';
+                                        if (phoneSetup && status?.hotspot?.mode === 'auto') {
+                                            if (cloudConfig.cloudEnabled === false)
+                                                throw new Error(
+                                                    'Resume cloud activity before registering from phone setup.',
+                                                );
+                                            const playerId = cloudConfig.playerIdToken || uuidv4();
+                                            registrationUrl = playerRegistrationUrl(
+                                                cloudConfig.cloudServiceUrl,
+                                                playerId,
+                                            );
+                                            if (!cloudConfig.playerIdToken)
+                                                await dispatch(
+                                                    postSetPlayerIdToken({ playerIdToken: playerId }),
+                                                ).unwrap();
+                                        }
+                                        const result = await request<{ connecting?: boolean; message?: string }>({
                                             action: 'wifi',
                                             interface: iface,
                                             ssid: network.ssid,
                                             security: network.security,
                                             password,
+                                            hidden: networkIndex === 'manual',
                                         });
                                         setPassword('');
+                                        if (result.connecting) {
+                                            setNotice(result.message || 'Connecting to Wi-Fi…');
+                                            if (registrationUrl)
+                                                setHandoff({ url: registrationUrl, started: Date.now() });
+                                        }
                                     })
                                 }
                             >
@@ -267,13 +495,36 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                                 <MenuItem value="manual">Static IP</MenuItem>
                             </TextField>
                             {method === 'manual' && (
-                                <TextField
-                                    label="IPv4 address / prefix"
-                                    placeholder="192.168.50.2/24"
-                                    value={address}
-                                    disabled={busy || !!pending}
-                                    onChange={(e) => setAddress(e.target.value)}
-                                />
+                                <>
+                                    <TextField
+                                        label="IP address"
+                                        placeholder="192.168.50.2"
+                                        value={address}
+                                        required
+                                        error={address !== '' && !addressValid}
+                                        helperText={
+                                            address !== '' && !addressValid
+                                                ? 'Enter a valid IPv4 address, such as 192.168.50.2.'
+                                                : 'Example: 192.168.50.2'
+                                        }
+                                        disabled={busy || !!pending}
+                                        onChange={(e) => setAddress(e.target.value)}
+                                    />
+                                    <TextField
+                                        label="Subnet mask"
+                                        placeholder="255.255.255.0"
+                                        value={subnetMask}
+                                        required
+                                        error={subnetMask !== '' && prefix === null}
+                                        helperText={
+                                            subnetMask !== '' && prefix === null
+                                                ? 'Enter a valid subnet mask, such as 255.255.255.0.'
+                                                : 'Example: 255.255.255.0'
+                                        }
+                                        disabled={busy || !!pending}
+                                        onChange={(e) => setSubnetMask(e.target.value)}
+                                    />
+                                </>
                             )}
                             <FormControlLabel
                                 label="Controller-only network (no internet default route)"
@@ -306,14 +557,16 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                                 </>
                             )}
                             <Button
-                                disabled={busy || !!pending}
+                                disabled={
+                                    busy || !!pending || (method === 'manual' && (!addressValid || prefix === null))
+                                }
                                 onClick={() =>
                                     void run(async () => {
                                         await request({
                                             action: 'ethernet',
                                             interface: iface,
                                             method,
-                                            address,
+                                            address: method === 'manual' ? `${address.trim()}/${prefix}` : '',
                                             gateway,
                                             dns: dns
                                                 .split(',')

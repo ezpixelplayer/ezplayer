@@ -7,9 +7,10 @@ The desktop app version is 0.6.9-pi.1 to distinguish this development build from
 - Settings has Pi Network and Pi System tiles only when the local Pi service is installed.
 - Welcome has a network setup button before EZRGB registration, so Wi-Fi can be connected first.
 - Wi-Fi scanning and joining open or WPA/WPA2 personal networks using DHCP.
-- Ethernet DHCP/static IPv4, CIDR subnet prefix, gateway and IPv4 DNS inputs.
+- Ethernet DHCP/static IPv4 with separate IP address and subnet mask fields, gateway and IPv4 DNS inputs.
+- Phone setup Wi-Fi with Auto and Off tethering modes, with editable setup Wi-Fi name and password. The captive setup page opens Pi Network in the existing phone UI; the other player tabs remain available. See TETHERING.md for behavior and installation.
 - Controller-only Ethernet disables IPv4/IPv6 default routing, ignores DHCP DNS and disables IPv6 for that connection, leaving Wi-Fi to provide internet access.
-- Network changes use a 120-second NetworkManager checkpoint. Activation may take up to 45 seconds; the remaining confirmation time is displayed in the app. Confirm to save or let NetworkManager restore the previous connection. A failed activation immediately requests rollback. Recovery still needs hardware testing.
+- Network changes use a 120-second NetworkManager checkpoint. Activation may take up to 45 seconds; the remaining confirmation time is displayed in the app. Confirm to save or let NetworkManager restore the previous connection. During setup hotspot handoff, the Pi confirms automatically only after NetworkManager verifies the new Wi-Fi connection; a failed activation requests rollback to setup Wi-Fi. Recovery still needs hardware testing.
 - Audio settings remain the existing EZPlayer implementation. A separate test-output selector plays a low-level one-second tone through a detected output; it does not change playback output preferences or validate audio/light synchronization.
 - System controls show hostname, network status, home-filesystem free space, and time zone; allow time zone changes, restarting EZPlayer, reboot and shutdown. Restart EZPlayer after time-zone changes before using its scheduler.
 - Graphical automatic login and EZPlayer automatic startup/restart in a maximized window. The app runs as the desktop user; a restricted root helper talks to NetworkManager over D-Bus.
@@ -46,7 +47,7 @@ After reboot:
 1. The graphical session starts EZPlayer automatically.
 2. Use the Welcome button to connect Wi-Fi before registration, or use Settings > Pi Network.
 3. Confirm a new network connection before the displayed timer expires.
-4. Set Ethernet to the controller subnet, for example 192.168.50.2/24, and select controller-only mode if Ethernet is not your internet connection. Give controllers other addresses on that subnet.
+4. Set Ethernet to the controller subnet, for example IP address 192.168.50.2 and subnet mask 255.255.255.0, and select controller-only mode if Ethernet is not your internet connection. Give controllers other addresses on that subnet.
 5. Use existing Audio settings to choose show outputs; the test sound checks the selected test device separately.
 6. Sign into EZRGB and complete normal show setup.
 
@@ -62,7 +63,8 @@ See IMAGE-BUILD.md and prepare-pi-gen.sh. The image build requires a rebuilt ARM
 
 ## Verification completed in this workspace
 
-- 21 Python service unit tests: configuration validation, checkpoint/revert/confirm, expiry, client UID/token ownership, failure rollback/error redaction, and power-action restrictions.
+- Python service tests cover configuration validation, checkpoint/revert/confirm, expiry, client UID/token ownership, failure rollback/error redaction, power-action restrictions, tethering policy, credential persistence, AP profiles, portal redirects, HTTP forwarding and WebSocket forwarding.
+- Pi HTTP tests cover same-origin access, cross-origin rejection, DNS rebinding rejection, action restrictions, and availability only on appliance installs.
 - Python compilation and shell syntax checks.
 - Node syntax checking of the added Electron main-process TypeScript module.
 - Dependencies installed with Node 24 and pnpm 10. Shared packages, embedded web app, desktop React build, renderer TypeScript, Electron main TypeScript/build and preload compilation passed; targeted ESLint passed. The audio conversion suite passed (21 tests). The controller-operation suite cannot enumerate host network interfaces in this restricted workspace; its 10 failures are an environment limitation. ARM64 packaging and complete CI validation remain outstanding.
@@ -71,6 +73,7 @@ See IMAGE-BUILD.md and prepare-pi-gen.sh. The image build requires a rebuilt ARM
 ## Required hardware acceptance checks
 
 - Fresh boot, automatic login and application launch on Pi 4/5.
+- Phone captive page launch, manual http://192.168.4.1 access, all three tethering modes, Wi-Fi handoff and wrong-password recovery. Always-on alongside home Wi-Fi requires two AP/client-capable adapters; test with the customer's actual adapters and regulatory country.
 - Wi-Fi scan, correct/wrong password, confirm, timeout rollback, and reconnect after reboot.
 - Ethernet DHCP and static settings, gateway/DNS persistence; Wi-Fi internet with controller-only Ethernet simultaneously.
 - EZRGB login, downloads and file ownership checks.
@@ -79,7 +82,7 @@ See IMAGE-BUILD.md and prepare-pi-gen.sh. The image build requires a rebuilt ARM
 - Scheduling, time zone and daylight saving; app crash restart; reboot, shutdown and power-loss recovery.
 - Check device operation without an HDMI monitor separately; this app still uses a graphical session, and its existing headless mode disables local audio.
 
-Known initial limits: no enterprise Wi-Fi, captive portal, hidden-SSID form, WPA3-only setup, Bluetooth pairing UI, or static IPv4 form for Wi-Fi. Existing OS tools can handle those during development; customer UI additions would need separate implementation/testing.
+Known initial limits: no enterprise Wi-Fi, joining networks that themselves require a captive portal login, WPA3-only setup, Bluetooth pairing UI, or static IPv4 form for Wi-Fi. An SSID can be entered manually, including hidden networks. Setup captive-page auto-launch varies by phone; manual browser access is the fallback.
 
 ## Maintenance and rollback
 
@@ -94,6 +97,6 @@ To stop the app temporarily:
 systemctl --user stop ezplayer-desktop.service
 ```
 
-To remove appliance startup/settings, stop the user service, remove /etc/xdg/autostart/ezplayer-pi.desktop and /etc/lightdm/lightdm.conf.d/90-ezplayer-pi.conf, and disable ezplayer-pi.service. The EZPlayer .deb remains installed. Network changes that were confirmed remain NetworkManager profiles.
+To remove appliance startup/settings, select Always off for tethering, stop the user service, remove /etc/xdg/autostart/ezplayer-pi.desktop and /etc/lightdm/lightdm.conf.d/90-ezplayer-pi.conf, disable ezplayer-pi.service and ezplayer-setup-portal.service, and remove /etc/NetworkManager/dnsmasq-shared.d/ezplayer-setup.conf. The EZPlayer .deb remains installed. Network changes that were confirmed remain NetworkManager profiles.
 
-The service exposes only a Unix socket under /run/ezplayer-pi, restricted to the ezplayer-system group. It has no HTTP/TCP listener. Main-process IPC checks the local player main frame. Wi-Fi passwords are passed over local IPC/D-Bus and stored by NetworkManager, not printed or placed on shell command lines. Network configuration is per machine; no secrets are included in the source archive.
+The privileged service exposes only a Unix socket under /run/ezplayer-pi, restricted to the ezplayer-system group. Main-process IPC checks the local player main frame. The appliance control web app exposes a limited Pi API, with same-origin/custom-header and local-host checks; it is not mounted on the public kiosk server or the cloud command bridge. The separate unprivileged setup proxy accepts requests only on 192.168.4.1 from the setup subnet and forwards to the registered local control web server, including its normal player WebSocket. Wi-Fi passwords are passed over IPC/D-Bus and stored by NetworkManager, never placed on shell command lines. The setup hotspot has a per-machine generated password shown in Pi Network. No actual secrets are included in the source archive. Anyone given the setup Wi-Fi password or trusted LAN control access can administer the player.

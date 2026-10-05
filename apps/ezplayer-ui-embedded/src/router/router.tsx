@@ -1,5 +1,6 @@
 import { Navigate, RouteObject } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { PiSettings } from '../../../ezplayer-ui-electron/src/components/PiSettings';
 import { useSelector } from 'react-redux';
 import {
     AudioSettings,
@@ -69,6 +70,15 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
 const getStatusArea = () => [];
 
 const EmbeddedSettingsPage = () => {
+    const [piAvailable, setPiAvailable] = useState(false);
+    useEffect(() => {
+        const controller = new AbortController();
+        void fetch('/api/ezp/pi/available', { signal: controller.signal })
+            .then((response) => response.json())
+            .then((result) => setPiAvailable(result.available === true))
+            .catch(() => {});
+        return () => controller.abort();
+    }, []);
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
@@ -128,16 +138,35 @@ const EmbeddedSettingsPage = () => {
             label: 'Software Update',
             icon: <SystemUpdateAltIcon sx={{ fontSize: 56 }} />,
             title: 'Software Update',
-            available: canUpdate,
+            available: canUpdate && !piAvailable,
             content: <SoftwareUpdateSettings />,
         },
         // Present only when available.
+        {
+            key: 'piNetwork',
+            label: 'Pi Network',
+            icon: <RouterIcon sx={{ fontSize: 56 }} />,
+            available: piAvailable,
+            content: <PiSettings />,
+        },
+        {
+            key: 'piSystem',
+            label: 'Pi System',
+            icon: <TuneIcon sx={{ fontSize: 56 }} />,
+            available: piAvailable,
+            content: <PiSettings system />,
+        },
         shellSection,
         filesSection,
     ];
     return (
         <>
-            <SettingsDrawer title="Settings" statusArea={getStatusArea()} sections={sections} />
+            <SettingsDrawer
+                title="Settings"
+                statusArea={getStatusArea()}
+                sections={sections}
+                initialSection={new URLSearchParams(window.location.search).get('section') ?? undefined}
+            />
             <PlayerCloudRegistrationDialog open={cloudOpen} onClose={() => setCloudOpen(false)} />
             {shellDialog}
             {filesDialog}
