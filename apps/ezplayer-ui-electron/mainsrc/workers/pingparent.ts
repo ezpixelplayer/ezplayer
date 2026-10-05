@@ -22,9 +22,9 @@ let stopping = false;
 let restartTimer: NodeJS.Timeout | undefined;
 
 /**
- * Health of the pinger itself, as opposed to of any controller.  A dead worker
- * used to be invisible: stats froze at their last value and every controller
- * kept whatever dot it had.  Callers can now say so.
+ * Health of the pinger itself, as opposed to any controller's.  While it is
+ * down, the stats below are frozen at their last values rather than absent, so
+ * callers that care have to ask.
  */
 export function getPingerHealth(): { running: boolean; error?: string; restarts: number } {
     return { running: worker !== undefined, error: lastError, restarts };
@@ -56,8 +56,7 @@ function startWorker() {
     try {
         w = new Worker(workerPath);
     } catch (err) {
-        // Typically the compiled worker or its native addon is missing from the
-        // install — worth saying out loud rather than pinging nothing forever.
+        // Typically the compiled worker or its native addon is missing.
         scheduleRestart(`cannot start ${workerPath}: ${String(err)}`);
         return;
     }

@@ -594,6 +594,7 @@ export function overlayHealth(rows: ControllerGridRow[], statuses: ControllerSta
             state,
             health: {
                 connectivity: match.connectivity,
+                reachedVia: match.reachedVia,
                 pingSummary: match.pingSummary,
                 status: match.status,
                 errors: match.errors,

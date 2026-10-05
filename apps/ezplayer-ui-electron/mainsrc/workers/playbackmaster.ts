@@ -104,6 +104,7 @@ import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
+import type { PingTarget } from './pingworker';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
@@ -374,6 +375,20 @@ function sendPlayerStateUpdate() {
     send({ type: 'pstatus', status: playStatus });
 }
 
+/**
+ * How to check one controller is reachable.  A controller behind an FPP proxy
+ * cannot answer ICMP, because the proxy forwards HTTP only, so it is confirmed
+ * through the proxy's own path; others are pinged, with their web service as a
+ * fallback for controllers that drop ICMP.
+ */
+function pingTargetFor(c: ControllerState): PingTarget {
+    const address = c.setup.address;
+    const proxy = c.xlRecord?.fppProxy;
+    const host = (h: string) => (h.includes(':') ? `[${h}]` : h);
+    if (proxy) return { address, icmp: false, webUrl: `http://${host(proxy)}/proxy/${address}/` };
+    return { address, icmp: true, webUrl: `http://${host(address)}/` };
+}
+
 function sendControllerStateUpdate() {
     const stats = getLatestPingStats();
     const cstatus: PlayerNStatusContent = {
@@ -385,7 +400,8 @@ function sendControllerStateUpdate() {
     );
     for (const c of controllerStates ?? []) {
         const pstat = stats.stats?.[c.setup.address];
-        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : '';
+        const checks = pstat?.via === 'web' ? 'web checks' : 'pings';
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} ${checks}` : '';
         const connectivity = !c.setup.usable ? 'N/A' : !pstat?.outOf ? 'Pending' : pstat.nReplies > 0 ? 'Up' : 'Down';
         cstatus.controllers?.push({
             name: c.setup.name,
@@ -400,6 +416,7 @@ function sendControllerStateUpdate() {
             notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
+            reachedVia: pstat?.via,
             pingSummary: pss,
             reported_time: stats.latestUpdate,
             startCh: c.setup.startCh,
@@ -2128,7 +2145,7 @@ async function processQueue() {
             fpsOverrides,
         });
         setPingConfig({
-            hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
+            targets: controllers.filter((c) => c.setup.usable).map(pingTargetFor),
             // Pings are cheap; a whole show's controllers go out in one burst.
             concurrency: 64,
             maxSamples: 10,

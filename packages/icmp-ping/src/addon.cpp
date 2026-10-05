@@ -327,9 +327,8 @@ struct PendingPing {
 };
 
 /**
- * Open the ICMP socket.  Unprivileged datagram ICMP is the normal path
- * (Linux ping_group_range, macOS by default); raw is the root fallback.
- * On failure `why` carries both errnos, so callers can say what went wrong.
+ * Open the ICMP socket: unprivileged datagram ICMP, falling back to raw, which
+ * needs root.  `why` carries both errnos so a caller can report which failed.
  */
 static int open_icmp_socket(std::string& why) {
     int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
@@ -343,9 +342,8 @@ static int open_icmp_socket(std::string& why) {
 }
 
 /**
- * No socket: fail every ping with `why` until shutdown.  The thread must keep
- * draining the queue — if it just exited, callers' promises would stay pending
- * forever and the health pinger would freeze with no diagnosis.
+ * With no socket, fail every ping with `why` until shutdown.  The thread has to
+ * keep draining the queue; were it to exit, callers' promises would never settle.
  */
 static void fail_all_pings(AddonState* st, const std::string& why) {
     while (!st->shutting_down.load()) {
@@ -463,8 +461,8 @@ static void ping_thread_func(AddonState* st) {
                 if (n <= 0) break;
 
                 // Linux ping sockets hand back the ICMP header first; macOS
-                // and raw sockets include the IP header.  Skip it when present
-                // (an IPv4 header starts 0x4N; an echo reply's type byte is 0).
+                // and raw sockets include the IP header.  Skip it when present:
+                // an IPv4 header starts 0x4N, an echo reply's type byte is 0.
                 const uint8_t* icmp = reinterpret_cast<const uint8_t*>(rbuf);
                 size_t len = static_cast<size_t>(n);
                 if (len >= 20 && (icmp[0] >> 4) == 4) {

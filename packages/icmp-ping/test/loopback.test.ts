@@ -1,15 +1,14 @@
 /**
- * Loopback ping test — runs on every platform we ship (see build.yml's
- * ubuntu/windows/macos matrix).  Pinging 127.0.0.1 needs no network, so a
- * failure here is our code or the platform's ICMP permissions, nothing else.
+ * Pinging 127.0.0.1 needs no network, so a failure here is either our code or
+ * the platform's ICMP permissions.
  *
- * The point is as much "it settles" as "it succeeds": a ping that never
- * resolves freezes the health pinger with no diagnosis, which is how a broken
- * platform used to present.  Every assertion therefore races a deadline.
+ * Settling matters as much as succeeding: a ping that never resolves would
+ * freeze the health pinger, so every assertion races a deadline rather than
+ * waiting on the promise.
  *
  * Where unprivileged ICMP is turned off (Linux `net.ipv4.ping_group_range`,
- * containers), these skip with the reason — unless REQUIRE_ICMP=1, which CI
- * sets so a platform regression cannot hide as a skip.
+ * containers) these skip with the reason, unless REQUIRE_ICMP=1 makes an
+ * absent ICMP socket a failure instead.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -26,10 +25,7 @@ async function within(p: Promise<PingResult>, ms: number): Promise<PingResult | 
     return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
 }
 
-/**
- * True when the platform refuses us an ICMP socket at all.  open_icmp_socket()
- * reports both errnos, so the skip message says which.
- */
+/** True when the platform refuses us an ICMP socket at all. */
 function unavailable(r: PingResult | 'hung'): string | undefined {
     if (r !== 'hung' && !r.alive && r.error?.startsWith('ICMP socket unavailable')) return r.error;
     return undefined;

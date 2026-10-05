@@ -1,15 +1,12 @@
 /**
- * `pingtest` — check that ICMP works *in this install*.
- *
- * The unit tests prove the addon against a plain Node build. They cannot prove
- * the copy inside an installed app, where the binary has to match Electron's
- * ABI and architecture and be reachable in app.asar.unpacked. Running this verb
- * on the installed binary tests exactly that, with no window and no show folder.
+ * `pingtest` — check that ICMP works in this install.  Needs no window and no
+ * show folder, so it can be run on an installed build, where the native addon
+ * has to match Electron's ABI and architecture and be reachable inside
+ * app.asar.unpacked.
  *
  * Two stages, because they fail for different reasons:
- *   addon  — load @ezplayer/icmp-ping here and ping. Catches ABI/arch/asar.
- *   worker — run the real pingworker thread, as the player does. Catches the
- *            worker's own resolution of the addon.
+ *   addon  — load @ezplayer/icmp-ping in this process and ping.
+ *   worker — run the real ping worker thread, which resolves the addon itself.
  */
 
 import { existsSync } from 'node:fs';
@@ -23,9 +20,8 @@ const PING_TIMEOUT_MS = 1000;
 const ROUND_TIMEOUT_MS = 20_000;
 
 /**
- * The compiled worker sits next to the bundle that imports it, but which bundle
- * that is depends on the build layout, so try the plausible spots and say which
- * one answered.
+ * The compiled worker sits next to the bundle that imports it, and which bundle
+ * that is depends on the build layout, so try the plausible spots.
  */
 function findWorker(): string | undefined {
     const here = path.dirname(fileURLToPath(import.meta.url));
@@ -68,7 +64,12 @@ async function stageWorker(hosts: string[]): Promise<boolean> {
     }
 
     const worker = new Worker(workerPath);
-    const config: PingConfig = { hosts, intervalS: 1, maxSamples: 3, concurrency: hosts.length || 1 };
+    const config: PingConfig = {
+        targets: hosts.map((address) => ({ address, icmp: true })),
+        intervalS: 1,
+        maxSamples: 3,
+        concurrency: hosts.length || 1,
+    };
 
     try {
         const outcome = await new Promise<RoundResultMessage | string>((resolve) => {

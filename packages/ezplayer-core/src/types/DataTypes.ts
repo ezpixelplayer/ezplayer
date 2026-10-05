@@ -381,6 +381,8 @@ export interface ControllerStatus {
     errors?: string[];
     connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     pingSummary?: string;
+    /** How the controller last answered; absent when nothing answered. */
+    reachedVia?: 'ping' | 'web';
     reported_time?: number;
     startCh?: number; // 1-based start channel within the fseq channel array
     nCh?: number; // Channel count owned by this controller

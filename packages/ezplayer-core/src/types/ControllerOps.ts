@@ -509,6 +509,8 @@ export interface ControllerHealth {
     connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     /** e.g. "8 out of 10 pings". */
     pingSummary?: string;
+    /** How the controller last answered; absent when nothing answered. */
+    reachedVia?: 'ping' | 'web';
     /** Data-plane sender state: opened, config-skipped, connect-failed, or unusable. */
     status?: 'open' | 'skipped' | 'error' | 'unusable';
     errors?: string[];

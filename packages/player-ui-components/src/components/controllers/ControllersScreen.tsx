@@ -45,6 +45,7 @@ import SyncProblemIcon from '@mui/icons-material/SyncProblem';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import FiberManualRecordOutlinedIcon from '@mui/icons-material/FiberManualRecordOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -268,13 +269,37 @@ const STATE_META: Record<ControllerRecordState, { label: string; color: 'success
     unregistered: { label: 'Unregistered', color: 'warning' },
 };
 
-/** Live ping connectivity → dot color (theme tokens). */
+/** Live connectivity → dot color (theme tokens). */
 const CONN_COLOR: Record<NonNullable<ControllerHealth['connectivity']>, string> = {
     Up: 'success.main',
     Down: 'error.main',
     Pending: 'warning.main',
     'N/A': 'text.disabled',
 };
+
+/**
+ * Reachability dot.  Filled means it answered a ping, a ring means only its web
+ * service answered — which is all a controller behind an FPP proxy can do.
+ */
+function ConnectivityDot({ health }: { health?: ControllerHealth }) {
+    const Icon = health?.reachedVia === 'web' ? FiberManualRecordOutlinedIcon : FiberManualRecordIcon;
+    const how = health?.reachedVia === 'web' ? 'web' : 'ping';
+    return (
+        <Icon
+            titleAccess={
+                health?.connectivity
+                    ? `${how} ${health.connectivity}${health.pingSummary ? ` — ${health.pingSummary}` : ''}`
+                    : 'no ping data'
+            }
+            sx={{
+                mr: 0.5,
+                verticalAlign: 'middle',
+                fontSize: 12,
+                color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
+            }}
+        />
+    );
+}
 
 const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     ok: 'in sync',
@@ -809,20 +834,10 @@ const GridRow: React.FC<{
                     )}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {/* Dot always renders (alignment); gray = no ping data. */}
-                    <FiberManualRecordIcon
-                        titleAccess={
-                            health?.connectivity
-                                ? `ping ${health.connectivity}${health.pingSummary ? ` — ${health.pingSummary}` : ''}`
-                                : 'no ping data'
-                        }
-                        sx={{
-                            mr: 0.5,
-                            verticalAlign: 'middle',
-                            fontSize: 12,
-                            color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
-                        }}
-                    />
+                    {/* Dot always renders (alignment); gray = no data.  A ring
+                        rather than a filled dot means the controller answered
+                        its web service but not a ping. */}
+                    <ConnectivityDot health={health} />
                     <Chip
                         size="small"
                         color={meta.color}

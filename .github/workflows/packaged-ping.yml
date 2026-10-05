@@ -1,14 +1,12 @@
 name: Packaged Ping Self-Test
 
-# Rung 3 of the ping ladder. build.yml proves the addon against a plain Node
-# build; this proves the copy inside a *packaged* app, where the binary has to
-# match Electron's ABI and architecture and be reachable in app.asar.unpacked.
-# That is the failure we cannot see any other way without installing by hand.
+# Checks ICMP from inside a packaged app, where the native addon has to match
+# Electron's ABI and architecture and be reachable in app.asar.unpacked.
 #
-# Packs with `electron-builder --dir` — a real app layout (asar + unpacked
-# natives) without spending time on installers, signing or notarization.
-# Heavy enough (full node-gyp install + Electron download + pack per OS) to run
-# nightly and on demand rather than per-PR.
+# Packs with `electron-builder --dir`: a real app layout (asar plus unpacked
+# natives) without the cost of installers, signing or notarization.  Still a
+# full node-gyp install, Electron download and pack per platform, so it runs
+# nightly and on demand rather than per PR.
 
 on:
     workflow_dispatch:
@@ -77,9 +75,8 @@ jobs:
               if: matrix.os == 'ubuntu-latest'
               run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
 
-            # The packed binary's own self-test: loads the native addon in
-            # process, then runs the real ping worker. Exits non-zero if either
-            # stage cannot ping loopback, which fails this step.
+            # Loads the native addon in process, then runs the real ping
+            # worker.  Exits non-zero if either stage cannot ping loopback.
             - name: Ping self-test on the packaged app (unix)
               if: matrix.os != 'windows-2022'
               working-directory: apps/ezplayer-ui-electron
