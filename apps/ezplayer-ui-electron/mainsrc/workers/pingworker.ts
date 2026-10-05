@@ -162,7 +162,11 @@ async function pingHost(host: string): Promise<PingStat> {
     const window = ensureWindow(host);
     const res = await ping(host, PING_TIMEOUT_MS);
     window.add(res.alive ? res.elapsed : undefined);
-    return window.getReport(host);
+    const report = window.getReport(host);
+    // Carry the reason up: "timeout" reads very differently from "ICMP socket
+    // unavailable", and without this the stat only says nothing replied.
+    if (!res.alive && res.error) report.error = res.error;
+    return report;
 }
 
 async function pingRoundOnce(): Promise<{ [address: string]: PingStat }> {
