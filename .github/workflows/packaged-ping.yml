@@ -86,14 +86,22 @@ jobs:
                       bin=$(find release -maxdepth 6 -type f -path '*.app/Contents/MacOS/*' | head -1)
                   else
                       bin=$(find release -maxdepth 2 -type f -name 'ezplayer*' -perm -u+x | head -1)
-                      # Electron wants a display even for a verb that exits early.
-                      command -v xvfb-run >/dev/null && LAUNCH_PREFIX="xvfb-run -a"
+                      # Chromium refuses to start unless its sandbox helper is
+                      # root-owned and setuid, which a package install arranges
+                      # and an unpacked directory does not.
+                      sandbox="$(dirname "$bin")/chrome-sandbox"
+                      if [ -f "$sandbox" ]; then
+                          sudo chown root:root "$sandbox"
+                          sudo chmod 4755 "$sandbox"
+                      fi
+                      # No display on the runner, so render off-screen.
+                      ARGS="--ozone-platform=headless"
                   fi
                   if [ -z "$bin" ]; then
                       echo "no packaged binary found under release/"; find release -maxdepth 6 | head -40; exit 1
                   fi
-                  echo "running: $bin pingtest"
-                  ${LAUNCH_PREFIX:-} "$bin" pingtest
+                  echo "running: $bin ${ARGS:-} pingtest"
+                  "$bin" ${ARGS:-} pingtest
 
             - name: Ping self-test on the packaged app (windows)
               if: matrix.os == 'windows-2022'
