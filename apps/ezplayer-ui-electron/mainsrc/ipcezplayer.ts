@@ -361,7 +361,8 @@ export function getSequenceThumbnail(id: string) {
 
 export function isScheduleActive(): boolean {
     const player = curStatus.player;
-    if (!player || player.status !== 'Playing') return false;
+    // A graceful stop is still playing until its song and outro finish.
+    if (!player || (player.status !== 'Playing' && player.status !== 'Stopping')) return false;
     const nowPlaying = player.now_playing;
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
 }

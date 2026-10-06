@@ -10,6 +10,7 @@ interface ControlButtonProps {
     variant?: 'contained' | 'outlined' | 'text';
     color?: 'primary' | 'secondary' | 'error' | 'warning';
     iconOnly?: boolean; // If true, only show the icon
+    disabled?: boolean;
 }
 
 export const ControlButton: React.FC<ControlButtonProps> = ({
@@ -20,15 +21,18 @@ export const ControlButton: React.FC<ControlButtonProps> = ({
     variant = 'contained',
     color = 'primary',
     iconOnly = false,
+    disabled = false,
 }) => {
     return iconOnly ? (
         <Tooltip title={label}>
-            <IconButton onClick={onClick} size={size} color={color}>
-                <Icon />
-            </IconButton>
+            <span>
+                <IconButton onClick={onClick} size={size} color={color} disabled={disabled}>
+                    <Icon />
+                </IconButton>
+            </span>
         </Tooltip>
     ) : (
-        <Button onClick={onClick} variant={variant} size={size} color={color} startIcon={<Icon />}>
+        <Button onClick={onClick} variant={variant} size={size} color={color} startIcon={<Icon />} disabled={disabled}>
             {label}
         </Button>
     );

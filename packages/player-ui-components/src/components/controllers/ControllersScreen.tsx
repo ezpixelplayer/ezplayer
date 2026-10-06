@@ -74,6 +74,7 @@ import {
     overlayHealth,
     findOffNetworkControllers,
     effectiveMaxFps,
+    isPlaybackActive,
 } from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
@@ -1527,7 +1528,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // clears what was learned from the network. Not while the show runs or a
     // controller operation is still going.
     const playerStatus = useSelector((s: RootState) => s.runtime?.combined?.player?.status);
-    const showActive = playerStatus === 'Playing' || playerStatus === 'Paused';
+    const showActive = isPlaybackActive(playerStatus);
     const reloadBlocked = showActive
         ? 'Stop the show to reload'
         : running.length > 0

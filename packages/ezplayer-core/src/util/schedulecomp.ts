@@ -440,21 +440,17 @@ export function getPlaylistDurationMS(
     smap?: Map<string, SequenceRecord>,
 ) {
     if (!smap) smap = seqsToMap(seqs, errs);
-    let totalMS = 0,
-        longestMS = 0;
+    let totalMS = 0;
     for (const sid of pl.items) {
         const seq = smap.get(sid.id);
         if (!seq) {
             errs.push(`In playlist ${pl.title}: Sequence library does not contain id ${sid.id}`);
             continue;
         }
-        const stime = getTotalSeqTimeMS(seq);
-        totalMS += stime;
-        longestMS = Math.max(longestMS, stime);
+        totalMS += getTotalSeqTimeMS(seq);
     }
     return {
         totalMS,
-        longestMS,
     };
 }
 
@@ -485,76 +481,6 @@ export function getScheduleTimes(sched: ScheduledPlaylist) {
     return {
         startTimeMS: startDate.getTime(),
         endTimeMS: untilDate.getTime(), // This can be ignored in many cases (calculated)
-    };
-}
-
-/**
- * Get time of a playlist as scheduled
- * NOTE: Currently a testing-only function not used in production
- */
-export function getScheduleDurationMS(
-    seqs: SequenceRecord[],
-    plists: PlaylistRecord[],
-    schedule: ScheduledPlaylist,
-    errs: string[],
-    smap?: Map<string, SequenceRecord>,
-    pmap?: Map<string, PlaylistRecord>,
-) {
-    if (!smap) smap = seqsToMap(seqs, errs);
-    if (!pmap) pmap = playlistsToMap(plists, errs, smap);
-
-    const pl = pmap.get(schedule.playlistId);
-    if (!pl) {
-        errs.push(`Playlist ${schedule.playlistId} does not exist.`);
-    }
-    const ipl = schedule.prePlaylistId ? pmap.get(schedule.prePlaylistId) : undefined;
-    const opl = schedule.postPlaylistId ? pmap.get(schedule.postPlaylistId) : undefined;
-
-    // schedule id should match pl id...
-    if (schedule.playlistId !== pl?.id) {
-        errs.push(`Calculating time for playlist ${pl?.id}, but schedule says ${schedule.playlistId}`);
-    }
-    const ptime = pl ? getPlaylistDurationMS(seqs, pl, errs, smap) : { longestMS: 0, totalMS: 0 };
-    const introTime = ipl ? getPlaylistDurationMS(seqs, ipl, errs, smap).totalMS : 0;
-    const outtroTime = opl ? getPlaylistDurationMS(seqs, opl, errs, smap).totalMS : 0;
-
-    const stime = getScheduleTimes(schedule);
-
-    // schedule id should match pl id...
-    if (schedule.playlistId !== pl?.id) {
-        errs.push(`Calculating time for playlist ${pl?.id}, but schedule says ${schedule.playlistId}`);
-    }
-
-    const nominalEndTimeMS = stime.endTimeMS; // When schedule says to end
-    let expectedEndMS = stime.endTimeMS; // For non-looping / nonshuffle, this is when it would naturally end unless abridged
-    let earlyEndMS = stime.endTimeMS; // When we'd end if stopping on song boundary early
-    let lateEndMS = stime.endTimeMS; // When we'd end if stopping on song boundary late
-
-    const sp = schedule.endPolicy ?? 'seqboundnearest';
-
-    if (!schedule.loop && !schedule.shuffle) {
-        expectedEndMS = Math.max(nominalEndTimeMS, stime.startTimeMS + ptime.totalMS + introTime + outtroTime);
-    }
-    if (sp === 'seqboundearly') {
-        earlyEndMS = expectedEndMS - ptime.longestMS;
-    } else if (sp === 'seqboundlate') {
-        lateEndMS = nominalEndTimeMS + ptime.longestMS;
-    } else if (sp === 'seqboundnearest') {
-        earlyEndMS = expectedEndMS - ptime.longestMS / 2;
-        lateEndMS = nominalEndTimeMS + ptime.longestMS / 2;
-    }
-
-    return {
-        startTimeMS: stime.startTimeMS,
-        hardStart: schedule.hardCutIn ?? false,
-        hardEnd: schedule.endPolicy === 'hardcut',
-        nominalEndTimeMS,
-        expectedEndMS,
-        earlyEndMS, // With preemption or looping or whatever, this could happen
-        lateEndMS, // With preemption or looping or whatever this could happen
-
-        totalPLMS: ptime.totalMS + introTime + outtroTime,
-        longestPLItemMS: ptime.longestMS,
     };
 }
 
@@ -691,6 +617,7 @@ class PlaybackStateEntry {
     //  'hardcut' - exactly when
     //  'seqboundearly' - if there is not time for one sequence
     //  'seqboundlate' - if there is
+    //  'seqboundnearest' - at whichever sequence boundary is closer
     // Return undefined if this should play
     // Return 0 if outro should start now
     // Return >0 if outro should start part way into seq
@@ -709,7 +636,11 @@ class PlaybackStateEntry {
             return undefined;
         }
         if (this.item.endPolicy === 'seqboundnearest') {
-            if (currentTime + this.item.mainSectionLongest / 2 > this.item.schedEnd - this.item.postSectionTotal) {
+            // Decided between songs only: one that has started plays out.
+            if (offsetInto >= 1) return undefined;
+            // Start the next song if its midpoint falls before the outro; ending after it
+            // is then closer to the target than ending now.
+            if (currentTime + seqLen / 2 > this.item.schedEnd - this.item.postSectionTotal) {
                 return 0;
             }
             return undefined;
@@ -863,7 +794,8 @@ class PlaybackStateEntry {
 
             // A missing/NaN/zero duration can't advance the clock; end the part rather than spin.
             if (!(this.getCurDurFor(c) > 0)) {
-                if (dbg) console.log(`PSE no usable duration at part ${c.itemPart} cursor ${c.itemCursor}; ending part`);
+                if (dbg)
+                    console.log(`PSE no usable duration at part ${c.itemPart} cursor ${c.itemCursor}; ending part`);
                 this.endCurrentPart(depth, c, curTime, log);
                 continue;
             }
@@ -1204,14 +1136,11 @@ class PlaybackItem implements SchedulerHeapItem {
     // shuffle, intentionally differs from the section length.
     preSection: SequenceRecord[] = [];
     preSectionDurs: number[] = [];
-    preSectionTotal: number = 0;
     postSection: SequenceRecord[] = [];
     postSectionDurs: number[] = [];
     postSectionTotal: number = 0;
     mainSection: SequenceRecord[] = [];
     mainSectionDurs: number[] = [];
-    mainSectionTotal: number = 0;
-    mainSectionLongest: number = 0;
     mainSectionLoop: boolean = false;
 }
 
@@ -1469,9 +1398,10 @@ export class PlayerRunState {
 
     /** Reconcile active stack entries against the new schedule data. A scheduled entry
      *  whose schedule was deleted is wound down by bringing its end to now (the entry's
-     *  endPolicy then governs how it stops); one whose end time moved has it accepted.
-     *  Start-time, playlist, priority and other edits are left frozen — reload applies
-     *  those. Safe on suspended entries too: a lowered end just takes effect on resume. */
+     *  endPolicy then governs how it stops); one whose end time moved has it accepted,
+     *  unless it was stopped by hand and is winding down. Start-time, playlist, priority
+     *  and other edits are left frozen — reload applies those. Safe on suspended entries
+     *  too: a lowered end just takes effect on resume. */
     #reconcileActiveSchedules() {
         for (const entry of this.stack) {
             if (entry.item.itemType !== 'Scheduled' || !entry.item.scheduleId) continue;
@@ -1483,6 +1413,8 @@ export class PlayerRunState {
             }
             const times = getScheduleTimes(sched);
             if (times.startTimeMS !== entry.item.schedStart) continue; // start moved → reload
+            // A graceful stop works by bringing the end in; the schedule's own end must not undo it.
+            if (this.stoppedIds.has(entry.item.itemId)) continue;
             if (times.endTimeMS !== entry.item.schedEnd) {
                 entry.item.schedEnd = times.endTimeMS;
                 entry.schedEndTime = times.endTimeMS;
@@ -1559,7 +1491,6 @@ export class PlayerRunState {
         sc.keepToScheduleWhenPreempted = s.keepToScheduleWhenPreempted;
 
         sc.preSection = [];
-        sc.preSectionTotal = 0;
         sc.postSection = [];
         sc.postSectionTotal = 0;
 
@@ -1571,7 +1502,6 @@ export class PlayerRunState {
                 sc.preSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.preSectionDurs.push(it);
-                sc.preSectionTotal += it;
             }
         }
         const postl = s.postPlaylistId ? this.playlistsById.get(s.postPlaylistId) : undefined;
@@ -1588,15 +1518,9 @@ export class PlayerRunState {
 
         sc.mainSection = [];
         sc.mainSectionLoop = !!(s.loop || s.shuffle);
-        sc.mainSectionTotal = 0;
-        sc.mainSectionLongest = 0;
 
         const mainpl = this.playlistsById.get(s.playlistId);
         if (mainpl) {
-            const mainTimes = getPlaylistDurationMS(this.sequences, mainpl, [], this.sequencesById);
-            sc.mainSectionTotal = mainTimes.totalMS;
-            sc.mainSectionLongest = mainTimes.longestMS;
-
             if (s.shuffle) {
                 sc.mainSection = createShuffleList(
                     mainpl,
@@ -1637,15 +1561,9 @@ export class PlayerRunState {
             sc.playlistIds = [undefined, ipc.playlistId, undefined];
             sc.mainSection = [];
             sc.mainSectionLoop = !!ipc.loop;
-            sc.mainSectionTotal = 0;
-            sc.mainSectionLongest = 0;
 
             const mainpl = this.playlistsById.get(ipc.playlistId);
             if (mainpl) {
-                const mainTimes = getPlaylistDurationMS(this.sequences, mainpl, [], this.sequencesById);
-                sc.mainSectionTotal = mainTimes.totalMS;
-                sc.mainSectionLongest = mainTimes.longestMS;
-
                 for (let i = 0; i < mainpl.items.length; ++i) {
                     const seq = this.sequencesById.get(mainpl.items[i].id);
                     if (!seq) continue;
@@ -1658,16 +1576,12 @@ export class PlayerRunState {
             sc.playlistIds = [undefined, undefined, undefined];
             sc.mainSection = [];
             sc.mainSectionLoop = false;
-            sc.mainSectionTotal = 0;
-            sc.mainSectionLongest = 0;
 
             const seq = this.sequencesById.get(ipc.seqId);
             if (seq) {
                 sc.mainSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.mainSectionDurs.push(it);
-                sc.mainSectionTotal = it;
-                sc.mainSectionLongest = it;
             }
         }
         sc.cutOffPrevious = ipc.immediate ? true : false;

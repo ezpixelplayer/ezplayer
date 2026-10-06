@@ -234,7 +234,14 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 </Typography>
                                 {
                                     <Typography variant="body1">
-                                        Status: {player.status === 'Playing' ? '▶ Playing' : '⏸ Not Playing'}
+                                        Status:{' '}
+                                        {player.status === 'Playing'
+                                            ? '▶ Playing'
+                                            : player.status === 'Stopping'
+                                              ? '▶ Ending'
+                                              : player.status === 'Paused'
+                                                ? '⏸ Paused'
+                                                : '⏸ Not Playing'}
                                     </Typography>
                                 }
                                 {player.now_playing && (
