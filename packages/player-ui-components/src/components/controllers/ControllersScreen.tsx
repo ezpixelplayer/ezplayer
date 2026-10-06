@@ -834,9 +834,7 @@ const GridRow: React.FC<{
                     )}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {/* Dot always renders (alignment); gray = no data.  A ring
-                        rather than a filled dot means the controller answered
-                        its web service but not a ping. */}
+                    {/* Always rendered, for column alignment; gray = no data. */}
                     <ConnectivityDot health={health} />
                     <Chip
                         size="small"

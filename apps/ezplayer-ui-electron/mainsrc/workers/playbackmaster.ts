@@ -402,14 +402,12 @@ const SENDER_OPEN_GAP_MS = 30_000;
 const recoveredAddresses = new Set<string>();
 
 /**
- * Give a controller a working data sender.
- *
- * Two cases, both of which leave a controller receiving nothing until the
- * schedule is reloaded:
- *  - it never opened (an address that would not resolve, or a ForceLocalIP
- *    interface that was absent), so there is no sender at all;
+ * Give a controller a working data sender, in either of two cases where it
+ * would otherwise receive nothing for the rest of the show:
+ *  - it never opened — an address that would not resolve, or a ForceLocalIP
+ *    interface that was absent — so there is no sender at all;
  *  - it has been away and is reachable again, where a fresh socket and a fresh
- *    DDP stream are what reloading the schedule would have given it.
+ *    DDP stream are what reloading the schedule would give the whole show.
  *
  * The scheduler sizes its per-sender state from the job each frame, so a sender
  * that appears or is replaced is picked up on the next one.

@@ -21,7 +21,7 @@ export interface Sender {
     isCurrentlySending(): boolean;
     /** Estimated on-the-wire bytes (payload + protocol + UDP/IP/eth overhead) for one whole frame of this job. */
     frameWireBytes(job: SenderJob): number;
-    /** Close the underlying socket; a replaced sender is dropped this way. */
+    /** Close the underlying socket. */
     disconnect?(): Promise<void>;
     /** What this sender has sent so far, for reporting. */
     stats?(): SenderStats | undefined;
