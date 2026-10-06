@@ -967,6 +967,9 @@ async function runUpload(
                 inputMode: rec.protocol?.toUpperCase(),
                 // Falcon V4/V5: the layout's variant fixes the board mode.
                 boardMode: caps?.v4BoardMode,
+                // Whether the stream keeps absolute channel numbers, which some
+                // drivers need to put port start channels in the same frame.
+                keepChannelNumbers: (rec.outputs ?? [])[0]?.keepChannelNumbers,
                 outputs: outputs.length
                     ? outputs.map((o) => ({
                           universe: o.universe ?? 0,

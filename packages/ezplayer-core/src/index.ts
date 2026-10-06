@@ -89,6 +89,7 @@ export type {
     ControllerOpProgress,
     ControllerOp,
     ControllerOpsState,
+    ControllerSenderStats,
     ControllerCommand,
     KnownController,
     EzpControllerRecord,

@@ -184,8 +184,12 @@ parentPort.on('message', (msg: ParentMessage) => {
  */
 const PING_TIMEOUT_MS = 300;
 
-/** Per-web-check budget; an HTTP round trip through a proxy is not LAN-fast. */
-const WEB_TIMEOUT_MS = 2000;
+/**
+ * Per-web-check budget.  Generous because it covers name resolution: a proxy
+ * named with .local can take seconds to resolve the first time, while the
+ * request itself is a LAN round trip.
+ */
+const WEB_TIMEOUT_MS = 5000;
 const DEFAULT_WEB_INTERVAL_S = 15;
 
 /**

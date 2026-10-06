@@ -713,7 +713,7 @@ const GridRow: React.FC<{
     const health = row.health;
     const hasHealthDetail = !!(
         health &&
-        (health.pingSummary || health.errors?.length || health.notices?.length || health.status)
+        (health.pingSummary || health.errors?.length || health.notices?.length || health.status || health.senderStats)
     );
     const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail;
     // Fall back to the record's address so an unscanned row still gets Open.
@@ -1041,12 +1041,35 @@ const GridRow: React.FC<{
                                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                             {[
                                                 health.status,
-                                                health.connectivity && `ping ${health.connectivity}`,
+                                                health.connectivity &&
+                                                    `${health.reachedVia === 'web' ? 'web' : 'ping'} ${health.connectivity}`,
                                                 health.pingSummary,
                                             ]
                                                 .filter(Boolean)
                                                 .join(' · ')}
                                         </Typography>
+                                        {health.senderStats && (
+                                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                                {[
+                                                    `sender ${health.senderStats.connected ? 'connected' : 'closed'}`,
+                                                    `${health.senderStats.sent.toLocaleString()} frames sent`,
+                                                    health.senderStats.skipped > 0 &&
+                                                        `${health.senderStats.skipped.toLocaleString()} skipped`,
+                                                    health.senderStats.errors > 0 &&
+                                                        `${health.senderStats.errors.toLocaleString()} send errors`,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' · ')}
+                                            </Typography>
+                                        )}
+                                        {health.senderStats?.lastError && (
+                                            <Typography
+                                                variant="caption"
+                                                sx={{ display: 'block', color: 'warning.main' }}
+                                            >
+                                                last send error: {health.senderStats.lastError}
+                                            </Typography>
+                                        )}
                                         {health.errors?.map((e, i) => (
                                             <Typography key={`e${i}`} variant="body2" sx={{ color: 'error.main' }}>
                                                 {e}

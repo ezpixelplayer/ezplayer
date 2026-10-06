@@ -61,15 +61,20 @@ using TSFN = Napi::TypedThreadSafeFunction<void, PingRequest, CallJs>;
 // Per-ping request (allocated on JS thread, freed in CallJs or on abort)
 // ---------------------------------------------------------------------------
 struct PingRequest {
-    Napi::Promise::Deferred deferred;
+    /** Held as the C deferred: resolving through the C++ wrapper throws on
+     *  failure, which is fatal on a thread whose environment is going away. */
+    napi_deferred deferred = nullptr;
+    /** Only valid in the call that created it, which returns it straight away. */
+    napi_value promise = nullptr;
     std::string host;
     int timeout_ms;
     bool alive = false;
     double elapsed_ms = 0.0;
     std::string error;
 
-    PingRequest(Napi::Env env, const std::string& h, int t)
-        : deferred(Napi::Promise::Deferred::New(env)), host(h), timeout_ms(t) {}
+    PingRequest(Napi::Env env, const std::string& h, int t) : host(h), timeout_ms(t) {
+        napi_create_promise(env, &deferred, &promise);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -94,14 +99,30 @@ struct AddonState {
 static void CallJs(Napi::Env env, Napi::Function /*jsCallback*/,
                    void* /*context*/, PingRequest* data) {
     if (data == nullptr) return;
+    // The C API with status checks, not the C++ wrappers: a worker terminated
+    // without its stop message can leave this running against an environment
+    // that is going away, and there a wrapper failure is fatal to the process.
     if (env != nullptr) {
-        auto obj = Napi::Object::New(env);
-        obj.Set("alive", Napi::Boolean::New(env, data->alive));
-        obj.Set("elapsed", Napi::Number::New(env, data->elapsed_ms));
-        if (!data->error.empty()) {
-            obj.Set("error", Napi::String::New(env, data->error));
+        napi_handle_scope scope = nullptr;
+        if (napi_open_handle_scope(env, &scope) == napi_ok) {
+            napi_value obj = nullptr;
+            napi_value alive = nullptr;
+            napi_value elapsed = nullptr;
+            if (napi_create_object(env, &obj) == napi_ok &&
+                napi_get_boolean(env, data->alive, &alive) == napi_ok &&
+                napi_create_double(env, data->elapsed_ms, &elapsed) == napi_ok &&
+                napi_set_named_property(env, obj, "alive", alive) == napi_ok &&
+                napi_set_named_property(env, obj, "elapsed", elapsed) == napi_ok) {
+                if (!data->error.empty()) {
+                    napi_value err = nullptr;
+                    if (napi_create_string_utf8(env, data->error.c_str(), NAPI_AUTO_LENGTH, &err) == napi_ok) {
+                        napi_set_named_property(env, obj, "error", err);
+                    }
+                }
+                napi_resolve_deferred(env, data->deferred, obj);
+            }
+            napi_close_handle_scope(env, scope);
         }
-        data->deferred.Resolve(obj);
     }
     delete data;
 }
@@ -562,7 +583,7 @@ static Napi::Value Ping(const Napi::CallbackInfo& info) {
     if (timeout_ms <= 0) timeout_ms = 1000;
 
     auto* req = new PingRequest(env, host, timeout_ms);
-    auto promise = req->deferred.Promise();
+    auto promise = Napi::Value(env, req->promise);
 
     {
         std::lock_guard<std::mutex> lk(st->queue_mutex);
