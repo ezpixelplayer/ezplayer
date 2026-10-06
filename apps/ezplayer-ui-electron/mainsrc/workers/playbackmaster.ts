@@ -56,6 +56,8 @@ if (!parentPort) throw new Error('No parentPort in worker');
 
 import {
     openControllersForDataSend,
+    openControllerForDataSend,
+    SenderJob,
     FSeqPrefetchCache,
     ModelRec,
     controllersFromParsedXlights,
@@ -104,6 +106,7 @@ import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
+import type { PingTarget } from './pingworker';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
@@ -374,6 +377,86 @@ function sendPlayerStateUpdate() {
     send({ type: 'pstatus', status: playStatus });
 }
 
+/**
+ * How to check one controller is reachable.  A controller behind an FPP proxy
+ * cannot answer ICMP, because the proxy forwards HTTP only, so it is confirmed
+ * through the proxy's own path; others are pinged, with their web service as a
+ * fallback for controllers that drop ICMP.
+ */
+function pingTargetFor(c: ControllerState): PingTarget {
+    const address = c.setup.address;
+    const proxy = c.xlRecord?.fppProxy;
+    const host = (h: string) => (h.includes(':') ? `[${h}]` : h);
+    if (proxy) return { address, icmp: false, webUrl: `http://${host(proxy)}/proxy/${address}/` };
+    return { address, icmp: true, webUrl: `http://${host(address)}/` };
+}
+
+/** The options the show's data senders were opened with, for a later retry. */
+let openForDataSendOpts: { ddpPort?: number; fpsOverrides?: Record<string, number> } | undefined;
+/** The job the playback loop is sending, so a late sender can join it. */
+let activeSendJob: { senders: SenderJob[] } | undefined;
+const lastSenderOpen = new Map<string, number>();
+/** How often one controller's sender is opened or reopened. */
+const SENDER_OPEN_GAP_MS = 30_000;
+/** Addresses that turned reachable since the last pass. */
+const recoveredAddresses = new Set<string>();
+
+/**
+ * Give a controller a working data sender, in either of two cases where it
+ * would otherwise receive nothing for the rest of the show:
+ *  - it never opened — an address that would not resolve, or a ForceLocalIP
+ *    interface that was absent — so there is no sender at all;
+ *  - it has been away and is reachable again, where a fresh socket and a fresh
+ *    DDP stream are what reloading the schedule would give the whole show.
+ *
+ * The scheduler sizes its per-sender state from the job each frame, so a sender
+ * that appears or is replaced is picked up on the next one.
+ */
+async function openOrReopenSenders(): Promise<void> {
+    const job = activeSendJob;
+    if (!job || !controllerStates) return;
+
+    const now = Date.now();
+    for (const c of controllerStates) {
+        if (!c.setup.usable) continue;
+
+        const key = c.setup.address;
+        const failed = c.report?.status === 'error';
+        const recovered = recoveredAddresses.has(key);
+        if (!failed && !recovered) continue;
+        recoveredAddresses.delete(key);
+
+        if (now - (lastSenderOpen.get(key) ?? 0) < SENDER_OPEN_GAP_MS) continue;
+        lastSenderOpen.set(key, now);
+
+        const previous = c.sender;
+        try {
+            const jobSender = await openControllerForDataSend(c, openForDataSendOpts);
+            if (!jobSender) continue;
+
+            const at = previous ? job.senders.findIndex((js) => js.sender === previous) : -1;
+            if (at >= 0) job.senders[at] = jobSender;
+            else job.senders.push(jobSender);
+
+            emitInfo(
+                `Controller ${c.setup.name} (${key}) ${failed ? 'opened on retry' : 'reopened after coming back'}; ` +
+                    'it is now getting data',
+            );
+
+            // Drop the old socket once nothing is sending on it any more.
+            if (previous && previous !== c.sender) {
+                void previous.disconnect?.().catch(() => undefined);
+            }
+        } catch (e) {
+            // c.report carries the reason; the next window tries again.
+            emitWarning(`Controller ${c.setup.name} (${key}) could not be opened: ${String(e)}`);
+        }
+    }
+}
+
+/** Connectivity per controller on the previous pass, to spot a recovery. */
+const lastSeenConnectivity = new Map<string, string>();
+
 function sendControllerStateUpdate() {
     const stats = getLatestPingStats();
     const cstatus: PlayerNStatusContent = {
@@ -385,8 +468,15 @@ function sendControllerStateUpdate() {
     );
     for (const c of controllerStates ?? []) {
         const pstat = stats.stats?.[c.setup.address];
-        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : '';
+        const checks = pstat?.via === 'web' ? 'web checks' : 'pings';
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} ${checks}` : '';
         const connectivity = !c.setup.usable ? 'N/A' : !pstat?.outOf ? 'Pending' : pstat.nReplies > 0 ? 'Up' : 'Down';
+        // Coming back from Down is the moment to give this controller a fresh
+        // sender; Pending is just the state before the first ping round.
+        if (connectivity === 'Up' && lastSeenConnectivity.get(c.setup.address) === 'Down') {
+            recoveredAddresses.add(c.setup.address);
+        }
+        lastSeenConnectivity.set(c.setup.address, connectivity);
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -400,6 +490,8 @@ function sendControllerStateUpdate() {
             notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
+            reachedVia: pstat?.via,
+            senderStats: c.sender?.stats?.(),
             pingSummary: pss,
             reported_time: stats.latestUpdate,
             startCh: c.setup.startCh,
@@ -2123,18 +2215,22 @@ async function processQueue() {
 
         // Per-controller max-FPS overrides from our records in the show folder
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
-        const sendJob = await openControllersForDataSend(controllers, {
+        // Kept so a controller that failed to open can be retried on the same
+        // terms as the rest of the show.
+        openForDataSendOpts = {
             ddpPort: latestSettings?.advanced?.ddpPort,
             fpsOverrides,
-        });
+        };
+        const sendJob = await openControllersForDataSend(controllers, openForDataSendOpts);
         setPingConfig({
-            hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
+            targets: controllers.filter((c) => c.setup.usable).map(pingTargetFor),
             // Pings are cheap; a whole show's controllers go out in one burst.
             concurrency: 64,
             maxSamples: 10,
             intervalS: 5,
         });
         sender.job = sendJob;
+        activeSendJob = sendJob;
         modelRecs = models;
         controllerStates = controllers;
         for (const c of controllers) {
@@ -2318,6 +2414,7 @@ async function processQueue() {
             }
             if (curPN - lastNStatusUpdatePN >= 1000 && iteration % 4 === 2) {
                 sendControllerStateUpdate();
+                void openOrReopenSenders();
                 lastNStatusUpdatePN += 1000 * Math.floor((curPN - lastNStatusUpdatePN) / 1000);
             }
             if (iteration % 4 === 3) {

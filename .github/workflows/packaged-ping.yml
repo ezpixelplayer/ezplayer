@@ -1,0 +1,130 @@
+name: Packaged Ping Self-Test
+
+# Checks ICMP from inside a packaged app, where the native addon has to match
+# Electron's ABI and architecture and be reachable in app.asar.unpacked.
+#
+# Packs with `electron-builder --dir`: a real app layout (asar plus unpacked
+# natives) without the cost of installers, signing or notarization.  Still a
+# full node-gyp install, Electron download and pack per platform, so it runs
+# nightly and on demand rather than per PR.
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: '41 9 * * *' # daily, 09:41 UTC — after the integration run
+
+jobs:
+    packaged-ping:
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-2022, macos-latest]
+
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 45
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v5
+
+            # Use Python 3.11 to satisfy node-gyp/gyp's distutils import
+            - name: Set up Python
+              uses: actions/setup-python@v6
+              with:
+                  python-version: '3.11'
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: 24
+
+            - name: Set up pnpm
+              uses: pnpm/action-setup@v5
+              with:
+                  version: 10
+                  run_install: false
+                  cache: true
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build workspace packages
+              run: pnpm --filter './packages/*' build
+
+            # extraResources pulls the embedded web UI's dist into the package.
+            - name: Build embedded web UI
+              run: |
+                  pnpm --filter @ezplayer/ui-embedded build
+                  pnpm --filter @ezplayer/ui-embedded build:web
+
+            - name: Build app
+              working-directory: apps/ezplayer-ui-electron
+              run: |
+                  pnpm build:react
+                  pnpm build:tsc
+                  pnpm build:preload
+
+            # --dir only: no installers, and no signing identity lookup on mac.
+            - name: Pack app directory
+              working-directory: apps/ezplayer-ui-electron
+              run: pnpm exec electron-builder --dir --publish never
+              env:
+                  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+            - name: Allow unprivileged ICMP (linux)
+              if: matrix.os == 'ubuntu-latest'
+              run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+
+            # Loads the native addon in process, then runs the real ping
+            # worker.  Exits non-zero if either stage cannot ping loopback.
+            - name: Ping self-test on the packaged app (unix)
+              if: matrix.os != 'windows-2022'
+              working-directory: apps/ezplayer-ui-electron
+              run: |
+                  set -euo pipefail
+                  if [ "${{ matrix.os }}" = "macos-latest" ]; then
+                      bin=$(find release -maxdepth 6 -type f -path '*.app/Contents/MacOS/*' | head -1)
+                  else
+                      bin=$(find release -maxdepth 2 -type f -name 'ezplayer*' -perm -u+x | head -1)
+                      # Electron wants a display even for a verb that exits early.
+                      command -v xvfb-run >/dev/null && LAUNCH_PREFIX="xvfb-run -a"
+                  fi
+                  if [ -z "$bin" ]; then
+                      echo "no packaged binary found under release/"; find release -maxdepth 6 | head -40; exit 1
+                  fi
+                  echo "running: $bin pingtest"
+                  ${LAUNCH_PREFIX:-} "$bin" pingtest
+
+            - name: Ping self-test on the packaged app (windows)
+              if: matrix.os == 'windows-2022'
+              working-directory: apps/ezplayer-ui-electron
+              shell: pwsh
+              run: |
+                  $bin = Get-ChildItem -Path release -Recurse -Filter 'EZPlayer.exe' |
+                         Where-Object { $_.FullName -like '*win-unpacked*' } |
+                         Select-Object -First 1 -ExpandProperty FullName
+                  if (-not $bin) {
+                      Write-Error 'no packaged EZPlayer.exe found under release/'
+                      Get-ChildItem -Path release -Recurse -Depth 2 | Select-Object -First 40 FullName
+                      exit 1
+                  }
+                  Write-Host "running: $bin pingtest"
+                  # A GUI-subsystem exe does not write to the parent console, so
+                  # capture its output to files and print them ourselves.
+                  $p = Start-Process -FilePath $bin -ArgumentList 'pingtest' -Wait -PassThru `
+                       -RedirectStandardOutput pingtest.out -RedirectStandardError pingtest.err `
+                       -NoNewWindow
+                  Get-Content pingtest.out -ErrorAction SilentlyContinue
+                  Get-Content pingtest.err -ErrorAction SilentlyContinue
+                  if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+            - name: Upload packaged layout on failure
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: packaged-layout-${{ matrix.os }}
+                  path: |
+                      apps/ezplayer-ui-electron/release/**/*.node
+                      apps/ezplayer-ui-electron/release/**/app.asar.unpacked/**
+                  if-no-files-found: ignore
+                  retention-days: 5
