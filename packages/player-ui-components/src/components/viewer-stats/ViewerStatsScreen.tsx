@@ -89,6 +89,8 @@ function describe(ev: VcStatsEvent): string {
         case 'refused':
             return `Refused “${title}” — ${REASON_TEXT[ev.reason ?? 'unknown']}`;
         case 'pick':
+            if (ev.source === 'remote-falcon') return `Remote Falcon picked “${title}”`;
+            if (ev.source === 'jukebox') return `Jukebox: “${title}”`;
             return `Picked “${title}” to play next (${ev.mode === 'vote' ? 'vote winner' : 'from queue'})`;
         case 'play':
             return `Now playing “${title}”`;
@@ -328,7 +330,12 @@ export function ViewerStatsBody() {
                                 <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
                                     <StatTile label="Requests" value={summary.today.requests} />
                                     <StatTile label="Votes" value={summary.today.votes} />
-                                    <StatTile label="Played from picks" value={summary.today.picks} />
+                                    <StatTile label="Picked from the page" value={summary.today.picksBySource.viewer} />
+                                    <StatTile
+                                        label="Remote Falcon picks"
+                                        value={summary.today.picksBySource['remote-falcon']}
+                                    />
+                                    <StatTile label="Jukebox picks" value={summary.today.picksBySource.jukebox} />
                                     <StatTile label="Viewers who acted" value={summary.today.uniqueViewers} />
                                     <StatTile label="Peak on page" value={summary.today.peakViewers} />
                                     <StatTile label="Peak listening" value={summary.today.peakListeners} />
@@ -351,7 +358,15 @@ export function ViewerStatsBody() {
                                 <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
                                     <StatTile label="Requests" value={summary.window.requests} />
                                     <StatTile label="Votes" value={summary.window.votes} />
-                                    <StatTile label="Played from picks" value={summary.window.picks} />
+                                    <StatTile
+                                        label="Picked from the page"
+                                        value={summary.window.picksBySource.viewer}
+                                    />
+                                    <StatTile
+                                        label="Remote Falcon picks"
+                                        value={summary.window.picksBySource['remote-falcon']}
+                                    />
+                                    <StatTile label="Jukebox picks" value={summary.window.picksBySource.jukebox} />
                                     <StatTile label="Viewers who acted" value={summary.window.uniqueViewers} />
                                     <StatTile label="Peak on page" value={summary.window.peakViewers} />
                                     <StatTile label="Peak listening" value={summary.window.peakListeners} />

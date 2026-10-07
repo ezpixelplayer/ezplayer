@@ -227,16 +227,9 @@ export {
     findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
 
-export {
-    type FrameBackingBuffer,
-    type FrameBufferReadResult,
-    LatestFrameRingBuffer
-} from './util/FrameRingBuffer';
+export { type FrameBackingBuffer, type FrameBufferReadResult, LatestFrameRingBuffer } from './util/FrameRingBuffer';
 
-export {
-    type AudioChunkReadResult,
-    AudioChunkRingBuffer
-} from './util/AudioChunkRingBuffer';
+export { type AudioChunkReadResult, AudioChunkRingBuffer } from './util/AudioChunkRingBuffer';
 
 export {
     AUDIO_WIRE_MAGIC,
@@ -251,12 +244,14 @@ export {
     buildAudioWireFrame,
     parseAudioWireFrame,
     splitOpusPackets,
-    joinOpusPackets
+    joinOpusPackets,
 } from './util/AudioStreamWire';
 
 export {
     summarizeViewerStats,
     trimViewerStatsEvents,
+    LOCAL_STATS_EPOCH,
+    emptyPicksBySource,
     viewerStatsDayKey,
     viewerStatsDayKeys,
     type StoredViewerStatsEvent,
@@ -264,7 +259,7 @@ export {
     type ViewerStatsDay,
     type ViewerStatsSong,
     type ViewerStatsSummary,
-    type SummarizeOptions
+    type SummarizeOptions,
 } from './util/viewerStats';
 
 export {
@@ -273,5 +268,13 @@ export {
     scheduledVolumeLevel,
     type VolumeOutputMode,
     type VolumeTarget,
-    type VolumeTargets
+    type VolumeTargets,
 } from './util/volumeTargets';
+export {
+    hasViewerControlBackend,
+    primaryViewerControlType,
+    viewerControlBackends,
+    withViewerControlBackends,
+} from './util/viewerControlBackends';
+export type { ViewerControlBackend, PlaySongSource } from './types/DataTypes';
+export type { VcPickSource } from './types/ViewerControlWire';

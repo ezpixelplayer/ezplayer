@@ -272,6 +272,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                 immediate: true,
                 priority: 5,
                 requestId: uuidv4(),
+                source: 'jukebox',
             }),
         ).unwrap();
     };
@@ -704,6 +705,7 @@ export function JukeboxScreen({
                 immediate: true,
                 priority: 5,
                 requestId: uuidv4(),
+                source: 'jukebox',
             }),
         ).unwrap();
     };
@@ -720,6 +722,7 @@ export function JukeboxScreen({
                 immediate: false,
                 priority: 5,
                 requestId: uuidv4(),
+                source: 'jukebox',
             }),
         ).unwrap();
     };

@@ -1,14 +1,16 @@
 /**
- * Show Status card summarising viewer control: what the player is set to,
- * whether a request window is open right now, what the cloud is doing with it
- * (mode, people on the page, listeners, queue or votes), and two actions —
- * the player's Viewer Control settings, and the full activity view in a dialog.
+ * Show Status card summarising viewer control: which backends the player runs
+ * (built-in viewer page, Remote Falcon, or both), whether a request window is
+ * open right now, what the cloud is doing with the built-in line (mode, people
+ * on the page, listeners, queue or votes), today's picks by source, and two
+ * actions — the player's Viewer Control settings, and the full activity view
+ * in a dialog.
  *
  * Replaces the "Viewer Activity" sidebar entry and the one-liner that used to
  * sit in Content & Schedule.
  */
 
-import { getActiveViewerControlSchedule } from '@ezplayer/ezplayer-core';
+import { getActiveViewerControlSchedule, viewerControlBackends } from '@ezplayer/ezplayer-core';
 import CloseIcon from '@mui/icons-material/Close';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import SettingsRounded from '@mui/icons-material/SettingsRounded';
@@ -36,13 +38,12 @@ import { ViewerStatsBody } from '../viewer-stats/ViewerStatsScreen';
 /** Section key the apps give the Viewer Control tile in their settings drawer. */
 export const VIEWER_SETTINGS_SECTION_KEY = 'viewer';
 
-const TYPE_LABEL: Record<string, string> = {
-    disabled: 'Disabled',
+const BACKEND_LABEL: Record<string, string> = {
     'remote-falcon': 'Remote Falcon',
-    ezplayer: 'EZPlayer (built-in)',
+    ezplayer: 'EZPlayer viewer page',
 };
 
-const MODE_LABEL: Record<string, string> = { off: 'off', request: 'requests', vote: 'voting' };
+const MODE_LABEL: Record<string, string> = { off: 'off', request: 'taking requests', vote: 'taking votes' };
 
 export function ViewerControlCard() {
     const theme = useTheme();
@@ -58,16 +59,18 @@ export function ViewerControlCard() {
         return () => clearInterval(id);
     }, []);
 
-    const type = viewerControl?.enabled ? (viewerControl.type ?? 'disabled') : 'disabled';
+    const backends = useMemo(() => viewerControlBackends(viewerControl), [viewerControl]);
+    const anyOn = backends.length > 0;
+    const builtIn = backends.includes('ezplayer');
     const window = useMemo(
-        () => (viewerControl && type !== 'disabled' ? getActiveViewerControlSchedule(viewerControl, now) : null),
-        [viewerControl, type, now],
+        () => (viewerControl && anyOn ? getActiveViewerControlSchedule(viewerControl, now) : null),
+        [viewerControl, anyOn, now],
     );
     const live = summary?.live;
     const liveFresh = !!live && Date.now() - live.at < 2 * 60_000;
 
     const windowLine = (() => {
-        if (type === 'disabled') return null;
+        if (!anyOn) return null;
         if (!viewerControl?.schedule?.length) return 'No request windows scheduled';
         return window
             ? `Request window open now — playlist “${window.playlist}” until ${window.endTime}`
@@ -75,10 +78,10 @@ export function ViewerControlCard() {
     })();
 
     const cloudLine = (() => {
-        if (type !== 'ezplayer') return null;
-        if (!live) return summary ? 'No cloud activity yet' : 'Waiting for the cloud…';
+        if (!builtIn) return null;
+        if (!live) return summary ? 'Viewer page: no activity yet' : 'Viewer page: waiting for the cloud…';
         const parts: string[] = [];
-        parts.push(live.online ? `Cloud: ${MODE_LABEL[live.mode] ?? live.mode}` : 'Cloud: player offline');
+        parts.push(live.online ? `Viewer page ${MODE_LABEL[live.mode] ?? live.mode}` : 'Viewer page: player offline');
         parts.push(`${live.viewers} on the page`);
         parts.push(`${live.listeners} listening`);
         if (live.mode === 'request') parts.push(`${live.queue.length} in queue`);
@@ -86,10 +89,21 @@ export function ViewerControlCard() {
         return parts.join(' · ') + (liveFresh ? '' : ' (stale)');
     })();
 
-    const todayLine =
-        summary && (summary.today.requests || summary.today.votes || summary.today.picks)
-            ? `Today: ${summary.today.requests} requests, ${summary.today.votes} votes, ${summary.today.picks} picked`
-            : null;
+    const todayLine = (() => {
+        const t = summary?.today;
+        if (!t) return null;
+        const picks = t.picksBySource;
+        const total = picks.viewer + picks['remote-falcon'] + picks.jukebox;
+        if (!t.requests && !t.votes && !total) return null;
+        const parts: string[] = [];
+        if (builtIn) parts.push(`${t.requests} requests, ${t.votes} votes on the page`);
+        const by: string[] = [];
+        if (picks.viewer) by.push(`${picks.viewer} from the page`);
+        if (picks['remote-falcon']) by.push(`${picks['remote-falcon']} Remote Falcon`);
+        if (picks.jukebox) by.push(`${picks.jukebox} jukebox`);
+        if (by.length) parts.push(`songs picked: ${by.join(', ')}`);
+        return `Today: ${parts.join(' · ')}`;
+    })();
 
     return (
         <Card>
@@ -98,17 +112,29 @@ export function ViewerControlCard() {
                     <Typography variant="h3" fontWeight="bold" color={theme.palette.secondary.main}>
                         Viewer Control
                     </Typography>
-                    <Chip
-                        size="small"
-                        label={TYPE_LABEL[type] ?? type}
-                        color={type === 'disabled' ? 'default' : window ? 'success' : 'warning'}
-                        variant={type === 'disabled' ? 'outlined' : 'filled'}
-                    />
+                    {anyOn ? (
+                        backends.map((b) => (
+                            <Chip
+                                key={b}
+                                size="small"
+                                label={BACKEND_LABEL[b] ?? b}
+                                color={window ? 'success' : 'warning'}
+                                variant="filled"
+                            />
+                        ))
+                    ) : (
+                        <Chip size="small" label="Disabled" variant="outlined" />
+                    )}
                 </Box>
                 {windowLine ? <Typography variant="body1">{windowLine}</Typography> : null}
                 {cloudLine ? <Typography variant="body1">{cloudLine}</Typography> : null}
+                {backends.length === 2 ? (
+                    <Typography variant="body2" color="text.secondary">
+                        Viewer-page requests are played before Remote Falcon suggestions.
+                    </Typography>
+                ) : null}
                 {todayLine ? <Typography variant="body1">{todayLine}</Typography> : null}
-                {type === 'disabled' ? (
+                {!anyOn ? (
                     <Typography variant="body2" color="text.secondary">
                         Viewers cannot request or vote. Turn it on in Settings.
                     </Typography>

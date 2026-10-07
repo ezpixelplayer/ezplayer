@@ -4,7 +4,7 @@
  * player is the durable store; the cloud keeps ~72 h in RAM and no database.
  */
 
-import type { VcSelectionReason, VcStatsEvent, VcStatsSnapshot } from '../types/ViewerControlWire';
+import type { VcSelectionReason, VcStatsEvent, VcStatsSnapshot, VcPickSource } from '../types/ViewerControlWire';
 
 /** A pulled event as the player stores it: tagged with the server epoch the
  *  seq belongs to, so the pair is unique across server restarts. */
@@ -12,11 +12,22 @@ export interface StoredViewerStatsEvent extends VcStatsEvent {
     epoch: string;
 }
 
+/** `epoch` of events the player records itself (Remote Falcon / jukebox picks). */
+export const LOCAL_STATS_EPOCH = 'local';
+
+export type PicksBySource = Record<VcPickSource, number>;
+
+export function emptyPicksBySource(): PicksBySource {
+    return { viewer: 0, 'remote-falcon': 0, jukebox: 0 };
+}
+
 export interface ViewerStatsCounts {
     requests: number;
     votes: number;
     refused: number;
     picks: number;
+    /** `picks` split by who chose. */
+    picksBySource: PicksBySource;
     plays: number;
     /** Distinct viewer hashes that requested / voted (or were refused). Hashes
      *  are salted per server process, so a server restart can double count. */
@@ -37,6 +48,7 @@ export interface ViewerStatsSong {
     votes: number;
     refused: number;
     picks: number;
+    picksBySource: PicksBySource;
     plays: number;
     lastAt: number;
 }
@@ -106,6 +118,7 @@ function emptyCounts(): ViewerStatsCounts {
         votes: 0,
         refused: 0,
         picks: 0,
+        picksBySource: emptyPicksBySource(),
         plays: 0,
         uniqueViewers: 0,
         peakViewers: 0,
@@ -154,7 +167,16 @@ export function summarizeViewerStats(
         if (!ev.songId) return undefined;
         let s = songs.get(ev.songId);
         if (!s) {
-            s = { songId: ev.songId, requests: 0, votes: 0, refused: 0, picks: 0, plays: 0, lastAt: 0 };
+            s = {
+                songId: ev.songId,
+                requests: 0,
+                votes: 0,
+                refused: 0,
+                picks: 0,
+                picksBySource: emptyPicksBySource(),
+                plays: 0,
+                lastAt: 0,
+            };
             songs.set(ev.songId, s);
         }
         if (ev.title && !s.title) s.title = ev.title;
@@ -186,11 +208,18 @@ export function summarizeViewerStats(
                 refusals.set(r, (refusals.get(r) ?? 0) + 1);
                 break;
             }
-            case 'pick':
+            case 'pick': {
+                const src: VcPickSource = ev.source ?? 'viewer';
                 day.picks++;
+                day.picksBySource[src]++;
                 window.picks++;
-                if (sg) sg.picks++;
+                window.picksBySource[src]++;
+                if (sg) {
+                    sg.picks++;
+                    sg.picksBySource[src]++;
+                }
                 break;
+            }
             case 'play':
                 day.plays++;
                 window.plays++;

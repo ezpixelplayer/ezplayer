@@ -37,6 +37,7 @@ import {
     configureViewerStatsSync,
     getViewerStatsSummary,
     publishViewerStats,
+    recordLocalViewerPick,
     setViewerStatsBroadcaster,
 } from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
@@ -87,7 +88,13 @@ import type {
 
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
-import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import {
+    CLOUD_API_ENDPOINTS,
+    mergePlaylists,
+    mergeSchedule,
+    mergeSequences,
+    viewerControlBackends,
+} from '@ezplayer/ezplayer-core';
 import type { AppSettingsCommand, AudioDevice } from '@ezplayer/ezplayer-core';
 import { reportDiagEvent } from './diagnostics.js';
 import { dispatchAppSettingsCommand, getAppSettingsState } from './appSettings.js';
@@ -192,6 +199,7 @@ function applyStatusSummary() {
         show_name: lastShowName,
         viewer_control_enabled: s?.viewerControl?.enabled,
         viewer_control_mode: s?.viewerControl?.type,
+        viewer_control_backends: s ? viewerControlBackends(s.viewerControl) : undefined,
     };
     const files = curStatus.content?.files;
     const nNeeding = files ? Object.values(files).filter((f) => f.status !== 'installed').length : undefined;
@@ -1303,6 +1311,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 curStatus = { ...curStatus, content: merged, content_updated: Date.now() };
                 safeSend(mainWindow, 'playback:cstatus', merged);
                 broadcastToWebSocket('cStatus', merged);
+                break;
+            }
+            case 'viewerPick': {
+                recordLocalViewerPick(msg);
                 break;
             }
             case 'nstatus': {

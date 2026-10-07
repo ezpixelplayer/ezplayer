@@ -7,8 +7,11 @@
 
 import * as fs from 'fs/promises';
 import {
+    LOCAL_STATS_EPOCH,
     trimViewerStatsEvents,
     type StoredViewerStatsEvent,
+    type VcPickSource,
+    type VcStatsEventKind,
     type VcStatsResponse,
     type VcStatsSnapshot,
 } from '@ezplayer/ezplayer-core';
@@ -93,6 +96,21 @@ export function applyViewerStatsPull(res: VcStatsResponse, now = Date.now()): nu
     if (res.truncated && !epochChanged) current.gapAt = now;
     if (incoming.length > 0 || res.truncated) void scheduleWrite();
     return incoming.length;
+}
+
+/** Record an event the player itself observed (Remote Falcon / jukebox picks). Local
+ *  events live in their own epoch with their own seq so they never collide with the
+ *  server's, and the pull cursor ignores them. */
+export function appendLocalViewerStatsEvent(
+    // Spelled out rather than Omit<>: the wire type's index signature makes Omit drop the known keys.
+    ev: { ts: number; kind: VcStatsEventKind; songId?: string; title?: string; source?: VcPickSource },
+    now = Date.now(),
+): void {
+    let seq = 0;
+    for (const e of current.events) if (e.epoch === LOCAL_STATS_EPOCH && e.seq > seq) seq = e.seq;
+    current.events.push({ ...ev, seq: seq + 1, epoch: LOCAL_STATS_EPOCH });
+    current.events = trimViewerStatsEvents(current.events, now, RETAIN_MS, MAX_EVENTS);
+    void scheduleWrite();
 }
 
 async function scheduleWrite(): Promise<void> {

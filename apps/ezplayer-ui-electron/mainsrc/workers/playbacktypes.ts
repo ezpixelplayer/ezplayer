@@ -146,6 +146,7 @@ export type WorkerToMainMessage =
     | { type: 'stats'; stats: PlaybackStatistics }
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
+    | { type: 'viewerPick'; source: 'remote-falcon' | 'jukebox'; songId: string; title?: string }
     | { type: 'pstatus'; status: PlayerPStatusContent }
     | {
           type: 'modelCoordinates';

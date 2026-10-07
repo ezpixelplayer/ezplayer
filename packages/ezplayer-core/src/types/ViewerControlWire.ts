@@ -166,6 +166,10 @@ export type VcStatsEventKind = 'request' | 'vote' | 'refused' | 'pick' | 'play' 
 /** One viewer-activity event from the player_server's RAM ring. The player
  *  pulls these (`GET /api/player/vc/stats/:player_token?afterSeq=N`) and is
  *  the durable home for them; the cloud keeps ~72 h and no database. */
+/** Who chose a song that was `pick`ed. Cloud events never carry it (they are the
+ *  viewer page); the player adds Remote Falcon and jukebox picks locally. */
+export type VcPickSource = 'viewer' | 'remote-falcon' | 'jukebox';
+
 export interface VcStatsEvent {
     /** Increasing within one server process (`VcStatsResponse.epoch`). */
     seq: number;
@@ -182,6 +186,8 @@ export interface VcStatsEvent {
     /** `viewers` / `listeners`: the new count. `request`: queue position.
      *  `vote`: the song's tally after the vote. */
     count?: number;
+    /** `pick` only. Absent = viewer page. */
+    source?: VcPickSource;
     [k: string]: unknown;
 }
 

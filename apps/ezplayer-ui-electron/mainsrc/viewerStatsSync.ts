@@ -9,7 +9,7 @@
  */
 
 import { summarizeViewerStats, type VcStatsResponse, type ViewerStatsSummary } from '@ezplayer/ezplayer-core';
-import { applyViewerStatsPull, getViewerStatsStore } from './data/ViewerStatsStorage.js';
+import { appendLocalViewerStatsEvent, applyViewerStatsPull, getViewerStatsStore } from './data/ViewerStatsStorage.js';
 import { trustSystemCAs } from './trustSystemCAs.js';
 
 const PULL_INTERVAL_MS = 30_000;
@@ -63,6 +63,24 @@ function stopTimer(): void {
 /** Current summary for first-connect snapshots. */
 export function getViewerStatsSummary(): ViewerStatsSummary {
     return buildSummary();
+}
+
+/** A song chosen on this player by Remote Falcon or the jukebox. Viewer-page picks
+ *  come from the cloud's event ring; these two never reach the cloud, so the player
+ *  records them into the same store and summary. */
+export function recordLocalViewerPick(pick: {
+    source: 'remote-falcon' | 'jukebox';
+    songId: string;
+    title?: string;
+}): void {
+    appendLocalViewerStatsEvent({
+        ts: Date.now(),
+        kind: 'pick',
+        source: pick.source,
+        songId: pick.songId,
+        title: pick.title,
+    });
+    publishViewerStats();
 }
 
 /** Recompute and push (after a folder load, or a pull). */

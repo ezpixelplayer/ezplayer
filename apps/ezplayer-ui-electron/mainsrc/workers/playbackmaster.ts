@@ -51,6 +51,7 @@ import {
     songVolumeScale,
     resolveVolumeTargets,
     type VolumeTarget,
+    viewerControlBackends,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -526,10 +527,44 @@ function sendControllerStateUpdate() {
 }
 
 let lastRFCheck: number = Date.now();
+
+// With both backends on, each round asks the built-in request line first and polls
+// Remote Falcon only when that had nothing (see the ezvc suggestion callback). The
+// two checks fire in the same tick because they share the schedule and the timing.
+let rfCheckDeferred = false;
+let rfCheckDeferredAt = 0;
+/** If the built-in check never answers (cloud unreachable), stop holding Remote Falcon. */
+const RF_DEFER_MAX_MS = 3000;
+function initiateRFCheck() {
+    const vc = latestSettings?.viewerControl;
+    const bothOn = viewerControlBackends(vc).includes('ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
+    if (!bothOn) {
+        sendRFInitiateCheck();
+        return;
+    }
+    const now = Date.now();
+    if (rfCheckDeferred && now - rfCheckDeferredAt > RF_DEFER_MAX_MS) {
+        rfCheckDeferred = false;
+        sendRFInitiateCheck();
+        return;
+    }
+    rfCheckDeferred = true;
+    rfCheckDeferredAt = now;
+}
+function releaseDeferredRFCheck() {
+    if (!rfCheckDeferred) return;
+    rfCheckDeferred = false;
+    sendRFInitiateCheck();
+}
+
 function sendRemoteUpdate() {
     const settings = latestSettings;
     if (!settings || !settings.viewerControl?.remoteFalconToken) {
         //emitInfo("No RF token");
+        return;
+    }
+    if (!viewerControlBackends(settings.viewerControl).includes('remote-falcon')) {
+        setRFControlEnabled(false);
         return;
     }
     const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
@@ -565,14 +600,14 @@ function sendRemoteUpdate() {
         const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
         if (diff >= 3000 && diff < 4000) {
             //emitInfo("Initiate while-playing RF check");
-            sendRFInitiateCheck();
+            initiateRFCheck();
         }
     } else {
         const dn = Date.now();
         if (dn - lastRFCheck > 5000) {
             lastRFCheck = dn;
             //emitInfo("Initiate idle RF check");
-            sendRFInitiateCheck();
+            initiateRFCheck();
         }
     }
 }
@@ -619,13 +654,19 @@ function configureEzvc() {
     lastEzvcPlayingKey = undefined;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
-        if (!next.songId) return;
+        if (!next.songId) {
+            // Nothing requested on the viewer page: Remote Falcon's turn.
+            releaseDeferredRFCheck();
+            return;
+        }
+        rfCheckDeferred = false; // the built-in line had something; Remote Falcon sits this round out
         processCommand({
             command: 'playsong',
             immediate: false,
             songId: next.songId,
             requestId: randomUUID(),
             priority: 3,
+            source: 'viewer',
         });
     });
     setEzvcResyncCallback(() => {
@@ -668,7 +709,8 @@ function sendEzvcUpdate() {
     // Display feeds report for any cloud-connected player; interactive control
     // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
-    const ezWindow = vc?.type === 'ezplayer' ? getActiveViewerControlSchedule(vc) : null;
+    const ezOn = viewerControlBackends(vc).includes('ezplayer');
+    const ezWindow = ezOn ? getActiveViewerControlSchedule(vc) : null;
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
@@ -712,7 +754,7 @@ function sendEzvcUpdate() {
             end: new Date(x.endTimeMS).toISOString(),
         }));
     // Request windows: exactly the viewer-control schedule entries.
-    const reqWindows: VcScheduleEntry[] = (vc?.type === 'ezplayer' ? (vc.schedule ?? []) : []).map((e) => ({
+    const reqWindows: VcScheduleEntry[] = (ezOn ? (vc?.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
         end: e.endTime,
@@ -871,6 +913,10 @@ function processCommand(cmd: EZPlayerCommand) {
                 }
 
                 emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                if (cmd.source === 'jukebox' || cmd.source === 'remote-falcon') {
+                    // Viewer-page picks are counted by the cloud; these two only the player sees.
+                    send({ type: 'viewerPick', source: cmd.source, songId: cmd.songId, title: seq.work?.title });
+                }
                 sendPlayerStateUpdate();
                 if (!running) {
                     running = processQueue(); // kick off first song
@@ -1230,6 +1276,7 @@ function dispatchSettings(settings: PlaybackSettings) {
                     songId: s.id,
                     requestId: randomUUID(),
                     priority: 3,
+                    source: 'remote-falcon',
                 });
             },
         );

@@ -75,3 +75,20 @@ describe('viewerStats', () => {
         expect(trimViewerStatsEvents(events, NOW, 1e9, 100)).toBe(events);
     });
 });
+
+describe('pick sources', () => {
+    it('splits picks by who chose, defaulting cloud events to the viewer page', () => {
+        const events: VcStatsEvent[] = [
+            ev('pick', NOW - 60_000, { songId: 'a', title: 'A' }),
+            ev('pick', NOW - 50_000, { songId: 'a', source: 'remote-falcon' }),
+            ev('pick', NOW - 40_000, { songId: 'b', source: 'jukebox' }),
+            ev('pick', NOW - 30_000, { songId: 'b', source: 'jukebox' }),
+        ];
+        const s = summarizeViewerStats(events, { tz: TZ, now: NOW, windowDays: 7 });
+        expect(s.today.picks).toBe(4);
+        expect(s.today.picksBySource).toEqual({ viewer: 1, 'remote-falcon': 1, jukebox: 2 });
+        expect(s.window.picksBySource).toEqual({ viewer: 1, 'remote-falcon': 1, jukebox: 2 });
+        const a = s.songs.find((x) => x.songId === 'a')!;
+        expect(a.picksBySource).toEqual({ viewer: 1, 'remote-falcon': 1, jukebox: 0 });
+    });
+});
