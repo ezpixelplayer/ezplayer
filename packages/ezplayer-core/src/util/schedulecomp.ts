@@ -510,6 +510,8 @@ export interface PlaybackLogDetail {
 
     /** Request ID if override command */
     requestId?: string;
+    /** How the item came to play: by schedule, or by request (immediate or queued) */
+    itemType?: 'Scheduled' | 'Immediate' | 'Queued';
 
     /**
      * If this is part of a scheduled item, this will be set
@@ -669,6 +671,7 @@ class PlaybackStateEntry {
             eventType: et,
             eventTime: ctime,
             requestId: c.item.requestId,
+            itemType: c.item.itemType,
             scheduleId: c.item.scheduleId,
             playlistId: c.item.playlistIds?.[c.itemPart],
             stackDepth: depth,
@@ -964,6 +967,7 @@ class PlaybackStateEntry {
             scheduleId: st.item.scheduleId,
             playlistId: st.item.playlistIds?.[st.itemPart],
             requestId: st.item.requestId,
+            itemType: st.item.itemType,
             eventTime: currentTime,
             stackDepth: depth,
             entryIntoPlaylist: [st.itemPart, st.itemCursor],
@@ -2103,8 +2107,10 @@ export class PlayerRunState {
         }
     }
 
+    /** Cancel a request wherever it is: waiting, queued, preempted, or playing.
+     *  Returns true if it was the item playing, which the caller has to cut over from. */
     // TODO This should really be at a time
-    removeInteractiveCommand(id: string) {
+    removeInteractiveCommand(id: string, log?: PlaybackLogDetail[]): boolean {
         this.interactiveQueue = this.interactiveQueue.filter((q) => q.requestId !== id);
         if (this.immediateItem?.requestId === id) this.immediateItem = undefined;
 
@@ -2116,7 +2122,17 @@ export class PlayerRunState {
         }
         this.upcomingById = nmap;
 
-        // Search the stack
+        // Playing right now: stop it and hand back to what it interrupted, the way
+        // stopImmediately does. Dropping the entry alone leaves the one below suspended.
+        const top = this.#stackTop;
+        const wasPlaying = top?.itemId === id;
+        if (top && wasPlaying) {
+            top.stopAtTime(this.depth, this.currentTime, log);
+            this.#stackPop();
+            this.#stackTop?.advancePausedTime(this.depth, this.currentTime, log);
+        }
+
+        // Search the rest of the stack
         for (let i = 0; i < this.stack.length;) {
             if (this.stack[i].itemId === id) {
                 this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i + 1)];
@@ -2136,6 +2152,8 @@ export class PlayerRunState {
                 this.heap.deleteAt(idx);
             }
         }
+
+        return wasPlaying;
     }
 
     removeInteractiveCommands() {
@@ -2230,7 +2248,8 @@ export class PlayerRunState {
     titleForIds(seqId?: string, plId?: string, schedId?: string) {
         if (seqId) {
             const nps = this.sequencesById.get(seqId);
-            return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+            const parts = [nps?.work?.title, nps?.work?.artist, nps?.sequence?.vendor].filter((p) => !!p);
+            return parts.length ? parts.join(' - ') : '<Unknown>';
         } else if (plId) {
             const npl = this.playlistsById.get(plId);
             return `${npl?.title ?? 'unknown playlist'}`;
@@ -2289,6 +2308,54 @@ export class PlayerRunState {
             }
         }
         return items.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+    }
+
+    /**
+     * What plays after what is on now, in order, decided the way the engine itself
+     * will decide it: the rest of the current item, a request waiting its turn, a
+     * show that was interrupted and resumes, the next show to start.  Up to
+     * `maxItems` song starts within `horizonMs`.  Runs a snapshot forward, so the
+     * live state is untouched.
+     */
+    predictUpcoming(horizonMs: number, maxItems: number = 10): PlayingItem[] {
+        const snap = this.snapshot();
+        const log = snap.readOutScheduleUntil(this.currentTime + horizonMs, maxItems * 8);
+        const items: PlayingItem[] = [];
+        const seen = new Set<string>();
+        for (let i = 0; i < log.length && items.length < maxItems; ++i) {
+            const e = log[i];
+            if (e.eventType !== 'Sequence Started' && e.eventType !== 'Sequence Resumed') continue;
+            if (!e.sequenceId || e.eventTime <= this.currentTime) continue; // on now, not next
+            const key = `${e.sequenceId}@${e.eventTime}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            // It runs until the engine ends or pauses it at this depth; failing a cut, its
+            // whole remaining length.
+            const stop = log
+                .slice(i + 1)
+                .find(
+                    (x) =>
+                        x.stackDepth === e.stackDepth &&
+                        x.sequenceId === e.sequenceId &&
+                        (x.eventType === 'Sequence Ended' || x.eventType === 'Sequence Paused'),
+                );
+            const seq = this.sequencesById.get(e.sequenceId);
+            const remaining = (seq ? getSeqTimesMS(seq).totalSeqTimeMS : 0) - (e.timeIntoSeqMS ?? 0);
+            const byRequest = !!e.requestId && !e.scheduleId;
+            items.push({
+                type: e.itemType ?? (byRequest ? 'Queued' : 'Scheduled'),
+                item: 'Song',
+                title: this.titleForIds(e.sequenceId),
+                sequence_id: e.sequenceId,
+                playlist_id: byRequest ? e.playlistId : undefined,
+                schedule_id: e.scheduleId || undefined,
+                request_id: e.requestId,
+                at: e.eventTime,
+                until: stop ? stop.eventTime : e.eventTime + Math.max(remaining, 0),
+            });
+        }
+        return items;
     }
 
     getUpcomingSchedules(): PlayingItem[] {

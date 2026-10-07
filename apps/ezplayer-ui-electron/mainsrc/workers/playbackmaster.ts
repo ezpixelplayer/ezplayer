@@ -307,7 +307,7 @@ function groupIdsForActions(group: PlaybackActions) {
 }
 
 /** Current/next background item for the existing Background slot. Same sources as
- *  foreground now-playing + Next Show (stack, due heap, then upcoming schedules). */
+ *  foreground now-playing + Up Next (stack, due heap, then upcoming schedules). */
 function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingItem | undefined {
     const ps = runState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const firstAction = (group?: PlaybackActions, requireStarted?: boolean): PlayingItem | undefined => {
@@ -331,6 +331,13 @@ function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingIte
     );
 }
 
+/** The foreground song that has actually started, if any. */
+function currentForegroundPlayingItem(): PlayingItem | undefined {
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    const pla = ps.curPLActions?.actions?.find((a) => !a.end && a.atTime <= foregroundPlayerRunState.currentTime);
+    return pla ? actionToPlayingItem(false, pla) : undefined;
+}
+
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const playStatus: PlayerPStatusContent = {
@@ -349,23 +356,24 @@ function sendPlayerStateUpdate() {
     if (ps.curPLActions?.actions?.length) {
         const group = ps.curPLActions;
         const groupIds = groupIdsForActions(group);
-        for (const pla of group.actions) {
-            if (pla.end) continue;
-            // Only "now playing" if it has actually started; a not-yet-started action
-            // (within the readahead window) is upcoming, not playing.
-            if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
-                playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
-            } else {
-                playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
-            }
+        // Only "now playing" if it has actually started; a not-yet-started action
+        // (within the readahead window) is upcoming, not playing.
+        const pla = group.actions.find((a) => !a.end && a.atTime <= foregroundPlayerRunState.currentTime);
+        if (pla) {
+            playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
+            playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
         }
     }
     // Over once nothing is playing: a later schedule must not inherit it.
     if (!playStatus.now_playing) stoppingGracefully = false;
     playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
-    playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
+    // The songs to come, as the engine will choose them — through requests, a
+    // resumed show and the next show alike — then the shows due to start.
+    playStatus.upcoming = [
+        ...foregroundPlayerRunState.predictUpcoming(600_000, 10),
+        ...foregroundPlayerRunState.getUpcomingSchedules(),
+    ];
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
 
@@ -517,21 +525,8 @@ function sendRemoteUpdate() {
         //emitInfo('Enable RF');
         setRFControlEnabled(true);
     }
-    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
-    let now_playing: PlayingItem | undefined = undefined;
-    let upcoming: PlayingItem | undefined = undefined;
-    if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
-            if (pla.end) continue;
-            // Only "now playing" if it has actually started; otherwise it's upcoming.
-            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                now_playing = actionToPlayingItem(false, pla);
-            } else {
-                upcoming = actionToPlayingItem(false, pla);
-                break;
-            }
-        }
-    }
+    const now_playing = currentForegroundPlayingItem();
+    const upcoming = foregroundPlayerRunState.predictUpcoming(600_000, 1)[0];
     //emitInfo("Set RF Now Playing");
     setRFNowPlaying(now_playing?.title, upcoming?.title);
     const pl = curPlaylists?.find((p) => p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
@@ -661,19 +656,8 @@ function sendEzvcUpdate() {
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
-    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
-    let now_playing: PlayingItem | undefined = undefined;
-    const upcomingItems: PlayingItem[] = [];
-    if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
-            if (pla.end) continue;
-            const pi = actionToPlayingItem(false, pla);
-            // Only "now playing" if it has actually started; otherwise it's upcoming.
-            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) now_playing = pi;
-            else if (upcomingItems.length < 12) upcomingItems.push(pi);
-            else break;
-        }
-    }
+    const now_playing = currentForegroundPlayingItem();
+    const upcomingItems = foregroundPlayerRunState.predictUpcoming(600_000, 12);
     const toVc = (pi: PlayingItem | undefined): VcPlayingItem | undefined =>
         pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
     const upcomingVc = upcomingItems.map((p) => toVc(p)).filter((x): x is VcPlayingItem => x !== undefined);
@@ -850,7 +834,12 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'deleterequest': {
             emitInfo(`Delete ${cmd.requestId}`);
-            foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+            if (foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId)) {
+                // It was playing: cut its audio over, as stopnow does.
+                audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                ++curAudioSyncNum;
+            }
+            sendPlayerStateUpdate();
             break;
         }
         case 'clearrequests': {

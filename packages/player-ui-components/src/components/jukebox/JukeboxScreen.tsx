@@ -706,6 +706,10 @@ export function JukeboxScreen({
         ).unwrap();
     };
 
+    const handleStop = async (requestId: string) => {
+        await dispatch(callImmediateCommand({ command: 'deleterequest', requestId })).unwrap();
+    };
+
     const handleQueue = async (songId: string) => {
         await dispatch(
             callImmediateCommand({
@@ -871,10 +875,10 @@ export function JukeboxScreen({
                                 action: handlePlay,
                                 variant: 'contained' as const,
                                 color: 'primary' as const,
-                                isDisabled: (_id: string) => {
-                                    // Example: Disable play button if song is currently playing
-                                    return false; // Implement your logic here
-                                },
+                                // Stopping a request is an operator control; a kiosk only starts them.
+                                whenPlaying: allowStopControls
+                                    ? { label: 'Stop', action: handleStop, color: 'error' as const }
+                                    : undefined,
                             },
                             {
                                 label: 'Queue',

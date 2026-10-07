@@ -159,7 +159,6 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
             await dispatch(
                 callImmediateCommand({ command: 'deleterequest', requestId: testRequest.requestId }),
             ).unwrap();
-            await dispatch(callImmediateCommand({ command: 'endsong', songId: testRequest.songId })).unwrap();
             setTestRequest(null);
             ToastMsgs.showSuccessMessage('Test sequence stopped', {
                 theme: 'colored',
@@ -292,10 +291,11 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Upcoming Shows ({player.upcoming.filter((s) => s.schedule_id).length}):
+                                            Upcoming Shows (
+                                            {player.upcoming.filter((s) => s.schedule_id && !s.sequence_id).length}):
                                         </Typography>
                                         {player.upcoming
-                                            .filter((s) => s.schedule_id)
+                                            .filter((s) => s.schedule_id && !s.sequence_id)
                                             .map((show, index) => (
                                                 <Box
                                                     key={index}

@@ -221,7 +221,8 @@ export const NowPlayingCard = ({
                     </Box>
                 )}
 
-                {/* Next Track Section */}
+                {/* Up Next: the first thing the engine will play after what is on —
+                    the next song, a waiting request, or an interrupted show resuming. */}
                 {hasUpcoming && (
                     <Box>
                         <Typography
@@ -230,7 +231,7 @@ export const NowPlayingCard = ({
                             color="secondary"
                             sx={{ mb: 0.5 }}
                         >
-                            Next Show
+                            Up Next
                         </Typography>
                         <Typography
                             variant={compact ? 'body2' : 'body1'}

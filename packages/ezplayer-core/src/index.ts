@@ -186,7 +186,7 @@ export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
 export { isSequencePlayable } from './util/seqFilter';
 
-export { isPlaybackActive } from './util/playerStatus';
+export { activeRequestFor, isPlaybackActive } from './util/playerStatus';
 
 export {
     CONVERTIBLE_AUDIO_EXTENSIONS,
