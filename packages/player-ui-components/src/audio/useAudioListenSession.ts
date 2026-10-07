@@ -40,9 +40,15 @@ export function useAudioListenSession(opts: AudioListenOptions | undefined): Use
         }
         const unsub = session.subscribe(setStatus);
         const tick = setInterval(() => setIsPlaying(session.isPlaying), 500);
+        // A Listen control is on screen: warm the decoder + clock now, and open the
+        // AudioContext at the first touch anywhere (browsers allow it from then on).
+        session.prewarm();
+        const onFirstTouch = () => session.prewarm();
+        window.addEventListener('pointerdown', onFirstTouch, { once: true, passive: true });
         return () => {
             unsub();
             clearInterval(tick);
+            window.removeEventListener('pointerdown', onFirstTouch);
         };
     }, [session]);
 

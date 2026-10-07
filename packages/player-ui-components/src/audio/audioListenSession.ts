@@ -12,10 +12,14 @@
  *     metadata, so iOS/Android treat the tab as active media and keep it
  *     alive when the screen locks (and show a lock-screen pause button);
  *   - holds a screen wake lock while listening, where supported;
- *   - re-syncs the clock and re-anchors the schedule after a wake-up.
+ *   - re-syncs the clock and re-anchors the schedule after a wake-up;
+ *   - starts warm: `prewarm()` compiles the decoder and takes a clock sample
+ *     before the tap, and the first chunk is not scheduled until the
+ *     AudioContext is really running, the decoder is up and a clock sample
+ *     is in (see warmStart.ts). Stop keeps the warmed pieces for a restart.
  */
 
-import { parseAudioWireFrame } from '@ezplayer/ezplayer-core';
+import { parseAudioWireFrame, type AudioWireFrame } from '@ezplayer/ezplayer-core';
 
 import { ChunkDecoder } from './chunkDecoder';
 import { RealTimeChunkPlayer, type ChunkPlaybackEvent } from './chunkScheduler';
@@ -28,6 +32,7 @@ import {
     resetClockWindow,
     type ClockOffsetRef,
 } from './clockSync';
+import { WARMUP_MAX_PENDING_FRAMES, stillPlayable, warmupReady } from './warmStart';
 
 export type AudioListenStatus = 'idle' | 'connecting' | 'listening' | 'reconnecting' | 'error';
 
@@ -67,6 +72,10 @@ export interface AudioListenDiagnostics {
     contextState?: AudioContextState;
     outputLatencyMs?: number;
     wakeLock: boolean;
+    /** Time from start() until the first chunk was scheduled (warm-up gate). */
+    warmupMs?: number;
+    /** Frames held back by the warm-up gate on this start. */
+    warmupHeld?: number;
     updatedAt: number;
 }
 
@@ -92,6 +101,12 @@ export class AudioListenSession {
     private wakeLock?: WakeLockSentinel;
     private lastChunkAt = 0;
     private listenersAttached = false;
+    // warm-up gate (see warmStart.ts)
+    private startedAt = 0;
+    private gateOpen = false;
+    private pendingFrames: AudioWireFrame[] = [];
+    private warmupMs?: number;
+    private warmupHeld = 0;
 
     // diagnostics
     private chunksReceived = 0;
@@ -162,8 +177,27 @@ export class AudioListenSession {
             contextState: ctx?.state,
             outputLatencyMs: ctx ? Math.round((ctx.outputLatency || 0) * 1000) : undefined,
             wakeLock: !!this.wakeLock && !this.wakeLock.released,
+            warmupMs: this.warmupMs,
+            warmupHeld: this.warmupHeld,
             updatedAt: Date.now(),
         };
+    }
+
+    /**
+     * Get the slow pieces ready before the user taps Listen, so the first
+     * start is as clean as a restart: compile the decoder, take a clock
+     * sample and — once the page has had any user activation, so the
+     * browser will let it run — open the AudioContext. Idempotent; call it
+     * whenever a Listen control is shown and again on first touch.
+     */
+    prewarm(): void {
+        if (this.wanted) return;
+        if (!this.decoder) {
+            this.decoder = new ChunkDecoder();
+            void this.decoder.init();
+        }
+        if (this.offsetRef.httpSample === undefined && !this.clockAbort) void this.syncClock(true);
+        if (!this.player && hasUserActivation()) this.player = this.makePlayer();
     }
 
     /** Must be called from a user gesture the first time (autoplay policy). */
@@ -173,7 +207,14 @@ export class AudioListenSession {
             return;
         }
         this.wanted = true;
-        this.offsetRef = createClockOffsetRef();
+        // Keep the learned clock offset across stop/start; only the one-way
+        // chunk samples are stale.
+        resetClockWindow(this.offsetRef);
+        this.startedAt = Date.now();
+        this.gateOpen = false;
+        this.pendingFrames = [];
+        this.warmupMs = undefined;
+        this.warmupHeld = 0;
         this.chunksReceived = 0;
         this.chunksDropped = 0;
         this.chunksTrimmed = 0;
@@ -184,7 +225,28 @@ export class AudioListenSession {
         this.lastChunk = undefined;
         this.reconnectDelay = RECONNECT_MIN_MS;
 
-        this.player = new RealTimeChunkPlayer(this.offsetRef, (ev) => {
+        // Reuse what prewarm() or a previous listen left ready.
+        if (!this.player) this.player = this.makePlayer();
+        this.player.reanchor();
+        void this.player.resume();
+        if (!this.decoder) {
+            this.decoder = new ChunkDecoder();
+            void this.decoder.init();
+        }
+
+        this.startKeepalive();
+        this.attachPageListeners();
+        void this.requestWakeLock();
+
+        this.setStatus('connecting');
+        // Don't abort a prewarm sample that is about to land.
+        if (!this.clockAbort) void this.syncClock();
+        this.clockTimer = setInterval(() => void this.syncClock(), CLOCK_REFRESH_INTERVAL_MS);
+        this.connect();
+    }
+
+    private makePlayer(): RealTimeChunkPlayer {
+        const player = new RealTimeChunkPlayer(this.offsetRef, (ev) => {
             this.lastChunk = ev;
             if (ev.dropped) this.chunksDropped++;
             else if (ev.trimmedMs > 0) this.chunksTrimmed++;
@@ -200,23 +262,12 @@ export class AudioListenSession {
                 }
             }
         });
-        void this.player.resume();
-        this.player.context.onstatechange = () => {
-            if (!this.wanted || !this.player) return;
-            const state = this.player.context.state as string;
-            if (state === 'suspended' || state === 'interrupted') void this.player.resume();
+        player.context.onstatechange = () => {
+            if (!this.wanted || this.player !== player) return;
+            const state = player.context.state as string;
+            if (state === 'suspended' || state === 'interrupted') void player.resume();
         };
-        this.decoder = new ChunkDecoder();
-        void this.decoder.init();
-
-        this.startKeepalive();
-        this.attachPageListeners();
-        void this.requestWakeLock();
-
-        this.setStatus('connecting');
-        void this.syncClock();
-        this.clockTimer = setInterval(() => void this.syncClock(), CLOCK_REFRESH_INTERVAL_MS);
-        this.connect();
+        return player;
     }
 
     stop(): void {
@@ -228,10 +279,12 @@ export class AudioListenSession {
         this.clockTimer = undefined;
         this.clockAbort?.abort();
         this.clockAbort = undefined;
-        this.player?.close();
-        this.player = undefined;
-        this.decoder?.free();
-        this.decoder = undefined;
+        this.pendingFrames = [];
+        this.gateOpen = false;
+        // Keep the context (suspended, so it costs nothing) and the compiled
+        // decoder: a restart then needs no device open or wasm compile.
+        this.player?.reanchor();
+        void this.player?.context.suspend().catch(() => undefined);
         this.stopKeepalive();
         this.releaseWakeLock();
         this.detachPageListeners();
@@ -317,21 +370,52 @@ export class AudioListenSession {
         this.chunksReceived++;
         this.lastChunkAt = Date.now();
         refineClockOffset(this.offsetRef, frame.serverNow);
+        if (!this.gateOpen) {
+            // Hold frames until the clocks can be trusted (see warmStart.ts);
+            // tryOpenGate() plays the ones still worth playing, this one included.
+            this.pendingFrames.push(frame);
+            if (this.pendingFrames.length > WARMUP_MAX_PENDING_FRAMES) this.pendingFrames.shift();
+            this.tryOpenGate();
+            return;
+        }
+        this.play(frame);
+    }
+
+    private play(frame: AudioWireFrame): void {
         const chunk = this.decoder?.decode(frame);
         if (!chunk) return;
         this.player?.handleChunk(chunk);
     }
 
+    private tryOpenGate(): void {
+        const ctx = this.player?.context;
+        const ok = warmupReady({
+            contextState: ctx?.state,
+            contextTime: ctx?.currentTime ?? 0,
+            decoderReady: this.decoder?.ready ?? false,
+            haveClockSample: this.offsetRef.httpSample !== undefined,
+            elapsedMs: Date.now() - this.startedAt,
+        });
+        if (!ok) return;
+        this.gateOpen = true;
+        this.warmupMs = Date.now() - this.startedAt;
+        this.warmupHeld = this.pendingFrames.length;
+        const playable = stillPlayable(this.pendingFrames, Date.now() + this.offsetRef.value);
+        this.pendingFrames = [];
+        for (const f of playable) this.play(f);
+    }
+
     // -- clock ---------------------------------------------------------------
 
-    private async syncClock(): Promise<void> {
-        if (!this.wanted) return;
+    private async syncClock(prewarm = false): Promise<void> {
+        if (!this.wanted && !prewarm) return;
         this.clockAbort?.abort();
         const abort = new AbortController();
         this.clockAbort = abort;
         this.httpAttempts++;
         const sample = await estimateClockOffset(this.opts.timeUrl, abort.signal);
-        if (abort.signal.aborted || !this.wanted || !sample) return;
+        if (this.clockAbort === abort) this.clockAbort = undefined;
+        if (abort.signal.aborted || !sample) return;
         applyHttpClockOffset(this.offsetRef, sample);
     }
 
@@ -456,6 +540,13 @@ export class AudioListenSession {
         this.currentStatus = s;
         for (const cb of this.listeners) cb(s);
     }
+}
+
+/** The page has seen a user gesture, so an AudioContext created now may run. */
+function hasUserActivation(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = (navigator as unknown as { userActivation?: { hasBeenActive?: boolean } }).userActivation;
+    return ua?.hasBeenActive === true;
 }
 
 /** Smallest non-zero step `performance.now()` takes in a quick burst of reads. */

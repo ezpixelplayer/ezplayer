@@ -17,12 +17,19 @@ import type { DecodedChunk } from './chunkScheduler';
 export class ChunkDecoder {
     private opus?: OpusDecoder<48000>;
     private opusReady = false;
+    private initDone = false;
     private initPromise?: Promise<void>;
     /** Frames whose payload failed to decode. */
     decodeErrors = 0;
 
+    /** Init has settled (successfully or not); the session's warm-up gate
+     *  waits on this so the first chunks are not thrown away. */
+    get ready(): boolean {
+        return this.initDone;
+    }
+
     /** Start the opus decoder (async wasm init). Frames arriving before it
-     *  resolves are dropped; that is at most the first ~100 ms. */
+     *  resolves are dropped — the session holds them back until `ready`. */
     init(): Promise<void> {
         if (!this.initPromise) {
             this.initPromise = (async () => {
@@ -37,9 +44,13 @@ export class ChunkDecoder {
                 await dec.ready;
                 this.opus = dec;
                 this.opusReady = true;
-            })().catch((err) => {
-                console.warn('[audio] opus decoder unavailable:', err);
-            });
+            })()
+                .catch((err) => {
+                    console.warn('[audio] opus decoder unavailable:', err);
+                })
+                .finally(() => {
+                    this.initDone = true;
+                });
         }
         return this.initPromise;
     }
@@ -52,6 +63,7 @@ export class ChunkDecoder {
         }
         this.opus = undefined;
         this.opusReady = false;
+        this.initDone = false;
         this.initPromise = undefined;
     }
 
