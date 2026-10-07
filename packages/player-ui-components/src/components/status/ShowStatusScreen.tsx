@@ -25,7 +25,7 @@ import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { CLOUD, VIEWER_STATS } from '../../constants/routes';
+import { CLOUD } from '../../constants/routes';
 
 // Types
 import { AppDispatch, RootState } from '../../store/Store';
@@ -40,6 +40,7 @@ import {
     severityToMainColor,
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
+import { ViewerControlCard } from './ViewerControlCard';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
@@ -205,13 +206,6 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const controller = runtime.combined.controller;
     const show = runtime.combined.show;
     const showName = show?.show_name || 'Unknown Show';
-    const vcLabel = show?.viewer_control_enabled
-        ? show.viewer_control_mode === 'ezplayer'
-            ? 'Enabled (EZPlayer)'
-            : show.viewer_control_mode === 'remote-falcon'
-              ? 'Enabled (Remote Falcon)'
-              : 'Enabled'
-        : 'Disabled';
 
     return (
         <Box>
@@ -502,23 +496,15 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     Schedule Sync: {formatTime(content.schedule_sync_time)}
                                 </Typography>
                                 <Typography variant="body1">Schedules: {content.n_schedules ?? '—'}</Typography>
-                                <Typography variant="body1">
-                                    Viewer Control: {vcLabel}
-                                    {show?.viewer_control_enabled ? (
-                                        <Button
-                                            size="small"
-                                            variant="text"
-                                            sx={{ ml: 1, textTransform: 'none' }}
-                                            onClick={() => navigate(VIEWER_STATS)}
-                                        >
-                                            Viewer activity
-                                        </Button>
-                                    ) : null}
-                                </Typography>
                             </CardContent>
                         </Card>
                     </Grid>
                 )}
+
+                {/* Viewer Control */}
+                <Grid item xs={12}>
+                    <ViewerControlCard />
+                </Grid>
 
                 {/* Controller Status */}
                 {controller && (

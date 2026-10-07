@@ -282,7 +282,9 @@ function LiveCard({ summary, now }: { summary: ViewerStatsSummary; now: number }
     );
 }
 
-export function ViewerStatsScreen({ title, statusArea }: ViewerStatsScreenProps) {
+/** The activity view itself (no page header): hosted by the screen below and by
+ *  the Show Status card's dialog. */
+export function ViewerStatsBody() {
     const theme = useTheme();
     const summary = useSelector((s: RootState) => s.viewerStats.summary);
     const [now, setNow] = useState(() => Date.now());
@@ -294,203 +296,203 @@ export function ViewerStatsScreen({ title, statusArea }: ViewerStatsScreenProps)
     const empty = useMemo(() => !summary || (summary.storedEvents === 0 && !summary.live), [summary]);
 
     return (
+        <Grid container spacing={2} sx={{ p: 2 }}>
+            {!summary ? (
+                <Grid item xs={12}>
+                    <Typography color="text.secondary">Waiting for the player…</Typography>
+                </Grid>
+            ) : (
+                <>
+                    {summary.gap ? (
+                        <Grid item xs={12}>
+                            <Alert severity="info">
+                                Some activity was dropped by the player server before it could be collected, so recent
+                                counts may be incomplete.
+                            </Alert>
+                        </Grid>
+                    ) : null}
+                    <Grid item xs={12}>
+                        <LiveCard summary={summary} now={now} />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography
+                                    variant="h3"
+                                    fontWeight="bold"
+                                    color={theme.palette.secondary.main}
+                                    sx={{ mb: 1 }}
+                                >
+                                    Today
+                                </Typography>
+                                <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
+                                    <StatTile label="Requests" value={summary.today.requests} />
+                                    <StatTile label="Votes" value={summary.today.votes} />
+                                    <StatTile label="Played from picks" value={summary.today.picks} />
+                                    <StatTile label="Viewers who acted" value={summary.today.uniqueViewers} />
+                                    <StatTile label="Peak on page" value={summary.today.peakViewers} />
+                                    <StatTile label="Peak listening" value={summary.today.peakListeners} />
+                                    <StatTile label="Refused" value={summary.today.refused} />
+                                </Stack>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography
+                                    variant="h3"
+                                    fontWeight="bold"
+                                    color={theme.palette.secondary.main}
+                                    sx={{ mb: 1 }}
+                                >
+                                    Last {summary.windowDays} days
+                                </Typography>
+                                <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+                                    <StatTile label="Requests" value={summary.window.requests} />
+                                    <StatTile label="Votes" value={summary.window.votes} />
+                                    <StatTile label="Played from picks" value={summary.window.picks} />
+                                    <StatTile label="Viewers who acted" value={summary.window.uniqueViewers} />
+                                    <StatTile label="Peak on page" value={summary.window.peakViewers} />
+                                    <StatTile label="Peak listening" value={summary.window.peakListeners} />
+                                </Stack>
+                                <DayBars days={summary.days} />
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    {empty ? (
+                        <Grid item xs={12}>
+                            <Alert severity="info">
+                                No viewer activity recorded yet. Activity appears here once the viewer page is enabled
+                                in your show settings and viewers start requesting or voting.
+                            </Alert>
+                        </Grid>
+                    ) : null}
+                    <Grid item xs={12} md={7}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography
+                                    variant="h3"
+                                    fontWeight="bold"
+                                    color={theme.palette.secondary.main}
+                                    sx={{ mb: 1 }}
+                                >
+                                    Most requested
+                                </Typography>
+                                {summary.songs.length === 0 ? (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Nothing yet.
+                                    </Typography>
+                                ) : (
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell>Song</TableCell>
+                                                <TableCell align="right">Requests</TableCell>
+                                                <TableCell align="right">Votes</TableCell>
+                                                <TableCell align="right">Picked</TableCell>
+                                                <TableCell align="right">Plays</TableCell>
+                                                <TableCell align="right">Refused</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {summary.songs.map((s) => (
+                                                <TableRow key={s.songId}>
+                                                    <TableCell>{s.title ?? s.songId}</TableCell>
+                                                    <TableCell align="right">{s.requests}</TableCell>
+                                                    <TableCell align="right">{s.votes}</TableCell>
+                                                    <TableCell align="right">{s.picks}</TableCell>
+                                                    <TableCell align="right">{s.plays}</TableCell>
+                                                    <TableCell align="right">{s.refused}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                )}
+                                {summary.refusals.length > 0 ? (
+                                    <Box sx={{ mt: 2 }}>
+                                        <Typography variant="subtitle2">Why requests were refused</Typography>
+                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                                            {summary.refusals.map((r) => (
+                                                <Chip
+                                                    key={r.reason}
+                                                    size="small"
+                                                    variant="outlined"
+                                                    label={`${REASON_TEXT[r.reason]}: ${r.count}`}
+                                                />
+                                            ))}
+                                        </Stack>
+                                    </Box>
+                                ) : null}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={12} md={5}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography
+                                    variant="h3"
+                                    fontWeight="bold"
+                                    color={theme.palette.secondary.main}
+                                    sx={{ mb: 1 }}
+                                >
+                                    Recent activity
+                                </Typography>
+                                {summary.recent.length === 0 ? (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Nothing yet.
+                                    </Typography>
+                                ) : (
+                                    <Stack spacing={0.75}>
+                                        {summary.recent.map((ev) => (
+                                            <Stack
+                                                key={`${ev.ts}-${ev.seq}`}
+                                                direction="row"
+                                                spacing={1}
+                                                alignItems="flex-start"
+                                            >
+                                                <Chip
+                                                    size="small"
+                                                    color={KIND_COLOR[ev.kind] ?? 'default'}
+                                                    label={ev.kind}
+                                                    sx={{ minWidth: 68, textTransform: 'capitalize' }}
+                                                />
+                                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                    <Typography variant="body2" noWrap title={describe(ev)}>
+                                                        {describe(ev)}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {clock(ev.ts, summary.tz)}
+                                                        {ev.viewer ? ` · viewer ${ev.viewer.slice(0, 6)}` : ''}
+                                                    </Typography>
+                                                </Box>
+                                            </Stack>
+                                        ))}
+                                    </Stack>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={12}>
+                        <Typography variant="caption" color="text.secondary">
+                            Days are counted in {summary.tz}. Viewers are identified by an anonymous hash, never an
+                            address. {summary.storedEvents} events stored on this player.
+                        </Typography>
+                    </Grid>
+                </>
+            )}
+        </Grid>
+    );
+}
+
+export function ViewerStatsScreen({ title, statusArea }: ViewerStatsScreenProps) {
+    return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Box sx={{ padding: 2, flexShrink: 0 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto' }}>
-                <Grid container spacing={2} sx={{ p: 2, pt: 0 }}>
-                    {!summary ? (
-                        <Grid item xs={12}>
-                            <Typography color="text.secondary">Waiting for the player…</Typography>
-                        </Grid>
-                    ) : (
-                        <>
-                            {summary.gap ? (
-                                <Grid item xs={12}>
-                                    <Alert severity="info">
-                                        Some activity was dropped by the player server before it could be collected, so
-                                        recent counts may be incomplete.
-                                    </Alert>
-                                </Grid>
-                            ) : null}
-                            <Grid item xs={12}>
-                                <LiveCard summary={summary} now={now} />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Card sx={{ height: '100%' }}>
-                                    <CardContent>
-                                        <Typography
-                                            variant="h3"
-                                            fontWeight="bold"
-                                            color={theme.palette.secondary.main}
-                                            sx={{ mb: 1 }}
-                                        >
-                                            Today
-                                        </Typography>
-                                        <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
-                                            <StatTile label="Requests" value={summary.today.requests} />
-                                            <StatTile label="Votes" value={summary.today.votes} />
-                                            <StatTile label="Played from picks" value={summary.today.picks} />
-                                            <StatTile label="Viewers who acted" value={summary.today.uniqueViewers} />
-                                            <StatTile label="Peak on page" value={summary.today.peakViewers} />
-                                            <StatTile label="Peak listening" value={summary.today.peakListeners} />
-                                            <StatTile label="Refused" value={summary.today.refused} />
-                                        </Stack>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Card sx={{ height: '100%' }}>
-                                    <CardContent>
-                                        <Typography
-                                            variant="h3"
-                                            fontWeight="bold"
-                                            color={theme.palette.secondary.main}
-                                            sx={{ mb: 1 }}
-                                        >
-                                            Last {summary.windowDays} days
-                                        </Typography>
-                                        <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
-                                            <StatTile label="Requests" value={summary.window.requests} />
-                                            <StatTile label="Votes" value={summary.window.votes} />
-                                            <StatTile label="Played from picks" value={summary.window.picks} />
-                                            <StatTile label="Viewers who acted" value={summary.window.uniqueViewers} />
-                                            <StatTile label="Peak on page" value={summary.window.peakViewers} />
-                                            <StatTile label="Peak listening" value={summary.window.peakListeners} />
-                                        </Stack>
-                                        <DayBars days={summary.days} />
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            {empty ? (
-                                <Grid item xs={12}>
-                                    <Alert severity="info">
-                                        No viewer activity recorded yet. Activity appears here once the viewer page is
-                                        enabled in your show settings and viewers start requesting or voting.
-                                    </Alert>
-                                </Grid>
-                            ) : null}
-                            <Grid item xs={12} md={7}>
-                                <Card sx={{ height: '100%' }}>
-                                    <CardContent>
-                                        <Typography
-                                            variant="h3"
-                                            fontWeight="bold"
-                                            color={theme.palette.secondary.main}
-                                            sx={{ mb: 1 }}
-                                        >
-                                            Most requested
-                                        </Typography>
-                                        {summary.songs.length === 0 ? (
-                                            <Typography variant="body2" color="text.secondary">
-                                                Nothing yet.
-                                            </Typography>
-                                        ) : (
-                                            <Table size="small">
-                                                <TableHead>
-                                                    <TableRow>
-                                                        <TableCell>Song</TableCell>
-                                                        <TableCell align="right">Requests</TableCell>
-                                                        <TableCell align="right">Votes</TableCell>
-                                                        <TableCell align="right">Picked</TableCell>
-                                                        <TableCell align="right">Plays</TableCell>
-                                                        <TableCell align="right">Refused</TableCell>
-                                                    </TableRow>
-                                                </TableHead>
-                                                <TableBody>
-                                                    {summary.songs.map((s) => (
-                                                        <TableRow key={s.songId}>
-                                                            <TableCell>{s.title ?? s.songId}</TableCell>
-                                                            <TableCell align="right">{s.requests}</TableCell>
-                                                            <TableCell align="right">{s.votes}</TableCell>
-                                                            <TableCell align="right">{s.picks}</TableCell>
-                                                            <TableCell align="right">{s.plays}</TableCell>
-                                                            <TableCell align="right">{s.refused}</TableCell>
-                                                        </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
-                                        )}
-                                        {summary.refusals.length > 0 ? (
-                                            <Box sx={{ mt: 2 }}>
-                                                <Typography variant="subtitle2">Why requests were refused</Typography>
-                                                <Stack
-                                                    direction="row"
-                                                    spacing={1}
-                                                    flexWrap="wrap"
-                                                    useFlexGap
-                                                    sx={{ mt: 0.5 }}
-                                                >
-                                                    {summary.refusals.map((r) => (
-                                                        <Chip
-                                                            key={r.reason}
-                                                            size="small"
-                                                            variant="outlined"
-                                                            label={`${REASON_TEXT[r.reason]}: ${r.count}`}
-                                                        />
-                                                    ))}
-                                                </Stack>
-                                            </Box>
-                                        ) : null}
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={5}>
-                                <Card sx={{ height: '100%' }}>
-                                    <CardContent>
-                                        <Typography
-                                            variant="h3"
-                                            fontWeight="bold"
-                                            color={theme.palette.secondary.main}
-                                            sx={{ mb: 1 }}
-                                        >
-                                            Recent activity
-                                        </Typography>
-                                        {summary.recent.length === 0 ? (
-                                            <Typography variant="body2" color="text.secondary">
-                                                Nothing yet.
-                                            </Typography>
-                                        ) : (
-                                            <Stack spacing={0.75}>
-                                                {summary.recent.map((ev) => (
-                                                    <Stack
-                                                        key={`${ev.ts}-${ev.seq}`}
-                                                        direction="row"
-                                                        spacing={1}
-                                                        alignItems="flex-start"
-                                                    >
-                                                        <Chip
-                                                            size="small"
-                                                            color={KIND_COLOR[ev.kind] ?? 'default'}
-                                                            label={ev.kind}
-                                                            sx={{ minWidth: 68, textTransform: 'capitalize' }}
-                                                        />
-                                                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                            <Typography variant="body2" noWrap title={describe(ev)}>
-                                                                {describe(ev)}
-                                                            </Typography>
-                                                            <Typography variant="caption" color="text.secondary">
-                                                                {clock(ev.ts, summary.tz)}
-                                                                {ev.viewer ? ` · viewer ${ev.viewer.slice(0, 6)}` : ''}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Stack>
-                                                ))}
-                                            </Stack>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12}>
-                                <Typography variant="caption" color="text.secondary">
-                                    Days are counted in {summary.tz}. Viewers are identified by an anonymous hash, never
-                                    an address. {summary.storedEvents} events stored on this player.
-                                </Typography>
-                            </Grid>
-                        </>
-                    )}
-                </Grid>
+                <ViewerStatsBody />
             </Box>
         </Box>
     );

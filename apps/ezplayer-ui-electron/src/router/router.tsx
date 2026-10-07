@@ -23,7 +23,6 @@ import {
     SongList,
     ShowFolderSettings,
     ShowStatusScreen,
-    ViewerStatsScreen,
     SettingsDrawer,
     Preview3DPage,
     UISettings,
@@ -38,7 +37,6 @@ import { useState } from 'react';
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
 import PlayArrow from '@mui/icons-material/PlayArrow';
 import InfoRounded from '@mui/icons-material/InfoRounded';
-import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
 import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
@@ -178,11 +176,6 @@ const menuRoutes: MenuRoute[] = [
         path: ROUTES.SHOWSTATUS,
         element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} />,
         sidebar: { icon: <InfoRounded />, label: 'Show Status' },
-    },
-    {
-        path: ROUTES.VIEWER_STATS,
-        element: <ViewerStatsScreen title="Viewer Activity" statusArea={getStatusArea()} />,
-        sidebar: { icon: <GroupsRounded />, label: 'Viewer Activity' },
     },
     {
         path: ROUTES.PREVIEW_3D,

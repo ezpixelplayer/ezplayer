@@ -10,7 +10,6 @@ import {
     PlayerCloudRegistrationDialog,
     PlayerSettings,
     ShowStatusScreen,
-    ViewerStatsScreen,
     SidebarLayout,
     Routes as ROUTES,
     JukeboxScreen,
@@ -34,7 +33,6 @@ import type { MenuRoute, RootState, SettingsSection } from '@ezplayer/player-ui-
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
 import PlayArrow from '@mui/icons-material/PlayArrow';
 import InfoRounded from '@mui/icons-material/InfoRounded';
-import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
 import MusicIcon from '@mui/icons-material/MusicNoteTwoTone';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
@@ -66,7 +64,6 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
     ROUTES.PLAYBACKSETTINGS,
     ROUTES.CLOUD,
     ROUTES.CONTROLLERS,
-    ROUTES.VIEWER_STATS,
 ]);
 
 const getStatusArea = () => [];
@@ -196,11 +193,6 @@ const allMenuRoutes: MenuRoute[] = [
         path: ROUTES.SHOWSTATUS,
         element: <ShowStatusScreen title="Show Status" statusArea={getStatusArea()} allowTestControls={!isKiosk} />,
         sidebar: { icon: <InfoRounded />, label: 'Show Status' },
-    },
-    {
-        path: ROUTES.VIEWER_STATS,
-        element: <ViewerStatsScreen title="Viewer Activity" statusArea={getStatusArea()} />,
-        sidebar: { icon: <GroupsRounded />, label: 'Viewer Activity' },
     },
     {
         path: ROUTES.PREVIEW_3D,
