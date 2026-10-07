@@ -105,6 +105,7 @@ import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
+import type { PingTarget } from './pingworker';
 
 import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
@@ -306,7 +307,7 @@ function groupIdsForActions(group: PlaybackActions) {
 }
 
 /** Current/next background item for the existing Background slot. Same sources as
- *  foreground now-playing + Next Show (stack, due heap, then upcoming schedules). */
+ *  foreground now-playing + Up Next (stack, due heap, then upcoming schedules). */
 function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingItem | undefined {
     const ps = runState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const firstAction = (group?: PlaybackActions, requireStarted?: boolean): PlayingItem | undefined => {
@@ -330,6 +331,13 @@ function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingIte
     );
 }
 
+/** The foreground song that has actually started, if any. */
+function currentForegroundPlayingItem(): PlayingItem | undefined {
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    const pla = ps.curPLActions?.actions?.find((a) => !a.end && a.atTime <= foregroundPlayerRunState.currentTime);
+    return pla ? actionToPlayingItem(false, pla) : undefined;
+}
+
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const playStatus: PlayerPStatusContent = {
@@ -348,23 +356,24 @@ function sendPlayerStateUpdate() {
     if (ps.curPLActions?.actions?.length) {
         const group = ps.curPLActions;
         const groupIds = groupIdsForActions(group);
-        for (const pla of group.actions) {
-            if (pla.end) continue;
-            // Only "now playing" if it has actually started; a not-yet-started action
-            // (within the readahead window) is upcoming, not playing.
-            if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
-                playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
-            } else {
-                playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
-            }
+        // Only "now playing" if it has actually started; a not-yet-started action
+        // (within the readahead window) is upcoming, not playing.
+        const pla = group.actions.find((a) => !a.end && a.atTime <= foregroundPlayerRunState.currentTime);
+        if (pla) {
+            playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
+            playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
         }
     }
     // Over once nothing is playing: a later schedule must not inherit it.
     if (!playStatus.now_playing) stoppingGracefully = false;
     playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
-    playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
+    // The songs to come, as the engine will choose them — through requests, a
+    // resumed show and the next show alike — then the shows due to start.
+    playStatus.upcoming = [
+        ...foregroundPlayerRunState.predictUpcoming(600_000, 10),
+        ...foregroundPlayerRunState.getUpcomingSchedules(),
+    ];
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
 
@@ -375,6 +384,77 @@ function sendPlayerStateUpdate() {
 
     send({ type: 'pstatus', status: playStatus });
 }
+
+/**
+ * How to check one controller is reachable.  A controller behind an FPP proxy
+ * cannot answer ICMP, because the proxy forwards HTTP only, so it is confirmed
+ * through the proxy's own path; others are pinged, with their web service as a
+ * fallback for controllers that drop ICMP.
+ */
+function pingTargetFor(c: ControllerState): PingTarget {
+    const address = c.setup.address;
+    const proxy = c.xlRecord?.fppProxy;
+    const host = (h: string) => (h.includes(':') ? `[${h}]` : h);
+    if (proxy) return { address, icmp: false, webUrl: `http://${host(proxy)}/proxy/${address}/` };
+    return { address, icmp: true, webUrl: `http://${host(address)}/` };
+}
+
+const lastSenderOpen = new Map<string, number>();
+/** How often one controller's sender is opened or reopened. */
+const SENDER_OPEN_GAP_MS = 30_000;
+/** Addresses that turned reachable since the last pass. */
+const recoveredAddresses = new Set<string>();
+
+/**
+ * Give a controller a working data sender, in either of two cases where it
+ * would otherwise receive nothing for the rest of the show:
+ *  - it never opened — an address that would not resolve, or a ForceLocalIP
+ *    interface that was absent — so there is no sender at all;
+ *  - it has been away and is reachable again, where a fresh socket and a fresh
+ *    DDP stream are what reloading the schedule would give the whole show.
+ *
+ * The senders live in the output worker; this thread decides which
+ * controllers are due and asks the worker to open them, then records the
+ * worker's reports. The worker's scheduler sizes its per-sender state from
+ * the job each frame, so a sender that appears or is replaced is picked up on
+ * the next one.
+ */
+async function openOrReopenSenders(): Promise<void> {
+    const pipeline = curPipeline;
+    if (!pipeline || !controllerStates) return;
+    const states = controllerStates;
+
+    const now = Date.now();
+    const wanted: { index: number; why: string }[] = [];
+    states.forEach((c, index) => {
+        if (!c.setup.usable) return;
+        const key = c.setup.address;
+        const failed = c.report?.status === 'error';
+        const recovered = recoveredAddresses.has(key);
+        if (!failed && !recovered) return;
+        recoveredAddresses.delete(key);
+        if (now - (lastSenderOpen.get(key) ?? 0) < SENDER_OPEN_GAP_MS) return;
+        lastSenderOpen.set(key, now);
+        wanted.push({ index, why: failed ? 'opened on retry' : 'reopened after coming back' });
+    });
+    if (!wanted.length) return;
+
+    const results = await pipeline.reopenControllers(wanted.map((w) => w.index));
+    for (const w of wanted) {
+        const c = states[w.index];
+        const report = results.get(w.index);
+        if (report) c.report = report;
+        if (report?.status === 'open') {
+            emitInfo(`Controller ${c.setup.name} (${c.setup.address}) ${w.why}; it is now getting data`);
+        } else {
+            // c.report carries the reason; the next window tries again.
+            emitWarning(`Controller ${c.setup.name} (${c.setup.address}) could not be opened: ${report?.error ?? 'unknown'}`);
+        }
+    }
+}
+
+/** Connectivity per controller on the previous pass, to spot a recovery. */
+const lastSeenConnectivity = new Map<string, string>();
 
 function sendControllerStateUpdate() {
     const stats = getLatestPingStats();
@@ -387,8 +467,15 @@ function sendControllerStateUpdate() {
     );
     for (const c of controllerStates ?? []) {
         const pstat = stats.stats?.[c.setup.address];
-        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : '';
+        const checks = pstat?.via === 'web' ? 'web checks' : 'pings';
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} ${checks}` : '';
         const connectivity = !c.setup.usable ? 'N/A' : !pstat?.outOf ? 'Pending' : pstat.nReplies > 0 ? 'Up' : 'Down';
+        // Coming back from Down is the moment to give this controller a fresh
+        // sender; Pending is just the state before the first ping round.
+        if (connectivity === 'Up' && lastSeenConnectivity.get(c.setup.address) === 'Down') {
+            recoveredAddresses.add(c.setup.address);
+        }
+        lastSeenConnectivity.set(c.setup.address, connectivity);
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -402,6 +489,8 @@ function sendControllerStateUpdate() {
             notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
+            reachedVia: pstat?.via,
+            senderStats: curPipeline?.senderStats(c.setup.name),
             pingSummary: pss,
             reported_time: stats.latestUpdate,
             startCh: c.setup.startCh,
@@ -427,21 +516,8 @@ function sendRemoteUpdate() {
         //emitInfo('Enable RF');
         setRFControlEnabled(true);
     }
-    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
-    let now_playing: PlayingItem | undefined = undefined;
-    let upcoming: PlayingItem | undefined = undefined;
-    if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
-            if (pla.end) continue;
-            // Only "now playing" if it has actually started; otherwise it's upcoming.
-            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                now_playing = actionToPlayingItem(false, pla);
-            } else {
-                upcoming = actionToPlayingItem(false, pla);
-                break;
-            }
-        }
-    }
+    const now_playing = currentForegroundPlayingItem();
+    const upcoming = foregroundPlayerRunState.predictUpcoming(600_000, 1)[0];
     //emitInfo("Set RF Now Playing");
     setRFNowPlaying(now_playing?.title, upcoming?.title);
     const pl = curPlaylists?.find((p) => p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
@@ -571,19 +647,8 @@ function sendEzvcUpdate() {
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
-    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
-    let now_playing: PlayingItem | undefined = undefined;
-    const upcomingItems: PlayingItem[] = [];
-    if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
-            if (pla.end) continue;
-            const pi = actionToPlayingItem(false, pla);
-            // Only "now playing" if it has actually started; otherwise it's upcoming.
-            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) now_playing = pi;
-            else if (upcomingItems.length < 12) upcomingItems.push(pi);
-            else break;
-        }
-    }
+    const now_playing = currentForegroundPlayingItem();
+    const upcomingItems = foregroundPlayerRunState.predictUpcoming(600_000, 12);
     const toVc = (pi: PlayingItem | undefined): VcPlayingItem | undefined =>
         pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
     const upcomingVc = upcomingItems.map((p) => toVc(p)).filter((x): x is VcPlayingItem => x !== undefined);
@@ -760,7 +825,12 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'deleterequest': {
             emitInfo(`Delete ${cmd.requestId}`);
-            foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+            if (foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId)) {
+                // It was playing: cut its audio over, as stopnow does.
+                audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                ++curAudioSyncNum;
+            }
+            sendPlayerStateUpdate();
             break;
         }
         case 'clearrequests': {
@@ -1572,13 +1642,16 @@ async function loadXmlCoordinates() {
                 if (parsedSettings.previewHeight !== undefined) {
                     layoutSettings.previewHeight = parsedSettings.previewHeight;
                 }
+                if (parsedSettings.scaleImage !== undefined) {
+                    layoutSettings.scaleImage = parsedSettings.scaleImage;
+                }
                 if (parsedSettings.layoutMode3D !== undefined) {
                     layoutSettings.layoutMode3D = parsedSettings.layoutMode3D;
                 }
 
                 if (layoutSettings.backgroundImage) {
                     emitInfo(
-                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight} fill=${layoutSettings.scaleImage}`,
                     );
                 }
             } catch (parseErr) {
@@ -1600,6 +1673,7 @@ async function loadXmlCoordinates() {
                         paneHeight: g.paneHeight,
                         backgroundBrightness: g.backgroundBrightness,
                         backgroundAlpha: g.backgroundAlpha,
+                        scaleImage: g.scaleImage,
                     }));
 
                     const names = parsedGroups
@@ -2106,7 +2180,7 @@ async function processQueue() {
         // Per-controller max-FPS overrides from our records in the show folder
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
         setPingConfig({
-            hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
+            targets: controllers.filter((c) => c.setup.usable).map(pingTargetFor),
             // Pings are cheap; a whole show's controllers go out in one burst.
             concurrency: 64,
             maxSamples: 10,
@@ -2322,6 +2396,7 @@ async function processQueue() {
             }
             if (curPN - lastNStatusUpdatePN >= 1000 && iteration % 4 === 2) {
                 sendControllerStateUpdate();
+                void openOrReopenSenders();
                 lastNStatusUpdatePN += 1000 * Math.floor((curPN - lastNStatusUpdatePN) / 1000);
             }
             if (iteration % 4 === 3) {

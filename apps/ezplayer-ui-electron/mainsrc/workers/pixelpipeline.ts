@@ -40,7 +40,9 @@ import {
     type InputMapProgram,
     type LayoutModelSpec,
     type LayoutManifest,
+    type OpenControllerReport,
     type OutputSpec,
+    type SenderStats,
 } from '@ezplayer/epp';
 import type { GetNodeResult, XlModelChannelInfo } from 'xllayoutcalcs';
 import { OutputWorkerHandle, serializeOutput } from './outputparent';
@@ -114,6 +116,8 @@ export class PixelPipeline {
     private readonly inputMaps = new Map<string, InputMapProgram>();
     /** Descriptors seen this session: by fingerprint, and by a hash of the embedded xLights files they came from. */
     private readonly descriptors = new Map<string, ChannelDescriptor>();
+    /** Latest per-controller sender stats reported by the output worker, by controller name. */
+    private latestSenderStats: Record<string, SenderStats> = {};
     private readonly log: PixelPipelineOptions['log'];
     private closed = false;
 
@@ -135,6 +139,7 @@ export class PixelPipeline {
         this.stats = StatsBlock.allocate(OUTPUT_STATS_COUNTERS, OUTPUT_STATS_GAUGES);
         this.output = new OutputWorkerHandle();
         this.output.onLog = opts.log;
+        this.output.onSenderStats = (stats) => (this.latestSenderStats = stats);
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
         this.overlays = new OverlayManager(layout);
@@ -376,6 +381,16 @@ export class PixelPipeline {
 
     settings(s: { outputEnabled?: boolean; blackFramesEnabled?: boolean; maxSlotFraction?: number }) {
         this.output.settings(s);
+    }
+
+    /** Ask the output worker to open or replace these controllers' senders; reports by controller index. */
+    reopenControllers(indices: number[]): Promise<Map<number, OpenControllerReport | undefined>> {
+        if (this.closed) return Promise.resolve(new Map());
+        return this.output.reopen(indices);
+    }
+
+    senderStats(controllerName: string): SenderStats | undefined {
+        return this.latestSenderStats[controllerName];
     }
 
     async close() {

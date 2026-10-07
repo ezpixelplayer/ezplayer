@@ -3,7 +3,7 @@
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import { fileURLToPath } from 'node:url';
-import type { CompiledOutput, OpenControllerReport } from '@ezplayer/epp';
+import type { CompiledOutput, OpenControllerReport, SenderStats } from '@ezplayer/epp';
 import type { OutputWorkerInMsg, OutputWorkerOpenMsg, OutputWorkerOutMsg, SerializedOutput } from './outputprotocol';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,7 +30,9 @@ export class OutputWorkerHandle {
     private closed: Promise<void>;
     private resolveClosed: () => void = () => {};
     private pendingOpen: ((r: { reports: (OpenControllerReport | undefined)[] }) => void) | undefined;
+    private pendingReopen: ((r: Map<number, OpenControllerReport | undefined>) => void)[] = [];
     onLog: (level: 'info' | 'warn' | 'error', msg: string) => void = () => {};
+    onSenderStats: (stats: Record<string, SenderStats>) => void = () => {};
 
     constructor() {
         this.worker = new Worker(path.join(__dirname, './outputworker.js'), { workerData: { name: 'output' } });
@@ -49,6 +51,14 @@ export class OutputWorkerHandle {
                 case 'opened':
                     this.pendingOpen?.({ reports: msg.reports });
                     this.pendingOpen = undefined;
+                    break;
+                case 'reopened': {
+                    const next = this.pendingReopen.shift();
+                    next?.(new Map(msg.results.map((r) => [r.index, r.report])));
+                    break;
+                }
+                case 'senderStats':
+                    this.onSenderStats(msg.stats);
                     break;
                 case 'log':
                     this.onLog(msg.level, msg.msg);
@@ -72,6 +82,14 @@ export class OutputWorkerHandle {
 
     settings(s: { outputEnabled?: boolean; blackFramesEnabled?: boolean; maxSlotFraction?: number }) {
         this.post({ type: 'settings', ...s });
+    }
+
+    /** Open or replace the senders of these controllers; resolves with each one's report. */
+    reopen(indices: number[]): Promise<Map<number, OpenControllerReport | undefined>> {
+        return new Promise((resolve) => {
+            this.pendingReopen.push(resolve);
+            this.post({ type: 'reopen', indices });
+        });
     }
 
     /** Ask the worker to finish, send a final black, and exit. */

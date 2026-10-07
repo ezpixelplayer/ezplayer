@@ -12,7 +12,7 @@ import {
     DialogContent,
 } from '@mui/material';
 import { Box } from '../box/Box';
-import { PlayerPStatusContent } from '@ezplayer/ezplayer-core';
+import { PlayerPStatusContent, isPlaybackActive } from '@ezplayer/ezplayer-core';
 import { VolumeOff, VolumeUp, Refresh, Tune, Close } from '@mui/icons-material';
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -68,7 +68,9 @@ export const NowPlayingCard = ({
 
     const isPlaying = player.status === 'Playing';
     const isPaused = player.status === 'Paused';
-    const isActive = isPlaying || isPaused;
+    // A graceful stop is under way: the current song (and any outro) is still playing.
+    const isStopping = player.status === 'Stopping';
+    const isActive = isPlaybackActive(player.status);
     const hasNowPlaying = !!player.now_playing;
     const hasBackgroundPlaying = !!player.background_now_playing;
     const hasUpcoming = player.upcoming && player.upcoming.length > 0;
@@ -91,9 +93,9 @@ export const NowPlayingCard = ({
                 {/* Status Indicator */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: compact ? 1 : 1.5 }}>
                     <Chip
-                        label={isPlaying ? 'Playing' : isPaused ? 'Paused' : 'Stopped'}
+                        label={isPlaying ? 'Playing' : isPaused ? 'Paused' : isStopping ? 'Ending' : 'Stopped'}
                         size="small"
-                        color={isPlaying ? 'success' : isPaused ? 'warning' : 'default'}
+                        color={isPlaying ? 'success' : isPaused ? 'warning' : isStopping ? 'info' : 'default'}
                         sx={{ fontWeight: 'bold' }}
                     />
                     <PlayerSystemTime />
@@ -219,7 +221,8 @@ export const NowPlayingCard = ({
                     </Box>
                 )}
 
-                {/* Next Track Section */}
+                {/* Up Next: the first thing the engine will play after what is on —
+                    the next song, a waiting request, or an interrupted show resuming. */}
                 {hasUpcoming && (
                     <Box>
                         <Typography
@@ -228,7 +231,7 @@ export const NowPlayingCard = ({
                             color="secondary"
                             sx={{ mb: 0.5 }}
                         >
-                            Next Show
+                            Up Next
                         </Typography>
                         <Typography
                             variant={compact ? 'body2' : 'body1'}

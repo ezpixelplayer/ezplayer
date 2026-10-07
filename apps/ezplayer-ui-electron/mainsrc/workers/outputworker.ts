@@ -11,6 +11,7 @@ import {
     FramePool,
     FRAME_FLAG_IDLE,
     lpBusySleep,
+    openControllerForDataSend,
     openControllersForDataSend,
     SendJob,
     SendJobState,
@@ -23,6 +24,8 @@ import {
     type CompiledOutput,
     type ControllerState,
     type SendBatch,
+    type SenderJob,
+    type SenderStats,
 } from '@ezplayer/epp';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { xbusySleep } from './framesend';
@@ -56,6 +59,9 @@ class OutputLoop {
     job = new SendJob();
     state = new SendJobState();
     controllers: ControllerState[] = [];
+    openOpts: OutputWorkerOpenMsg['opts'] = {};
+    senderOutput: number[] = [];
+    statsTimer?: NodeJS.Timeout;
     outputEnabled: boolean;
     blackFramesEnabled: boolean;
     maxSlotFraction: number;
@@ -115,19 +121,62 @@ class OutputLoop {
 
     async open(msg: OutputWorkerOpenMsg) {
         this.controllers = msg.controllers;
+        this.openOpts = msg.opts;
+        this.senderOutput = msg.senderOutput;
         const job = await openControllersForDataSend(this.controllers, msg.opts);
-        // Each sender reads its whole wire buffer; the Output Map already put it in port order.
         this.controllers.forEach((c, i) => {
-            if (!c.sender) return;
-            const outIdx = msg.senderOutput[i] ?? -1;
             const sj = job.senders.find((s) => s.sender === c.sender);
-            if (!sj) return;
-            const out = outIdx >= 0 ? this.outputs[outIdx] : undefined;
-            sj.parts = out ? [{ bufIdx: outIdx, bufStart: 0, bufLen: out.wireBytes }] : [];
+            if (sj) this.assignParts(sj, i);
         });
         this.job = job;
         this.job.dataBuffers = this.wire;
         post({ type: 'opened', reports: this.controllers.map((c) => c.report) });
+        this.statsTimer = setInterval(() => this.postSenderStats(), 1000);
+    }
+
+    /** Each sender reads its whole wire buffer; the Output Map already put it in port order. */
+    private assignParts(sj: SenderJob, controllerIndex: number) {
+        const outIdx = this.senderOutput[controllerIndex] ?? -1;
+        const out = outIdx >= 0 ? this.outputs[outIdx] : undefined;
+        sj.parts = out ? [{ bufIdx: outIdx, bufStart: 0, bufLen: out.wireBytes }] : [];
+    }
+
+    /**
+     * Open a controller that never opened, or replace the sender of one that
+     * came back, on the same terms as the rest of the show. The scheduler sizes
+     * its per-sender state from the job each frame, so the change takes on the next.
+     */
+    async reopen(indices: number[]) {
+        const results: { index: number; report: ControllerState['report'] }[] = [];
+        for (const index of indices) {
+            const c = this.controllers[index];
+            if (!c) continue;
+            const previous = c.sender;
+            try {
+                const jobSender = await openControllerForDataSend(c, this.openOpts);
+                if (jobSender) {
+                    this.assignParts(jobSender, index);
+                    const at = previous ? this.job.senders.findIndex((js) => js.sender === previous) : -1;
+                    if (at >= 0) this.job.senders[at] = jobSender;
+                    else this.job.senders.push(jobSender);
+                    // Drop the old socket once nothing is sending on it any more.
+                    if (previous && previous !== c.sender) void previous.disconnect?.().catch(() => undefined);
+                }
+            } catch (e) {
+                log('warn', `[output] reopen of ${c.setup.name} failed: ${(e as Error).message}`);
+            }
+            results.push({ index, report: c.report });
+        }
+        post({ type: 'reopened', results });
+    }
+
+    private postSenderStats() {
+        const stats: Record<string, SenderStats> = {};
+        for (const c of this.controllers) {
+            const s = c.sender?.stats?.();
+            if (s) stats[c.setup.name] = s;
+        }
+        post({ type: 'senderStats', stats });
     }
 
     /** Leave room in the interval for the next frame's encode and the packetizing itself. */
@@ -252,6 +301,7 @@ class OutputLoop {
                 log('error', `[output] send failed: ${(e as Error).message}`);
             }
         }
+        if (this.statsTimer) clearInterval(this.statsTimer);
         // Final black so controllers do not hold the last frame.
         await this.sendBlackNow();
         post({ type: 'closed' });
@@ -293,6 +343,14 @@ port.on('message', async (msg: OutputWorkerInMsg) => {
                 log('error', `[output] open failed: ${(e as Error).message}`);
                 post({ type: 'opened', reports: msg.controllers.map(() => undefined) });
             }
+            break;
+        }
+        case 'reopen': {
+            if (!loop) {
+                post({ type: 'reopened', results: msg.indices.map((index) => ({ index, report: undefined })) });
+                return;
+            }
+            await loop.reopen(msg.indices);
             break;
         }
         case 'settings': {

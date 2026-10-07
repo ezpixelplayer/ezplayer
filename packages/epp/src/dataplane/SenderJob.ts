@@ -1,7 +1,7 @@
 import { OpenControllerReport } from '../controllers/controllertypes';
 import { ControllerRec } from '../xlcompat/XLXmlUtil';
 import { ControllerSetup } from '../controllers/controllertypes';
-import { SendBatch } from './protocols/UDP';
+import { SendBatch, SenderStats } from './protocols/UDP';
 import { SchedulerHeapItem, SchedulerMinHeap } from './SchedulerHeap';
 
 export interface Sender {
@@ -21,6 +21,10 @@ export interface Sender {
     isCurrentlySending(): boolean;
     /** Estimated on-the-wire bytes (payload + protocol + UDP/IP/eth overhead) for one whole frame of this job. */
     frameWireBytes(job: SenderJob): number;
+    /** Close the underlying socket. */
+    disconnect?(): Promise<void>;
+    /** What this sender has sent so far, for reporting. */
+    stats?(): SenderStats | undefined;
 }
 
 // What's in here?  The description of the job, containing:

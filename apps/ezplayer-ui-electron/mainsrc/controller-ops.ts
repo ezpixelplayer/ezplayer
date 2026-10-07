@@ -547,6 +547,18 @@ export async function dispatchControllerCommand(
 }
 
 /** True while any controller operation (scan, read, action, upload) runs or waits to. */
+/**
+ * The id of the known device at this address, if any.  Device ids are not
+ * addresses, and a status command addresses a device by id.
+ */
+export function deviceIdForAddress(address: string): string | undefined {
+    const want = address.toLowerCase();
+    for (const [id, dev] of Object.entries(state.devices)) {
+        if (dev.ip?.toLowerCase() === want) return id;
+    }
+    return undefined;
+}
+
 export function hasRunningControllerOps(): boolean {
     return Object.values(state.operations).some((o) => o.status === 'running' || o.status === 'queued');
 }
@@ -955,6 +967,9 @@ async function runUpload(
                 inputMode: rec.protocol?.toUpperCase(),
                 // Falcon V4/V5: the layout's variant fixes the board mode.
                 boardMode: caps?.v4BoardMode,
+                // Whether the stream keeps absolute channel numbers, which some
+                // drivers need to put port start channels in the same frame.
+                keepChannelNumbers: (rec.outputs ?? [])[0]?.keepChannelNumbers,
                 outputs: outputs.length
                     ? outputs.map((o) => ({
                           universe: o.universe ?? 0,

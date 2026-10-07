@@ -5,11 +5,25 @@ if (!parentPort) {
     throw new Error('ping-worker must be run as a worker thread');
 }
 
+/**
+ * One controller to watch.  `icmp` is off for a controller reached through an
+ * FPP proxy: the proxy forwards HTTP, so the controller itself can never answer
+ * a ping.  `webUrl`, when set, confirms the controller over HTTP — directly, or
+ * through the proxy — and is tried only when ICMP does not answer.
+ */
+export type PingTarget = {
+    address: string;
+    icmp: boolean;
+    webUrl?: string;
+};
+
 export type PingConfig = {
-    hosts: string[];
+    targets: PingTarget[];
     intervalS: number;
     maxSamples: number;
     concurrency: number;
+    /** Min seconds between web checks of one controller.  Default 15. */
+    webIntervalS?: number;
 };
 
 export type ParentMessage = { type: 'config'; config: PingConfig } | { type: 'stop' };
@@ -21,6 +35,8 @@ export interface PingStat {
     avgResponseTime?: number;
     lastTime?: number;
     error?: string;
+    /** How the last reply was obtained; absent when nothing answered. */
+    via?: 'ping' | 'web';
 }
 
 export type RoundResultMessage = {
@@ -103,11 +119,15 @@ export class RollingSuccessWindow {
 const windows = new Map<string, RollingSuccessWindow>();
 
 const cfg: PingConfig = {
-    hosts: [],
+    targets: [],
     intervalS: 5,
     maxSamples: 10,
     concurrency: 64,
 };
+
+/** Last web check per controller, so a slower HTTP check can span rounds. */
+type WebState = { at: number; alive: boolean; elapsed: number; error?: string };
+const webStates = new Map<string, WebState>();
 
 let running = true;
 
@@ -121,10 +141,15 @@ function ensureWindow(host: string): RollingSuccessWindow {
 }
 
 function pruneWindowsForCurrentHosts() {
-    const hostSet = new Set(cfg.hosts);
+    const hostSet = new Set(cfg.targets.map((t) => t.address));
     for (const h of windows.keys()) {
         if (!hostSet.has(h)) {
             windows.delete(h);
+        }
+    }
+    for (const h of webStates.keys()) {
+        if (!hostSet.has(h)) {
+            webStates.delete(h);
         }
     }
 }
@@ -140,14 +165,15 @@ parentPort.on('message', (msg: ParentMessage) => {
 
     if (msg.type === 'config') {
         //console.log(`Configuring ping: ${os.platform}/${process.env.SystemRoot}`)
-        const { hosts, intervalS: intervalMs, maxSamples, concurrency } = msg.config;
+        const { targets, intervalS: intervalMs, maxSamples, concurrency, webIntervalS } = msg.config;
 
         if (typeof intervalMs === 'number') cfg.intervalS = intervalMs;
         if (typeof maxSamples === 'number') cfg.maxSamples = maxSamples;
         if (typeof concurrency === 'number') cfg.concurrency = concurrency;
+        if (typeof webIntervalS === 'number') cfg.webIntervalS = webIntervalS;
 
-        if (Array.isArray(hosts)) {
-            cfg.hosts = hosts.slice();
+        if (Array.isArray(targets)) {
+            cfg.targets = targets.slice();
             pruneWindowsForCurrentHosts();
         }
     }
@@ -158,28 +184,101 @@ parentPort.on('message', (msg: ParentMessage) => {
  */
 const PING_TIMEOUT_MS = 300;
 
-async function pingHost(host: string): Promise<PingStat> {
-    const window = ensureWindow(host);
-    const res = await ping(host, PING_TIMEOUT_MS);
-    window.add(res.alive ? res.elapsed : undefined);
-    return window.getReport(host);
+/**
+ * Per-web-check budget.  Generous because it covers name resolution: a proxy
+ * named with .local can take seconds to resolve the first time, while the
+ * request itself is a LAN round trip.
+ */
+const WEB_TIMEOUT_MS = 5000;
+const DEFAULT_WEB_INTERVAL_S = 15;
+
+/**
+ * GET the controller's web service.  Any HTTP answer counts, including 401 or
+ * 404 — the controller replied, which is the question being asked.
+ */
+async function webProbe(url: string): Promise<{ alive: boolean; elapsed: number; error?: string }> {
+    const started = Date.now();
+    try {
+        await fetch(url, { signal: AbortSignal.timeout(WEB_TIMEOUT_MS), redirect: 'manual' });
+        return { alive: true, elapsed: Date.now() - started };
+    } catch (e) {
+        return { alive: false, elapsed: Date.now() - started, error: `web: ${(e as Error).message}` };
+    }
+}
+
+/** Cached web state for a target, refreshed no more often than webIntervalS. */
+async function webState(target: PingTarget): Promise<WebState | undefined> {
+    if (!target.webUrl) return undefined;
+    const ttl = (cfg.webIntervalS ?? DEFAULT_WEB_INTERVAL_S) * 1000;
+    const prev = webStates.get(target.address);
+    const now = Date.now();
+    if (prev && now - prev.at < ttl) return prev;
+    const probed = await webProbe(target.webUrl);
+    const state: WebState = { at: now, ...probed };
+    webStates.set(target.address, state);
+    return state;
+}
+
+/**
+ * One reachability sample for one controller: ICMP when it applies, otherwise
+ * (or on no reply) the web check.  Exactly one sample is added per round, so a
+ * controller confirmed only by web does not flap between rounds that check it
+ * and rounds that reuse the cached result.
+ */
+async function checkTarget(target: PingTarget): Promise<PingStat> {
+    const window = ensureWindow(target.address);
+
+    let alive = false;
+    let elapsed = 0;
+    let via: 'ping' | 'web' | undefined;
+    let error: string | undefined;
+
+    if (target.icmp) {
+        const res = await ping(target.address, PING_TIMEOUT_MS);
+        if (res.alive) {
+            alive = true;
+            elapsed = res.elapsed;
+            via = 'ping';
+        } else {
+            error = res.error;
+        }
+    }
+
+    if (!alive) {
+        const web = await webState(target);
+        if (web?.alive) {
+            alive = true;
+            elapsed = web.elapsed;
+            via = 'web';
+            error = undefined;
+        } else if (web?.error && !target.icmp) {
+            error = web.error;
+        }
+    }
+
+    window.add(alive ? elapsed : undefined);
+    const report = window.getReport(target.address);
+    if (via) report.via = via;
+    // Carry the reason up; the reply counts alone don't say why.
+    if (!alive && error) report.error = error;
+    return report;
 }
 
 async function pingRoundOnce(): Promise<{ [address: string]: PingStat }> {
-    const hostsSnapshot = cfg.hosts.slice();
+    const snapshot = cfg.targets.slice();
     const reports: { [address: string]: PingStat } = {};
 
-    if (hostsSnapshot.length === 0) {
+    if (snapshot.length === 0) {
         return reports;
     }
 
     const limit = Math.max(1, cfg.concurrency);
 
-    for (let i = 0; i < hostsSnapshot.length; i += limit) {
-        const chunk = hostsSnapshot.slice(i, i + limit);
-        const chunkReports = await Promise.all(chunk.map((h) => pingHost(h)));
+    for (let i = 0; i < snapshot.length; i += limit) {
+        const chunk = snapshot.slice(i, i + limit);
+        const chunkReports = await Promise.all(chunk.map((t) => checkTarget(t)));
         for (let j = 0; j < chunk.length; ++j) {
-            reports[chunk[j]] = chunkReports[j];
+            reports[chunk[j].address] = chunkReports[j];
         }
     }
 

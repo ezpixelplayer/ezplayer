@@ -12,6 +12,7 @@
 import * as crypto from 'crypto';
 import { fileBaseName } from '../pathnames.js';
 import type { EZPlayerCommand, PlayerPStatusContent, PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
+import { isPlaybackActive } from '@ezplayer/ezplayer-core';
 
 export interface FppCommandDeps {
     sendPlayerCommand: (cmd: EZPlayerCommand) => Promise<void> | void;
@@ -88,8 +89,7 @@ const arg = (name: string, type: string, description: string, dflt?: string): Fp
 
 /** Something is playing or paused: what FPP's "if not running" flag checks. */
 function isRunning(deps: FppCommandDeps): boolean {
-    const status = deps.getPStatus?.()?.status;
-    return status === 'Playing' || status === 'Paused' || status === 'Stopping' || status === 'Suppressed';
+    return isPlaybackActive(deps.getPStatus?.()?.status);
 }
 
 async function startPlaylist(

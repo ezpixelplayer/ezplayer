@@ -35,7 +35,7 @@ import {
     updateCloudConfig,
 } from './data/CloudConfigStorage.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
-import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
+import { ensureEzplayerSubdir, settingsPath } from './data/SettingsDir.js';
 import {
     getCurrentCloudStatus,
     fetchLayoutNow,
@@ -58,7 +58,12 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio, resolveFfmpegBinary } from './data/derived-audio.js';
+import {
+    deriveAudioForRecord,
+    pruneStaleDerivedAudio,
+    reconcileDerivedAudio,
+    resolveFfmpegBinary,
+} from './data/derived-audio.js';
 
 import type {
     CloudCommand,
@@ -96,6 +101,7 @@ import {
 import { getServerStatus } from './server-worker-manager.js';
 import {
     dispatchControllerCommand,
+    deviceIdForAddress,
     getControllerOpsState,
     loadControllerRecords,
     loadNetworkPolicies,
@@ -103,7 +109,7 @@ import {
     hasRunningControllerOps,
     setKnownControllers,
 } from './controller-ops.js';
-import type { ControllerCommand } from '@ezplayer/ezplayer-core';
+import type { ControllerCommand, PlayerNStatusContent } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
     updatePixelPool,
@@ -126,6 +132,52 @@ export let curSchedule: ScheduledPlaylist[] = [];
 export let curStatus: CombinedPlayerStatus = {};
 let lastShowName: string | undefined;
 export let curErrors: string[] = [];
+
+/** Last connectivity seen per controller address, to spot when it turns Up. */
+const lastConnectivity = new Map<string, string>();
+const lastAliveRefresh = new Map<string, number>();
+/** One refresh per controller per minute, so a flapping controller cannot storm. */
+const ALIVE_REFRESH_GAP_MS = 60_000;
+
+/**
+ * Read a controller's details when we first learn it is alive, since what it
+ * reports is newer than anything held from before.
+ *
+ * A controller that was Down and is now Up is refreshed whatever the player is
+ * doing: it has been missing data anyway.  A controller seen alive for the
+ * first time — every controller, shortly after startup — waits for an idle
+ * player, because reading them all can disrupt a running show.
+ */
+function refreshControllersNowAlive(status: PlayerNStatusContent): void {
+    const now = Date.now();
+    // Only an explicit Stopped counts as idle: before the first player status
+    // arrives the schedule may be about to start a show.
+    const idle = curStatus.player?.status === 'Stopped';
+
+    for (const c of status.controllers ?? []) {
+        const address = c.address;
+        if (!address || !c.connectivity) continue;
+
+        const was = lastConnectivity.get(address);
+        lastConnectivity.set(address, c.connectivity);
+        if (c.connectivity !== 'Up') continue;
+
+        const recovered = was === 'Down';
+        const firstSighting = was === undefined || was === 'Pending';
+        if (!recovered && !(firstSighting && idle)) continue;
+
+        const last = lastAliveRefresh.get(address) ?? 0;
+        if (now - last < ALIVE_REFRESH_GAP_MS) continue;
+        lastAliveRefresh.set(address, now);
+
+        // A controller that was never scanned has no device entry; the status
+        // command materializes one from the address.
+        const id = deviceIdForAddress(address) ?? `${address}|direct`;
+        void dispatchControllerCommand({ cmd: 'status', id, address, depth: 'full' }, 'lan').catch(() => {
+            // The operation reports its own failure; nothing to add here.
+        });
+    }
+}
 
 /** Stamp show/content summary onto curStatus from current state.
  *  Called at every broadcast site so Show Status sees fresh values. */
@@ -318,7 +370,8 @@ export function getSequenceThumbnail(id: string) {
 
 export function isScheduleActive(): boolean {
     const player = curStatus.player;
-    if (!player || player.status !== 'Playing') return false;
+    // A graceful stop is still playing until its song and outro finish.
+    if (!player || (player.status !== 'Playing' && player.status !== 'Stopping')) return false;
     const nowPlaying = player.now_playing;
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
 }
@@ -597,9 +650,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     // Flush out any pending writes (e.g. downloads) to show data in previous folder.
     await flushPendingInstalls();
 
-    // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
-    // loader so that, on first run against an old folder, root-level files are moved
-    // into the subdir and the loaders read the migrated copies on this same tick.
+    // All our JSON lives under `.ezplayer/` in the show folder.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
     resetControllerOps();
@@ -1232,6 +1283,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 curStatus = { ...curStatus, controller: merged, controller_updated: Date.now() };
                 safeSend(mainWindow, 'playback:nstatus', merged);
                 broadcastToWebSocket('nStatus', merged);
+                refreshControllersNowAlive(msg.status);
                 break;
             }
             case 'pstatus': {

@@ -1,6 +1,6 @@
 /* Messages between the playback conductor and the output worker. */
 
-import type { ControllerState, OpenControllerReport, OutputPolicy } from '@ezplayer/epp';
+import type { ControllerState, OpenControllerReport, OutputPolicy, SenderStats } from '@ezplayer/epp';
 
 /** A compiled output whose tables are SharedArrayBuffer-backed (cloned without copying). */
 export interface SerializedOutput {
@@ -35,11 +35,16 @@ export interface OutputWorkerOpenMsg {
 export type OutputWorkerInMsg =
     | OutputWorkerOpenMsg
     | ({ type: 'settings' } & Partial<OutputWorkerSettings>)
+    /** Open (or replace) the senders of these controllers, by index into the open message's list. */
+    | { type: 'reopen'; indices: number[] }
     | { type: 'close' };
 
 export type OutputWorkerOutMsg =
     | { type: 'ready' }
     | { type: 'opened'; reports: (OpenControllerReport | undefined)[] }
+    | { type: 'reopened'; results: { index: number; report: OpenControllerReport | undefined }[] }
+    /** What each controller's sender has sent so far, by controller name; about once a second. */
+    | { type: 'senderStats'; stats: Record<string, SenderStats> }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; msg: string }
     | { type: 'closed' };
 

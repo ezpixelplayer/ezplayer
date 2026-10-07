@@ -502,6 +502,20 @@ export interface ControllerGridRow {
     health?: ControllerHealth;
 }
 
+/**
+ * A controller's data sender as it sees itself.  `skipped` counts frames the
+ * sender dropped (suspended, or not connected); `errors` counts sends the OS
+ * refused.  Cumulative since the show's output was opened.
+ */
+export interface ControllerSenderStats {
+    connected: boolean;
+    sent: number;
+    skipped: number;
+    errors: number;
+    bytes: number;
+    lastError?: string;
+}
+
 /** Live per-controller health from the playback/status pipeline — the runtime
  *  signals a static xLights read + one-shot scan don't provide. */
 export interface ControllerHealth {
@@ -509,8 +523,12 @@ export interface ControllerHealth {
     connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     /** e.g. "8 out of 10 pings". */
     pingSummary?: string;
+    /** How the controller last answered; absent when nothing answered. */
+    reachedVia?: 'ping' | 'web';
     /** Data-plane sender state: opened, config-skipped, connect-failed, or unusable. */
     status?: 'open' | 'skipped' | 'error' | 'unusable';
+    /** What the sender itself reports having sent; absent until it is opened. */
+    senderStats?: ControllerSenderStats;
     errors?: string[];
     notices?: string[];
 }

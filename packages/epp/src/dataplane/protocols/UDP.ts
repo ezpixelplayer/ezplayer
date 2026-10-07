@@ -197,6 +197,8 @@ export class UdpClient {
             if (err) {
                 sendBatch.err = err;
                 ++sendBatch.nECBs;
+                ++this.nErrors;
+                this.lastError = err.message;
             } else {
                 ++sendBatch.nSCBs;
             }
@@ -281,6 +283,16 @@ export class UdpClient {
     }
 }
 
+/** A sender's own account of what it has sent, as reported to the UI. */
+export interface SenderStats {
+    connected: boolean;
+    sent: number;
+    skipped: number;
+    errors: number;
+    bytes: number;
+    lastError?: string;
+}
+
 export abstract class UDPSender implements Sender {
     controller?: ControllerState = undefined;
 
@@ -295,6 +307,20 @@ export abstract class UDPSender implements Sender {
     isCurrentlySending(): boolean {
         if (!this.client) return false;
         return this.client.batchesInFlight > 0;
+    }
+
+    /** What this sender has done so far, for reporting; absent until opened. */
+    stats(): SenderStats | undefined {
+        if (!this.client) return undefined;
+        const s = this.client.getStats();
+        return {
+            connected: s.isConnected,
+            sent: s.nSent,
+            skipped: s.nSkipped,
+            errors: s.nErrors,
+            bytes: s.bytesSent,
+            ...(s.lastError ? { lastError: s.lastError } : {}),
+        };
     }
 
     client?: UdpClient;
