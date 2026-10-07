@@ -248,6 +248,18 @@ describe('applyDataUpdate', () => {
         expect(plr.depth).toBeGreaterThan(0); // still playing
     });
 
+    it('keeps a graceful stop in force across an unrelated update', () => {
+        const plr = runningState(); // 10s into seqA; seqB would follow
+        plr.stopGracefully(plr.currentTime);
+
+        apply(plr, [seqA, seqB, seqC], [plAB], [sched]); // nothing changed
+
+        // seqA finishes at 18:01:40 and the schedule ends there; seqB never starts.
+        const log = plr.readOutScheduleUntil(baseTime() + 18 * 3600_000 + 150_000, 100);
+        expect(log.filter((e) => e.eventType === 'Sequence Started').map((e) => e.sequenceId)).toEqual([]);
+        expect(plr.depth).toBe(0);
+    });
+
     it('winds down an active schedule that was deleted', () => {
         const plr = runningState();
         const top = plr.stack[plr.stack.length - 1];

@@ -116,13 +116,32 @@ function minFrameTimeFor(xc: ControllerRec, opts?: OpenControllersOptions): numb
 export async function openControllersForDataSend(ctrls: ControllerState[], opts?: OpenControllersOptions) {
     const job = new SendJob();
     for (const c of ctrls) {
+        const jobSender = await openControllerForDataSend(c, opts);
+        if (jobSender) job.senders.push(jobSender);
+    }
+    return job;
+}
+
+/**
+ * Open one controller's data sender, setting `c.report` either way.  Returns
+ * the SenderJob to add to a SendJob, or undefined when the controller is
+ * skipped or could not be opened.
+ *
+ * Separate from the loop above so one controller can be opened on its own and
+ * added to a job that is already running.
+ */
+export async function openControllerForDataSend(
+    c: ControllerState,
+    opts?: OpenControllersOptions,
+): Promise<SenderJob | undefined> {
+    {
         if (!c.setup.usable || !c.setup.proto || !c.xlRecord) {
             c.report = {
                 name: c.setup.name,
                 status: 'skipped',
                 error: `${c.setup.summary}`,
             };
-            continue;
+            return undefined;
         }
         const xc = c.xlRecord;
 
@@ -151,12 +170,11 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
                     status: 'error',
                     error: `Error opening ${xc.name}: ${err.message}`,
                 };
-                continue;
+                return undefined;
             }
             const jobSender = new SenderJob();
             jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh - 1, bufLen: c.setup.nCh });
             jobSender.sender = dsender;
-            job.senders.push(jobSender);
             c.report = {
                 name: xc.name,
                 status: 'open',
@@ -164,6 +182,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
             };
             dsender.controller = c;
             c.sender = dsender;
+            return jobSender;
         } else if (c.setup.proto === 'E131') {
             const esender = new E131Sender();
             esender.address = c.setup.address;
@@ -183,12 +202,11 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
                     status: 'error',
                     error: `Error opening ${xc.name}: ${err.message}`,
                 };
-                continue;
+                return undefined;
             }
             const jobSender = new SenderJob();
             jobSender.parts.push({ bufIdx: 0, bufStart: c.setup.startCh - 1, bufLen: c.setup.nCh });
             jobSender.sender = esender;
-            job.senders.push(jobSender);
             c.report = {
                 name: xc.name,
                 status: 'open',
@@ -196,6 +214,7 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
             };
             esender.controller = c;
             c.sender = esender;
+            return jobSender;
         } else {
             c.report = {
                 name: xc.name,
@@ -204,6 +223,5 @@ export async function openControllersForDataSend(ctrls: ControllerState[], opts?
             };
         }
     }
-
-    return job;
+    return undefined;
 }

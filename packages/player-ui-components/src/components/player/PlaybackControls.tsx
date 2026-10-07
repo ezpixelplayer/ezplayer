@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack } from '@mui/material';
 import { useSelector, useDispatch } from 'react-redux';
 import { PlayArrow, Pause, Stop, StopCircle, SkipNext } from '@mui/icons-material';
+import { isPlaybackActive } from '@ezplayer/ezplayer-core';
 
 import { ControlButton } from './ControlButton';
 import { AppDispatch, RootState } from '../../store/Store';
@@ -17,21 +18,16 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({ allowStopCon
     const runtime = useSelector((state: RootState) => state.runtime);
     const dispatch = useDispatch<AppDispatch>();
 
-    const player = runtime.combined?.player;
-    const isPlaying = player?.status === 'Playing';
-    const isPaused = player?.status === 'Paused';
+    const status = runtime.combined?.player?.status;
+    const isPaused = status === 'Paused';
+    // A graceful stop is under way: the current song (and any outro) is still playing.
+    const isStopping = status === 'Stopping';
 
-    const isStopped = !isPlaying && !isPaused;
+    // These act on what is playing; with nothing playing there is nothing to show.
+    if (!isPlaybackActive(status)) return null;
 
     const handlePlayPause = async () => {
-        if (isPlaying) {
-            await dispatch(callImmediateCommand({ command: 'pause' })).unwrap();
-        } else if (isStopped) {
-            // Reload schedule so playback re-engages
-            await dispatch(callImmediateCommand({ command: 'resetplayback' })).unwrap();
-        } else {
-            await dispatch(callImmediateCommand({ command: 'resume' })).unwrap();
-        }
+        await dispatch(callImmediateCommand({ command: isPaused ? 'resume' : 'pause' })).unwrap();
     };
 
     const handleStopGraceful = async () => {
@@ -61,12 +57,19 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({ allowStopCon
     return (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <ControlButton
-                icon={isPlaying ? Pause : PlayArrow}
-                label={isPlaying ? 'Pause' : isPaused ? 'Resume' : 'Play'}
+                icon={isPaused ? PlayArrow : Pause}
+                label={isPaused ? 'Resume' : 'Pause'}
                 onClick={handlePlayPause}
             />
             <ControlButton icon={SkipNext} label="Skip" onClick={handleSkip} />
-            {allowStopControls && <ControlButton icon={Stop} label="End" onClick={handleStopGraceful} />}
+            {allowStopControls && (
+                <ControlButton
+                    icon={Stop}
+                    label={isStopping ? 'Ending' : 'End'}
+                    onClick={handleStopGraceful}
+                    disabled={isStopping}
+                />
+            )}
             {allowStopControls && (
                 <ControlButton icon={StopCircle} label="Abort" color="error" onClick={handleStopNow} />
             )}

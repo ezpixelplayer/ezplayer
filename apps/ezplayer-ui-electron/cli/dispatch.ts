@@ -11,7 +11,17 @@ type CommandModule = { run: (args: string[]) => Promise<number> };
  * Single source of truth for the text-only verbs, in the order usage output
  * lists them. These run in the pure-Node entrypoint as well as the desktop binary.
  */
-export const TOOL_VERBS = ['play', 'stats', 'discover', 'interfaces', 'controller', 'shell', 'files', 'help'] as const;
+export const TOOL_VERBS = [
+    'play',
+    'stats',
+    'discover',
+    'interfaces',
+    'controller',
+    'shell',
+    'files',
+    'pingtest',
+    'help',
+] as const;
 
 export type ToolVerb = (typeof TOOL_VERBS)[number];
 
@@ -84,7 +94,8 @@ export function parseResetArgs(args: string[]): ResetOptions | 'help' | { error:
         if (HELP_FLAGS.has(a)) return 'help';
         else if (a === '--no-cloud' || a === '--nocloud') showCloud = false;
         else if (a === '--cloud') showCloud = true;
-        else if (a.startsWith('--user-data-dir=')) continue; // applied by earlycli
+        else if (a.startsWith('--user-data-dir='))
+            continue; // applied by earlycli
         else return { error: `Unknown option "${a}" for reset.` };
     }
     return { showCloud };
@@ -106,6 +117,7 @@ const COMMANDS: Record<DispatchableVerb, () => Promise<CommandModule>> = {
     interfaces: () => import('./commands/interfaces.js'),
     shell: () => import('./commands/shell.js'),
     files: () => import('./commands/files.js'),
+    pingtest: () => import('./commands/pingtest.js'),
 };
 
 const CONTROLLER_COMMANDS: Record<ControllerSubcommand, () => Promise<CommandModule>> = {
@@ -190,6 +202,20 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
     interfaces: {
         summary: "List this host's networks (CIDRs to feed --networks).",
         detail: 'Usage: EZPlayer interfaces',
+    },
+    pingtest: {
+        summary: 'Check that ICMP ping works in this install.',
+        detail:
+            'Usage: EZPlayer pingtest [<host> ...]\n' +
+            '\n' +
+            'Pings each host (default 127.0.0.1) twice over: once through the native\n' +
+            'addon loaded in this process, then once through the real ping worker the\n' +
+            'player uses. Needs no show folder and opens no window, so it can be run\n' +
+            'against an installed build to tell a broken native addon (wrong ABI or\n' +
+            'architecture, missing from the package) apart from a host that is simply\n' +
+            'not answering.\n' +
+            '\n' +
+            'Exit codes: 0 = both stages pinged every host, 1 = something failed.',
     },
     list: {
         summary: 'Show the controller reconcile state (known vs. scanned).',
@@ -419,8 +445,12 @@ export async function runCli(args: string[]): Promise<number> {
             console.log(APP_USAGE[verb].detail);
             return 0;
         }
-        console.error(`The \`${verb}\` command needs the desktop app runtime; it is not available in the headless CLI.`);
-        console.error(`Run it on the EZPlayer app binary instead, e.g. \`EZPlayer.exe ${verb}\` (not the console launcher).\n`);
+        console.error(
+            `The \`${verb}\` command needs the desktop app runtime; it is not available in the headless CLI.`,
+        );
+        console.error(
+            `Run it on the EZPlayer app binary instead, e.g. \`EZPlayer.exe ${verb}\` (not the console launcher).\n`,
+        );
         printTopHelp();
         return 2;
     }

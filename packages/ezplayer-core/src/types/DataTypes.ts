@@ -1,4 +1,4 @@
-import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+import type { ControllerOpsState, ControllerCommand, ControllerSenderStats } from './ControllerOps';
 import type { ViewerStatsSummary } from '../util/viewerStats';
 import type { AudioDevice } from './EZPElectronAPI';
 
@@ -389,6 +389,10 @@ export interface ControllerStatus {
     errors?: string[];
     connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     pingSummary?: string;
+    /** How the controller last answered; absent when nothing answered. */
+    reachedVia?: 'ping' | 'web';
+    /** What the controller's data sender reports having sent. */
+    senderStats?: ControllerSenderStats;
     reported_time?: number;
     startCh?: number; // 1-based start channel within the fseq channel array
     nCh?: number; // Channel count owned by this controller

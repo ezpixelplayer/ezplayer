@@ -90,6 +90,7 @@ export type {
     ControllerOpProgress,
     ControllerOp,
     ControllerOpsState,
+    ControllerSenderStats,
     ControllerCommand,
     KnownController,
     EzpControllerRecord,
@@ -189,6 +190,8 @@ export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
 export { isSequencePlayable } from './util/seqFilter';
+
+export { activeRequestFor, isPlaybackActive } from './util/playerStatus';
 
 export {
     CONVERTIBLE_AUDIO_EXTENSIONS,

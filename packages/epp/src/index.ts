@@ -1,4 +1,5 @@
 export { DDPSender } from './dataplane/protocols/DDP';
+export type { SenderStats } from './dataplane/protocols/UDP';
 
 export { E131Sender } from './dataplane/protocols/E131';
 
@@ -33,6 +34,7 @@ export {
     controllersFromParsedXlights,
     readControllersFromXlights,
     openControllersForDataSend,
+    openControllerForDataSend,
 } from './xlcompat/XLControllerSetup';
 
 export { ArrayBufferPool, BufferPool } from './util/BufferRecycler';
