@@ -34,8 +34,10 @@ registration.
 ![Cloud Registration Screen](/img/FirstRunCloudReg.png)
 
 When EZRGB confirms the claim, EZPlayer pulls your layout and opens the main
-app. Your player also appears under **EZPlayer** on your EZRGB account — use
-**Manage Player** there later for remote control over the internet.
+app. Open the **Cloud** screen for a **Remote Control Link** (QR and URL) —
+anyone with that link can control the player over the internet. The player also
+appears under **EZPlayer** on your EZRGB account; **Manage Player** there opens
+the same remote UI.
 
 ## 2. Wait for content
 
@@ -62,8 +64,9 @@ the left into your playlist on the right, set a name, and save. Schedules play
 playlists — not individual songs — so group your sequences into at least one
 playlist before you set show times.
 
-You can also create and edit playlists from EZRGB via **Manage Player**, or on
-the website itself for a fully cloud-managed show.
+You can also create and edit playlists from the Cloud screen's **Remote Control
+Link**, from EZRGB via **Manage Player**, or on the website itself for a fully
+cloud-managed show.
 
 See [Playlists](./playlists.md) for sorting, tags, and cloning.
 
@@ -88,9 +91,11 @@ address from any phone or laptop on the same network. The default port is 3000;
 confirm under **Show Status → HTTP Listener Status**. See
 [Local Web Interface](./local-web-interface.md).
 
-**Over the internet** — on [EZRGB](https://ezrgb.com), open your account →
-**EZPlayer** → **Manage Player** for the full remote player UI (playlists,
-schedule, playback, and more). Prefer a new browser tab.
+**Over the internet** — open the **Remote Control Link** on the Cloud screen
+(QR or URL), or on [EZRGB](https://ezrgb.com) go to your account → **EZPlayer**
+→ **Manage Player**. Both load the full remote player UI (playlists, schedule,
+playback, and more). Prefer a new browser tab. Treat the link like a key — see
+[Cloud Status / Control UI](../cloud/status-control-ui.md#remote-control-link).
 
 ## 7. Use cloud features
 
