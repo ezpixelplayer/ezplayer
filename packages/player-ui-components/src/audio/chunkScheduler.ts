@@ -98,6 +98,10 @@ export class RealTimeChunkPlayer {
     /** Sources started but possibly not yet playing, so a re-anchor can cut them. */
     private scheduled: Array<{ source: AudioBufferSourceNode; start: number; end: number }> = [];
     private lateShiftSec = 0;
+    /** Listener-chosen offset added to every stamp (positive = play later). A measuring
+     *  instrument: the value that brings a device into sync with the lights is how far
+     *  its reported output latency is from the truth. */
+    private trimSec = 0;
     /** idealStart − earliest schedulable time, for recent chained chunks (shifted chains only). */
     private slack: number[] = [];
     private readonly offsetRef: ClockOffsetRef;
@@ -138,6 +142,15 @@ export class RealTimeChunkPlayer {
         this.deviations.length = 0;
     }
 
+    get trimMs(): number {
+        return this.trimSec * 1000;
+    }
+
+    set trimMs(ms: number) {
+        this.trimSec = (Number.isFinite(ms) ? ms : 0) / 1000;
+        // The chained schedule re-anchors on its own once the deviation persists.
+    }
+
     /** Current late shift, ms (diagnostics). */
     get lateShiftMs(): number {
         return this.lateShiftSec * 1000;
@@ -176,7 +189,7 @@ export class RealTimeChunkPlayer {
         const hopMs = hopSec * 1000;
         const now = this.outputNow();
         // Local wall ms the chunk should be audible, mapped onto the context clock.
-        const idealStart = now.ctx + (playAt - offset - now.wall) / 1000;
+        const idealStart = now.ctx + (playAt - offset - now.wall) / 1000 + this.trimSec;
 
         const ctxNow = this.context.currentTime;
         // Nothing can be scheduled earlier than this.
