@@ -37,6 +37,17 @@ export interface ClockOffsetRef {
     snaps?: number;
 }
 
+/** One Cristian round trip, for diagnostics. All times are browser Date.now() ms except
+ *  `now`, the player's clock as returned. */
+export interface ClockRoundTrip {
+    index: number;
+    t0: number;
+    t1: number;
+    now: number;
+    rtt: number;
+    offset: number;
+}
+
 export interface ClockOffsetSample {
     offset: number;
     rtt: number;
@@ -62,6 +73,7 @@ export async function estimateClockOffset(
     timeUrl: string,
     signal?: AbortSignal,
     samples = CLOCK_SYNC_SAMPLES,
+    onRoundTrip?: (rt: ClockRoundTrip) => void,
 ): Promise<ClockOffsetSample | null> {
     let best: ClockOffsetSample | null = null;
     for (let i = 0; i < samples; i++) {
@@ -75,6 +87,7 @@ export async function estimateClockOffset(
             if (typeof now !== 'number') continue;
             const rtt = t1 - t0;
             const offset = now - (t0 + rtt / 2);
+            onRoundTrip?.({ index: i, t0, t1, now, rtt, offset });
             if (best === null || rtt < best.rtt) best = { offset, rtt };
         } catch {
             /* one bad sample is fine */

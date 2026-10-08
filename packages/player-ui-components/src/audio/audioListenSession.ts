@@ -31,6 +31,7 @@ import {
     refineClockOffset,
     resetClockWindow,
     type ClockOffsetRef,
+    type ClockRoundTrip,
 } from './clockSync';
 import { WARMUP_MAX_PENDING_FRAMES, stillPlayable, warmupReady } from './warmStart';
 
@@ -79,6 +80,16 @@ export interface AudioListenDiagnostics {
     updatedAt: number;
 }
 
+/** `?audiodebug=1` in the URL or localStorage ezpAudioDebug=1: verbose console breadcrumbs. */
+function audioDebugEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+        return /[?&]audiodebug=1/.test(window.location.search) || localStorage.getItem('ezpAudioDebug') === '1';
+    } catch {
+        return false;
+    }
+}
+
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 /** No chunk for this long while listening → status shows reconnecting-ish silence. */
@@ -101,6 +112,7 @@ export class AudioListenSession {
     private wakeLock?: WakeLockSentinel;
     private lastChunkAt = 0;
     private listenersAttached = false;
+    private debugTimer?: ReturnType<typeof setInterval>;
     // warm-up gate (see warmStart.ts)
     private startedAt = 0;
     private gateOpen = false;
@@ -237,6 +249,7 @@ export class AudioListenSession {
         this.startKeepalive();
         this.attachPageListeners();
         void this.requestWakeLock();
+        this.startDebugLog();
 
         this.setStatus('connecting');
         // Don't abort a prewarm sample that is about to land.
@@ -263,6 +276,7 @@ export class AudioListenSession {
             }
         });
         player.context.onstatechange = () => {
+            if (audioDebugEnabled()) console.debug(`[audio] context state -> ${player.context.state}`);
             if (!this.wanted || this.player !== player) return;
             const state = player.context.state as string;
             if (state === 'suspended' || state === 'interrupted') void player.resume();
@@ -288,6 +302,7 @@ export class AudioListenSession {
         this.stopKeepalive();
         this.releaseWakeLock();
         this.detachPageListeners();
+        this.stopDebugLog();
         this.setStatus('idle');
     }
 
@@ -352,6 +367,7 @@ export class AudioListenSession {
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = undefined;
             this.reconnects++;
+            if (audioDebugEnabled()) console.debug(`[audio] reconnect #${this.reconnects} to ${this.opts.wsUrl}`);
             this.player?.reanchor();
             resetClockWindow(this.offsetRef);
             void this.syncClock();
@@ -402,6 +418,14 @@ export class AudioListenSession {
         this.warmupHeld = this.pendingFrames.length;
         const playable = stillPlayable(this.pendingFrames, Date.now() + this.offsetRef.value);
         this.pendingFrames = [];
+        if (audioDebugEnabled()) {
+            console.debug(
+                `[audio] warm-up gate open after ${this.warmupMs}ms: held ${this.warmupHeld} frames, ${playable.length} still playable; ` +
+                    `ctx=${ctx?.state} ctxTime=${(ctx?.currentTime ?? 0).toFixed(3)} outLat=${Math.round((ctx?.outputLatency || 0) * 1000)}ms ` +
+                    `decoder=${this.decoder?.ready ? 'ready' : 'not ready'} http=${this.offsetRef.httpSample === undefined ? 'MISSING (deadline)' : 'ok'} ` +
+                    `offset=${this.offsetRef.value.toFixed(1)}ms`,
+            );
+        }
         for (const f of playable) this.play(f);
     }
 
@@ -413,15 +437,46 @@ export class AudioListenSession {
         const abort = new AbortController();
         this.clockAbort = abort;
         this.httpAttempts++;
-        const sample = await estimateClockOffset(this.opts.timeUrl, abort.signal);
+        const debug = audioDebugEnabled();
+        const onRoundTrip = debug
+            ? (rt: ClockRoundTrip) =>
+                  console.debug(
+                      `[audio] clock rt#${rt.index}: t0=${rt.t0} t1=${rt.t1} rtt=${rt.rtt}ms player.now=${rt.now} ` +
+                          `offset=${rt.offset.toFixed(1)}ms (player - browser)` +
+                          (prewarm ? ' [prewarm]' : ''),
+                  )
+            : undefined;
+        const sample = await estimateClockOffset(this.opts.timeUrl, abort.signal, undefined, onRoundTrip);
         if (this.clockAbort === abort) this.clockAbort = undefined;
-        if (abort.signal.aborted || !sample) return;
+        if (abort.signal.aborted || !sample) {
+            if (debug) console.debug(`[audio] clock: no usable sample from ${this.opts.timeUrl}`);
+            return;
+        }
+        const before = this.offsetRef.value;
+        const snapsBefore = this.offsetRef.snaps ?? 0;
         applyHttpClockOffset(this.offsetRef, sample);
+        if (debug) {
+            const ref = this.offsetRef;
+            const floor = ref.chunkCandidates.length ? Math.max(...ref.chunkCandidates) : undefined;
+            console.debug(
+                `[audio] clock applied: best rtt=${sample.rtt}ms http=${sample.offset.toFixed(1)} ` +
+                    `chunkFloor=${floor === undefined ? '-' : floor.toFixed(1)} (${ref.chunkCandidates.length} samples) ` +
+                    `estimate=${ref.estimate.toFixed(1)} value ${before.toFixed(1)} -> ${ref.value.toFixed(1)}` +
+                    ((ref.snaps ?? 0) > snapsBefore
+                        ? ' SNAPPED'
+                        : ref.value === before
+                          ? ' (held: within threshold)'
+                          : ''),
+            );
+        }
     }
 
     // -- page lifecycle --------------------------------------------------------
 
     private readonly onVisibility = (): void => {
+        if (audioDebugEnabled() && typeof document !== 'undefined') {
+            console.debug(`[audio] visibility -> ${document.visibilityState}, socket ${this.ws?.readyState ?? 'none'}`);
+        }
         if (!this.wanted || document.visibilityState !== 'visible') return;
         void this.player?.resume();
         void this.requestWakeLock();
@@ -431,7 +486,8 @@ export class AudioListenSession {
             this.closeSocket();
             this.scheduleReconnect(true);
         } else {
-            this.player?.reanchor();
+            // Fresh clock samples; the chained schedule stays unless it really drifted
+            // (a forced re-anchor here was an audible chop on every return to the tab).
             resetClockWindow(this.offsetRef);
             void this.syncClock();
         }
@@ -460,6 +516,38 @@ export class AudioListenSession {
         window.removeEventListener('pageshow', this.onVisibility);
         window.removeEventListener('online', this.onOnline);
         this.listenersAttached = false;
+    }
+
+    // -- diagnostics breadcrumb -----------------------------------------------------
+
+    /** With `?audiodebug=1` in the URL (or localStorage ezpAudioDebug=1) print one compact
+     *  diagnostics line every 10 s. Works on every page, including the LAN ones that have no
+     *  overlay, and keeps logging while the tab is in the background. */
+    private startDebugLog(): void {
+        if (this.debugTimer || typeof window === 'undefined') return;
+        if (!audioDebugEnabled()) return;
+        const line = () => {
+            const d = this.getDiagnostics();
+            const c = d.lastChunk;
+            console.debug(
+                '[audio] ' +
+                    `${d.status} vis=${typeof document !== 'undefined' ? document.visibilityState : '?'} ` +
+                    `ctx=${d.contextState ?? '?'} outLat=${d.outputLatencyMs ?? '?'}ms map=${d.mapping ?? '?'} ` +
+                    `offset=${d.offsetValue.toFixed(0)}ms rtt=${d.httpRtt ?? '?'} ` +
+                    `rx=${d.chunksReceived} trim=${d.chunksTrimmed} drop=${d.chunksDropped} snaps=${d.chunksSnapped}/${d.offsetSnaps} ` +
+                    `warmup=${d.warmupMs ?? '-'}ms ` +
+                    (c
+                        ? `last: late=${c.lateBy.toFixed(0)} dev=${c.deviationMs.toFixed(0)} trim=${c.trimmedMs.toFixed(0)}`
+                        : ''),
+            );
+        };
+        line();
+        this.debugTimer = setInterval(line, 10_000);
+    }
+
+    private stopDebugLog(): void {
+        if (this.debugTimer) clearInterval(this.debugTimer);
+        this.debugTimer = undefined;
     }
 
     private async requestWakeLock(): Promise<void> {

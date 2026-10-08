@@ -2221,7 +2221,20 @@ function sendAudioChunk(
 ) {
     // Web/cloud listeners are an independent path: they get the song at unity, never
     // modulated by the local output schedules or mute (they have their own volume).
-    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, 1);
+    // Nor by the local speaker sync adjustment: `playAtRealTime` arrives with
+    // `audioTimeAdjMs` folded in for the Electron audio windows (which play at the
+    // stamp on the raw context clock, so the user trims their own output latency
+    // with that setting). The stream carries the lights' time — browser listeners
+    // compensate their own output latency themselves.
+    audioExportRing?.publish(
+        samplesUnity,
+        playAtRealTime - playbackParams.audioTimeAdjMs,
+        incarnation,
+        sampleRate,
+        channels,
+        advanceSamples,
+        1,
+    );
     const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
