@@ -21,9 +21,9 @@ import * as THREE from 'three';
  * r3f keeps a ResizeObserver on the container and, whenever its measured size changes,
  * re-applies the on-screen drawing-buffer size and camera framing (the store subscription in
  * its `createRoot`). Any layout shift during an export — a reflow of the surrounding modal,
- * a scrollbar appearing — therefore silently undid `beginFixedSize`, and the on-screen-shaped
- * canvas got stretched into the export frame from that point on. So the fixed size is
- * re-asserted at the start of every `renderFrame`, not only once at the beginning.
+ * a scrollbar appearing — would otherwise undo `beginFixedSize` and leave an on-screen-shaped
+ * canvas to be stretched into the export frame. So the fixed size is re-asserted at the
+ * start of every `renderFrame`, not only once at the beginning.
  */
 export interface PreviewRenderHandle {
     beginFixedSize(width: number, height: number): void;

@@ -486,8 +486,9 @@ export class AudioListenSession {
             this.closeSocket();
             this.scheduleReconnect(true);
         } else {
-            // Fresh clock samples; the chained schedule stays unless it really drifted
-            // (a forced re-anchor here was an audible chop on every return to the tab).
+            // Fresh clock samples only. The chained schedule is kept: the scheduler's drift
+            // detector re-anchors if it has really drifted, and an unconditional re-anchor
+            // is audible.
             resetClockWindow(this.offsetRef);
             void this.syncClock();
         }

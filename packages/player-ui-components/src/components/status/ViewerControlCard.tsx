@@ -5,9 +5,6 @@
  * on the page, listeners, queue or votes), today's picks by source, and two
  * actions — the player's Viewer Control settings, and the full activity view
  * in a dialog.
- *
- * Replaces the "Viewer Activity" sidebar entry and the one-liner that used to
- * sit in Content & Schedule.
  */
 
 import { getActiveViewerControlSchedule, viewerControlBackends } from '@ezplayer/ezplayer-core';

@@ -1,18 +1,15 @@
 /**
  * Warm-start gate for a listening session.
  *
- * A cold start used to schedule the first chunks against clocks that were not
- * yet trustworthy: the AudioContext had not opened the device (its clock read
- * 0 and reported no output latency), the opus wasm was still compiling, and
- * the first HTTP clock sample was still in flight on a cold HTTPS connection.
- * Every one of those chunks then came out late and was trimmed — the choppy
- * first seconds on phones, cured by stop + listen because a restart finds all
- * three already warm.
+ * The first chunk is scheduled only once the clocks it depends on can be
+ * trusted: the AudioContext is running (before that its clock reads 0 and it
+ * reports no output latency), the opus wasm has compiled, and an HTTP clock
+ * sample has arrived. A chunk scheduled before that point comes out late and
+ * is trimmed, which is audible as chop. Frames are buffered meanwhile.
  *
- * So the first anchor waits until the pieces are ready, buffering frames
- * meanwhile. The context and decoder are hard requirements (nothing can play
- * without them); the clock sample is waited for up to WARMUP_CLOCK_WAIT_MS so
- * a slow time endpoint cannot hold audio back indefinitely.
+ * The context and decoder are hard requirements (nothing can play without
+ * them); the clock sample is waited for up to WARMUP_CLOCK_WAIT_MS so a slow
+ * time endpoint cannot hold audio back indefinitely.
  */
 
 /** Longest the first anchor waits for an HTTP clock sample. */

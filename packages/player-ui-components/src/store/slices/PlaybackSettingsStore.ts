@@ -162,7 +162,7 @@ const playbackSettingsSlice = createSlice({
                 state.settings.viewerControl.backends = [];
             }
         },
-        /** Legacy single-backend setter; kept for callers that still think in one type. */
+        /** Single-backend setter for callers that choose one type; `backends` follows. */
         setViewerControlType(state, action: PayloadAction<'disabled' | 'remote-falcon' | 'ezplayer'>) {
             state.settings.viewerControl = withViewerControlBackends(
                 state.settings.viewerControl,
