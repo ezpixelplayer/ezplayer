@@ -62,6 +62,17 @@ export function BulkImportSummaryDialog({
                     Imported <strong>{summary.imported}</strong> of <strong>{summary.total}</strong> sequence
                     {summary.total === 1 ? '' : 's'}.
                 </Typography>
+                {summary.successes.some((s) => !s.mediaFound) && (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                        Sequences without audio were saved. Upload matching audio later, or use Edit Song to choose it.
+                        Animations can play without audio.
+                    </Alert>
+                )}
+                {summary.total === 0 && summary.failed === 0 && (
+                    <Alert severity="success" sx={{ mb: 2 }}>
+                        Files uploaded. Choose them with “On player” when adding or editing a song.
+                    </Alert>
+                )}
                 {summary.failed > 0 && (
                     <Typography color="error" sx={{ mb: 1 }}>
                         Failed: {summary.failed}

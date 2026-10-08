@@ -106,14 +106,23 @@ export const batchUploadImportShowSequences = createAsyncThunk<
         companionAudioNames?: string[];
         /** Existing show-folder FSEQs to import after an audio-only upload. */
         importFseqNames?: string[];
+        onProgress?: (loaded: number, total: number) => void;
     },
     { extra: DataStorageAPI }
->('sequences/batchUploadImportShowSequences', async ({ files, companionAudioNames, importFseqNames }, { extra }) => {
-    if (!extra.batchUploadImportShowSequences) {
-        throw new Error('This player connection does not support bulk upload-import');
-    }
-    return await extra.batchUploadImportShowSequences(files, companionAudioNames ?? [], importFseqNames);
-});
+>(
+    'sequences/batchUploadImportShowSequences',
+    async ({ files, companionAudioNames, importFseqNames, onProgress }, { extra }) => {
+        if (!extra.batchUploadImportShowSequences) {
+            throw new Error('This player connection does not support bulk upload-import');
+        }
+        return await extra.batchUploadImportShowSequences(
+            files,
+            companionAudioNames ?? [],
+            importFseqNames,
+            onProgress,
+        );
+    },
+);
 
 /** True when the connected backing store can receive file uploads (web/LAN
  *  file-management API). Electron's renderer works with local paths instead. */
@@ -125,14 +134,14 @@ export function canUploadShowFiles(extra: DataStorageAPI): boolean {
  *  flow). No-op entries are allowed so callers can pass optional files. */
 export const uploadShowFiles = createAsyncThunk<
     void,
-    Array<{ name: string; data: Blob } | undefined>,
+    Array<{ name: string; data: Blob; onProgress?: (loaded: number, total: number) => void } | undefined>,
     { extra: DataStorageAPI }
 >('sequences/uploadShowFiles', async (files, { extra }) => {
     if (!extra.uploadShowFile) {
         throw new Error('This player connection does not support file upload');
     }
     for (const f of files) {
-        if (f) await extra.uploadShowFile(f.name, f.data);
+        if (f) await extra.uploadShowFile(f.name, f.data, f.onProgress);
     }
 });
 

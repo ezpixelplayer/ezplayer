@@ -915,6 +915,8 @@ export async function batchImportSequencesCore(
     fseqNames: unknown,
     companionAudioNames?: unknown,
     allowExistingAudio?: unknown,
+    allowMissingAudio = false,
+    attachMissingAudio = false,
 ): Promise<ProxyResult> {
     if (!showFolder) return { status: 400, body: { error: 'Show folder not set' } };
     if (!Array.isArray(fseqNames)) {
@@ -949,6 +951,8 @@ export async function batchImportSequencesCore(
 
     try {
         const summary = await batchImportSequences(unique, {
+            allowMissingAudio,
+            attachMissingAudio,
             mediaFolder: deps.getMediaFolder?.(),
             showFolder: deps.getShowFolder(),
             normalize: deps.getNormalizeNewSongs?.(),
@@ -1131,11 +1135,16 @@ export async function batchUploadImportSequencesCore(
         }
     }
     const fseqNames = uploadedFseqs.length ? uploadedFseqs : [...new Set(fromManifest)];
-    if (!fseqNames.length) {
-        return { status: 400, body: { error: 'No .fseq files in upload' } };
+    // Include incomplete catalog entries so media uploaded later can fill their
+    // missing audio using exact filename/header matches, without duplicate songs.
+    const pending = (deps.getSequences() ?? [])
+        .filter((s) => !s.deleted && !s.cloud && s.files?.fseq && !s.files.audio)
+        .map((s) => path.relative(showFolder, s.files!.fseq!));
+    const names = [...new Set([...fseqNames, ...pending])];
+    if (!names.length) {
+        return { status: 200, body: { total: 0, imported: 0, failed: 0, successes: [], failures: [] } };
     }
-
-    return batchImportSequencesCore(showFolder, deps, fseqNames, manifest.companionAudioNames ?? []);
+    return batchImportSequencesCore(showFolder, deps, names, [], true, true, true);
 }
 
 /** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */

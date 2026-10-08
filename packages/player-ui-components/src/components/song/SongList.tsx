@@ -10,7 +10,6 @@ import { AppDispatch, RootState } from '../..';
 import { batchImportShowSequences, batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
 import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
-import { PlayStopButton } from '../player/PlayStopButton';
 
 import {
     Autocomplete,
@@ -37,8 +36,10 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import LibraryAddIcon from '@mui/icons-material/LibraryAdd';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { AddSongProps } from './AddSongDialogBrowser';
+import { UploadProgressDialog, type UploadProgress } from './UploadProgressDialog';
 import { BulkImportSummaryDialog } from './BulkImportSummaryDialog';
 import { DeleteSongDialog } from './DeleteSongDialog';
 import { EditSongDetailsDialog } from './EditSongDetailsDialog';
@@ -227,6 +228,7 @@ export function SongList({
     const [tagInputValue, setTagInputValue] = useState('');
     const [bulkMenuAnchor, setBulkMenuAnchor] = useState<null | HTMLElement>(null);
     const [bulkImporting, setBulkImporting] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
     /** Bulk-import progress: per-song from Electron events; count-only on the web. */
     const [importProgress, setImportProgress] = useState<BatchImportProgress | null>(null);
     const [bulkSummary, setBulkSummary] = useState<BatchImportSummary | null>(null);
@@ -287,6 +289,7 @@ export function SongList({
             setBulkSummaryOpen(true);
         } finally {
             setBulkImporting(false);
+            setUploadProgress(null);
             setImportProgress(null);
         }
     };
@@ -309,7 +312,21 @@ export function SongList({
         return [...byName.values()];
     };
 
-    const AUDIO_UPLOAD_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4']);
+    const AUDIO_UPLOAD_EXTS = new Set([
+        '.mp3',
+        '.wav',
+        '.m4a',
+        '.aac',
+        '.flac',
+        '.ogg',
+        '.wma',
+        '.mp4',
+        '.mkv',
+        '.avi',
+        '.mov',
+        '.mpg',
+        '.mpeg',
+    ]);
     const IMAGE_UPLOAD_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
     const pathExt = (name: string) => {
@@ -330,23 +347,21 @@ export function SongList({
     };
 
     const uploadAndBatchImportBrowser = async (files: File[]): Promise<BatchImportSummary | undefined> => {
+        const selectedNames = files
+            .filter(
+                (f) =>
+                    f.name.toLowerCase().endsWith('.fseq') ||
+                    AUDIO_UPLOAD_EXTS.has(pathExt(f.name)) ||
+                    IMAGE_UPLOAD_EXTS.has(pathExt(f.name)),
+            )
+            .map((f) => f.name);
+        if (new Set(selectedNames).size !== selectedNames.length)
+            throw new Error('Files in an upload must have different filenames.');
         const fseqFiles = collectFseqUploadFiles(files);
-        if (!fseqFiles.length) {
-            return {
-                total: 0,
-                imported: 0,
-                failed: 1,
-                successes: [],
-                failures: [
-                    {
-                        fseqPath: '',
-                        fseqName: '(selection)',
-                        reason: 'No .fseq files found in the selection',
-                    },
-                ],
-            };
-        }
         const companions = collectCompanionUploadFiles(files);
+        if (!fseqFiles.length && !companions.length) throw new Error('Choose audio, video, or FSEQ files to upload.');
+        const names = [...fseqFiles, ...companions].map((f) => f.name);
+        if (new Set(names).size !== names.length) throw new Error('Files in an upload must have different filenames.');
         const companionAudio = companions.filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
         const companionAudioNames = companionAudio.map((f) => f.name);
         lanCompanionAudioRef.current = companionAudioNames;
@@ -356,7 +371,17 @@ export function SongList({
             `[BulkImport] Uploading+importing ${fseqFiles.length} fseq(s), ${companionAudioNames.length} companion audio(s) in one request…`,
         );
         setImportProgress({ done: 0, total: toUpload.length });
-        return dispatch(batchUploadImportShowSequences({ files: toUpload, companionAudioNames })).unwrap();
+        const name = `${toUpload.length} file${toUpload.length === 1 ? '' : 's'}`;
+        setUploadProgress({ name, loaded: 0, total: toUpload.reduce((n, f) => n + f.data.size, 0) });
+        const summary = await dispatch(
+            batchUploadImportShowSequences({
+                files: toUpload,
+                companionAudioNames,
+                onProgress: (loaded, total) => setUploadProgress({ name, loaded, total }),
+            }),
+        ).unwrap();
+        ToastMsgs.showSuccessMessage(`${toUpload.length} file(s) uploaded to the player.`, { autoClose: 4000 });
+        return summary;
     };
 
     const handleChooseMediaFolderAndRetry = async () => {
@@ -768,9 +793,13 @@ export function SongList({
                               }}
                           >
                               {canShowPlay && (
-                                  <PlayStopButton
-                                      target={{ songId: params.row.id }}
-                                      onPlay={() => handlePlayClick(params.row)}
+                                  <Button
+                                      aria-label="play"
+                                      title="Play immediately"
+                                      startIcon={<PlayArrowIcon />}
+                                      size="small"
+                                      color="success"
+                                      onClick={() => handlePlayClick(params.row)}
                                       sx={{ minWidth: 'auto', padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                                   />
                               )}
@@ -915,7 +944,7 @@ export function SongList({
                                                     document.getElementById('ezplayer-bulk-fseq-files')?.click();
                                                 }}
                                             >
-                                                Upload FSEQ and audio files…
+                                                Upload audio, video, or FSEQ files…
                                             </MenuItem>
                                             <MenuItem
                                                 onClick={() => {
@@ -942,7 +971,7 @@ export function SongList({
                                         <input
                                             id="ezplayer-bulk-fseq-files"
                                             type="file"
-                                            accept=".fseq,.mp3,.m4a,.aac,.wav,.ogg,.flac,.wma,.mp4,.xml,.jpg,.jpeg,.png,.webp"
+                                            accept=".fseq,.mp3,.m4a,.aac,.wav,.ogg,.flac,.wma,.mp4,.mkv,.avi,.mov,.mpg,.mpeg,.xml,.jpg,.jpeg,.png,.webp"
                                             multiple
                                             style={{ display: 'none' }}
                                             disabled={bulkImporting}
@@ -1001,6 +1030,7 @@ export function SongList({
 
             {AddSongDialog && <AddSongDialog open={openAddDialog} onClose={handleClose} title="Add New Song" />}
 
+            <UploadProgressDialog open={bulkImporting && !isElectron()} progress={uploadProgress} />
             <BulkImportSummaryDialog
                 open={bulkSummaryOpen}
                 summary={bulkSummary}

@@ -7,7 +7,7 @@ import type { SequenceFiles } from '@ezplayer/ezplayer-core';
 export async function copyPiSongFiles(folder: string, files: SequenceFiles): Promise<SequenceFiles> {
     const result = { ...files };
     const root = await fs.realpath(folder);
-    for (const key of ['fseq', 'audio', 'thumb'] as const) {
+    for (const key of ['fseq', 'audio', 'video', 'thumb'] as const) {
         const file = files[key];
         if (!file) continue;
         const source = await fs.realpath(path.resolve(folder, file));
