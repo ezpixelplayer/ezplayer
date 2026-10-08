@@ -63,6 +63,9 @@ export interface ChunkPlaybackEvent {
     deviationMs: number;
     /** Where the wall↔context mapping came from. */
     mapping: 'outputTimestamp' | 'currentTime';
+    /** How much later than the stamp the chain is playing because the device could
+     *  not honor the stamp (output latency exceeds the stream's lead). 0 = in sync. */
+    lateShiftMs: number;
 }
 
 /** Persistent deviation that re-anchors the chained schedule. */
@@ -73,6 +76,12 @@ const DRIFT_WINDOW = 10;
 const DRIFT_MIN_SAMPLES = 6;
 /** Lead-in when a late chunk has to start "now". */
 const CATCHUP_MARGIN_S = 0.004;
+/** Extra room added when the chain has to be shifted later, so arrival jitter does
+ *  not put the next chunk straight back behind the context. */
+const LATE_HEADROOM_S = 0.03;
+/** A shifted chain is pulled back toward the stamp once its chunks have had at least
+ *  this much more slack than the shift for DRIFT_MIN_SAMPLES chunks. */
+const UNSHIFT_SLACK_S = 0.05;
 
 function median(values: number[]): number {
     const s = [...values].sort((a, b) => a - b);
@@ -86,6 +95,11 @@ export class RealTimeChunkPlayer {
     private nextPlayAt: number | undefined;
     private nextStartCtx: number | undefined;
     private deviations: number[] = [];
+    /** Sources started but possibly not yet playing, so a re-anchor can cut them. */
+    private scheduled: Array<{ source: AudioBufferSourceNode; start: number; end: number }> = [];
+    private lateShiftSec = 0;
+    /** idealStart − earliest schedulable time, for recent chained chunks (shifted chains only). */
+    private slack: number[] = [];
     private readonly offsetRef: ClockOffsetRef;
     private readonly onChunk?: (ev: ChunkPlaybackEvent) => void;
     private gain: GainNode;
@@ -124,6 +138,11 @@ export class RealTimeChunkPlayer {
         this.deviations.length = 0;
     }
 
+    /** Current late shift, ms (diagnostics). */
+    get lateShiftMs(): number {
+        return this.lateShiftSec * 1000;
+    }
+
     /** Which mapping the last chunk used (diagnostics). */
     get mapping(): ChunkPlaybackEvent['mapping'] {
         return this.lastMapping;
@@ -159,6 +178,10 @@ export class RealTimeChunkPlayer {
         // Local wall ms the chunk should be audible, mapped onto the context clock.
         const idealStart = now.ctx + (playAt - offset - now.wall) / 1000;
 
+        const ctxNow = this.context.currentTime;
+        // Nothing can be scheduled earlier than this.
+        const earliest = ctxNow + CATCHUP_MARGIN_S;
+
         let start: number;
         let snapped = false;
         let deviationMs = 0;
@@ -169,25 +192,35 @@ export class RealTimeChunkPlayer {
             this.nextStartCtx === undefined
         ) {
             this.incarnation = incarnation;
-            start = idealStart;
-            this.deviations.length = 0;
+            start = this.anchor(idealStart, earliest);
         } else {
             start = this.nextStartCtx;
-            deviationMs = (idealStart - start) * 1000;
+            // Deviation is measured against the stamp plus whatever shift the chain carries.
+            deviationMs = (idealStart + this.lateShiftSec - start) * 1000;
             this.deviations.push(deviationMs);
             if (this.deviations.length > DRIFT_WINDOW) this.deviations.shift();
+            if (this.lateShiftSec > 0) {
+                this.slack.push(idealStart - earliest);
+                if (this.slack.length > DRIFT_WINDOW) this.slack.shift();
+            }
             const persistent =
                 this.deviations.length >= DRIFT_MIN_SAMPLES && Math.abs(median(this.deviations)) > DRIFT_SNAP_MS;
-            if (Math.abs(deviationMs) > DRIFT_HARD_SNAP_MS || persistent) {
-                start = idealStart;
+            // The chain fell behind what the context can still play: shift it later as a
+            // whole rather than trimming the front of every chunk from here on.
+            const behind = start < earliest;
+            // The device now has room to play closer to the stamp: take some of the shift back.
+            const unshift =
+                this.lateShiftSec > 0 &&
+                this.slack.length >= DRIFT_MIN_SAMPLES &&
+                median(this.slack) > this.lateShiftSec + UNSHIFT_SLACK_S;
+            if (Math.abs(deviationMs) > DRIFT_HARD_SNAP_MS || persistent || behind || unshift) {
+                start = this.anchor(idealStart, earliest);
                 snapped = true;
-                this.deviations.length = 0;
             }
         }
         this.nextPlayAt = playAt + hopMs;
         this.nextStartCtx = start + hopSec;
 
-        const ctxNow = this.context.currentTime;
         let trimmedMs = 0;
         let dropped = false;
         let when = start;
@@ -214,6 +247,7 @@ export class RealTimeChunkPlayer {
             snapped,
             deviationMs,
             mapping: this.lastMapping,
+            lateShiftMs: this.lateShiftSec * 1000,
         });
         if (dropped || chunk.silent || chunk.planar.length === 0) return;
 
@@ -228,5 +262,49 @@ export class RealTimeChunkPlayer {
         source.buffer = buffer;
         source.connect(this.gain);
         source.start(when, sourceOffset);
+        this.scheduled.push({ source, start: when, end: when + (frames - sourceOffset * sampleRate) / sampleRate });
+        if (this.scheduled.length > 64) this.prune(ctxNow);
+    }
+
+    /**
+     * Start a new chain at `ideal`, or — when the device cannot play that soon — as early
+     * as it can plus headroom, remembering the shift. Anything the previous chain had
+     * queued from the new start onward is cut so the two never sound together.
+     */
+    private anchor(ideal: number, earliest: number): number {
+        this.deviations.length = 0;
+        this.slack.length = 0;
+        let start = ideal;
+        if (ideal < earliest) {
+            start = earliest + LATE_HEADROOM_S;
+            this.lateShiftSec = start - ideal;
+        } else {
+            this.lateShiftSec = 0;
+        }
+        this.cutFrom(start);
+        return start;
+    }
+
+    /** Stop queued sources at `at`: those not yet started are cancelled, one playing
+     *  across `at` ends there. */
+    private cutFrom(at: number): void {
+        const keep: typeof this.scheduled = [];
+        for (const s of this.scheduled) {
+            if (s.end <= at) {
+                keep.push(s);
+                continue;
+            }
+            try {
+                s.source.stop(Math.max(at, this.context.currentTime));
+            } catch {
+                /* already stopped */
+            }
+        }
+        this.scheduled = keep;
+        this.prune(this.context.currentTime);
+    }
+
+    private prune(ctxNow: number): void {
+        this.scheduled = this.scheduled.filter((s) => s.end > ctxNow);
     }
 }

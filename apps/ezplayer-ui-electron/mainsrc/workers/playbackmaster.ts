@@ -886,6 +886,85 @@ function recomputeVolumeGains() {
 }
 
 /////////
+// Commanded songs wait for their audio (issue #180)
+//
+// A jukebox / viewer / Remote Falcon pick names a song whose mp3 may not be decoded
+// yet. Starting it on the fixed interactive delay played the lights with the opening
+// bars silent. Instead the decode is requested the moment the command arrives, and the
+// start is held — lights and audio together — until the audio is there, up to a cap.
+
+/** Longest a commanded song is held for its audio before playing lights-only after all. */
+const INTERACTIVE_AUDIO_WAIT_MAX_MS = 5_000;
+/** requestId -> when the hold began. */
+const interactiveAudioWaitSince = new Map<string, number>();
+
+function audioFileFor(seq: SequenceRecord | undefined): string | undefined {
+    let saf = seq?.files?.audio;
+    if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
+    return saf || undefined;
+}
+
+/** Ask the decoder for a commanded song's audio right now, at top priority. */
+function requestAudioDecodeNow(seq: SequenceRecord, startTime: number): void {
+    const saf = audioFileFor(seq);
+    if (!saf || !mp3Cache) return;
+    const durationMs = seq.work?.length ? seq.work.length * 1000 : 600_000;
+    mp3Cache.prefetchMP3({
+        mp3file: saf,
+        needByTime: startTime,
+        neededThroughTime: startTime + durationMs,
+        estDurationSec: durationMs / 1000,
+        tier: 0,
+        expiry: startTime + 7 * 24 * 3600_000,
+        normalize: !!seq.settings?.normalize,
+    });
+    mp3Cache.dispatch();
+}
+
+/** True when the song's audio is decoded, has no audio, or failed (nothing to wait for). */
+function interactiveAudioReady(seqId: string): boolean {
+    const seq = foregroundPlayerRunState.sequencesById.get(seqId) ?? curSequences?.find((x) => x.id === seqId);
+    const saf = audioFileFor(seq);
+    if (!saf || !mp3Cache) return true;
+    const r = mp3Cache.getMp3(saf, !!seq?.settings?.normalize);
+    if (!r) return false; // not requested yet
+    return !!r.err || !!r.ref;
+}
+
+/**
+ * Push back any interactive start, immediate or queued, that would begin within the audio
+ * lead while its audio is still decoding, so the audio generator never reaches an
+ * undecoded song. Runs every tick after the prefetch pass.
+ */
+function holdInteractiveStartsForAudio(now: number): void {
+    const horizon = now + playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs;
+    const hold = (cmd: { seqId?: string; startTime: number; requestId: string }): boolean => {
+        if (!cmd.seqId || cmd.startTime > horizon) return false;
+        if (interactiveAudioReady(cmd.seqId)) {
+            interactiveAudioWaitSince.delete(cmd.requestId);
+            return false;
+        }
+        const since = interactiveAudioWaitSince.get(cmd.requestId) ?? now;
+        interactiveAudioWaitSince.set(cmd.requestId, since);
+        if (now - since > INTERACTIVE_AUDIO_WAIT_MAX_MS) {
+            if (now - since < INTERACTIVE_AUDIO_WAIT_MAX_MS + 1000) {
+                emitWarning(
+                    `Audio for ${cmd.seqId} still not decoded after ${INTERACTIVE_AUDIO_WAIT_MAX_MS} ms; starting without it.`,
+                );
+            }
+            return false;
+        }
+        cmd.startTime = horizon;
+        return true;
+    };
+    const fs = foregroundPlayerRunState;
+    if (fs.immediateItem) hold(fs.immediateItem);
+    let moved = false;
+    for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
+    if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+}
+
+/////////
 // Inbound messages
 function processCommand(cmd: EZPlayerCommand) {
     switch (cmd.command) {
@@ -901,6 +980,7 @@ function processCommand(cmd: EZPlayerCommand) {
                     return false;
                 }
                 const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
+                requestAudioDecodeNow(seq, startTime);
                 foregroundPlayerRunState.addInteractiveCommand({
                     immediate: cmd.immediate,
                     requestId: cmd.requestId,
@@ -1137,13 +1217,18 @@ const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 // Playback params
 const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
-    sendAudioInAdvanceMs: 300, // audio generation lead (all consumers); modest margin for cloud/network jitter
+    // Audio generation lead (all consumers). A browser listener must receive a chunk
+    // earlier than its own output latency plus transit, or it cannot be played at the
+    // stamp: phone outputs report ~300 ms, cloud transit ~100 ms.
+    sendAudioInAdvanceMs: 700,
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
+    // Earliest a commanded song starts. Its audio may not have decoded by then; the start
+    // is then held by holdInteractiveStartsForAudio() rather than played without sound.
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
@@ -2248,6 +2333,7 @@ function sendAudioChunk(
                 playAtRealTime,
                 incarnation,
                 advanceSamples,
+                rtcOffsetMs: rtcConverter.computeTime(performance.now()) - Date.now(),
             },
         },
         [buf],
@@ -2671,6 +2757,7 @@ async function processQueue() {
                     PREFETCH_TIER.SPECULATIVE,
                 );
                 mp3Cache.dispatch();
+                holdInteractiveStartsForAudio(targetFrameRTC);
             }
 
             if (doFseqPrefetch) {

@@ -33,6 +33,10 @@ export interface AudioDevice {
 export interface AudioChunk {
     playAtRealTime: number; // Sent in advance, adjustment already applied to compensate for display
     incarnation: number; // Increments if a break in the audio is convenient
+    /** The player's RTC (the clock `playAtRealTime` is in — smoothed, follows the lights)
+     *  minus its Date.now() at send time. Consumers add it to their own Date.now() so a
+     *  wall-clock step on the player does not read as the audio moving. */
+    rtcOffsetMs?: number;
 
     sampleRate: number;
     channels: number;

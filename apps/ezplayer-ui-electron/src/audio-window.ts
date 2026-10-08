@@ -153,7 +153,8 @@ export class RealTimeChunkPlayer {
         const advanceFrames = advanceSamples && advanceSamples > 0 ? advanceSamples / channels : numSamples;
         const audioLenMs = (1000 * advanceFrames) / sampleRate;
 
-        const dn = Math.round(Date.now()); // real clock, ms
+        // The stamp is in the player's RTC; compare it with the same clock.
+        const dn = Math.round(Date.now() + (msg.rtcOffsetMs ?? 0));
         const actNow = Math.round(this.audioCtx.currentTime * 1000); // audio clock, ms
 
         let startTimeMs: number | undefined;
@@ -166,6 +167,9 @@ export class RealTimeChunkPlayer {
 
             startTimeMs = actNow + (playAtRealTime - dn);
             this.audioPlayAtNextACT = startTimeMs;
+            // Audio runs well ahead of the lights; whatever the previous segment had queued
+            // from here on must not sound under the new one.
+            this.cutQueuedFrom(startTimeMs / 1000);
         } else {
             startTimeMs = this.audioPlayAtNextACT;
         }
@@ -177,6 +181,7 @@ export class RealTimeChunkPlayer {
             startTimeMs = idealStart;
             this.audioPlayAtNextRealTime = playAtRealTime;
             this.audioPlayAtNextACT = startTimeMs;
+            this.cutQueuedFrom(startTimeMs / 1000);
         }
 
         // Advance scheduling state
@@ -204,7 +209,32 @@ export class RealTimeChunkPlayer {
         source.connect(this.gainNode);
 
         // Web Audio time is in seconds
-        source.start(startTimeMs! / 1000);
+        const startSec = startTimeMs! / 1000;
+        source.start(startSec);
+        this.queued.push({ source, start: startSec, end: startSec + numSamples / sampleRate });
+        if (this.queued.length > 64) this.queued = this.queued.filter((q) => q.end > this.audioCtx!.currentTime);
+    }
+
+    private queued: Array<{ source: AudioBufferSourceNode; start: number; end: number }> = [];
+
+    /** Stop queued sources at `at` seconds: not-yet-started ones are cancelled, one playing
+     *  across `at` ends there. */
+    private cutQueuedFrom(at: number): void {
+        if (!this.audioCtx) return;
+        const now = this.audioCtx.currentTime;
+        const keep: typeof this.queued = [];
+        for (const q of this.queued) {
+            if (q.end <= at) {
+                if (q.end > now) keep.push(q);
+                continue;
+            }
+            try {
+                q.source.stop(Math.max(at, now));
+            } catch {
+                /* already stopped */
+            }
+        }
+        this.queued = keep;
     }
 }
 

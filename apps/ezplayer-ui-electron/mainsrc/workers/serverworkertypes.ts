@@ -81,6 +81,11 @@ export type MainToServerWorkerMessage =
           mode: CloudAudioMode;
       }
     | {
+          /** Player RTC minus Date.now(): the clock audio stamps and the time endpoint use. */
+          type: 'rtcOffset';
+          offsetMs: number;
+      }
+    | {
           /** Close the cloud bridge. `sessionId` is optional — when omitted
            *  (e.g. a config change), close anything currently open. When
            *  provided, only close if it matches the active session. */

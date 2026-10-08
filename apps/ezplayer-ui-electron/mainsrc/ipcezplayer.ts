@@ -111,7 +111,7 @@ import {
     pickAnotherShowFolder,
     pickCloudShowFolder,
 } from '../showfolder.js';
-import { getServerStatus, setCloudAudioMode } from './server-worker-manager.js';
+import { getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
 import {
     dispatchControllerCommand,
     deviceIdForAddress,
@@ -1284,6 +1284,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
+                if (msg.chunk.rtcOffsetMs !== undefined) setRtcOffset(msg.chunk.rtcOffsetMs);
                 broadcastAudioChunk(msg.chunk, msg.volumeSF, msg.outputGains);
                 break;
             }

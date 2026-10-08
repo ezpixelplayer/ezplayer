@@ -77,6 +77,9 @@ export interface AudioListenDiagnostics {
     warmupMs?: number;
     /** Frames held back by the warm-up gate on this start. */
     warmupHeld?: number;
+    /** Chain playing later than the stamps because the device's output latency exceeds
+     *  the stream lead; 0 when in sync. */
+    lateShiftMs?: number;
     updatedAt: number;
 }
 
@@ -191,6 +194,7 @@ export class AudioListenSession {
             wakeLock: !!this.wakeLock && !this.wakeLock.released,
             warmupMs: this.warmupMs,
             warmupHeld: this.warmupHeld,
+            lateShiftMs: this.player?.lateShiftMs,
             updatedAt: Date.now(),
         };
     }
@@ -536,7 +540,7 @@ export class AudioListenSession {
                     `ctx=${d.contextState ?? '?'} outLat=${d.outputLatencyMs ?? '?'}ms map=${d.mapping ?? '?'} ` +
                     `offset=${d.offsetValue.toFixed(0)}ms rtt=${d.httpRtt ?? '?'} ` +
                     `rx=${d.chunksReceived} trim=${d.chunksTrimmed} drop=${d.chunksDropped} snaps=${d.chunksSnapped}/${d.offsetSnaps} ` +
-                    `warmup=${d.warmupMs ?? '-'}ms ` +
+                    `warmup=${d.warmupMs ?? '-'}ms shift=${d.lateShiftMs === undefined ? '-' : d.lateShiftMs.toFixed(0)}ms ` +
                     (c
                         ? `last: late=${c.lateBy.toFixed(0)} dev=${c.deviationMs.toFixed(0)} trim=${c.trimmedMs.toFixed(0)}`
                         : ''),

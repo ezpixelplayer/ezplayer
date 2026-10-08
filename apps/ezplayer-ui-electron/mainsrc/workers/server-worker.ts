@@ -361,6 +361,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         audioPumpAfterSeq = curAudioRing.latestSeq;
     } else if (msg.type === 'cloudAudioMode') {
         setCloudAudioMode(msg.mode);
+    } else if (msg.type === 'rtcOffset') {
+        rtcOffsetMs = msg.offsetMs;
     } else if (msg.type === 'broadcast') {
         // A remote-access session belongs to the show it was opened against —
         // its password lives in that show's folder. Switching shows revokes it
@@ -761,6 +763,18 @@ let audioEncoder: AudioStreamEncoder | undefined;
 let audioPumpTimer: NodeJS.Timeout | undefined;
 /** Last ring seq forwarded. */
 let audioPumpAfterSeq = 0;
+/**
+ * The player's RTC minus its Date.now(), pushed from the playback worker with every
+ * audio chunk. Audio chunks are stamped in RTC (the smoothed clock the lights run on), so
+ * the listener stream's serverNow and the /api/ezp/time answer are given in RTC too:
+ * listeners then sync to the one clock the stamps are on, and a wall-clock step on this
+ * machine cannot open a gap between the two.
+ */
+let rtcOffsetMs = 0;
+function rtcNow(): number {
+    return Date.now() + rtcOffsetMs;
+}
+
 let cloudAudioMode: CloudAudioMode = 'auto';
 /** Listener count last reported by the relay. Undefined until it says — an
  *  older relay never does, and then we stream whenever the bridge is up. */
@@ -816,7 +830,7 @@ function audioPumpTick(): void {
     if (!curAudioRing || !audioEncoder) return;
     const chunks = curAudioRing.readAfter(audioPumpAfterSeq);
     if (chunks.length === 0) return;
-    const serverNow = Date.now();
+    const serverNow = rtcNow();
     for (const chunk of chunks) {
         audioPumpAfterSeq = chunk.seq;
         let frames: Uint8Array[];
@@ -1297,7 +1311,7 @@ async function dispatchHttpProxy(
 
     // /api/ezp/time — server-clock sample for client RTT/offset estimation.
     if (pathStr === '/api/ezp/time') {
-        return jsonResult({ now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        return jsonResult({ now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
     }
 
     return { status: 404 };
@@ -1576,7 +1590,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.body = {
             stats,
             pStatus: wsBroadcaster.get('pStatus'),
-            serverNow: Date.now(),
+            serverNow: rtcNow(),
         };
     });
 
@@ -1917,7 +1931,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
         ctx.set('Cache-Control', 'no-store');
-        ctx.body = { now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+        ctx.body = { now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     });
 
     webApp.use(router.routes());

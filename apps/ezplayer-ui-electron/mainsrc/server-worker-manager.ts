@@ -406,6 +406,9 @@ function initializeServerWorker(port: number, portSource: string, _mainWindow: B
             mode: lastCloudAudioMode,
         } satisfies MainToServerWorkerMessage);
     }
+    if (lastRtcOffsetMs !== undefined) {
+        serverWorker.postMessage({ type: 'rtcOffset', offsetMs: lastRtcOffsetMs } satisfies MainToServerWorkerMessage);
+    }
 
     // Send initial frame buffer if available
     if (curFrameBuffer) {
@@ -498,6 +501,17 @@ let lastCloudAudioMode: CloudAudioMode | undefined;
 export function setCloudAudioMode(mode: CloudAudioMode) {
     lastCloudAudioMode = mode;
     serverWorker?.postMessage({ type: 'cloudAudioMode', mode } satisfies MainToServerWorkerMessage);
+}
+
+let lastRtcOffsetMs: number | undefined;
+
+/** Player RTC minus Date.now(), from the playback worker. The server worker stamps the
+ *  listener stream and answers the time endpoint in RTC so listeners sync to the clock
+ *  the stamps are on. Forwarded only when it moves. */
+export function setRtcOffset(offsetMs: number) {
+    if (lastRtcOffsetMs !== undefined && Math.abs(offsetMs - lastRtcOffsetMs) < 0.5) return;
+    lastRtcOffsetMs = offsetMs;
+    serverWorker?.postMessage({ type: 'rtcOffset', offsetMs } satisfies MainToServerWorkerMessage);
 }
 
 export function cloudBridgeOpen(
