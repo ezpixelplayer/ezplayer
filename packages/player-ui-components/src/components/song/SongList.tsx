@@ -880,11 +880,7 @@ export function SongList({
                                     sx={{ pt: 1, pb: 1 }}
                                     className="letter-spacing"
                                     variant={'outlined'}
-                                    onClick={(e) =>
-                                        isElectron()
-                                            ? setBulkMenuAnchor(e.currentTarget)
-                                            : setShowFolderImportOpen(true)
-                                    }
+                                    onClick={(e) => setBulkMenuAnchor(e.currentTarget)}
                                     startIcon={
                                         bulkImporting ? (
                                             <CircularProgress size={16} color="inherit" />
@@ -910,16 +906,47 @@ export function SongList({
                                     transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                                     PaperProps={{ sx: { mt: 1.5 } }}
                                 >
-                                    <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
-                                    <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
+                                    {isElectron() ? (
+                                        <>
+                                            <MenuItem onClick={handleBulkImportFiles}>Select .fseq files…</MenuItem>
+                                            <MenuItem onClick={handleBulkImportFolder}>Select folder…</MenuItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MenuItem
+                                                onClick={() => {
+                                                    setBulkMenuAnchor(null);
+                                                    document.getElementById('ezplayer-bulk-fseq-files')?.click();
+                                                }}
+                                            >
+                                                Upload FSEQ and audio files…
+                                            </MenuItem>
+                                            <MenuItem
+                                                onClick={() => {
+                                                    setBulkMenuAnchor(null);
+                                                    document.getElementById('ezplayer-bulk-fseq-folder')?.click();
+                                                }}
+                                            >
+                                                Upload folder…
+                                            </MenuItem>
+                                            <MenuItem
+                                                onClick={() => {
+                                                    setBulkMenuAnchor(null);
+                                                    setShowFolderImportOpen(true);
+                                                }}
+                                            >
+                                                Import files already on player…
+                                            </MenuItem>
+                                        </>
+                                    )}
                                 </Menu>
-                                {/* Hidden inputs for the browser-upload flow; not wired to any UI. */}
+                                {/* Local browser file/folder uploads transfer bytes to the player. */}
                                 {!isElectron() && (
                                     <>
                                         <input
                                             id="ezplayer-bulk-fseq-files"
                                             type="file"
-                                            accept=".fseq,application/octet-stream"
+                                            accept=".fseq,.mp3,.m4a,.aac,.wav,.ogg,.flac,.wma,.mp4,.xml,.jpg,.jpeg,.png,.webp"
                                             multiple
                                             style={{ display: 'none' }}
                                             disabled={bulkImporting}

@@ -1,15 +1,11 @@
 import { app, ipcMain } from 'electron';
 import { requestPi } from './pi-client.js';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getMainWindow } from '../main';
 
 export function registerPiSystemHandlers(): void {
-    ipcMain.handle(
-        'pi:available',
-        () => process.platform === 'linux' && fs.existsSync('/run/ezplayer-pi/control.sock'),
-    );
+    ipcMain.handle('pi:available', () => process.platform === 'linux' && process.env.EZPLAYER_PI_APPLIANCE === '1');
     ipcMain.handle('pi:request', (event, request: Record<string, unknown>) => {
         const window = getMainWindow();
         if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {

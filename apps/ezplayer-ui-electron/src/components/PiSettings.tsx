@@ -6,7 +6,14 @@ import { playerRegistrationUrl } from './piRegistration';
 import { Alert, Box, Button, Checkbox, FormControlLabel, MenuItem, TextField, Typography } from '@mui/material';
 
 type Device = { name: string; type: string; state: number; addresses: string[]; gateway: string; dns: string[] };
+type ClockStatus = {
+    timezone: string;
+    time: string;
+    ntp: boolean;
+    synchronized: boolean;
+};
 type Status = {
+    clock?: ClockStatus;
     devices: Device[];
     pending: { token: string; seconds: number } | null;
     hostname: string;
@@ -70,7 +77,8 @@ export function PiSettings({ system = false }: { system?: boolean }) {
     const [manualSecurity, setManualSecurity] = useState('personal');
     const [hotspotMode, setHotspotMode] = useState('');
     const [setupSsid, setSetupSsid] = useState<string | null>(null);
-    const [setupPassword, setSetupPassword] = useState('');
+    const [setupPassword, setSetupPassword] = useState<string | null>(null);
+    const [showSetupPassword, setShowSetupPassword] = useState(false);
     const [password, setPassword] = useState('');
     const [method, setMethod] = useState('auto');
     const [address, setAddress] = useState('');
@@ -78,7 +86,9 @@ export function PiSettings({ system = false }: { system?: boolean }) {
     const [gateway, setGateway] = useState('');
     const [dns, setDns] = useState('');
     const [controllerOnly, setControllerOnly] = useState(true);
-    const [zone, setZone] = useState('America/New_York');
+    const [zone, setZone] = useState('');
+    const [zones, setZones] = useState<string[]>([]);
+    const [manualTime, setManualTime] = useState('');
     const [powerAction, setPowerAction] = useState('');
     const refresh = async () => setStatus(await request<Status>({ action: 'status' }));
     useEffect(() => {
@@ -96,12 +106,16 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                     if (active) setError(String(e.message));
                 });
         void poll();
+        if (system)
+            void request<string[]>({ action: 'timezones' })
+                .then(setZones)
+                .catch((e) => setError(e.message));
         const timer = window.setInterval(() => void poll(), 5000);
         return () => {
             active = false;
             window.clearInterval(timer);
         };
-    }, []);
+    }, [system]);
     useEffect(() => {
         if (!handoff) return;
         let cancelled = false;
@@ -201,13 +215,20 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                     </Typography>
                     <Typography>Current time zone: {status?.timezone}</Typography>
                     <TextField
-                        label="Time zone (IANA name)"
-                        value={zone}
+                        label="Time zone"
+                        select
+                        value={zone || status?.timezone || ''}
                         onChange={(e) => setZone(e.target.value)}
-                        helperText="Example: America/New_York"
-                    />
+                        helperText="Time zone controls local schedule times; internet time synchronization is separate."
+                    >
+                        {[...new Set([...(status?.timezone ? [status.timezone] : []), ...zones])].map((name) => (
+                            <MenuItem key={name} value={name}>
+                                {name.replace(/_/g, ' ')}
+                            </MenuItem>
+                        ))}
+                    </TextField>
                     <Button
-                        disabled={busy || !!pending}
+                        disabled={busy || !!pending || !zone}
                         onClick={() =>
                             void run(async () => {
                                 await request({ action: 'timezone', timezone: zone });
@@ -217,6 +238,54 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                     >
                         Save time zone
                     </Button>
+                    {status?.clock && (
+                        <>
+                            <Typography>Player date and time: {status.clock.time.replace('T', ' ')}</Typography>
+                            <FormControlLabel
+                                label="Synchronize time from the internet"
+                                control={
+                                    <Checkbox
+                                        checked={status.clock.ntp}
+                                        disabled={busy}
+                                        onChange={(e) =>
+                                            void run(async () => {
+                                                await request({ action: 'ntp', enabled: e.target.checked });
+                                                setNotice('Internet time setting saved.');
+                                            })
+                                        }
+                                    />
+                                }
+                            />
+                            <Typography variant="caption">
+                                {status.clock.synchronized
+                                    ? 'Internet time synchronized.'
+                                    : 'Internet time has not synchronized.'}
+                            </Typography>
+                            <TextField
+                                label="Offline date and time"
+                                type="datetime-local"
+                                value={manualTime}
+                                onChange={(e) => setManualTime(e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                helperText={`Enter the time in ${status.timezone}. Setting it manually turns internet synchronization off.`}
+                            />
+                            <Alert severity="warning">
+                                Stop playback before changing the clock. Date, time and time zone changes affect
+                                scheduled shows. Restart EZPlayer after changing the time zone.
+                            </Alert>
+                            <Button
+                                disabled={busy || !manualTime}
+                                onClick={() =>
+                                    void run(async () => {
+                                        await request({ action: 'clock', datetime: manualTime });
+                                        setNotice('Player time set. Internet time synchronization is off.');
+                                    })
+                                }
+                            >
+                                Set offline date and time
+                            </Button>
+                        </>
+                    )}
                     <Alert severity="info">
                         Stop the show before rebooting or shutting down. A shutdown requires switching the Pi power off
                         and on to start it again.
@@ -257,91 +326,6 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                         Use Wi-Fi for internet and Ethernet for controllers. Controller-only Ethernet has no default
                         route. Stop the show before changing network settings.
                     </Alert>
-                    {status?.hotspot && (
-                        <>
-                            <TextField
-                                select
-                                label="Tethering"
-                                value={hotspotMode || status.hotspot.mode}
-                                disabled={busy || !!pending || status.hotspot.setup?.state === 'connecting'}
-                                onChange={(e) => setHotspotMode(e.target.value)}
-                                helperText="Auto offers setup Wi-Fi until the player connects to a Wi-Fi network."
-                            >
-                                <MenuItem value="auto">Auto</MenuItem>
-                                <MenuItem value="off">Off</MenuItem>
-                            </TextField>
-                            <TextField
-                                label="Setup Wi-Fi name (SSID)"
-                                value={setupSsid ?? status.hotspot.ssid}
-                                disabled={busy || !!pending}
-                                onChange={(e) => setSetupSsid(e.target.value)}
-                                helperText="1–32 bytes. Changing this name disconnects devices using setup Wi-Fi."
-                            />
-                            <TextField
-                                label="New setup Wi-Fi password"
-                                type="password"
-                                value={setupPassword}
-                                disabled={busy || !!pending}
-                                onChange={(e) => setSetupPassword(e.target.value)}
-                                helperText="8–63 characters. Leave blank to keep the current password. Save the new credentials before applying."
-                            />
-                            <Button
-                                disabled={
-                                    busy ||
-                                    !!pending ||
-                                    (!hotspotMode && setupSsid === null && !setupPassword) ||
-                                    status.hotspot.setup?.state === 'connecting'
-                                }
-                                onClick={() =>
-                                    void run(async () => {
-                                        await request({
-                                            action: 'hotspot',
-                                            mode: hotspotMode || status.hotspot!.mode,
-                                            ...(setupSsid !== null ? { ssid: setupSsid } : {}),
-                                            ...(setupPassword ? { password: setupPassword } : {}),
-                                        });
-                                        setSetupSsid(null);
-                                        setSetupPassword('');
-                                        setHotspotMode('');
-                                        setNotice(
-                                            'Setup Wi-Fi settings saved. If the name or password changed, reconnect using the new credentials. Off disconnects your phone.',
-                                        );
-                                    })
-                                }
-                            >
-                                Save setup Wi-Fi settings
-                            </Button>
-                            <Typography>
-                                Setup Wi-Fi: {status.hotspot.ssid} · {status.hotspot.active ? 'On' : 'Off'}
-                            </Typography>
-                            <TextField
-                                label="Setup Wi-Fi password"
-                                value={status.hotspot.password}
-                                InputProps={{ readOnly: true }}
-                                helperText={`Connect your phone to this Wi-Fi, then open ${status.hotspot.url} if the setup page does not open automatically.`}
-                            />
-                            <Typography variant="caption">
-                                Auto keeps setup Wi-Fi available while no home Wi-Fi is connected, including when
-                                Ethernet is connected to controllers. Connecting to home Wi-Fi turns setup Wi-Fi off.
-                                Off disables setup Wi-Fi.
-                            </Typography>
-                            {status.hotspot.error && <Alert severity="warning">{status.hotspot.error}</Alert>}
-                            {status.hotspot.active && (
-                                <Alert severity="info">
-                                    Select your home Wi-Fi below and enter its password. After a successful connection,
-                                    Auto turns setup Wi-Fi off. Your phone will disconnect; reconnect it to your home
-                                    Wi-Fi to access the player there. If the connection fails, rejoin setup Wi-Fi and
-                                    try again.
-                                </Alert>
-                            )}
-                            {status.hotspot.setup?.state === 'connecting' && (
-                                <Alert severity="info">Connecting to Wi-Fi…</Alert>
-                            )}
-                            {status.hotspot.setup?.state === 'failed' && (
-                                <Alert severity="error">{status.hotspot.setup.error}</Alert>
-                            )}
-                        </>
-                    )}
                     {status?.devices.map((d) => (
                         <Typography key={d.name}>
                             {d.name} ({d.type}): {d.state === 100 ? 'Connected' : 'Not connected'} ·{' '}
@@ -579,6 +563,98 @@ export function PiSettings({ system = false }: { system?: boolean }) {
                             >
                                 Apply Ethernet settings
                             </Button>
+                        </>
+                    )}
+                    {status?.hotspot && (
+                        <>
+                            <TextField
+                                select
+                                label="Tethering"
+                                value={hotspotMode || status.hotspot.mode}
+                                disabled={busy || !!pending || status.hotspot.setup?.state === 'connecting'}
+                                onChange={(e) => setHotspotMode(e.target.value)}
+                                helperText="Auto offers setup Wi-Fi until the player connects to a Wi-Fi network."
+                            >
+                                <MenuItem value="auto">Auto</MenuItem>
+                                <MenuItem value="off">Off</MenuItem>
+                            </TextField>
+                            <TextField
+                                label="Setup Wi-Fi name (SSID)"
+                                value={setupSsid ?? status.hotspot.ssid}
+                                disabled={busy || !!pending}
+                                onChange={(e) => setSetupSsid(e.target.value)}
+                                helperText="1–32 bytes. Changing this name disconnects devices using setup Wi-Fi."
+                            />
+                            <TextField
+                                label="Setup Wi-Fi password"
+                                type={showSetupPassword ? 'text' : 'password'}
+                                value={setupPassword ?? status.hotspot.password}
+                                disabled={busy || !!pending}
+                                onChange={(e) => setSetupPassword(e.target.value)}
+                                helperText="8–63 characters. Changing the password disconnects setup Wi-Fi devices."
+                            />
+                            <Button
+                                disabled={
+                                    busy ||
+                                    !!pending ||
+                                    (!hotspotMode && setupSsid === null && setupPassword === null) ||
+                                    status.hotspot.setup?.state === 'connecting'
+                                }
+                                onClick={() =>
+                                    void run(async () => {
+                                        await request({
+                                            action: 'hotspot',
+                                            mode: hotspotMode || status.hotspot!.mode,
+                                            ...(setupSsid !== null ? { ssid: setupSsid } : {}),
+                                            ...(setupPassword !== null ? { password: setupPassword } : {}),
+                                        });
+                                        setSetupSsid(null);
+                                        setSetupPassword(null);
+                                        setHotspotMode('');
+                                        setNotice(
+                                            'Setup Wi-Fi settings saved. If the name or password changed, reconnect using the new credentials. Off disconnects your phone.',
+                                        );
+                                    })
+                                }
+                            >
+                                Save setup Wi-Fi settings
+                            </Button>
+                            <Typography>
+                                Setup Wi-Fi: {status.hotspot.ssid} · {status.hotspot.active ? 'On' : 'Off'}
+                            </Typography>
+                            <FormControlLabel
+                                label="Show setup Wi-Fi password"
+                                control={
+                                    <Checkbox
+                                        checked={showSetupPassword}
+                                        onChange={(e) => setShowSetupPassword(e.target.checked)}
+                                    />
+                                }
+                            />
+                            <Typography variant="caption">
+                                Connect to setup Wi-Fi, then open {status.hotspot.url} if the setup page does not open
+                                automatically.
+                            </Typography>
+                            <Typography variant="caption">
+                                Auto keeps setup Wi-Fi available while no home Wi-Fi is connected, including when
+                                Ethernet is connected to controllers. Connecting to home Wi-Fi turns setup Wi-Fi off.
+                                Off disables setup Wi-Fi.
+                            </Typography>
+                            {status.hotspot.error && <Alert severity="warning">{status.hotspot.error}</Alert>}
+                            {status.hotspot.active && (
+                                <Alert severity="info">
+                                    Select your home Wi-Fi below and enter its password. After a successful connection,
+                                    Auto turns setup Wi-Fi off. Your phone will disconnect; reconnect it to your home
+                                    Wi-Fi to access the player there. If the connection fails, rejoin setup Wi-Fi and
+                                    try again.
+                                </Alert>
+                            )}
+                            {status.hotspot.setup?.state === 'connecting' && (
+                                <Alert severity="info">Connecting to Wi-Fi…</Alert>
+                            )}
+                            {status.hotspot.setup?.state === 'failed' && (
+                                <Alert severity="error">{status.hotspot.setup.error}</Alert>
+                            )}
                         </>
                     )}
                 </>

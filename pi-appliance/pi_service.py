@@ -242,9 +242,11 @@ class NetworkManager:
 
 
 class Appliance:
-    def __init__(self, network, hotspot=None):
+    def __init__(self, network, hotspot=None, clock=None):
         self.network = network
         self.hotspot = hotspot
+        from pi_clock import Clock
+        self.clock = clock or Clock()
         self.pending = None
         self.lock = threading.Lock()
 
@@ -270,9 +272,10 @@ class Appliance:
                 if self.pending and self.pending['uid'] == uid:
                     pending = {'token': self.pending['token'], 'seconds': max(0, int(self.pending['expires'] - time.monotonic()))}
                 stat = os.statvfs('/home')
+                clock_status = self.clock.status()
                 return {'devices': self.network.status(), 'pending': pending, 'hostname': socket.gethostname(),
                         'hotspot': self.hotspot.status() if self.hotspot else None,
-                        'freeBytes': stat.f_bavail * stat.f_frsize, 'timezone': open('/etc/timezone').read().strip() if os.path.isfile('/etc/timezone') else os.path.realpath('/etc/localtime').split('/zoneinfo/')[-1]}
+                        'freeBytes': stat.f_bavail * stat.f_frsize, 'timezone': clock_status['timezone'], 'clock': clock_status}
             if action == 'scan':
                 return self.network.scan(req.get('interface'))
             if action == 'hotspot':
@@ -311,12 +314,15 @@ class Appliance:
                     self.network.rollback(self.pending['checkpoint'])
                 self.pending = None
                 return {'ok': True}
+            if action == 'timezones':
+                from zoneinfo import available_timezones
+                return sorted(available_timezones())
             if action == 'timezone':
-                zone = text(req.get('timezone'), 'time zone')
-                if not re.fullmatch('[A-Za-z0-9_+/-]+', zone) or '..' in zone or not os.path.isfile('/usr/share/zoneinfo/' + zone):
-                    raise ValueError('Invalid IANA time zone')
-                subprocess.run(['/usr/bin/timedatectl', 'set-timezone', zone], check=True, timeout=10, capture_output=True)
-                return {'ok': True}
+                return self.clock.set_timezone(req.get('timezone'))
+            if action == 'ntp':
+                return self.clock.set_ntp(req.get('enabled'))
+            if action == 'clock':
+                return self.clock.set_time(req.get('datetime'))
             if action in ('reboot', 'shutdown', 'restartPlayer'):
                 if self.pending:
                     raise ValueError('Confirm or revert the network change before powering off')

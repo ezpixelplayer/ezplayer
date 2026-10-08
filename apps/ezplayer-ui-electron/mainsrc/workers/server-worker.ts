@@ -902,6 +902,8 @@ async function dispatchProxyWrite(
     method: string,
     req: { headers?: Record<string, string>; bodyBase64?: string } | undefined,
 ): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    if (process.env.EZPLAYER_PI_APPLIANCE === '1' && /^\/api\/(file|sequence)(?:s)?(?:\/|$)/.test(pathStr))
+        return { status: 403 };
     const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
     const body = req?.bodyBase64 ? Buffer.from(req.bodyBase64, 'base64') : Buffer.alloc(0);
     if (body.length > PROXY_MAX_BODY_BYTES) return { status: 413 };
