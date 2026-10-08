@@ -50,13 +50,15 @@ A meter shows the current output level (0–100%). You can
 mute/unmute and adjust default and scheduled volumes via the gear icon — see
 [Volume](../advanced/volume.md).
 
-### Now Playing and Next Show
+### Now Playing and Up Next
 
 When a song or sequence is active:
 
 - **Now Playing** — title of the current item and **Until** time (when it is
   expected to end).
-- **Next Show** — the next scheduled or queued item and when it **Starts**.
+- **Up Next** — what plays after it and when it **Starts**: the next song of
+  the show, a request waiting its turn, a show that was interrupted by a
+  request and will resume, or the next scheduled show.
 
 If nothing is playing, the card shows _No track currently playing_.
 

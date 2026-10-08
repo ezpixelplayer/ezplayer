@@ -244,8 +244,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/epp
       '@ezplayer/epp-controllers':
-        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.31.tgz
-        version: file:libs/ezplayer-epp-controllers-0.0.31.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
+        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.32.tgz
+        version: file:libs/ezplayer-epp-controllers-0.0.32.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
       '@ezplayer/ezplayer-client':
         specifier: workspace:*
         version: link:../../packages/ezplayer-client
@@ -649,6 +649,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.4.1)(jsdom@25.0.1)(vite@7.3.6(@types/node@26.4.1)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.0))
 
   packages/integration-tests:
     devDependencies:
@@ -1627,11 +1630,11 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.31.tgz':
-    resolution: {integrity: sha512-rpVQmLQFwZ5Ow6Ag1a8XEHXIQqbfePGFt0CpL6MQr4c43XoOns7XAEaDkhKSRjPYTmaOk8GO3HPMJ/9ZdX3ymg==, tarball: file:libs/ezplayer-epp-controllers-0.0.31.tgz}
-    version: 0.0.31
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.32.tgz':
+    resolution: {integrity: sha512-e/FMmjc9WNgAMBXBy/9JgbrVfkqaTKIrBRjR89qy36Ak+L1Xo98kKl5htFZKyWnHuDfte+4wShu634gqFrxlEQ==, tarball: file:libs/ezplayer-epp-controllers-0.0.32.tgz}
+    version: 0.0.32
     peerDependencies:
-      '@ezplayer/epp': 0.1.8
+      '@ezplayer/epp': 0.1.9
       '@ezplayer/icmp-ping': 0.1.1
     peerDependenciesMeta:
       '@ezplayer/icmp-ping':
@@ -6354,7 +6357,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.31.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.32.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
     dependencies:
       '@ezplayer/epp': link:packages/epp
       '@xmldom/xmldom': 0.8.15

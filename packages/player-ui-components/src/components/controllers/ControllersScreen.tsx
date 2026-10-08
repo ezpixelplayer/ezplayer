@@ -45,6 +45,7 @@ import SyncProblemIcon from '@mui/icons-material/SyncProblem';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import FiberManualRecordOutlinedIcon from '@mui/icons-material/FiberManualRecordOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -73,6 +74,7 @@ import {
     overlayHealth,
     findOffNetworkControllers,
     effectiveMaxFps,
+    isPlaybackActive,
 } from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
@@ -268,13 +270,37 @@ const STATE_META: Record<ControllerRecordState, { label: string; color: 'success
     unregistered: { label: 'Unregistered', color: 'warning' },
 };
 
-/** Live ping connectivity → dot color (theme tokens). */
+/** Live connectivity → dot color (theme tokens). */
 const CONN_COLOR: Record<NonNullable<ControllerHealth['connectivity']>, string> = {
     Up: 'success.main',
     Down: 'error.main',
     Pending: 'warning.main',
     'N/A': 'text.disabled',
 };
+
+/**
+ * Reachability dot.  Filled means it answered a ping, a ring means only its web
+ * service answered — which is all a controller behind an FPP proxy can do.
+ */
+function ConnectivityDot({ health }: { health?: ControllerHealth }) {
+    const Icon = health?.reachedVia === 'web' ? FiberManualRecordOutlinedIcon : FiberManualRecordIcon;
+    const how = health?.reachedVia === 'web' ? 'web' : 'ping';
+    return (
+        <Icon
+            titleAccess={
+                health?.connectivity
+                    ? `${how} ${health.connectivity}${health.pingSummary ? ` — ${health.pingSummary}` : ''}`
+                    : 'no ping data'
+            }
+            sx={{
+                mr: 0.5,
+                verticalAlign: 'middle',
+                fontSize: 12,
+                color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
+            }}
+        />
+    );
+}
 
 const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     ok: 'in sync',
@@ -688,7 +714,7 @@ const GridRow: React.FC<{
     const health = row.health;
     const hasHealthDetail = !!(
         health &&
-        (health.pingSummary || health.errors?.length || health.notices?.length || health.status)
+        (health.pingSummary || health.errors?.length || health.notices?.length || health.status || health.senderStats)
     );
     const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail;
     // Fall back to the record's address so an unscanned row still gets Open.
@@ -809,20 +835,8 @@ const GridRow: React.FC<{
                     )}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {/* Dot always renders (alignment); gray = no ping data. */}
-                    <FiberManualRecordIcon
-                        titleAccess={
-                            health?.connectivity
-                                ? `ping ${health.connectivity}${health.pingSummary ? ` — ${health.pingSummary}` : ''}`
-                                : 'no ping data'
-                        }
-                        sx={{
-                            mr: 0.5,
-                            verticalAlign: 'middle',
-                            fontSize: 12,
-                            color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
-                        }}
-                    />
+                    {/* Always rendered, for column alignment; gray = no data. */}
+                    <ConnectivityDot health={health} />
                     <Chip
                         size="small"
                         color={meta.color}
@@ -1026,12 +1040,35 @@ const GridRow: React.FC<{
                                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                             {[
                                                 health.status,
-                                                health.connectivity && `ping ${health.connectivity}`,
+                                                health.connectivity &&
+                                                    `${health.reachedVia === 'web' ? 'web' : 'ping'} ${health.connectivity}`,
                                                 health.pingSummary,
                                             ]
                                                 .filter(Boolean)
                                                 .join(' · ')}
                                         </Typography>
+                                        {health.senderStats && (
+                                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                                {[
+                                                    `sender ${health.senderStats.connected ? 'connected' : 'closed'}`,
+                                                    `${health.senderStats.sent.toLocaleString()} frames sent`,
+                                                    health.senderStats.skipped > 0 &&
+                                                        `${health.senderStats.skipped.toLocaleString()} skipped`,
+                                                    health.senderStats.errors > 0 &&
+                                                        `${health.senderStats.errors.toLocaleString()} send errors`,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' · ')}
+                                            </Typography>
+                                        )}
+                                        {health.senderStats?.lastError && (
+                                            <Typography
+                                                variant="caption"
+                                                sx={{ display: 'block', color: 'warning.main' }}
+                                            >
+                                                last send error: {health.senderStats.lastError}
+                                            </Typography>
+                                        )}
                                         {health.errors?.map((e, i) => (
                                             <Typography key={`e${i}`} variant="body2" sx={{ color: 'error.main' }}>
                                                 {e}
@@ -1491,7 +1528,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // clears what was learned from the network. Not while the show runs or a
     // controller operation is still going.
     const playerStatus = useSelector((s: RootState) => s.runtime?.combined?.player?.status);
-    const showActive = playerStatus === 'Playing' || playerStatus === 'Paused';
+    const showActive = isPlaybackActive(playerStatus);
     const reloadBlocked = showActive
         ? 'Stop the show to reload'
         : running.length > 0

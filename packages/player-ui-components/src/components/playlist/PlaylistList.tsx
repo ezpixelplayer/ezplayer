@@ -3,7 +3,6 @@ import { PageHeader, TextField, ToastMsgs } from '@ezplayer/shared-ui-components
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Box } from '../box/Box';
 import {
     alpha,
@@ -31,6 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { AppDispatch, postPlaylistData, RootState, Routes as ROUTES, useRouteBase } from '../..';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
+import { PlayStopButton } from '../player/PlayStopButton';
 interface PlaylistRow {
     id: string;
     title: string;
@@ -396,13 +396,9 @@ export function PlaylistList({ title, statusArea }: PlaylistListProps) {
             sortable: false,
             renderCell: (params: { row: PlaylistRow }) => (
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start', gap: 0.5 }}>
-                    <Button
-                        aria-label="play"
-                        title="Play immediately"
-                        startIcon={<PlayArrowIcon />}
-                        onClick={() => handlePlayPlaylistClick(params.row)}
-                        size="small"
-                        color="success"
+                    <PlayStopButton
+                        target={{ playlistId: params.row.id }}
+                        onPlay={() => handlePlayPlaylistClick(params.row)}
                         sx={{ minWidth: 0, padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                     />
                     <Button
