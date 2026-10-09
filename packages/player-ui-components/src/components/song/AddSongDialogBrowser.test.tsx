@@ -50,7 +50,12 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 describe('Add Song browser save', () => {
-    it.each(['.mp3', '.fseq', '.mp4'])('accepts one %s file and uploads only on Save', async (ext) => {
+    it('does not offer a separate video file field', () => {
+        render(<AddSongDialogBrowser open title="Add Song" onClose={vi.fn()} />);
+        expect(screen.queryByText(/Video file/i)).toBeNull();
+        expect(screen.getAllByText('Choose on player')).toHaveLength(3);
+    });
+    it.each(['.mp3', '.fseq'])('accepts one %s file and uploads only on Save', async (ext) => {
         const close = vi.fn();
         render(<AddSongDialogBrowser open title="Add Song" onClose={close} />);
         const file = new File(['bytes'], `Song${ext}`);
@@ -62,7 +67,7 @@ describe('Add Song browser save', () => {
         expect(mocks.upload).toHaveBeenCalledTimes(1);
         expect(mocks.post).toHaveBeenCalledTimes(1);
         expect(mocks.upload.mock.invocationCallOrder[0]).toBeLessThan(mocks.post.mock.invocationCallOrder[0]);
-        const key = ext === '.fseq' ? 'fseq' : ext === '.mp3' ? 'audio' : 'video';
+        const key = ext === '.fseq' ? 'fseq' : 'audio';
         expect(mocks.post.mock.calls[0][0][0].files[key]).toBe(file.name);
     });
     it('keeps upload progress open until the player finishes saving', async () => {

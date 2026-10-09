@@ -71,6 +71,45 @@ describe('LAN files arriving separately', () => {
             await fs.rm(folder, { recursive: true, force: true });
         }
     });
+    it('reports only files in this upload, even when importing a sequence fails', async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ezp-counts-'));
+        vi.spyOn(FSEQReaderAsync, 'readFSEQHeaderAsync').mockRejectedValue(new Error('Invalid FSEQ'));
+        try {
+            await fs.writeFile(path.join(folder, 'Existing.mp3'), 'old audio');
+            const result = await batchUploadImportSequencesCore(
+                folder,
+                { getShowFolder: () => folder, getSequences: () => [], putSequences: async (r) => r },
+                upload([
+                    { name: 'New.mp3', data: 'audio' },
+                    { name: 'Broken.fseq', data: 'invalid' },
+                ]),
+            );
+            expect(result.status).toBe(200);
+            expect(result.body).toMatchObject({ uploadedFiles: ['New.mp3', 'Broken.fseq'], imported: 0, failed: 1 });
+        } finally {
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
+    it('does not report success for an incomplete upload', async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ezp-incomplete-'));
+        try {
+            const manifest = Buffer.from(JSON.stringify({ files: [{ name: 'Song.mp3', size: 100 }] }));
+            const prefix = Buffer.alloc(4);
+            prefix.writeUInt32BE(manifest.length);
+            const req = Readable.from([
+                Buffer.concat([prefix, manifest, Buffer.from('short')]),
+            ]) as unknown as IncomingMessage;
+            const result = await batchUploadImportSequencesCore(
+                folder,
+                { getShowFolder: () => folder, getSequences: () => [], putSequences: async (r) => r },
+                req,
+            );
+            expect(result.status).not.toBe(200);
+            expect(result.body).not.toHaveProperty('uploadedFiles');
+        } finally {
+            await fs.rm(folder, { recursive: true, force: true });
+        }
+    });
     it('accepts video-only uploads', async () => {
         const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ezp-video-'));
         try {
@@ -80,6 +119,7 @@ describe('LAN files arriving separately', () => {
                 upload([{ name: 'Intro.mp4', data: 'video-bytes' }]),
             );
             expect(result.status).toBe(200);
+            expect(result.body).toMatchObject({ uploadedFiles: ['Intro.mp4'] });
             expect(await fs.readFile(path.join(folder, 'Intro.mp4'), 'utf8')).toBe('video-bytes');
         } finally {
             await fs.rm(folder, { recursive: true, force: true });

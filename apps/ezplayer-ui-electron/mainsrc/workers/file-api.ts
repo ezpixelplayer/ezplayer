@@ -1142,9 +1142,23 @@ export async function batchUploadImportSequencesCore(
         .map((s) => path.relative(showFolder, s.files!.fseq!));
     const names = [...new Set([...fseqNames, ...pending])];
     if (!names.length) {
-        return { status: 200, body: { total: 0, imported: 0, failed: 0, successes: [], failures: [] } };
+        return {
+            status: 200,
+            body: {
+                total: 0,
+                imported: 0,
+                failed: 0,
+                successes: [],
+                failures: [],
+                uploadedFiles: written.map((f) => f.name),
+            },
+        };
     }
-    return batchImportSequencesCore(showFolder, deps, names, [], true, true, true);
+    const result = await batchImportSequencesCore(showFolder, deps, names, [], true, true, true);
+    if (result.status === 200) {
+        result.body = { ...(result.body as object), uploadedFiles: written.map((f) => f.name) };
+    }
+    return result;
 }
 
 /** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */

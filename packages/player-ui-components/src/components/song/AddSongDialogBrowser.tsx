@@ -31,8 +31,6 @@ import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
 import { UploadProgressDialog, type UploadProgress } from './UploadProgressDialog';
 
-const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg'];
-
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
@@ -57,8 +55,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const [saving, setSaving] = useState(false);
 
     const [fseqFile, setFseqFile] = useState<File | null>(null);
-    const [videoFile, setVideoFile] = useState<File | null>(null);
-    const [videoPlayerName, setVideoPlayerName] = useState<string | null>(null);
     const [artworkFile, setArtworkFile] = useState<File | null>(null);
     const [progress, setProgress] = useState<UploadProgress | null>(null);
     const [mp3File, setMp3File] = useState<File | null>(null);
@@ -67,7 +63,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const [mp3PlayerName, setMp3PlayerName] = useState<string | null>(null);
     const [artworkName, setArtworkName] = useState<string | null>(null);
     const [imageUrl, setImageUrl] = useState('');
-    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'video' | 'image' | null>(null);
+    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
     const [needValidMp3File, setNeedValidMp3File] = useState(false);
 
@@ -84,8 +80,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
 
     useEffect(() => {
         setFseqFile(null);
-        setVideoFile(null);
-        setVideoPlayerName(null);
         setArtworkFile(null);
         setProgress(null);
         setMp3File(null);
@@ -109,20 +103,11 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         const messages: string[] = [];
         if (!newSongData.title.trim()) messages.push('Title is required.');
         if (!newSongData.artist.trim()) messages.push('Artist is required.');
-        if (!(fseqFile || fseqPlayerName || mp3File || mp3PlayerName || videoFile || videoPlayerName)) {
-            messages.push('Choose a sequence, audio, or video file.');
+        if (!(fseqFile || fseqPlayerName || mp3File || mp3PlayerName)) {
+            messages.push('Choose a sequence or audio file.');
         }
         return messages;
-    }, [
-        newSongData.title,
-        newSongData.artist,
-        fseqFile,
-        fseqPlayerName,
-        mp3File,
-        mp3PlayerName,
-        videoFile,
-        videoPlayerName,
-    ]);
+    }, [newSongData.title, newSongData.artist, fseqFile, fseqPlayerName, mp3File, mp3PlayerName]);
 
     const handleNewSongDataChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -169,10 +154,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     };
 
     // Selection stays on this computer. Only Save sends bytes to the player.
-    const handleFileChange = async (
-        event: React.ChangeEvent<HTMLInputElement>,
-        type: 'fseq' | 'mp3' | 'video' | 'image',
-    ) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
         const file = event.target.files?.[0];
         event.target.value = '';
         if (!file || saving) return;
@@ -198,10 +180,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             setMp3File(file);
             setMp3PlayerName(null);
             setNeedValidMp3File(false);
-        } else if (type === 'video') {
-            if (!VIDEO_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))) return;
-            setVideoFile(file);
-            setVideoPlayerName(null);
         } else {
             setArtworkFile(file);
             setArtworkName(file.name);
@@ -221,7 +199,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         setSaving(true);
 
         try {
-            const selected = [fseqFile, mp3File, videoFile, artworkFile].filter((f): f is File => !!f);
+            const selected = [fseqFile, mp3File, artworkFile].filter((f): f is File => !!f);
             if (new Set(selected.map((f) => f.name)).size !== selected.length) {
                 throw new Error('Selected files must have different filenames.');
             }
@@ -245,7 +223,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             const files: SequenceFiles = {};
             files.fseq = fseqFile?.name ?? fseqPlayerName ?? undefined;
             files.audio = mp3File?.name ?? mp3PlayerName ?? undefined;
-            files.video = videoFile?.name ?? videoPlayerName ?? undefined;
             files.thumb = artworkName ?? undefined;
 
             let detected: { detectedTitle?: string; detectedArtist?: string; durationSecs?: number } = {};
@@ -269,7 +246,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     /* Tags are optional. */
                 }
             }
-            const defaultTitle = (fseqFile ?? mp3File ?? videoFile)?.name.replace(/\.[^.]+$/, '');
+            const defaultTitle = (fseqFile ?? mp3File)?.name.replace(/\.[^.]+$/, '');
             // Create the new song object with correct type structure
             const newSong: SequenceRecord = {
                 instanceId: newId,
@@ -349,8 +326,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                 <form style={{ width: '100%', maxWidth: 600 }} onSubmit={handleNewSongSubmit}>
                     <Typography variant="body2" sx={{ mb: 2 }}>
                         Choose files from this computer, then click Save to upload them to the player. You can save a
-                        sequence, audio, or video separately and add matching files later. Light playback requires a
-                        sequence file.
+                        sequence or audio separately and add matching files later. Light playback requires a sequence
+                        file.
                     </Typography>
                     <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
                         <Grid container spacing={2}>
@@ -406,26 +383,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                                         Please upload a supported audio file ({SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
                                     </Typography>
                                 )}
-                            </Grid>
-                            <Grid item xs={12}>
-                                <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                    Video file (optional)
-                                </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <FileButton
-                                        fileType={VIDEO_EXTENSIONS}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'video')
-                                        }
-                                    />
-                                    <Button variant="outlined" size="small" onClick={() => setPickerFor('video')}>
-                                        Choose on player
-                                    </Button>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {videoFile?.name ?? videoPlayerName ?? ''}
-                                    </Typography>
-                                </Box>
                             </Grid>
                             <Grid item xs={12}>
                                 <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
@@ -583,14 +540,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             onClick={handleNewSongSubmit}
                             disabled={
                                 saving ||
-                                !(
-                                    fseqFile ||
-                                    fseqPlayerName ||
-                                    mp3File ||
-                                    mp3PlayerName ||
-                                    videoFile ||
-                                    videoPlayerName
-                                ) ||
+                                !(fseqFile || fseqPlayerName || mp3File || mp3PlayerName) ||
                                 !newSongData.title ||
                                 !newSongData.artist
                             }
@@ -613,19 +563,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         ? 'Choose a sequence on the player'
                         : pickerFor === 'mp3'
                           ? 'Choose audio on the player'
-                          : pickerFor === 'video'
-                            ? 'Choose video on the player'
-                            : 'Choose artwork on the player'
+                          : 'Choose artwork on the player'
                 }
-                dir={
-                    pickerFor === 'fseq'
-                        ? 'sequences'
-                        : pickerFor === 'mp3'
-                          ? 'music'
-                          : pickerFor === 'video'
-                            ? 'videos'
-                            : 'images'
-                }
+                dir={pickerFor === 'fseq' ? 'sequences' : pickerFor === 'mp3' ? 'music' : 'images'}
                 onSelect={(name) => {
                     if (pickerFor === 'fseq') {
                         setFseqPlayerName(name);
@@ -637,9 +577,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         setMp3File(null);
                         setNeedValidMp3File(false);
                         void applyAudioMetadata(name);
-                    } else if (pickerFor === 'video') {
-                        setVideoPlayerName(name);
-                        setVideoFile(null);
                     } else {
                         setArtworkFile(null);
                         setArtworkName(name);

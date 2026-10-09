@@ -100,6 +100,8 @@ export interface BatchImportSkipped {
 }
 
 export interface BatchImportSummary {
+    /** Files confirmed saved by a LAN upload, independent of catalog import results. */
+    uploadedFiles?: string[];
     total: number;
     imported: number;
     failed: number;
