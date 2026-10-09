@@ -74,6 +74,7 @@ export type {
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
+    ControllerRefreshSettings,
 } from './types/DataTypes';
 
 export type {

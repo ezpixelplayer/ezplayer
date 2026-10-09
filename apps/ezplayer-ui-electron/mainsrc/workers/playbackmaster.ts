@@ -479,6 +479,47 @@ async function openOrReopenSenders(): Promise<void> {
     }
 }
 
+/** Controllers whose data is held for a read, with the lease that frees them. */
+const dataHolds = new Map<string, NodeJS.Timeout>();
+
+/** The sender for one controller, by the address the show records use. */
+function senderFor(address: string) {
+    return controllerStates?.find((c) => c.setup.address === address)?.sender;
+}
+
+/**
+ * Stop sending to one controller so it can answer a read or accept an upload.
+ * Its lights hold their last frame meanwhile.
+ */
+function holdControllerData(address: string, leaseMs: number): void {
+    const sender = senderFor(address);
+    if (!sender) return;
+
+    const existing = dataHolds.get(address);
+    if (existing) clearTimeout(existing);
+    else {
+        sender.suspend();
+        emitInfo(`Holding data to ${address} while it is read`);
+    }
+
+    const lease = setTimeout(() => {
+        dataHolds.delete(address);
+        sender.resume();
+        emitWarning(`Hold on ${address} expired after ${Math.round(leaseMs / 1000)}s; sending again`);
+    }, leaseMs);
+    lease.unref?.();
+    dataHolds.set(address, lease);
+}
+
+function releaseControllerData(address: string): void {
+    const lease = dataHolds.get(address);
+    if (!lease) return;
+    clearTimeout(lease);
+    dataHolds.delete(address);
+    senderFor(address)?.resume();
+    emitInfo(`Sending to ${address} again`);
+}
+
 /** Connectivity per controller on the previous pass, to spot a recovery. */
 const lastSeenConnectivity = new Map<string, string>();
 
@@ -1061,6 +1102,14 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'resetstats': {
             resetCumulativeCounters();
+            break;
+        }
+        case 'holdcontrollerdata': {
+            holdControllerData(cmd.address, cmd.leaseMs);
+            break;
+        }
+        case 'releasecontrollerdata': {
+            releaseControllerData(cmd.address);
             break;
         }
         case 'activateoutput':

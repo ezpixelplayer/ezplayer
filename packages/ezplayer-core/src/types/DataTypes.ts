@@ -546,6 +546,21 @@ export type EZPlayerCommand =
           command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
+          /**
+           * Stop sending to one controller so it can answer a read or accept an
+           * upload.  The hold releases itself after `leaseMs` even if the
+           * release never arrives, so a controller cannot be left dark; a
+           * longer operation renews it.
+           */
+          command: 'holdcontrollerdata';
+          address: string;
+          leaseMs: number;
+      }
+    | {
+          command: 'releasecontrollerdata'; // Resume sending to one controller
+          address: string;
+      }
+    | {
           command: 'activateoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
@@ -694,6 +709,22 @@ export interface JukeboxSettings {
     includedTags?: string[];
 }
 
+/**
+ * When the player may read a controller's configuration on its own.  A read
+ * pauses data to that controller while it runs — several models will not answer
+ * while they are streamed to — and can take tens of seconds on a HinksPix.
+ */
+export interface ControllerRefreshSettings {
+    /** Read controllers as they are first seen alive, while playback is stopped. */
+    whenIdle?: boolean;
+    /**
+     * Read a controller that comes back during a show, holding its data back
+     * until the read finishes.  Off by default: lighting it immediately beats
+     * fresh details, since the read pauses it again for as long as it takes.
+     */
+    onRecovery?: boolean;
+}
+
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
     /** Default for `settings.normalize` on songs added locally; cloud songs arrive normalized. */
@@ -711,6 +742,8 @@ export interface PlaybackSettings {
     sendIdleBlackFrames?: boolean;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
+    /** When the player may read controller configuration by itself. */
+    controllerRefresh?: ControllerRefreshSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;
     /**

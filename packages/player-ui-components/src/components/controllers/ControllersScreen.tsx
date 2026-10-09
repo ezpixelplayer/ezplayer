@@ -837,6 +837,11 @@ const GridRow: React.FC<{
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {/* Always rendered, for column alignment; gray = no data. */}
                     <ConnectivityDot health={health} />
+                    {known && !hasDetail && (
+                        <Tooltip title="Details not read yet — refresh to see ports, firmware and drift">
+                            <Chip size="small" variant="outlined" label="?" sx={{ mr: 0.5, cursor: 'default' }} />
+                        </Tooltip>
+                    )}
                     <Chip
                         size="small"
                         color={meta.color}
@@ -1503,8 +1508,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const scanning = running.some((o) => o.kind === 'scan');
     // Failed ops stay until someone dismisses them, which removes them on the
     // player for every client.
+    // Automatic reads are left out: a controller that refused one stays marked
+    // unread, which says the same thing without looking like a fault.
     const failed = ops
-        .filter((o) => o.status === 'error')
+        .filter((o) => o.status === 'error' && o.origin !== 'auto')
         .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''));
     const dismissError = (opId: string) => dispatch(issueControllerCommand({ cmd: 'dismiss', opId }));
     const deviceList = Object.values(devices).sort(

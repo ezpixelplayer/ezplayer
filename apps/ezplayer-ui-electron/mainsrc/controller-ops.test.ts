@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Controller reads resolve when a test says so, and never touch the network.
 const probe = vi.hoisted(() => ({
@@ -18,7 +18,9 @@ vi.mock('@ezplayer/epp-controllers', async (importOriginal) => {
 });
 
 const {
+    cancelQueuedAutomaticReads,
     dispatchControllerCommand,
+    setControllerDataHold,
     getControllerOpsState,
     hasRunningControllerOps,
     resetControllerOps,
@@ -28,6 +30,13 @@ const {
 /** Start a status read against a never-scanned address; returns its settle promise. */
 function startRead(address: string): Promise<unknown> {
     return dispatchControllerCommand({ cmd: 'status', id: `${address}|direct`, address, depth: 'full' }, 'lan').catch(
+        (e: Error) => e,
+    );
+}
+
+/** Start a status read the player asked for itself. */
+function startAutomaticRead(address: string): Promise<unknown> {
+    return dispatchControllerCommand({ cmd: 'status', id: `${address}|direct`, address, depth: 'full' }, 'auto').catch(
         (e: Error) => e,
     );
 }
@@ -196,5 +205,86 @@ describe('queue', () => {
         // The cancelled and reset reads never reached the controller.
         expect(probe.options.length).toBe(8);
         expect(hasRunningControllerOps()).toBe(false);
+    });
+});
+
+describe('automatic reads', () => {
+    it('drops the queued ones when playback starts, keeping the running ones', async () => {
+        const done = Array.from({ length: 10 }, (_, i) => startAutomaticRead(`10.9.2.${i}`));
+        await vi.waitFor(() => expect(probe.pending.length).toBe(8));
+
+        // Eight are with the controllers already; the last two never start.
+        expect(cancelQueuedAutomaticReads()).toBe(2);
+        expect(opsFor('10.9.2.8|direct')).toMatchObject([{ status: 'cancelled' }]);
+        expect(opsFor('10.9.2.9|direct')).toMatchObject([{ status: 'cancelled' }]);
+        expect(opsFor('10.9.2.0|direct')).toMatchObject([{ status: 'running' }]);
+
+        for (let i = 0; i < 8; i++) await settleRead({ success: false, error: 'done' });
+        await Promise.all(done);
+        expect(probe.options.length).toBe(8);
+        expect(hasRunningControllerOps()).toBe(false);
+    });
+
+    it('leaves a read the user asked for queued', async () => {
+        const auto = Array.from({ length: 8 }, (_, i) => startAutomaticRead(`10.9.3.${i}`));
+        await vi.waitFor(() => expect(probe.pending.length).toBe(8));
+        const mine = startRead('10.9.3.9');
+        expect(opsFor('10.9.3.9|direct')).toMatchObject([{ status: 'queued' }]);
+
+        expect(cancelQueuedAutomaticReads()).toBe(0);
+        expect(opsFor('10.9.3.9|direct')).toMatchObject([{ status: 'queued' }]);
+
+        for (let i = 0; i < 9; i++) await settleRead({ success: false, error: 'done' });
+        await Promise.all([...auto, mine]);
+    });
+});
+
+describe('holding data while a controller is read', () => {
+    /** Records hold/release pairs the way the playback worker would see them. */
+    function recordHolds() {
+        const events: string[] = [];
+        setControllerDataHold((address: string) => {
+            events.push(`hold ${address}`);
+            return () => events.push(`release ${address}`);
+        });
+        return events;
+    }
+
+    afterEach(() => {
+        // Leave the hook inert for the other suites.
+        setControllerDataHold(() => undefined);
+    });
+
+    it('holds for the read and releases after it', async () => {
+        const events = recordHolds();
+        const done = startRead('10.9.4.1');
+        await probeCalled(1);
+        expect(events).toEqual(['hold 10.9.4.1']);
+
+        await settleRead({ success: true });
+        await done;
+        expect(events).toEqual(['hold 10.9.4.1', 'release 10.9.4.1']);
+    });
+
+    it('releases when the read fails', async () => {
+        const events = recordHolds();
+        const done = startRead('10.9.4.2');
+        await probeCalled(1);
+        await settleRead({ success: false, error: 'refused' });
+        await done;
+        expect(events).toEqual(['hold 10.9.4.2', 'release 10.9.4.2']);
+    });
+
+    it('holds only the controller being read', async () => {
+        const events = recordHolds();
+        const a = startRead('10.9.4.3');
+        const b = startRead('10.9.4.4');
+        await probeCalled(2);
+        expect(events).toEqual(['hold 10.9.4.3', 'hold 10.9.4.4']);
+
+        await settleRead({ success: true });
+        await settleRead({ success: true });
+        await Promise.all([a, b]);
+        expect(events.filter((e) => e.startsWith('release')).sort()).toEqual(['release 10.9.4.3', 'release 10.9.4.4']);
     });
 });
