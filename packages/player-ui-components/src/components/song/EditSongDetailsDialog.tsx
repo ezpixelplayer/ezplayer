@@ -42,7 +42,7 @@ const FileSelectButton = ({
     fileType,
     onFileSelect,
 }: {
-    fileType: 'fseq' | 'mp3' | 'video' | 'image';
+    fileType: 'fseq' | 'mp3' | 'image';
     onFileSelect: (file: string | undefined) => void;
 }) => {
     const handleFileSelect = async () => {
@@ -51,22 +51,13 @@ const FileSelectButton = ({
                 const options = {
                     types: [
                         {
-                            name:
-                                fileType === 'fseq'
-                                    ? 'FSEQ Sequence'
-                                    : fileType === 'mp3'
-                                      ? 'Audio'
-                                      : fileType === 'video'
-                                        ? 'Video'
-                                        : 'Images',
+                            name: fileType === 'fseq' ? 'FSEQ Sequence' : fileType === 'mp3' ? 'Audio' : 'Images',
                             extensions:
                                 fileType === 'fseq'
                                     ? ['.fseq']
                                     : fileType === 'mp3'
                                       ? [...SUPPORTED_AUDIO_EXTENSIONS]
-                                      : fileType === 'video'
-                                        ? ['mp4', 'mkv', 'avi', 'mov', 'mpg', 'mpeg']
-                                        : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                      : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
                         },
                     ],
                     multi: false,
@@ -126,7 +117,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     });
     const [uploadedFiles, setUploadedFiles] = useState<SequenceFiles>({});
     const [newFiles, setNewFiles] = useState<SequenceFiles>({});
-    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'video' | 'image' | null>(null);
+    const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
     /** Save in flight: derived audio is built before the record commits. */
     const [saving, setSaving] = useState(false);
@@ -219,15 +210,12 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
     /** Web replacement path: the picked File lives on this machine, so push
      *  its bytes into the show folder first, then reference it by name. */
-    const handleWebFileReplace = async (
-        event: React.ChangeEvent<HTMLInputElement>,
-        type: 'fseq' | 'mp3' | 'video' | 'image',
-    ) => {
+    const handleWebFileReplace = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
         const file = event.target.files?.[0];
         event.target.value = '';
         if (!file || saving) return;
         try {
-            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : type === 'video' ? 'video' : 'fseq';
+            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file.name }));
             setPendingFiles((prev) => ({ ...prev, [fileKey]: file }));
             if (type === 'fseq') {
@@ -248,9 +236,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         }
     };
 
-    const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'video' | 'image') => {
+    const handleFileChange = async (file: string | undefined, type: 'fseq' | 'mp3' | 'image') => {
         if (file) {
-            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : type === 'video' ? 'video' : 'fseq';
+            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file }));
 
             if (type === 'fseq' && typeof window !== 'undefined' && window.electronAPI?.autoDetectSongFilesFromFseq) {
@@ -298,7 +286,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             }
         } else {
             // If file is undefined (cleared), remove it from newFiles
-            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : type === 'video' ? 'video' : 'fseq';
+            const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => {
                 const updated = { ...prev };
                 delete updated[fileKey];
@@ -619,47 +607,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                                 </Box>
                             </Box>
 
-                            <Box>
-                                <FileFieldLabel
-                                    title="Video File"
-                                    extensions={['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg']}
-                                />
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                    {isElectron() ? (
-                                        <FileSelectButton
-                                            fileType="video"
-                                            onFileSelect={(file) => handleFileChange(file, 'video')}
-                                        />
-                                    ) : (
-                                        <>
-                                            <FileButton
-                                                fileType={['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg']}
-                                                isMultipleFile={false}
-                                                onChange={(e) =>
-                                                    handleWebFileReplace(
-                                                        e as React.ChangeEvent<HTMLInputElement>,
-                                                        'video',
-                                                    )
-                                                }
-                                            />
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => setPickerFor('video')}
-                                            >
-                                                On player
-                                            </Button>
-                                        </>
-                                    )}
-                                    <Typography>
-                                        {getFileName(newFiles?.video || uploadedFiles?.video) || 'No video file'}
-                                    </Typography>
-                                </Box>
-                            </Box>
-
                             {/* Image File */}
                             <Box>
-                                <FileFieldLabel title="Image File" extensions={IMAGE_EXTENSIONS} />
+                                <FileFieldLabel title="Artwork" extensions={IMAGE_EXTENSIONS} />
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                     {isElectron() ? (
                                         <FileSelectButton
@@ -844,24 +794,9 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 open={pickerFor !== null}
                 onClose={() => setPickerFor(null)}
                 title="Choose a file on the player"
-                dir={
-                    pickerFor === 'fseq'
-                        ? 'sequences'
-                        : pickerFor === 'mp3'
-                          ? 'music'
-                          : pickerFor === 'video'
-                            ? 'videos'
-                            : 'images'
-                }
+                dir={pickerFor === 'fseq' ? 'sequences' : pickerFor === 'mp3' ? 'music' : 'images'}
                 onSelect={(name) => {
-                    const fileKey =
-                        pickerFor === 'mp3'
-                            ? 'audio'
-                            : pickerFor === 'image'
-                              ? 'thumb'
-                              : pickerFor === 'video'
-                                ? 'video'
-                                : 'fseq';
+                    const fileKey = pickerFor === 'mp3' ? 'audio' : pickerFor === 'image' ? 'thumb' : 'fseq';
                     setNewFiles((prev) => ({ ...prev, [fileKey]: name }));
                     setPendingFiles((prev) => ({ ...prev, [fileKey]: undefined }));
                     if (pickerFor === 'fseq') setNewDurationSecs(0); // server refills from header
