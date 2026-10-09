@@ -98,9 +98,9 @@ export class RealTimeChunkPlayer {
     /** Sources started but possibly not yet playing, so a re-anchor can cut them. */
     private scheduled: Array<{ source: AudioBufferSourceNode; start: number; end: number }> = [];
     private lateShiftSec = 0;
-    /** Listener-chosen offset added to every stamp (positive = play later). A measuring
-     *  instrument: the value that brings a device into sync with the lights is how far
-     *  its reported output latency is from the truth. */
+    /** Viewer-chosen offset added to every stamp (positive = play later): the sync nudge.
+     *  The value that brings a device into sync with the lights is how far its reported
+     *  output latency is from the truth. */
     private trimSec = 0;
     /** idealStart − earliest schedulable time, for recent chained chunks (shifted chains only). */
     private slack: number[] = [];

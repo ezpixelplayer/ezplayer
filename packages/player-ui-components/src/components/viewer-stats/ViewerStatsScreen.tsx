@@ -154,11 +154,18 @@ function DayBars({ days }: { days: ViewerStatsDay[] }) {
                                     flexDirection: 'column',
                                     justifyContent: 'flex-end',
                                     borderRadius: '2px 2px 0 0',
-                                    backgroundColor: total === 0 ? theme.palette.action.hover : 'transparent',
                                 }}
                             >
-                                <Box sx={{ height: hVote, backgroundColor: theme.palette.secondary.main }} />
-                                <Box sx={{ height: hReq, backgroundColor: theme.palette.primary.main }} />
+                                {total === 0 ? (
+                                    // A day with nothing: a baseline tick, so the column is visibly zero
+                                    // rather than empty space; a full-height tint would read as a bar.
+                                    <Box sx={{ height: 2, backgroundColor: theme.palette.divider }} />
+                                ) : (
+                                    <>
+                                        <Box sx={{ height: hVote, backgroundColor: theme.palette.secondary.main }} />
+                                        <Box sx={{ height: hReq, backgroundColor: theme.palette.primary.main }} />
+                                    </>
+                                )}
                             </Box>
                         </Tooltip>
                     );

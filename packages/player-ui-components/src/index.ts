@@ -186,6 +186,7 @@ export {
     ChunkDecoder,
     createClockOffsetRef,
     estimateClockOffset,
+    defaultTrimMsForDevice,
 } from './audio';
 export type {
     AudioListenDiagnostics,

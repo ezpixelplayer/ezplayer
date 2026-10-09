@@ -4,6 +4,7 @@ export {
     type AudioListenDiagnostics,
     type AudioListenOptions,
     type AudioListenStatus,
+    defaultTrimMsForDevice,
 } from './audioListenSession';
 export { useAudioListenSession, type UseAudioListenSessionResult } from './useAudioListenSession';
 export { deriveAudioStreamOptions } from './streamUrls';

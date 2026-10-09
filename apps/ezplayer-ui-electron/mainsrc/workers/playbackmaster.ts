@@ -889,9 +889,9 @@ function recomputeVolumeGains() {
 // Commanded songs wait for their audio (issue #180)
 //
 // A jukebox / viewer / Remote Falcon pick names a song whose mp3 may not be decoded
-// yet. Starting it on the fixed interactive delay played the lights with the opening
-// bars silent. Instead the decode is requested the moment the command arrives, and the
-// start is held — lights and audio together — until the audio is there, up to a cap.
+// yet, and a fixed start delay cannot be long enough for a cold decode without making
+// every pick sluggish. So the decode is requested the moment the command arrives, and
+// the start is held — lights and audio together — until the audio is there, up to a cap.
 
 /** Longest a commanded song is held for its audio before playing lights-only after all. */
 const INTERACTIVE_AUDIO_WAIT_MAX_MS = 5_000;

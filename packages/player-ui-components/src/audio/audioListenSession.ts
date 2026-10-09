@@ -80,7 +80,7 @@ export interface AudioListenDiagnostics {
     /** Chain playing later than the stamps because the device's output latency exceeds
      *  the stream lead; 0 when in sync. */
     lateShiftMs?: number;
-    /** Listener-chosen trim, ms (positive = later). Debug instrument; see `setTrimMs`. */
+    /** Viewer-chosen trim, ms (positive = later); see `setTrimMs`. */
     trimMs: number;
     updatedAt: number;
 }
@@ -95,13 +95,29 @@ function audioDebugEnabled(): boolean {
     }
 }
 
+/**
+ * Starting trim for this device when the viewer has not chosen one. Android reports an
+ * output latency well above its real pipeline — its media output path reports the
+ * buffer's capacity, not its fill — so audio placed by that figure plays early, by
+ * roughly 150 ms. Desktop browsers report accurately. The viewer's own setting overrides.
+ */
+export function defaultTrimMsForDevice(): number {
+    if (typeof navigator === 'undefined') return 0;
+    return /Android/i.test(navigator.userAgent) ? 150 : 0;
+}
+
+/** The viewer's own trim if they set one, else the device default. */
 function readStoredTrimMs(): number {
     try {
-        const v = Number(localStorage.getItem('ezpAudioTrimMs'));
-        return Number.isFinite(v) ? v : 0;
+        const raw = localStorage.getItem('ezpAudioTrimMs');
+        if (raw !== null) {
+            const v = Number(raw);
+            if (Number.isFinite(v)) return v;
+        }
     } catch {
-        return 0;
+        /* no storage */
     }
+    return defaultTrimMsForDevice();
 }
 
 const RECONNECT_MIN_MS = 1_000;
@@ -286,12 +302,23 @@ export class AudioListenSession {
         const v = Math.max(-2000, Math.min(2000, Math.round(ms)));
         if (this.player) this.player.trimMs = v;
         try {
-            if (v === 0) localStorage.removeItem('ezpAudioTrimMs');
-            else localStorage.setItem('ezpAudioTrimMs', String(v));
+            localStorage.setItem('ezpAudioTrimMs', String(v));
         } catch {
             /* no storage */
         }
         if (audioDebugEnabled()) console.debug(`[audio] trim -> ${v} ms`);
+    }
+
+    /** Forget the viewer's trim; the device default applies again. */
+    resetTrim(): void {
+        try {
+            localStorage.removeItem('ezpAudioTrimMs');
+        } catch {
+            /* no storage */
+        }
+        const v = defaultTrimMsForDevice();
+        if (this.player) this.player.trimMs = v;
+        if (audioDebugEnabled()) console.debug(`[audio] trim reset -> device default ${v} ms`);
     }
 
     private makePlayer(): RealTimeChunkPlayer {
