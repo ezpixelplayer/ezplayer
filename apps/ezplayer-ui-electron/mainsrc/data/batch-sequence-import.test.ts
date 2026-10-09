@@ -106,3 +106,65 @@ describe('batchImportSequences audio gating', () => {
         expect(summary.failures[0].reason).toBe('Could not read FSEQ header');
     });
 });
+
+describe('separate LAN uploads', () => {
+    beforeEach(() => {
+        detectMock.mockReset();
+        deriveMock.mockReset();
+        deriveMock.mockResolvedValue(undefined);
+    });
+    it('saves a musical FSEQ before audio arrives when enabled', async () => {
+        detectMock.mockResolvedValue({ audioRequired: true, headerAudioName: 'song.mp3', durationSecs: 42 });
+        const putSpy = vi.fn(putSequences);
+        const result = await batchImportSequences(['/show/Song.fseq'], {
+            putSequences: putSpy,
+            allowMissingAudio: true,
+        });
+        expect(result).toMatchObject({ imported: 1, failed: 0 });
+        expect(putSpy.mock.calls[0][0][0].files?.audio).toBeUndefined();
+    });
+    it('attaches later audio preserving song IDs and user edits', async () => {
+        detectMock.mockResolvedValue({ audioRequired: true, audioFile: '/show/song.mp3', durationSecs: 42 });
+        const existing: SequenceRecord = {
+            id: 'existing-song',
+            instanceId: 'existing-instance',
+            work: { title: 'Custom title', artist: 'Custom artist', length: 42 },
+            files: { fseq: '/show/Song.fseq', video: '/show/custom.mp4' },
+            settings: { normalize: false, volume_adj: -10 },
+            updatedAt: 1,
+        };
+        const putSpy = vi.fn(putSequences);
+        const result = await batchImportSequences(['/show/Song.fseq'], {
+            putSequences: putSpy,
+            existingSequences: [existing],
+            attachMissingAudio: true,
+            allowMissingAudio: true,
+            showFolder: '/show',
+        });
+        expect(result).toMatchObject({ imported: 1, failed: 0 });
+        expect(putSpy.mock.calls[0][0][0]).toMatchObject({
+            ...existing,
+            updatedAt: expect.any(Number),
+            files: { ...existing.files, audio: '/show/song.mp3' },
+        });
+        expect(deriveMock).toHaveBeenCalledWith({ audio: '/show/song.mp3', normalize: false }, '/show');
+    });
+    it('preserves an existing explicit audio selection', async () => {
+        const existing: SequenceRecord = {
+            id: 'one',
+            instanceId: 'one',
+            work: { title: 'Title', artist: 'Artist', length: 42 },
+            files: { fseq: '/show/Song.fseq', audio: '/show/user.mp3' },
+            updatedAt: 1,
+        };
+        const putSpy = vi.fn(putSequences);
+        const result = await batchImportSequences(['/show/Song.fseq'], {
+            putSequences: putSpy,
+            existingSequences: [existing],
+            attachMissingAudio: true,
+        });
+        expect(result.skipped).toHaveLength(1);
+        expect(detectMock).not.toHaveBeenCalled();
+        expect(putSpy).not.toHaveBeenCalled();
+    });
+});

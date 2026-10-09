@@ -37,6 +37,8 @@ interface SettingsDrawerProps {
     /** Section tiles to render. Apps assemble their own list from the exported section
      *  components (or any custom sections of their own). */
     sections: SettingsSection[];
+    /** Open a named section when loading a setup link. */
+    initialSection?: string;
 }
 
 const SectionDialog: React.FC<{ open: boolean; title: string; onClose: () => void; children: React.ReactNode }> = ({
@@ -58,8 +60,8 @@ const SectionDialog: React.FC<{ open: boolean; title: string; onClose: () => voi
     </Dialog>
 );
 
-export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusArea, sections }) => {
-    const [activeDialog, setActiveDialog] = useState<string | null>(null);
+export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusArea, sections, initialSection }) => {
+    const [activeDialog, setActiveDialog] = useState<string | null>(initialSection ?? null);
     const closeActiveDialog = () => setActiveDialog(null);
 
     const effectiveSections = sections.filter((s) => s.available !== false);

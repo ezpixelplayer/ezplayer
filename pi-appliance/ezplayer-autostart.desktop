@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=EZPlayer Pi
+Exec=/usr/local/bin/ezplayer-pi-start
+Terminal=false
+X-GNOME-Autostart-enabled=true

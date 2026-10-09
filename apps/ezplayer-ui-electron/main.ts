@@ -246,6 +246,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         clearTimeout(splashFallback);
         if (!splash.isDestroyed()) splash.destroy();
         if (mainWindow && !mainWindow.isDestroyed()) {
+            if (process.env.EZPLAYER_PI_APPLIANCE === '1') mainWindow.maximize();
             mainWindow.show();
             mainWindow.focus();
             mainWindow.setAlwaysOnTop(true);

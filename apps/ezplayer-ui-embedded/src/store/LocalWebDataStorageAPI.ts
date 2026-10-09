@@ -1,3 +1,4 @@
+import { uploadRequest } from './uploadRequest';
 import type {
     SequenceRecord,
     PlaylistRecord,
@@ -275,6 +276,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         files: Array<{ name: string; data: Blob }>,
         companionAudioNames?: string[],
         importFseqNames?: string[],
+        onProgress?: (loaded: number, total: number) => void,
     ): Promise<BatchImportSummary> {
         const byName = new Map<string, Blob>();
         for (const f of files) {
@@ -300,18 +302,13 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
         const lengthPrefix = new Uint8Array(4);
         new DataView(lengthPrefix.buffer).setUint32(0, manifestBytes.byteLength, false);
-        const response = await fetch(`${this.apiUrl}ezp/sequences/batch-upload-import`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/octet-stream',
-            },
-            body: new Blob([lengthPrefix, manifestBytes, ...unique.map((f) => f.data)]),
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error((err as { error?: string }).error ?? `Batch upload-import failed: ${response.statusText}`);
-        }
-        return (await response.json()) as BatchImportSummary;
+        const result = await uploadRequest(
+            `${this.apiUrl}ezp/sequences/batch-upload-import`,
+            new Blob([lengthPrefix, manifestBytes, ...unique.map((f) => f.data)]),
+            { 'Content-Type': 'application/octet-stream' },
+            onProgress,
+        );
+        return JSON.parse(result) as BatchImportSummary;
     }
 
     async listShowFiles(dir: string): Promise<string[]> {
@@ -322,37 +319,36 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     /** Push a file's bytes into the show folder via the file-management API.
      *  Chunked (FPP-style PATCH) above 16MB so big fseqs don't ride one request. */
-    async uploadShowFile(fileName: string, data: Blob): Promise<void> {
+    async uploadShowFile(
+        fileName: string,
+        data: Blob,
+        onProgress?: (loaded: number, total: number) => void,
+    ): Promise<void> {
         const ext = fileName.toLowerCase().split('.').pop() ?? '';
-        const dir =
-            ext === 'fseq'
-                ? 'sequences'
-                : ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'].includes(ext)
-                  ? 'music'
-                  : 'uploads';
-
+        const dir = ext === 'fseq' ? 'sequences' : 'uploads';
         const CHUNK = 8 * 1024 * 1024;
         if (data.size <= CHUNK * 2) {
-            const res = await fetch(`${this.apiUrl}file/${dir}/${encodeURIComponent(fileName)}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/octet-stream' },
-                body: data,
-            });
-            if (!res.ok) throw new Error(`Upload of ${fileName} failed: ${res.statusText}`);
+            await uploadRequest(
+                `${this.apiUrl}file/${dir}/${encodeURIComponent(fileName)}`,
+                data,
+                { 'Content-Type': 'application/octet-stream' },
+                onProgress,
+            );
             return;
         }
         for (let off = 0; off < data.size; off += CHUNK) {
-            const res = await fetch(`${this.apiUrl}file/${dir}`, {
-                method: 'PATCH',
-                headers: {
+            await uploadRequest(
+                `${this.apiUrl}file/${dir}`,
+                data.slice(off, Math.min(off + CHUNK, data.size)),
+                {
                     'Content-Type': 'application/offset+octet-stream',
                     'Upload-Name': fileName,
                     'Upload-Offset': String(off),
                     'Upload-Length': String(data.size),
                 },
-                body: data.slice(off, Math.min(off + CHUNK, data.size)),
-            });
-            if (!res.ok) throw new Error(`Chunk upload of ${fileName} failed: ${res.statusText}`);
+                (loaded) => onProgress?.(off + loaded, data.size),
+                'PATCH',
+            );
         }
     }
 

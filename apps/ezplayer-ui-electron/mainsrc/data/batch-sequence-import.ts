@@ -17,6 +17,10 @@ import {
 import { deriveAudioForRecord } from './derived-audio.js';
 
 export interface BatchImportOptions extends AutoDetectOptions {
+    /** LAN uploads may save a sequence before its companion audio arrives. */
+    allowMissingAudio?: boolean;
+    /** Fill missing audio on existing records after a later upload; preserve IDs and user edits. */
+    attachMissingAudio?: boolean;
     /** Persist one or more SequenceRecords (typically putSequencesWithDurations). */
     putSequences: (recs: SequenceRecord[]) => Promise<SequenceRecord[]>;
     /** Current catalog. Basename matches are skipped. */
@@ -75,7 +79,7 @@ export function buildSequenceRecordFromDetected(fseqPath: string, detected: Auto
 
 async function importOneFseq(
     fseqPath: string,
-    options: AutoDetectOptions & Pick<BatchImportOptions, 'showFolder' | 'normalize'>,
+    options: AutoDetectOptions & Pick<BatchImportOptions, 'showFolder' | 'normalize' | 'allowMissingAudio'>,
 ): Promise<
     { ok: true; success: BatchImportSuccess; record: SequenceRecord } | { ok: false; failure: BatchImportFailure }
 > {
@@ -97,7 +101,7 @@ async function importOneFseq(
         }
 
         // Audio is required only when the FSEQ header names a media file.
-        if (detected.audioRequired && !detected.audioFile) {
+        if (detected.audioRequired && !detected.audioFile && !options.allowMissingAudio) {
             const wanted = detected.headerAudioName ? ` (${detected.headerAudioName})` : '';
             return {
                 ok: false,
@@ -184,6 +188,22 @@ export async function batchImportSequences(
     for (const fseqPath of unique) {
         const fseqName = path.basename(fseqPath);
         const existing = existingByBasename.get(fseqName.toLowerCase());
+        if (existing && !existing.cloud && options.attachMissingAudio && !existing.files?.audio) {
+            const result = await importOneFseq(fseqPath, { ...options, normalize: existing.settings?.normalize });
+            if (result.ok && result.record.files?.audio) {
+                recordsToSave.push({
+                    ...existing,
+                    files: { ...existing.files, audio: result.record.files.audio },
+                    updatedAt: Date.now(),
+                });
+                successes.push({ ...result.success, title: existing.work.title, artist: existing.work.artist });
+                continue;
+            }
+            if (!result.ok) {
+                failures.push(result.failure);
+                continue;
+            }
+        }
         if (existing) {
             skipped.push({ fseqPath, fseqName, existingTitle: existing.work?.title });
             console.log(`[BatchImport] Skipped "${fseqName}" (already imported)`);
