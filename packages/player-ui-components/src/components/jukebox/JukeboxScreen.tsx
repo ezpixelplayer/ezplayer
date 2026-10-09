@@ -28,7 +28,7 @@ import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { useImageUrl } from '../../util/imageUtils';
 import { QueueAndControlStack } from '../player/QueueAndControlStack';
 import { isSongAllowedForJukebox } from '../../services/jukeboxFilter';
-import { useAudioStream } from '../../hooks/useAudioStream';
+import { deriveAudioStreamOptions, useAudioListenSession } from '../../audio';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 
 interface Song {
@@ -272,6 +272,7 @@ export function JukeboxArea({ onInteract }: JukeboxAreaProps) {
                 immediate: true,
                 priority: 5,
                 requestId: uuidv4(),
+                source: 'jukebox',
             }),
         ).unwrap();
     };
@@ -598,7 +599,9 @@ export function JukeboxScreen({
     // Audio stream toggle — useful for testing audio-only over the cloud
     // bridge without pixel-frame polling competing for bandwidth.
     const { url: frameServerUrl } = useFrameServerUrl();
-    const { audioEnabled, toggleAudio } = useAudioStream({ baseUrl: frameServerUrl });
+    const { active: audioEnabled, toggle: toggleAudio } = useAudioListenSession(
+        deriveAudioStreamOptions(frameServerUrl, 'EZPlayer jukebox'),
+    );
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData) as SequenceItem[] | undefined;
     const jukeboxSettings = useSelector((state: RootState) => state.playbackSettings.settings.jukebox);
     const [searchQuery, setSearchQuery] = useState('');
@@ -702,6 +705,7 @@ export function JukeboxScreen({
                 immediate: true,
                 priority: 5,
                 requestId: uuidv4(),
+                source: 'jukebox',
             }),
         ).unwrap();
     };
@@ -718,6 +722,7 @@ export function JukeboxScreen({
                 immediate: false,
                 priority: 5,
                 requestId: uuidv4(),
+                source: 'jukebox',
             }),
         ).unwrap();
     };

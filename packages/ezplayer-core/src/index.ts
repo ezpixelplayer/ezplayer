@@ -1,4 +1,5 @@
 export type {
+    CloudAudioMode,
     CloudConfig,
     CloudStatus,
     EZPlayerVersions,
@@ -160,6 +161,10 @@ export type {
     VcSelectionOutcome,
     VcPublicSong,
     VcPublicShowState,
+    VcStatsEventKind,
+    VcStatsEvent,
+    VcStatsSnapshot,
+    VcStatsResponse,
 } from './types/ViewerControlWire';
 
 export type {
@@ -222,13 +227,54 @@ export {
     findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
 
-export {
-    type FrameBackingBuffer,
-    type FrameBufferReadResult,
-    LatestFrameRingBuffer
-} from './util/FrameRingBuffer';
+export { type FrameBackingBuffer, type FrameBufferReadResult, LatestFrameRingBuffer } from './util/FrameRingBuffer';
+
+export { type AudioChunkReadResult, AudioChunkRingBuffer } from './util/AudioChunkRingBuffer';
 
 export {
-    type AudioChunkReadResult,
-    AudioChunkRingBuffer
-} from './util/AudioChunkRingBuffer';
+    AUDIO_WIRE_MAGIC,
+    AUDIO_WIRE_VERSION,
+    AUDIO_WIRE_HEADER_BYTES,
+    AUDIO_WIRE_FLAG_CONTINUOUS,
+    AUDIO_WIRE_FLAG_STREAM_START,
+    AudioWireCodec,
+    type AudioWireHeader,
+    type AudioWireFrame,
+    type AudioBridgeControlMessage,
+    buildAudioWireFrame,
+    parseAudioWireFrame,
+    splitOpusPackets,
+    joinOpusPackets,
+} from './util/AudioStreamWire';
+
+export {
+    summarizeViewerStats,
+    trimViewerStatsEvents,
+    LOCAL_STATS_EPOCH,
+    emptyPicksBySource,
+    viewerStatsDayKey,
+    viewerStatsDayKeys,
+    type StoredViewerStatsEvent,
+    type ViewerStatsCounts,
+    type ViewerStatsDay,
+    type ViewerStatsSong,
+    type ViewerStatsSummary,
+    type SummarizeOptions,
+} from './util/viewerStats';
+
+export {
+    DEFAULT_VOLUME_TARGET_ID,
+    resolveVolumeTargets,
+    scheduledVolumeLevel,
+    type VolumeOutputMode,
+    type VolumeTarget,
+    type VolumeTargets,
+} from './util/volumeTargets';
+export {
+    hasViewerControlBackend,
+    primaryViewerControlType,
+    viewerControlBackends,
+    withViewerControlBackends,
+} from './util/viewerControlBackends';
+export type { ViewerControlBackend, PlaySongSource } from './types/DataTypes';
+export type { VcPickSource } from './types/ViewerControlWire';

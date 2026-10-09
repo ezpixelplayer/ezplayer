@@ -6,6 +6,7 @@ import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import type { CloudAudioMode } from '@ezplayer/ezplayer-core';
 import { app, BrowserWindow } from 'electron';
 import type {
     ServerWorkerToMainMessage,
@@ -399,6 +400,15 @@ function initializeServerWorker(port: number, portSource: string, _mainWindow: B
     };
 
     serverWorker.postMessage(initMessage);
+    if (lastCloudAudioMode) {
+        serverWorker.postMessage({
+            type: 'cloudAudioMode',
+            mode: lastCloudAudioMode,
+        } satisfies MainToServerWorkerMessage);
+    }
+    if (lastRtcOffsetMs !== undefined) {
+        serverWorker.postMessage({ type: 'rtcOffset', offsetMs: lastRtcOffsetMs } satisfies MainToServerWorkerMessage);
+    }
 
     // Send initial frame buffer if available
     if (curFrameBuffer) {
@@ -484,6 +494,26 @@ export function broadcastToWebSocket(key: string, value: unknown) {
  * TTL timer to auto-close if the cloud goes silent. Same sessionId with a
  * live socket is idempotent (refreshes TTL); a dropped socket redials.
  */
+let lastCloudAudioMode: CloudAudioMode | undefined;
+
+/** Cloud live-audio policy (see `CloudConfig.cloudAudioMode`). Remembered so
+ *  a server worker started later still gets it. */
+export function setCloudAudioMode(mode: CloudAudioMode) {
+    lastCloudAudioMode = mode;
+    serverWorker?.postMessage({ type: 'cloudAudioMode', mode } satisfies MainToServerWorkerMessage);
+}
+
+let lastRtcOffsetMs: number | undefined;
+
+/** Player RTC minus Date.now(), from the playback worker. The server worker stamps the
+ *  listener stream and answers the time endpoint in RTC so listeners sync to the clock
+ *  the stamps are on. Forwarded only when it moves. */
+export function setRtcOffset(offsetMs: number) {
+    if (lastRtcOffsetMs !== undefined && Math.abs(offsetMs - lastRtcOffsetMs) < 0.5) return;
+    lastRtcOffsetMs = offsetMs;
+    serverWorker?.postMessage({ type: 'rtcOffset', offsetMs } satisfies MainToServerWorkerMessage);
+}
+
 export function cloudBridgeOpen(
     wsUrl: string,
     proxyWsUrl: string | undefined,

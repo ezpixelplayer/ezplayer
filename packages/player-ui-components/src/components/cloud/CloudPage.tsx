@@ -8,8 +8,12 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
+    FormControl,
     FormControlLabel,
     IconButton,
+    InputLabel,
+    MenuItem,
+    Select,
     LinearProgress,
     Link,
     Stack,
@@ -56,6 +60,7 @@ import type {
     CloudFileStatus,
     CloudSequenceProgress,
     PlayerCStatusContent,
+    CloudAudioMode,
 } from '@ezplayer/ezplayer-core';
 
 interface CloudPageProps {
@@ -557,6 +562,9 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
     const remoteControlEnabled = cloudConfig.cloudRemoteControlEnabled !== false;
     const handleRemoteControlToggle = (enabled: boolean) =>
         void dispatch(issueCloudCommand({ type: 'setCloudRemoteControlEnabled', enabled }));
+    const cloudAudioMode: CloudAudioMode = cloudConfig.cloudAudioMode ?? 'auto';
+    const handleCloudAudioModeChange = (mode: CloudAudioMode) =>
+        void dispatch(issueCloudCommand({ type: 'setCloudAudioMode', mode }));
 
     // Cloud remote-control URL — prefer the elected regional home server,
     // fall back to the configured cloud service URL (central).
@@ -900,6 +908,25 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                     }
                                     sx={{ mr: 0 }}
                                 />
+                            )}
+                            {remoteControlEnabled && (
+                                <Tooltip title="When the player sends live audio to the cloud for browser listeners (viewer page, jukebox, preview). Auto streams only while someone is listening.">
+                                    <FormControl size="small" sx={{ minWidth: 220 }}>
+                                        <InputLabel id="cloud-audio-mode-label">Cloud audio</InputLabel>
+                                        <Select
+                                            labelId="cloud-audio-mode-label"
+                                            label="Cloud audio"
+                                            value={cloudAudioMode}
+                                            onChange={(e) =>
+                                                handleCloudAudioModeChange(e.target.value as CloudAudioMode)
+                                            }
+                                        >
+                                            <MenuItem value="auto">Auto (while someone listens)</MenuItem>
+                                            <MenuItem value="always">Always stream</MenuItem>
+                                            <MenuItem value="never">Never stream</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Tooltip>
                             )}
                             {remoteControlEnabled && (
                                 <Tooltip title="Copy link">

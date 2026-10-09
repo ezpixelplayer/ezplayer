@@ -29,7 +29,10 @@
             "node_modules/@ezplayer/icmp-ping/build/Release/*.node",
             "node_modules/@lydell/node-pty/**/*",
             "node_modules/@lydell/node-pty-*/**/*",
-            "node_modules/ffmpeg-static/**/*"
+            "node_modules/ffmpeg-static/**/*",
+            "node_modules/mpg123-decoder-ezp/**/*",
+            "node_modules/@wasm-audio-decoders/common/**/*",
+            "node_modules/opusscript/**/*"
         ],
         "asarUnpack": [
             "**/*.node",
@@ -181,6 +184,7 @@
         "@mui/x-date-pickers": "catalog:",
         "@reduxjs/toolkit": "catalog:",
         "@types/ws": "catalog:",
+        "@wasm-audio-decoders/common": "9.0.7",
         "audiofile": "file:..\\..\\libs\\audiofile-0.0.5.tgz",
         "axios": "catalog:",
         "bindings": "^1.5.0",
@@ -196,6 +200,7 @@
         "mpg123-decoder-ezp": "file:..\\..\\libs\\mpg123-decoder-ezp-1.0.4.tgz",
         "node-addon-api": "^7.1.1",
         "nprogress": "catalog:",
+        "opusscript": "^0.1.1",
         "path": "^0.12.7",
         "proper-lockfile": "^4.1.2",
         "raw-body": "^2.5.3",

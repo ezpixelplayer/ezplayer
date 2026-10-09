@@ -40,6 +40,8 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
             // Default true on absent. Only an explicit `false` parks the worker.
             cloudEnabled: parsed.cloudEnabled === false ? false : true,
             cloudRemoteControlEnabled: parsed.cloudRemoteControlEnabled === false ? false : true,
+            cloudAudioMode:
+                parsed.cloudAudioMode === 'always' || parsed.cloudAudioMode === 'never' ? parsed.cloudAudioMode : 'auto',
             cloudPollMode: parsed.cloudPollMode === 'scheduled' ? 'scheduled' : 'always',
             cloudPollSchedule: parsed.cloudPollSchedule,
             cloudPollIntervals: parsed.cloudPollIntervals,

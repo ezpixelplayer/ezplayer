@@ -1,7 +1,8 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import CloseIcon from '@mui/icons-material/Close';
 import { Card, Dialog, DialogContent, DialogTitle, IconButton, Tooltip, Typography } from '@mui/material';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Box } from '../box/Box';
 import { LegalFooter } from './LegalFooter';
 
@@ -62,6 +63,20 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
     const closeActiveDialog = () => setActiveDialog(null);
 
     const effectiveSections = sections.filter((s) => s.available !== false);
+
+    // Deep link: `?section=<key>` opens that section's dialog on arrival (the Show
+    // Status viewer-control card sends people here), then drops the parameter so a
+    // reload or back-navigation doesn't reopen it.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const requested = searchParams.get('section');
+    useEffect(() => {
+        if (!requested) return;
+        if (effectiveSections.some((s) => s.key === requested && 'content' in s)) setActiveDialog(requested);
+        const next = new URLSearchParams(searchParams);
+        next.delete('section');
+        setSearchParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requested]);
 
     return (
         <Box

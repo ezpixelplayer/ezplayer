@@ -28,6 +28,8 @@ import type {
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
+import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
+import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
 import type {
@@ -356,6 +358,11 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         curFrameBuffer = msg.buffer;
     } else if (msg.type === 'updateAudioBuffer') {
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
+        audioPumpAfterSeq = curAudioRing.latestSeq;
+    } else if (msg.type === 'cloudAudioMode') {
+        setCloudAudioMode(msg.mode);
+    } else if (msg.type === 'rtcOffset') {
+        rtcOffsetMs = msg.offsetMs;
     } else if (msg.type === 'broadcast') {
         // A remote-access session belongs to the show it was opened against —
         // its password lives in that show's folder. Switching shows revokes it
@@ -424,6 +431,11 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
+/** Open, or still dialing (CONNECTING). Anything else is dead and gets redialed. */
+function bridgeAlive(b: { ws: WebSocket; open: boolean }): boolean {
+    return b.open || b.ws.readyState === WebSocket.CONNECTING;
+}
+
 function openCloudBridge(
     wsUrl: string,
     proxyWsUrl: string | undefined,
@@ -434,7 +446,11 @@ function openCloudBridge(
     if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
     if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
 
-    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && cloudBridge.open) {
+    // Same session + same URL + a socket that is open OR still dialing: keep it and
+    // refresh the TTL. Redialing over a CONNECTING socket (checkins arrive every 5 s;
+    // a slow TLS handshake can take longer) tore the dial down each time, so the
+    // bridge never came up and logged "closed before the connection was established".
+    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && bridgeAlive(cloudBridge)) {
         clearTimeout(cloudBridge.ttlTimer);
         cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -470,6 +486,7 @@ function openCloudBridge(
         wsBroadcaster.attachClient(ws);
     });
     ws.on('error', (err) => {
+        if (cloudBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud bridge error:', err);
     });
     ws.on('close', () => {
@@ -511,7 +528,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         cloudProxyBridge &&
         cloudProxyBridge.sessionId === sessionId &&
         cloudProxyBridge.url === wsUrl &&
-        cloudProxyBridge.open
+        bridgeAlive(cloudProxyBridge)
     ) {
         clearTimeout(cloudProxyBridge.ttlTimer);
         cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
@@ -677,6 +694,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         }
     });
     ws.on('error', (err) => {
+        if (cloudProxyBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud proxy bridge error:', err);
     });
     ws.on('close', () => {
@@ -701,9 +719,157 @@ function closeCloudProxyBridge(sessionId?: string) {
     cloudProxyBridge = undefined;
 }
 
-// -- cloud audio bridge (push) ------------------------------------------------
-// Push each new audio chunk as a binary WS frame: per-chunk wire format from
-// /api/ezp/audio, prefixed with `serverNow` for browser-side clockOffset refinement.
+// -- live audio fan-out ---------------------------------------------------------
+// One pump reads new ring chunks, encodes each once (opus — see
+// audio-stream-encoder.ts) and pushes the wire frame to every LAN listener on
+// `/api/ezp/audiostream` and, when wanted, up the cloud audio bridge. The pump
+// only runs while someone is listening: LAN sockets are counted here; cloud
+// listeners are reported by the relay as `{ type: 'listeners', count }` text
+// messages on the bridge socket.
+
+/** How often the pump checks for new chunks. Chunks are ~100 ms; 20 ms keeps
+ *  the added latency to one tick. */
+const AUDIO_PUSH_INTERVAL_MS = 20;
+/** Keep streaming this long after the last cloud listener leaves, so a page
+ *  refresh doesn't cost a fresh spin-up. */
+const CLOUD_AUDIO_LINGER_MS = 30_000;
+/** A socket further behind than this is skipped rather than buffered. */
+const AUDIO_MAX_BUFFERED_BYTES = 256 * 1024;
+
+const lanAudioClients = new Set<WebSocket>();
+const audioStreamWss = new WebSocketServer({ noServer: true });
+audioStreamWss.on('connection', (ws) => {
+    lanAudioClients.add(ws);
+    ws.on('close', () => {
+        lanAudioClients.delete(ws);
+    });
+    ws.on('error', () => {
+        lanAudioClients.delete(ws);
+    });
+    ensureAudioPump();
+});
+
+/** LAN / kiosk listeners: `ws://<player>/api/ezp/audiostream`. Same trust
+ *  level as the rest of the LAN API (none). */
+function attachAudioStreamUpgrade(server: ReturnType<typeof createServer>): void {
+    server.on('upgrade', (req, socket, head) => {
+        const pathname = (req.url ?? '').split('?')[0];
+        if (pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
+        audioStreamWss.handleUpgrade(req, socket, head, (ws) => audioStreamWss.emit('connection', ws, req));
+    });
+}
+
+let audioEncoder: AudioStreamEncoder | undefined;
+let audioPumpTimer: NodeJS.Timeout | undefined;
+/** Last ring seq forwarded. */
+let audioPumpAfterSeq = 0;
+/**
+ * The player's RTC minus its Date.now(), pushed from the playback worker with every
+ * audio chunk. Audio chunks are stamped in RTC (the smoothed clock the lights run on), so
+ * the listener stream's serverNow and the /api/ezp/time answer are given in RTC too:
+ * listeners then sync to the one clock the stamps are on, and a wall-clock step on this
+ * machine cannot open a gap between the two.
+ */
+let rtcOffsetMs = 0;
+function rtcNow(): number {
+    return Date.now() + rtcOffsetMs;
+}
+
+let cloudAudioMode: CloudAudioMode = 'auto';
+/** Listener count last reported by the relay. Undefined until it says — an
+ *  older relay never does, and then we stream whenever the bridge is up. */
+let cloudListenerCount: number | undefined;
+let cloudAudioLingerUntil = 0;
+
+function setCloudAudioMode(mode: CloudAudioMode): void {
+    if (cloudAudioMode === mode) return;
+    cloudAudioMode = mode;
+    console.log(`[server-worker] cloud audio mode: ${mode}`);
+    if (mode === 'never') closeCloudAudioBridge();
+    ensureAudioPump();
+}
+
+function cloudAudioWanted(): boolean {
+    if (!cloudAudioBridge?.open || cloudAudioMode === 'never') return false;
+    if (cloudAudioMode === 'always' || cloudListenerCount === undefined) return true;
+    return cloudListenerCount > 0 || Date.now() < cloudAudioLingerUntil;
+}
+
+function ensureAudioPump(): void {
+    if (lanAudioClients.size === 0 && !cloudAudioWanted()) {
+        stopAudioPump();
+        return;
+    }
+    if (audioPumpTimer) return;
+    // Start clean: nobody can use history, and the first chunks a new
+    // listener hears should be the ones playing now.
+    audioPumpAfterSeq = curAudioRing?.latestSeq ?? 0;
+    audioEncoder ??= new AudioStreamEncoder();
+    console.log('[server-worker] audio pump started');
+    audioPumpTimer = setInterval(audioPumpTick, AUDIO_PUSH_INTERVAL_MS);
+}
+
+function stopAudioPump(): void {
+    if (!audioPumpTimer) return;
+    clearInterval(audioPumpTimer);
+    audioPumpTimer = undefined;
+    // Let listeners hear the queued tail, and start a fresh stream next time.
+    if (audioEncoder) {
+        const toCloud = cloudAudioWanted();
+        for (const frame of audioEncoder.flush(Date.now())) sendAudioFrame(frame, toCloud);
+    }
+    console.log('[server-worker] audio pump stopped');
+}
+
+function audioPumpTick(): void {
+    const toCloud = cloudAudioWanted();
+    if (lanAudioClients.size === 0 && !toCloud) {
+        stopAudioPump();
+        return;
+    }
+    if (!curAudioRing || !audioEncoder) return;
+    const chunks = curAudioRing.readAfter(audioPumpAfterSeq);
+    if (chunks.length === 0) return;
+    const serverNow = rtcNow();
+    for (const chunk of chunks) {
+        audioPumpAfterSeq = chunk.seq;
+        let frames: Uint8Array[];
+        try {
+            frames = audioEncoder.push(chunk, serverNow);
+        } catch (err) {
+            console.error('[server-worker] audio encode failed:', err);
+            continue;
+        }
+        for (const frame of frames) sendAudioFrame(frame, toCloud);
+    }
+}
+
+function sendAudioFrame(frame: Uint8Array, toCloud: boolean): void {
+    {
+        for (const client of lanAudioClients) {
+            if (client.readyState !== WebSocket.OPEN || client.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) continue;
+            try {
+                client.send(frame, { binary: true });
+            } catch {
+                /* per-client */
+            }
+        }
+        const cloud = cloudAudioBridge;
+        if (toCloud && cloud?.open && cloud.ws.readyState === WebSocket.OPEN) {
+            if (cloud.ws.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) return;
+            try {
+                cloud.ws.send(frame, { binary: true });
+            } catch (err) {
+                console.error('[server-worker] audio bridge send failed:', err);
+            }
+        }
+    }
+}
+
+// -- cloud audio bridge ---------------------------------------------------------
+// Outbound socket to the relay. Binary frames go up; the relay sends text
+// control messages (listener counts) down. Dialed whenever the cloud asks
+// (unless the audio mode is `never`); audio only flows while wanted.
 
 interface CloudAudioBridge {
     sessionId: string;
@@ -711,22 +877,19 @@ interface CloudAudioBridge {
     ws: WebSocket;
     open: boolean;
     ttlTimer: NodeJS.Timeout;
-    /** Interval handle for the chunk-polling pump. Cleared on close. */
-    pumpTimer?: NodeJS.Timeout;
-    /** Last audio chunk seq we forwarded. Drives `readAfter` on each pump tick. */
-    afterSeq: number;
 }
 let cloudAudioBridge: CloudAudioBridge | undefined;
-/** How often the push loop checks for new audio chunks. Chunks are typically
- *  produced every 20–50ms; 20ms gives us at most ~one tick of latency. */
-const AUDIO_PUSH_INTERVAL_MS = 20;
 
 function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    if (cloudAudioMode === 'never') {
+        closeCloudAudioBridge();
+        return;
+    }
     if (
         cloudAudioBridge &&
         cloudAudioBridge.sessionId === sessionId &&
         cloudAudioBridge.url === wsUrl &&
-        cloudAudioBridge.open
+        bridgeAlive(cloudAudioBridge)
     ) {
         clearTimeout(cloudAudioBridge.ttlTimer);
         cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
@@ -734,7 +897,6 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     if (cloudAudioBridge) {
         clearTimeout(cloudAudioBridge.ttlTimer);
-        if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
         try {
             cloudAudioBridge.ws.close();
         } catch {
@@ -750,63 +912,41 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         return;
     }
     const ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
-    cloudAudioBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer, afterSeq: 0 };
+    cloudAudioBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer };
+    cloudListenerCount = undefined;
+    cloudAudioLingerUntil = 0;
 
     ws.on('open', () => {
         if (cloudAudioBridge?.ws !== ws) return;
         cloudAudioBridge.open = true;
-        // Start clean — the listener can't replay history anyway; the next
-        // chunks we read are what they'll hear first.
-        cloudAudioBridge.afterSeq = curAudioRing?.latestSeq ?? 0;
         console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}...`);
-
-        cloudAudioBridge.pumpTimer = setInterval(() => {
-            const slot = cloudAudioBridge;
-            if (!slot || !slot.open || !curAudioRing) return;
-            const chunks = curAudioRing.readAfter(slot.afterSeq);
-            if (chunks.length === 0) return;
-            const serverNow = Date.now();
-            for (const chunk of chunks) {
-                slot.afterSeq = chunk.seq;
-                // 8 (serverNow) + 8 (playAt) + 4*5 (incarnation/sampleRate/channels/sampleCount/
-                // advanceSamples) + sampleCount*4 (Float32 payload).
-                const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
-                const buf = Buffer.allocUnsafe(totalSize);
-                let off = 0;
-                buf.writeDoubleLE(serverNow, off);
-                off += 8;
-                buf.writeDoubleLE(chunk.playAtRealTime, off);
-                off += 8;
-                buf.writeUInt32LE(chunk.incarnation, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.sampleRate, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.channels, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.samples.length, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.advanceSamples, off);
-                off += 4;
-                const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
-                src.copy(buf, off);
-                try {
-                    slot.ws.send(buf, { binary: true });
-                } catch (err) {
-                    console.error('[server-worker] audio bridge send failed:', err);
-                    return;
-                }
-            }
-        }, AUDIO_PUSH_INTERVAL_MS);
+        ensureAudioPump();
+    });
+    ws.on('message', (data, isBinary) => {
+        if (isBinary || cloudAudioBridge?.ws !== ws) return;
+        let msg: AudioBridgeControlMessage | undefined;
+        try {
+            msg = JSON.parse(data.toString()) as AudioBridgeControlMessage;
+        } catch {
+            return;
+        }
+        if (msg?.type !== 'listeners' || typeof msg.count !== 'number') return;
+        const prev = cloudListenerCount;
+        cloudListenerCount = msg.count;
+        if (msg.count === 0 && (prev ?? 0) > 0) cloudAudioLingerUntil = Date.now() + CLOUD_AUDIO_LINGER_MS;
+        if (prev !== msg.count) console.log(`[server-worker] cloud audio listeners: ${msg.count}`);
+        ensureAudioPump();
     });
     ws.on('error', (err) => {
+        if (cloudAudioBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud audio bridge error:', err);
     });
     ws.on('close', () => {
         if (cloudAudioBridge?.ws === ws) {
             console.log('[server-worker] cloud audio bridge socket closed');
             clearTimeout(cloudAudioBridge.ttlTimer);
-            if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
             cloudAudioBridge = undefined;
+            ensureAudioPump();
         }
     });
 }
@@ -815,13 +955,13 @@ function closeCloudAudioBridge(sessionId?: string) {
     if (!cloudAudioBridge) return;
     if (sessionId !== undefined && cloudAudioBridge.sessionId !== sessionId) return;
     clearTimeout(cloudAudioBridge.ttlTimer);
-    if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
     try {
         cloudAudioBridge.ws.close();
     } catch {
         /* ignore */
     }
     cloudAudioBridge = undefined;
+    ensureAudioPump();
 }
 
 /** Single-shot under PROXY_CHUNK_SIZE; larger bodies stream via httpProxyChunk
@@ -1169,62 +1309,12 @@ async function dispatchHttpProxy(
         return dispatchFramesZstd();
     }
 
-    // /api/ezp/audio?afterSeq=N — incremental audio chunks for the WAN-side
-    // browser. Mirrors the Koa route's binary chunk-pack wire format; the
-    // browser uses `useAudioStream` to schedule via Web Audio with drift
-    // correction against the player's clock (sync'd via /api/ezp/time).
-    if (pathStr === '/api/ezp/audio') {
-        const afterSeq = parseInt(query?.afterSeq ?? '0', 10) || 0;
-        return dispatchAudio(afterSeq);
-    }
-
     // /api/ezp/time — server-clock sample for client RTT/offset estimation.
     if (pathStr === '/api/ezp/time') {
-        return jsonResult({ now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        return jsonResult({ now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
     }
 
     return { status: 404 };
-}
-
-function dispatchAudio(afterSeq: number): { status: number; headers?: Record<string, string>; body?: Buffer } {
-    if (!curAudioRing) return { status: 204 };
-    const chunks = curAudioRing.readAfter(afterSeq);
-    if (chunks.length === 0) return { status: 204 };
-
-    // Wire format mirrors the LAN Koa route: 8-byte header (chunkCount,
-    // latestSeq) then per-chunk metadata + Float32 samples.
-    let totalSize = 8;
-    for (const chunk of chunks) {
-        totalSize += 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
-    }
-    const buf = Buffer.allocUnsafe(totalSize);
-    let off = 0;
-    buf.writeUInt32LE(chunks.length, off);
-    off += 4;
-    buf.writeUInt32LE(chunks[chunks.length - 1].seq, off);
-    off += 4;
-    for (const chunk of chunks) {
-        buf.writeDoubleLE(chunk.playAtRealTime, off);
-        off += 8;
-        buf.writeUInt32LE(chunk.incarnation, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.sampleRate, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.channels, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.samples.length, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.advanceSamples, off);
-        off += 4;
-        const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
-        src.copy(buf, off);
-        off += chunk.samples.byteLength;
-    }
-    return {
-        status: 200,
-        headers: { 'content-type': 'application/octet-stream' },
-        body: buf,
-    };
 }
 
 function dispatchFramesZstd(): { status: number; headers?: Record<string, string>; body?: Buffer } {
@@ -1500,7 +1590,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.body = {
             stats,
             pStatus: wsBroadcaster.get('pStatus'),
-            serverNow: Date.now(),
+            serverNow: rtcNow(),
         };
     });
 
@@ -1841,74 +1931,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
         ctx.set('Cache-Control', 'no-store');
-        ctx.body = { now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-    });
-
-    // ----------------------------------------------
-    // API: GET /api/ezp/audio?afterSeq=N - binary audio chunk data for web client
-    // Wire format: [u32 chunkCount][u32 latestSeq]
-    //   per chunk: [f64 playAtRealTime][u32 incarnation][u32 sampleRate]
-    //              [u32 channels][u32 sampleCount][u32 advanceSamples][Float32 × sampleCount]
-    // ----------------------------------------------
-    router.get('/api/ezp/audio', async (ctx) => {
-        ctx.set('Access-Control-Allow-Origin', '*');
-        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-
-        if (!curAudioRing) {
-            ctx.status = 204;
-            return;
-        }
-
-        const afterSeq = parseInt(ctx.query.afterSeq as string) || 0;
-        const chunks = curAudioRing.readAfter(afterSeq);
-
-        if (chunks.length === 0) {
-            ctx.status = 204;
-            return;
-        }
-
-        // Calculate total response size
-        // Header: 4 (chunkCount) + 4 (latestSeq) = 8 bytes
-        // Per chunk: 8 (playAtRealTime f64) + 4 (incarnation) + 4 (sampleRate)
-        //          + 4 (channels) + 4 (sampleCount) + 4 (advanceSamples) + sampleCount*4 (Float32 data)
-        let totalSize = 8;
-        for (const chunk of chunks) {
-            totalSize += 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
-        }
-
-        const buf = Buffer.allocUnsafe(totalSize);
-        let offset = 0;
-
-        // Write header
-        buf.writeUInt32LE(chunks.length, offset);
-        offset += 4;
-        buf.writeUInt32LE(chunks[chunks.length - 1].seq, offset);
-        offset += 4;
-
-        // Write each chunk
-        for (const chunk of chunks) {
-            buf.writeDoubleLE(chunk.playAtRealTime, offset);
-            offset += 8;
-            buf.writeUInt32LE(chunk.incarnation, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.sampleRate, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.channels, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.samples.length, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.advanceSamples, offset);
-            offset += 4;
-
-            // Copy Float32 audio data from SAB view into response buffer
-            const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
-            src.copy(buf, offset);
-            offset += chunk.samples.byteLength;
-        }
-
-        ctx.set('Cache-Control', 'no-store');
-        ctx.type = 'application/octet-stream';
-        ctx.body = buf;
+        ctx.body = { now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     });
 
     webApp.use(router.routes());
@@ -2093,6 +2116,7 @@ async function startServer(config: ServerWorkerData) {
     // `/ws`, because the broadcaster there is lossy by design.
     attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
     attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
+    attachAudioStreamUpgrade(httpServer);
 
     // ----------------------------
     // Kiosk server — second port, same API, limited sidebar
@@ -2189,6 +2213,7 @@ async function startServer(config: ServerWorkerData) {
         const kioskWss = new WebSocketServer({ noServer: true });
         attachWsPath(kioskHttpServer, kioskWss);
         wsBroadcaster.attach(kioskWss);
+        attachAudioStreamUpgrade(kioskHttpServer);
     }
 }
 

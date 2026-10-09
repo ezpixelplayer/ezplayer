@@ -47,7 +47,7 @@ import type { LayoutGroupInfo, MhFixtureInfo, ViewpointInfo } from 'xllayoutcalc
 import { viewpointToCameraState } from './viewpointCamera';
 import { GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
-import { useAudioStream } from '../../hooks/useAudioStream';
+import { deriveAudioStreamOptions, useAudioListenSession } from '../../audio';
 import { isElectron } from '@ezplayer/shared-ui-components';
 import type { RootState } from '../../store/Store';
 import {
@@ -490,11 +490,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     );
 
     // Audio stream for the standalone web client. In embedded mode the host (e.g. the browser
-    // preview dialog) owns audio, so we pass no baseUrl — that short-circuits `useAudioStream`
-    // before any HTTP polling, even if audioEnabled somehow flips on.
-    const { audioEnabled, toggleAudio } = useAudioStream({
-        baseUrl: embedded ? undefined : effectiveFrameServerUrl,
-    });
+    // preview dialog) owns audio, so we pass no base — the session comes back inert.
+    const { active: audioEnabled, toggle: toggleAudio } = useAudioListenSession(
+        deriveAudioStreamOptions(embedded ? undefined : effectiveFrameServerUrl, 'EZPlayer preview'),
+    );
 
     // Clear stale state immediately when show folder changes so old data
     // is never rendered with new frame buffers (or vice versa).

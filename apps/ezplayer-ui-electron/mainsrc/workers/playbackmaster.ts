@@ -43,13 +43,15 @@ import type {
 import {
     AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
-    getActiveVolumeSchedule,
     getScheduleTimes,
     getSeqTimesMS,
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
     songVolumeScale,
+    resolveVolumeTargets,
+    type VolumeTarget,
+    viewerControlBackends,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -178,6 +180,10 @@ function emitError(msg: string) {
     playLogger.log(msg);
     console.log(msg);
 }
+
+/** Per-file throttle for the "audio still decoding" notice (see the audio loop). */
+const audioPendingLoggedAt = new Map<string, number>();
+const AUDIO_PENDING_LOG_INTERVAL_MS = 5_000;
 
 function emitWarning(msg: string) {
     playLogger.log(msg);
@@ -350,6 +356,17 @@ function sendPlayerStateUpdate() {
         volume: {
             level: volume,
             muted,
+            mode: volumeMode,
+            outputs:
+                volumeMode === 'outputs'
+                    ? volumeTargetsNow.map((t) => ({
+                          id: t.id,
+                          label: t.label,
+                          deviceId: t.deviceId,
+                          groupId: t.groupId,
+                          level: outputLevels.get(t.id) ?? t.level,
+                      }))
+                    : undefined,
         },
     };
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
@@ -510,10 +527,44 @@ function sendControllerStateUpdate() {
 }
 
 let lastRFCheck: number = Date.now();
+
+// With both backends on, each round asks the built-in request line first and polls
+// Remote Falcon only when that had nothing (see the ezvc suggestion callback). The
+// two checks fire in the same tick because they share the schedule and the timing.
+let rfCheckDeferred = false;
+let rfCheckDeferredAt = 0;
+/** If the built-in check never answers (cloud unreachable), stop holding Remote Falcon. */
+const RF_DEFER_MAX_MS = 3000;
+function initiateRFCheck() {
+    const vc = latestSettings?.viewerControl;
+    const bothOn = viewerControlBackends(vc).includes('ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
+    if (!bothOn) {
+        sendRFInitiateCheck();
+        return;
+    }
+    const now = Date.now();
+    if (rfCheckDeferred && now - rfCheckDeferredAt > RF_DEFER_MAX_MS) {
+        rfCheckDeferred = false;
+        sendRFInitiateCheck();
+        return;
+    }
+    rfCheckDeferred = true;
+    rfCheckDeferredAt = now;
+}
+function releaseDeferredRFCheck() {
+    if (!rfCheckDeferred) return;
+    rfCheckDeferred = false;
+    sendRFInitiateCheck();
+}
+
 function sendRemoteUpdate() {
     const settings = latestSettings;
     if (!settings || !settings.viewerControl?.remoteFalconToken) {
         //emitInfo("No RF token");
+        return;
+    }
+    if (!viewerControlBackends(settings.viewerControl).includes('remote-falcon')) {
+        setRFControlEnabled(false);
         return;
     }
     const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
@@ -549,14 +600,14 @@ function sendRemoteUpdate() {
         const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
         if (diff >= 3000 && diff < 4000) {
             //emitInfo("Initiate while-playing RF check");
-            sendRFInitiateCheck();
+            initiateRFCheck();
         }
     } else {
         const dn = Date.now();
         if (dn - lastRFCheck > 5000) {
             lastRFCheck = dn;
             //emitInfo("Initiate idle RF check");
-            sendRFInitiateCheck();
+            initiateRFCheck();
         }
     }
 }
@@ -603,13 +654,19 @@ function configureEzvc() {
     lastEzvcPlayingKey = undefined;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
-        if (!next.songId) return;
+        if (!next.songId) {
+            // Nothing requested on the viewer page: Remote Falcon's turn.
+            releaseDeferredRFCheck();
+            return;
+        }
+        rfCheckDeferred = false; // the built-in line had something; Remote Falcon sits this round out
         processCommand({
             command: 'playsong',
             immediate: false,
             songId: next.songId,
             requestId: randomUUID(),
             priority: 3,
+            source: 'viewer',
         });
     });
     setEzvcResyncCallback(() => {
@@ -652,7 +709,8 @@ function sendEzvcUpdate() {
     // Display feeds report for any cloud-connected player; interactive control
     // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
-    const ezWindow = vc?.type === 'ezplayer' ? getActiveViewerControlSchedule(vc) : null;
+    const ezOn = viewerControlBackends(vc).includes('ezplayer');
+    const ezWindow = ezOn ? getActiveViewerControlSchedule(vc) : null;
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
@@ -696,7 +754,7 @@ function sendEzvcUpdate() {
             end: new Date(x.endTimeMS).toISOString(),
         }));
     // Request windows: exactly the viewer-control schedule entries.
-    const reqWindows: VcScheduleEntry[] = (vc?.type === 'ezplayer' ? (vc.schedule ?? []) : []).map((e) => ({
+    const reqWindows: VcScheduleEntry[] = (ezOn ? (vc?.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
         end: e.endTime,
@@ -767,15 +825,26 @@ function doVolumeAdjust(dn: number) {
         lastVolCheck = dn; // unconfigured: keep the slew clock fresh, don't bank credit
         return;
     }
-    const volsched = getActiveVolumeSchedule(settings.volumeControl);
-    let tgtvol = settings.volumeControl.defaultVolume ?? 100;
-    if (volsched) {
-        tgtvol = volsched.volumeLevel;
+    // One resolver for every output (default sink, or each named device with its
+    // own schedule). The worker owns the slew and mute; main just applies gains.
+    const resolved = resolveVolumeTargets(settings);
+    volumeMode = resolved.mode;
+    volumeTargetsNow = resolved.targets;
+    for (const id of [...outputLevels.keys()]) {
+        if (!resolved.targets.some((t) => t.id === id)) outputLevels.delete(id);
     }
-
-    const diff = tgtvol - volume;
-    if (diff === 0) {
+    let maxDiff = 0;
+    for (const t of resolved.targets) {
+        const cur = outputLevels.get(t.id);
+        if (cur === undefined) {
+            outputLevels.set(t.id, t.level); // a new output starts at its target
+            continue;
+        }
+        maxDiff = Math.max(maxDiff, Math.abs(t.level - cur));
+    }
+    if (maxDiff === 0) {
         lastVolCheck = dn; // at target: reset so a future change starts from now
+        recomputeVolumeGains();
         return;
     }
 
@@ -784,11 +853,115 @@ function doVolumeAdjust(dn: number) {
 
     // One 1% step per whole interval elapsed, capped by the remaining distance.
     const maxSteps = Math.floor(elapsed / VOLUME_SLEW_INTERVAL_MS);
-    const step = Math.min(Math.abs(diff), maxSteps);
-    volume += Math.sign(diff) * step;
+    let used = 0;
+    for (const t of resolved.targets) {
+        const cur = outputLevels.get(t.id)!;
+        const diff = t.level - cur;
+        if (diff === 0) continue;
+        const step = Math.min(Math.abs(diff), maxSteps);
+        outputLevels.set(t.id, cur + Math.sign(diff) * step);
+        used = Math.max(used, step);
+    }
     // Consume only the time we used so a sub-interval remainder carries forward.
-    lastVolCheck += step * VOLUME_SLEW_INTERVAL_MS;
-    volumeSF = muted ? 0 : volume / 100;
+    lastVolCheck += used * VOLUME_SLEW_INTERVAL_MS;
+    recomputeVolumeGains();
+}
+
+/** Derive the per-output gains, the headline `volume`, and the listener-ring
+ *  gain from the current levels and mute. */
+function recomputeVolumeGains() {
+    const gains: Record<string, number> = {};
+    let headline = 0;
+    for (const t of volumeTargetsNow) {
+        const lvl = outputLevels.get(t.id) ?? t.level;
+        gains[t.id] = muted ? 0 : lvl / 100;
+        headline = Math.max(headline, lvl);
+    }
+    if (volumeTargetsNow.length === 0) headline = volumeMode === 'default' ? 100 : 0;
+    volume = headline;
+    outputGains = gains;
+    // Legacy single gain, consumed by main for the default-sink window when a
+    // chunk carries no per-output gains. Listeners never see it (see sendAudioChunk).
+    volumeSF = muted ? 0 : volumeMode === 'default' ? volume / 100 : 1;
+}
+
+/////////
+// Commanded songs wait for their audio (issue #180)
+//
+// A jukebox / viewer / Remote Falcon pick names a song whose mp3 may not be decoded
+// yet, and a fixed start delay cannot be long enough for a cold decode without making
+// every pick sluggish. So the decode is requested the moment the command arrives, and
+// the start is held — lights and audio together — until the audio is there, up to a cap.
+
+/** Longest a commanded song is held for its audio before playing lights-only after all. */
+const INTERACTIVE_AUDIO_WAIT_MAX_MS = 5_000;
+/** requestId -> when the hold began. */
+const interactiveAudioWaitSince = new Map<string, number>();
+
+function audioFileFor(seq: SequenceRecord | undefined): string | undefined {
+    let saf = seq?.files?.audio;
+    if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
+    return saf || undefined;
+}
+
+/** Ask the decoder for a commanded song's audio right now, at top priority. */
+function requestAudioDecodeNow(seq: SequenceRecord, startTime: number): void {
+    const saf = audioFileFor(seq);
+    if (!saf || !mp3Cache) return;
+    const durationMs = seq.work?.length ? seq.work.length * 1000 : 600_000;
+    mp3Cache.prefetchMP3({
+        mp3file: saf,
+        needByTime: startTime,
+        neededThroughTime: startTime + durationMs,
+        estDurationSec: durationMs / 1000,
+        tier: 0,
+        expiry: startTime + 7 * 24 * 3600_000,
+        normalize: !!seq.settings?.normalize,
+    });
+    mp3Cache.dispatch();
+}
+
+/** True when the song's audio is decoded, has no audio, or failed (nothing to wait for). */
+function interactiveAudioReady(seqId: string): boolean {
+    const seq = foregroundPlayerRunState.sequencesById.get(seqId) ?? curSequences?.find((x) => x.id === seqId);
+    const saf = audioFileFor(seq);
+    if (!saf || !mp3Cache) return true;
+    const r = mp3Cache.getMp3(saf, !!seq?.settings?.normalize);
+    if (!r) return false; // not requested yet
+    return !!r.err || !!r.ref;
+}
+
+/**
+ * Push back any interactive start, immediate or queued, that would begin within the audio
+ * lead while its audio is still decoding, so the audio generator never reaches an
+ * undecoded song. Runs every tick after the prefetch pass.
+ */
+function holdInteractiveStartsForAudio(now: number): void {
+    const horizon = now + playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs;
+    const hold = (cmd: { seqId?: string; startTime: number; requestId: string }): boolean => {
+        if (!cmd.seqId || cmd.startTime > horizon) return false;
+        if (interactiveAudioReady(cmd.seqId)) {
+            interactiveAudioWaitSince.delete(cmd.requestId);
+            return false;
+        }
+        const since = interactiveAudioWaitSince.get(cmd.requestId) ?? now;
+        interactiveAudioWaitSince.set(cmd.requestId, since);
+        if (now - since > INTERACTIVE_AUDIO_WAIT_MAX_MS) {
+            if (now - since < INTERACTIVE_AUDIO_WAIT_MAX_MS + 1000) {
+                emitWarning(
+                    `Audio for ${cmd.seqId} still not decoded after ${INTERACTIVE_AUDIO_WAIT_MAX_MS} ms; starting without it.`,
+                );
+            }
+            return false;
+        }
+        cmd.startTime = horizon;
+        return true;
+    };
+    const fs = foregroundPlayerRunState;
+    if (fs.immediateItem) hold(fs.immediateItem);
+    let moved = false;
+    for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
+    if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
 }
 
 /////////
@@ -807,6 +980,7 @@ function processCommand(cmd: EZPlayerCommand) {
                     return false;
                 }
                 const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
+                requestAudioDecodeNow(seq, startTime);
                 foregroundPlayerRunState.addInteractiveCommand({
                     immediate: cmd.immediate,
                     requestId: cmd.requestId,
@@ -819,6 +993,10 @@ function processCommand(cmd: EZPlayerCommand) {
                 }
 
                 emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                if (cmd.source === 'jukebox' || cmd.source === 'remote-falcon') {
+                    // Viewer-page picks are counted by the cloud; these two only the player sees.
+                    send({ type: 'viewerPick', source: cmd.source, songId: cmd.songId, title: seq.work?.title });
+                }
                 sendPlayerStateUpdate();
                 if (!running) {
                     running = processQueue(); // kick off first song
@@ -848,12 +1026,15 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'setvolume': {
             if (cmd?.volume !== undefined) {
+                // Applies to every output; the schedule slew then pulls each back
+                // toward its own target (pre-existing semantics).
                 volume = cmd.volume;
+                for (const id of outputLevels.keys()) outputLevels.set(id, cmd.volume);
             }
             if (cmd.mute !== undefined) {
                 muted = cmd.mute;
             }
-            volumeSF = muted ? 0 : volume / 100;
+            recomputeVolumeGains();
             sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
@@ -1036,13 +1217,18 @@ const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 // Playback params
 const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
-    sendAudioInAdvanceMs: 300, // audio generation lead (all consumers); modest margin for cloud/network jitter
+    // Audio generation lead (all consumers). A browser listener must receive a chunk
+    // earlier than its own output latency plus transit, or it cannot be played at the
+    // stamp: phone outputs report ~300 ms, cloud transit ~100 ms.
+    sendAudioInAdvanceMs: 700,
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
+    // Earliest a commanded song starts. Its audio may not have decoded by then; the start
+    // is then held by holdInteractiveStartsForAudio() rather than played without sound.
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
@@ -1175,6 +1361,7 @@ function dispatchSettings(settings: PlaybackSettings) {
                     songId: s.id,
                     requestId: randomUUID(),
                     priority: 3,
+                    source: 'remote-falcon',
                 });
             },
         );
@@ -1314,8 +1501,15 @@ let isPaused = false;
 /** A graceful stop is in progress: still playing, but ending at the next
  *  convenient point. Reported as "Stopping". */
 let stoppingGracefully = false;
+/** Headline level for status / legacy consumers (see recomputeVolumeGains). */
 let volume = 100;
 let muted = false;
+/** Current (slewed) level per output target id. */
+const outputLevels = new Map<string, number>();
+let volumeMode: 'default' | 'outputs' = 'default';
+let volumeTargetsNow: VolumeTarget[] = [];
+/** Linear gain per output key, mute applied; shipped with every audio chunk. */
+let outputGains: Record<string, number> = {};
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
@@ -2098,8 +2292,9 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
 }
 
 /**
- * Publish volume-scaled samples to the ring buffer (web clients), then send
- * unity-gain PCM to main for Electron audio windows (per-sink GainNode).
+ * Publish unity-gain samples to the ring buffer (web/cloud listeners, who set
+ * their own volume), then send the same PCM to main for the Electron audio
+ * windows, which apply the per-output gains.
  */
 function sendAudioChunk(
     samplesUnity: Float32Array,
@@ -2109,12 +2304,28 @@ function sendAudioChunk(
     channels: number,
     advanceSamples: number,
 ) {
-    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, volumeSF);
+    // Web/cloud listeners are an independent path: they get the song at unity, never
+    // modulated by the local output schedules or mute (they have their own volume).
+    // Nor by the local speaker sync adjustment: `playAtRealTime` arrives with
+    // `audioTimeAdjMs` folded in for the Electron audio windows (which play at the
+    // stamp on the raw context clock, so the user trims their own output latency
+    // with that setting). The stream carries the lights' time — browser listeners
+    // compensate their own output latency themselves.
+    audioExportRing?.publish(
+        samplesUnity,
+        playAtRealTime - playbackParams.audioTimeAdjMs,
+        incarnation,
+        sampleRate,
+        channels,
+        advanceSamples,
+        1,
+    );
     const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
             type: 'audioChunk',
             volumeSF,
+            outputGains,
             chunk: {
                 sampleRate,
                 channels,
@@ -2122,6 +2333,7 @@ function sendAudioChunk(
                 playAtRealTime,
                 incarnation,
                 advanceSamples,
+                rtcOffsetMs: rtcConverter.computeTime(performance.now()) - Date.now(),
             },
         },
         [buf],
@@ -2545,6 +2757,7 @@ async function processQueue() {
                     PREFETCH_TIER.SPECULATIVE,
                 );
                 mp3Cache.dispatch();
+                holdInteractiveStartsForAudio(targetFrameRTC);
             }
 
             if (doFseqPrefetch) {
@@ -2601,16 +2814,21 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - Fseq prefetched`);
 
-            function sendSilence(startTime: number, ms: number) {
-                if (ms <= 0) return;
+            /** Send up to one chunk of silence starting at `startTime`; returns the ms it
+             *  covers so the caller advances the audio clock by exactly that and loops for
+             *  the rest. Silence must be as contiguous as music: the listener stream is one
+             *  continuous opus encoding and restarts on any hole. */
+            function sendSilence(startTime: number, ms: number): number {
+                if (ms <= 0) return 0;
                 if (ms > playbackParams.sendAudioChunkMs) {
                     ms = playbackParams.sendAudioChunkMs;
                 }
                 ms = Math.ceil(ms);
-                const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
+                const quiet = new Float32Array(ms * 48);
                 // Silence carries no overlap: advance by its full length. Transitions to/from
                 // music fade naturally against the music chunk's ramped edge.
                 sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1, quiet.length);
+                return ms;
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -2642,15 +2860,24 @@ async function processQueue() {
                 );
                 const audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
-                    sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
-                    audioPlayerRunTime = audioAction.atTime;
+                    const want = audioAction.atTime - audioPlayerRunTime;
+                    const sent = sendSilence(startTime, want);
+                    audioPlayerRunTime = sent >= want ? audioAction.atTime : audioPlayerRunTime + sent;
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    const etime = Math.max(audioPlayerRunTime, targetFrameRTC);
-                    sendSilence(startTime, etime - audioPlayerRunTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
-                    audioPlayerRunTime = etime;
-                    break;
+                    // Idle: fill silence contiguously out to the same lead as music. The old
+                    // code sent one chunk "up to now" and jumped the clock past the rest,
+                    // leaving holes that restarted the listener stream every chunk.
+                    if (audioPlayerRunTime < targetFrameRTC - 1000) {
+                        audioPlayerRunTime = targetFrameRTC; // far behind (e.g. unpause): don't flood
+                    }
+                    const lead = targetFrameRTC + playbackParams.sendAudioInAdvanceMs;
+                    const want = lead - audioPlayerRunTime;
+                    if (want <= 0) break;
+                    const sent = sendSilence(startTime, want);
+                    audioPlayerRunTime = sent >= want ? lead : audioPlayerRunTime + sent;
+                    continue;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
                     curAudioSyncNum++;
@@ -2680,7 +2907,16 @@ async function processQueue() {
                                 emitError(`Audio error for ${saf}: ${audioref.err.message}.`);
                                 break;
                             } else if (!audioref.ref) {
-                                emitError(`Audio unknown condition ${saf}.`);
+                                // Still decoding (or the decode is stuck — the decoder client
+                                // times out and reports that as an audio error). Log at most
+                                // once per file every few seconds; this branch runs every tick.
+                                const lastAt = audioPendingLoggedAt.get(saf) ?? 0;
+                                if (performance.now() - lastAt > AUDIO_PENDING_LOG_INTERVAL_MS) {
+                                    audioPendingLoggedAt.set(saf, performance.now());
+                                    emitWarning(
+                                        `Audio still decoding ${saf}; playing lights without sound until it is ready.`,
+                                    );
+                                }
                                 break;
                             }
                         }
