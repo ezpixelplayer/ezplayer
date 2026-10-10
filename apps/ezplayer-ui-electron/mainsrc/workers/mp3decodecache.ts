@@ -183,6 +183,12 @@ export class MP3PrefetchCache {
         });
     }
 
+    /** Decode settled (ready or failed)? Unlike getMp3 this neither counts as a miss nor
+     *  references the entry, so it is safe to ask every tick. False when not requested. */
+    isSettled(mp3file: string, normalize?: boolean): boolean {
+        return this.mp3PrefetchCache.check({ mp3file, normalize: !!normalize }, this.now);
+    }
+
     getMp3(mp3file: string, normalize?: boolean): { ref?: MP3Reference; err?: Error } | undefined {
         const mp3ref = this.mp3PrefetchCache.reference({ mp3file, normalize: !!normalize }, this.now);
         if (!mp3ref) return undefined;

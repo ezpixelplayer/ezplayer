@@ -926,9 +926,9 @@ function interactiveAudioReady(seqId: string): boolean {
     const seq = foregroundPlayerRunState.sequencesById.get(seqId) ?? curSequences?.find((x) => x.id === seqId);
     const saf = audioFileFor(seq);
     if (!saf || !mp3Cache) return true;
-    const r = mp3Cache.getMp3(saf, !!seq?.settings?.normalize);
-    if (!r) return false; // not requested yet
-    return !!r.err || !!r.ref;
+    // A settled decode, success or failure, is nothing to wait for. Polled every tick while a
+    // song is held, so this must not count as a cache miss or touch the entry.
+    return mp3Cache.isSettled(saf, !!seq?.settings?.normalize);
 }
 
 /**
@@ -944,10 +944,14 @@ function holdInteractiveStartsForAudio(now: number): void {
             interactiveAudioWaitSince.delete(cmd.requestId);
             return false;
         }
-        const since = interactiveAudioWaitSince.get(cmd.requestId) ?? now;
+        const stored = interactiveAudioWaitSince.get(cmd.requestId);
+        if (stored !== undefined && stored < 0) return false; // gave up on this one already
+        const since = stored ?? now;
         interactiveAudioWaitSince.set(cmd.requestId, since);
         if (now - since > INTERACTIVE_AUDIO_WAIT_MAX_MS) {
-            if (now - since < INTERACTIVE_AUDIO_WAIT_MAX_MS + 1000) {
+            // Once per song: a negative `since` marks the warning as already given.
+            if (since > 0) {
+                interactiveAudioWaitSince.set(cmd.requestId, -since);
                 emitWarning(
                     `Audio for ${cmd.seqId} still not decoded after ${INTERACTIVE_AUDIO_WAIT_MAX_MS} ms; starting without it.`,
                 );
