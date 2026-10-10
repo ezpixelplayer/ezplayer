@@ -44,6 +44,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SyncProblemIcon from '@mui/icons-material/SyncProblem';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import FiberManualRecordOutlinedIcon from '@mui/icons-material/FiberManualRecordOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -837,11 +838,6 @@ const GridRow: React.FC<{
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {/* Always rendered, for column alignment; gray = no data. */}
                     <ConnectivityDot health={health} />
-                    {known && !hasDetail && (
-                        <Tooltip title="Details not read yet — refresh to see ports, firmware and drift">
-                            <Chip size="small" variant="outlined" label="?" sx={{ mr: 0.5, cursor: 'default' }} />
-                        </Tooltip>
-                    )}
                     <Chip
                         size="small"
                         color={meta.color}
@@ -853,7 +849,7 @@ const GridRow: React.FC<{
                                 : undefined
                         }
                     />
-                    {/* One status slot: work in progress, then a failure, then drift. */}
+                    {/* One status slot: work in progress, a failure, drift, then unread. */}
                     {runningOp?.status === 'queued' ? (
                         <MuiBox
                             component="span"
@@ -915,16 +911,25 @@ const GridRow: React.FC<{
                                 </Box>
                             </Popover>
                         </>
+                    ) : anyDrift ? (
+                        <IconButton
+                            size="small"
+                            onClick={() => setPortDialog('compare')}
+                            title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
+                            sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <SyncProblemIcon color="warning" fontSize="small" />
+                        </IconButton>
                     ) : (
-                        anyDrift && (
-                            <IconButton
-                                size="small"
-                                onClick={() => setPortDialog('compare')}
-                                title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
-                                sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        known &&
+                        !hasDetail && (
+                            <MuiBox
+                                component="span"
+                                title="Details not read yet — refresh to see ports, firmware and drift"
+                                sx={{ display: 'inline-flex', ml: 0.25, verticalAlign: 'middle' }}
                             >
-                                <SyncProblemIcon color="warning" fontSize="small" />
-                            </IconButton>
+                                <HelpOutlineIcon color="info" fontSize="small" />
+                            </MuiBox>
                         )
                     )}
                 </TableCell>

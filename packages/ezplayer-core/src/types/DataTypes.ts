@@ -714,13 +714,31 @@ export interface JukeboxSettings {
  * pauses data to that controller while it runs — several models will not answer
  * while they are streamed to — and can take tens of seconds on a HinksPix.
  */
+/**
+ * The automatic-read choices offered as one setting.  `whenIdle: false` with
+ * `onRecovery: true` is not among them: a controller is only read on recovery
+ * if automatic reads are on at all.
+ */
+export type ControllerRefreshMode = 'off' | 'idle' | 'recovery';
+
+/** The stored flags for a choice. */
+export function controllerRefreshSettingsFor(mode: ControllerRefreshMode): ControllerRefreshSettings {
+    return { whenIdle: mode !== 'off', onRecovery: mode === 'recovery' };
+}
+
+/** The choice the stored flags amount to; unset means reads when idle. */
+export function controllerRefreshMode(s?: ControllerRefreshSettings): ControllerRefreshMode {
+    if (s?.whenIdle === false) return 'off';
+    return s?.onRecovery ? 'recovery' : 'idle';
+}
+
 export interface ControllerRefreshSettings {
     /** Read controllers as they are first seen alive, while playback is stopped. */
     whenIdle?: boolean;
     /**
-     * Read a controller that comes back during a show, holding its data back
-     * until the read finishes.  Off by default: lighting it immediately beats
-     * fresh details, since the read pauses it again for as long as it takes.
+     * Read a controller that comes back during a show before sending to it.
+     * Off by default: lighting it immediately beats fresh details, since it
+     * only joins the show once the read finishes.
      */
     onRecovery?: boolean;
 }

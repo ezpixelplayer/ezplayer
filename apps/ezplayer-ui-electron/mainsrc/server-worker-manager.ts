@@ -43,6 +43,7 @@ import {
     setControllerOpsBroadcaster,
     refreshInterfaces,
     hasRunningControllerOps,
+    cancelQueuedAutomaticReads,
 } from './controller-ops.js';
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
 import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
@@ -108,8 +109,10 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
         if (cmd.command === 'resetplayback') {
+            // The user asked for this, so automatic reads give way to it.
+            cancelQueuedAutomaticReads();
             // Reloading clears controller state an operation is still writing to.
-            if (hasRunningControllerOps()) {
+            if (hasRunningControllerOps({ ignoreAutomatic: true })) {
                 console.warn('[resetplayback] refused: a controller operation is running');
                 return;
             }

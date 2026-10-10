@@ -225,6 +225,24 @@ describe('automatic reads', () => {
         expect(hasRunningControllerOps()).toBe(false);
     });
 
+    it('does not count as a reason to refuse what the user asked for', async () => {
+        const auto = Array.from({ length: 2 }, (_, i) => startAutomaticRead(`10.9.5.${i}`));
+        await vi.waitFor(() => expect(probe.pending.length).toBe(2));
+
+        // Running automatic reads: a reload the user asked for goes ahead.
+        expect(hasRunningControllerOps()).toBe(true);
+        expect(hasRunningControllerOps({ ignoreAutomatic: true })).toBe(false);
+
+        // A read the user asked for still holds it off.
+        const user = startRead('10.9.5.9');
+        await vi.waitFor(() => expect(probe.pending.length).toBe(3));
+        expect(hasRunningControllerOps({ ignoreAutomatic: true })).toBe(true);
+
+        for (let i = 0; i < 3; i++) await settleRead({ success: false, error: 'done' });
+        await Promise.all([...auto, user]);
+        expect(hasRunningControllerOps()).toBe(false);
+    });
+
     it('leaves a read the user asked for queued', async () => {
         const auto = Array.from({ length: 8 }, (_, i) => startAutomaticRead(`10.9.3.${i}`));
         await vi.waitFor(() => expect(probe.pending.length).toBe(8));

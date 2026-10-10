@@ -75,7 +75,10 @@ export type {
     AppSettingsState,
     AppSettingsCommand,
     ControllerRefreshSettings,
+    ControllerRefreshMode,
 } from './types/DataTypes';
+
+export { controllerRefreshSettingsFor, controllerRefreshMode } from './types/DataTypes';
 
 export type {
     ControllerDetailNode,

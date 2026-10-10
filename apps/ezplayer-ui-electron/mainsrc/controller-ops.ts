@@ -586,8 +586,16 @@ export function cancelQueuedAutomaticReads(): number {
     return dropped;
 }
 
-export function hasRunningControllerOps(): boolean {
-    return Object.values(state.operations).some((o) => o.status === 'running' || o.status === 'queued');
+/**
+ * Whether any controller operation is under way.  `ignoreAutomatic` leaves out
+ * the reads the player starts itself, which must not block what the user asked for.
+ */
+export function hasRunningControllerOps(opts?: { ignoreAutomatic?: boolean }): boolean {
+    return Object.values(state.operations).some((o) => {
+        if (o.status !== 'running' && o.status !== 'queued') return false;
+        if (opts?.ignoreAutomatic && o.origin === 'auto' && o.kind === 'status') return false;
+        return true;
+    });
 }
 
 /**

@@ -1193,8 +1193,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
 
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
+            // The user asked for this, so automatic reads give way to it.
+            cancelQueuedAutomaticReads();
             // Reloading clears controller state an operation is still writing to.
-            if (hasRunningControllerOps()) {
+            if (hasRunningControllerOps({ ignoreAutomatic: true })) {
                 console.warn('[resetplayback] refused: a controller operation is running');
                 return false;
             }
