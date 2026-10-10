@@ -92,11 +92,9 @@ for (const file of nodeBundles(path.resolve('dist'))) {
     }
 }
 
-// An external that IS in the asar still needs its own dependencies there:
-// electron-builder's collector has dropped those too (2026-09: mpg123-decoder-ezp
-// shipped without @wasm-audio-decoders/common after an unrelated pnpm add, and
-// the mp3 decode worker died at import in the packaged app). Walk each present
-// external's package.json and require its dependencies, recursively.
+// An external that IS in the asar still needs its own dependencies there, and
+// electron-builder's collector can drop those. Walk each present external's
+// package.json and require its dependencies, recursively.
 const asarDeps = (pkg) => {
     try {
         const json = JSON.parse(asar.extractFile(asarPath, `node_modules/${pkg}/package.json`).toString('utf8'));

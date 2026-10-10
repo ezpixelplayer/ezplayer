@@ -12,11 +12,9 @@
  * the clock offset's jitter never reaches the audio. The chained schedule is
  * compared against the ideal (wall-clock derived) start on every chunk, but
  * only a PERSISTENT deviation re-anchors: the median of the last few readings
- * must exceed DRIFT_SNAP_MS. A single noisy reading of the browser's clocks
- * (Firefox quantizes timers under resistFingerprinting, and its output
- * timestamp pairing is coarser than Chrome's) used to snap the schedule on
- * its own, which was audible as a chop about once a second. A gross error
- * still snaps immediately.
+ * must exceed DRIFT_SNAP_MS, so one noisy clock reading (a quantized timer, a
+ * coarse output timestamp pair) cannot snap the schedule by itself. A gross
+ * error still snaps immediately.
  *
  * Output latency: `getOutputTimestamp()` pairs a context time that is being
  * output right now with a performance timestamp, so mapping wall time through

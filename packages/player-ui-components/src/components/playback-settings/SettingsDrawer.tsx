@@ -64,9 +64,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({ title, statusAre
 
     const effectiveSections = sections.filter((s) => s.available !== false);
 
-    // Deep link: `?section=<key>` opens that section's dialog on arrival (the Show
-    // Status viewer-control card sends people here), then drops the parameter so a
-    // reload or back-navigation doesn't reopen it.
+    // Deep link: `?section=<key>` opens that section's dialog on arrival, then drops
+    // the parameter so a reload or back-navigation doesn't reopen it.
     const [searchParams, setSearchParams] = useSearchParams();
     const requested = searchParams.get('section');
     useEffect(() => {

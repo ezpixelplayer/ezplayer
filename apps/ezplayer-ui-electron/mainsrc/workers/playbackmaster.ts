@@ -886,7 +886,7 @@ function recomputeVolumeGains() {
 }
 
 /////////
-// Commanded songs wait for their audio (issue #180)
+// Commanded songs wait for their audio
 //
 // A jukebox / viewer / Remote Falcon pick names a song whose mp3 may not be decoded
 // yet, and a fixed start delay cannot be long enough for a cold decode without making
@@ -1031,7 +1031,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'setvolume': {
             if (cmd?.volume !== undefined) {
                 // Applies to every output; the schedule slew then pulls each back
-                // toward its own target (pre-existing semantics).
+                // toward its own target.
                 volume = cmd.volume;
                 for (const id of outputLevels.keys()) outputLevels.set(id, cmd.volume);
             }
@@ -2870,9 +2870,8 @@ async function processQueue() {
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    // Idle: fill silence contiguously out to the same lead as music. The old
-                    // code sent one chunk "up to now" and jumped the clock past the rest,
-                    // leaving holes that restarted the listener stream every chunk.
+                    // Idle: fill silence contiguously out to the same lead as music; a hole
+                    // here restarts the listener stream.
                     if (audioPlayerRunTime < targetFrameRTC - 1000) {
                         audioPlayerRunTime = targetFrameRTC; // far behind (e.g. unpause): don't flood
                     }

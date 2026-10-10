@@ -58,9 +58,8 @@ export class AsyncBatchLogger {
 
     /**
      * Size-based rotation: when the next write would carry the file past `maxBytes`,
-     * shift `<file>.N-1` → `<file>.N` … `<file>` → `<file>.1` and start afresh. A show
-     * season otherwise grows one file without bound (tens of MB), which makes the log
-     * slow to open and read when it is needed most.
+     * shift `<file>.N-1` → `<file>.N` … `<file>` → `<file>.1` and start afresh, so a
+     * season's log never grows without bound.
      */
     private async rotateIfNeeded(incoming: number): Promise<void> {
         if (this.bytes === undefined) {

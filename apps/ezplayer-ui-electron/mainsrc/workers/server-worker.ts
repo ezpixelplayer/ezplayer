@@ -447,9 +447,8 @@ function openCloudBridge(
     if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
 
     // Same session + same URL + a socket that is open OR still dialing: keep it and
-    // refresh the TTL. Redialing over a CONNECTING socket (checkins arrive every 5 s;
-    // a slow TLS handshake can take longer) tore the dial down each time, so the
-    // bridge never came up and logged "closed before the connection was established".
+    // refresh the TTL. Redialing over a CONNECTING socket would tear down a dial
+    // still completing a slow handshake, so the bridge would never come up.
     if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && bridgeAlive(cloudBridge)) {
         clearTimeout(cloudBridge.ttlTimer);
         cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);

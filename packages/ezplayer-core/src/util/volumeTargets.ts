@@ -3,10 +3,7 @@
  *
  * One place resolves this for everyone: the playback worker slews toward these
  * targets and reports the live levels in `PlayerPStatusContent.volume`, and the
- * desktop audio windows apply the worker's gains. (Previously the default
- * schedule was evaluated in the worker and the per-device schedules separately
- * in the Electron main process, per chunk, without mute — so named outputs
- * ignored mute, nothing reported their levels, and the two could disagree.)
+ * desktop audio windows apply the worker's gains.
  */
 
 import type { PlaybackSettings, VolumeControlState } from '../types/DataTypes';

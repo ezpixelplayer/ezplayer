@@ -138,7 +138,7 @@ describe('AudioStreamEncoder (continuous opus)', () => {
         const want = new Float32Array(got.length);
         for (let f = 0; f < want.length; f++) want[f] = sine(SR, f, 440);
         // Skip the first 20 ms (codec warm-up) and compare the body, including
-        // every chunk boundary, where the old per-chunk scheme wobbled.
+        // every chunk boundary.
         expect(similarity(got.subarray(960), want.subarray(960))).toBeGreaterThan(0.99);
         // No level dips at chunk boundaries: RMS of each 10 ms window within 1 dB of the sine's.
         const sineRms = 0.5 / Math.SQRT2;
