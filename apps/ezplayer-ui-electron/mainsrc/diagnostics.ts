@@ -77,6 +77,16 @@ export function isExpectedProcessExit(details: { reason: string; exitCode: numbe
 
 const MAX_REPORTS_PER_HOUR = 10;
 let sentTimestamps: number[] = [];
+const inFlight = new Set<Promise<unknown>>();
+
+/** Resolves when pending uploads have settled or the timeout passes. Never rejects. */
+export function flushDiagReports(timeoutMs: number): Promise<void> {
+    if (inFlight.size === 0) return Promise.resolve();
+    return Promise.race([
+        Promise.allSettled([...inFlight]).then(() => undefined),
+        new Promise<void>((r) => setTimeout(r, timeoutMs)),
+    ]);
+}
 
 export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: string, extra?: unknown): void {
     try {
@@ -107,13 +117,15 @@ export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: st
                 ? { player_token: cfg.playerIdToken }
                 : {}),
         };
-        void fetch(`${base}api/diag/crashreport`, {
+        const upload = fetch(`${base}api/diag/crashreport`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
         }).catch(() => {
             /* best-effort */
         });
+        inFlight.add(upload);
+        void upload.finally(() => inFlight.delete(upload));
     } catch {
         /* never throw from a crash path */
     }

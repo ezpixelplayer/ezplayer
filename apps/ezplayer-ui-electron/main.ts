@@ -10,7 +10,9 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
-import { isExpectedProcessExit, noteSessionEnding, reportDiagEvent } from './mainsrc/diagnostics.js';
+import { flushDiagReports, isExpectedProcessExit, noteSessionEnding, reportDiagEvent } from './mainsrc/diagnostics.js';
+import { applyGpuStartupPolicy, maybeFallbackToSoftwareGpu, noteChildProcessGone } from './mainsrc/gpuFallback.js';
+import { describeExitCode } from './mainsrc/rendererCrashPolicy.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
@@ -56,6 +58,8 @@ if (process.platform === 'linux') {
         app.commandLine.appendSwitch('disable-gpu');
     }
 }
+// EZP_GPU override, or a software-rendering fallback saved by an earlier run.
+applyGpuStartupPolicy();
 
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
 
@@ -109,13 +113,29 @@ app.commandLine.appendSwitch('enable-logging', 'js-flags');
 app.on('render-process-gone', (_event, _webContents, details) => {
     console.error('app render-process-gone', details);
     if (isExpectedProcessExit(details)) return;
-    reportDiagEvent('render-process-gone', details.reason, undefined, details);
+    // A renderer fault with no GPU process alive: relaunch once without the GPU.
+    void maybeFallbackToSoftwareGpu(details).then((fallback) => {
+        reportDiagEvent('render-process-gone', details.reason, undefined, {
+            ...details,
+            exit: describeExitCode(details.exitCode),
+            ...(fallback ? { gpuFallback: 'relaunch-without-gpu' } : {}),
+        });
+        if (fallback) {
+            isQuitting = true;
+            // Let the report leave before the process goes away.
+            void flushDiagReports(2000).then(() => app.quit());
+        }
+    });
 });
 
 app.on('child-process-gone', (_event, details) => {
     console.error('app child-process-gone', details);
+    noteChildProcessGone(details);
     if (isExpectedProcessExit(details)) return;
-    reportDiagEvent('child-process-gone', details.reason, undefined, details);
+    reportDiagEvent('child-process-gone', details.reason, undefined, {
+        ...details,
+        exit: describeExitCode(details.exitCode),
+    });
 });
 
 let mainWindow: BrowserWindow | null = null;

@@ -24,6 +24,7 @@ before launching EZPlayer.
 | `EZPLAYER_WEB_PORT`   | `3000`    | TCP port for the main **LAN HTTP server** (web UI, REST API, WebSocket at `/ws`). Valid range: 1024–65535. Stored in electron-store after first successful use. CLI equivalent: `--web-port=<n>`. |
 | `EZPLAYER_KIOSK_PORT` | `3001`    | TCP port for the **kiosk** web server (simplified public UI). Set to `0` to disable the kiosk listener. CLI equivalent: `--kiosk-port=<n>` or `--kiosk-port=0`.                                   |
 | `EZP_OPEN_DEVTOOLS`   | _(unset)_ | When set to any value, opens Chromium DevTools on the main window even in **packaged** builds. Dev builds open DevTools automatically without this variable.                                      |
+| `EZP_GPU`             | _(unset)_ | `hardware` retries the GPU after an automatic software-rendering fallback and clears the saved fallback; `software` forces software rendering (hardware acceleration off, WebGL on SwiftShader). See [CLI: Sandbox, GPU, and proxy](./cli.md#sandbox-gpu-and-proxy). |
 | `APP_MODE`            | _(unset)_ | Set to `local` to enable permissive CORS headers on the Koa server worker (main and kiosk listeners). Used for local development when the embedded UI is served from a separate origin.           |
 
 ### Examples
