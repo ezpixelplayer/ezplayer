@@ -135,7 +135,15 @@ export type PlayerCommand =
 
 export type WorkerToMainMessage =
     | { type: 'ready' }
-    | { type: 'audioChunk'; chunk: AudioChunk; volumeSF: number }
+    | {
+          type: 'audioChunk';
+          chunk: AudioChunk;
+          /** Gain for the web/cloud listener ring and the legacy single output. */
+          volumeSF: number;
+          /** Linear gain per output key (`DEFAULT_VOLUME_TARGET_ID` or
+           *  `AudioOutputConfig.id`), mute applied. */
+          outputGains?: Record<string, number>;
+      }
     | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
     /** The canonical frame pool and the layout that explains it (see epp FramePool / Layout). */
     | { type: 'pixelpool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
@@ -144,6 +152,7 @@ export type WorkerToMainMessage =
     | { type: 'stats'; stats: PlaybackStatistics }
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
+    | { type: 'viewerPick'; source: 'remote-falcon' | 'jukebox'; songId: string; title?: string }
     | { type: 'pstatus'; status: PlayerPStatusContent }
     | {
           type: 'modelCoordinates';

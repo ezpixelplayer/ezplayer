@@ -22,6 +22,8 @@ export { PlaybackControls } from './components/player/PlaybackControls';
 export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
+export { ViewerStatsScreen, ViewerStatsBody } from './components/viewer-stats/ViewerStatsScreen';
+export { ViewerControlCard } from './components/status/ViewerControlCard';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
@@ -62,7 +64,15 @@ export { RenderBridge } from './components/preview-3d/RenderBridge';
 export type { PreviewRenderHandle } from './components/preview-3d/RenderBridge';
 export { ModelList } from './components/preview-3d/ModelList';
 export type { ModelListProps } from './components/preview-3d/ModelList';
-export type { Model3DData, ModelMetadata, Point3D, Shape3D, SelectionState, LayoutSettings, ViewObject } from './types/model3d';
+export type {
+    Model3DData,
+    ModelMetadata,
+    Point3D,
+    Shape3D,
+    SelectionState,
+    LayoutSettings,
+    ViewObject,
+} from './types/model3d';
 export type { MenuRoute } from './types/menuRoute';
 export { toRouteChildren } from './types/menuRoute';
 export { convertXmlCoordinatesToModel3D } from './services/model3dLoader';
@@ -147,6 +157,8 @@ export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 export { remoteAccessActions } from './store/slices/RemoteAccessStore';
+export { viewerStatsActions } from './store/slices/ViewerStatsStore';
+export type { ViewerStatsSliceState } from './store/slices/ViewerStatsStore';
 export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';
 export { audioDevicesActions } from './store/slices/AudioDevicesStore';
 export type { AudioDevicesState } from './store/slices/AudioDevicesStore';
@@ -165,4 +177,25 @@ export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';
 
 export { useFrameServerUrl } from './hooks/useFrameServerUrl';
+export {
+    AudioListenSession,
+    getAudioListenSession,
+    useAudioListenSession,
+    deriveAudioStreamOptions,
+    RealTimeChunkPlayer,
+    ChunkDecoder,
+    createClockOffsetRef,
+    estimateClockOffset,
+    defaultTrimMsForDevice,
+} from './audio';
+export type {
+    AudioListenDiagnostics,
+    AudioListenOptions,
+    AudioListenStatus,
+    UseAudioListenSessionResult,
+    ChunkPlaybackEvent,
+    DecodedChunk,
+    ClockOffsetRef,
+    ClockOffsetSample,
+} from './audio';
 export type { UseFrameServerUrlOptions, UseFrameServerUrlResult } from './hooks/useFrameServerUrl';

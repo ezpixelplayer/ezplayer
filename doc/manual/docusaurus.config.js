@@ -50,6 +50,21 @@ const config = {
         ],
     ],
 
+    themes: [
+        [
+            '@easyops-cn/docusaurus-search-local',
+            {
+                hashed: true,
+                indexDocs: true,
+                // Docs are served at site root (no /docs prefix).
+                docsRouteBasePath: '/',
+                // Blog is disabled in the classic preset above.
+                indexBlog: false,
+                language: ['en'],
+            },
+        ],
+    ],
+
     themeConfig:
         /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
         ({

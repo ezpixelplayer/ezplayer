@@ -1,16 +1,24 @@
 // AsyncBatchLogger.ts
-import { appendFile } from 'node:fs/promises';
+import { appendFile, rename, rm, stat } from 'node:fs/promises';
 import { EOL } from 'node:os';
 
 export interface LoggerOptions {
     filePath: string;
     maxQueue?: number; // default 100
+    /** Rotate once the file passes this many bytes (default 20 MB). */
+    maxBytes?: number;
+    /** Rotated generations to keep as `<file>.1` … `<file>.N` (default 3). */
+    keep?: number;
     format?: (line: string) => string; // default timestamp prefix
 }
 
 export class AsyncBatchLogger {
     private filePath: string;
     private maxQueue: number;
+    private maxBytes: number;
+    private keep: number;
+    /** Bytes in the current file; seeded from disk, then counted as we append. */
+    private bytes: number | undefined;
     private format: (line: string) => string;
 
     private queue: string[] = [];
@@ -23,6 +31,8 @@ export class AsyncBatchLogger {
     constructor(opts: LoggerOptions) {
         this.filePath = opts.filePath;
         this.maxQueue = opts.maxQueue ?? 100;
+        this.maxBytes = opts.maxBytes ?? 20 * 1024 * 1024;
+        this.keep = Math.max(1, opts.keep ?? 3);
         this.format = opts.format ?? ((line) => `[${new Date().toISOString()}] ${line}${EOL}`);
     }
 
@@ -46,6 +56,36 @@ export class AsyncBatchLogger {
         return true;
     }
 
+    /**
+     * Size-based rotation: when the next write would carry the file past `maxBytes`,
+     * shift `<file>.N-1` → `<file>.N` … `<file>` → `<file>.1` and start afresh, so a
+     * season's log never grows without bound.
+     */
+    private async rotateIfNeeded(incoming: number): Promise<void> {
+        if (this.bytes === undefined) {
+            try {
+                this.bytes = (await stat(this.filePath)).size;
+            } catch {
+                this.bytes = 0;
+            }
+        }
+        if (this.bytes + incoming <= this.maxBytes) return;
+        try {
+            await rm(`${this.filePath}.${this.keep}`, { force: true });
+            for (let i = this.keep - 1; i >= 1; i--) {
+                try {
+                    await rename(`${this.filePath}.${i}`, `${this.filePath}.${i + 1}`);
+                } catch {
+                    /* that generation does not exist */
+                }
+            }
+            await rename(this.filePath, `${this.filePath}.1`);
+        } catch (err) {
+            console.error('[logger] rotation failed:', err);
+        }
+        this.bytes = 0;
+    }
+
     /** Internal: start a flush loop if needed */
     private kick() {
         if (this.flushInFlight) return;
@@ -60,7 +100,10 @@ export class AsyncBatchLogger {
                         chunk.push(notice);
                         this.dropping = 0;
                     }
-                    await appendFile(this.filePath, chunk.join(''), { encoding: 'utf8', flag: 'a' });
+                    const text = chunk.join('');
+                    await this.rotateIfNeeded(Buffer.byteLength(text, 'utf8'));
+                    await appendFile(this.filePath, text, { encoding: 'utf8', flag: 'a' });
+                    this.bytes = (this.bytes ?? 0) + Buffer.byteLength(text, 'utf8');
                     // loop continues if more accumulated during the write
                 }
             } catch (e) {

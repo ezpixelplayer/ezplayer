@@ -40,6 +40,7 @@ import {
     cloudStatusActions,
     controllerOpsActions,
     remoteAccessActions,
+    viewerStatsActions,
     autoUpdateActions,
     audioDevicesActions,
 } from '@ezplayer/player-ui-components';
@@ -102,6 +103,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         window.electronAPI!.onRemoteAccessUpdated((state: RemoteAccessAvailability) => {
             if (!this.dispatch) return;
             this.dispatch(remoteAccessActions.setRemoteAccess(state));
+        });
+        window.electronAPI!.onViewerStatsUpdated((summary) => {
+            if (!this.dispatch) return;
+            this.dispatch(viewerStatsActions.setViewerStats(summary));
         });
         window.electronAPI!.onAppSettingsUpdated((state: AppSettingsState) => {
             if (!this.dispatch) return;
@@ -286,6 +291,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
             if (snapshot.appSettings) dispatch(appSettingsActions.setAppSettings(snapshot.appSettings));
+            if (snapshot.viewerStats) dispatch(viewerStatsActions.setViewerStats(snapshot.viewerStats));
         }
         void this.publishAudioOutputDevices();
         // Initial update state comes from an invoke.

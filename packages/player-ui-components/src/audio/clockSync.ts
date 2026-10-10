@@ -1,0 +1,138 @@
+/**
+ * Player-clock offset estimation for synced audio.
+ *
+ * Every chunk's `serverNow` and `playAt` are the PLAYER's `Date.now()`: the
+ * lights fire on the player at `playAt`, so the browser must play the chunk
+ * at the same instant on the player's clock. We estimate
+ * `offset = playerClock − browserClock` two ways and combine them:
+ *
+ *   - HTTP round trips to a time endpoint that answers with the player's
+ *     clock (`{ now }`). Cristian's algorithm: the clock read is assumed to
+ *     have happened in the middle of the round trip, and the sample with the
+ *     shortest round trip wins because its midpoint assumption is the least
+ *     wrong. Re-run periodically as a backstop for drift.
+ *   - Per-chunk `serverNow − Date.now()`. Each sample is `offset − oneWay`,
+ *     so the max over a short window is a floor on the true offset. It never
+ *     beats a good HTTP sample, but it catches a browser clock that stepped
+ *     (NTP correction, phone wake) within a few seconds.
+ *
+ * The applied value only snaps when the estimate moves by more than
+ * SNAP_THRESHOLD_MS, so tiny refinements don't pop the schedule.
+ */
+
+export interface ClockOffsetRef {
+    /** Applied offset (player − browser, ms). Stable between snaps. */
+    value: number;
+    /** Running estimate; pushed to `value` on a snap. */
+    estimate: number;
+    /** Sliding window of `serverNow − Date.now()` samples from chunks. */
+    chunkCandidates: number[];
+    /** Last HTTP Cristian sample. */
+    httpSample?: number;
+    /** Round trip of the accepted HTTP sample (ms), for diagnostics. */
+    httpRtt?: number;
+    /** Consecutive refinements that wanted a snap; see `maybeSnap`. */
+    pendingSnaps?: number;
+    /** Times `value` has been snapped (diagnostics). */
+    snaps?: number;
+}
+
+/** One Cristian round trip, for diagnostics. All times are browser Date.now() ms except
+ *  `now`, the player's clock as returned. */
+export interface ClockRoundTrip {
+    index: number;
+    t0: number;
+    t1: number;
+    now: number;
+    rtt: number;
+    offset: number;
+}
+
+export interface ClockOffsetSample {
+    offset: number;
+    rtt: number;
+}
+
+export const CLOCK_REFRESH_INTERVAL_MS = 30_000;
+const CLOCK_SYNC_SAMPLES = 6;
+const SNAP_THRESHOLD_MS = 50;
+/** A disagreement this large is applied at once (clock step, wake-up). */
+const HARD_SNAP_MS = 250;
+/** Smaller disagreements must persist this many refinements before applying:
+ *  one noisy clock reading must not move the audio schedule. */
+const SNAP_PERSISTENCE = 3;
+/** ~100 ms per chunk → about 6 s of history. */
+const CHUNK_CANDIDATE_WINDOW = 64;
+
+export function createClockOffsetRef(): ClockOffsetRef {
+    return { value: 0, estimate: 0, chunkCandidates: [] };
+}
+
+/** Cristian round trips against `timeUrl`, which must answer `{ now: <player ms> }`. */
+export async function estimateClockOffset(
+    timeUrl: string,
+    signal?: AbortSignal,
+    samples = CLOCK_SYNC_SAMPLES,
+    onRoundTrip?: (rt: ClockRoundTrip) => void,
+): Promise<ClockOffsetSample | null> {
+    let best: ClockOffsetSample | null = null;
+    for (let i = 0; i < samples; i++) {
+        if (signal?.aborted) break;
+        const t0 = Date.now();
+        try {
+            const res = await fetch(timeUrl, { cache: 'no-store', signal });
+            const t1 = Date.now();
+            if (!res.ok) continue;
+            const { now } = (await res.json()) as { now?: number };
+            if (typeof now !== 'number') continue;
+            const rtt = t1 - t0;
+            const offset = now - (t0 + rtt / 2);
+            onRoundTrip?.({ index: i, t0, t1, now, rtt, offset });
+            if (best === null || rtt < best.rtt) best = { offset, rtt };
+        } catch {
+            /* one bad sample is fine */
+        }
+    }
+    return best;
+}
+
+export function refineClockOffset(ref: ClockOffsetRef, serverNow: number): void {
+    ref.chunkCandidates.push(serverNow - Date.now());
+    if (ref.chunkCandidates.length > CHUNK_CANDIDATE_WINDOW) ref.chunkCandidates.shift();
+    ref.estimate = combinedEstimate(ref);
+    maybeSnap(ref);
+}
+
+export function applyHttpClockOffset(ref: ClockOffsetRef, sample: ClockOffsetSample): void {
+    ref.httpSample = sample.offset;
+    ref.httpRtt = sample.rtt;
+    ref.estimate = combinedEstimate(ref);
+    maybeSnap(ref);
+}
+
+/** Drop the one-way samples (they predate a sleep / reconnect) but keep the
+ *  last HTTP sample so playback can continue while a fresh one is fetched. */
+export function resetClockWindow(ref: ClockOffsetRef): void {
+    ref.chunkCandidates.length = 0;
+    ref.estimate = combinedEstimate(ref);
+}
+
+function combinedEstimate(ref: ClockOffsetRef): number {
+    let best = ref.httpSample ?? -Infinity;
+    for (const v of ref.chunkCandidates) if (v > best) best = v;
+    return best === -Infinity ? 0 : best;
+}
+
+function maybeSnap(ref: ClockOffsetRef): void {
+    const diff = Math.abs(ref.estimate - ref.value);
+    if (diff < SNAP_THRESHOLD_MS) {
+        ref.pendingSnaps = 0;
+        return;
+    }
+    ref.pendingSnaps = (ref.pendingSnaps ?? 0) + 1;
+    if (diff >= HARD_SNAP_MS || ref.pendingSnaps >= SNAP_PERSISTENCE) {
+        ref.value = ref.estimate;
+        ref.pendingSnaps = 0;
+        ref.snaps = (ref.snaps ?? 0) + 1;
+    }
+}

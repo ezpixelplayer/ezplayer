@@ -1,3 +1,5 @@
+import type { ControllerRefreshMode, ViewerControlBackend } from '@ezplayer/ezplayer-core';
+import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
     AudioOutputConfig,
@@ -6,6 +8,7 @@ import {
     VolumeControlState,
     VolumeScheduleEntry,
     VirtualMatrixOutput,
+    withViewerControlBackends,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
@@ -69,6 +72,12 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             ...input.viewerControl,
             enabled: input.viewerControl?.enabled ?? false,
             type: input.viewerControl?.type ?? 'disabled',
+            // Older files have only `type`; derive the backend set from it.
+            backends:
+                input.viewerControl?.backends ??
+                (input.viewerControl?.type === 'remote-falcon' || input.viewerControl?.type === 'ezplayer'
+                    ? [input.viewerControl.type]
+                    : []),
             schedule: input.viewerControl?.schedule ?? [],
         },
         volumeControl: {
@@ -152,11 +161,19 @@ const playbackSettingsSlice = createSlice({
             state.settings.viewerControl.enabled = action.payload;
             if (!action.payload) {
                 state.settings.viewerControl.type = 'disabled';
+                state.settings.viewerControl.backends = [];
             }
         },
+        /** Single-backend setter for callers that choose one type; `backends` follows. */
         setViewerControlType(state, action: PayloadAction<'disabled' | 'remote-falcon' | 'ezplayer'>) {
-            state.settings.viewerControl.type = action.payload;
-            state.settings.viewerControl.enabled = action.payload !== 'disabled';
+            state.settings.viewerControl = withViewerControlBackends(
+                state.settings.viewerControl,
+                action.payload === 'disabled' ? [] : [action.payload],
+            );
+        },
+        /** The set of backends to run; `type` and `enabled` follow (built-in is primary). */
+        setViewerControlBackends(state, action: PayloadAction<ViewerControlBackend[]>) {
+            state.settings.viewerControl = withViewerControlBackends(state.settings.viewerControl, action.payload);
         },
         setRemoteFalconToken(state, action: PayloadAction<string>) {
             state.settings.viewerControl.remoteFalconToken = action.payload;
@@ -185,6 +202,10 @@ const playbackSettingsSlice = createSlice({
         removeVirtualMatrixOutput(state, action: PayloadAction<string>) {
             const next = (state.settings.virtualMatrixOutputs ?? []).filter((o) => o.id !== action.payload);
             state.settings.virtualMatrixOutputs = next.length > 0 ? next : undefined;
+        },
+
+        setControllerRefresh(state, action: PayloadAction<ControllerRefreshMode>) {
+            state.settings.controllerRefresh = controllerRefreshSettingsFor(action.payload);
         },
 
         setNormalizeNewSongs(state, action: PayloadAction<boolean>) {
@@ -300,6 +321,7 @@ export const {
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
     setSendIdleBlackFrames,
+    setControllerRefresh,
     setNormalizeNewSongs,
     setMultisyncEnabled,
     setMultisyncRemotes,

@@ -31,7 +31,9 @@ beforeAll(async () => {
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
 
-    await fpp.uploadFile('sequences', 'Sched.fseq', buildFseq({ channels: 150, frames: 1200, value: 77 })); // 60s
+    // Kept short: the schedule ends at the nearest sequence boundary, and a song
+    // that has started plays out, so the wind-down lasts as long as this does.
+    await fpp.uploadFile('sequences', 'Sched.fseq', buildFseq({ channels: 150, frames: 100, value: 77 })); // 5s
     const res = await fpp.putPlaylist('Nightly', {
         name: 'Nightly',
         mainPlaylist: [{ type: 'sequence', sequenceName: 'Sched.fseq' }],
@@ -79,7 +81,7 @@ describe('scheduled start', () => {
         await mock.ddp.waitForFrames(10, { timeoutMs: 20_000 });
         expect(Array.from(mock.ddp.channelRange(0, 3))).toEqual([77, 77, 77]);
 
-        // Clear the schedule -> playback should wind down
+        // Clear the schedule -> the playing song finishes, then the player idles
         expect((await fpp.putSchedule([])).status).toBe(200);
         await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'schedule cleared', timeoutMs: 45_000 });
     });

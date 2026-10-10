@@ -1,4 +1,5 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
+import { PREVIEW_GL_CANDIDATES, type PreviewGlAttributes } from './webglSupport';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, MapControls } from '@react-three/drei';
 import { RenderBridge, type PreviewRenderHandle } from './RenderBridge';
@@ -54,6 +55,8 @@ export interface Viewer2DProps {
     /** Stop the r3f frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
      *  Used for deterministic offline rendering (video export). */
     renderOnDemand?: boolean;
+    /** Context attributes the WebGL probe found to work; the default set otherwise. */
+    glAttributes?: PreviewGlAttributes;
     /** Registers an imperative handle for fixed-size, frame-stepped rendering (null on unmount). */
     onRenderHandle?: (handle: PreviewRenderHandle | null) => void;
 }
@@ -1010,6 +1013,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     onGetCurrentCameraState,
     fillContainer = false,
     renderOnDemand = false,
+    glAttributes,
     onRenderHandle,
 }) => {
     const [error, setError] = useState<string | null>(null);
@@ -1113,11 +1117,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                                 setError('Failed to create WebGL context');
                             }
                         }}
-                        gl={{
-                            antialias: true,
-                            alpha: false,
-                            powerPreference: 'high-performance',
-                        }}
+                        gl={glAttributes ?? PREVIEW_GL_CANDIDATES[0]}
                         style={{
                             position: 'absolute',
                             top: 0,

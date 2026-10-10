@@ -36,6 +36,7 @@ const sidebars = {
                 'cloud/status-control-ui',
                 'cloud/getting-sequences',
                 'cloud/full-cloud-control',
+                'cloud/show-settings',
             ],
         },
         {

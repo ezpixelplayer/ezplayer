@@ -60,9 +60,9 @@ player side.
 ## Optional: viewer / show page
 
 EZRGB can also host a public **show page** for your audience — show info, song
-requests during allowed hours, and optional audio. Configure viewer-control
-hours and playlists in EZPlayer under [Viewer Control](../advanced/viewer-control.md);
-the cloud keeps the public page in sync while the show runs.
+requests during allowed hours, and optional audio. Configure the page on
+[Show Settings](./show-settings.md). Set request hours and playlists in
+EZPlayer under [Viewer Control](../advanced/viewer-control.md).
 
 ## What still happens locally
 
