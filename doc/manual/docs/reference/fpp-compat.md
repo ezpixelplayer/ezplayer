@@ -39,7 +39,7 @@ exactly one entry, the idle placeholder when nothing is playing.
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| GET    | `/api/player`, `/api/player/status` | `{playlists: [{name, desc, currentState, currentEntry, size, repeat, …, details, status, scheduled, position, startTime, stopTime, priority}]}`. `details` is the running playlist's config with each entry's run state; `currentEntry` carries `secondsElapsed`, `millisecondsElapsed` and `secondsRemaining` |
+| GET    | `/api/player`, `/api/player/status` | `{playlists: [{name, desc, currentState, currentEntry, size, repeat, …, details, status, scheduled, position, startTime, stopTime, priority}]}`. `details` is the running playlist's config with each entry's run state; `currentEntry` carries `duration`, `secondsElapsed`, `millisecondsElapsed` and `secondsRemaining`; a sequence+media (`both`) entry also nests `media` and `sequence` objects carrying the same elapsed fields, as FPP does |
 | GET    | `/api/player/current` | `{playlist: {…the same info, without details…}}` |
 | GET    | `/api/fppd/playlists` | `{playlists: [name]}` while playing, `[]` when idle |
 | GET    | `/api/fppd/playlist/config` | the running playlist's config (as in `details` above); only the status fields when idle |

@@ -116,3 +116,50 @@ describe('/api/fppd/playlists and /api/fppd/playlist/config against FPP 10.1', (
         expect(buildFppdPlaylists(src(idle), NOW)).toMatchObject({ playlists: [] });
     });
 });
+
+describe('sequence+media entries against FPP 9.2', () => {
+    const withAudio: SequenceRecord = { ...song, files: { fseq: 'RefSong.fseq', audio: 'RefSong.mp3' } };
+    const other: SequenceRecord = {
+        id: 'seq2',
+        instanceId: 'i2',
+        work: { title: 'Other', artist: '', length: 30 },
+        files: { fseq: 'Other.fseq', audio: 'Other.mp3' },
+    };
+    const two: PlaylistRecord = {
+        ...show,
+        items: [
+            { id: 'seq2', sequence: 1 },
+            { id: 'seq1', sequence: 2 },
+        ],
+    };
+    const bothSrc = { pStatus: playing, sequences: [withAudio, other], playlists: [two] };
+    const fpp92 = JSON.parse(
+        readFileSync(path.join(fixtureDir, '..', 'fpp-9.2', 'playing-both.player-status.json'), 'utf8'),
+    ) as unknown;
+
+    it('matches FPP’s structure', () => {
+        expect(gaps(buildPlayerStatus(bothSrc, NOW), fpp92)).toEqual([]);
+    });
+
+    it('nests the media and sequence halves with elapsed time', () => {
+        const [pl] = buildPlayerStatus(bothSrc, NOW).playlists as Record<string, unknown>[];
+        const elapsed = { secondsElapsed: 5, millisecondsElapsed: 5_000, secondsRemaining: 55 };
+        expect(pl.currentEntry).toMatchObject({
+            type: 'both',
+            duration: 60,
+            timecode: 'Default',
+            videoOut: '--Default--',
+            media: { type: 'sequence', mediaName: 'RefSong.mp3', ...elapsed },
+            sequence: { type: 'sequence', sequenceName: 'RefSong.fseq', ...elapsed },
+        });
+        const prev = (pl.details as { mainPlaylist: Record<string, Record<string, unknown>>[] }).mainPlaylist[0];
+        expect(prev.media).toMatchObject({ type: 'media', mediaFilename: 'Other.mp3', isFinished: 1 });
+        expect(prev.sequence).not.toHaveProperty('secondsElapsed');
+    });
+
+    it('sorts keys like FPP', () => {
+        const [pl] = buildPlayerStatus(bothSrc, NOW).playlists as Record<string, unknown>[];
+        const keys = Object.keys(pl);
+        expect(keys).toEqual([...keys].sort());
+    });
+});

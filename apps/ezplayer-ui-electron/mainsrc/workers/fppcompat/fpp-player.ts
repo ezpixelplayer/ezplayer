@@ -26,8 +26,13 @@ const seconds = (ms: number | undefined): number => (ms ? Math.floor(ms / 1000) 
  *  clients written against 5.x. */
 const BLANK_BETWEEN = { blankBetweenIterations: 0, blankBetweenSequences: 0 };
 
+/** Entry fields FPP's UI saves with a sequence+media entry. */
+const BOTH_DEFAULTS = { timecode: 'Default', videoOut: '--Default--' };
+
 /** One playlist entry as PlaylistEntryBase::GetConfig reports it, with its
- *  run state relative to the current position (1-based). */
+ *  run state relative to the current position (1-based). A sequence+media
+ *  entry (PlaylistEntryBoth) also nests its `media` and `sequence` halves,
+ *  which is where FPP reports elapsed time for it. */
 function entryConfig(entry: FppPlaylistEntry, position: number, current: number, np: FppNowPlaying) {
     const isCurrent = position === current;
     const done = position < current;
@@ -40,13 +45,38 @@ function entryConfig(entry: FppPlaylistEntry, position: number, current: number,
         isFinished: done ? 1 : 0,
         playCount: done || isCurrent ? 1 : 0,
     };
-    delete out.duration;
-    if (isCurrent) {
-        out.secondsElapsed = Math.floor(np.secondsPlayed);
-        out.millisecondsElapsed = Math.floor(np.secondsPlayed * 1000);
-        out.secondsRemaining = Math.floor(np.secondsRemaining);
+    if (!out.duration) delete out.duration;
+    const elapsed = isCurrent
+        ? {
+              secondsElapsed: Math.floor(np.secondsPlayed),
+              millisecondsElapsed: Math.floor(np.secondsPlayed * 1000),
+              secondsRemaining: Math.floor(np.secondsRemaining),
+          }
+        : {};
+    if (entry.type !== 'both') return { ...out, ...elapsed };
+
+    const both = { ...out, ...BOTH_DEFAULTS };
+    // FPP reports the media half as type "sequence" while it plays, and as
+    // "media" with its mediaFilename otherwise.
+    const media = isCurrent
+        ? { ...both, type: 'sequence', ...elapsed }
+        : { ...both, type: 'media', mediaFilename: entry.mediaName ?? '' };
+    // FPP keeps elapsed time only in the halves; ours also carries it at the
+    // entry level, as for a sequence-only entry.
+    return { ...both, ...elapsed, media, sequence: { ...both, type: 'sequence', ...elapsed } };
+}
+
+/** Objects with their keys sorted, as FPP's JSON writer emits them. */
+function sortKeys<T>(v: T): T {
+    if (Array.isArray(v)) return v.map(sortKeys) as T;
+    if (v && typeof v === 'object') {
+        return Object.fromEntries(
+            Object.keys(v)
+                .sort()
+                .map((k) => [k, sortKeys((v as Record<string, unknown>)[k])]),
+        ) as T;
     }
-    return out;
+    return v;
 }
 
 /** Playlist item and duration counts, as FPP stores them with a playlist. */
@@ -110,6 +140,7 @@ function playerView(np: FppNowPlaying, sequences: SequenceRecord[] | undefined, 
                       playOnce: 0,
                       sequenceName: np.sequenceFile,
                       ...(np.songFile ? { mediaName: np.songFile } : {}),
+                      duration: np.sequence?.work?.length ?? 0,
                   },
               ],
               playlistInfo: undefined,
@@ -145,7 +176,7 @@ export function buildPlayerStatus(src: FppStatusSources, now: number): Record<st
     const np = resolveNowPlaying(src, now);
     const { info, config } = playerView(np, src.sequences, now);
     const pl = np.playlist;
-    return {
+    return sortKeys({
         playlists: [
             {
                 ...info,
@@ -162,12 +193,12 @@ export function buildPlayerStatus(src: FppStatusSources, now: number): Record<st
                 priority: np.active ? (np.priority ?? -1) : 1000,
             },
         ],
-    };
+    });
 }
 
 /** GET /api/player/current: `{playlist: Playlist::GetInfo()}`. */
 export function buildPlayerCurrent(src: FppStatusSources, now: number): Record<string, unknown> {
-    return { playlist: playerView(resolveNowPlaying(src, now), src.sequences, now).info };
+    return sortKeys({ playlist: playerView(resolveNowPlaying(src, now), src.sequences, now).info });
 }
 
 const OK = { Status: 'OK', Message: '', respCode: 200 };
@@ -183,5 +214,5 @@ export function buildFppdPlaylists(src: FppStatusSources, now: number): Record<s
 export function buildFppdPlaylistConfig(src: FppStatusSources, now: number): Record<string, unknown> {
     const np = resolveNowPlaying(src, now);
     if (!np.active) return { ...OK };
-    return { ...OK, ...playerView(np, src.sequences, now).config };
+    return sortKeys({ ...OK, ...playerView(np, src.sequences, now).config });
 }
