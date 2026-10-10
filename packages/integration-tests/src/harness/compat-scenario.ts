@@ -32,6 +32,9 @@ export interface ScenarioFiles {
     scratch: string;
     /** Playlist name created on both. */
     show: string;
+    /** Play the sequence+media playlist too. A containerised FPP 10+ cannot:
+     *  its GStreamer output needs a PipeWire server the container lacks. */
+    playBoth?: boolean;
 }
 
 /** A body's fields, as facts. Missing pieces record as undefined, which is
@@ -86,7 +89,10 @@ const playlistFacts: Facts = (b) => {
 
 /** The names this scenario created, so a target's other content is ignored. */
 const ownNames = (f: ScenarioFiles): Set<string> =>
-    new Set([f.show, f.song, f.song.replace(/\.fseq$/, ''), f.audio, f.scratch]);
+    new Set([f.show, bothShow(f), f.song, f.song.replace(/\.fseq$/, ''), f.audio, f.scratch]);
+
+/** A second playlist playing the song with its media (a "both" entry). */
+const bothShow = (f: ScenarioFiles): string => `${f.show}Both`;
 
 const namesFacts =
     (f: ScenarioFiles): Facts =>
@@ -153,6 +159,8 @@ export async function runCompatScenario(c: FppClient, f: ScenarioFiles): Promise
     // ---- set the target up from scratch ------------------------------------
     await call('stop before setup', '/api/playlists/stop');
     await c.waitForStatus((s) => s.status_name === 'idle', { label: 'idle before setup' });
+    // A run that stopped early leaves this behind; it is created again below.
+    await fetch(`${c.base}/api/playlist/${bothShow(f)}`, { method: 'DELETE' });
     await call('upload sequence', `/api/sequence/${f.song}`, { method: 'POST', body: f.fseq });
     await call('create playlist', `/api/playlist/${f.show}`, {
         method: 'POST',
@@ -232,6 +240,29 @@ export async function runCompatScenario(c: FppClient, f: ScenarioFiles): Promise
     await call('stopped status', '/api/fppd/status', { facts: statusFacts });
     await call('stopped player status', '/api/player/status', { facts: playerFacts });
     await call('stopped playlist config', '/api/fppd/playlist/config');
+
+    // ---- sequence + media ----------------------------------------------------
+    // Most shows pair each sequence with its audio; FPP reports such entries
+    // differently (nested media/sequence halves), so play one of those too.
+    await call('create both playlist', `/api/playlist/${bothShow(f)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: bothShow(f),
+            mainPlaylist: [{ type: 'both', enabled: 1, playOnce: 0, sequenceName: f.song, mediaName: f.audio }],
+        }),
+    });
+    await call('read both playlist', `/api/playlist/${bothShow(f)}`, { facts: playlistFacts });
+    if (f.playBoth) {
+        await call('start both playlist', `/api/playlist/${bothShow(f)}/start`);
+        await c.waitForStatus((s) => s.status_name === 'playing', { label: 'playing both' });
+        await new Promise((r) => setTimeout(r, 1500));
+        await call('both player status', '/api/player/status', { facts: playerFacts });
+        await call('both player current', '/api/player/current');
+        await call('both playlist config', '/api/fppd/playlist/config');
+        await call('stop both', '/api/playlists/stop');
+        await c.waitForStatus((s) => s.status_name === 'idle', { label: 'stopped both' });
+    }
 
     // ---- inventory and settings ---------------------------------------------
     await call('version', '/api/fppd/version');

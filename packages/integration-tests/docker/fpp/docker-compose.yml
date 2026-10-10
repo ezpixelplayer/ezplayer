@@ -23,6 +23,9 @@ services:
             - rm -f /var/run/apache2/*.pid /run/apache2/*.pid; exec /opt/fpp/Docker/runDocker.sh
         environment:
             - TZ=UTC
+            # No sound card in a container: without this, media fails to open
+            # and a sequence+media entry ends the moment it starts.
+            - SDL_AUDIODRIVER=dummy
         cap_add:
             - SYS_NICE
         ulimits:

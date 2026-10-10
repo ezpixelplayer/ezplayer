@@ -37,7 +37,7 @@ import {
 } from './fpp-status.js';
 import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
 import { buildFppdPlaylistConfig, buildFppdPlaylists, buildPlayerCurrent, buildPlayerStatus } from './fpp-player.js';
-import { fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
+import { findSequenceByName, fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
 import {
     buildFppdSchedule,
     fppScheduleToRecords,
@@ -369,31 +369,79 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     /** Register a SequenceRecord on the fly for unresolved sequenceName
      *  entries whose fseq file exists — FPP tools don't know about EZP's
      *  registration step. */
-    async function autoRegisterSequences(unresolved: string[]): Promise<boolean> {
+    /** A show-folder file this API may name (basename only, readable). */
+    async function showFileExists(name: string): Promise<boolean> {
         const showFolder = deps.getShowFolder();
-        if (!showFolder || unresolved.length === 0) return false;
+        if (!showFolder || name !== path.basename(name)) return false;
+        try {
+            await fsp.access(path.join(showFolder, name), fs.constants.R_OK);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** The media a sequence+media entry names, by sequenceName (lowercased). */
+    function entryMedia(body: FppPlaylist): Map<string, string> {
+        const out = new Map<string, string>();
+        for (const e of [...(body.leadIn ?? []), ...(body.mainPlaylist ?? []), ...(body.leadOut ?? [])]) {
+            if (e.type === 'both' && e.sequenceName && e.mediaName) out.set(e.sequenceName.toLowerCase(), e.mediaName);
+        }
+        return out;
+    }
+
+    async function autoRegisterSequences(unresolved: string[], media: Map<string, string>): Promise<boolean> {
         const toCreate: unknown[] = [];
         for (const raw of unresolved) {
             const name = /\.fseq$/i.test(raw) ? raw : `${raw}.fseq`;
-            if (name !== path.basename(name)) continue;
-            try {
-                await fsp.access(path.join(showFolder, name), fs.constants.R_OK);
-                toCreate.push({
-                    files: { fseq: name },
-                    work: { title: name.replace(/\.fseq$/i, ''), artist: '', length: 0 },
-                });
-            } catch {
-                /* unreadable file; skip */
-            }
+            if (!(await showFileExists(name))) continue;
+            const audio = media.get(raw.toLowerCase());
+            toCreate.push({
+                files: { fseq: name, ...(audio && (await showFileExists(audio)) ? { audio } : {}) },
+                work: { title: name.replace(/\.fseq$/i, ''), artist: '', length: 0 },
+            });
         }
         if (toCreate.length === 0) return false;
         await deps.putSequences(toCreate);
         return true;
     }
 
+    /** Give already-registered sequences the media their sequence+media
+     *  entries name, when they have none yet. Returns warnings. */
+    async function attachEntryMedia(media: Map<string, string>): Promise<string[]> {
+        const warnings: string[] = [];
+        const updates = new Map<string, SequenceRecord>();
+        for (const [seqName, mediaName] of media) {
+            const seq = findSequenceByName(deps.getSequences(), seqName);
+            if (!seq || updates.has(seq.id)) continue;
+            if (seq.files?.audio) {
+                if (fileBaseName(seq.files.audio).toLowerCase() !== mediaName.toLowerCase()) {
+                    warnings.push(
+                        `'${seqName}' already plays '${fileBaseName(seq.files.audio)}'; media '${mediaName}' ignored`,
+                    );
+                }
+                continue;
+            }
+            if (!(await showFileExists(mediaName))) {
+                warnings.push(`media '${mediaName}' not found in the show folder — '${seqName}' plays without audio`);
+                continue;
+            }
+            updates.set(seq.id, { ...seq, files: { ...seq.files, audio: mediaName } });
+        }
+        if (updates.size > 0) {
+            try {
+                await deps.putSequences([...updates.values()]);
+            } catch (err) {
+                warnings.push(`media not attached: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        return warnings;
+    }
+
     const upsertFppPlaylist = async (ctx: RouterContext, name: string, body: FppPlaylist) => {
+        const media = entryMedia(body);
         let ingest = fppPlaylistToRecord(body, name, deps.getPlaylists(), deps.getSequences());
-        if (!ingest.error && ingest.unresolved.length > 0 && (await autoRegisterSequences(ingest.unresolved))) {
+        if (!ingest.error && ingest.unresolved.length > 0 && (await autoRegisterSequences(ingest.unresolved, media))) {
             ingest = fppPlaylistToRecord(body, name, deps.getPlaylists(), deps.getSequences());
         }
         if (ingest.error) {
@@ -404,6 +452,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         const warnings = [
             ...ingest.warnings,
             ...ingest.unresolved.map((n) => `sequence '${n}' not found in the show folder — entry skipped`),
+            ...(await attachEntryMedia(media)),
         ];
         const record = ingest.record;
         if (!record) {
