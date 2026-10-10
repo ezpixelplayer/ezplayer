@@ -103,6 +103,10 @@ EZPlayer playlists are ordered lists of sequences, so the FPP format maps with
   or title (case-insensitive, extension optional). If the name isn't
   registered but the `.fseq` file exists in the show folder (e.g. it was just
   uploaded via the file API), a sequence record is **auto-registered**.
+- A `both` entry's `mediaName` becomes the sequence's audio when that file is
+  in the show folder and the sequence has no audio yet. A sequence already
+  paired with different audio keeps it (EZPlayer songs have one audio file),
+  with a warning.
 - Audio-only `media` entries and `pause` entries are skipped.
 - Nested `playlist` entries are rejected (400).
 - `repeat`/`loopCount` are not stored — pass repeat to `Start Playlist` or set

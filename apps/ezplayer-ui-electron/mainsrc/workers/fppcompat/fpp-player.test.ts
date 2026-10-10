@@ -117,7 +117,7 @@ describe('/api/fppd/playlists and /api/fppd/playlist/config against FPP 10.1', (
     });
 });
 
-describe('sequence+media entries against FPP 9.2', () => {
+describe('sequence+media entries against FPP 9.2 and 9.5', () => {
     const withAudio: SequenceRecord = { ...song, files: { fseq: 'RefSong.fseq', audio: 'RefSong.mp3' } };
     const other: SequenceRecord = {
         id: 'seq2',
@@ -139,6 +139,13 @@ describe('sequence+media entries against FPP 9.2', () => {
 
     it('matches FPP’s structure', () => {
         expect(gaps(buildPlayerStatus(bothSrc, NOW), fpp92)).toEqual([]);
+        // 9.5 adds the media clock to the playing media half; its playlist has
+        // the one (playing) entry, so check that one against ours.
+        const fpp95 = JSON.parse(
+            readFileSync(path.join(fixtureDir, '..', 'fpp-9.5', 'playing-both.player-status.json'), 'utf8'),
+        ) as unknown;
+        const playingOnly = { ...bothSrc, playlists: [{ ...two, items: [{ id: 'seq1', sequence: 1 }] }] };
+        expect(gaps(buildPlayerStatus(playingOnly, NOW), fpp95)).toEqual([]);
     });
 
     it('nests the media and sequence halves with elapsed time', () => {
@@ -149,7 +156,7 @@ describe('sequence+media entries against FPP 9.2', () => {
             duration: 60,
             timecode: 'Default',
             videoOut: '--Default--',
-            media: { type: 'sequence', mediaName: 'RefSong.mp3', ...elapsed },
+            media: { type: 'media', mediaFilename: 'RefSong.mp3', secondsTotal: 0, minutesTotal: 1, ...elapsed },
             sequence: { type: 'sequence', sequenceName: 'RefSong.fseq', ...elapsed },
         });
         const prev = (pl.details as { mainPlaylist: Record<string, Record<string, unknown>>[] }).mainPlaylist[0];

@@ -56,14 +56,29 @@ function entryConfig(entry: FppPlaylistEntry, position: number, current: number,
     if (entry.type !== 'both') return { ...out, ...elapsed };
 
     const both = { ...out, ...BOTH_DEFAULTS };
-    // FPP reports the media half as type "sequence" while it plays, and as
-    // "media" with its mediaFilename otherwise.
-    const media = isCurrent
-        ? { ...both, type: 'sequence', ...elapsed }
-        : { ...both, type: 'media', mediaFilename: entry.mediaName ?? '' };
+    const media = { ...both, type: 'media', mediaFilename: entry.mediaName ?? '' };
     // FPP keeps elapsed time only in the halves; ours also carries it at the
     // entry level, as for a sequence-only entry.
-    return { ...both, ...elapsed, media, sequence: { ...both, type: 'sequence', ...elapsed } };
+    return {
+        ...both,
+        ...elapsed,
+        media: isCurrent ? { ...media, ...elapsed, ...mediaClock(np) } : media,
+        sequence: { ...both, type: 'sequence', ...elapsed },
+    };
+}
+
+/** The media player's own clock (MediaOutputStatus), which FPP adds to the
+ *  playing media half. Times split into minutes/seconds and hundredths. */
+function mediaClock(np: FppNowPlaying) {
+    const total = Math.floor(np.secondsPlayed + np.secondsRemaining);
+    return {
+        mediaSeconds: np.secondsPlayed,
+        minutesTotal: Math.floor(total / 60),
+        secondsTotal: total % 60,
+        status: 1,
+        subSecondsElapsed: Math.floor(np.secondsPlayed * 100) % 100,
+        subSecondsRemaining: Math.floor(np.secondsRemaining * 100) % 100,
+    };
 }
 
 /** Objects with their keys sorted, as FPP's JSON writer emits them. */
