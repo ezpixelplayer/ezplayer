@@ -47,7 +47,7 @@ export interface PointShaderAttributes {
 export interface PointShaderUniforms {
     /** Time for animated procedural colors */
     time: number;
-    /** Dimming-curve factor (0..1) the renderer baked into live data; the shader divides it back out */
+    /** Dimming-curve brightness factor (0..1) baked into live data */
     brightness: number;
     /** Gamma correction value */
     gamma: number;
@@ -198,15 +198,9 @@ void main() {
         color = calculateProceduralColor(position, originalIndex);
     }
     
-    // Undo the dimming curve xLights baked into the channel data.
-    // xLights bakes   out = pow(v, gamma) * brightness   (gamma FIRST, then the
-    // brightness factor 0..1 from the layout's dimmingCurve), so with
-    // brightness 0.5 and gamma 2 the file holds 0..0.5. Invert in the reverse
-    // order: divide the brightness back out (0..1, clamped against rounding),
-    // THEN apply 1/gamma, which keeps the result in 0..1. Doing gamma first
-    // would compress 0..0.5 to 0..0.71 and never reach full white. Lossy on
-    // 8-bit data by nature. Procedural "off" colors are not file data: they
-    // get the dimmed, gamma-adjusted look as before.
+    // xLights bakes out = pow(v, gamma) * brightness. Undo in reverse order:
+    // divide brightness out (clamped to 0..1), then 1/gamma. Lossy on 8-bit.
+    // Procedural "off" colors are not file data; they keep the dimmed look.
     if (useLiveData > 0.5) {
         color = min(color / max(brightness, 0.001), vec3(1.0));
         color = pow(color, vec3(1.0 / gamma));
@@ -226,8 +220,8 @@ void main() {
 
 /**
  * Fragment shader for point rendering
- * Handles color selection, hover highlighting, and pixel shape (dimming-curve
- * inversion, brightness then gamma, lives in the vertex shader)
+ * Handles color selection, hover highlighting, and pixel shape
+ * (dimming-curve inversion lives in the vertex shader)
  */
 export const pointFragmentShader = `
 uniform vec3 selectedColor;
@@ -291,8 +285,7 @@ void main() {
         color = vStartColor;
     }
 
-    // Gamma and brightness are already undone in the vertex shader (in the
-    // right order); nothing to apply here, so selection/hover colors stay true.
+    // Dimming already undone in the vertex shader; selection/hover colors stay true.
     
     // Apply model transparency (opacity = 1 - transparency/100, passed as uniform)
     // Multiply the fragment alpha by opacity: 1.0 = fully opaque, 0.0 = fully transparent
