@@ -18,10 +18,31 @@ import { Box } from '../box/Box';
  * so the viewer is never rendered on a machine that cannot support it.
  */
 
+/** The context attributes a preview canvas asks for. */
+export interface PreviewGlAttributes {
+    antialias: boolean;
+    alpha: boolean;
+    powerPreference: WebGLPowerPreference;
+}
+
+/**
+ * Attribute sets to try, best first. A machine on software rendering can refuse a
+ * high-performance context yet grant a default one; three.js throws on the refusal,
+ * so the probe has to ask for exactly what the canvas will ask for and the canvas
+ * has to use whatever the probe found.
+ */
+export const PREVIEW_GL_CANDIDATES: readonly PreviewGlAttributes[] = [
+    { antialias: true, alpha: false, powerPreference: 'high-performance' },
+    { antialias: true, alpha: false, powerPreference: 'default' },
+    { antialias: false, alpha: false, powerPreference: 'default' },
+];
+
 export interface WebGLSupport {
     supported: boolean;
     /** Human-readable reason when `supported` is false. */
     reason?: string;
+    /** The attribute set that produced a context; the viewers create theirs with it. */
+    attributes?: PreviewGlAttributes;
 }
 
 let cached: WebGLSupport | undefined;
@@ -38,20 +59,26 @@ export function probeWebGLSupport(): WebGLSupport {
         return cached;
     }
     try {
-        const canvas = document.createElement('canvas');
-        // Same order three.js tries: webgl2 first, then webgl.
-        const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl') ?? canvas.getContext('experimental-webgl');
-        if (gl && typeof (gl as WebGLRenderingContext).getParameter === 'function') {
-            // Release the probe context right away so it doesn't count toward
-            // Chromium's per-page live-context limit.
-            (gl as WebGLRenderingContext).getExtension('WEBGL_lose_context')?.loseContext();
-            cached = { supported: true };
-        } else {
-            cached = {
-                supported: false,
-                reason: 'The graphics driver on this computer does not provide WebGL, or Chromium has disabled it for this GPU.',
-            };
+        for (const attributes of PREVIEW_GL_CANDIDATES) {
+            // A canvas holds one context, so each attempt gets a fresh one.
+            const canvas = document.createElement('canvas');
+            // Same order three.js tries: webgl2 first, then webgl.
+            const gl =
+                canvas.getContext('webgl2', attributes) ??
+                canvas.getContext('webgl', attributes) ??
+                canvas.getContext('experimental-webgl', attributes);
+            if (gl && typeof (gl as WebGLRenderingContext).getParameter === 'function') {
+                // Release the probe context right away so it doesn't count toward
+                // Chromium's per-page live-context limit.
+                (gl as WebGLRenderingContext).getExtension('WEBGL_lose_context')?.loseContext();
+                cached = { supported: true, attributes };
+                return cached;
+            }
         }
+        cached = {
+            supported: false,
+            reason: 'The graphics driver on this computer does not provide WebGL, or Chromium has disabled it for this GPU.',
+        };
     } catch (err) {
         cached = { supported: false, reason: err instanceof Error ? err.message : String(err) };
     }

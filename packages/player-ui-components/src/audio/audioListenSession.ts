@@ -61,8 +61,7 @@ export interface AudioListenDiagnostics {
     offsetSnaps: number;
     /** Where the wall↔AudioContext mapping comes from. */
     mapping?: 'outputTimestamp' | 'currentTime';
-    /** Smallest observed step of `performance.now()` in ms (100 under Firefox
-     *  resistFingerprinting; ~0.1 or less normally). */
+    /** Smallest observed step of `performance.now()`, ms; a quantized timer reads 100. */
     timerPrecisionMs?: number;
     decodeErrors: number;
     reconnects: number;
@@ -96,10 +95,10 @@ function audioDebugEnabled(): boolean {
 }
 
 /**
- * Starting trim for this device when the viewer has not chosen one. Android reports an
- * output latency well above its real pipeline — its media output path reports the
- * buffer's capacity, not its fill — so audio placed by that figure plays early, by
- * roughly 150 ms. Desktop browsers report accurately. The viewer's own setting overrides.
+ * Starting trim for this device when the viewer has not chosen one. Android's media
+ * output path reports its buffer capacity as latency rather than its fill, so audio
+ * placed by that figure plays early by about the difference. The viewer's own
+ * setting overrides.
  */
 export function defaultTrimMsForDevice(): number {
     if (typeof navigator === 'undefined') return 0;
@@ -586,8 +585,7 @@ export class AudioListenSession {
     // -- diagnostics breadcrumb -----------------------------------------------------
 
     /** With `?audiodebug=1` in the URL (or localStorage ezpAudioDebug=1) print one compact
-     *  diagnostics line every 10 s. Works on every page, including the LAN ones that have no
-     *  overlay, and keeps logging while the tab is in the background. */
+     *  diagnostics line every 10 s, on every page and while the tab is in the background. */
     private startDebugLog(): void {
         if (this.debugTimer || typeof window === 'undefined') return;
         if (!audioDebugEnabled()) return;

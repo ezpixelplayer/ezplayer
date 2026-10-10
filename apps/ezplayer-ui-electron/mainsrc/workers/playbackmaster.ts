@@ -886,7 +886,7 @@ function recomputeVolumeGains() {
 }
 
 /////////
-// Commanded songs wait for their audio (issue #180)
+// Commanded songs wait for their audio
 //
 // A jukebox / viewer / Remote Falcon pick names a song whose mp3 may not be decoded
 // yet, and a fixed start delay cannot be long enough for a cold decode without making
@@ -926,9 +926,9 @@ function interactiveAudioReady(seqId: string): boolean {
     const seq = foregroundPlayerRunState.sequencesById.get(seqId) ?? curSequences?.find((x) => x.id === seqId);
     const saf = audioFileFor(seq);
     if (!saf || !mp3Cache) return true;
-    const r = mp3Cache.getMp3(saf, !!seq?.settings?.normalize);
-    if (!r) return false; // not requested yet
-    return !!r.err || !!r.ref;
+    // A settled decode, success or failure, is nothing to wait for. Polled every tick while a
+    // song is held, so this must not count as a cache miss or touch the entry.
+    return mp3Cache.isSettled(saf, !!seq?.settings?.normalize);
 }
 
 /**
@@ -944,10 +944,14 @@ function holdInteractiveStartsForAudio(now: number): void {
             interactiveAudioWaitSince.delete(cmd.requestId);
             return false;
         }
-        const since = interactiveAudioWaitSince.get(cmd.requestId) ?? now;
+        const stored = interactiveAudioWaitSince.get(cmd.requestId);
+        if (stored !== undefined && stored < 0) return false; // gave up on this one already
+        const since = stored ?? now;
         interactiveAudioWaitSince.set(cmd.requestId, since);
         if (now - since > INTERACTIVE_AUDIO_WAIT_MAX_MS) {
-            if (now - since < INTERACTIVE_AUDIO_WAIT_MAX_MS + 1000) {
+            // Once per song: a negative `since` marks the warning as already given.
+            if (since > 0) {
+                interactiveAudioWaitSince.set(cmd.requestId, -since);
                 emitWarning(
                     `Audio for ${cmd.seqId} still not decoded after ${INTERACTIVE_AUDIO_WAIT_MAX_MS} ms; starting without it.`,
                 );
@@ -1027,7 +1031,7 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'setvolume': {
             if (cmd?.volume !== undefined) {
                 // Applies to every output; the schedule slew then pulls each back
-                // toward its own target (pre-existing semantics).
+                // toward its own target.
                 volume = cmd.volume;
                 for (const id of outputLevels.keys()) outputLevels.set(id, cmd.volume);
             }
@@ -2866,9 +2870,8 @@ async function processQueue() {
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    // Idle: fill silence contiguously out to the same lead as music. The old
-                    // code sent one chunk "up to now" and jumped the clock past the rest,
-                    // leaving holes that restarted the listener stream every chunk.
+                    // Idle: fill silence contiguously out to the same lead as music; a hole
+                    // here restarts the listener stream.
                     if (audioPlayerRunTime < targetFrameRTC - 1000) {
                         audioPlayerRunTime = targetFrameRTC; // far behind (e.g. unpause): don't flood
                     }

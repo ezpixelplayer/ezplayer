@@ -7,10 +7,8 @@
  * stream: it overlap-adds each chunk's ramped tail into the next chunk's
  * ramped head (exactly what the local speakers do when they play the chunks
  * overlapped), so the codec sees contiguous, un-ramped audio and never
- * restarts. A per-chunk encoder reset — the first version of this file — made
- * libopus redo its mode/bandwidth decisions every 100 ms: 10 dB down at
- * 14 kHz and ~1 dB of level wobble at chunk rate, which is what "dull treble
- * with warps and chirps" was.
+ * restarts. A reset per chunk would make libopus redo its mode and bandwidth
+ * decisions every 100 ms, which is audible.
  *
  * Wire frames carry whole 20 ms packets, so the stream is re-chunked through
  * a FIFO: each wire frame is EMIT_PACKETS packets (100 ms) with `playAt` of
@@ -59,8 +57,7 @@ const OPUS_SIGNAL_MUSIC = 3002;
 const OPUS_BANDWIDTH_FULLBAND = 1105;
 
 export interface AudioStreamEncoderOptions {
-    /** Target bitrate in bits/s. Default 128 kbps: measured transparent on
-     *  real music (every octave band within 0.1 dB); still ~4% of raw PCM. */
+    /** Target bitrate in bits/s. */
     bitrate?: number;
     /** libopus complexity 0–10. Default 8. */
     complexity?: number;

@@ -2,7 +2,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { probeWebGLSupport, resetWebGLSupportCache, PreviewErrorBoundary } from './webglSupport';
+import { probeWebGLSupport, resetWebGLSupportCache, PreviewErrorBoundary, PREVIEW_GL_CANDIDATES } from './webglSupport';
 
 describe('probeWebGLSupport', () => {
     beforeEach(() => resetWebGLSupportCache());
@@ -34,9 +34,11 @@ describe('probeWebGLSupport', () => {
     it('memoizes the result', () => {
         const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
         probeWebGLSupport();
+        const afterFirst = spy.mock.calls.length;
+        // One probe tries each attribute set with each context name, and no more.
+        expect(afterFirst).toBeLessThanOrEqual(3 * PREVIEW_GL_CANDIDATES.length);
         probeWebGLSupport();
-        // One probe → at most the three context names tried once.
-        expect(spy.mock.calls.length).toBeLessThanOrEqual(3);
+        expect(spy.mock.calls.length).toBe(afterFirst);
     });
 
     it('treats a throwing getContext as unsupported', () => {

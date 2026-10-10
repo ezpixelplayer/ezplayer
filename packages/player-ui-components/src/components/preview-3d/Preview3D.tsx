@@ -1319,6 +1319,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     forceOrbitControls={preferOrbitControls}
                                     renderOnDemand={renderOnDemand}
                                     onRenderHandle={onRenderHandle}
+                                    glAttributes={webglSupport.attributes}
                                 />
                             ) : (
                                 <Viewer2D
@@ -1348,6 +1349,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     fillContainer
                                     renderOnDemand={renderOnDemand}
                                     onRenderHandle={onRenderHandle}
+                                    glAttributes={webglSupport.attributes}
                                 />
                             )}
                         </PreviewErrorBoundary>

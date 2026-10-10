@@ -183,6 +183,12 @@ export class MP3PrefetchCache {
         });
     }
 
+    /** Decode settled (ready or failed)? Unlike getMp3 this neither counts as a miss nor
+     *  references the entry, so it is safe to ask every tick. False when not requested. */
+    isSettled(mp3file: string, normalize?: boolean): boolean {
+        return this.mp3PrefetchCache.check({ mp3file, normalize: !!normalize }, this.now);
+    }
+
     getMp3(mp3file: string, normalize?: boolean): { ref?: MP3Reference; err?: Error } | undefined {
         const mp3ref = this.mp3PrefetchCache.reference({ mp3file, normalize: !!normalize }, this.now);
         if (!mp3ref) return undefined;
@@ -232,11 +238,9 @@ const DECODE_TIMEOUT_MS = 120_000;
 
 /**
  * Talks to mp3decodeworker.js. The worker is a separate thread that can die at
- * load (a broken decoder module) or wedge; both used to be invisible — the
- * client posted into a dead worker and every decode hung forever, which the
- * playback loop reported only as "unknown condition". Now a dead worker is
- * logged, in-flight and later requests fail with the reason, and the worker is
- * respawned for the next request.
+ * load (a broken decoder module) or wedge. A dead worker is logged, in-flight
+ * and later requests fail with the reason, and the worker is respawned for the
+ * next request.
  */
 export class Mp3DecodeWorkerClient {
     private worker: Worker | undefined;
