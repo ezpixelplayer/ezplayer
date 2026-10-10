@@ -19,6 +19,7 @@ export { SongSaveProgress, describeSongSave, saveErrorMessage } from './componen
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
+export { PlaybackDetailDialog } from './components/player/PlaybackDetailDialog';
 export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';

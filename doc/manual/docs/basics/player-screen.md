@@ -62,6 +62,13 @@ When a song or sequence is active:
 
 If nothing is playing, the card shows _No track currently playing_.
 
+The list icon beside the status chip opens **Playback details**: what is on
+with its position in the show (song 10 of 100) and the full song order, any
+show it interrupted and will go back to, requests waiting their turn, and what
+comes next. From there you can pause, skip, end or abort what is on, stop a
+single request, or drop a waiting item. The same dialog opens from the Player
+Status card on the Show Status page.
+
 ### Controls
 
 When status is **Playing** or **Paused**, the same playback controls as the

@@ -80,6 +80,7 @@ import type {
     CombinedPlayerStatus,
     UIConnectSnapshot,
     FullPlayerState,
+    PlaybackItemOrder,
     PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -451,6 +452,11 @@ export function isScheduleActive(): boolean {
     if (!player || (player.status !== 'Playing' && player.status !== 'Stopping')) return false;
     const nowPlaying = player.now_playing;
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
+}
+
+/** The baked song order of a playback item, from the worker that holds it. */
+export async function getPlaybackItemOrder(key: string): Promise<PlaybackItemOrder | undefined> {
+    return await rpcc?.call('getPlaybackItemOrder', { key });
 }
 
 /**

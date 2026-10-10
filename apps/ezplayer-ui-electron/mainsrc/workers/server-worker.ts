@@ -1559,6 +1559,27 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: GET /api/ezp/playback-item/:key — the baked song order of a loaded
+    // playback item (a shuffled show's order exists only in the engine). Asked
+    // for on demand by the detailed playback view; too big to ride the status.
+    // ----------------------------------------------
+    router.get('/api/ezp/playback-item/:key', async (ctx) => {
+        try {
+            const order = await rpc.call('getPlaybackItemOrder', ctx.params.key as string);
+            if (!order) {
+                ctx.status = 404;
+                ctx.body = { error: 'No such playback item' };
+                return;
+            }
+            ctx.body = order;
+        } catch (error) {
+            console.error('[server-worker] Error reading playback item:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
     // API: GET /api/ezp/current-show (local cache read)
     // ----------------------------------------------
     router.get('/api/ezp/current-show', async (ctx) => {

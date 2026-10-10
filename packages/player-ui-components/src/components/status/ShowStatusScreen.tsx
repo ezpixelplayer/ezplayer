@@ -2,6 +2,7 @@ import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
+import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import {
     Accordion,
     AccordionDetails,
@@ -30,6 +31,7 @@ import { CLOUD } from '../../constants/routes';
 // Types
 import { AppDispatch, RootState } from '../../store/Store';
 import { StatsDialog } from './StatsDialog';
+import { PlaybackDetailDialog } from '../player/PlaybackDetailDialog';
 import type { ControllerStatus } from '@ezplayer/ezplayer-core';
 import {
     type ControllerStatusSeverity,
@@ -93,6 +95,7 @@ export interface ShowStatusScreenProps {
 export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }: ShowStatusScreenProps) => {
     const theme = useTheme();
     const [statsDialogOpen, setStatsDialogOpen] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
     /** Per-controller accordion: omitted index defaults to expanded (matches prior “always open” behavior). */
     const [controllerSectionExpanded, setControllerSectionExpanded] = useState<Record<number, boolean>>({});
     const [serverStatus, setServerStatus] = useState<{
@@ -225,6 +228,19 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 <Typography variant="body1">
                                     Last Checkin: {formatTime(player.reported_time)}
                                 </Typography>
+                                {player.ptype === 'EZP' && (
+                                    <Box sx={{ my: 1 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            startIcon={<QueueMusicIcon />}
+                                            onClick={() => setDetailOpen(true)}
+                                        >
+                                            Playback details
+                                        </Button>
+                                        <PlaybackDetailDialog open={detailOpen} onClose={() => setDetailOpen(false)} />
+                                    </Box>
+                                )}
                                 {
                                     <Typography variant="body1">
                                         Status:{' '}

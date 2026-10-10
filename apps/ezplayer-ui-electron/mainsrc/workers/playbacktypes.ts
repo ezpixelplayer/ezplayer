@@ -14,6 +14,7 @@ import type {
     ScheduledPlaylist,
     PlaybackStatistics,
     PlayerPStatusContent,
+    PlaybackItemOrder,
     PlayerCStatusContent,
     PlayerNStatusContent,
     EZPlayerCommand,
@@ -93,6 +94,8 @@ export type PlayWorkerRPCAPI = {
     getModelCoordinates: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getModelCoordinates2D: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
+    /** The baked song order of a loaded item, for the detailed playback view. */
+    getPlaybackItemOrder: (args: { key: string }) => Promise<PlaybackItemOrder | undefined>;
 };
 
 export type MainRPCAPI = {

@@ -13,7 +13,7 @@ import {
 } from '@mui/material';
 import { Box } from '../box/Box';
 import { PlayerPStatusContent, isPlaybackActive, resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
-import { VolumeOff, VolumeUp, Refresh, Tune, Close, WarningAmber } from '@mui/icons-material';
+import { VolumeOff, VolumeUp, Refresh, Tune, Close, WarningAmber, QueueMusic } from '@mui/icons-material';
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
@@ -21,6 +21,7 @@ import { AppDispatch, RootState } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
 import { AudioSettings } from '../playback-settings/sections/AudioSettings';
 import { PlayerSystemTime } from './PlayerSystemTime';
+import { PlaybackDetailDialog } from './PlaybackDetailDialog';
 
 interface NowPlayingCardProps {
     player: PlayerPStatusContent;
@@ -56,6 +57,7 @@ export const NowPlayingCard = ({
     // Hooks must precede the ptype early-return to keep call order stable.
     const dispatch = useDispatch<AppDispatch>();
     const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
     // Reloading clears controller state, so it waits for controller operations
     // that are running or queued.
     const controllerOpRunning = useSelector((s: RootState) =>
@@ -119,6 +121,12 @@ export const NowPlayingCard = ({
                         sx={{ fontWeight: 'bold' }}
                     />
                     <PlayerSystemTime />
+                    <Box sx={{ flexGrow: 1 }} />
+                    <Tooltip title="Playback details">
+                        <IconButton size="small" aria-label="Playback details" onClick={() => setDetailOpen(true)}>
+                            <QueueMusic fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
 
                 {/* Volume is automated toward the scheduled target(s), so it is shown read-only
@@ -326,6 +334,12 @@ export const NowPlayingCard = ({
                         </Tooltip>
                     </Box>
                 )}
+
+                <PlaybackDetailDialog
+                    open={detailOpen}
+                    onClose={() => setDetailOpen(false)}
+                    allowStopControls={allowStopControls}
+                />
 
                 {/* Default/scheduled volume settings, popped over the page (operator contexts). */}
                 <Dialog
