@@ -1,4 +1,5 @@
-import type { ViewerControlBackend } from '@ezplayer/ezplayer-core';
+import type { ControllerRefreshMode, ViewerControlBackend } from '@ezplayer/ezplayer-core';
+import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
     AudioOutputConfig,
@@ -189,6 +190,10 @@ const playbackSettingsSlice = createSlice({
             state.settings.sendIdleBlackFrames = action.payload;
         },
 
+        setControllerRefresh(state, action: PayloadAction<ControllerRefreshMode>) {
+            state.settings.controllerRefresh = controllerRefreshSettingsFor(action.payload);
+        },
+
         setNormalizeNewSongs(state, action: PayloadAction<boolean>) {
             state.settings.normalizeNewSongs = action.payload;
         },
@@ -302,6 +307,7 @@ export const {
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
     setSendIdleBlackFrames,
+    setControllerRefresh,
     setNormalizeNewSongs,
     setMultisyncEnabled,
     setMultisyncRemotes,

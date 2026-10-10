@@ -114,7 +114,9 @@ import {
 import { getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
 import {
     dispatchControllerCommand,
+    cancelQueuedAutomaticReads,
     deviceIdForAddress,
+    setControllerDataHold,
     getControllerOpsState,
     loadControllerRecords,
     loadNetworkPolicies,
@@ -145,26 +147,77 @@ export let curStatus: CombinedPlayerStatus = {};
 let lastShowName: string | undefined;
 export let curErrors: string[] = [];
 
+/**
+ * How long one hold of a controller's data lasts without renewal.  Short, so a
+ * crash or a lost release frees the controller quickly; operations that outlive
+ * it renew while they work.
+ */
+const HOLD_LEASE_MS = 60_000;
+/** Renewal interval, comfortably inside the lease. */
+const HOLD_RENEW_MS = 20_000;
+
+/** True while the player is putting data on the wire. */
+function playbackActive(): boolean {
+    const status = curStatus.player?.status;
+    return status !== undefined && status !== 'Stopped';
+}
+
+/**
+ * Hold one controller's data for the length of an operation, returning the
+ * release.  Nothing is held when no data is flowing, so an idle player behaves
+ * as it always did.  Handed to controller-ops, so reads and uploads go through
+ * it whatever asked for them — the controller list, the LAN API, the cloud or
+ * the CLI.
+ */
+function holdControllerData(address: string): (() => void) | undefined {
+    if (!playbackActive() || !playWorker) return undefined;
+
+    const hold = () =>
+        playWorker?.postMessage({
+            type: 'frontendcmd',
+            cmd: { command: 'holdcontrollerdata', address, leaseMs: HOLD_LEASE_MS },
+        } as PlayerCommand);
+
+    hold();
+    // An upload outlasts any one lease, so keep renewing until released.
+    const renew = setInterval(hold, HOLD_RENEW_MS);
+    renew.unref?.();
+
+    return () => {
+        clearInterval(renew);
+        playWorker?.postMessage({
+            type: 'frontendcmd',
+            cmd: { command: 'releasecontrollerdata', address },
+        } as PlayerCommand);
+    };
+}
+setControllerDataHold(holdControllerData);
+
 /** Last connectivity seen per controller address, to spot when it turns Up. */
 const lastConnectivity = new Map<string, string>();
 const lastAliveRefresh = new Map<string, number>();
-/** One refresh per controller per minute, so a flapping controller cannot storm. */
+/** One read per controller per minute, so a flapping controller cannot storm. */
 const ALIVE_REFRESH_GAP_MS = 60_000;
 
 /**
  * Read a controller's details when we first learn it is alive, since what it
  * reports is newer than anything held from before.
  *
- * A controller that was Down and is now Up is refreshed whatever the player is
- * doing: it has been missing data anyway.  A controller seen alive for the
- * first time — every controller, shortly after startup — waits for an idle
- * player, because reading them all can disrupt a running show.
+ * A first sighting means every controller at once, each read pausing its data
+ * and taking up to tens of seconds, so those wait for a stopped player and a
+ * show starting drops whatever is still queued.  A controller that comes back
+ * is a single read, allowed mid-show when the recovery setting asks for it.
  */
 function refreshControllersNowAlive(status: PlayerNStatusContent): void {
-    const now = Date.now();
+    const refresh = getSettingsCache()?.controllerRefresh;
+    // Unset means on: reading controllers as they appear is the helpful default.
+    const whenIdle = refresh?.whenIdle !== false;
+    const onRecovery = refresh?.onRecovery === true;
+
     // Only an explicit Stopped counts as idle: before the first player status
     // arrives the schedule may be about to start a show.
     const idle = curStatus.player?.status === 'Stopped';
+    const now = Date.now();
 
     for (const c of status.controllers ?? []) {
         const address = c.address;
@@ -174,9 +227,16 @@ function refreshControllersNowAlive(status: PlayerNStatusContent): void {
         lastConnectivity.set(address, c.connectivity);
         if (c.connectivity !== 'Up') continue;
 
-        const recovered = was === 'Down';
         const firstSighting = was === undefined || was === 'Pending';
-        if (!recovered && !(firstSighting && idle)) continue;
+        const recovered = was === 'Down';
+
+        // A first sighting is every controller at once, so it waits for an idle
+        // player.  One that just came back is a single read, and holding its
+        // data makes it answerable even mid-show.
+        let why: string | undefined;
+        if (firstSighting && idle && whenIdle) why = 'first time seen alive, player idle';
+        else if (recovered && (idle ? whenIdle : onRecovery)) why = 'back after being unreachable';
+        if (!why) continue;
 
         const last = lastAliveRefresh.get(address) ?? 0;
         if (now - last < ALIVE_REFRESH_GAP_MS) continue;
@@ -185,10 +245,20 @@ function refreshControllersNowAlive(status: PlayerNStatusContent): void {
         // A controller that was never scanned has no device entry; the status
         // command materializes one from the address.
         const id = deviceIdForAddress(address) ?? `${address}|direct`;
-        void dispatchControllerCommand({ cmd: 'status', id, address, depth: 'full' }, 'lan').catch(() => {
+        console.log(`Reading ${c.name ?? address} (${address}): ${why}`);
+        void dispatchControllerCommand({ cmd: 'status', id, address, depth: 'full' }, 'auto').catch(() => {
             // The operation reports its own failure; nothing to add here.
         });
     }
+}
+
+/**
+ * Playback starting ends the automatic reads: the queued ones are dropped, and
+ * the controllers they would have covered stay marked unread.
+ */
+function stopAutomaticReadsForPlayback(): void {
+    const dropped = cancelQueuedAutomaticReads();
+    if (dropped > 0) console.log(`Playback started: dropped ${dropped} queued controller read(s)`);
 }
 
 /** Stamp show/content summary onto curStatus from current state.
@@ -1123,8 +1193,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
 
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
+            // The user asked for this, so automatic reads give way to it.
+            cancelQueuedAutomaticReads();
             // Reloading clears controller state an operation is still writing to.
-            if (hasRunningControllerOps()) {
+            if (hasRunningControllerOps({ ignoreAutomatic: true })) {
                 console.warn('[resetplayback] refused: a controller operation is running');
                 return false;
             }
@@ -1330,6 +1402,9 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             }
             case 'pstatus': {
                 // The worker's pstatus is a complete snapshot of playback state.
+                if (curStatus.player?.status === 'Stopped' && msg.status?.status !== 'Stopped') {
+                    stopAutomaticReadsForPlayback();
+                }
                 curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
                 safeSend(mainWindow, 'playback:pstatus', msg.status);
                 broadcastToWebSocket('pStatus', msg.status);

@@ -546,6 +546,21 @@ export type EZPlayerCommand =
           command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
+          /**
+           * Stop sending to one controller so it can answer a read or accept an
+           * upload.  The hold releases itself after `leaseMs` even if the
+           * release never arrives, so a controller cannot be left dark; a
+           * longer operation renews it.
+           */
+          command: 'holdcontrollerdata';
+          address: string;
+          leaseMs: number;
+      }
+    | {
+          command: 'releasecontrollerdata'; // Resume sending to one controller
+          address: string;
+      }
+    | {
           command: 'activateoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
@@ -694,6 +709,40 @@ export interface JukeboxSettings {
     includedTags?: string[];
 }
 
+/**
+ * When the player may read a controller's configuration on its own.  A read
+ * pauses data to that controller while it runs — several models will not answer
+ * while they are streamed to — and can take tens of seconds on a HinksPix.
+ */
+/**
+ * The automatic-read choices offered as one setting.  `whenIdle: false` with
+ * `onRecovery: true` is not among them: a controller is only read on recovery
+ * if automatic reads are on at all.
+ */
+export type ControllerRefreshMode = 'off' | 'idle' | 'recovery';
+
+/** The stored flags for a choice. */
+export function controllerRefreshSettingsFor(mode: ControllerRefreshMode): ControllerRefreshSettings {
+    return { whenIdle: mode !== 'off', onRecovery: mode === 'recovery' };
+}
+
+/** The choice the stored flags amount to; unset means reads when idle. */
+export function controllerRefreshMode(s?: ControllerRefreshSettings): ControllerRefreshMode {
+    if (s?.whenIdle === false) return 'off';
+    return s?.onRecovery ? 'recovery' : 'idle';
+}
+
+export interface ControllerRefreshSettings {
+    /** Read controllers as they are first seen alive, while playback is stopped. */
+    whenIdle?: boolean;
+    /**
+     * Read a controller that comes back during a show before sending to it.
+     * Off by default: lighting it immediately beats fresh details, since it
+     * only joins the show once the read finishes.
+     */
+    onRecovery?: boolean;
+}
+
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
     /** Default for `settings.normalize` on songs added locally; cloud songs arrive normalized. */
@@ -711,6 +760,8 @@ export interface PlaybackSettings {
     sendIdleBlackFrames?: boolean;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
+    /** When the player may read controller configuration by itself. */
+    controllerRefresh?: ControllerRefreshSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;
     /**
