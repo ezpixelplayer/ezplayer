@@ -242,9 +242,10 @@ class NetworkManager:
 
 
 class Appliance:
-    def __init__(self, network, hotspot=None, clock=None):
+    def __init__(self, network, hotspot=None, clock=None, external_network=False):
         self.network = network
         self.hotspot = hotspot
+        self.external_network = external_network
         from pi_clock import Clock
         self.clock = clock or Clock()
         self.pending = None
@@ -255,6 +256,8 @@ class Appliance:
             raise ValueError('Invalid request')
         action = req.get('action')
         with self.lock:
+            if self.external_network and action in ('wifi', 'ethernet', 'hotspot'):
+                raise ValueError('Network settings are managed by the setup portal. Join your setup hotspot and open http://192.168.4.1.')
             if action == 'registerWeb':
                 expected_uid = int(open('/etc/ezplayer-pi-player-uid').read().strip())
                 port = req.get('port')
@@ -275,6 +278,7 @@ class Appliance:
                 clock_status = self.clock.status()
                 return {'devices': self.network.status(), 'pending': pending, 'hostname': socket.gethostname(),
                         'hotspot': self.hotspot.status() if self.hotspot else None,
+                        'networkManagedExternally': self.external_network,
                         'freeBytes': stat.f_bavail * stat.f_frsize, 'timezone': clock_status['timezone'], 'clock': clock_status}
             if action == 'scan':
                 return self.network.scan(req.get('interface'))
@@ -363,10 +367,9 @@ if __name__ == '__main__':
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
         os.unlink(path)
-    from pi_hotspot import Hotspot
-    hotspot = Hotspot(NetworkManager)
-    appliance = Appliance(NetworkManager(), hotspot)
-    threading.Thread(target=hotspot.run, daemon=True).start()
+    # The standalone portal owns Wi-Fi/LAN writes and hotspot lifecycle.
+    # Keep this Unix bridge for system controls and read-only network status.
+    appliance = Appliance(NetworkManager(), external_network=True)
     with socketserver.UnixStreamServer(path, Handler) as server:
         os.chown(path, 0, grp.getgrnam('ezplayer-system').gr_gid)
         os.chmod(path, 0o660)
