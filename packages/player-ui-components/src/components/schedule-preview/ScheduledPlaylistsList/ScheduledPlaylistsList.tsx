@@ -21,7 +21,7 @@ import {
 } from '@mui/material';
 import { Box } from '../../box/Box';
 import { alpha } from '@mui/material/styles';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import React, {
     forwardRef,
     startTransition,
@@ -1055,7 +1055,8 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                                 <CalendarTodayIcon sx={{ color: 'primary.main' }} />
                                                 <Typography variant="h6" sx={{ fontWeight: 500 }}>
-                                                    {format(new Date(date), 'dd-MMM-yyyy HH:mm:ss')}
+                                                    {/* parseISO reads the yyyy-MM-dd key as local midnight; new Date() would take it as UTC */}
+                                                    {format(parseISO(date), 'dd-MMM-yyyy')}
                                                 </Typography>
                                                 <Chip
                                                     label={`${schedules.length} schedule${schedules.length !== 1 ? 's' : ''}`}
