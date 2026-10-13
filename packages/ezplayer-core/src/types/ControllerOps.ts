@@ -75,7 +75,8 @@ export type ControllerOpKind = 'scan' | 'status' | 'action' | 'upload';
  *  run at once); `cancelled` = stopped on request before completion, partial
  *  results kept. */
 export type ControllerOpStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
-export type ControllerOpOrigin = 'lan' | 'cloud' | 'cli';
+/** `auto` marks a read the player started by itself, not a user action. */
+export type ControllerOpOrigin = 'lan' | 'cloud' | 'cli' | 'auto';
 
 export interface ControllerOpProgress {
     phase: string;

@@ -23,6 +23,7 @@ import {
     autoUpdateActions,
     cloudConfigActions,
     remoteAccessActions,
+    viewerStatsActions,
     audioDevicesActions,
     cloudStatusActions,
     controllerOpsActions,
@@ -108,6 +109,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
             if (data.remoteAccess !== undefined) {
                 dispatch(remoteAccessActions.setRemoteAccess(data.remoteAccess));
+            }
+            if (data.viewerStats !== undefined) {
+                dispatch(viewerStatsActions.setViewerStats(data.viewerStats));
             }
             if (data.audioOutputDevices !== undefined) {
                 dispatch(audioDevicesActions.setAudioOutputDevices(data.audioOutputDevices));

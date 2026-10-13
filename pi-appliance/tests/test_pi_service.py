@@ -54,6 +54,13 @@ class TransactionTests(unittest.TestCase):
         self.network = FakeNetwork()
         self.app = m.Appliance(self.network)
         self.req = {'action': 'ethernet', 'interface': 'eth0', 'method': 'auto', 'controllerOnly': True}
+    def test_external_portal_blocks_legacy_network_writes(self):
+        self.app.external_network = True
+        for action in ('wifi', 'ethernet', 'hotspot'):
+            with self.subTest(action=action), self.assertRaisesRegex(ValueError, 'setup portal'):
+                self.app.request({'action': action}, 1000)
+        self.assertEqual(self.network.events, [])
+
     def test_confirm_and_pending_lock(self):
         result = self.app.request(self.req, 1000)
         with self.assertRaises(ValueError): self.app.request(self.req, 1000)

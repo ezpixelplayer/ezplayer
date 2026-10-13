@@ -7,19 +7,22 @@ import {
     DialogTitle,
     Divider,
     FormControl,
+    FormControlLabel,
     IconButton,
     InputAdornment,
     List,
     ListItem,
     ListItemSecondaryAction,
     ListItemText,
+    Switch,
     TextField,
     Typography,
 } from '@mui/material';
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
+import type { ViewerControlBackend, ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
+import { viewerControlBackends } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
@@ -51,10 +54,15 @@ export const ViewerSettings: React.FC = () => {
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [showRemoteFalconToken, setShowRemoteFalconToken] = useState(false);
 
-    // The schedule config is backend-agnostic; `'ezplayer'` reuses the same
-    // schedule UI. Only the token field below is backend-specific.
-    const vcType = settings.viewerControl.type;
-    const showSchedule = vcType === 'remote-falcon' || vcType === 'ezplayer';
+    // The schedule is shared by both backends; only the token field is Remote Falcon's.
+    const backends = viewerControlBackends(settings.viewerControl);
+    const showSchedule = backends.length > 0;
+    const setBackend = (backend: ViewerControlBackend, on: boolean) =>
+        dispatch(
+            playbackSettingsActions.setViewerControlBackends(
+                on ? [...backends, backend] : backends.filter((b) => b !== backend),
+            ),
+        );
 
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
@@ -100,26 +108,29 @@ export const ViewerSettings: React.FC = () => {
 
     return (
         <Box>
-            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                <Select
-                    options={[
-                        { id: 'disabled', name: 'Disabled' },
-                        { id: 'remote-falcon', name: 'Remote Falcon' },
-                        { id: 'ezplayer', name: 'EZPlayer (built-in)' },
-                    ]}
-                    itemText="name"
-                    itemValue="id"
-                    onChange={(e) => {
-                        const type = (e.target as HTMLSelectElement).value as 'disabled' | 'remote-falcon' | 'ezplayer';
-                        dispatch(playbackSettingsActions.setViewerControlType(type));
-                        dispatch(playbackSettingsActions.setViewerControlEnabled(type !== 'disabled'));
-                    }}
-                    label="Viewer Control Type"
-                    value={settings.viewerControl.type}
-                />
-            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Where viewers can pick songs from. Both can run at once: requests from the EZPlayer viewer page are
+                played before Remote Falcon suggestions.
+            </Typography>
+            <FormControlLabel
+                sx={{ display: 'flex', mb: 0.5 }}
+                control={
+                    <Switch checked={backends.includes('ezplayer')} onChange={(_e, on) => setBackend('ezplayer', on)} />
+                }
+                label="EZPlayer viewer page (built-in)"
+            />
+            <FormControlLabel
+                sx={{ display: 'flex', mb: 2 }}
+                control={
+                    <Switch
+                        checked={backends.includes('remote-falcon')}
+                        onChange={(_e, on) => setBackend('remote-falcon', on)}
+                    />
+                }
+                label="Remote Falcon"
+            />
 
-            {settings.viewerControl.type === 'remote-falcon' && (
+            {backends.includes('remote-falcon') && (
                 <TextField
                     fullWidth
                     size="small"

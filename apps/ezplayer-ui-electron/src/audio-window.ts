@@ -153,7 +153,8 @@ export class RealTimeChunkPlayer {
         const advanceFrames = advanceSamples && advanceSamples > 0 ? advanceSamples / channels : numSamples;
         const audioLenMs = (1000 * advanceFrames) / sampleRate;
 
-        const dn = Math.round(Date.now()); // real clock, ms
+        // The stamp is in the player's RTC; compare it with the same clock.
+        const dn = Math.round(Date.now() + (msg.rtcOffsetMs ?? 0));
         const actNow = Math.round(this.audioCtx.currentTime * 1000); // audio clock, ms
 
         let startTimeMs: number | undefined;
@@ -166,6 +167,9 @@ export class RealTimeChunkPlayer {
 
             startTimeMs = actNow + (playAtRealTime - dn);
             this.audioPlayAtNextACT = startTimeMs;
+            // Audio runs well ahead of the lights; whatever the previous segment had queued
+            // from here on must not sound under the new one.
+            this.cutQueuedFrom(startTimeMs / 1000);
         } else {
             startTimeMs = this.audioPlayAtNextACT;
         }
@@ -173,10 +177,25 @@ export class RealTimeChunkPlayer {
         // Sanity check: if we drift too far, snap back to real-time alignment
         const idealStart = actNow + (playAtRealTime - dn);
         if (Math.abs(startTimeMs! - idealStart) > 50) {
-            console.log(`Start time way off: ${startTimeMs} vs ${idealStart}, snapping back`);
+            // One line every few seconds: a chain that cannot stay within 50 ms of the wall
+            // clock snaps on every chunk, and what matters then is whether the context's
+            // clock is advancing at all (state, currentTime) and what it claims as latency.
+            const nowMs = Date.now();
+            if (nowMs - this.lastSnapLogAt > 5000) {
+                this.lastSnapLogAt = nowMs;
+                console.log(
+                    `Audio chain ${startTimeMs! - idealStart > 0 ? 'ahead of' : 'behind'} wall by ${Math.abs(startTimeMs! - idealStart)} ms, snapping ` +
+                        `(ctx ${this.audioCtx.state} t=${this.audioCtx.currentTime.toFixed(3)} outLat=${Math.round((this.audioCtx.outputLatency || 0) * 1000)}ms ` +
+                        `rtcOffset=${msg.rtcOffsetMs ?? 0}ms, ${this.snapsSinceLog + 1} snaps since last line)`,
+                );
+                this.snapsSinceLog = 0;
+            } else {
+                this.snapsSinceLog++;
+            }
             startTimeMs = idealStart;
             this.audioPlayAtNextRealTime = playAtRealTime;
             this.audioPlayAtNextACT = startTimeMs;
+            this.cutQueuedFrom(startTimeMs / 1000);
         }
 
         // Advance scheduling state
@@ -204,7 +223,34 @@ export class RealTimeChunkPlayer {
         source.connect(this.gainNode);
 
         // Web Audio time is in seconds
-        source.start(startTimeMs! / 1000);
+        const startSec = startTimeMs! / 1000;
+        source.start(startSec);
+        this.queued.push({ source, start: startSec, end: startSec + numSamples / sampleRate });
+        if (this.queued.length > 64) this.queued = this.queued.filter((q) => q.end > this.audioCtx!.currentTime);
+    }
+
+    private queued: Array<{ source: AudioBufferSourceNode; start: number; end: number }> = [];
+    private lastSnapLogAt = 0;
+    private snapsSinceLog = 0;
+
+    /** Stop queued sources at `at` seconds: not-yet-started ones are cancelled, one playing
+     *  across `at` ends there. */
+    private cutQueuedFrom(at: number): void {
+        if (!this.audioCtx) return;
+        const now = this.audioCtx.currentTime;
+        const keep: typeof this.queued = [];
+        for (const q of this.queued) {
+            if (q.end <= at) {
+                if (q.end > now) keep.push(q);
+                continue;
+            }
+            try {
+                q.source.stop(Math.max(at, now));
+            } catch {
+                /* already stopped */
+            }
+        }
+        this.queued = keep;
     }
 }
 

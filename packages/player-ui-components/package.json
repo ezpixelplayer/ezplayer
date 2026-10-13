@@ -1,7 +1,7 @@
 {
     "name": "@ezplayer/player-ui-components",
     "private": true,
-    "version": "0.15.8",
+    "version": "0.15.9",
     "type": "module",
     "sideEffects": false,
     "main": "./dist/index.js",
@@ -57,6 +57,7 @@
         "jszip": "catalog:",
         "jwt-decode": "catalog:",
         "nprogress": "catalog:",
+        "opus-decoder": "^0.7.12",
         "prop-types": "catalog:",
         "qrcode": "catalog:",
         "qrcode.react": "catalog:",

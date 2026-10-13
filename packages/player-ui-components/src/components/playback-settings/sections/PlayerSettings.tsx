@@ -2,7 +2,8 @@ import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Ty
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AppSettingsCommand, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import type { AppSettingsCommand, ControllerRefreshMode, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
@@ -123,6 +124,40 @@ export const PlayerSettings: React.FC = () => {
                     the same controllers — lights then hold their last frame when playback stops.
                 </Typography>
             </Box>
+
+            <Divider sx={{ my: 3 }} />
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Controllers
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                The player can read each controller’s configuration on its own — ports, firmware, and anything that has
+                drifted from xLights. A read takes up to tens of seconds and pauses that controller’s data, so reads
+                normally wait for an idle player.
+            </Typography>
+            <FormControl fullWidth size="small">
+                <Select
+                    options={[
+                        { id: 'idle', name: 'When nothing is playing (recommended)' },
+                        { id: 'recovery', name: 'Also when a controller comes back mid-show' },
+                        { id: 'off', name: 'Never' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    onChange={(e) =>
+                        dispatch(
+                            playbackSettingsActions.setControllerRefresh(
+                                (e.target as HTMLSelectElement).value as ControllerRefreshMode,
+                            ),
+                        )
+                    }
+                    label="Read controller details automatically"
+                    value={controllerRefreshMode(settings.controllerRefresh)}
+                />
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Allowing a read mid-show keeps a controller that just came back up to date; it joins the show once the
+                read finishes.
+            </Typography>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

@@ -54,8 +54,10 @@ fi
 mkdir -p /etc/NetworkManager/dnsmasq-shared.d
 printf 'address=/#/192.168.4.1\n' > /etc/NetworkManager/dnsmasq-shared.d/ezplayer-setup.conf
 systemctl daemon-reload
-systemctl enable NetworkManager.service ezplayer-pi.service ezplayer-setup-portal.service
+# The standalone captive portal owns port 80; keep the legacy portal dormant.
+systemctl disable --now ezplayer-setup-portal.service
+systemctl enable NetworkManager.service ezplayer-pi.service
 systemctl restart ezplayer-pi.service
-systemctl restart ezplayer-setup-portal.service
+
 printf '\nInstalled. Reboot to load group membership and start EZPlayer.\n'
-printf 'Use Settings > Pi Network to join Wi-Fi. No account or Wi-Fi password is baked into this package.\n'
+printf 'Use the standalone setup hotspot portal to join Wi-Fi. No account or Wi-Fi password is baked into this package.\n'

@@ -12,7 +12,9 @@
     "devDependencies": {
         "@ezplayer/epp": "workspace:*",
         "@ezplayer/epp-mock-controller": "file:..\\..\\libs\\ezplayer-epp-mock-controller-0.0.1-dev.6.tgz",
+        "@ezplayer/ezplayer-core": "workspace:*",
         "@types/node": "catalog:",
+        "opusscript": "^0.1.1",
         "typescript": "catalog:",
         "vitest": "catalog:"
     }

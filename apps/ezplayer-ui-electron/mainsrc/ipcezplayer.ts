@@ -32,6 +32,14 @@ import {
     loadCloudConfigFromDisk,
     updateCloudConfig,
 } from './data/CloudConfigStorage.js';
+import { loadViewerStatsFromDisk, resetViewerStatsStore } from './data/ViewerStatsStorage.js';
+import {
+    configureViewerStatsSync,
+    getViewerStatsSummary,
+    publishViewerStats,
+    recordLocalViewerPick,
+    setViewerStatsBroadcaster,
+} from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
 import { ensureEzplayerSubdir, settingsPath } from './data/SettingsDir.js';
 import {
@@ -65,10 +73,12 @@ import {
 
 import type {
     CloudCommand,
+    CloudAudioMode,
     CloudConfig,
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
+    PlayerNStatusContent,
     UIConnectSnapshot,
     FullPlayerState,
     PlaybackSettings,
@@ -80,7 +90,13 @@ import type {
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import { copyPiSongFiles } from './data/pi-import-files.js';
 
-import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import {
+    CLOUD_API_ENDPOINTS,
+    mergePlaylists,
+    mergeSchedule,
+    mergeSequences,
+    viewerControlBackends,
+} from '@ezplayer/ezplayer-core';
 import type { AppSettingsCommand, AudioDevice } from '@ezplayer/ezplayer-core';
 import { reportDiagEvent } from './diagnostics.js';
 import { dispatchAppSettingsCommand, getAppSettingsState } from './appSettings.js';
@@ -97,9 +113,12 @@ import {
     pickAnotherShowFolder,
     pickCloudShowFolder,
 } from '../showfolder.js';
-import { getServerStatus } from './server-worker-manager.js';
+import { getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
 import {
     dispatchControllerCommand,
+    cancelQueuedAutomaticReads,
+    deviceIdForAddress,
+    setControllerDataHold,
     getControllerOpsState,
     loadControllerRecords,
     loadNetworkPolicies,
@@ -130,6 +149,120 @@ export let curStatus: CombinedPlayerStatus = {};
 let lastShowName: string | undefined;
 export let curErrors: string[] = [];
 
+/**
+ * How long one hold of a controller's data lasts without renewal.  Short, so a
+ * crash or a lost release frees the controller quickly; operations that outlive
+ * it renew while they work.
+ */
+const HOLD_LEASE_MS = 60_000;
+/** Renewal interval, comfortably inside the lease. */
+const HOLD_RENEW_MS = 20_000;
+
+/** True while the player is putting data on the wire. */
+function playbackActive(): boolean {
+    const status = curStatus.player?.status;
+    return status !== undefined && status !== 'Stopped';
+}
+
+/**
+ * Hold one controller's data for the length of an operation, returning the
+ * release.  Nothing is held when no data is flowing, so an idle player behaves
+ * as it always did.  Handed to controller-ops, so reads and uploads go through
+ * it whatever asked for them — the controller list, the LAN API, the cloud or
+ * the CLI.
+ */
+function holdControllerData(address: string): (() => void) | undefined {
+    if (!playbackActive() || !playWorker) return undefined;
+
+    const hold = () =>
+        playWorker?.postMessage({
+            type: 'frontendcmd',
+            cmd: { command: 'holdcontrollerdata', address, leaseMs: HOLD_LEASE_MS },
+        } as PlayerCommand);
+
+    hold();
+    // An upload outlasts any one lease, so keep renewing until released.
+    const renew = setInterval(hold, HOLD_RENEW_MS);
+    renew.unref?.();
+
+    return () => {
+        clearInterval(renew);
+        playWorker?.postMessage({
+            type: 'frontendcmd',
+            cmd: { command: 'releasecontrollerdata', address },
+        } as PlayerCommand);
+    };
+}
+setControllerDataHold(holdControllerData);
+
+/** Last connectivity seen per controller address, to spot when it turns Up. */
+const lastConnectivity = new Map<string, string>();
+const lastAliveRefresh = new Map<string, number>();
+/** One read per controller per minute, so a flapping controller cannot storm. */
+const ALIVE_REFRESH_GAP_MS = 60_000;
+
+/**
+ * Read a controller's details when we first learn it is alive, since what it
+ * reports is newer than anything held from before.
+ *
+ * A first sighting means every controller at once, each read pausing its data
+ * and taking up to tens of seconds, so those wait for a stopped player and a
+ * show starting drops whatever is still queued.  A controller that comes back
+ * is a single read, allowed mid-show when the recovery setting asks for it.
+ */
+function refreshControllersNowAlive(status: PlayerNStatusContent): void {
+    const refresh = getSettingsCache()?.controllerRefresh;
+    // Unset means on: reading controllers as they appear is the helpful default.
+    const whenIdle = refresh?.whenIdle !== false;
+    const onRecovery = refresh?.onRecovery === true;
+
+    // Only an explicit Stopped counts as idle: before the first player status
+    // arrives the schedule may be about to start a show.
+    const idle = curStatus.player?.status === 'Stopped';
+    const now = Date.now();
+
+    for (const c of status.controllers ?? []) {
+        const address = c.address;
+        if (!address || !c.connectivity) continue;
+
+        const was = lastConnectivity.get(address);
+        lastConnectivity.set(address, c.connectivity);
+        if (c.connectivity !== 'Up') continue;
+
+        const firstSighting = was === undefined || was === 'Pending';
+        const recovered = was === 'Down';
+
+        // A first sighting is every controller at once, so it waits for an idle
+        // player.  One that just came back is a single read, and holding its
+        // data makes it answerable even mid-show.
+        let why: string | undefined;
+        if (firstSighting && idle && whenIdle) why = 'first time seen alive, player idle';
+        else if (recovered && (idle ? whenIdle : onRecovery)) why = 'back after being unreachable';
+        if (!why) continue;
+
+        const last = lastAliveRefresh.get(address) ?? 0;
+        if (now - last < ALIVE_REFRESH_GAP_MS) continue;
+        lastAliveRefresh.set(address, now);
+
+        // A controller that was never scanned has no device entry; the status
+        // command materializes one from the address.
+        const id = deviceIdForAddress(address) ?? `${address}|direct`;
+        console.log(`Reading ${c.name ?? address} (${address}): ${why}`);
+        void dispatchControllerCommand({ cmd: 'status', id, address, depth: 'full' }, 'auto').catch(() => {
+            // The operation reports its own failure; nothing to add here.
+        });
+    }
+}
+
+/**
+ * Playback starting ends the automatic reads: the queued ones are dropped, and
+ * the controllers they would have covered stay marked unread.
+ */
+function stopAutomaticReadsForPlayback(): void {
+    const dropped = cancelQueuedAutomaticReads();
+    if (dropped > 0) console.log(`Playback started: dropped ${dropped} queued controller read(s)`);
+}
+
 /** Stamp show/content summary onto curStatus from current state.
  *  Called at every broadcast site so Show Status sees fresh values. */
 function applyStatusSummary() {
@@ -138,6 +271,7 @@ function applyStatusSummary() {
         show_name: lastShowName,
         viewer_control_enabled: s?.viewerControl?.enabled,
         viewer_control_mode: s?.viewerControl?.type,
+        viewer_control_backends: s ? viewerControlBackends(s.viewerControl) : undefined,
     };
     const files = curStatus.content?.files;
     const nNeeding = files ? Object.values(files).filter((f) => f.status !== 'installed').length : undefined;
@@ -603,6 +737,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
     resetControllerOps();
+    resetViewerStatsStore();
     await loadControllerRecords(showFolder);
     await loadNetworkPolicies(showFolder);
 
@@ -614,8 +749,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curSchedule = await loadScheduleAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
+    await loadViewerStatsFromDisk(settingsPath(showFolder, 'viewer-stats.json'));
+    publishViewerStats();
     const cloudActive = cloudConfig.cloudEnabled !== false;
     setCloudRemoteControlEnabled(cloudConfig.cloudRemoteControlEnabled !== false);
+    setCloudAudioMode(cloudConfig.cloudAudioMode ?? 'auto');
     setCloudWorkerConfig(
         cloudActive ? cloudConfig.cloudServiceUrl : '',
         cloudActive ? cloudConfig.playerIdToken : '',
@@ -695,6 +833,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
         playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cloudConfig.playerIdToken : '',
+    });
     scheduleUpdated(forceRestart);
 }
 
@@ -708,6 +851,11 @@ function resendCloudIdentity(): void {
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cfg.playerIdToken : '',
+    });
 }
 
 const handlers: MainRPCAPI = {
@@ -765,6 +913,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
         case 'setCloudRemoteControlEnabled':
             applyCloudRemoteControlEnabled(cmd.enabled);
             break;
+        case 'setCloudAudioMode':
+            applyCloudAudioMode(cmd.mode);
+            break;
         case 'setCloudPolling':
             applyCloudPolling({
                 mode: cmd.mode,
@@ -791,6 +942,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
 function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
     setCloudRemoteControlEnabled(cfg.cloudRemoteControlEnabled !== false);
+    setCloudAudioMode(cfg.cloudAudioMode ?? 'auto');
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
         cloudActive ? cfg.playerIdToken : '',
@@ -813,12 +965,22 @@ function reconfigureCloudWorker(cfg: CloudConfig) {
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cfg.playerIdToken : '',
+    });
 }
 
 function broadcastCloudConfig(cfg: CloudConfig) {
     safeSend(updateWindow, 'update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
+
+setViewerStatsBroadcaster((summary) => {
+    safeSend(updateWindow, 'update:viewerStats', summary);
+    broadcastToWebSocket('viewerStats', summary);
+});
 
 /** Update the persisted layout-source mode (`xlights` or `cloud`). Reconfigures the
  *  worker so it knows whether to auto-fetch layout at the head of each manifest tick. */
@@ -858,6 +1020,14 @@ export function applyCloudEnabled(enabled: boolean) {
 /** Allow / refuse cloud remote control. */
 export function applyCloudRemoteControlEnabled(enabled: boolean) {
     const cfg = updateCloudConfig({ cloudRemoteControlEnabled: enabled });
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
+}
+
+/** Persist the cloud live-audio policy and push it to the server worker,
+ *  which owns the audio bridge and pump. */
+export function applyCloudAudioMode(mode: CloudAudioMode) {
+    const cfg = updateCloudConfig({ cloudAudioMode: mode });
     reconfigureCloudWorker(cfg);
     broadcastCloudConfig(cfg);
 }
@@ -918,6 +1088,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             controllerops: getControllerOpsState(),
             remoteAccess: await getRemoteAccessAvailability(),
             appSettings: getAppSettingsState(),
+            viewerStats: getViewerStatsSummary(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
@@ -1027,8 +1198,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
 
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
+            // The user asked for this, so automatic reads give way to it.
+            cancelQueuedAutomaticReads();
             // Reloading clears controller state an operation is still writing to.
-            if (hasRunningControllerOps()) {
+            if (hasRunningControllerOps({ ignoreAutomatic: true })) {
                 console.warn('[resetplayback] refused: a controller operation is running');
                 return false;
             }
@@ -1188,7 +1361,8 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                broadcastAudioChunk(msg.chunk, msg.volumeSF);
+                if (msg.chunk.rtcOffsetMs !== undefined) setRtcOffset(msg.chunk.rtcOffsetMs);
+                broadcastAudioChunk(msg.chunk, msg.volumeSF, msg.outputGains);
                 break;
             }
             case 'pixelbuffer': {
@@ -1217,6 +1391,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 broadcastToWebSocket('cStatus', merged);
                 break;
             }
+            case 'viewerPick': {
+                recordLocalViewerPick(msg);
+                break;
+            }
             case 'nstatus': {
                 // Merge so any second writer's fields on curStatus.controller (e.g.
                 // cross-source controller info) survive playback's pushes.
@@ -1228,6 +1406,9 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             }
             case 'pstatus': {
                 // The worker's pstatus is a complete snapshot of playback state.
+                if (curStatus.player?.status === 'Stopped' && msg.status?.status !== 'Stopped') {
+                    stopAutomaticReadsForPlayback();
+                }
                 curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
                 safeSend(mainWindow, 'playback:pstatus', msg.status);
                 broadcastToWebSocket('pStatus', msg.status);

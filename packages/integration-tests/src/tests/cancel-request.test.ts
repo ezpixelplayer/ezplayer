@@ -153,8 +153,10 @@ describe('cancel a playing request', () => {
         await mock.ddp.waitForFrames(10, { timeoutMs: 10_000 });
         expect(lights()).toBe(77);
 
-        // Clear the schedule so the app winds down cleanly.
+        // Clear the schedule and stop, so the app winds down cleanly.  Clearing
+        // alone lets the started song play out — here, the rest of two minutes.
         expect((await fpp.putSchedule([])).status).toBe(200);
-        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'schedule cleared', timeoutMs: 45_000 });
+        expect((await fpp.command('Stop Now')).status).toBe(200);
+        await fpp.waitForStatus((s) => s.status_name === 'idle', { label: 'stopped', timeoutMs: 45_000 });
     });
 });

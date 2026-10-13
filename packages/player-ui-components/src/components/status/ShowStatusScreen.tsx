@@ -40,6 +40,7 @@ import {
     severityToMainColor,
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
+import { ViewerControlCard } from './ViewerControlCard';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
@@ -205,13 +206,6 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const controller = runtime.combined.controller;
     const show = runtime.combined.show;
     const showName = show?.show_name || 'Unknown Show';
-    const vcLabel = show?.viewer_control_enabled
-        ? show.viewer_control_mode === 'ezplayer'
-            ? 'Enabled (EZPlayer)'
-            : show.viewer_control_mode === 'remote-falcon'
-              ? 'Enabled (Remote Falcon)'
-              : 'Enabled'
-        : 'Disabled';
 
     return (
         <Box>
@@ -474,13 +468,26 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     Need Download: {content.n_needing_download ?? '—'}
                                 </Typography>
                                 {(content.n_rights_unmet ?? 0) > 0 && (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', my: 0.5 }}>
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1.5,
+                                            flexWrap: 'wrap',
+                                            my: 0.5,
+                                        }}
+                                    >
                                         <Chip
                                             color="warning"
                                             size="small"
                                             label={`Music proof needed: ${content.n_rights_unmet} sequence${content.n_rights_unmet === 1 ? '' : 's'}`}
                                         />
-                                        <Button size="small" variant="outlined" color="warning" onClick={() => navigate(CLOUD)}>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            color="warning"
+                                            onClick={() => navigate(CLOUD)}
+                                        >
                                             Fix on Cloud page
                                         </Button>
                                     </Box>
@@ -489,11 +496,15 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     Schedule Sync: {formatTime(content.schedule_sync_time)}
                                 </Typography>
                                 <Typography variant="body1">Schedules: {content.n_schedules ?? '—'}</Typography>
-                                <Typography variant="body1">Viewer Control: {vcLabel}</Typography>
                             </CardContent>
                         </Card>
                     </Grid>
                 )}
+
+                {/* Viewer Control */}
+                <Grid item xs={12}>
+                    <ViewerControlCard />
+                </Grid>
 
                 {/* Controller Status */}
                 {controller && (

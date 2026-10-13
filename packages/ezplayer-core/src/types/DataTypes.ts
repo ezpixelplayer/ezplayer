@@ -1,4 +1,5 @@
 import type { ControllerOpsState, ControllerCommand, ControllerSenderStats } from './ControllerOps';
+import type { ViewerStatsSummary } from '../util/viewerStats';
 import type { AudioDevice } from './EZPElectronAPI';
 
 export interface EZPlayerVersions {
@@ -191,8 +192,15 @@ export interface PlayerPStatusContent {
     preemptedItems?: PlayingItem[];
 
     volume?: {
-        level: number; // 0-100
+        /** 0-100. The default output's level, or in `outputs` mode the loudest
+         *  named output (0 when none are selected). */
+        level: number;
         muted?: boolean;
+        /** `default`: the system default output follows `volumeControl`.
+         *  `outputs`: each named output follows its own `AudioOutputConfig`. */
+        mode?: 'default' | 'outputs';
+        /** Live per-output levels in `outputs` mode; empty when none selected. */
+        outputs?: Array<{ id: string; label: string; level: number; deviceId?: string; groupId?: string }>;
     };
 
     /** Files pinned by currently-loaded playback (foreground + background), as stored
@@ -397,6 +405,8 @@ export interface PlayerNStatusContent {
     n_channels?: number;
 }
 
+export type PlaySongSource = 'ui' | 'jukebox' | 'remote-falcon' | 'viewer';
+
 export interface CombinedPlayerStatus {
     player_token?: string;
     player_updated?: number;
@@ -410,6 +420,8 @@ export interface CombinedPlayerStatus {
         show_name?: string;
         viewer_control_enabled?: boolean;
         viewer_control_mode?: 'disabled' | 'remote-falcon' | 'ezplayer';
+        /** All backends on (newer players); `viewer_control_mode` is the primary one. */
+        viewer_control_backends?: ViewerControlBackend[];
     };
 }
 
@@ -534,6 +546,21 @@ export type EZPlayerCommand =
           command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
+          /**
+           * Stop sending to one controller so it can answer a read or accept an
+           * upload.  The hold releases itself after `leaseMs` even if the
+           * release never arrives, so a controller cannot be left dark; a
+           * longer operation renews it.
+           */
+          command: 'holdcontrollerdata';
+          address: string;
+          leaseMs: number;
+      }
+    | {
+          command: 'releasecontrollerdata'; // Resume sending to one controller
+          address: string;
+      }
+    | {
           command: 'activateoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
@@ -542,6 +569,9 @@ export type EZPlayerCommand =
           immediate: boolean; // If false, enqueue
           priority: number; // Allows precedence over RF, lower is higher priority
           requestId: string; // To identify, for canceling
+          /** Who asked for it; Remote Falcon and jukebox picks are tallied on the owner's
+           *  Viewer Activity view (viewer-page picks are counted by the cloud). */
+          source?: PlaySongSource;
       }
     | {
           command: 'endsong'; // End song (skip to next)
@@ -584,6 +614,7 @@ export interface UIConnectSnapshot {
     /** Which remote-access tiles to offer. */
     remoteAccess?: RemoteAccessAvailability;
     appSettings?: AppSettingsState;
+    viewerStats?: ViewerStatsSummary;
 }
 
 export type ScheduleDays =
@@ -626,12 +657,19 @@ export interface CloudPollScheduleEntry {
     endTime: string; // HH:MM
 }
 
+export type ViewerControlBackend = 'remote-falcon' | 'ezplayer';
+
 export interface ViewerControlState {
     enabled: boolean;
     /** `'ezplayer'` = the built-in EZPlayer viewer control. Unlike
      *  `'remote-falcon'` it needs no token here — it uses the player's
      *  existing cloud identity — and reuses `schedule` for the live window. */
     type: 'disabled' | 'remote-falcon' | 'ezplayer';
+    /** Backends running at once — both may be on; built-in requests take precedence
+     *  over Remote Falcon. Newer players write this and keep `type` as the primary
+     *  backend for older readers. Absent → derived from `type`
+     *  (`viewerControlBackends()`). */
+    backends?: ViewerControlBackend[];
     remoteFalconToken?: string;
     /** Optional in the type because legacy persisted shapes can lack it.
      *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
@@ -671,6 +709,40 @@ export interface JukeboxSettings {
     includedTags?: string[];
 }
 
+/**
+ * When the player may read a controller's configuration on its own.  A read
+ * pauses data to that controller while it runs — several models will not answer
+ * while they are streamed to — and can take tens of seconds on a HinksPix.
+ */
+/**
+ * The automatic-read choices offered as one setting.  `whenIdle: false` with
+ * `onRecovery: true` is not among them: a controller is only read on recovery
+ * if automatic reads are on at all.
+ */
+export type ControllerRefreshMode = 'off' | 'idle' | 'recovery';
+
+/** The stored flags for a choice. */
+export function controllerRefreshSettingsFor(mode: ControllerRefreshMode): ControllerRefreshSettings {
+    return { whenIdle: mode !== 'off', onRecovery: mode === 'recovery' };
+}
+
+/** The choice the stored flags amount to; unset means reads when idle. */
+export function controllerRefreshMode(s?: ControllerRefreshSettings): ControllerRefreshMode {
+    if (s?.whenIdle === false) return 'off';
+    return s?.onRecovery ? 'recovery' : 'idle';
+}
+
+export interface ControllerRefreshSettings {
+    /** Read controllers as they are first seen alive, while playback is stopped. */
+    whenIdle?: boolean;
+    /**
+     * Read a controller that comes back during a show before sending to it.
+     * Off by default: lighting it immediately beats fresh details, since it
+     * only joins the show once the read finishes.
+     */
+    onRecovery?: boolean;
+}
+
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
     /** Default for `settings.normalize` on songs added locally; cloud songs arrive normalized. */
@@ -688,6 +760,8 @@ export interface PlaybackSettings {
     sendIdleBlackFrames?: boolean;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
+    /** When the player may read controller configuration by itself. */
+    controllerRefresh?: ControllerRefreshSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;
     /**
@@ -755,6 +829,12 @@ export interface LayoutFileMeta {
     file_time: number;
 }
 
+/** When the player streams live audio up to the cloud for browser listeners.
+ *  `'auto'` streams only while the relay reports someone listening, `'always'`
+ *  streams whenever the bridge is up (a diagnostic / experiment setting),
+ *  `'never'` leaves the audio bridge closed. */
+export type CloudAudioMode = 'auto' | 'always' | 'never';
+
 /** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
 export interface CloudConfig {
     cloudServiceUrl: string;
@@ -773,6 +853,8 @@ export interface CloudConfig {
     /** Whether the player accepts remote control from the cloud. Default true.
      *  Sync, registration, and status reporting are unaffected. */
     cloudRemoteControlEnabled?: boolean;
+    /** Live-audio streaming policy for the cloud bridge. Absent defaults to `'auto'`. */
+    cloudAudioMode?: CloudAudioMode;
     /** When the worker is enabled, how aggressively it polls content. `'always'`
      *  polls on the configured cadence. `'scheduled'` polls only when current
      *  local time is inside any window in `cloudPollSchedule`. Registration
@@ -908,6 +990,9 @@ export type FullPlayerState = {
     audioOutputDevices?: AudioDevice[];
     /** App-global (machine-wide) settings: diagnostics consent, start at sign-in. */
     appSettings?: AppSettingsState;
+    /** Owner viewer-activity summary (requests / votes / audience), computed by
+     *  the player from events pulled off its player_server. */
+    viewerStats?: ViewerStatsSummary;
 };
 
 /**
@@ -1037,6 +1122,7 @@ export type CloudCommand =
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
     | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud remote control
+    | { type: 'setCloudAudioMode'; mode: CloudAudioMode } // when to stream live audio to the cloud
     | { type: 'scanMediaRights' } // fingerprint local media (media folder + show folder) and submit proof of ownership
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so

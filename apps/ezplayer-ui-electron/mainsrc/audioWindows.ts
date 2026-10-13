@@ -4,24 +4,27 @@
  * unity-gain PCM; each window applies its own volume via a GainNode.
  *
  * With `useDefaultAudioOutput` on there is a single window on the system
- * default sink using the worker's volume. Off, there is one window per
- * `PlaybackSettings.audioOutputs` entry; the window resolves and tracks its
- * device itself (see src/audio-window.ts) and mutes while it is absent.
+ * default sink. Off, there is one window per `PlaybackSettings.audioOutputs`
+ * entry; the window resolves and tracks its device itself (see
+ * src/audio-window.ts) and mutes while it is absent.
+ *
+ * Volume is decided in one place — the playback worker (see
+ * `resolveVolumeTargets` in ezplayer-core): it slews every output toward its
+ * own scheduled level, folds in mute, and sends the resulting per-output
+ * gains with each audio chunk. This module only applies them.
  */
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { BrowserWindow, app } from 'electron';
-import type { AudioChunk, AudioOutputTarget, PlaybackSettings, VolumeControlState } from '@ezplayer/ezplayer-core';
-import { getActiveVolumeSchedule, isPhysicalAudioOutput } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, AudioOutputTarget, PlaybackSettings } from '@ezplayer/ezplayer-core';
+import { DEFAULT_VOLUME_TARGET_ID, isPhysicalAudioOutput } from '@ezplayer/ezplayer-core';
 import { safeSend } from './safe-send.js';
 
-const DEFAULT_KEY = 'default';
 const DEFAULT_TARGET: AudioOutputTarget = { deviceId: '', label: 'System default' };
 
 interface AudioOutputWindow {
     win: BrowserWindow;
     target: AudioOutputTarget;
-    volumeControl?: VolumeControlState;
     lastGain?: number;
 }
 
@@ -31,11 +34,13 @@ let htmlBaseUrl: string | undefined;
 /** Headless / CLI runs stay silent on local speakers. */
 let audioWindowsEnabled = true;
 
-/** DEFAULT_KEY or AudioOutputConfig.id */
+/** DEFAULT_VOLUME_TARGET_ID or AudioOutputConfig.id */
 const outputs = new Map<string, AudioOutputWindow>();
 
-/** Linear gain from the playback worker; applies to the default-sink window. */
-let workerVolumeSF = 1;
+/** Latest linear gains from the worker, by output key. The default-sink
+ *  window reads `DEFAULT_VOLUME_TARGET_ID`. Unknown keys play at unity until
+ *  the worker's next chunk names them. */
+let workerGains: Record<string, number> = {};
 
 export function setAudioWindowsEnabled(enabled: boolean) {
     audioWindowsEnabled = enabled;
@@ -79,22 +84,20 @@ function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindo
         const cur = outputs.get(key);
         if (cur?.win === win) {
             cur.lastGain = undefined;
-            pushGain(cur, new Date());
+            pushGain(key, cur);
         }
     });
     return win;
 }
 
-function effectiveVolumeSF(volumeControl: VolumeControlState | undefined, now: Date): number {
-    if (!volumeControl) return workerVolumeSF;
-    const sched = getActiveVolumeSchedule(volumeControl, now);
-    const level = sched?.volumeLevel ?? volumeControl.defaultVolume ?? 100;
-    return Math.max(0, Math.min(100, level)) / 100;
+function gainFor(key: string): number {
+    const g = workerGains[key];
+    return Number.isFinite(g) ? Math.max(0, Math.min(1, g)) : 1;
 }
 
-function pushGain(out: AudioOutputWindow, now: Date) {
+function pushGain(key: string, out: AudioOutputWindow) {
     if (out.win.isDestroyed()) return;
-    const gain = effectiveVolumeSF(out.volumeControl, now);
+    const gain = gainFor(key);
     if (gain === out.lastGain) return;
     out.lastGain = gain;
     safeSend(out.win, 'audio:gain', gain);
@@ -112,33 +115,28 @@ export function syncAudioOutputsFromSettings(settings: PlaybackSettings | null |
     if (!audioWindowsEnabled) return;
 
     const useDefault = settings?.useDefaultAudioOutput !== false;
-    const desired = new Map<string, { target: AudioOutputTarget; volumeControl?: VolumeControlState }>();
+    const desired = new Map<string, AudioOutputTarget>();
     if (useDefault) {
-        desired.set(DEFAULT_KEY, { target: DEFAULT_TARGET });
+        desired.set(DEFAULT_VOLUME_TARGET_ID, DEFAULT_TARGET);
     } else {
         for (const o of settings?.audioOutputs ?? []) {
             if (!isPhysicalAudioOutput({ deviceId: o.deviceId, kind: 'audiooutput' })) continue;
-            desired.set(o.id, {
-                target: { deviceId: o.deviceId, label: o.label, groupId: o.groupId },
-                volumeControl: o.volumeControl,
-            });
+            desired.set(o.id, { deviceId: o.deviceId, label: o.label, groupId: o.groupId });
         }
     }
 
     for (const key of [...outputs.keys()]) {
         const want = desired.get(key);
         const have = outputs.get(key)!;
-        if (!want || !sameTarget(want.target, have.target)) destroyOutput(key);
+        if (!want || !sameTarget(want, have.target)) destroyOutput(key);
     }
-    const now = new Date();
-    for (const [key, want] of desired) {
+    for (const [key, target] of desired) {
         let out = outputs.get(key);
         if (!out) {
-            out = { win: createAudioWindow(key, want.target), target: want.target };
+            out = { win: createAudioWindow(key, target), target };
             outputs.set(key, out);
         }
-        out.volumeControl = want.volumeControl;
-        pushGain(out, now);
+        pushGain(key, out);
     }
 
     const names = [...outputs.values()].map((o) => o.target.label || '(default)');
@@ -153,13 +151,16 @@ export function destroyAllAudioWindows(): void {
     for (const key of [...outputs.keys()]) destroyOutput(key);
 }
 
-/** Fan out one unity-gain chunk; `volumeSF` is the worker's current global volume. */
-export function broadcastAudioChunk(chunk: AudioChunk, volumeSF = 1): void {
-    workerVolumeSF = volumeSF;
-    const now = new Date();
-    for (const out of outputs.values()) {
+/**
+ * Fan out one unity-gain chunk. `gains` are the worker's current linear gains
+ * per output key (mute already applied). `volumeSF` is the legacy single gain
+ * and stands in for the default output when `gains` is absent.
+ */
+export function broadcastAudioChunk(chunk: AudioChunk, volumeSF = 1, gains?: Record<string, number>): void {
+    workerGains = gains ?? { [DEFAULT_VOLUME_TARGET_ID]: volumeSF };
+    for (const [key, out] of outputs) {
         if (out.win.isDestroyed()) continue;
-        pushGain(out, now);
+        pushGain(key, out);
         safeSend(out.win, 'audio:chunk', chunk);
     }
 }

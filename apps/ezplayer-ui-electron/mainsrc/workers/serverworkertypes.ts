@@ -5,6 +5,7 @@
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type {
     AppSettingsCommand,
+    CloudAudioMode,
     CloudCommand,
     RemoteAccessAvailability,
     UpdateCommand,
@@ -73,6 +74,16 @@ export type MainToServerWorkerMessage =
           audioWsUrl?: string;
           sessionId: string;
           ttlSeconds: number;
+      }
+    | {
+          /** Live-audio streaming policy for the cloud audio bridge. */
+          type: 'cloudAudioMode';
+          mode: CloudAudioMode;
+      }
+    | {
+          /** Player RTC minus Date.now(): the clock audio stamps and the time endpoint use. */
+          type: 'rtcOffset';
+          offsetMs: number;
       }
     | {
           /** Close the cloud bridge. `sessionId` is optional — when omitted

@@ -92,6 +92,34 @@ for (const file of nodeBundles(path.resolve('dist'))) {
     }
 }
 
+// An external that IS in the asar still needs its own dependencies there, and
+// electron-builder's collector can drop those. Walk each present external's
+// package.json and require its dependencies, recursively.
+const asarDeps = (pkg) => {
+    try {
+        const json = JSON.parse(asar.extractFile(asarPath, `node_modules/${pkg}/package.json`).toString('utf8'));
+        return Object.keys(json.dependencies ?? {});
+    } catch {
+        return [];
+    }
+};
+const seen = new Set();
+const walkDeps = (pkg, via) => {
+    if (seen.has(pkg)) return;
+    seen.add(pkg);
+    for (const dep of asarDeps(pkg)) {
+        if (builtins.has(dep) || ALLOW_MISSING.has(dep)) continue;
+        const chain = `${via} -> ${dep}`;
+        if (!asarPkgs.has(dep)) {
+            if (!refs.has(dep)) refs.set(dep, new Set());
+            refs.get(dep).add(`dependency of ${chain}`);
+            continue;
+        }
+        walkDeps(dep, chain);
+    }
+};
+for (const pkg of [...refs.keys()]) if (asarPkgs.has(pkg)) walkDeps(pkg, pkg);
+
 const missing = [];
 for (const [pkg, where] of [...refs].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (builtins.has(pkg) || asarPkgs.has(pkg) || ALLOW_MISSING.has(pkg)) continue;
