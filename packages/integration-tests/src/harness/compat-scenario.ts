@@ -32,8 +32,8 @@ export interface ScenarioFiles {
     scratch: string;
     /** Playlist name created on both. */
     show: string;
-    /** Play the sequence+media playlist too. A containerised FPP 10+ cannot:
-     *  its GStreamer output needs a PipeWire server the container lacks. */
+    /** Also play the sequence+media playlist. FPP 10+ cannot in a container:
+     *  its GStreamer output needs a PipeWire server. */
     playBoth?: boolean;
 }
 
@@ -159,7 +159,7 @@ export async function runCompatScenario(c: FppClient, f: ScenarioFiles): Promise
     // ---- set the target up from scratch ------------------------------------
     await call('stop before setup', '/api/playlists/stop');
     await c.waitForStatus((s) => s.status_name === 'idle', { label: 'idle before setup' });
-    // A run that stopped early leaves this behind; it is created again below.
+    // Left behind by a run that stopped early; created again below.
     await fetch(`${c.base}/api/playlist/${bothShow(f)}`, { method: 'DELETE' });
     await call('upload sequence', `/api/sequence/${f.song}`, { method: 'POST', body: f.fseq });
     await call('create playlist', `/api/playlist/${f.show}`, {
@@ -242,8 +242,8 @@ export async function runCompatScenario(c: FppClient, f: ScenarioFiles): Promise
     await call('stopped playlist config', '/api/fppd/playlist/config');
 
     // ---- sequence + media ----------------------------------------------------
-    // Most shows pair each sequence with its audio; FPP reports such entries
-    // differently (nested media/sequence halves), so play one of those too.
+    // FPP reports sequence+media entries differently (nested media and
+    // sequence halves), and most shows use them.
     await call('create both playlist', `/api/playlist/${bothShow(f)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

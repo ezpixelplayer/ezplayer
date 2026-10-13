@@ -139,8 +139,8 @@ describe('sequence+media entries against FPP 9.2 and 9.5', () => {
 
     it('matches FPP’s structure', () => {
         expect(gaps(buildPlayerStatus(bothSrc, NOW), fpp92)).toEqual([]);
-        // 9.5 adds the media clock to the playing media half; its playlist has
-        // the one (playing) entry, so check that one against ours.
+        // 9.5 adds the media clock to the playing media half. Its capture has
+        // one entry, the playing one, so compare against that alone.
         const fpp95 = JSON.parse(
             readFileSync(path.join(fixtureDir, '..', 'fpp-9.5', 'playing-both.player-status.json'), 'utf8'),
         ) as unknown;

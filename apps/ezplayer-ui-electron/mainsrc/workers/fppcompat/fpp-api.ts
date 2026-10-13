@@ -369,7 +369,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     /** Register a SequenceRecord on the fly for unresolved sequenceName
      *  entries whose fseq file exists — FPP tools don't know about EZP's
      *  registration step. */
-    /** A show-folder file this API may name (basename only, readable). */
+    /** Whether `name` (a basename) is a readable file in the show root. */
     async function showFileExists(name: string): Promise<boolean> {
         const showFolder = deps.getShowFolder();
         if (!showFolder || name !== path.basename(name)) return false;
@@ -381,7 +381,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         }
     }
 
-    /** The media a sequence+media entry names, by sequenceName (lowercased). */
+    /** Each sequence+media entry's mediaName, by lowercased sequenceName. */
     function entryMedia(body: FppPlaylist): Map<string, string> {
         const out = new Map<string, string>();
         for (const e of [...(body.leadIn ?? []), ...(body.mainPlaylist ?? []), ...(body.leadOut ?? [])]) {
