@@ -117,6 +117,8 @@ export interface ServerWorkerRPCAPI {
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
+    /** The baked song order of a playback item, for the detailed playback view. */
+    getPlaybackItemOrder(key: string): Promise<unknown>;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;

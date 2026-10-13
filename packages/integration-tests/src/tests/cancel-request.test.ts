@@ -21,11 +21,20 @@ interface PlayingItem {
     request_id?: string;
     schedule_id?: string;
 }
+interface StackEntry {
+    key: string;
+    origin: string;
+    state: string;
+    order_key: string;
+    song?: { sequence_id: string; offset_ms: number };
+    position?: { index: number; count: number };
+}
 interface PStatus {
     status?: string;
     engine_time?: number;
     now_playing?: PlayingItem;
     queue?: PlayingItem[];
+    view?: { stack: StackEntry[]; pending: unknown[]; upcoming: PlayingItem[] };
 }
 
 function hhmmss(d: Date): string {
@@ -126,10 +135,29 @@ describe('cancel a playing request', () => {
             requestId,
         });
         expect(play.status).toBe(200);
-        await waitFor(
-            async () => (await pStatus())?.now_playing?.request_id === requestId && lights() === 99,
-            'request playing',
-        );
+        const during = await waitFor(async () => {
+            const p = await pStatus();
+            return p?.now_playing?.request_id === requestId && lights() === 99 ? p : undefined;
+        }, 'request playing');
+
+        // The detailed view: the request on top, the show under it waiting to resume,
+        // and the show's song as what comes next.
+        const stack = during.view!.stack;
+        expect(stack.map((e) => [e.origin, e.state])).toEqual([
+            ['Immediate', 'playing'],
+            ['Scheduled', 'suspended'],
+        ]);
+        expect(stack[0].key).toBe(requestId);
+        expect(stack[1].song?.sequence_id).toBe(schedSeqId);
+        expect(during.view!.upcoming[0]?.sequence_id).toBe(schedSeqId);
+
+        // The show's song order is fetched on demand and keyed to the view.
+        const orderRes = await fetch(`${app.base}/api/ezp/playback-item/${encodeURIComponent(stack[1].key)}`);
+        expect(orderRes.status).toBe(200);
+        const order = (await orderRes.json()) as { order_key: string; main: Array<{ sequence_id: string }> };
+        expect(order.order_key).toBe(stack[1].order_key);
+        expect(order.main.map((e) => e.sequence_id)).toEqual([schedSeqId]);
+        expect((await fetch(`${app.base}/api/ezp/playback-item/no-such-item`)).status).toBe(404);
 
         // Cancel it by id.
         expect((await fpp.ezpCommand({ command: 'deleterequest', requestId })).status).toBe(200);
@@ -143,6 +171,8 @@ describe('cancel a playing request', () => {
         }, 'schedule resumed');
         expect(resumed.status).toBe('Playing');
         expect(resumed.queue ?? []).toEqual([]);
+        expect(resumed.view!.stack.map((e) => [e.origin, e.state])).toEqual([['Scheduled', 'playing']]);
+        expect(resumed.view!.stack[0].position).toEqual({ index: 0, count: 1, loop: false });
 
         // And it is actually running, not parked on one frame: the engine clock moves.
         const t0 = resumed.engine_time!;
