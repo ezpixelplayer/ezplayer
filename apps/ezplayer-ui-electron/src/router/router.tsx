@@ -144,7 +144,9 @@ const ElectronSettingsPage = () => {
             label: 'Pi Network',
             icon: <RouterIcon sx={{ fontSize: 56 }} />,
             available: piAvailable,
-            content: <PiSettings />,
+            onClick: () => {
+                window.open('http://192.168.4.1/setup', '_blank', 'noopener,noreferrer');
+            },
         },
         {
             key: 'piSystem',

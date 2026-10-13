@@ -7,7 +7,6 @@ import {
     CloudPage,
     ControllersScreen,
     JukeboxSettings,
-    MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
     ShowStatusScreen,
@@ -45,7 +44,6 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
-import FolderIcon from '@mui/icons-material/Folder';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 
 declare global {
@@ -88,13 +86,6 @@ const EmbeddedSettingsPage = () => {
     const canUpdate = useSelector((s: RootState) => s.autoUpdate.ops != null);
     // Embedded is a browser; show-folder selection isn't possible here.
     const sections: SettingsSection[] = [
-        {
-            key: 'mediaFolder',
-            label: 'Media Folder',
-            icon: <FolderIcon sx={{ fontSize: 56 }} />,
-            title: 'Media Folder',
-            content: <MediaFolderSettings />,
-        },
         {
             key: 'ui',
             label: 'UI',
@@ -147,7 +138,9 @@ const EmbeddedSettingsPage = () => {
             label: 'Pi Network',
             icon: <RouterIcon sx={{ fontSize: 56 }} />,
             available: piAvailable,
-            content: <PiSettings />,
+            onClick: () => {
+                window.open('http://192.168.4.1/setup', '_blank', 'noopener,noreferrer');
+            },
         },
         {
             key: 'piSystem',
